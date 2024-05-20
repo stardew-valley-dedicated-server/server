@@ -1,0 +1,73 @@
+version: "3.3"
+
+services:
+    stardew:
+        image: stardew-dedicated-server:${IMAGE_VERSION}
+        build:
+            context: .
+            dockerfile: docker/Dockerfile
+            args:
+                STARDEW_VERSION: ${STARDEW_VERSION}
+                SMAPI_VERSION: ${SMAPI_VERSION}
+                STEAM_USER: ${STEAM_USER}
+                STEAM_PASS: ${STEAM_PASS}
+        container_name: stardew-dedicated-server
+        depends_on:
+            - web
+        environment:
+            DISPLAY_HEIGHT: 800
+            DISPLAY_WIDTH: 1280
+            SERVER_ID: docker-test-1
+            NO_BACKEND: true
+            STEAM_AUTH_ENABLED: false
+            FORCE_NEW_DEBUG_GAME: false
+            DISABLE_RENDERING: false
+            HEALTH_CHECK_SECONDS: 300
+          
+            # Not in use, here for backward compat
+            BACKUP_GCS_BUCKET: not-used
+            GOOGLE_APPLICATION_CREDENTIALS: /etc/gcp/stardew-sa.json
+
+            # WEBVNC
+            # VNC_PASSWORD: "123"
+            DARK_MODE: "1"
+        ports:
+            # VNC
+            #- 8091:5900
+            # Web VNC
+            - 8090:5800
+            # Game
+            - 24643:24642/udp
+            - 8082:8081
+            - 8083:8080
+        volumes:
+            # Required: Not in use, here for backward compat
+            - ./stardew-sa.json:/etc/gcp/stardew-sa.json
+            # Required: Persist server data (StardewModdingApi.Constants.DataPath on linux)
+            - ./data:/config/xdg/config/StardewValley
+            # Optional: Mount shared to "local" web ui
+            - ./web/public/server:/config/xdg/config/StardewValley/Server
+            # Optional: Mount additional mods
+            - ./mods_extra:/data/Stardew/Mods/extra
+
+    # web:
+        # image: stardew-dedicated-web:${IMAGE_VERSION}
+        # build:
+            # context: ./web
+            # dockerfile: Dockerfile
+        # container_name: stardew-dedicated-web
+        # ports:
+            # # Nuxt
+            # - 3000:3000
+            # # HMR
+            # - 24678:24678
+        # volumes:
+            # # Required: Shared data
+            # #- ./data/shared:/app/public/shared
+            # # Required: Shared data
+            # #- ./web/public/server:/app/public/server:ro
+            # - ./web:/app
+            # - node_modules:/app/node_modules
+
+# volumes:
+  # node_modules:

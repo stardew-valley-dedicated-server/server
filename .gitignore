@@ -1,0 +1,39 @@
+# Misc
+.DS_Store
+.fleet
+
+# VS
+.vs
+
+# VSC
+.history
+
+# IntelliJ
+.idea
+
+# Logs
+logs
+*.log
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Settings files
+gcp-key.json
+stardew-sa.json
+
+# Build output
+build
+bin
+debug
+docker/game-daemon
+docker/mods
+cmd/daemon/__debug_bin.exe
+
+# Container game data mount
+data
+
+# Additional mods mount
+mods_extra

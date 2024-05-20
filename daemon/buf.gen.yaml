@@ -1,0 +1,17 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/junimohost/game-daemon/gen/proto/go
+    except:
+      - buf.build/googleapis/googleapis
+plugins:
+  # remote urls are links to list of versions
+  - remote: buf.build/protocolbuffers/plugins/go:v1.28.1-1
+    out: gen/proto/go
+    opt:
+      - paths=source_relative
+  - remote: buf.build/grpc/plugins/go:v1.2.0-1
+    out: gen/proto/go
+    opt:
+      - paths=source_relative

@@ -1,0 +1,9 @@
+version: v1
+managed:
+  enabled: true
+plugins:
+  # remote urls are links to list of versions
+  - remote: buf.build/protocolbuffers/plugins/csharp:v21.5.0-1
+    out: gen/proto/csharp
+  - remote: buf.build/grpc/plugins/csharp:v1.48.1-1
+    out: gen/proto/csharp

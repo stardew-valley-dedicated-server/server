@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JunimoServer", "JunimoServer\JunimoServer.csproj", "{73F95CD6-9989-441A-95A2-1F4F8BD246F3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JunimoBot", "JunimoBot\JunimoBot.csproj", "{2608DD57-A038-4190-904F-F39664A87997}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{73F95CD6-9989-441A-95A2-1F4F8BD246F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{73F95CD6-9989-441A-95A2-1F4F8BD246F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{73F95CD6-9989-441A-95A2-1F4F8BD246F3}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{73F95CD6-9989-441A-95A2-1F4F8BD246F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{73F95CD6-9989-441A-95A2-1F4F8BD246F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2608DD57-A038-4190-904F-F39664A87997}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2608DD57-A038-4190-904F-F39664A87997}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2608DD57-A038-4190-904F-F39664A87997}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4C481B93-8466-4C03-A28F-D29CB3F5BF62}
+	EndGlobalSection
+EndGlobal

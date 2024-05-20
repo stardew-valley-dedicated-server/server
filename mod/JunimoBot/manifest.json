@@ -1,0 +1,10 @@
+{
+  "Name": "JunimoBot",
+  "Author": "JV",
+  "Version": "0.0.1",
+  "Description": "JunimoBot",
+  "UniqueID": "JunimoHost.Bot",
+  "EntryDll": "JunimoBot.dll",
+  "MinimumApiVersion": "3.0.0",
+  "UpdateKeys": []
+}
