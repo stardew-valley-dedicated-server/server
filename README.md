@@ -97,8 +97,8 @@ These are the environment variables which can be specified at container run time
 |---|---|---|---|
 |GAME_PORT|Game Port|24643|1.0.0|
 |DISABLE_RENDERING|Disables rendering in VNC|true|1.0.0|
-|STEAM_USER|Required to download the game|-|1.0.0|
-|STEAM_PASS|Required to download the game|-|1.0.0|
+|STEAM_USER|Required to download the game on initial startup or for updates, but not to run the server|-|1.0.0|
+|STEAM_PASS|See STEAM_USER|-|1.0.0|
 |VNC_PORT|Web VNC port|8090|1.0.0|
 |VNC_PASSWORD|Web VNC password|-|1.0.0|
 |IMAGE_VERSION|Docker image version|-|1.0.0|
@@ -152,9 +152,9 @@ Tools and CI pipelines enforce conventional commits are not yet in place.
 #### Requirements
 * Docker `>=20`
 * git `>=2`
-* make `>=4`
-* .NET SDK `6`
-* Local Stardew Valley installation
+* make `>=4` ([Download](https://gnuwin32.sourceforge.net/packages/make.htm))
+* .NET SDK `6` ([Download](https://dotnet.microsoft.com/en-us/download/dotnet/6.0))
+* Local Stardew Valley installation (use Steam)
 
 #### Setup
 Clone the repository:
@@ -164,10 +164,13 @@ cd sdvd-server
 git clone --recurse-submodules git@github.com:stardew-valley-dedicated-server/server.git .
 ```
 
-Update `GamePath` in `JunimoServer.csproj` to your local installation to enable IDE autocomplete and build support. 
+Update `JunimoServer.csproj` to enable IDE autocomplete and build support:
+```xml
+<GamePath>C:\path\to\Stardew Valley</GamePath>
+```
 
 #### Usage
-Then build the mod and start the local server container:
+Build and start the server:
 ```sh
 make dev
 ```
