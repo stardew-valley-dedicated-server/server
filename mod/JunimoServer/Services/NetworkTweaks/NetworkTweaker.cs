@@ -1,3 +1,4 @@
+using System;
 using JunimoServer.Services.PersistentOption;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -10,10 +11,13 @@ namespace JunimoServer.Services.NetworkTweaks
         private readonly PersistentOptions _options;
         private readonly IModHelper _helper;
 
-        public NetworkTweaker(IModHelper helper, PersistentOptions options)
+        private readonly IMonitor _monitor;
+
+        public NetworkTweaker(IModHelper helper, IMonitor monitor, PersistentOptions options)
         {
             _options = options;
             _helper = helper;
+            _monitor = monitor;
 
             helper.Events.GameLoop.UpdateTicked += OnTick;
         }
@@ -24,7 +28,6 @@ namespace JunimoServer.Services.NetworkTweaks
 
             HandlePlayerLimit();
 
-            // TODO: Doubt this needs to be done every tick, rather once at the start
             HandleNetworkSettings();
         }
 

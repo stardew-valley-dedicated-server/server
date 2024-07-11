@@ -1,5 +1,4 @@
-﻿using StardewModdingAPI;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Threading.Tasks;
@@ -11,7 +10,7 @@ namespace JunimoServer.Util
     {
         private WebsocketClient _ws;
 
-        private readonly IMonitor _monitor;
+        //private readonly IMonitor _monitor;
         public WebSocketClient(string url)
         {
             //ManualResetEvent exitEvent = new ManualResetEvent(false);
@@ -27,7 +26,7 @@ namespace JunimoServer.Util
                 }
             });
 
-            Console.WriteLine("Setting up WS");
+            // Console.WriteLine("Setting up WS");
             _ws = new WebsocketClient(uri, factory);
 
             _ws.ErrorReconnectTimeout = TimeSpan.FromSeconds(3);
@@ -35,49 +34,49 @@ namespace JunimoServer.Util
             //_ws.LostReconnectTimeout = TimeSpan.FromSeconds(3); 
 
             _ws.ReconnectionHappened.Subscribe(msg => {
-                Console.WriteLine($"Reconnection happened, type: {msg.Type}");
+                // Console.WriteLine($"Reconnection happened, type: {msg.Type}");
 
-                var logData = new Dictionary<string, string>
-                {
-                    { "Type", msg.Type.ToString() },
-                    { "ToString", msg?.ToString() },
-                };
+                // var logData = new Dictionary<string, string>
+                // {
+                //     { "Type", msg.Type.ToString() },
+                //     { "ToString", msg?.ToString() },
+                // };
 
-                Console.WriteLine(Serialize(logData));
-                Console.WriteLine($"+++++++++++++++++++++++++++++++++++");
+                // Console.WriteLine(Serialize(logData));
+                // Console.WriteLine($"+++++++++++++++++++++++++++++++++++");
             });
 
             _ws.DisconnectionHappened.Subscribe(msg => {
-                Console.WriteLine($"Disconnection happened type: {msg.Type}");
+                // Console.WriteLine($"Disconnection happened type: {msg.Type}");
 
-                var logData = new Dictionary<string, string>
-                {
-                    { "Type", msg.Type.ToString() },
-                    { "CloseStatus", msg.CloseStatus?.ToString() },
-                    { "CloseStatusDescription", msg.CloseStatusDescription?.ToString() },
-                    { "Exception", msg.Exception?.Message?.ToString() },
-                };
+                // var logData = new Dictionary<string, string>
+                // {
+                //     { "Type", msg.Type.ToString() },
+                //     { "CloseStatus", msg.CloseStatus?.ToString() },
+                //     { "CloseStatusDescription", msg.CloseStatusDescription?.ToString() },
+                //     { "Exception", msg.Exception?.Message?.ToString() },
+                // };
 
-                Console.WriteLine(Serialize(logData));
+                // Console.WriteLine(Serialize(logData));
 
-                if (msg.Type == DisconnectionType.NoMessageReceived)
-                {
-                    Console.WriteLine("No message received, server probably starting up...");
-                }
-                else if (msg.Type == DisconnectionType.Error)
-                {
-                    Console.WriteLine("Error");
-                }
+                // if (msg.Type == DisconnectionType.NoMessageReceived)
+                // {
+                //     Console.WriteLine("No message received, server probably starting up...");
+                // }
+                // else if (msg.Type == DisconnectionType.Error)
+                // {
+                //     Console.WriteLine("Error");
+                // }
 
                 //Console.WriteLine($"Retrying to start WS");
                 //_ws.Start();
 
-                Console.WriteLine($"-----------------------------------");
+                // Console.WriteLine($"-----------------------------------");
             });
 
             _ws.MessageReceived.Subscribe(msg => Console.WriteLine($"Message received: {msg}"));
 
-            Console.WriteLine("Connecting to WS");
+            // Console.WriteLine("Connecting to WS");
             _ws.Start();
 
             //Console.WriteLine("Waiting for WS exitEvent...");

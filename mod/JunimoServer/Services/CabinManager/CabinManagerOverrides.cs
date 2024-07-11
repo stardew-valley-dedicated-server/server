@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using JunimoServer.Services.PersistentOption;
+﻿using JunimoServer.Services.PersistentOption;
 using JunimoServer.Util;
 using Microsoft.Xna.Framework;
 using Netcode;
@@ -11,6 +7,9 @@ using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
 using StardewValley.Network;
+using System;
+using System.IO;
+using System.Linq;
 
 namespace JunimoServer.Services.CabinManager
 {
@@ -24,8 +23,7 @@ namespace JunimoServer.Services.CabinManager
         private static Multiplayer _multiplayer;
 
 
-        public static void Initialize(IModHelper helper, IMonitor monitor,
-            PersistentOptions options, Action<long> onServerJoined)
+        public static void Initialize(IModHelper helper, IMonitor monitor, PersistentOptions options, Action<long> onServerJoined)
         {
             _helper = helper;
             _monitor = monitor;
@@ -40,8 +38,7 @@ namespace JunimoServer.Services.CabinManager
 
         public static void sendServerIntroduction_Postfix(long peer)
         {
-            Console.WriteLine("################### PLAYER JOINED");
-            Console.WriteLine(peer);
+            _monitor.Log($"sendServerIntroduction_Postfix: {peer}", LogLevel.Debug);
             _onServerJoined?.Invoke(peer);
         }
 
@@ -68,10 +65,9 @@ namespace JunimoServer.Services.CabinManager
             }
 
             NPC character = _helper.Reflection.GetMethod(__instance, "readNPC").Invoke<NPC>(msg.Reader);
-            Console.WriteLine("Warping Player");
+            _monitor.Log("Warping Player");
             GameLocation location = _helper.Reflection.GetMethod(__instance, "readLocation").Invoke<GameLocation>(msg.Reader);
-
-            Console.WriteLine(location.NameOrUniqueName);
+            _monitor.Log(location.NameOrUniqueName);
 
             if (character != null && location != null)
             {
@@ -247,8 +243,8 @@ namespace JunimoServer.Services.CabinManager
             // TODO: This was working immediately after the migration to 1.6.5, but broke with 1.6.8!?
             //       No idea what changed, but "ownersCabin" is null here and throws. Imo we don't need it anyway,
             //       we adjust warps above already and overriding them with the actual cabin reference position is redundant.
-            //       We are stacking them on the same location, so we can always rely on what we do above.
-            //       Leaving it for reference though.
+            //       We are stacking them on the same location, so we should be able to just rely on what we do above.
+            //       Leaving this here for reference though, cabin management is broken and I'm really not 100% sure.
 
             // If were not using the owners cabin to act as the stack position
             // Handle updating owner cabin warp to farmhouse entrance

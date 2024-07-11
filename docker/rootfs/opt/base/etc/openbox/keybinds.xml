@@ -1,0 +1,17 @@
+<keyboard>
+<!-- <keybind key="C-space">
+    <action name="Execute">
+        <command>rofi -show drun</command>
+    </action>
+  </keybind>
+  <keybind key="S-Tab">
+    <action name="Execute">
+        <command>rofi -show window</command>
+    </action>
+  </keybind>
+  <keybind key="C-S-t">
+    <action name="Execute">
+        <command>echo "Wooop"</command>
+    </action>
+  </keybind> -->
+</keyboard>

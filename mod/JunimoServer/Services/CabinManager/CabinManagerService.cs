@@ -1,7 +1,6 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using HarmonyLib;
+﻿using HarmonyLib;
 using JunimoServer.Services.PersistentOption;
+using JunimoServer.Util;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -9,8 +8,8 @@ using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
 using StardewValley.Network;
-using JunimoServer.Util;
-using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace JunimoServer.Services.CabinManager
 {
@@ -25,7 +24,7 @@ namespace JunimoServer.Services.CabinManager
         public Vector2? DefaultCabinLocation = null;
 
         /// <summary>
-        /// TODO: THIS IS NOT PERSISTED YET, THE CAKE IS A LIE!! RESTARTING MAKES THE "NEVER" VERY DECEPTIVE! Restarting after having one player prevents other players to start (create a cabin fails)
+        /// TODO: This is not persisted and not "allPlayersEVERJoined", should it be persisted tho?
         /// </summary>
         public HashSet<long> AllPlayerIdsEverJoined = new HashSet<long>();
     }
@@ -61,18 +60,15 @@ namespace JunimoServer.Services.CabinManager
             _helper = helper;
             _monitor = monitor;
             _options = options;
+
             Data = new CabinManagerData();
             CabinManagerOverrides.Initialize(helper, monitor, options, OnServerJoined);
 
-            Console.WriteLine("#####");
-            Console.WriteLine("#####");
-            Console.WriteLine("#####");
-            Console.WriteLine("#####");
-            Console.WriteLine("#####");
-            Console.WriteLine("Registering CabinManagerService SaveLoaded");
+            _monitor.Log("Registering CabinManagerService SaveLoaded", LogLevel.Debug);
             _helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
             _helper.Events.GameLoop.UpdateTicked += OnTicked;
 
+            // Adds additional debug logging
             if (debug)
             {
                 harmony.Patch(
@@ -92,20 +88,22 @@ namespace JunimoServer.Services.CabinManager
             );
         }
 
+
+
         private void OnServerJoined(long peerId)
         {
             Data.AllPlayerIdsEverJoined.Add(peerId);
-            Console.WriteLine($"+++++");
-            Console.WriteLine($"+++++");
-            Console.WriteLine($"+++++");
-            Console.WriteLine($"WriteSaveData {cabinManagerDataKey}");
+            _monitor.Log($"WriteSaveData {cabinManagerDataKey}", LogLevel.Debug);
+
             foreach (var playerJoined in Data.AllPlayerIdsEverJoined)
             {
-                Console.WriteLine($"{playerJoined}");
+                _monitor.Log($"{playerJoined}", LogLevel.Debug);
             }
+
             _helper.Data.WriteSaveData(cabinManagerDataKey, Data);
             EnsureAtLeastXCabins();
         }
+
 
 
         private void OnTicked(object sender, UpdateTickedEventArgs e)
@@ -117,11 +115,11 @@ namespace JunimoServer.Services.CabinManager
         {
             if (!Game1.hasLoadedGame) return;
 
-            var idsInFarmHouse = new HashSet<long>();
+            var farmersInFarmHouseCurrent = new HashSet<long>();
 
             foreach (var farmer in Game1.getLocationFromName("Farmhouse").farmers)
             {
-                idsInFarmHouse.Add(farmer.UniqueMultiplayerID);
+                farmersInFarmHouseCurrent.Add(farmer.UniqueMultiplayerID);
             }
 
             foreach (var farmer in Game1.getLocationFromName("Farmhouse").farmers)
@@ -134,12 +132,12 @@ namespace JunimoServer.Services.CabinManager
                 }
             }
 
-            farmersInFarmhouse.RemoveWhere(farmerId => !idsInFarmHouse.Contains(farmerId));
+            farmersInFarmhouse.RemoveWhere(farmerId => !farmersInFarmHouseCurrent.Contains(farmerId));
         }
 
         private void OnFarmerEnteredFarmhouse(Farmer farmer)
         {
-            // Bail when player entered his own farmhouse
+            // Player can enter his own farmhouse
             if (farmer.UniqueMultiplayerID == Game1.player.UniqueMultiplayerID)
             {
                 return;
@@ -149,10 +147,10 @@ namespace JunimoServer.Services.CabinManager
             string farmersCabinUniqueLocation = farmersCabin.indoors.Value.NameOrUniqueName;
             Point farmersCabinEntrypoint = ((Cabin)farmersCabin.indoors.Value).getEntryLocation();
 
+            // TODO: Instead of porting to player cabin, should we prevent going inside?
+            // Pass player out because it fades the screen before warping
             _helper.SendPrivateMessage(farmer.UniqueMultiplayerID, "Can't enter main building, porting to your own cabin");
 
-            // TODO: Ideal solution: Prevent going inside
-            // Using passout because it fades out the screen before warping
             Game1.server.sendMessage(farmer.UniqueMultiplayerID, Multiplayer.passout, Game1.player, new object[] {
                 farmersCabinUniqueLocation, farmersCabinEntrypoint.X, farmersCabinEntrypoint.Y, true
             });
@@ -162,8 +160,8 @@ namespace JunimoServer.Services.CabinManager
         {
             if (_options.Data.CabinStrategy == CabinStrategy.FarmhouseStack)
             {
-                return Game1.getFarm().buildings.First(building =>
-                    building.isCabin && ((Cabin)building.indoors.Value).owner.UniqueMultiplayerID == farmer.UniqueMultiplayerID);
+                return Game1.getFarm().buildings
+                    .First(building => building.isCabin && ((Cabin)building.indoors.Value).owner.UniqueMultiplayerID == farmer.UniqueMultiplayerID);
             }
             else
             {
@@ -171,31 +169,37 @@ namespace JunimoServer.Services.CabinManager
             }
         }
 
+
+
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
             Data = _helper.Data.ReadSaveData<CabinManagerData>(cabinManagerDataKey) ?? new CabinManagerData();
 
-            _monitor.Log($"ReadSaveData {cabinManagerDataKey}", LogLevel.Info);
+            _monitor.Log($"ReadSaveData {cabinManagerDataKey}", LogLevel.Debug);
             foreach (var playerJoined in Data.AllPlayerIdsEverJoined)
             {
-                Console.WriteLine($"{playerJoined}", LogLevel.Info);
+                _monitor.Log($"{playerJoined}", LogLevel.Debug);
             }
         }
 
         public void SetDefaultCabinLocation(Vector2 location)
         {
+            _monitor.Log($"Setting default cabin location: '{location}'", LogLevel.Debug);
             Data.DefaultCabinLocation = location;
             _helper.Data.WriteSaveData(cabinManagerDataKey, Data);
         }
 
         public void MoveCabinToHiddenStack(Building cabin)
         {
+            _monitor.Log($"Moving cabin to hidden stack: '{cabin.indoors.Value.NameOrUniqueName}'", LogLevel.Debug);
             cabin.tileX.Value = HiddenCabinX;
             cabin.tileY.Value = HiddenCabinY;
         }
 
         public void EnsureAtLeastXCabins()
         {
+            _monitor.Log($"EnsureAtLeastXCabins start...", LogLevel.Debug);
+
             var cabinBlueprint = Building.CreateInstanceFromId("Log Cabin", Vector2.Zero);
             var outOfBoundsLocation = new Vector2(HiddenCabinX, HiddenCabinY);
 
@@ -205,17 +209,22 @@ namespace JunimoServer.Services.CabinManager
             );
 
             var cabinsToBuild = minEmptyCabins - numEmptyCabins;
+            _monitor.Log($"EnsureAtLeastXCabins minEmptyCabins: '{minEmptyCabins}', numEmptyCabins: '{numEmptyCabins}', cabinsToBuild: '{cabinsToBuild}'", LogLevel.Debug);
+
             if (cabinsToBuild <= 0)
             {
+                _monitor.Log($"EnsureAtLeastXCabins no cabins to build...", LogLevel.Debug);
                 return;
             }
 
+            _monitor.Log($"EnsureAtLeastXCabins building cabins: '{cabinsToBuild}'", LogLevel.Debug);
             for (var i = 0; i < cabinsToBuild; i++)
             {
                 if (Game1.getFarm().buildStructure(cabinBlueprint, outOfBoundsLocation, Game1.player, skipSafetyChecks: true))
                 {
                     var cabin = Game1.getFarm().buildings.Last();
                     cabin.daysOfConstructionLeft.Value = 0;
+                    _monitor.Log($"Cabin built: '{cabin.indoors.Value.NameOrUniqueName}'", LogLevel.Debug);
                 }
             }
         }

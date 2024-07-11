@@ -5,11 +5,13 @@ using JunimoServer.Services.AlwaysOnServer;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
-using JunimoServer.Services.Daemon;
+using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
+using JunimoServer.Services.GameTweaks;
 using JunimoServer.Services.HostAutomation;
 using JunimoServer.Services.Map;
+using JunimoServer.Services.NetworkTweaks;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
@@ -18,6 +20,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
+using Steamworks;
 using System;
 using System.Net.Http;
 
@@ -25,25 +28,14 @@ namespace JunimoServer
 {
     internal class ModEntry : Mod
     {
-        private static readonly bool SteamAuthEnabled =
-            bool.Parse(Environment.GetEnvironmentVariable("STEAM_AUTH_ENABLED") ?? "false");
-
         private static readonly bool EnableModIncompatibleOptimizations =
             bool.Parse(Environment.GetEnvironmentVariable("ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS") ?? "true");
-
-        private static readonly string SteamAuthServerAddress =
-            Environment.GetEnvironmentVariable("STEAM_AUTH_IP_PORT") ?? "localhost:50053";
 
         private static readonly string JunimoBootServerAddress =
             Environment.GetEnvironmentVariable("BACKEND_HOSTPORT") ?? "";
 
         private static readonly int HealthCheckSeconds =
-            Int32.Parse(Environment.GetEnvironmentVariable("HEALTH_CHECK_SECONDS") ?? "15");
-
-        private static readonly string ServerId =
-            Environment.GetEnvironmentVariable("SERVER_ID") ?? "test";
-
-        private static readonly string DaemonPort = Environment.GetEnvironmentVariable("DAEMON_HTTP_PORT") ?? "8080";
+            Int32.Parse(Environment.GetEnvironmentVariable("HEALTH_CHECK_SECONDS") ?? "300");
 
         private static readonly bool DisableRendering =
             bool.Parse(Environment.GetEnvironmentVariable("DISABLE_RENDERING") ?? "true");
@@ -51,78 +43,56 @@ namespace JunimoServer
         private static readonly bool ForceNewDebugGame =
             bool.Parse(Environment.GetEnvironmentVariable("FORCE_NEW_DEBUG_GAME") ?? "false");
 
+        // TODO: Once web UI is available, add info to docs about how "host.docker.internal:3000" can be used to connect to local web UI (dev mode)
+        private static readonly string WebSocketServerAddress =
+            Environment.GetEnvironmentVariable("WEB_SOCKET_SERVER_ADDRESS") ?? "stardew-dedicated-web:3000";
+
         private GameCreatorService _gameCreatorService;
         private GameLoaderService _gameLoaderService;
         private ServerOptimizer _serverOptimizer;
-        private DaemonService _daemonService;
-        private StardewGameService.StardewGameServiceClient _stardewGameServiceClient;
 
         private bool _titleLaunched = false;
         private bool _gameStarted = false;
         private int _healthCheckTimer = 0;
         private DateTime? _lastNullCodeTime = null;
 
-        private WebSocketClient _webSocketClient;
+        // private WebSocketClient _webSocketClient;
 
         public override void Entry(IModHelper helper)
         {
+            // TODO: What *exactly* does this do, and should it really be hardcoded?
             Program.enableCheats = true;
             Game1.options.pauseWhenOutOfFocus = false;
 
             var harmony = new Harmony(this.ModManifest.UniqueID);
-            var daemonHttpClient = new HttpClient();
-            daemonHttpClient.BaseAddress = new Uri($"http://localhost:{DaemonPort}");
-
             var options = new PersistentOptions(helper);
 
-            // Core Services: Necessary for core dedicated server functionality
+            // Register services
             var chatCommands = new ChatCommands(Monitor, harmony, helper);
             var alwaysOnConfig = new AlwaysOnConfig();
             var alwaysOnServer = new AlwaysOnServer(helper, Monitor, chatCommands, alwaysOnConfig);
             _gameLoaderService = new GameLoaderService(helper, Monitor);
-            _daemonService = new DaemonService(daemonHttpClient, Monitor);
-
             var cabinManager = new CabinManagerService(helper, Monitor, harmony, options);
-            _gameCreatorService = new GameCreatorService(_gameLoaderService, options, Monitor, _daemonService, cabinManager, helper);
-            //var cropSaver = new CropSaver(helper, harmony, Monitor);
-            //var gameTweaker = new GameTweaker(helper);
-            //var networkTweaker = new NetworkTweaker(helper, options);
-            //var desyncKicker = new DesyncKicker(helper, Monitor);
-            //_serverOptimizer = new ServerOptimizer(harmony, Monitor, helper, DisableRendering, EnableModIncompatibleOptimizations);
+            _gameCreatorService = new GameCreatorService(_gameLoaderService, options, Monitor, cabinManager, helper);
+            
+            var cropSaver = new CropSaver(helper, harmony, Monitor);
+            var gameTweaker = new GameTweaker(helper);
+            var networkTweaker = new NetworkTweaker(helper, Monitor, options);
+            var desyncKicker = new DesyncKicker(helper, Monitor);
+            _serverOptimizer = new ServerOptimizer(harmony, Monitor, helper, DisableRendering, EnableModIncompatibleOptimizations);
 
+            // TODO: Add once web UI is available
+            // _webSocketClient = new WebSocketClient($"ws://{WebSocketServerAddress}/api/websocket");
+            // var mapService = new MapService(helper, Monitor, _webSocketClient);
 
-            _webSocketClient = new WebSocketClient("ws://host.docker.internal:3000/api/websocket");
-            //foo = new Foo("ws://stardew-dedicated-web:3000/api/websocket");
-            var mapService = new MapService(helper, Monitor, _webSocketClient);
-
-            //foo = new Foo("ws://stardew-dedicated-server:3000");
-            // TODO: Backup service needs to be refactored, currently hardcoded to use google cloud storage??
-            //var backupService = new BackupService(daemonHttpClient, Monitor);
+            // TODO: Backup service needs to be refactored, removed due to gRPC and hardcoded google cloud storage under the hood
+            //var backupService = new BackupService(Monitor);
             //var backupScheduler = new BackupScheduler(helper, backupService, Monitor);
-
-            // TODO: Low prio, but needs to be understood and fixed up
-            //var debrisOptimizer = new DebrisOptimizer(harmony, Monitor, helper);
-
-            // TODO: No idea what this SteamAuthServer is, maybe needed to get invite codes working
-            //if (SteamAuthEnabled)
-            //{
-            //    var steamTicketGenChannel = GrpcChannel.ForAddress($"http://{SteamAuthServerAddress}");
-            //    var steamTicketGenClient =
-            //        new StardewSteamAuthService.StardewSteamAuthServiceClient(steamTicketGenChannel);
-            //    var galaxyAuthService = new GalaxyAuthService(Monitor, helper, harmony, steamTicketGenClient);
-            //}
-
-            // TODO: We don't have the backend src yet, see what to do with this
-            //if (JunimoBootServerAddress != "")
-            //{
-            //    var junimoBootGenChannel = GrpcChannel.ForAddress($"http://{JunimoBootServerAddress}");
-            //    _stardewGameServiceClient = new StardewGameService.StardewGameServiceClient(junimoBootGenChannel);
-            //}
 
             // Host automation (hiding/teleporting host player)
             var hostBot = new HostBot(helper, Monitor);
 
-            // Register custom commands
+            // Register custom chat commands
             var roleService = new RoleService(helper);
             CabinCommand.Register(helper, chatCommands, options, Monitor);
             RoleCommands.Register(helper, chatCommands, roleService);
@@ -153,21 +123,18 @@ namespace JunimoServer
             }
         }
 
-        //private void SavePng(string name, Texture2D texture)
-        //{
-        //    string filename = $"region_{textureIndex}.png";
-        //    Monitor.Log($"Exporting region base texture: {filename} ({texture.Name})", LogLevel.Info);
-        //    Helper.Data.WritePngFile(filename, texture);
-        //}
-
         private void ConditionallyStartGame()
-
         {
-            if (_gameStarted) return;
+            if (_gameStarted)
+            {
+                return;
+            }
 
-            var isNetworkingReady = Helper.IsNetworkingReady();
-            var networkingIsNeededButNotReady = SteamAuthEnabled && !isNetworkingReady;
-            if (!_titleLaunched || networkingIsNeededButNotReady) return;
+            if (!_titleLaunched)
+            {
+                return;
+            }
+
             _gameStarted = true;
 
             if (ForceNewDebugGame)
@@ -189,21 +156,22 @@ namespace JunimoServer
             }
             else
             {
-                successfullyStarted = _gameCreatorService.CreateNewGameFromDaemonConfig();
+                successfullyStarted = _gameCreatorService.CreateNewGameFromConfig();
             }
 
             try
             {
-                if (successfullyStarted)
-                {
-                    var updateTask = _daemonService.UpdateConnectableStatus();
-                    updateTask.Wait();
-                }
-                else
-                {
-                    var updateTask = _daemonService.UpdateNotConnectableStatus();
-                    updateTask.Wait();
-                }
+                // TODO: There is no backend to update anymore; add again once web UI is available
+                //if (successfullyStarted)
+                //{
+                //    var updateTask = _daemonService.UpdateConnectableStatus();
+                //    updateTask.Wait();
+                //}
+                //else
+                //{
+                //    var updateTask = _daemonService.UpdateNotConnectableStatus();
+                //    updateTask.Wait();
+                //}
             }
             catch (Exception e)
             {
@@ -228,28 +196,7 @@ namespace JunimoServer
 
             if (Game1.server != null)
             {
-                // TODO: Figure out how to get GOG/Galaxy/Steamauth working properly, galaxy auth fails and we have no lobby/invite code - only works via IP:PORT
-                //if (Game1.server.getInviteCode() != null)
-                //{
-                //    // Monitor.Log(Game1.server.getInviteCode(), LogLevel.Info);
-                //    Task.Run(() => { SendHealthCheck(Game1.server.getInviteCode()); });
-                //}
-                //else
-                //{
-                //    Monitor.Log("Invite code is null", LogLevel.Info);
-                //    Monitor.Log("canOfferInvite" + (Game1.server.canOfferInvite() ? "Yes" : "No"), LogLevel.Info);
-                //    Monitor.Log("canAcceptIPConnections" + (Game1.server.canAcceptIPConnections() ? "Yes" : "No"), LogLevel.Info);
-                //    Monitor.Log("_gameStarted" + (_gameStarted ? "Yes" : "No"), LogLevel.Info);
-                //    Monitor.Log("_titleLaunched" + (_titleLaunched ? "Yes" : "No"), LogLevel.Info);
-                //    _lastNullCodeTime ??= DateTime.Now;
-
-                //    if (HasDurationPassedSinceLastNullCode(TimeSpan.FromMinutes(2)))
-                //    {
-                //        Environment.Exit(0); //let kubernetes restart the pod.
-                //    }
-                //}
-
-                if (Game1.server.canOfferInvite() && Game1.server.canAcceptIPConnections())
+                if (Game1.server.canAcceptIPConnections())
                 {
                     Monitor.Log("Healthcheck ✓", LogLevel.Info);
                 }
@@ -270,27 +217,28 @@ namespace JunimoServer
             }
         }
 
-        private async void SendHealthCheck(string inviteCode)
+        private void SendHealthCheck(string inviteCode)
         {
-            if (JunimoBootServerAddress == "") return;
+            // TODO: There is no backend to update anymore; add again once web UI is available
+            //if (JunimoBootServerAddress == "") return;
 
-            try
-            {
-                await _stardewGameServiceClient.GameHealthCheckAsync(new GameHealthCheckRequest
-                {
-                    InviteCode = inviteCode,
-                    IsConnectable = true,
-                    ServerId = ServerId,
-                });
-            }
-            catch (Exception e)
-            {
-                Monitor.Log("Failed to send health check: " + e.Message, LogLevel.Error);
+            //try
+            //{
+            //    await _stardewGameServiceClient.GameHealthCheckAsync(new GameHealthCheckRequest
+            //    {
+            //        InviteCode = inviteCode,
+            //        IsConnectable = true,
+            //        ServerId = ServerId,
+            //    });
+            //}
+            //catch (Exception e)
+            //{
+            //    Monitor.Log("Failed to send health check: " + e.Message, LogLevel.Error);
 
-                // manually retry connection
-                var junimoBootGenChannel = GrpcChannel.ForAddress($"http://{JunimoBootServerAddress}");
-                _stardewGameServiceClient = new StardewGameService.StardewGameServiceClient(junimoBootGenChannel);
-            }
+            //    // Manually retry connection
+            //    var junimoBootGenChannel = GrpcChannel.ForAddress($"http://{JunimoBootServerAddress}");
+            //    _stardewGameServiceClient = new StardewGameService.StardewGameServiceClient(junimoBootGenChannel);
+            //}
         }
     }
 }

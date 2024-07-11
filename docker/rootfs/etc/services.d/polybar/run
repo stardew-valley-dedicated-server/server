@@ -1,0 +1,39 @@
+#!/bin/sh
+
+set -u # Treat unset variables as an error.
+
+# Replicate logic from "$HOME/.config/polybar/launch.sh --shades" command,
+# launch.sh sends polybar and its output to the background via ampersand.
+# But there are more problems which I don't really understand yet, which
+# prevent usage of the launch.sh script due to simply not working.
+
+# Terminate already running bar instances
+pkill polybar
+
+# Wait until the processes have been shut down
+# while pgrep -u $USER_ID -x polybar > /dev/null; do sleep 1; done
+while pgrep polybar > /dev/null; do sleep 1; done
+
+# Save the current values of the variables
+# old_XDG_DATA_HOME=$XDG_DATA_HOME
+# old_XDG_CONFIG_HOME=$XDG_CONFIG_HOME
+# old_XDG_CACHE_HOME=$XDG_CACHE_HOME
+# old_XDG_STATE_HOME=$XDG_STATE_HOME
+# old_XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+
+# Unset because they infer with polybar
+unset XDG_DATA_HOME
+unset XDG_CONFIG_HOME
+unset XDG_CACHE_HOME
+unset XDG_STATE_HOME
+unset XDG_RUNTIME_DIR
+
+# Launch the bar
+polybar -q main -c "$HOME/.config/polybar/config.ini"
+
+# Restore the previous values of the variables
+# export XDG_DATA_HOME=$old_XDG_DATA_HOME
+# export XDG_CONFIG_HOME=$old_XDG_CONFIG_HOME
+# export XDG_CACHE_HOME=$old_XDG_CACHE_HOME
+# export XDG_STATE_HOME=$old_XDG_STATE_HOME
+# export XDG_RUNTIME_DIR=$old_XDG_RUNTIME_DIR

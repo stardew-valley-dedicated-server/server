@@ -13,7 +13,7 @@ namespace JunimoServer.Services.GameTweaks
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
-            // TODO: What *exactly* does this? Currently assuming it allows everyone to move every building (necessary for multiplayer, otherwise only host can move buildings which is sadge)
+            // Allows everyone to move farm buildings
             Game1.options.setMoveBuildingPermissions("on");
         }
     }

@@ -1,0 +1,42 @@
+# NOT IN USE/READY
+services:
+    stardew:
+        image: sdvd/server:dev
+        build:
+            context: .
+            dockerfile: ./docker/Dockerfile
+            args:
+                SMAPI_VERSION: ${SMAPI_VERSION}
+                STEAM_USER: ${STEAM_USER}
+                STEAM_PASS: ${STEAM_PASS}
+        container_name: stardew-dedicated-server
+        ports:
+            - ${GAME_PORT}:24642/udp
+            - ${VNC_PORT}:5800
+        volumes:
+            - game:/data/Stardew
+            - data:/config/xdg/config/StardewValley
+            # [Optional] Extra mods to be loaded by the server (GenericModConfigMenu, TimeSpeed, etc.)
+            # - ./mods:/data/Stardew/Mods/extra
+        environment:
+            STEAM_USER: "${STEAM_USER}"
+            STEAM_PASS: "${STEAM_PASS}"
+            VNC_PASSWORD: "${VNC_PASSWORD}"
+            DISABLE_RENDERING: "${DISABLE_RENDERING}"
+
+    web:
+        image: stardew-dedicated-web:${IMAGE_VERSION}
+        profiles: [web]
+        build:
+            context: ./../web
+            dockerfile: ./../web/Dockerfile
+        container_name: stardew-dedicated-web
+        ports:
+            - ${WEB_UI_PORT}:3000
+            - ${WEB_HMR_PORT}:24678
+        volumes:
+            - data:/data:ro
+
+volumes:
+  game:
+  data:

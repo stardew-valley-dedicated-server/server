@@ -19,7 +19,7 @@ namespace JunimoServer.Services.ChatCommands
 
         private readonly List<ChatCommand> _registeredCommands = new List<ChatCommand>();
 
-        private static readonly char _commandPrefix = '!';
+        //private static readonly char _commandPrefix = '!';
 
         public ChatCommands(IMonitor monitor, Harmony harmony, IModHelper helper)
         {

@@ -5,8 +5,6 @@ VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JunimoServer", "JunimoServer\JunimoServer.csproj", "{73F95CD6-9989-441A-95A2-1F4F8BD246F3}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JunimoBot", "JunimoBot\JunimoBot.csproj", "{2608DD57-A038-4190-904F-F39664A87997}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +19,10 @@ Global
 		{2608DD57-A038-4190-904F-F39664A87997}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2608DD57-A038-4190-904F-F39664A87997}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2608DD57-A038-4190-904F-F39664A87997}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B101C8D1-2A2E-43D8-A8DB-E4F1554B06ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B101C8D1-2A2E-43D8-A8DB-E4F1554B06ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B101C8D1-2A2E-43D8-A8DB-E4F1554B06ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B101C8D1-2A2E-43D8-A8DB-E4F1554B06ED}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

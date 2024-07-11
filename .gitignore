@@ -6,7 +6,13 @@
 .vs
 
 # VSC
-.history
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
 
 # IntelliJ
 .idea
@@ -20,20 +26,14 @@ logs
 .env.*
 !.env.example
 
-# Settings files
-gcp-key.json
-stardew-sa.json
-
 # Build output
+.output
 build
 bin
 debug
-docker/game-daemon
-docker/mods
-cmd/daemon/__debug_bin.exe
 
-# Container game data mount
-data
+# Extra mods
+mods
 
-# Additional mods mount
-mods_extra
+# Resharper personal layer
+JunimoMods.sln.DotSettings

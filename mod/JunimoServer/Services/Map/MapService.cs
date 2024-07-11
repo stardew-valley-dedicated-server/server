@@ -100,7 +100,7 @@ namespace JunimoServer.Services.Map
         #region Farmer Position
         private void SyncFarmerPositions()
         {
-            _monitor.Log($"Syncing player positions", LogLevel.Info);
+            // _monitor.Log($"Syncing player positions", LogLevel.Info);
 
             Dictionary<Vector2, int> usedPositions = new Dictionary<Vector2, int>();
 
@@ -125,19 +125,17 @@ namespace JunimoServer.Services.Map
 
                     Rectangle mapBounds = region.GetMapPixelBounds();
                     Vector2? mapPixelPos = positionData.GetMapPixelPosition(player.currentLocation, tile);
-                    //Vector2? pos = positionData.GetPositionRatioIfValid(player.currentLocation, tile);
 
                     if (mapPixelPos == null || !mapPixelPos.HasValue)
                     {
                         continue;
                     }
 
-                    //Vector2? pos = new Vector2(mapPixelPos.Value.X + mapBounds.X, mapPixelPos.Value.Y + mapBounds.Y);
                     Vector2? pos = mapPixelPos;
-                    // TODO: What is -32f for? PRobably accounting for avatar/marker image size. MapBounds are ignored on ALL our calculations.
+                    // TODO: Find out why we have to use -32f here. Probably accounting for avatar/marker image size? MapBounds are ignored on ALL our calculations.
                     //pos = new Vector2(pos.X + (float)mapBounds.X - 32f, pos.Y + (float)mapBounds.Y - 32f);
 
-                    // TODO: What *exactly* is this for? Assuming to shift multiple markers on the same location a tiny bit
+                    // Prevent markers from overlapping each other
                     usedPositions.TryGetValue(pos.Value, out var count);
                     usedPositions[pos.Value] = count + 1;
                     if (count > 0)
@@ -163,7 +161,7 @@ namespace JunimoServer.Services.Map
                 }
             }
 
-            _monitor.Log($"Syncing player positions done", LogLevel.Info);
+            // _monitor.Log($"Syncing player positions done", LogLevel.Info);
         }
         #endregion
 
@@ -250,7 +248,7 @@ namespace JunimoServer.Services.Map
             //var mapAreaPosition = (WorldMapManager.GetPositionData(Game1.player.currentLocation, Game1.player.TilePoint) ?? WorldMapManager.GetPositionData(Game1.getFarm(), Point.Zero)).Region;
 
             IEnumerable<MapRegion> mapRegions = WorldMapManager.GetMapRegions();
-            _monitor.Log($"Processing map regions ({mapRegions.Count()})", LogLevel.Info);
+            // _monitor.Log($"Processing map regions ({mapRegions.Count()})", LogLevel.Info);
             return mapRegions;
         }
 
@@ -281,13 +279,13 @@ namespace JunimoServer.Services.Map
         #region Saving Data
         private void SaveJson(string filename, object data)
         {
-            _monitor.Log($"Saving JSON file ({filename})", LogLevel.Info);
+            // _monitor.Log($"Saving JSON file ({filename})", LogLevel.Info);
             _helper.Data.WriteServerJsonFile($"{Path.Combine("Data", filename)}", data);
         }
 
         private void SaveTexture(string filename, Texture2D texture, Rectangle rect)
         {
-            _monitor.Log($"Saving map region base texture ({filename})", LogLevel.Info);
+            // _monitor.Log($"Saving map region base texture ({filename})", LogLevel.Info);
             _helper.Data.WriteServerTextureFile($"{Path.Combine("Images", filename)}", MapUtil.CropFromTexture(texture, rect));
         }
 

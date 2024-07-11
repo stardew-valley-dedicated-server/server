@@ -23,9 +23,7 @@ namespace JunimoServer.Services.ChatCommands
                 Language = language,
                 Message = message
             };
-
-            // TODO: Would be nice, somehow called early and needs "isRunning" check or smt
-            //Debug.Assert(_onChatMessage == null, "Missing `_onChatMessage`, did you forget to call `Initialize()`?");
+            
             _onChatMessage(msg);
         }
     }

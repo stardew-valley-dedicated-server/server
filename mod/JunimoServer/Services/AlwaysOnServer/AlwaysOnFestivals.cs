@@ -687,7 +687,6 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.exitActiveMenu();
                 AlwaysOnUtil.WarpToHidingSpot();
 
-                // TODO: Why the different times here?
                 Game1.timeOfDay = SDateHelper.IsSpiritsEveToday() ? 2400 : 2200;
             });
         }

@@ -30,6 +30,7 @@ namespace JunimoServer.Services.ServerOptim
         
         public static void CreateLobby_Prefix(ref ServerPrivacy privacy, ref uint memberLimit)
         {
+            // Used by GoG
             privacy = ServerPrivacy.Public;
             memberLimit = 150;
         }

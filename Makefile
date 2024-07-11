@@ -1,50 +1,46 @@
-
-# Set .env defaults
-IMAGE_VERSION=v0.20.7
-CI_GAMEPATH=/home/runner/actions-runner/_work/junimohost-stardew-server/junimohost-stardew-server/Stardew Valley
+# CI_GAME_PATH=/home/runner/actions-runner/_work/junimohost-stardew-server/junimohost-stardew-server/Stardew Valley
+CI_GAME_PATH=D:/Games/Steam/steamapps/common/Stardew Valley
 
 # Load .env file
 -include .env
 
-build: 
-	docker/mods/JunimoServer $(shell find docker -type f)
-	docker build --platform=amd64 -t stardew-dedicated-server:$(IMAGE_VERSION) -f docker/Dockerfile .
+# Load after .env, should not be overridden
+SRC_PATH=./mod/JunimoServer
+BUILD_PATH=./.output/build
+DEST_PATH=./.output/mods/JunimoServer
+
+IMAGE_REGISTRY=sdvd
+IMAGE_NAME=server
 
 dev: 
-	make docker/mods/JunimoServer -B
-	docker compose up --build
+	make build -B
+	docker compose up --force-recreate -d 
+	
+build: 
+	make build-server-mod -B
+	docker build --platform=amd64 -t $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION) -t $(IMAGE_REGISTRY)/$(IMAGE_NAME):latest -f docker/Dockerfile .
 
-clean:
-	rm -rf ./docker/mods/JunimoServer
-	rm -rf ./mod/build
-	rm -rf ./mod/JunimoServer/bin
-	rm -rf ./mod/JunimoServer/obj
-
-docker/mods/JunimoServer: $(shell find mod/JunimoServer/**/*.cs -type f) ./mod/JunimoServer/JunimoServer.csproj
+build-server-mod: $(shell find $(SRC_PATH)/**/*.cs -type f) $(SRC_PATH)/JunimoServer.csproj
 ifeq ($(CI), true)
-	cd mod && dotnet build -o ./build --configuration Release "/p:EnableModZip=false;EnableModDeploy=false;GamePath=$(CI_GAMEPATH)"
+	dotnet build $(SRC_PATH)/JunimoServer.csproj -o $(BUILD_PATH) --configuration Release '/p:EnableModZip=false;EnableModDeploy=false;GamePath=$(CI_GAME_PATH)'
 else
-	cd mod && dotnet build -o ./build --configuration Debug
+	dotnet build $(SRC_PATH)/JunimoServer.csproj -o $(BUILD_PATH) --configuration Debug
 endif
-	rm -rf ./docker/mods/JunimoServer
-	mkdir -p ./docker/mods/JunimoServer
-	cp ./mod/build/JunimoServer.dll \
-	./mod/build/Microsoft.Extensions.Logging.Abstractions.dll \
-	./mod/build/Microsoft.IO.RecyclableMemoryStream.dll \
-	./mod/build/Google.Protobuf.dll \
-	./mod/build/Grpc.Core.Api.dll \
-	./mod/build/Grpc.Net.Client.dll \
-	./mod/build/Grpc.Net.Common.dll \
-	./mod/build/System.Reactive.dll \
-	./mod/build/Websocket.Client.dll \
-	./mod/JunimoServer/manifest.json \
-	./docker/mods/JunimoServer
-
-game-daemon: $(shell find daemon -type f)
-	GOOS=linux GOARCH=amd64 go build -o game-daemon ./cmd/daemon/daemon.go
+	rm -rf $(DEST_PATH)
+	mkdir -p $(DEST_PATH)
+	cp $(BUILD_PATH)/JunimoServer.dll \
+	$(BUILD_PATH)/Microsoft.Extensions.Logging.Abstractions.dll \
+	$(BUILD_PATH)/Microsoft.IO.RecyclableMemoryStream.dll \
+	$(BUILD_PATH)/Google.Protobuf.dll \
+	$(BUILD_PATH)/Grpc.Core.Api.dll \
+	$(BUILD_PATH)/Grpc.Net.Client.dll \
+	$(BUILD_PATH)/Grpc.Net.Common.dll \
+	$(BUILD_PATH)/System.Reactive.dll \
+	$(BUILD_PATH)/Websocket.Client.dll \
+	$(SRC_PATH)/manifest.json \
+	$(DEST_PATH)
+	rm -rf $(BUILD_PATH)
 
 push: build
-	docker push gcr.io/junimo-host/stardew-dedicated-server:$(IMAGE_VERSION)
-
-daemon_windows:
-	cd daemon && set GOOS=linux && go build -o game-daemon ./cmd/daemon/daemon.go
+	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
+	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):latest

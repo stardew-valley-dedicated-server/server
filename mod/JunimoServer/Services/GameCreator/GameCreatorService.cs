@@ -1,19 +1,18 @@
-﻿using System;
-using System.Linq;
-using System.Threading;
-using JunimoServer.Services.CabinManager;
-using JunimoServer.Services.Daemon;
+﻿using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace JunimoServer.Services.GameCreator
 {
     class GameCreatorService
     {
-        private readonly DaemonService _daemonService;
         private readonly CabinManagerService _cabinManagerService;
         private readonly GameLoaderService _gameLoader;
         private static readonly Mutex CreateGameMutex = new Mutex();
@@ -24,9 +23,8 @@ namespace JunimoServer.Services.GameCreator
         public bool GameIsCreating { get; private set; }
 
         public GameCreatorService(GameLoaderService gameLoader, PersistentOptions options, IMonitor monitor,
-            DaemonService daemonService, CabinManagerService cabinManagerService, IModHelper helper)
+           CabinManagerService cabinManagerService, IModHelper helper)
         {
-            _daemonService = daemonService;
             _options = options;
             _gameLoader = gameLoader;
             _monitor = monitor;
@@ -34,11 +32,30 @@ namespace JunimoServer.Services.GameCreator
             _helper = helper;
         }
 
-        public bool CreateNewGameFromDaemonConfig()
+        public async Task<NewGameConfig> GetConfig()
+        {
+            // TODO: Make this configurable again
+            NewGameConfig config = new NewGameConfig()
+            {
+                WhichFarm = 0,
+                UseSeparateWallets = false,
+                StartingCabins = 1,
+                CatPerson = false,
+                FarmName = "Test",
+                MaxPlayers = 10,
+                CabinStrategy = 0,
+            };
+
+            _monitor.Log($"Using config: {config}", LogLevel.Info);
+
+            return await Task.Run(() => { return config; });
+        }
+
+        public bool CreateNewGameFromConfig()
         {
             try
             {
-                var configTask = _daemonService.GetConfig();
+                var configTask = GetConfig();
                 configTask.Wait();
                 var config = configTask.Result;
 
@@ -65,22 +82,25 @@ namespace JunimoServer.Services.GameCreator
 
 
             Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
+            // TODO: Should be fine as hardcoded value, cabins are supposed to be built on the fly when players join
             Game1.startingCabins = 1;
 
+            // Ultimate Farm CP compat
             var isUltimateFarmModLoaded = _helper.ModRegistry.GetAll().Any(mod => mod.Manifest.Name == "Ultimate Farm CP");
             if (isUltimateFarmModLoaded)
             {
-                Game1.whichFarm = 1; // Ultimate Farm CP expects riverland == 1
+                // Ultimate Farm CP expects riverland == 1
+                Game1.whichFarm = 1;
             }
             else
             {
                 Game1.whichFarm = config.WhichFarm;
             }
-            
+
             var isWildernessFarm = config.WhichFarm == 4;
             Game1.spawnMonstersAtNight = isWildernessFarm;
 
-            if(config.CatPerson)
+            if (config.CatPerson)
             {
                 Game1.player.whichPetType = "Cat";
             }
@@ -109,13 +129,12 @@ namespace JunimoServer.Services.GameCreator
             _gameLoader.SetCurrentGameAsSaveToLoad(config.FarmName);
 
 
-
+            // Game initializes with one cabin, so we just grab that location for all other stacked cabins
             var initialCabin = Game1.getFarm().buildings.First(building => building.isCabin);
             var cabinLocation = new Vector2(initialCabin.tileX.Value, initialCabin.tileY.Value);
 
             _cabinManagerService.SetDefaultCabinLocation(cabinLocation);
             _cabinManagerService.MoveCabinToHiddenStack(initialCabin);
-
 
             GameIsCreating = false;
             CreateGameMutex.ReleaseMutex();

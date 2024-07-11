@@ -1,7 +1,0 @@
-{
-  "autoModeLabelOff": "Auto Mode On!",
-  "autoModeLabelOn": "Auto Mode Off!",
-  "autoModeLabelToggleHotkey": "Press {{button}} On/Off",
-  "autoModeStepsLeft": "Random walks until bed: {{steps}}/{{maxSteps}}",
-  "autoModeStepsChangeHotkeyLabel": "Press {{buttonDecrease}}/{{buttonIncrease}} to decrease/increase random walks"
-}

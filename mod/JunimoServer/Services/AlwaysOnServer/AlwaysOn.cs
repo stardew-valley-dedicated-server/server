@@ -214,7 +214,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.options.setServerMode("online");
             }
 
-            // TODO: Find out why we do this
+            // TODO: Why do we do this?
             if (Game1.timeOfDay == 2600)
             {
                 Game1.paused = false;
@@ -284,7 +284,6 @@ namespace JunimoServer.Services.AlwaysOnServer
             }
 
             // Update pet name
-            // TODO: Is that needed every frame?
             if (Game1.player.hasPet())
             {
                 var pet = Game1.player.getPet();
@@ -597,8 +596,7 @@ namespace JunimoServer.Services.AlwaysOnServer
         /// <summary>
         /// Lock players chests.
         /// </summary>
-        /// <todo>Find out WHY we do this, and WHY it is important.</todo>
-        /// <see cref="https://github.com/funny-snek/Always-On-Server-for-Multiplayer/blob/master/Always%20On%20Server/ModEntry.cs#L987">Original code comes from here, Junimo just took it as is</see>
+        /// <see cref="https://github.com/funny-snek/Always-On-Server-for-Multiplayer/blob/master/Always%20On%20Server/ModEntry.cs#L987">Original code seems to come from here</see>
         private void HandleLockPlayersChests()
         {
             if (!Config.LockPlayerChests)
@@ -621,7 +619,6 @@ namespace JunimoServer.Services.AlwaysOnServer
                     house.fridge.Value.mutex.RequestLock();
                     foreach (var chest in house.objects.Values.OfType<Chest>())
                     {
-
                         chest.mutex.RequestLock();
                     }
                 }
