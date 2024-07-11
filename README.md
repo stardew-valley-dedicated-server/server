@@ -1,7 +1,6 @@
 # Stardew Valley Dedicated Server
 
-![Static Badge](https://img.shields.io/badge/Status-Not%20Stable-red) 
-![Static Badge](https://img.shields.io/badge/Stardew%20Valley-1.6.6-34D058) 
+![Static Badge](https://img.shields.io/badge/Stardew%20Valley-1.6.8-34D058) 
 ![Static Badge](https://img.shields.io/badge/SMAPI-4.0.8-34D058)
 
 Join us in [Discord](https://discord.gg/w23GVXdSF7)
@@ -86,8 +85,7 @@ CLI support is not implemented yet.
 ### Saves
 Save files are located in the `data` volume in the `Saves` directory.
 
-> [!WARNING]
-> There is no backup functionality included at this moment, please make sure manually backup your `data` volume.
+Backup functionality is not built in yet, so make sure manually backup the `data` volume in regular intervals.
 
 ### Upgrading
 To download the latest game or SMAPI files, stop the server, delete the `game` docker volume and start the server again.
@@ -145,14 +143,20 @@ This is a list of planned or wanted features with rough priorization, so if you 
 > [!WARNING]
 > This section needs work.
 
-### Requirements
+### Commits
+We use conventional commits, refer to [Conventional Commit Cheat Sheet](https://gist.github.com/qoomon/5dfcdf8eec66a051ecd85625518cfd13).
+
+Tools and CI pipelines enforce conventional commits are not yet in place.
+  
+### Development
+#### Requirements
 * Docker `>=20`
 * git `>=2`
 * make `>=4`
 * .NET SDK `6`
 * Local Stardew Valley installation
-  
-### Local development
+
+#### Setup
 Clone the repository:
 ```sh
 mkdir sdvd-server
@@ -162,6 +166,7 @@ git clone --recurse-submodules git@github.com:stardew-valley-dedicated-server/se
 
 Update `GamePath` in `JunimoServer.csproj` to your local installation to enable IDE autocomplete and build support. 
 
+#### Usage
 Then build the mod and start the local server container:
 ```sh
 make dev
@@ -177,11 +182,11 @@ Stop the server:
 docker compose down
 ```
 
-## Release Management
+### Release Management
 > [!WARNING]
 > This section needs work.
 
-### Push release
+#### Push release
 To push a release to the container repository, set the `IMAGE_VERSION` in your `.env` file and run these commands:
 
 ```sh
