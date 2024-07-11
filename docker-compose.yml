@@ -1,6 +1,6 @@
 services:
     stardew:
-        image: sdvd/server:1.0.1
+        image: sdvd/server:${IMAGE_VERSION}
         container_name: sdvd-server
         ports:
             - ${GAME_PORT}:24642/udp

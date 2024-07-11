@@ -1,7 +1,7 @@
 # NOT IN USE/READY
 services:
     stardew:
-        image: sdvd/server:dev
+        image: sdvd/server:${IMAGE_VERSION}
         build:
             context: .
             dockerfile: ./docker/Dockerfile
