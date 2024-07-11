@@ -3,12 +3,8 @@
 ![Static Badge](https://img.shields.io/badge/Status-Not%20Stable-red) 
 ![Static Badge](https://img.shields.io/badge/Stardew%20Valley-1.6.6-34D058) 
 ![Static Badge](https://img.shields.io/badge/SMAPI-4.0.8-34D058)
-[![Discord](https://img.shields.io/discord/947923329057185842?logo=discord&logoColor=white)](https://discord.gg/CxexQJvh "Our community hub on Discord")
 
-> [!NOTE]
-> This project is currently being overhauled, so some information may be incorrect or missing.
-> 
-> Any assistance is highly appreciated! :)
+Join us in [Discord](https://discord.gg/w23GVXdSF7)
 
 ## Table of Contents
 
@@ -43,7 +39,6 @@
 A Linux Docker image to run a headless dedicated multiplayer server for [Stardew Valley](https://www.stardewvalley.net/). 
 
 This project is not affiliated with or endorsed by ConcernedApe LLC. All product names, logos, and brands are property of their respective owners.
-
 
 
 ## Features
@@ -170,6 +165,16 @@ Update `GamePath` in `JunimoServer.csproj` to your local installation to enable 
 Then build the mod and start the local server container:
 ```sh
 make dev
+```
+
+See the logs:
+```sh
+docker compose logs -f
+```
+
+Stop the server:
+```sh
+docker compose down
 ```
 
 ## Release Management
