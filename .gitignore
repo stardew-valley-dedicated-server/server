@@ -31,6 +31,10 @@ logs
 build
 bin
 debug
+decompiled
+
+# Decompiler version file
+/version.txt
 
 # Extra mods
 mods
