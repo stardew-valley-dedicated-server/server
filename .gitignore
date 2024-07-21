@@ -36,6 +36,10 @@ decompiled
 # Decompiler version file
 /version.txt
 
+# Used by fetch-version.sh
+tools/depot-downloader/DepotDownloader.exe
+tools/depot-downloader/DepotDownloader.xml
+
 # Extra mods
 mods
 

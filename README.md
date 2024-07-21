@@ -73,7 +73,7 @@ docker compose down
 ### Web VNC
 To connect to the web VNC, open your browser and navigate to `http://IP:VNC_PORT`. 
 
-The settings panel on the left side can be used to set connection quality, compression level and scaling mode. The scaling mode `Remote Resizing` should should not be used, it tends to break the server and requires a restart to be fixed.
+The settings panel on the left side can be used to set connection quality, compression level and scaling mode. The scaling mode `Remote Resizing` should not be used, it tends to break the server and requires a restart to be fixed.
 
 Copy and paste only works via the settings panel clipboard area.
 
@@ -124,6 +124,7 @@ This is a list of planned or wanted features with rough priorization, so if you 
 * **[HIGH] Server authentication**: Implement server password, whitelist, banlist
 * **[HIGH] Admin indicator**: Admins need a visible chat indicator to prevent name impersonation
 * **[HIGH] Unit Tests**: Would be great to have least parts of the code base covered by automated (unit)-tests
+* **[HIGH] Player list command**: Implement new /online command, showing player names with ping etc.
 * **[MID] Backup integration**: Backups should be integrated into the server in a provider agnostic way
 * **[MID] noVNC encryption**: Currently using insecure connections, but should use secure connections
 * **[MID] noVNC password**: Prevent startup without VNC password, to prevent exposing by accident
@@ -136,6 +137,7 @@ This is a list of planned or wanted features with rough priorization, so if you 
 * **[LOW] Discord integration**: WebHooks, Bot, something else?
 * **[LOW] Server Plugins**: Plugin/mod system to extend the server (which we then also use internally)
 * **[LOW] Custom launcher**: Custom app as a server browser with listing, favorites, per-server mod sync and more
+* **[LOW] Performance Benchmarks**: Run benchmarks to get performance requirements
 
 
 
@@ -184,6 +186,14 @@ Stop the server:
 ```sh
 docker compose down
 ```
+
+#### Decompile Stardew Valley
+To decompile Stardew Valley run this script:
+```sh
+bash ./tools/decompile.sh
+```
+
+
 
 ### Release Management
 > [!WARNING]
