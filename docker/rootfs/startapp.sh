@@ -20,6 +20,10 @@ print_text_for_duration() {
     done
 }
 
+print_error() {
+    echo -e "\e[31m$1\e[0m"
+}
+
 init_xauthority() {
     # Can not be done in Dockerfile, because xauth needs to access the running display ":0"
     touch ~/.Xauthority
@@ -34,6 +38,7 @@ init_stardew() {
     # Installation check
     if [ -e "${GAME_EXECUTABLE}" ]; then
         # TODO: Check if update necessary, add version to installed.txt
+        # TODO: See new fetch-version and parse-version scripts
         echo "Game already initialized, skipping."
         return;
     fi
@@ -46,6 +51,15 @@ init_stardew() {
         +login "${STEAM_USER}" "${STEAM_PASS}" \
         +app_update 413150 \
         +quit
+
+    # Capture the exit status of the steamcmd command
+    EXIT_STATUS=$?
+
+    # Check if the command was successful
+    if [ $EXIT_STATUS -ne 0 ]; then
+        print_error "Error: steamcmd command failed with exit status $EXIT_STATUS"
+        exit 1
+    fi
 
     # Removing these files causes a "FileNotFoundException", but it doesn't
     # seem to cause problems but reduces game storage size by about 70-80%.
