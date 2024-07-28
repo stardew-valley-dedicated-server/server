@@ -17,6 +17,9 @@
 # IntelliJ
 .idea
 
+# Resharper personal layer
+JunimoMods.sln.DotSettings
+
 # Logs
 logs
 *.log
@@ -27,21 +30,18 @@ logs
 !.env.example
 
 # Build output
-.output
-build
-bin
-debug
-decompiled
+/.output
+/build
+/bin
+/debug
+/decompiled
 
 # Decompiler version file
 /version.txt
 
 # Used by fetch-version.sh
-tools/depot-downloader/DepotDownloader.exe
-tools/depot-downloader/DepotDownloader.xml
+/tools/depot-downloader/DepotDownloader.exe
+/tools/depot-downloader/DepotDownloader.xml
 
 # Extra mods
-mods
-
-# Resharper personal layer
-JunimoMods.sln.DotSettings
+/mods
