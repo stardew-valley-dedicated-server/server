@@ -1,2 +1,2 @@
 * text=auto
-docker/rootfs/* text eol=lf
+docker/rootfs/** text eol=lf

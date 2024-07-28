@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea/
+.vs/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Git files
+.github/
+.gitattributes
+.gitignore
+.gitmodules
+
+# Project dirs
+decompiled/
+mod/
+mods/
+sub_modules/
+tools/
+
+# Project files
+.dockerignore
+.editorconfig
+docker-compose*.yml
+LICENSE
+Makefile
+README.md
