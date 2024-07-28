@@ -1,2 +1,11 @@
-* text=auto
+*               text=auto
+
+# Ensure all scripts have EOL=LF
+*.sh		    text eol=lf
 docker/rootfs/* text eol=lf
+
+# Images/binaries should not change EOL
+*.jpg		    -text
+*.png		    -text
+*.gif		    -text
+*.webp		    -text
