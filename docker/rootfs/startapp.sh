@@ -38,7 +38,7 @@ init_stardew() {
     # Installation check
     if [ -e "${GAME_EXECUTABLE}" ]; then
         # TODO: Check if update necessary, add version to installed.txt
-        # TODO: See new fetch-version and parse-version scripts
+        # TODO: See new fetch-sdv-version and parse-sdv-version scripts
         echo "Game already initialized, skipping."
         return;
     fi
@@ -74,7 +74,7 @@ init_smapi() {
     if [ -e "${SMAPI_EXECUTABLE}" ]; then
         # TODO: Check if update necessary, add version to installed.txt
         echo "SMAPI already initialized, skipping."
-    else 
+    else
         # Download
         curl -L https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip -o /data/smapi.zip
 
@@ -89,7 +89,8 @@ init_smapi() {
         # Cleanup
         rm -rf "/data/smapi"
     fi
-    
+
+    # Ensure we see SMAPI logs in docker logs, by reading them using non-blocking background process tail
     tail -F /config/xdg/config/StardewValley/ErrorLogs/SMAPI-latest.txt &
 }
 

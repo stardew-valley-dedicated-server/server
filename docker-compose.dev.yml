@@ -1,12 +1,11 @@
 # NOT IN USE/READY
 services:
     stardew:
-        image: sdvd/server:${IMAGE_VERSION}
+        image: sdvd/server:latest
         build:
             context: .
             dockerfile: ./docker/Dockerfile
             args:
-                SMAPI_VERSION: ${SMAPI_VERSION}
                 STEAM_USER: ${STEAM_USER}
                 STEAM_PASS: ${STEAM_PASS}
         container_name: stardew-dedicated-server
@@ -25,7 +24,7 @@ services:
             DISABLE_RENDERING: "${DISABLE_RENDERING}"
 
     web:
-        image: stardew-dedicated-web:${IMAGE_VERSION}
+        image: stardew-dedicated-web:latest
         profiles: [web]
         build:
             context: ./../web

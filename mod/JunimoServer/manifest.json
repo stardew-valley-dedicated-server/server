@@ -1,10 +1,10 @@
 {
-  "Name": "JunimoServer",
-  "Author": "JunimoHost",
-  "Version": "0.15.0",
-  "Description": "JunimoHost's remote game manager",
-  "UniqueID": "JunimoHost.Server",
-  "EntryDll": "JunimoServer.dll",
-  "MinimumApiVersion": "3.0.0",
-  "UpdateKeys": []
+    "Name": "JunimoServer",
+    "Author": "JunimoHost",
+    "Version": "1.0.0-alpha",
+    "Description": "JunimoHost's remote game manager",
+    "UniqueID": "JunimoHost.Server",
+    "EntryDll": "JunimoServer.dll",
+    "MinimumApiVersion": "3.0.0",
+    "UpdateKeys": []
 }

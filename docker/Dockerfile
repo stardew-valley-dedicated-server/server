@@ -18,7 +18,7 @@ ENV APP_NAME="Stardew Dedicated Server" \
     DISABLE_RENDERING=true\
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
-    SMAPI_VERSION=4.0.8 \
+    SMAPI_VERSION=4.1.10 \
     SMAPI_MODS_PATH=/data/Mods
 
 # Add 32-bit architecture and update the sources list for SteamCMD
@@ -64,7 +64,7 @@ RUN apt-get install -y \
     exa \
     htop \
     nano
-    
+
 # Install TigerVNC (replaces pre-compiled x11 to include GLX extension)
 RUN apt-get install -y \
     tigervnc-standalone-server && \

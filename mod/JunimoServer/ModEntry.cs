@@ -1,28 +1,21 @@
-﻿using Grpc.Net.Client;
-using HarmonyLib;
-using Junimohost.Stardewgame.V1;
+﻿using HarmonyLib;
 using JunimoServer.Services.AlwaysOnServer;
 using JunimoServer.Services.CabinManager;
-using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.GameTweaks;
 using JunimoServer.Services.HostAutomation;
-using JunimoServer.Services.Map;
 using JunimoServer.Services.NetworkTweaks;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
-using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
-using Steamworks;
 using System;
-using System.Net.Http;
 
 namespace JunimoServer
 {
@@ -68,13 +61,13 @@ namespace JunimoServer
             var options = new PersistentOptions(helper);
 
             // Register services
-            var chatCommands = new ChatCommands(Monitor, harmony, helper);
+            var chatCommands = new JunimoServer.Services.ChatCommands.ChatCommands(Monitor, harmony, helper);
             var alwaysOnConfig = new AlwaysOnConfig();
             var alwaysOnServer = new AlwaysOnServer(helper, Monitor, chatCommands, alwaysOnConfig);
             _gameLoaderService = new GameLoaderService(helper, Monitor);
             var cabinManager = new CabinManagerService(helper, Monitor, harmony, options);
             _gameCreatorService = new GameCreatorService(_gameLoaderService, options, Monitor, cabinManager, helper);
-            
+
             var cropSaver = new CropSaver(helper, harmony, Monitor);
             var gameTweaker = new GameTweaker(helper);
             var networkTweaker = new NetworkTweaker(helper, Monitor, options);
