@@ -39,7 +39,7 @@ logs
 # Decompiler version file
 /version.txt
 
-# Used by fetch-version.sh
+# Used by fetch-sdv-version.sh
 /tools/depot-downloader/DepotDownloader.exe
 /tools/depot-downloader/DepotDownloader.xml
 

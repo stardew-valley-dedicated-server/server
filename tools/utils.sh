@@ -2,7 +2,7 @@
 
 load_env() {
     set -o allexport
-    source .env set
+    source $(realpath .env) set
     set +o allexport
 }
 
@@ -10,14 +10,33 @@ trim() {
     echo "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
-# Function to print a message in green
-print_success() {
-    echo -e "\e[32m$1\e[0m"
+command_exists() {
+    if which "$1" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
 }
 
-# Function to print a message in red
+file_exists() {
+    if [[ -f "$1" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+var_exists() {
+    if [[ -n "$(printf '%s\n' "${!1}")" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+print_success() {
+    printf "\e[32m%s\e[0m\n" "$1"
+}
+
 print_error() {
-    echo -e "\e[31m$1\e[0m"
+    printf "\e[31m%s\e[0m\n" "$1"
 }
 
 suppress_output_conditionally() {
@@ -30,46 +49,11 @@ suppress_output_conditionally() {
     fi
 }
 
-# Function to check if a command exists
-command_exists() {
-    if command -v "$1" &> /dev/null; then
-        return 0
-    else
-        return 1
-    fi
-}
+# get_latest_git_release() {
+#   curl --silent "https://api.github.com/repos/$1/releases/latest" |
+#     grep '"tag_name":' |
+#     sed -E 's/.*"([^"]+)".*/\1/'
+# }
 
-file_exists() {
-    if [[ -f "$src" ]]; then
-        return 0
-    fi
-    return 1
-}
-
-# Function to check if a given env var is set, print error and exit script if not
-var_exists() {
-    local -r env_value=$(printf '%s\n' "${!1}")
-    if [[ -z "$env_value" ]]; then
-        return 1
-    fi
-    return 0
-}
-
-get_dll_version() {
-    # CYGWIN, WSL + LINUX
-    strings "$1" -el | grep -A1 'ProductVersion' | tail -n1
-
-    # CYGWIN + POWERSHELL ONLY, VERY MUCH NO NO
-    # win_path=$(cygpath -a -w "$1")
-    # powershell "(Get-Item -path '$win_path').VersionInfo.ProductVersion"
-}
-
-# get_latest_git_release Pathoschild/SMAPI
-get_latest_git_release() {
-  curl --silent "https://api.github.com/repos/$1/releases/latest" |
-    grep '"tag_name":' |
-    sed -E 's/.*"([^"]+)".*/\1/'
-}
-
-# For convenience we automatically load env variables when sourcing this file
+# Automatically load env variables when sourcing this file
 load_env

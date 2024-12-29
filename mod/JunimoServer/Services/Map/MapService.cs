@@ -1,20 +1,13 @@
-﻿using System.Linq;
+using JunimoServer.Util;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
-using StardewValley;
-using StardewValley.WorldMaps;
-using JunimoServer.Util;
-using System;
 using StardewModdingAPI.Events;
+using StardewValley;
 using StardewValley.GameData.WorldMaps;
-using System.Threading;
-using static Grpc.Core.Metadata;
+using StardewValley.WorldMaps;
 using System.Collections.Generic;
 using System.IO;
-using StardewModdingAPI.Utilities;
-using StardewValley.GameData.HomeRenovations;
-using static StardewValley.FarmerRenderer;
 
 
 namespace JunimoServer.Services.Map
@@ -24,12 +17,12 @@ namespace JunimoServer.Services.Map
         public readonly string type = "MapMessage";
         public MapSyncData data;
     }
-    
+
     public class MapSyncData
     {
         public List<MapSyncPlayerData> players;
     }
-    
+
     public class MapSyncPlayerData
     {
         public string uniqueMultiplayerID;
@@ -82,7 +75,7 @@ namespace JunimoServer.Services.Map
 
                 _ws.Send(Newtonsoft.Json.JsonConvert.SerializeObject(new MapMessage() { data = _syncData }));
             }
-            
+
         }
 
         private void OnOneSecondUpdateTick(object sender, OneSecondUpdateTickedEventArgs args)
@@ -107,13 +100,15 @@ namespace JunimoServer.Services.Map
             foreach (Farmer player in Game1.getOnlineFarmers())
             {
                 Point tile = MapUtil.GetNormalizedPlayerTile(player);
-                MapAreaPosition positionData = WorldMapManager.GetPositionData(player.currentLocation, tile);
+                MapAreaPositionWithContext? positionDataContext = WorldMapManager.GetPositionData(player.currentLocation, tile);
 
                 // Skip if farmer is not visible on a map
-                if (positionData == null)
+                if (!positionDataContext.HasValue)
                 {
                     continue;
                 }
+
+                MapAreaPosition positionData = positionDataContext.Value.Data;
 
                 foreach (MapRegion region in GetRegions())
                 {
@@ -190,7 +185,8 @@ namespace JunimoServer.Services.Map
 
         private TextureData GetFarmerBaseTexture(Farmer farmer)
         {
-            return new TextureData() {
+            return new TextureData()
+            {
                 texture = _helper.Reflection.GetField<Texture2D>(farmer.FarmerRenderer, "baseTexture").GetValue(),
                 rect = new Rectangle(0, 0, 16, farmer.IsMale ? 15 : 16)
             };
@@ -209,7 +205,8 @@ namespace JunimoServer.Services.Map
                 ? new Rectangle(hairMetadata.tileX * 16, hairMetadata.tileY * 16, 16, 15)
                 : new Rectangle(hairStyleIndex * 16 % FarmerRenderer.hairStylesTexture.Width, hairStyleIndex * 16 / FarmerRenderer.hairStylesTexture.Width * 96, 16, 15);
 
-            return new TextureData() {
+            return new TextureData()
+            {
                 texture = texture,
                 rect = rect
             };
@@ -219,7 +216,7 @@ namespace JunimoServer.Services.Map
         {
             return (bool)player.prismaticHair.Value ? Utility.GetPrismaticColor() : player.hairstyleColor.Value;
         }
-        
+
         private Vector2 GetHairOffset(Farmer farmer)
         {
             int hairStyleIndex = farmer.getHair(ignore_hat: true);
@@ -293,7 +290,7 @@ namespace JunimoServer.Services.Map
         {
             SaveTexture(filename, textureData.texture, textureData.rect);
         }
-        
+
         private void SaveTextureData(string filename, MapAreaTexture mapAreaTexture)
         {
             SaveTexture(filename, mapAreaTexture.Texture, mapAreaTexture.SourceRect);

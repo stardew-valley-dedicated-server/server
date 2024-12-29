@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # Requires: https://github.com/SteamRE/DepotDownloader/releases/tag/DepotDownloader_2.6.0
+# TODO: Add auto-download with check if already downloaded
 
 source tools/utils.sh
 
 # Usage information
 usage() {
+    echo "Fetch latest version information for Stardew Valley from Steam.\n"
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
@@ -15,12 +17,11 @@ usage() {
 }
 
 
-# Download latest file from steam depot which is used to parse version info
+# Download latest file from steam depot to parse version info from
 run_depot_downloader() {
     tools/depot-downloader/DepotDownloader.exe \
         -app $APP_ID \
         -depot $DEPOT_ID \
-        -manifest $MANIFEST_ID \
         -username "$STEAM_USER" \
         -password "$STEAM_PASS" \
         -dir "$TEMP_DIR" \
@@ -43,7 +44,6 @@ main() {
     # DepotDownloader config
     APP_ID=413150
     DEPOT_ID=413151
-    MANIFEST_ID=1777024427851858279
     FILE="Stardew Valley.dll"
     TEMP_DIR=""
     TEMP_FILE=""
@@ -90,14 +90,14 @@ main() {
     fi
 
     create_temp
-    
+
     if [ -n "$output_path" ] && [ "$suppress_output" = false ]; then
         echo "Using output_path: '$output_path'"
     fi
 
     suppress_output_conditionally "$suppress_output" run_depot_downloader
 
-    version=$(tools/parse-version.sh -p "$TEMP_DIR/$FILE" label)
+    version=$(tools/get-sdv-version-local.sh -p "$TEMP_DIR/$FILE" label)
     clear_temp
 
     if [ -n "$output_path" ]; then

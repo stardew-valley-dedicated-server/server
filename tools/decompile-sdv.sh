@@ -31,18 +31,22 @@ get_src_directory() {
         error_ci_game_path_not_set
     fi
 
-    local -r src="${CI_GAME_PATH}\Stardew Valley.dll"
+    local -r src="${CI_GAME_PATH}/Stardew Valley.dll"
 
+    # Directory separators:
+    # Windows -> \
+    # Linux -> /
     if ! file_exists "$src"; then
         error_file_not_found "$src"
     fi
+
 
     echo "$src"
 }
 
 get_dest_directory() {
-    local -r versionLabel=$(tools/parse-version.sh label)
-    local -r versionBuildNumber=$(tools/parse-version.sh build)
+    local -r versionLabel=$(tools/parse-sdv-version.sh label)
+    local -r versionBuildNumber=$(tools/parse-sdv-version.sh build)
     echo "./decompiled/sdv-${versionLabel}-${versionBuildNumber}"
 }
 
@@ -53,7 +57,9 @@ decompile() {
     local -r dest=$2
 
     echo "Decompiling Stardew Valley..."
-    echo "$src -> $dest"
+    
+    printf "Input: \e[90m%s\e[0m\n" "$(realpath "$src")"
+    printf "Output: \e[90m%s\e[0m\n\n" "$(realpath "$dest")"
 
     if file_exists "$dest/Stardew Valley.csproj"; then
         print_success "Skipping, already decompiled."
@@ -74,24 +80,38 @@ decompile() {
 }
 
 error_ci_game_path_not_set() {
-    print_error "Error: CI_GAME_PATH is not set."
+    print_error "Error: \"CI_GAME_PATH\" is not set."
     exit 2
 }
 
 error_file_not_found() {
-    print_error "Error: Source file $1 does not exist. Is CI_GAME_PATH correct and Stardew Valley installed?"
+    print_error "Error: Source file \"$1\" does not exist. Did you install Stardew Valley and set \"CI_GAME_PATH\"?"
     exit 3
 }
 
 error_ilspycmd_failed() {
-    print_error "Error: ilspycmd process failed with exit code $?."
+    print_error "Error: ilspycmd process failed with exit code \"$?\"."
     exit 4
 }
 
 main() {
+    . tools/utils.sh
+    
     trap cleanup SIGINT
-    source tools/utils.sh
-    decompile "$(get_src_directory)" "$(get_dest_directory)" 
+    
+    src_dir=$(get_src_directory)
+    if [ $? -ne 0 ]; then
+        echo $src_dir
+        exit 1
+    fi
+    
+    dest_dir=$(get_dest_directory)
+    if [ $? -ne 0 ]; then
+        echo $dest_dir
+        exit 1
+    fi
+
+    decompile "$src_dir" "$dest_dir"
 }
 
 main

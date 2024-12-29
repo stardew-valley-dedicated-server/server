@@ -1,26 +1,28 @@
 # CI_GAME_PATH=/home/runner/actions-runner/_work/junimohost-stardew-server/junimohost-stardew-server/Stardew Valley
 CI_GAME_PATH=D:/Games/Steam/steamapps/common/Stardew Valley
 
-# Load .env file
+# Load configuration
 -include .env
 
-# Load after .env, should not be overridden
+# Define constants
 SRC_PATH=./mod/JunimoServer
 BUILD_PATH=./.output/build
 DEST_PATH=./.output/mods/JunimoServer
 
+# TODO: Random project meta data, should it be defined more centrally? (.env vs .props files problem)
 IMAGE_REGISTRY=sdvd
 IMAGE_NAME=server
 
-dev: 
-	make build -B
-	docker compose up --force-recreate -d 
-	
-build: 
-	make build-server-mod -B
+# Build and start docker containers
+run: build-mod build-image
+	docker compose up --force-recreate -d
+
+# Build mod and docker image
+build-image:
 	docker build --platform=amd64 -t $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION) -t $(IMAGE_REGISTRY)/$(IMAGE_NAME):latest -f docker/Dockerfile .
 
-build-server-mod: $(shell find $(SRC_PATH)/**/*.cs -type f) $(SRC_PATH)/JunimoServer.csproj
+# Build mod
+build-mod: $(shell find $(SRC_PATH)/**/*.cs -type f) $(SRC_PATH)/JunimoServer.csproj $(SRC_PATH)/manifest.json
 ifeq ($(CI), true)
 	dotnet build $(SRC_PATH)/JunimoServer.csproj -o $(BUILD_PATH) --configuration Release '/p:EnableModZip=false;EnableModDeploy=false;GamePath=$(CI_GAME_PATH)'
 else
@@ -41,6 +43,8 @@ endif
 	$(DEST_PATH)
 	rm -rf $(BUILD_PATH)
 
-push: build
+# Tag and push docker image
+push:
+	make build-image -B
 	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):latest

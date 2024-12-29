@@ -1,13 +1,11 @@
-﻿using System;
-using System.Diagnostics;
-using HarmonyLib;
+﻿using HarmonyLib;
 using Microsoft.VisualBasic;
-using Microsoft.VisualBasic.CompilerServices;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
-using StardewValley;
 using StardewValley.SDKs.GogGalaxy;
+using System;
+using System.Diagnostics;
 
 namespace JunimoServer.Services.ServerOptim
 {
@@ -53,7 +51,7 @@ namespace JunimoServer.Services.ServerOptim
                 original: AccessTools.Method(typeof(GalaxySocket), "CreateLobby"),
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
                     nameof(ServerOptimizerOverrides.CreateLobby_Prefix)));
-            
+
 
             if (disableRendering)
             {
@@ -62,11 +60,12 @@ namespace JunimoServer.Services.ServerOptim
                     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
                         nameof(ServerOptimizerOverrides.AssignNullDisplay_Prefix)));
 
-                harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.SCore:GetMapDisplayDevice"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.ReturnNullDisplay_Prefix)));
-                
+                // TODO: This seem to have moved to Game1.mapDisplayDevice
+                //harmony.Patch(
+                //    original: AccessTools.Method("StardewModdingAPI.Framework.SCore:GetMapDisplayDevice"),
+                //    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
+                //        nameof(ServerOptimizerOverrides.ReturnNullDisplay_Prefix)));
+
                 harmony.Patch(
                     original: AccessTools.Method("Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"),
                     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
@@ -120,12 +119,12 @@ namespace JunimoServer.Services.ServerOptim
 
         private void OnDayEnding(object sender, DayEndingEventArgs e)
         {
-            var before = checked ((long) Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
+            var before = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
             _monitor.Log($"Running GC", LogLevel.Info);
             GC.Collect(generation: 0, GCCollectionMode.Forced, blocking: true);
             GC.Collect(generation: 1, GCCollectionMode.Forced, blocking: true);
             GC.Collect(generation: 2, GCCollectionMode.Forced, blocking: true);
-            var after = checked ((long) Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
+            var after = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
             var beforeFormatted = Strings.Format(before / 1024.0, "0.00") + " GB";
             var afterFormatted = Strings.Format(after / 1024.0, "0.00") + " GB";
             _monitor.Log($"Ran GC {beforeFormatted} -> {afterFormatted}", LogLevel.Info);
