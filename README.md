@@ -1,6 +1,6 @@
 # JunimoServer
 
-![Static Badge](https://img.shields.io/badge/SVDS-0.0.2--alpha-34D058)
+![Static Badge](https://img.shields.io/badge/SVDS-1.0.0-alpha-34D058)
 ![Static Badge](https://img.shields.io/badge/Stardew%20Valley-1.6.15-34D058)
 ![Static Badge](https://img.shields.io/badge/SMAPI-4.1.10-34D058)
 
@@ -121,4 +121,3 @@ This project would not have been possible without the amazing work of many other
 * [NetworkOptimizer](https://github.com/Ilyaki/NetworkOptimizer) (from [Ilyaki](https://github.com/Ilyaki))
 
 If you think your name belongs here, please feel free to create a PR adding yourself to this list!
-
