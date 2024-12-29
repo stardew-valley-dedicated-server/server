@@ -1,0 +1,18 @@
+#!/bin/sh
+
+# Filter out arguments matching -InternalConnectionSecurityTypes=*
+filtered_args=""
+for arg in "$@"; do
+    case "$arg" in
+        -InternalConnectionSecurityTypes=*)
+            ;; # Skip this argument
+        *)
+            filtered_args="$filtered_args \"$arg\""
+            ;;
+    esac
+done
+
+echo "Args: $filtered_args";
+
+# Execute xvnc with the filtered arguments
+eval exec /opt/base/bin/Xvnc $filtered_args
