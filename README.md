@@ -1,6 +1,6 @@
 # JunimoServer
 
-![Static Badge](https://img.shields.io/badge/SVDS-1.0.0-alpha-34D058)
+![Static Badge](https://img.shields.io/badge/SVDS-1.0.0--alpha-34D058)
 ![Static Badge](https://img.shields.io/badge/Stardew%20Valley-1.6.15-34D058)
 ![Static Badge](https://img.shields.io/badge/SMAPI-4.1.10-34D058)
 
