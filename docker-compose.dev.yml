@@ -16,7 +16,7 @@ services:
             - game:/data/Stardew
             - data:/config/xdg/config/StardewValley
             # [Optional] Extra mods to be loaded by the server (GenericModConfigMenu, TimeSpeed, etc.)
-            # - ./mods:/data/Stardew/Mods/extra
+            # - ./mods:/data/Mods/extra
         environment:
             STEAM_USER: "${STEAM_USER}"
             STEAM_PASS: "${STEAM_PASS}"
