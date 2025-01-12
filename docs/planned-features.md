@@ -1,6 +1,6 @@
 # Planned Features
 This is a list of planned or wanted features with rough priorization, so if you want to help out this is a good starting point:
-* **[HIGH] Hide player IPs**: Players IPs should be hidden from server join message, /list command and others (?)
+* **[HIGH] [#21](https://github.com/stardew-valley-dedicated-server/server/issues/21) Hide player IPs**: Players IPs should be hidden from server join message, /list command and others (?)
 * **[HIGH] Server authentication**: Implement server password, whitelist, banlist
 * **[HIGH] Admin indicator**: Admins need a visible chat indicator to prevent name impersonation
 * **[HIGH] Unit Tests**: Would be great to have least parts of the code base covered by automated (unit)-tests

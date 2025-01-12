@@ -31,12 +31,13 @@ endif
 	rm -rf $(DEST_PATH)
 	mkdir -p $(DEST_PATH)
 	cp $(BUILD_PATH)/JunimoServer.dll \
-	$(BUILD_PATH)/Microsoft.Extensions.Logging.Abstractions.dll \
-	$(BUILD_PATH)/Microsoft.IO.RecyclableMemoryStream.dll \
 	$(BUILD_PATH)/Google.Protobuf.dll \
 	$(BUILD_PATH)/Grpc.Core.Api.dll \
 	$(BUILD_PATH)/Grpc.Net.Client.dll \
 	$(BUILD_PATH)/Grpc.Net.Common.dll \
+	$(BUILD_PATH)/Microsoft.Extensions.DependencyInjection.dll \
+	$(BUILD_PATH)/Microsoft.Extensions.Logging.Abstractions.dll \
+	$(BUILD_PATH)/Microsoft.IO.RecyclableMemoryStream.dll \
 	$(BUILD_PATH)/System.Reactive.dll \
 	$(BUILD_PATH)/Websocket.Client.dll \
 	$(SRC_PATH)/manifest.json \
@@ -44,7 +45,6 @@ endif
 	rm -rf $(BUILD_PATH)
 
 # Tag and push docker image
-push:
-	make build-image -B
+push: build-mod build-image
 	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):latest

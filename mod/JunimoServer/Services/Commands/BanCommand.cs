@@ -1,4 +1,3 @@
-using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
@@ -9,10 +8,9 @@ namespace JunimoServer.Services.Commands
 {
     public class BanCommand
     {
-         public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("ban", "\"farmerName|userName\" to ban the player.", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("ban", "\"farmerName|userName\" to ban the player.", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
@@ -32,7 +30,7 @@ namespace JunimoServer.Services.Commands
                     helper.SendPrivateMessage(msg.SourceFarmer, "Player not found: " + nameFromCommand);
                     return;
                 }
-                
+
                 if (roleService.IsPlayerOwner(targetFarmer.UniqueMultiplayerID))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You can't ban the owner of the server.");
@@ -43,6 +41,6 @@ namespace JunimoServer.Services.Commands
                 helper.SendPrivateMessage(msg.SourceFarmer, "Banned: " + targetFarmer.Name);
             });
         }
-    
+
     }
 }

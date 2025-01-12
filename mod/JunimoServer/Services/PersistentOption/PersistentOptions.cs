@@ -1,4 +1,6 @@
-﻿using StardewModdingAPI;
+using JunimoServer.Services.CabinManager;
+using StardewModdingAPI;
+using System.Xml.Serialization;
 
 namespace JunimoServer.Services.PersistentOption
 {
@@ -19,6 +21,18 @@ namespace JunimoServer.Services.PersistentOption
         {
             _helper.Data.WriteGlobalData(SaveKey, optionsSaveData);
             Data = optionsSaveData;
+        }
+
+        [XmlIgnore]
+        public bool IsFarmHouseStack
+        {
+            get => Data.CabinStrategy == CabinStrategy.FarmhouseStack;
+        }
+
+        [XmlIgnore]
+        public bool IsCabinStack
+        {
+            get => !IsFarmHouseStack;
         }
     }
 }

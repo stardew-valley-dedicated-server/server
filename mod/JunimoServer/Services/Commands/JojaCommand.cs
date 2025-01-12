@@ -1,21 +1,18 @@
-﻿using JunimoServer.Services.AlwaysOnServer;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewValley;
 
 namespace JunimoServer.Services.Commands
 {
     public static class JojaCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService,
-            AlwaysOnConfig alwaysOnConfig)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService, AlwaysOnConfig alwaysOnConfig)
         {
-            chatCommandApi.RegisterCommand("joja",
+            chatCommandsService.RegisterCommand("joja",
                 "Type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" to enable joja and disable the standard community center forever.",
-                (args, msg) =>
-                {
+                (args, msg) => {
                     if (!roleService.IsPlayerOwner(msg.SourceFarmer))
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Only the owner of the server can enable Joja.");

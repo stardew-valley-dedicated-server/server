@@ -1,73 +1,58 @@
-﻿using System;
-using System.Linq;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.PersistentOption;
+using JunimoServer.Services.Roles;
 using JunimoServer.Util;
-using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
-using StardewValley.Buildings;
-using StardewValley.Locations;
+using System;
 
 namespace JunimoServer.Services.Commands
 {
     public static class CabinCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi,
-            PersistentOptions options, IMonitor monitor)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleSerivce, CabinManagerService cabinService, PersistentOptions options)
         {
-            chatCommandApi.RegisterCommand("cabin",
+            Console.WriteLine("Registering cabin command");
+            chatCommandsService.RegisterCommand("cabin",
                 "Moves your cabin to the right of your player.\nThis will clear basic debris to make space.",
-                (args, msg) =>
-                {
-                    if (options.Data.CabinStrategy == CabinStrategy.FarmhouseStack)
+                (args, msg) => {
+                    if (cabinService.options.IsFarmHouseStack)
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin. The host has chosen to keep all cabins in the farmhouse.");
                         return;
                     }
-                    var fromPlayer = Game1.getOnlineFarmers()
-                        .First(farmer => farmer.UniqueMultiplayerID == msg.SourceFarmer);
 
-                    if (fromPlayer.currentLocation.Name != "Farm")
+                    var farmer = Game1.GetPlayer(msg.SourceFarmer);
+
+                    if (farmer.currentLocation.Name != "Farm")
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Must be on Farm to move your cabin.");
                         return;
                     }
 
-                    var isOwnersCabin = helper.GetOwnerPlayerId() == fromPlayer.UniqueMultiplayerID;
-                    if (isOwnersCabin)
+                    if (roleSerivce.IsPlayerOwner(farmer))
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin as primary admin. (Your cabin is the farmhouse)");
                         return;
                     }
 
+                    var cabin = Game1.getFarm().GetCabin(msg.SourceFarmer);
 
-                    var cabinBlueprint = Building.CreateInstanceFromId("Log Cabin", Vector2.Zero);
-                    var cabinLocation = new Vector2(fromPlayer.Tile.X + 1, fromPlayer.Tile.Y);
-
-                    for (var x = 0; x < cabinBlueprint.tilesWide.Value; x++)
+                    if (cabin == null)
                     {
-                        for (var y = 0; y < cabinBlueprint.tilesHigh.Value; y++)
-                        {
-                            var currentTileLocation = new Vector2(cabinLocation.X + x, cabinLocation.Y + y);
-
-                            fromPlayer.currentLocation.terrainFeatures.Remove(currentTileLocation);
-                            fromPlayer.currentLocation.objects.Remove(currentTileLocation);
-
-                        }
+                        helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin. (Your cabin was not found, which should not happen.)");
+                        return;
                     }
 
-                    var farmersCabin = Game1.getFarm().buildings.First(building => building.isCabin && ((Cabin)(building.indoors.Value)).owner.UniqueMultiplayerID == msg.SourceFarmer);
-                    farmersCabin.tileX.Value = (int)cabinLocation.X;
-                    farmersCabin.tileY.Value = (int)cabinLocation.Y;
+                    // TODO: Add checks to prevent placing cabin out-of-bounds, over trees, buildings etc.
+                    // TODO: Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
+                    //  - 'cabin move [direction=top|right|bottom|left]': Start "ghost" mode, manipulate LocationIntroduction package to show building as ghost without updating warp targets etc?
+                    //  - 'cabin cancel': Cancel the move, reset to position from before the ghost mode
+                    //  - 'cabin confirm': Confirm the move, update warp targets etc
 
-                    var indoor = (Cabin)farmersCabin.indoors.Value;
-                    foreach (var warp in indoor.warps.Where(warp => warp.TargetName == "Farm"))
-                    {
-                        warp.TargetX = (int)cabinLocation.X + 2;
-                        warp.TargetY = (int)cabinLocation.Y + 2;
-                    }
+                    // Place cabin on the right-hand side the farmer
+                    cabin.Relocate(farmer.Tile.X + 1, farmer.Tile.Y);
                 }
             );
         }

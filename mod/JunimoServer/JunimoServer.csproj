@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
@@ -9,7 +9,7 @@
 		<EnableModZip>false</EnableModZip>
 		<GamePath>D:\Games\Steam\steamapps\common\Stardew Valley</GamePath>
 		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
-        <!-- Ignoring mod-breaking files which target .NET 8, removal causes no problems so far -->
+        <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
         <IgnoreModFilePaths>System.Threading.Channels.dll</IgnoreModFilePaths>
   </PropertyGroup>
 
@@ -17,9 +17,9 @@
 		<PackageReference Include="Google.Protobuf" Version="3.21.5" />
 		<PackageReference Include="Grpc.Net.Client" Version="2.48.0" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2" />
-		<PackageReference Include="Websocket.Client" Version="5.1.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
+		<PackageReference Include="Websocket.Client" Version="5.1.0" />
 	</ItemGroup>
 
 	<ItemGroup>

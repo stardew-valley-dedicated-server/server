@@ -9,10 +9,9 @@ namespace JunimoServer.Services.Commands
 {
     public class ChangeWalletCommand
     {
-         public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("changewallet", "Immediate toggle between shared or split money.", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("changewallet", "Immediate toggle between shared or split money.", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
@@ -32,6 +31,6 @@ namespace JunimoServer.Services.Commands
                 }
             });
         }
-    
+
     }
 }

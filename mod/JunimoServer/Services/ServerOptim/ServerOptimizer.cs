@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using Microsoft.VisualBasic;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -9,7 +9,7 @@ using System.Diagnostics;
 
 namespace JunimoServer.Services.ServerOptim
 {
-    public class ServerOptimizer
+    public class ServerOptimizer : ModService
     {
         private readonly bool _disableRendering;
         private readonly IMonitor _monitor;
@@ -17,74 +17,71 @@ namespace JunimoServer.Services.ServerOptim
         public ServerOptimizer(
             Harmony harmony,
             IMonitor monitor,
-            IModHelper helper,
-            bool disableRendering,
-            bool enableModIncompatibleOptimizations
+            IModHelper helper
         )
         {
             _monitor = monitor;
-            _disableRendering = disableRendering;
+            _disableRendering = Env.DisableRendering;
 
             ServerOptimizerOverrides.Initialize(monitor);
+
             harmony.Patch(
                 original: AccessTools.Method(typeof(Game), "BeginDraw"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                    nameof(ServerOptimizerOverrides.Draw_Prefix))
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Draw_Prefix))
             );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.Game1:updateMusic"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                    nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.BellsAndWhistles.Butterfly:update"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                    nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.BellsAndWhistles.AmbientLocationSounds:update"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                    nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            );
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(GalaxySocket), "CreateLobby"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                    nameof(ServerOptimizerOverrides.CreateLobby_Prefix)));
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.CreateLobby_Prefix))
+            );
 
-
-            if (disableRendering)
+            if (_disableRendering)
             {
                 harmony.Patch(
                     original: AccessTools.Method("StardewModdingAPI.Framework.SCore:OnInstanceContentLoaded"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.AssignNullDisplay_Prefix)));
+                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.AssignNullDisplay_Prefix))
+                );
 
                 // TODO: This seem to have moved to Game1.mapDisplayDevice
                 //harmony.Patch(
                 //    original: AccessTools.Method("StardewModdingAPI.Framework.SCore:GetMapDisplayDevice"),
-                //    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                //        nameof(ServerOptimizerOverrides.ReturnNullDisplay_Prefix)));
+                //    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.ReturnNullDisplay_Prefix))
+                //);
 
                 harmony.Patch(
                     original: AccessTools.Method("Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                );
 
                 harmony.Patch(
                     original: AccessTools.Method("Microsoft.Xna.Framework.Input.Mouse:PlatformGetState"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                );
 
                 harmony.Patch(
                     original: AccessTools.Method("StardewValley.Game1:UpdateControlInput"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                );
             }
 
 
 
-            if (enableModIncompatibleOptimizations)
+            if (Env.EnableModIncompatibleOptimizations)
             {
                 harmony.Patch(
                     original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.Snapshots.PlayerSnapshot:Update"),

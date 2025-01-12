@@ -1,9 +1,9 @@
-﻿using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace JunimoServer.Services.AlwaysOnServer
+namespace JunimoServer.Services.AlwaysOn
 {
     public static class AlwaysOnUtil
     {

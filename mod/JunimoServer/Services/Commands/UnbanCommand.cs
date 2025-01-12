@@ -1,4 +1,3 @@
-using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
@@ -9,10 +8,9 @@ namespace JunimoServer.Services.Commands
 {
     public class UnbanCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("unban", "\"id|userName\" to unban the player. Use !listban to find ID.", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("unban", "\"id|userName\" to unban the player. Use !listban to find ID.", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
