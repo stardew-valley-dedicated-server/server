@@ -1,18 +1,15 @@
-using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewValley;
 
 namespace JunimoServer.Services.Commands
 {
     public class ListAdminsCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("listadmins", "list bans", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("listadmins", "list bans", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");

@@ -1,4 +1,3 @@
-﻿using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Util;
 using StardewModdingAPI;
@@ -8,63 +7,66 @@ using StardewValley.Locations;
 using StardewValley.Menus;
 using StardewValley.Network;
 using StardewValley.Objects;
+using System.Linq;
 
-namespace JunimoServer.Services.AlwaysOnServer
+namespace JunimoServer.Services.AlwaysOn
 {
-    public class AlwaysOnServer
+    public class AlwaysOnServer : ModService
     {
+        // TODO: Find a way to replace this static stuff.
+        public static bool PlayerIsHidden = true;
+
         /// <summary>
         /// Whether the main player is currently being automated.
         /// </summary>
         public bool IsAutomating;
 
-        public bool IsServerPaused;
+        public bool clientPaused;
 
         /// <summary>
-        /// Set to true when ShippingMenu should be active, then used 
+        /// Set to true when ShippingMenu should be active, then used
         /// </summary>
         private bool _isShippingMenuActive;
 
         private bool doWarpRoutineToGetToNextDay = false;
         private int _warpTickCounter = 0;
 
-        // Variables for timeout reset
+        // Shipping menu timeout reset, causes menu to be closed when bigger than `Config.EndOfDayTimeOut`
         private int shippingMenuTimeoutTicks;
 
         private AlwaysOnServerFestivals alwaysOnServerFestivals;
 
-        private readonly IModHelper _helper;
-        private readonly IMonitor _monitor;
         private readonly AlwaysOnConfig Config;
 
-        public AlwaysOnServer(IModHelper helper, IMonitor monitor, IChatCommandApi chatCommandApi, AlwaysOnConfig config)
+        public AlwaysOnServer(ChatCommandsService chatCommandService, AlwaysOnConfig config, IModHelper helper, IMonitor monitor) : base(helper, monitor)
         {
-            _helper = helper;
-            _monitor = monitor;
             Config = config;
 
-            // Register event handlers
-            helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
-            helper.Events.GameLoop.Saving += OnSaving;
-            helper.Events.GameLoop.OneSecondUpdateTicked += OnOneSecondUpdateTicked;
-            helper.Events.GameLoop.TimeChanged += OnTimeChanged;
-            helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-            helper.Events.Input.ButtonPressed += OnButtonPressed;
-            helper.Events.Display.Rendered += OnRendered;
-            helper.Events.Specialized.UnvalidatedUpdateTicked += OnUnvalidatedUpdateTick;
-            helper.Events.GameLoop.DayEnding += OnDayEnd;
-            helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
-
             // Register chat commands
-            helper.ConsoleCommands.Add("server", "Toggles headless 'auto mode' on/off", ToggleAutoModeCommand);
+            helper.ConsoleCommands.Add("host-auto", "Toggles host auto mode on/off", ToggleAutoModeCommand);
+            helper.ConsoleCommands.Add("host-visibility", "Toggles host visibility on/off", ToggleVisibilityCommand);
 
             // Extracted festival logic
-            alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandApi, config);
+            alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandService, config);
+        }
+
+        public override void Entry()
+        {
+            Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+            Helper.Events.GameLoop.Saving += OnSaving;
+            Helper.Events.GameLoop.OneSecondUpdateTicked += OnOneSecondUpdateTicked;
+            Helper.Events.GameLoop.TimeChanged += OnTimeChanged;
+            Helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+            Helper.Events.Input.ButtonPressed += OnButtonPressed;
+            Helper.Events.Display.Rendered += OnRendered;
+            Helper.Events.Specialized.UnvalidatedUpdateTicked += OnUnvalidatedUpdateTick;
+            Helper.Events.GameLoop.DayEnding += OnDayEnd;
+            Helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
         }
 
         private void OnReturnedToTitle(object sender, ReturnedToTitleEventArgs e)
         {
-            // Turns off auto mod if the game gets exited back to title screen for now
+            // TODO: Restart the server if we happen to return to the title, this should not happen during regular operations
             IsAutomating = false;
         }
 
@@ -78,7 +80,13 @@ namespace JunimoServer.Services.AlwaysOnServer
         {
             if (Game1.IsServer)
             {
-                TurnOnAutoMode();
+                ToggleAutoMode();
+
+                if (Game1.player != null)
+                {
+                    Game1.player.Equip(ItemRegistry.Create<Hat>($"{ItemRegistry.type_hat}JunimoHat"), Game1.player.hat);
+                    Game1.player.ignoreCollisions = true;
+                }
             }
         }
 
@@ -91,19 +99,26 @@ namespace JunimoServer.Services.AlwaysOnServer
 
             // Draw server status information in the top left corner
             AlwaysOnUtil.DrawTextBox(5, 100, Game1.dialogueFont, "Auto Mode On");
-            AlwaysOnUtil.DrawTextBox(5, 180, Game1.dialogueFont, $"Press {Config.ServerHotKey} On/Off");
-            AlwaysOnUtil.DrawTextBox(5, 340, Game1.dialogueFont, $"{Game1.server.connectionsCount} Players Online");
+            AlwaysOnUtil.DrawTextBox(5, 180, Game1.dialogueFont, $"Press {Config.HotKeyToggleAutoMode} On/Off");
+            AlwaysOnUtil.DrawTextBox(5, 300, Game1.dialogueFont, "Visibility On");
+            AlwaysOnUtil.DrawTextBox(5, 380, Game1.dialogueFont, $"Press {Config.HotKeyToggleVisibility} On/Off");
+            AlwaysOnUtil.DrawTextBox(5, 540, Game1.dialogueFont, $"{Game1.server.connectionsCount} Players Online");
         }
 
         private void OnButtonPressed(object sender, ButtonPressedEventArgs e)
         {
-            //toggles server on/off with configurable hotkey
-            if (Context.IsWorldReady)
+            if (!Context.IsWorldReady)
             {
-                if (e.Button == this.Config.ServerHotKey)
-                {
-                    ToggleAutoMode();
-                }
+                return;
+            }
+
+            if (e.Button == Config.HotKeyToggleAutoMode)
+            {
+                ToggleAutoMode();
+            }
+            else if (e.Button == Config.HotKeyToggleVisibility)
+            {
+                ToggleVisibility();
             }
         }
 
@@ -111,11 +126,9 @@ namespace JunimoServer.Services.AlwaysOnServer
         {
             if (!IsAutomating)
             {
-                Game1.paused = false;
                 return;
             }
 
-            HandleAutoPause();
             HandleNextDayWarp();
             HandleDialogueBox();
             HandleSkippableEvent();
@@ -131,9 +144,11 @@ namespace JunimoServer.Services.AlwaysOnServer
             // Automate choices
             if (!IsAutomating)
             {
+                Game1.paused = false;
                 return;
             }
 
+            HandleAutoPause();
             HandleAutoSleep();
 
             alwaysOnServerFestivals.HandleLeaveFestival();
@@ -185,8 +200,8 @@ namespace JunimoServer.Services.AlwaysOnServer
 
             if (Game1.activeClickableMenu is ShippingMenu)
             {
-                _monitor.Log("Clicking OK on ShippingMenu");
-                _helper.Reflection.GetMethod(Game1.activeClickableMenu, "okClicked").Invoke();
+                Monitor.Log("Clicking OK on ShippingMenu");
+                Helper.Reflection.GetMethod(Game1.activeClickableMenu, "okClicked").Invoke();
             }
         }
 
@@ -231,8 +246,17 @@ namespace JunimoServer.Services.AlwaysOnServer
             ToggleAutoMode();
         }
 
-        private void ToggleAutoMode()
+        /// <summary>
+        /// Toggles host farmhand visibility on/off with console command "server"
+        /// </summary>
+        /// <param name="command"></param>
+        /// <param name="args"></param>
+        private void ToggleVisibilityCommand(string command, string[] args)
+        {
+            ToggleVisibility();
+        }
 
+        private void ToggleAutoMode()
         {
             if (!Context.IsWorldReady)
             {
@@ -241,33 +265,42 @@ namespace JunimoServer.Services.AlwaysOnServer
 
             if (!IsAutomating)
             {
-                TurnOnAutoMode();
+                Game1.chatBox.addInfoMessage("The host is in automatic mode!");
+                var hudMessage = new HUDMessage("Auto Mode On!");
+                Game1.addHUDMessage(hudMessage);
+                Monitor.Log(hudMessage.message, LogLevel.Info);
             }
             else
             {
-                TurnOffAutoMode();
+                Game1.chatBox.addInfoMessage("The host has returned!");
+                var hudMessage = new HUDMessage("Auto Mode Off!");
+                Game1.addHUDMessage(hudMessage);
+                Monitor.Log(hudMessage.message, LogLevel.Info);
             }
+
+            IsAutomating = !IsAutomating;
+            Game1.displayHUD = true;
         }
 
-        private void TurnOffAutoMode()
+        private void ToggleVisibility()
         {
-            IsAutomating = false;
-            _monitor.Log("Auto mode off!", LogLevel.Info);
+            if (!Context.IsWorldReady)
+            {
+                return;
+            }
 
-            Game1.chatBox.addInfoMessage("The host has returned!");
-            Game1.displayHUD = true;
-            Game1.addHUDMessage(new HUDMessage("Auto Mode Off!"));
-        }
+            if (!Game1.displayFarmer)
+            {
+                Monitor.Log("Host farmhand is now visible!", LogLevel.Info);
+                Game1.addHUDMessage(new HUDMessage("Host farmhand is now visible!"));
+            }
+            else
+            {
+                Monitor.Log("Host farmhand is now invisible!", LogLevel.Info);
+                Game1.addHUDMessage(new HUDMessage("Host farmhand is now invisible!"));
+            }
 
-        private void TurnOnAutoMode()
-        {
-            IsAutomating = true;
-
-            _monitor.Log("Auto mode on!", LogLevel.Info);
-            Game1.chatBox.addInfoMessage("The host is in automatic mode!");
-
-            Game1.displayHUD = true;
-            Game1.addHUDMessage(new HUDMessage("Auto Mode On!"));
+            PlayerIsHidden = !PlayerIsHidden;
         }
 
         private void HandlePetChoice()
@@ -280,7 +313,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             // Initial pet choice
             if (!Game1.player.hasPet())
             {
-                _helper.Reflection.GetMethod(new Event(), "namePet").Invoke(this.Config.PetName.Substring(0));
+                Helper.Reflection.GetMethod(new Event(), "namePet").Invoke(this.Config.PetName.Substring(0));
             }
 
             // Update pet name
@@ -292,7 +325,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             }
 
         }
-        
+
         private void HandleCaveChoice()
         {
             if (!IsAutomating)
@@ -300,7 +333,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 return;
             }
 
-            // Cave choice unlock 
+            // Cave choice unlock
             if (!Game1.player.eventsSeen.Contains("65"))
             {
                 Game1.player.eventsSeen.Add("65");
@@ -317,7 +350,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 }
             }
         }
-        
+
         private void HandleCommunityCenterUnlock()
         {
             if (!IsAutomating)
@@ -343,7 +376,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 return;
             }
 
-            _monitor.Log("Clicking DialogBox", LogLevel.Info);
+            Monitor.Log("Clicking DialogBox", LogLevel.Info);
             Game1.activeClickableMenu.receiveLeftClick(10, 10);
         }
 
@@ -360,11 +393,11 @@ namespace JunimoServer.Services.AlwaysOnServer
             }
 
             bool skipped = Game1.CurrentEvent.skipped;
-            bool finished = _helper.Reflection.GetField<bool>(Game1.CurrentEvent, "eventFinished").GetValue();
+            bool finished = Helper.Reflection.GetField<bool>(Game1.CurrentEvent, "eventFinished").GetValue();
 
             if (!skipped && !finished)
             {
-                _monitor.Log("Skipping event", LogLevel.Info);
+                Monitor.Log("Skipping event", LogLevel.Info);
                 Game1.CurrentEvent.skipEvent();
                 Game1.CurrentEvent.receiveMouseClick(1, 2);
             }
@@ -380,7 +413,7 @@ namespace JunimoServer.Services.AlwaysOnServer
 
             if (numPlayers >= 1)
             {
-                if (IsServerPaused)
+                if (clientPaused)
                 {
                     Game1.netWorldState.Value.IsPaused = true;
                 }
@@ -406,7 +439,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             }
 
             // Taken from LevelUpMenu.cs:504
-            _monitor.Log("[Automation] Skipping level up menu", LogLevel.Info);
+            Monitor.Log("[Automation] Skipping level up menu", LogLevel.Info);
             menu.isActive = false;
             menu.informationUp = false;
             menu.isProfessionChooser = false;
@@ -424,7 +457,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             if (numPlayers == 0)
             {
                 return;
-            } 
+            }
 
             var numReadySleep = Game1.netReady.GetNumberReady("sleep");
             var numberRequiredSleep = Game1.netReady.GetNumberRequired("sleep");
@@ -432,12 +465,12 @@ namespace JunimoServer.Services.AlwaysOnServer
             // Go to sleep once server is the last player awake
             if (numberRequiredSleep - numReadySleep == 1)
             {
-                _monitor.Log("Called StartSleep");
+                Monitor.Log("Called StartSleep");
 
                 FarmHouse farmHouse = Game1.getLocationFromName("Farmhouse") as FarmHouse;
                 Game1.player.lastSleepLocation.Value = farmHouse.NameOrUniqueName;
                 Game1.player.lastSleepPoint.Value = farmHouse.GetPlayerBedSpot();
-                _helper.Reflection.GetMethod(farmHouse, "startSleep").Invoke();
+                Helper.Reflection.GetMethod(farmHouse, "startSleep").Invoke();
 
                 doWarpRoutineToGetToNextDay = true;
             }
@@ -453,7 +486,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 return;
             }
 
-            _monitor.Log("Attempting to warp to next day");
+            Monitor.Log("Attempting to warp to next day");
 
 
             if (_warpTickCounter % 10 == 1)
@@ -476,7 +509,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             // Check all mails
             for (int i = 0; i < mailboxCount; i++)
             {
-                _helper.Reflection.GetMethod(Game1.currentLocation, "mailbox").Invoke();
+                Helper.Reflection.GetMethod(Game1.currentLocation, "mailbox").Invoke();
             }
         }
 
@@ -537,7 +570,7 @@ namespace JunimoServer.Services.AlwaysOnServer
             {
                 Game1.player.Money -= 5000;
                 Game1.player.mailReceived.Add("JojaMember");
-                _helper.SendPublicMessage("Buying Joja Membership");
+                Helper.SendPublicMessage("Buying Joja Membership");
             }
 
             if (CheckJojaMarketProgress(30000, "jojaBoilerRoom"))
@@ -545,7 +578,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.player.Money -= 15000;
                 Game1.player.mailReceived.Add("ccBoilerRoom");
                 Game1.player.mailReceived.Add("jojaBoilerRoom");
-                _helper.SendPublicMessage("Buying Joja Minecarts");
+                Helper.SendPublicMessage("Buying Joja Minecarts");
             }
 
             if (CheckJojaMarketProgress(40000, "jojaFishTank"))
@@ -553,7 +586,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.player.Money -= 20000;
                 Game1.player.mailReceived.Add("ccFishTank");
                 Game1.player.mailReceived.Add("jojaFishTank");
-                _helper.SendPublicMessage("Buying Joja Panning");
+                Helper.SendPublicMessage("Buying Joja Panning");
             }
 
             if (CheckJojaMarketProgress(50000, "jojaCraftsRoom"))
@@ -561,7 +594,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.player.Money -= 25000;
                 Game1.player.mailReceived.Add("ccCraftsRoom");
                 Game1.player.mailReceived.Add("jojaCraftsRoom");
-                _helper.SendPublicMessage("Buying Joja Bridge");
+                Helper.SendPublicMessage("Buying Joja Bridge");
             }
 
             if (CheckJojaMarketProgress(70000, "jojaPantry"))
@@ -569,7 +602,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.player.Money -= 35000;
                 Game1.player.mailReceived.Add("ccPantry");
                 Game1.player.mailReceived.Add("jojaPantry");
-                _helper.SendPublicMessage("Buying Joja Greenhouse");
+                Helper.SendPublicMessage("Buying Joja Greenhouse");
             }
 
             if (CheckJojaMarketProgress(80000, "jojaVault"))
@@ -577,7 +610,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                 Game1.player.Money -= 40000;
                 Game1.player.mailReceived.Add("ccVault");
                 Game1.player.mailReceived.Add("jojaVault");
-                _helper.SendPublicMessage("Buying Joja Bus");
+                Helper.SendPublicMessage("Buying Joja Bus");
                 Game1.player.eventsSeen.Add("502261");
             }
         }
@@ -611,7 +644,7 @@ namespace JunimoServer.Services.AlwaysOnServer
                     // Lock offline player inventory
                     if (house is Cabin cabin)
                     {
-                        NetMutex inventoryMutex = _helper.Reflection.GetField<NetMutex>(cabin, "inventoryMutex").GetValue();
+                        NetMutex inventoryMutex = Helper.Reflection.GetField<NetMutex>(cabin, "inventoryMutex").GetValue();
                         inventoryMutex.RequestLock();
                     }
 

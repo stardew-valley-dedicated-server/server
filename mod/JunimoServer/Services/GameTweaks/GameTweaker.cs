@@ -1,10 +1,10 @@
-﻿using StardewModdingAPI;
+using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 
 namespace JunimoServer.Services.GameTweaks
 {
-    public class GameTweaker
+    public class GameTweaker : ModService
     {
         public GameTweaker(IModHelper helper)
         {

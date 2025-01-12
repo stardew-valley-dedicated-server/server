@@ -1,4 +1,3 @@
-using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
@@ -9,10 +8,9 @@ namespace JunimoServer.Services.Commands
 {
     public class ListBansCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("listbans", "list bans", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("listbans", "list bans", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
@@ -24,7 +22,7 @@ namespace JunimoServer.Services.Commands
                     helper.SendPrivateMessage(msg.SourceFarmer, "There are 0 banned users.");
                     return;
                 }
-                
+
                 helper.SendPrivateMessage(msg.SourceFarmer, "Banned users:");
 
                 foreach (var (k, v) in Game1.bannedUsers)

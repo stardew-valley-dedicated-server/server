@@ -1,18 +1,14 @@
-﻿using System.Linq;
-using JunimoServer.Services.AlwaysOnServer;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
-using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewValley;
 
 namespace JunimoServer.Services.Commands
 {
     public static class ConsoleCommand
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            //chatCommandApi.RegisterCommand("console",
+            //chatCommandsService.RegisterCommand("console",
             //    "forwards the proceeding command to be run on the server.",
             //    (args, msg) =>
             //    {

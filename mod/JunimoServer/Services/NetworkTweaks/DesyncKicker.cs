@@ -1,18 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using HarmonyLib;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace JunimoServer.Services.NetworkTweaks
 {
-    public class DesyncKicker
+    public class DesyncKicker : ModService
     {
         private const int barrierDesyncMaxTime = 20;
         private const int endOfDayDesyncMaxTime = 60;
@@ -47,8 +45,7 @@ namespace JunimoServer.Services.NetworkTweaks
             _currentEndOfDayCancelToken = new CancellationTokenSource();
             var token = _currentEndOfDayCancelToken.Token;
 
-            Task.Run(async () =>
-            {
+            Task.Run(async () => {
                 _monitor.Log($"waiting {endOfDayDesyncMaxTime} sec to kick non-ready players");
 
                 await Task.Delay(endOfDayDesyncMaxTime * 1000);
@@ -71,8 +68,7 @@ namespace JunimoServer.Services.NetworkTweaks
             _currentNewDayBarrierCancelToken = new CancellationTokenSource();
             var token = _currentNewDayBarrierCancelToken.Token;
 
-            Task.Run(async () =>
-            {
+            Task.Run(async () => {
                 _monitor.Log($"waiting {barrierDesyncMaxTime} sec to kick barrier");
 
                 await Task.Delay(barrierDesyncMaxTime * 1000);
@@ -101,7 +97,7 @@ namespace JunimoServer.Services.NetworkTweaks
 
         private void KickDesyncedPlayers()
         {
-            foreach (var farmer in Game1.otherFarmers.Values.ToArray().Where(farmer => 
+            foreach (var farmer in Game1.otherFarmers.Values.ToArray().Where(farmer =>
                 Game1.player.team.endOfNightStatus.GetStatusText(farmer.UniqueMultiplayerID) != "ready"
             ))
             {

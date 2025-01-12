@@ -116,8 +116,10 @@ This project is not affiliated with or endorsed by ConcernedApe LLC.
 All product names, logos, and brands are property of their respective owners.
 
 This project would not have been possible without the amazing work of many other people :heart:
-* [Junimohost](https://github.com/JunimoHost/junimohost-stardew-server) (from [mrthinger](https://github.com/mrthinger) and [Regnivon](https://github.com/regnivon)) as the base of this dedicated server
-* [AlwaysOn Mod](https://github.com/funny-snek/Always-On-Server-for-Multiplayer) (from [funny-snek](https://github.com/funny-snek)) for writing the original keep-alive logic for the server player
-* [NetworkOptimizer](https://github.com/Ilyaki/NetworkOptimizer) (from [Ilyaki](https://github.com/Ilyaki))
+* [Junimohost](https://github.com/JunimoHost/junimohost-stardew-server) as the base of this dedicated server
+* [AlwaysOn Mod](https://github.com/funny-snek/Always-On-Server-for-Multiplayer) for writing the original keep-alive logic for the server player
+* [NetworkOptimizer](https://github.com/Ilyaki/NetworkOptimizer)
+* [SMAPIDedicatedServer](https://github.com/ObjectManagerManager/SMAPIDedicatedServerMod/tree/main/DedicatedServer)
+* [CabinStacker](https://github.com/reyqn/CabinStacker)
 
-If you think your name belongs here, please feel free to create a PR adding yourself to this list!
+If you think your stuff belongs here, please feel free to create a PR adding it to this list!

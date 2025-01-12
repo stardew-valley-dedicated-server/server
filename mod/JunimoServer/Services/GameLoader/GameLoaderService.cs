@@ -1,18 +1,19 @@
-﻿using System;
-using System.IO;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using System;
+using System.IO;
 
 namespace JunimoServer.Services.GameLoader
 {
-    class GameLoaderService
+    class GameLoaderService : ModService
     {
         private const string SaveKey = "JunimoHost.GameLoader";
 
         private readonly IModHelper _helper;
         private readonly IMonitor _monitor;
         private readonly GameLoaderSaveData _saveData;
+
         public GameLoaderService(IModHelper helper, IMonitor monitor)
         {
             _helper = helper;

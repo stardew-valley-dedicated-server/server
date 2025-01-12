@@ -1,4 +1,3 @@
-﻿using System.Collections.Generic;
 using HarmonyLib;
 using Netcode;
 using StardewModdingAPI;
@@ -6,12 +5,12 @@ using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
 using StardewValley.TerrainFeatures;
+using System.Collections.Generic;
 
 namespace JunimoServer.Services.CropSaver
 {
-    public class CropSaver
+    public class CropSaver : ModService
     {
-
         private readonly CropWatcher _cropWatcher;
         private readonly CropSaverDataLoader _cropSaverDataLoader;
 
@@ -46,8 +45,7 @@ namespace JunimoServer.Services.CropSaver
             }
 
 
-            _cropSaverDataLoader.GetSaverCrops().ForEach(saverCrop =>
-            {
+            _cropSaverDataLoader.GetSaverCrops().ForEach(saverCrop => {
                 var dirt = saverCrop.TryGetCoorespondingDirt();
                 if (dirt != null)
                 {

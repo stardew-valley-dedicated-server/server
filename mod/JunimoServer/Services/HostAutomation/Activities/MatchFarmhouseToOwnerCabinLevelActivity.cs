@@ -1,6 +1,6 @@
-using System.Linq;
 using StardewValley;
 using StardewValley.Locations;
+using System.Linq;
 
 namespace JunimoServer.Services.HostAutomation.Activities
 {
@@ -10,9 +10,22 @@ namespace JunimoServer.Services.HostAutomation.Activities
         {
         }
 
-        protected override void OnTick(int tickNum)
+        protected override void OnTick()
         {
-            var owner = ((Cabin)Game1.getFarm().buildings.First(building => building.isCabin).indoors.Value).owner;
+            SyncFarmhouseLevel();
+        }
+
+        // Sets host farmer HouseUpgradeLevel to the first player/cabin owner, which it is currently always assumed to be the owner
+        private void SyncFarmhouseLevel()
+        {
+            var cabin = Game1.getFarm().buildings.FirstOrDefault(building => building.isCabin);
+            if (cabin == null)
+            {
+                return;
+            }
+
+            var owner = ((Cabin)cabin.GetIndoors()).owner;
+
             if (owner.HouseUpgradeLevel != Game1.player.HouseUpgradeLevel)
             {
                 Game1.player.HouseUpgradeLevel = owner.HouseUpgradeLevel;

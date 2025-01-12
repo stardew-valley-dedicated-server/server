@@ -1,21 +1,11 @@
-﻿using System.Linq;
-using System.Threading;
 using JunimoServer.Services.ChatCommands;
-using JunimoServer.Services.ServerOptim;
 using JunimoServer.Util;
-using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 using StardewValley;
-using StardewValley.Characters;
-using StardewValley.Locations;
 using StardewValley.Menus;
-using StardewValley.Network;
-using StardewValley.Objects;
 using SObject = StardewValley.Object;
 
-namespace JunimoServer.Services.AlwaysOnServer
+namespace JunimoServer.Services.AlwaysOn
 {
     public class AlwaysOnServerFestivals
     {
@@ -56,13 +46,13 @@ namespace JunimoServer.Services.AlwaysOnServer
         protected readonly IMonitor _monitor;
         protected readonly AlwaysOnConfig Config;
 
-        public AlwaysOnServerFestivals(IModHelper helper, IMonitor monitor, IChatCommandApi chatCommandApi, AlwaysOnConfig config)
+        public AlwaysOnServerFestivals(IModHelper helper, IMonitor monitor, ChatCommandsService chatCommandService, AlwaysOnConfig config)
         {
             _helper = helper;
             _monitor = monitor;
             Config = config;
 
-            chatCommandApi.RegisterCommand("event", "Tries to start the current festival's event.", StartEventCommand);
+            chatCommandService.RegisterCommand("event", "Tries to start the current festival's event.", StartEventCommand);
         }
 
         public void UpdateFestivalStatus()

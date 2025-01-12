@@ -1,3 +1,4 @@
+using JunimoServer.Services.AlwaysOn;
 using StardewValley;
 
 namespace JunimoServer.Services.HostAutomation.Activities
@@ -9,14 +10,14 @@ namespace JunimoServer.Services.HostAutomation.Activities
             AutomationUtil.WarpToHidingSpot();
         }
 
-        protected override void OnTick(int tickNum)
+        protected override void OnTick()
         {
-            Game1.displayFarmer = false;
+            Game1.displayFarmer = !AlwaysOnServer.PlayerIsHidden;
         }
 
-        protected override void OnDisabled()
+        protected override void OnEnabled()
         {
-            Game1.displayFarmer = true;
+            Game1.displayFarmer = !AlwaysOnServer.PlayerIsHidden;
         }
     }
 }

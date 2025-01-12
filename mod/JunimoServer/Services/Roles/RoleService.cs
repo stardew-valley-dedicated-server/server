@@ -1,8 +1,9 @@
-using System.Collections.Generic;
-using System.Linq;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewValley;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace JunimoServer.Services.Roles
 {
@@ -17,7 +18,7 @@ namespace JunimoServer.Services.Roles
         public Dictionary<long, Role> Roles = new Dictionary<long, Role>();
     }
 
-    public class RoleService
+    public class RoleService : ModService
     {
         private RoleData _data = new RoleData();
         private const string RoleDataKey = "JunimoHost.Roles.data";
@@ -58,7 +59,10 @@ namespace JunimoServer.Services.Roles
 
         public void UnassignAdmin(long playerId)
         {
-            if (playerId == _helper.GetOwnerPlayerId()) return;
+            if (playerId == _helper.GetOwnerPlayerId())
+            {
+                return;
+            }
 
             _data.Roles[playerId] = Role.Unassigned;
             SaveData();
@@ -72,6 +76,11 @@ namespace JunimoServer.Services.Roles
         public bool IsPlayerOwner(long playerId)
         {
             return _helper.GetOwnerPlayerId() == playerId;
+        }
+
+        public bool IsPlayerOwner(Farmer farmer)
+        {
+            return IsPlayerOwner(farmer.UniqueMultiplayerID);
         }
 
         public long[] GetAdmins()

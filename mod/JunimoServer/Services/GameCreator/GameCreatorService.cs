@@ -1,4 +1,4 @@
-﻿using JunimoServer.Services.CabinManager;
+using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
 using Microsoft.Xna.Framework;
@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace JunimoServer.Services.GameCreator
 {
-    class GameCreatorService
+    class GameCreatorService : ModService
     {
         private readonly CabinManagerService _cabinManagerService;
         private readonly GameLoaderService _gameLoader;
@@ -22,8 +22,7 @@ namespace JunimoServer.Services.GameCreator
 
         public bool GameIsCreating { get; private set; }
 
-        public GameCreatorService(GameLoaderService gameLoader, PersistentOptions options, IMonitor monitor,
-           CabinManagerService cabinManagerService, IModHelper helper)
+        public GameCreatorService(IModHelper helper, IMonitor monitor, GameLoaderService gameLoader, CabinManagerService cabinManagerService, PersistentOptions options)
         {
             _options = options;
             _gameLoader = gameLoader;
@@ -128,13 +127,7 @@ namespace JunimoServer.Services.GameCreator
 
             _gameLoader.SetCurrentGameAsSaveToLoad(config.FarmName);
 
-
-            // Game initializes with one cabin, so we just grab that location for all other stacked cabins
-            var initialCabin = Game1.getFarm().buildings.First(building => building.isCabin);
-            var cabinLocation = new Vector2(initialCabin.tileX.Value, initialCabin.tileY.Value);
-
-            _cabinManagerService.SetDefaultCabinLocation(cabinLocation);
-            _cabinManagerService.MoveCabinToHiddenStack(initialCabin);
+            _cabinManagerService.EnsureAtLeastXCabins();
 
             GameIsCreating = false;
             CreateGameMutex.ReleaseMutex();
