@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GAME_SOURCE_DIR="/data/game"
+MODS_DEST_DIR="/data/Mods"
 GAME_DEST_DIR="/data/Stardew"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
@@ -77,8 +77,6 @@ init_smapi() {
     else
         # Download
         curl -L https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip -o /data/smapi.zip
-
-        # Unzip
         unzip -q /data/smapi.zip -d /data/smapi/
 
         # Install
@@ -89,9 +87,12 @@ init_smapi() {
         # Cleanup
         rm -rf "/data/smapi"
     fi
+}
 
-    # Ensure we see SMAPI logs in docker logs, by reading them using non-blocking background process tail
-    tail -F /config/xdg/config/StardewValley/ErrorLogs/SMAPI-latest.txt &
+init_mods() {
+    rm -rf ${MODS_DEST_DIR}/smapi/
+    mkdir -p ${MODS_DEST_DIR}/smapi/
+    cp -r ${GAME_DEST_DIR}/Mods/* ${MODS_DEST_DIR}/smapi/
 }
 
 init_permissions() {
@@ -119,6 +120,7 @@ init_gui
 init_xauthority
 init_stardew
 init_smapi
+init_mods
 init_permissions
 
 # Run the game
