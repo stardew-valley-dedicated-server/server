@@ -48,7 +48,7 @@ init_stardew() {
 
     steamcmd +@sSteamCmdForcePlatformType linux \
         +force_install_dir ${GAME_DEST_DIR} \
-        +login "${STEAM_USER}" "${STEAM_PASS}" \
+        +login "${STEAM_USER}" "${STEAM_PASS}" "${STEAM_GUARD_CODE}" \
         +app_update 413150 \
         +quit
 
