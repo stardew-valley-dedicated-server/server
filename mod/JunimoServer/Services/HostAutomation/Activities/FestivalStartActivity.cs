@@ -3,7 +3,7 @@ namespace JunimoServer.Services.HostAutomation.Activities
     public class FestivalStartActivity: Activity
     {
 
-        protected override void OnTick(int tickNum)
+        protected override void OnTick()
         {
             // Utility.isFestivalDay(1,"Fall");
             //

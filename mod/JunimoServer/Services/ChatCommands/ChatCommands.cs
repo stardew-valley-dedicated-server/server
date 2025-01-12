@@ -1,10 +1,12 @@
-﻿using System;
+using HarmonyLib;
+using JunimoServer.Services.Roles;
+using JunimoServer.Util;
+using StardewModdingAPI;
+using StardewValley;
+using StardewValley.Menus;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using HarmonyLib;
-using StardewModdingAPI;
-using StardewValley.Menus;
-using JunimoServer.Util;
 
 namespace JunimoServer.Services.ChatCommands
 {
@@ -12,7 +14,7 @@ namespace JunimoServer.Services.ChatCommands
     /// Support server side chat commands without client side mods.
     /// Server checks incoming messages for our custom command pattern `!command arg1 arg2` and reacts accordingly.
     /// </summary>
-    public class ChatCommands : IChatCommandApi
+    public class ChatCommandsService : ModService, IChatCommandApi
     {
         private readonly IMonitor _monitor;
         private readonly IModHelper _helper;
@@ -21,10 +23,13 @@ namespace JunimoServer.Services.ChatCommands
 
         //private static readonly char _commandPrefix = '!';
 
-        public ChatCommands(IMonitor monitor, Harmony harmony, IModHelper helper)
+        public ChatCommandsService(IMonitor monitor, Harmony harmony, IModHelper helper, RoleService roleService)
         {
             _monitor = monitor;
             _helper = helper;
+
+            // Enable cheat/debug commands work (https://stardewvalleywiki.com/Modding:Console_commands#Debug_commands)
+            Program.enableCheats = true;
 
             ChatWatcher.Initialize(OnChatMessage);
 
@@ -33,12 +38,12 @@ namespace JunimoServer.Services.ChatCommands
                 postfix: new HarmonyMethod(typeof(ChatWatcher), nameof(ChatWatcher.receiveChatMessage_Postfix))
             );
 
-            RegisterCommand(new ChatCommand("help", "Displays available commands.", HelpCommand));
-        } 
+            RegisterCommand(new ChatCommand("help", "XXXDisplays available commands.", HelpCommand));
+        }
 
         private void HelpCommand(string[] args, ReceivedMessage msg)
         {
-            if(args.Length > 0)
+            if (args.Length > 0)
             {
                 // Show help for specific commands passed as args
                 foreach (var command in _registeredCommands.Where(command => args.Contains(command.Name)))

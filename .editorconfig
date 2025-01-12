@@ -9,4 +9,3 @@ insert_final_newline = true
 
 [docker/rootfs/*]
 end_of_line = lf
-

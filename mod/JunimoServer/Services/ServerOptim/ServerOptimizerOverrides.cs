@@ -1,6 +1,5 @@
-﻿using StardewModdingAPI;
+using StardewModdingAPI;
 using StardewValley;
-using StardewValley.SDKs;
 using xTile.Display;
 
 namespace JunimoServer.Services.ServerOptim
@@ -15,19 +14,19 @@ namespace JunimoServer.Services.ServerOptim
             _monitor = monitor;
         }
 
-        
+
         public static bool AssignNullDisplay_Prefix()
         {
             Game1.mapDisplayDevice = new NullDisplayDevice();
             return false;
         }
-        
+
         public static bool ReturnNullDisplay_Prefix(IDisplayDevice __result)
         {
             __result = new NullDisplayDevice();
             return false;
         }
-        
+
         public static void CreateLobby_Prefix(ref ServerPrivacy privacy, ref uint memberLimit)
         {
             // Used by GoG
@@ -39,7 +38,7 @@ namespace JunimoServer.Services.ServerOptim
         {
             return false;
         }
-        
+
         // ReSharper disable once InconsistentNaming
         public static bool Draw_Prefix(GameRunner __instance)
 

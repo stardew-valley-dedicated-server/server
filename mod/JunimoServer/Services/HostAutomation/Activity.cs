@@ -4,7 +4,6 @@ namespace JunimoServer.Services.HostAutomation
     {
         private bool _enabled = false;
         private readonly int _everyXTicks;
-        private int _tickNum = 0;
         private int _ticksToWaitRemaining = 0;
 
         public Activity(int everyXTicks = 1)
@@ -12,51 +11,58 @@ namespace JunimoServer.Services.HostAutomation
             _everyXTicks = everyXTicks;
         }
 
-        protected virtual void OnTick(int tickNum)
-        {
-        }
+        protected virtual void OnTick() { }
 
-        protected virtual void OnEnabled()
-        {
-        }
+        protected virtual void OnEnabled() { }
 
-        protected virtual void OnDisabled()
-        {
-        }
-        
-        protected virtual void OnDayStart(){}
+        protected virtual void OnDisabled() { }
+
+        protected virtual void OnDayStart() { }
 
         public void HandleDayStart()
         {
-            if (!_enabled) return;
+            if (!_enabled)
+            {
+                return;
+            }
+
             OnDayStart();
         }
-        
+
         public void HandleTick()
         {
-            if (!_enabled) return;
-
-            _ticksToWaitRemaining--;
+            if (!_enabled)
+            {
+                return;
+            }
 
             if (_ticksToWaitRemaining <= 0)
             {
-                OnTick(_tickNum);
+                OnTick();
                 _ticksToWaitRemaining += _everyXTicks;
             }
-            _tickNum++;
-            _tickNum %= 1000;
+
+            _ticksToWaitRemaining--;
         }
 
         public void Enable()
         {
-            if (_enabled) return;
+            if (_enabled)
+            {
+                return;
+            }
+
             _enabled = true;
             OnEnabled();
         }
 
         public void Disable()
         {
-            if (!_enabled) return;
+            if (!_enabled)
+            {
+                return;
+            }
+
             _enabled = false;
             OnDisabled();
         }

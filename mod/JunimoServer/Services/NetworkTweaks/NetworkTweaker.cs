@@ -1,4 +1,3 @@
-using System;
 using JunimoServer.Services.PersistentOption;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -6,29 +5,26 @@ using StardewValley;
 
 namespace JunimoServer.Services.NetworkTweaks
 {
-    public class NetworkTweaker
+    public class NetworkTweaker : ModService
     {
         private readonly PersistentOptions _options;
-        private readonly IModHelper _helper;
 
-        private readonly IMonitor _monitor;
-
-        public NetworkTweaker(IModHelper helper, IMonitor monitor, PersistentOptions options)
+        public NetworkTweaker(IModHelper helper, PersistentOptions options)
         {
             _options = options;
-            _helper = helper;
-            _monitor = monitor;
 
             helper.Events.GameLoop.UpdateTicked += OnTick;
         }
 
         private void OnTick(object sender, UpdateTickedEventArgs e)
         {
-            if (Game1.netWorldState.Value == null || !Game1.hasLoadedGame) return;
-
-            HandlePlayerLimit();
+            if (Game1.netWorldState.Value == null || !Game1.hasLoadedGame)
+            {
+                return;
+            }
 
             HandleNetworkSettings();
+            HandlePlayerLimit();
         }
 
         private void HandleNetworkSettings()

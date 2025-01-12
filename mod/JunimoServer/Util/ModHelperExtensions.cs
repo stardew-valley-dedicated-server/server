@@ -1,18 +1,14 @@
-﻿using System;
+using Microsoft.Xna.Framework.Graphics;
+using StardewModdingAPI;
+using StardewModdingAPI.Utilities;
+using StardewValley;
+using StardewValley.Locations;
+using StardewValley.SDKs;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading;
-using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
-using StardewModdingAPI;
-using StardewModdingAPI.Utilities;
-using StardewValley;
-using StardewValley.BellsAndWhistles;
-using StardewValley.Locations;
-using StardewValley.SDKs;
-using StardewValley.WorldMaps;
 
 namespace JunimoServer.Util
 {
@@ -70,13 +66,19 @@ namespace JunimoServer.Util
 
         public static long GetOwnerPlayerId(this IModHelper helper)
         {
-            if (Game1.activeClickableMenu == null)
+            var farm = Game1.getFarm();
+            var building = farm.buildings.FirstOrDefault(building => building.isCabin);
+
+            if (building == null)
             {
                 return -1;
             }
 
-            helper.Reflection.GetMethod(Game1.activeClickableMenu, "okClicked").Invoke();
-            return ((Cabin)Game1.getFarm().buildings.First(building => building.isCabin).indoors.Value).owner.UniqueMultiplayerID;
+            var indoors = ((Cabin)building.GetIndoors());
+            var ownerId = indoors.owner.UniqueMultiplayerID;
+            var ownerName = indoors.owner.Name;
+
+            return ownerId;
         }
 
         public static void WriteServerJsonFile(this IDataHelper dataHelper, string path, object data)
@@ -130,13 +132,5 @@ namespace JunimoServer.Util
 
             return path;
         }
-
-        //private static void AssertSlug(string key, string paramName)
-        //{
-        //    if (!PathUtilities.IsSlug(key))
-        //    {
-        //        throw new ArgumentException("The data key is invalid (keys must only contain letters, numbers, underscores, periods, or hyphens).", paramName);
-        //    }
-        //}
     }
 }

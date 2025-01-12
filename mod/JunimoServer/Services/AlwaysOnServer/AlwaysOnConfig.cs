@@ -1,10 +1,11 @@
-﻿using StardewModdingAPI;
+using StardewModdingAPI;
 
-namespace JunimoServer.Services.AlwaysOnServer
+namespace JunimoServer.Services.AlwaysOn
 {
     public class AlwaysOnConfig
     {
-        public SButton ServerHotKey { get; set; } = SButton.F9;
+        public SButton HotKeyToggleAutoMode { get; set; } = SButton.F9;
+        public SButton HotKeyToggleVisibility { get; set; } = SButton.F10;
 
         public string PetName { get; set; } = "Apples";
         public bool FarmCaveChoiceIsMushrooms { get; set; } = true;

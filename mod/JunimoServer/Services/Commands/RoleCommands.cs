@@ -1,18 +1,15 @@
-using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewValley;
 
 namespace JunimoServer.Services.Commands
 {
     public static class RoleCommands
     {
-        public static void Register(IModHelper helper, IChatCommandApi chatCommandApi, RoleService roleService)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandApi.RegisterCommand("admin", "\"farmerName|userName\" to assign admin status to the player.", (args, msg) =>
-            {
+            chatCommandsService.RegisterCommand("admin", "\"farmerName|userName\" to assign admin status to the player.", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
@@ -36,8 +33,8 @@ namespace JunimoServer.Services.Commands
                 roleService.AssignAdmin(farmerToAdmin.UniqueMultiplayerID);
                 helper.SendPrivateMessage(msg.SourceFarmer, "Assigned Admin to: " + farmerToAdmin.Name);
             });
-            chatCommandApi.RegisterCommand("unadmin", "\"farmerName|userName\" to take away admin status from the player.", (args, msg) =>
-            {
+
+            chatCommandsService.RegisterCommand("unadmin", "\"farmerName|userName\" to take away admin status from the player.", (args, msg) => {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
