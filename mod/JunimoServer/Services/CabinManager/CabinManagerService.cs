@@ -8,9 +8,12 @@ using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Buildings;
+using StardewValley.Locations;
 using StardewValley.Network;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace JunimoServer.Services.CabinManager
 {
@@ -30,9 +33,9 @@ namespace JunimoServer.Services.CabinManager
 
     public class CabinManagerService : ModService
     {
-        private static CabinManagerData _data;
+        private CabinManagerData _data;
 
-        public static CabinManagerData Data
+        public CabinManagerData Data
         {
             get => _data;
             set
@@ -125,7 +128,13 @@ namespace JunimoServer.Services.CabinManager
                     // TODO: b) Send request to allow entering to farmhouse owner, could this be useful?
                     if (!roleService.IsPlayerOwner(farmer))
                     {
-                        farmer.WarpToHomeCabin(options.Data.CabinStrategy);
+                        Game1.Multiplayer.sendChatMessage(
+                            LocalizedContentManager.CurrentLanguageCode,
+                            "Can't enter main building, porting to your own cabin",
+                            farmer.UniqueMultiplayerID
+                        );
+
+                        farmer.WarpHome();
                     }
                 }
             }
@@ -136,20 +145,49 @@ namespace JunimoServer.Services.CabinManager
         public void EnsureAtLeastXCabins()
         {
             var farm = Game1.getFarm();
-            var emptyCabinCount = farm.GetCabinHiddenCount();
+            var emptyCabinCount = GetCabinHiddenCount(farm);
             var cabinsMissingCount = minEmptyCabins - emptyCabinCount;
 
-            // For now we have hardcoded minEmptyCabins = 1, basically create a new empty cabin whenever the current one was picked
+            // TODO: Currently using hardcoded minEmptyCabins = 1, essentially creates a new empty cabin as soon as the "current" free cabin got picked... lets see if that works with concurrency.
             Monitor.Log($"Cabin check: {{ min: '{minEmptyCabins}', empty: '{emptyCabinCount}', missing: '{cabinsMissingCount}' }}", LogLevel.Debug);
 
             for (var i = 0; i < cabinsMissingCount; i++)
             {
                 Monitor.Log($"Cabin check: building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Debug);
-                if (!farm.BuildNewCabin())
+
+                if (!BuildNewCabin(farm))
                 {
                     Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}'", LogLevel.Error);
                 }
             }
+        }
+
+        private int GetCabinHiddenCount(GameLocation farm)
+        {
+            return farm.buildings
+                .Where(building => building.isCabin)
+                .Count(cabin => !Data.AllPlayerIdsEverJoined.Contains(cabin.GetIndoors<Cabin>().owner.UniqueMultiplayerID));
+        }
+
+        public bool BuildNewCabin(GameLocation location)
+        {
+            var cabinTilePosition = HiddenCabinLocation.ToVector2();
+
+            var cabin = new Building("Cabin", cabinTilePosition);
+            cabin.skinId.Value = "Log Cabin";
+            cabin.magical.Value = true;
+            cabin.daysOfConstructionLeft.Value = 0;
+            cabin.load();
+
+            // Cabin now exists within the game data, but still needs to be placed in its desired location
+            if (location.buildStructure(cabin, cabinTilePosition, Game1.player, true))
+            {
+                // Usually cabins are placed out-of-bounds, so this is just for good measure
+                cabin.ClearTerrainBelow();
+                return true;
+            }
+
+            return false;
         }
     }
 }

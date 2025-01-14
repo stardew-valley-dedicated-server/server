@@ -1,5 +1,4 @@
 using JunimoServer.Services.CabinManager;
-using System.Xml.Serialization;
 
 namespace JunimoServer.Services.PersistentOption
 {

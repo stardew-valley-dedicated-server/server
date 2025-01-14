@@ -11,6 +11,7 @@
 		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
         <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
         <IgnoreModFilePaths>System.Threading.Channels.dll</IgnoreModFilePaths>
+        <Nullable>annotations</Nullable>
   </PropertyGroup>
 
 	<ItemGroup>

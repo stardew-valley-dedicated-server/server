@@ -3,7 +3,6 @@ using JunimoServer.Services.PersistentOption;
 using JunimoServer.Util;
 using Netcode;
 using StardewValley;
-using StardewValley.Buildings;
 using StardewValley.Locations;
 
 namespace JunimoServer.Services.CabinManager
@@ -27,37 +26,51 @@ namespace JunimoServer.Services.CabinManager
 
         public static void OnLocationIntroductionMessage(MessageContext context)
         {
-            if (!options.IsCabinStack)
+            // Parse message
+            var forceCurrentLocation = context.Reader.ReadBoolean();
+            var location = NetRoot<GameLocation>.Connect(context.Reader);
+
+            // Check location
+            if (location.Value is not Farm)
             {
                 return;
             }
 
-            var forceCurrentLocation = context.Reader.ReadBoolean();
-            var location = NetRoot<GameLocation>.Connect(context.Reader);
+            GameLocation farm;
 
-            // Using a local copy of GameLocation, so changes only apply
-            // when we pass it along the intercepted outgoing message
-            if (location.Value is Farm farm)
+            if (options.IsFarmHouseStack)
             {
-                if (farm.GetCabinHidden(context.PeerId, out Building cabin))
-                {
-                    cabin.Relocate(StackLocation.Create().ToPoint());
+                // Update warps on server
+                farm = Game1.getFarm();
+                var cabin = farm.GetCabin(context.PeerId);
 
-                    // Replace the outgoing message with the modified data
-                    context.ModifiedMessage = NetworkHelper.CreateMessageLocationIntroduction(context.PeerId, location, forceCurrentLocation);
-
-                    // TODO: Would be nice to also have at least one cabin visible on server, but code
-                    // below won't work as it physically moves and persists the cabin for all players 
-                    //Game1.getFarm().GetCabinHidden(context.PeerId).Relocate(StackLocation.Create().ToPoint());
-                }
+                cabin.SetWarpsToFarmFarmhouseDoor();
             }
+            else
+            {
+                // Update position and warps for this client only
+                farm = location.Value;
+                var cabin = farm.GetCabin(context.PeerId);
+
+                cabin.Relocate(StackLocation.Create().ToPoint());
+            }
+
+            context.ModifiedMessage = NetworkHelper.CreateMessageLocationIntroduction(context.PeerId, farm.Root, forceCurrentLocation);
         }
 
         public static void OnLocationDeltaMessage(MessageContext context)
         {
-            if (options.IsCabinStack && NetworkHelper.IsLocationDeltaMessageForLocation(context, out Cabin cabin))
+            if (NetworkHelper.IsLocationDeltaMessageForLocation(context, out Cabin cabin))
             {
-                cabin.ParentBuilding.updateInteriorWarps(cabin);
+                if (options.IsFarmHouseStack)
+                {
+                    cabin.SetWarpsToFarmFarmhouseDoor();
+                }
+                else
+                {
+                    cabin.SetWarpsToFarmCabinDoor();
+
+                }
             }
         }
     }

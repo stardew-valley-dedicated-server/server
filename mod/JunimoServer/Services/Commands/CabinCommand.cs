@@ -45,8 +45,11 @@ namespace JunimoServer.Services.Commands
                         return;
                     }
 
-                    // TODO: Add checks to prevent placing cabin out-of-bounds, over trees, buildings etc.
-                    // TODO: Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
+
+                    // TODO:
+                    // a) When cabin was relocated out of the stack, move a dummy/placeholder/other cabin in place of the stack location
+                    // b) Add checks to prevent placing cabin out-of-bounds, over trees, buildings etc.
+                    // c) Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
                     //  - 'cabin move [direction=top|right|bottom|left]': Start "ghost" mode, manipulate LocationIntroduction package to show building as ghost without updating warp targets etc?
                     //  - 'cabin cancel': Cancel the move, reset to position from before the ghost mode
                     //  - 'cabin confirm': Confirm the move, update warp targets etc

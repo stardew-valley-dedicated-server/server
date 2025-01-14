@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace JunimoServer
 {
@@ -22,5 +23,8 @@ namespace JunimoServer
         // TODO: Once web UI is available, add info to docs about how "host.docker.internal:3000" can be used to connect to local web UI (dev mode)
         public static readonly string WebSocketServerAddress =
             Environment.GetEnvironmentVariable("WEB_SOCKET_SERVER_ADDRESS") ?? "stardew-dedicated-web:3000";
+
+        public static readonly bool HasServerBypassCommandLineArg =
+            Environment.GetCommandLineArgs().Any("--client".Contains);
     }
 }
