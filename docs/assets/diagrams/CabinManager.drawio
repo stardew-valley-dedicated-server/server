@@ -1,0 +1,122 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0" version="26.0.5">
+  <diagram id="C5RBs43oDa-KdzZeNtuy" name="Page-1">
+    <mxGraphModel dx="1034" dy="1079" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="WIyWlLk6GJQsqaUBKTNV-0" />
+        <mxCell id="WIyWlLk6GJQsqaUBKTNV-1" parent="WIyWlLk6GJQsqaUBKTNV-0" />
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-95" value="" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=none;strokeColor=#6c8ebf;fillColor=#dae8fc;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="280" y="620" width="530" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-94" value="" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=none;strokeColor=#6c8ebf;fillColor=#dae8fc;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="280" y="240" width="530" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-0" value="CabinManager Overview" style="text;strokeColor=none;fillColor=none;html=1;fontSize=24;fontStyle=1;verticalAlign=middle;align=center;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="495" y="40" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-71" value="" style="edgeStyle=orthogonalEdgeStyle;shape=flexArrow;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-28">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="545" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-28" value="Player connected" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="485" y="120" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-48" value="" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-39" target="lFv3QJc8qxP4ShpyzfSH-47">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-39" value="Intercept LocationIntroduction Message for &lt;b&gt;Farm&lt;/b&gt;" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="485" y="260" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-50" value="Yes" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-47" target="lFv3QJc8qxP4ShpyzfSH-49">
+          <mxGeometry x="-0.1111" y="-20" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-52" value="No" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-47" target="lFv3QJc8qxP4ShpyzfSH-51">
+          <mxGeometry x="-0.1111" y="20" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-56" value="" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-47" target="lFv3QJc8qxP4ShpyzfSH-65">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="545" y="475" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-47" value="Is CabinStrategy FarmhouseStack?" style="rhombus;whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="465" y="360" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-82" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-49" target="lFv3QJc8qxP4ShpyzfSH-65">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="365" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-49" value="Override warp target on cabin in Game1 (&lt;b&gt;server + client&lt;/b&gt;)" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="305" y="360" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-81" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-51" target="lFv3QJc8qxP4ShpyzfSH-65">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-51" value="Override position and warp target on cabin in parsed message (&lt;b&gt;client only&lt;/b&gt;)" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="665" y="360" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-60" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-47" target="lFv3QJc8qxP4ShpyzfSH-47">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-61" value="No" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-62" target="lFv3QJc8qxP4ShpyzfSH-63">
+          <mxGeometry y="10" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-91" value="" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-62" target="lFv3QJc8qxP4ShpyzfSH-89">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-62" value="&lt;div&gt;Has enough&amp;nbsp;&lt;/div&gt;&lt;div&gt;empty cabins?&lt;/div&gt;" style="rhombus;whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="465" y="740" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-63" value="Create cabin in hidden location" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="665" y="750" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-73" value="" style="edgeStyle=orthogonalEdgeStyle;shape=flexArrow;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-94" target="lFv3QJc8qxP4ShpyzfSH-95">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-65" value="&lt;div&gt;Override outgoing LocationIntroduction message&lt;/div&gt;" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="485" y="480" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-70" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="260" y="240" width="40" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-84" value="" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-72" target="lFv3QJc8qxP4ShpyzfSH-62">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-72" value="Game sends ServerIntroduction" style="whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="487.5" y="640" width="115" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-80" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Message:&lt;br&gt;LocationIntroduction&lt;/h1&gt;&lt;p&gt;Before sending the LocationIntroduction message, we intercept it and override the cabin position and its warp targets according to the active CabinStrategy.&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="20" y="335" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-83" value="" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.annotation_2;align=left;labelPosition=right;pointerEvents=1;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="260" y="620" width="40" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-85" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Message:&lt;br&gt;ServerIntroduction&lt;/h1&gt;&lt;p&gt;After sending the ServerIntroduction message, we ensure the configured amount of empty cabins are built to allow further players to join.&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="20" y="715" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-89" value="Player ready" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=none;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="495" y="860" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lFv3QJc8qxP4ShpyzfSH-92" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;shadow=0;strokeColor=default;strokeWidth=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=none;endArrow=block;endFill=0;endSize=8;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="lFv3QJc8qxP4ShpyzfSH-63" target="lFv3QJc8qxP4ShpyzfSH-89">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="890" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

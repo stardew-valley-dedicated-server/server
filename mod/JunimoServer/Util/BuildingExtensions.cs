@@ -4,6 +4,7 @@ using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
 
+#nullable enable
 namespace JunimoServer.Util
 {
     public static class BuildingExtensions
@@ -22,15 +23,33 @@ namespace JunimoServer.Util
             location.removeObjectsAndSpawned(building.tileX.Value + 2, building.tileY.Value + 3, 1, 1);
         }
 
-        public static T GetIndoors<T>(this Building building) where T : GameLocation
+        public static T? GetIndoors<T>(this Building building) where T : GameLocation
         {
             return (T)building.GetIndoors();
         }
 
-        public static Cabin GetCabinIndoors(this Building building)
+        public static bool IsInHiddenStack(this Building building)
         {
-            return building.GetIndoors<Cabin>();
+            return building.tileX.Value == CabinManagerService.HiddenCabinLocation.X && building.tileY.Value == CabinManagerService.HiddenCabinLocation.Y;
         }
+
+        public static bool IsOwnedBy(this Building building, long ownerId)
+        {
+            if (building == null || !building.isCabin)
+            {
+                return false;
+            }
+
+            var cabin = building.GetIndoors<Cabin>();
+            if (cabin == null)
+            {
+                return false;
+            }
+
+            // building.owner?
+            return cabin.IsOwnedBy(ownerId);
+        }
+
 
         public static void Relocate(this Building cabin, float x, float y)
         {
@@ -45,36 +64,11 @@ namespace JunimoServer.Util
         public static void Relocate(this Building cabin, Point position)
         {
             cabin.SetPosition(position);
-
-            // Update the warp targets so players don't exit at the hidden stack location
-            cabin.RefreshCabinToFarmWarps();
-
-            // Clear terrain below building to prevent blocking debris on the porch
-            // TODO: Use `cabin.GetParentLocation().OnBuildingMoved(cabin)`?
+            cabin.SetWarpsToFarmCabinDoor();
             cabin.ClearTerrainBelow();
+            // TODO: Use `cabin.GetParentLocation().OnBuildingMoved(cabin)`?
         }
 
-        // TODO: BELONGS TO CABIN
-        public static bool IsOwnedBy(this Building building, long ownerId)
-        {
-            if (building == null || !building.isCabin)
-            {
-                return false;
-            }
-
-            var indoors = building.GetCabinIndoors();
-            if (indoors == null)
-            {
-                return false;
-            }
-
-            return indoors.owner.UniqueMultiplayerID == ownerId;
-        }
-
-        public static bool IsInHiddenStack(this Building building)
-        {
-            return building.tileX.Value == CabinManagerService.HiddenCabinLocation.X && building.tileY.Value == CabinManagerService.HiddenCabinLocation.Y;
-        }
 
         public static void SetPosition(this Building building, Vector2 position)
         {
@@ -87,22 +81,20 @@ namespace JunimoServer.Util
             building.tileY.Value = position.Y;
         }
 
-        // TODO: BELONGS TO CABIN
-        public static void SetCabinToFarmWarps(this Building building, Point position)
-        {
-            var cabin = building.GetIndoors<Cabin>();
 
-            foreach (var warp in cabin.GetWarpsToFarm())
-            {
-                warp.TargetX = position.X;
-                warp.TargetY = position.Y;
-            }
+        public static void SetWarpsToFarm(this Building building, Point position)
+        {
+            building.GetIndoors<Cabin>()?.SetWarpsToFarm(position);
         }
 
-        // TODO: BELONGS TO CABIN
-        public static void RefreshCabinToFarmWarps(this Building building)
+        public static void SetWarpsToFarmCabinDoor(this Building building)
         {
-            building.SetCabinToFarmWarps(new Point(building.tileX.Value + 2, building.tileY.Value + 2));
+            building.GetIndoors<Cabin>()?.SetWarpsToFarmCabinDoor();
+        }
+
+        public static void SetWarpsToFarmFarmhouseDoor(this Building building)
+        {
+            building.GetIndoors<Cabin>()?.SetWarpsToFarmFarmhouseDoor();
         }
     }
 }

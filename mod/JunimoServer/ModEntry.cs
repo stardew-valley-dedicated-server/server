@@ -8,6 +8,7 @@ using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using Microsoft.Extensions.DependencyInjection;
 using StardewModdingAPI;
+using StardewModdingAPI.Events;
 using StardewValley;
 using System;
 using System.Linq;
@@ -24,15 +25,36 @@ namespace JunimoServer
 
         public override void Entry(IModHelper helper)
         {
-            Game1.options.pauseWhenOutOfFocus = false;
+            // TODO:
+            // a) Create "SDVD Debug Client" mod (features: disable pause when out of focus)
+            // b) Create "SDVD Client" mod: POC for enhanced server <-> client functions with custom network message/behavior
+            // Disables pause when out of focus, currently useful for testing since clients start up faster this way
+            Helper.Events.GameLoop.GameLaunched += OnGameLaunched;
+            Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
 
-            ShowStartupBanner();
+            if (Env.HasServerBypassCommandLineArg)
+            {
+                Monitor.Log($"Found '--client' command line argument, skipping {ModManifest.Name}", LogLevel.Debug);
+                return;
+            }
+
+            PrintStartupBanner();
 
             RegisterServices();
             RegisterChatCommands();
         }
 
-        private void ShowStartupBanner()
+        private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
+        {
+            Game1.options.pauseWhenOutOfFocus = false;
+        }
+
+        private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
+        {
+            Game1.options.pauseWhenOutOfFocus = false;
+        }
+
+        private void PrintStartupBanner()
         {
             var externalIp = NetworkHelper.GetIpAddressExternal();
             var externalIpValue = externalIp == IPAddress.None ? "n/a" : externalIp.ToString();
