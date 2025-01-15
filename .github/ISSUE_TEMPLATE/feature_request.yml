@@ -3,7 +3,7 @@ description: "Suggest a feature that will improve the project"
 labels: ["enhancement", "needs-verification"]
 body:
 - type: textarea
-  id: feature-description
+  id: feature-problem
   attributes:
     label: Is your feature request related to a problem?
     description: A clear and concise description of what the problem is. Include possible use cases and alternative solutions you have considered.
