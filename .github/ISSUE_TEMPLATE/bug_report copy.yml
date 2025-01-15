@@ -1,0 +1,51 @@
+name: "🐞 Bug report"
+description: "Create a report to help improve the project"
+labels: ["bug", "needs-verification"]
+body:
+- type: textarea
+  id: bug-description
+  attributes:
+    label: Describe the bug
+    description: A clear and concise description of what the bug is. If you intend to submit a PR for this issue, tell us in the description. Thanks!
+    placeholder: Bug description
+  validations:
+    required: true
+
+- type: textarea
+  id: bug-reproduction
+  attributes:
+    label: Reproduction
+    description: A clear and concise description with steps to reproduce the bug.
+    placeholder: |
+      1. Do [...]
+      2. Click on [...]
+      3. See error [...]
+  validations:
+    required: true
+
+- type: textarea
+  id: bug-expected
+  attributes:
+    label: Expected Behavior
+    description: A clear and concise description of what you expected to happen.
+  validations:
+    required: true
+
+- type: textarea
+  id: bug-additional
+  attributes:
+    label: Additional context
+    description: Additional information or screenshots about the problem.
+  validations:
+    required: false
+
+- type: checkboxes
+  id: bug-required-info
+  attributes:
+    label: Final checks
+    description: Before submitting, please make sure you do the following
+    options:
+      - label: Read the [contribution guide](https://github.com/stardew-valley-dedicated-server/server/blob/master/docs/contributing.md).
+        required: true
+      - label: Check existing [issues](https://github.com/stardew-valley-dedicated-server/server/issues).
+        required: true
