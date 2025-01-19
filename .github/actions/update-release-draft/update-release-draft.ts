@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { inc } from 'semver'
-import { generateMarkDown, getCurrentGitBranch, loadChangelogConfig, SemverBumpType, setGithubToken } from 'changelogen'
+import { generateMarkDown, getCurrentGitBranch, loadChangelogConfig, SemverBumpType } from 'changelogen'
 import core from '@actions/core';
 import {
     determineBumpType,
@@ -11,6 +11,7 @@ import {
     getPr,
     createPR,
     updatePR,
+    setGithubToken,
 } from './utils'
 
 async function main () {
