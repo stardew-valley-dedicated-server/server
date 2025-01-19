@@ -142,11 +142,12 @@ export async function getContributors () {
   return contributors
 }
 
+export async function setGithubToken() {
+    return execSync(`git remote set-url origin https://${process.env.GITHUB_TOKEN}@github.com/${GIT_REPO}.git/`);
+}
+
 export async function branchExists(branchName: string) {
     return execSync(`git ls-remote --heads origin ${branchName}`).toString().trim().length > 0;
-}
-export async function branchExists(branchName: string) {
-    return execSync(`git remote set-url origin https://${process.env.GITHUB_TOKEN}@github.com/${GIT_REPO}.git/`);
 }
 
 export async function getPr(newVersion: string) {

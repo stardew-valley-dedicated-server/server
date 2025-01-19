@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { inc } from 'semver'
-import { generateMarkDown, getCurrentGitBranch, loadChangelogConfig, SemverBumpType } from 'changelogen'
+import { generateMarkDown, getCurrentGitBranch, loadChangelogConfig, SemverBumpType, setGithubToken } from 'changelogen'
 import core from '@actions/core';
 import {
     determineBumpType,
@@ -29,6 +29,7 @@ async function main () {
     const newVersion = inc(manifest.version, bumpType);
     assert(newVersion, `Missing 'newVersion'`);
 
+    setGithubToken();
 
     // Passing `newVersion` to ensure a proper changelog comparison link
     const config = await loadChangelogConfig(process.cwd(), { newVersion });
