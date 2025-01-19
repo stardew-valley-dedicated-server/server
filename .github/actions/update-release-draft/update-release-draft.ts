@@ -29,6 +29,7 @@ async function main () {
     const newVersion = inc(manifest.version, bumpType);
     assert(newVersion, `Missing 'newVersion'`);
 
+
     // Passing `newVersion` to ensure a proper changelog comparison link
     const config = await loadChangelogConfig(process.cwd(), { newVersion });
     const commits = await getCommitsForChangelog(config);

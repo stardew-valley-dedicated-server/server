@@ -145,6 +145,9 @@ export async function getContributors () {
 export async function branchExists(branchName: string) {
     return execSync(`git ls-remote --heads origin ${branchName}`).toString().trim().length > 0;
 }
+export async function branchExists(branchName: string) {
+    return execSync(`git remote set-url origin https://${process.env.GITHUB_TOKEN}@github.com/${GIT_REPO}.git/`);
+}
 
 export async function getPr(newVersion: string) {
     return $fetch(`https://api.github.com/repos/${GIT_REPO}/pulls?head=${GIT_HEAD}:v${newVersion}`)
