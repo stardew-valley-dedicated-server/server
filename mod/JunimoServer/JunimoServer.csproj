@@ -1,8 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
-		<Version>1.0.0-alpha</Version>
+		<Version>1.0.0</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>true</EnableModDeploy>
@@ -15,12 +15,12 @@
   </PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Google.Protobuf" Version="3.21.5" />
-		<PackageReference Include="Grpc.Net.Client" Version="2.48.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
-		<PackageReference Include="Websocket.Client" Version="5.1.0" />
+		<PackageReference Include="Google.Protobuf" Version="3.21.5"/>
+		<PackageReference Include="Grpc.Net.Client" Version="2.48.0"/>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+		<PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
+		<PackageReference Include="Websocket.Client" Version="5.1.0"/>
 	</ItemGroup>
 
 	<ItemGroup>
