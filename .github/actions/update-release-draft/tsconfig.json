@@ -1,0 +1,10 @@
+{
+    // https://www.totaltypescript.com/tsconfig-cheat-sheet
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "Node",
+        "esModuleInterop": true,
+        "noImplicitAny": false
+    },
+}
