@@ -45,3 +45,5 @@ logs
 
 # Extra mods
 /mods
+
+node_modules

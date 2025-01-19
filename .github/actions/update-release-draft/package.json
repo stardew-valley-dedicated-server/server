@@ -1,0 +1,22 @@
+{
+  "name": "update-release-draft",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@actions/core": "^1.11.1",
+    "@types/node": "^22.10.7",
+    "@types/semver": "^7.5.8",
+    "changelogen": "^0.5.7",
+    "ofetch": "^1.4.1",
+    "semver": "^7.6.3",
+    "tinyexec": "^0.3.2",
+    "xml-js": "^1.6.11"
+  }
+}
