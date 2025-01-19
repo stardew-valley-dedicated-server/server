@@ -73,8 +73,8 @@ jobs:
   #         make push
 
   update:
-    # Only when running on our own repo, and only for non-draft release PRs
-    if: github.repository_owner == 'stardew-valley-dedicated-server' && !contains(github.event.head_commit.message, 'v1.')
+    # Only when running on our own repo, and only for non-draft release PRs (meaning not starting with v1.)
+    if: github.repository_owner == 'stardew-valley-dedicated-server' && !startsWith(github.event.head_commit.message, 'v1.')
     runs-on: ubuntu-latest
 
     permissions:
@@ -86,22 +86,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: webfactory/ssh-agent@v0.9.0
+      - name: Setup SSH for Testing with ACT
+        uses: webfactory/ssh-agent@v0.9.0
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        if: ${{ env.SSH_PRIVATE_KEY != '' }}
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Install BunJS ${{ env.BUNJS_VERSION }}
+      - name: Install BunJS
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUNJS_VERSION }}
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           bun install --cwd ./.github/actions/update-release-draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update draft
+      - name: Update Release Draft
         run: |
           bun ./.github/actions/update-release-draft/update-release-draft.ts
         env:

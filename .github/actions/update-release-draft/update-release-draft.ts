@@ -30,8 +30,6 @@ async function main () {
     const newVersion = inc(manifest.version, bumpType);
     assert(newVersion, `Missing 'newVersion'`);
 
-    setGithubToken();
-
     // Passing `newVersion` to ensure a proper changelog comparison link
     const config = await loadChangelogConfig(process.cwd(), { newVersion });
     const commits = await getCommitsForChangelog(config);
@@ -41,9 +39,11 @@ async function main () {
     // Get the current PR for this release, if it exists
     const [currentPR] = await getPr(newVersion);
 
+    const nextReleaseType = bumpType === 'prerelease' ? 'prerelease' : `${bumpType} release`;
+
     // On existing PR -> remove changelog and below
     // On new PR -> add timetable above changelog
-    const body = currentPR?.body.replace(/## 👉 Changelog[\s\S]*$/, '') || `> ${newVersion} is the next ${bumpType} release.\n>\n> **Timetable**: to be announced.`;
+    const body = currentPR?.body.replace(/## 👉 Changelog[\s\S]*$/, '') || `> ${newVersion} is the next ${nextReleaseType}.\n>\n> **Timetable**: to be announced.`;
 
     const changelog = (await generateMarkDown(commits, config))
         // Remove default title, it should not be part of the description
