@@ -1,0 +1,111 @@
+name: release draft
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  BUNJS_VERSION: "1.2.0"
+  DOTNET_VERSION: "6.0.302"
+  SMAPI_VERSION: "4.1.10"
+  GAME_DEST_DIR: "${{ github.workspace }}/Stardew Valley"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  # build:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Download sources
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+  #     - name: Setup .NET ${{ env.DOTNET_VERSION }}
+  #       uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: ${{ env.DOTNET_VERSION }}
+
+  #     - name: Setup BunJS ${{ env.BUNJS_VERSION }}
+  #       uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: ${{ env.BUNJS_VERSION }}
+
+  #       # TODO: Cache artifacts
+  #     - name: Install SteamCMD
+  #       run: |
+  #         echo steam steam/question select "I AGREE" | debconf-set-selections && \
+  #         echo steam steam/license note '' | debconf-set-selections && \
+  #         apt-get install -y \
+  #         steamcmd && \
+  #         mv /usr/games/steamcmd /opt/base/bin/ && \
+  #         steamcmd +force_install_dir /data/steam +@sSteamCmdForcePlatformType linux +login anonymous +app_update 1007 +quit && \
+  #         mkdir -p /root/.steam/sdk64 && \
+  #         mv /data/steam/linux64/steamclient.so /root/.steam/sdk64/steamclient.so && \
+  #         rm -rf /data/steam
+  #       shell: bash
+
+  #       # TODO: Cache artifacts
+  #     - name: Download Stardew Valley
+  #       run: |
+  #         steamcmd +@sSteamCmdForcePlatformType linux \
+  #         +force_install_dir ${GAME_DEST_DIR} \
+  #         +login "${{ secrets.STEAM_USER }}" "${{ secrets.STEAM_PASS }}" \
+  #         +app_update 413150 \
+  #         +quit
+  #       shell: bash
+
+  #       # TODO: Cache artifacts
+  #     - name: Download SMAPI
+  #       run: |
+  #         curl -L https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip -o ./smapi.zip
+  #         unzip -q smapi.zip -d ./smapi/
+  #         echo -e "2\n\n" | "./smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
+  #           --install \
+  #           --game-path "${GAME_DEST_DIR}"
+  #       shell: bash
+
+  #     - name: Build and Publish
+  #       run: |
+  #         make push
+
+  update:
+    # Only when running on our own repo, and only for non-draft release PRs (meaning not starting with v1.)
+    if: github.repository_owner == 'stardew-valley-dedicated-server' && !startsWith(github.event.head_commit.message, 'v1.')
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH for Testing with ACT
+        uses: webfactory/ssh-agent@v0.9.0
+        # Empty and thus skipped in CI, only set when running locally
+        if: ${{ env.SSH_PRIVATE_KEY != '' }}
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install BunJS
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUNJS_VERSION }}
+
+      - name: Install Dependencies
+        run: |
+          bun install --cwd ./.github/actions/update-release-draft
+
+      - name: Update Release Draft
+        run: |
+          bun ./.github/actions/update-release-draft/update-release-draft.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
