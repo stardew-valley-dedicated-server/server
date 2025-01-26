@@ -1,7 +1,7 @@
 > [!IMPORTANT]
-> JunimoServer is currently in an **unstable alpha release**.
+> JunimoServer is currently **NOT MAINTAINED** and open for a new maintainer.
 >
->  You might encounter bugs, missing features, or occasional crashes. Join our [Discord](https://discord.gg/w23GVXdSF7) to report issues, get updates, and connect with the community. Check out the list of known issues [here](https://github.com/stardew-valley-dedicated-server/server/issues).
+> The project is **NOT FINISHED** and you will encounter bugs, missing features, or occasional crashes. However, join our [Discord](https://discord.gg/w23GVXdSF7) to connect with the community. Check out the list of known issues [here](https://github.com/stardew-valley-dedicated-server/server/issues).
 
 # JunimoServer
 

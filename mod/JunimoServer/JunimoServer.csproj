@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
-		<Version>1.0.0-alpha</Version>
+		<Version>1.0.2-alpha</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>true</EnableModDeploy>
