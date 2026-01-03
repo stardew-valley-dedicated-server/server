@@ -21,7 +21,9 @@ logs
 
 # Project dirs
 decompiled/
-mod/
+mod/.vs/
+mod/JunimoServer/bin/
+mod/JunimoServer/obj/
 mods/
 sub_modules/
 tools/
