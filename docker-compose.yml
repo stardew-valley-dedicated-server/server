@@ -1,20 +1,45 @@
 services:
-    stardew:
-        image: sdvd/server:latest
-        container_name: sdvd-server
-        ports:
-            - ${GAME_PORT}:24642/udp
-            - ${VNC_PORT}:5800
-        volumes:
-            - game:/data/Stardew
-            - data:/config/xdg/config/StardewValley
-        environment:
-            STEAM_USER: "${STEAM_USER}"
-            STEAM_PASS: "${STEAM_PASS}"
-            STEAM_GUARD_CODE: "${STEAM_GUARD_CODE}"
-            VNC_PASSWORD: "${VNC_PASSWORD}"
-            DISABLE_RENDERING: "${DISABLE_RENDERING}"
+  server:
+    image: sdvd/server:latest
+    stdin_open: true
+    tty: true
+    # container_name: sdvd-server
+    # network_mode: host  # Required for Galaxy P2P UDP connections
+    # ports section is ignored in host mode - ports are directly exposed
+    ports:
+      - ${GAME_PORT:-24642}:24642/udp # Now uses host port 24642
+      - ${VNC_PORT:-5800}:5800 # Now uses host port 5800
+    cap_add:
+      - SYS_TIME # Required for container time sync with host
+    volumes:
+      # Game files are downloaded on first run into this volume
+      - game-files:/data/Stardew
+      # Save data and config
+      - saves:/config/xdg/config/StardewValley
+    environment:
+      # Required for first-time game download and ingame lobby auth
+      STEAM_USER: "${STEAM_USER}"
+      STEAM_PASS: "${STEAM_PASS}"
+      STEAM_GUARD_CODE: "${STEAM_GUARD_CODE:-}"
+      # Server configuration
+      VNC_PASSWORD: "${VNC_PASSWORD:-}"
+      DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
+    restart: unless-stopped
+
+  # NOTE: Not currently used and only here for reference.
+  # web:
+  #   image: stardew-dedicated-web:latest
+  #   profiles: [web]
+  #   build:
+  #     context: ./../web
+  #     dockerfile: ./../web/Dockerfile
+  #   container_name: stardew-dedicated-web
+  #   ports:
+  #     - ${WEB_UI_PORT}:3000
+  #     - ${WEB_HMR_PORT}:24678
+  #   volumes:
+  #     - data:/data:ro
 
 volumes:
-  game:
-  data:
+  game-files:
+  saves:

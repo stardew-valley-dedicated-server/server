@@ -2,33 +2,89 @@
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
-		<Version>1.0.2-alpha</Version>
+		<Version>1.0.2</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>true</EnableModDeploy>
 		<EnableModZip>false</EnableModZip>
-		<GamePath>D:\Games\Steam\steamapps\common\Stardew Valley</GamePath>
 		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
         <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
         <IgnoreModFilePaths>System.Threading.Channels.dll</IgnoreModFilePaths>
         <Nullable>annotations</Nullable>
-  </PropertyGroup>
+    </PropertyGroup>
 
-	<ItemGroup>
-		<PackageReference Include="Google.Protobuf" Version="3.21.5" />
-		<PackageReference Include="Grpc.Net.Client" Version="2.48.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
-		<PackageReference Include="Websocket.Client" Version="5.1.0" />
-	</ItemGroup>
 
-	<ItemGroup>
-	  <Reference Include="GalaxyCSharp">
-		<HintPath>$(GamePath)\GalaxyCSharp.dll</HintPath>
-	  </Reference>
-	  <Reference Include="Steamworks.NET">
-		<HintPath>$(GamePath)\Steamworks.NET.dll</HintPath>
-	  </Reference>
-	</ItemGroup>
+    <!-- Debug settings -->
+    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+        <DebugType>portable</DebugType>
+        <DebugSymbols>true</DebugSymbols>
+    </PropertyGroup>
+
+    <!-- Release settings -->
+    <PropertyGroup Condition="'$(Configuration)'=='Release'">
+        <DebugType>none</DebugType>
+        <DebugSymbols>false</DebugSymbols>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Google.Protobuf" Version="3.21.5" />
+        <PackageReference Include="Grpc.Net.Client" Version="2.48.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
+        <PackageReference Include="Websocket.Client" Version="5.1.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Reference Include="Stardew Valley">
+            <HintPath>$(GamePath)\Stardew Valley.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="GalaxyCSharp">
+            <HintPath>$(GamePath)\GalaxyCSharp.dll</HintPath>
+        </Reference>
+        <Reference Include="Steamworks.NET">
+            <HintPath>$(GamePath)\Steamworks.NET.dll</HintPath>
+        </Reference>
+        <Reference Include="Lidgren.Network">
+            <HintPath>$(GamePath)\Lidgren.Network.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <!-- Custom deployment target to copy mod to output directory -->
+    <Target Name="DeployMod" AfterTargets="Build">
+        <!-- Define destination path -->
+        <PropertyGroup>
+            <!-- <DestPath>$(MSBuildProjectDirectory)\..\..\.output\mods\JunimoServer</DestPath> -->
+            <DestPath>$(MSBuildProjectDirectory)\tmp</DestPath>
+        </PropertyGroup>
+
+        <!-- Clean and create destination directory -->
+        <RemoveDir Directories="$(DestPath)" />
+        <MakeDir Directories="$(DestPath)" />
+
+        <!-- Copy required mod files to destination -->
+        <ItemGroup>
+            <ModFiles Include="$(OutputPath)\JunimoServer.dll" />
+            <!-- <ModFiles Include="$(OutputPath)\JunimoServer.pdb" /> -->
+            <ModFiles Include="$(OutputPath)\Google.Protobuf.dll" />
+            <ModFiles Include="$(OutputPath)\Grpc.Core.Api.dll" />
+            <ModFiles Include="$(OutputPath)\Grpc.Net.Client.dll" />
+            <ModFiles Include="$(OutputPath)\Grpc.Net.Common.dll" />
+            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.DependencyInjection.dll" />
+            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.Logging.Abstractions.dll" />
+            <ModFiles Include="$(OutputPath)\Microsoft.IO.RecyclableMemoryStream.dll" />
+            <ModFiles Include="$(OutputPath)\System.Reactive.dll" />
+            <ModFiles Include="$(OutputPath)\Websocket.Client.dll" />
+            <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json" />
+        </ItemGroup>
+        <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)" />
+
+        <!-- Clean up build directory after copying files -->
+        <RemoveDir Directories="$(OutputPath)" />
+        <MakeDir Directories="$(OutputPath)" />
+        <Exec Command="cp -r $(DestPath)/* $(OutputPath)/" Condition="'$(OS)' != 'Windows_NT'" />
+        <Exec Command="xcopy /Y /E &quot;$(DestPath)\*&quot; &quot;$(OutputPath)\&quot;" Condition="'$(OS)' == 'Windows_NT'" />
+    </Target>
 </Project>

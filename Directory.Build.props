@@ -1,0 +1,61 @@
+<Project>
+    <!--
+    ============================================================================
+    GamePath Configuration
+    ============================================================================
+
+    PURPOSE:
+    This file centralizes the Stardew Valley game installation path configuration
+    to avoid hardcoding it in multiple places (Makefile, .csproj files, scripts).
+
+    WHY IT EXISTS:
+    - Previously, the game path was hardcoded in both Makefile and JunimoServer.csproj
+    - This made it difficult to maintain and required changes in multiple files
+    - Now, GAME_PATH is defined once in .env and automatically loaded by this file
+
+    HOW IT WORKS:
+    - MSBuild automatically imports Directory.Build.props from parent directories
+    - This file reads the .env file and extracts the GAME_PATH value using regex
+    - The GamePath property is set and becomes available to all .csproj files
+    - The $(GamePath) variable is used in csproj for DLL references and mod building
+
+    SCOPE:
+    - Applies to ALL .NET projects in this repository (current and future)
+    - Located at repo root so .env and Directory.Build.props are colocated
+
+    USAGE:
+    1. Set GAME_PATH in .env file (use forward slashes for cross-platform compatibility)
+    2. Build normally: dotnet build or make build-mod
+    3. GamePath is automatically available in all projects
+
+    PRIORITY ORDER:
+    1. Command line: /p:GamePath=... (highest priority, for one-off overrides)
+    2. .env file: GAME_PATH=... (normal usage, single source of truth)
+    3. Environment variable: GAME_PATH (fallback if .env doesn't exist)
+
+    RELATED FILES:
+    - .env (and .env.example): Defines GAME_PATH
+    - mod/JunimoServer/JunimoServer.csproj: Uses $(GamePath) for DLL references
+    - Makefile: Loads .env for other build variables
+    - tools/decompile-sdv.sh: Uses GAME_PATH environment variable
+    ============================================================================
+  -->
+
+    <PropertyGroup>
+        <!-- Define path to .env file -->
+        <DotEnvPath>$(MSBuildThisFileDirectory).env</DotEnvPath>
+
+        <!-- Read .env file content if it exists -->
+        <DotEnvContent Condition="Exists('$(DotEnvPath)')">
+            $([System.IO.File]::ReadAllText('$(DotEnvPath)'))</DotEnvContent>
+
+        <!-- Extract GAME_PATH from .env content using regex -->
+        <!-- Match GAME_PATH="value" or GAME_PATH=value -->
+        <_EnvGamePath Condition="'$(DotEnvContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(DotEnvContent),
+            'GAME_PATH\s*=\s*"?([^"\r\n]+)"?').Groups[1].Value)</_EnvGamePath>
+
+        <!-- Set GamePath with priority: command line > .env file > environment variable -->
+        <GamePath Condition="'$(GamePath)' == '' AND '$(_EnvGamePath)' != ''">$(_EnvGamePath)</GamePath>
+        <GamePath Condition="'$(GAME_PATH)' != ''">$(GAME_PATH)</GamePath>
+    </PropertyGroup>
+</Project>

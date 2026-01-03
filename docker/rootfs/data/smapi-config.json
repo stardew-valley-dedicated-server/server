@@ -1,0 +1,34 @@
+{
+    // Test comment
+    "VerboseLogging": ["SMAPI", "JunimoHost.Server"],
+    "SuppressUpdateChecks": ["JunimoHost.Server"],
+    "CheckForUpdates": false,
+    "CheckContentIntegrity": false,
+    "ListenForConsoleInput": true,
+    "DeveloperMode": true,
+    "ParanoidWarnings": false,
+    "LogTechnicalDetailsForBrokenMods": true,
+    "ConsoleColors": {
+        "UseScheme": "DarkBackground",
+        "Schemes": {
+            "DarkBackground": {
+                "Trace": "DarkGray",
+                "Debug": "Gray",
+                "Info": "White",
+                "Warn": "Yellow",
+                "Error": "Red",
+                "Alert": "Magenta",
+                "Success": "DarkGreen"
+            },
+            "LightBackground": {
+                "Trace": "DarkGray",
+                "Debug": "Gray",
+                "Info": "Black",
+                "Warn": "DarkYellow",
+                "Error": "Red",
+                "Alert": "DarkMagenta",
+                "Success": "DarkGreen"
+            }
+        }
+    }
+}

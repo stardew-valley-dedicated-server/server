@@ -1,4 +1,55 @@
-FROM jlesage/baseimage-gui:debian-11-v4
+# ============================================================================
+# Stage 1: Download game files (for mod compilation only, not in final image)
+# ============================================================================
+FROM steamcmd/steamcmd:latest AS game-downloader
+
+ARG SMAPI_VERSION=4.1.10
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    libicu-dev
+
+COPY ./tools/download-game.sh /tools/download-game.sh
+
+# Download Stardew Valley
+RUN --mount=type=secret,id=steam_user \
+    --mount=type=secret,id=steam_pass \
+    /tools/download-game.sh
+
+# Remove unnecessary wave bank files to reduce size
+RUN rm -fv "/game/Content/XACT/Wave Bank.xwb" "/game/Content/XACT/Wave Bank(1.4).xwb"
+
+# Install SMAPI (needed for mod compilation DLL references)
+RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
+    unzip -q /tmp/smapi.zip -d /tmp/smapi && \
+    printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
+    --install \
+    --game-path /game && \
+    rm -rf /tmp/smapi /tmp/smapi.zip
+
+# ============================================================================
+# Stage 2: Build mod using game DLLs from stage 1
+# ============================================================================
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS mod-builder
+
+ARG Configuration=Debug
+
+COPY --from=game-downloader /game /game
+COPY ./mod /src/mod
+COPY ./Directory.Build.props /src/
+
+RUN dotnet build /src/mod/JunimoServer/JunimoServer.csproj \
+    --configuration Debug \
+    /p:GamePath=/game \
+    -o /output/JunimoServer
+
+RUN ls -al /output
+
+# ============================================================================
+# Stage 3: Final runtime image (no game files, downloads on first run)
+# ============================================================================
+FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.6.7 AS server
 
 ENV APP_NAME="Stardew Dedicated Server" \
     USER_ID=0 \
@@ -97,12 +148,16 @@ RUN \
     # Prevent overriding OpenGL drivers
     rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH
 
-# Copy mods
-COPY .output/mods /data/Mods
 
-# Copy remaining files
+
+
+# Copy system files
 COPY docker/rootfs/ /
 
+# Copy mod from build stage (no game files included in image)
+COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
+
+# Game files and save data are in volumes (game downloaded at runtime)
 VOLUME [ "/data/Stardew", "/config/xdg/config/StardewValley" ]
 
 WORKDIR /data
