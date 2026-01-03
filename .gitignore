@@ -35,6 +35,10 @@ logs
 /bin
 /debug
 /decompiled
+/.game-files
+
+# Dependency folders
+node_modules/
 
 # Decompiler version file
 /version.txt

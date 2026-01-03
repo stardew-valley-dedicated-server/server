@@ -27,6 +27,9 @@ mod/JunimoServer/obj/
 mods/
 sub_modules/
 
+# Dependency folders
+node_modules/
+
 # Project files
 .dockerignore
 .editorconfig

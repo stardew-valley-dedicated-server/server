@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 MODS_DEST_DIR="/data/Mods"
 GAME_DEST_DIR="/data/Stardew"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
@@ -152,5 +154,31 @@ init_smapi
 init_mods
 init_permissions
 
-# Run the game
-${GAME_EXECUTABLE}
+# Run the game through SMAPI with FIFO for command input
+SESSION_NAME="stardew-server"
+LOG_FILE="/tmp/server-output.log"
+INPUT_FIFO="/tmp/smapi-input"
+
+# Touch the log file to ensure it exists
+touch "${LOG_FILE}"
+
+# Create FIFO for command input
+rm -f "${INPUT_FIFO}"
+mkfifo "${INPUT_FIFO}"
+
+# Start a background tail to stdout (so 'docker compose logs' works)
+tail -f "${LOG_FILE}" &
+TAIL_PID=$!
+
+# Start SMAPI with stdin from FIFO, output to log file
+# Using 'script' to create a PTY so SMAPI outputs colors (thinks it's a terminal)
+# Using tail -f on the FIFO to keep it open and avoid blocking
+script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
+SMAPI_PID=$!
+
+# Wait for SMAPI process to exit (when it exits, the server has stopped)
+wait $SMAPI_PID
+
+# Cleanup
+kill $TAIL_PID 2>/dev/null || true
+echo "Server session ended"

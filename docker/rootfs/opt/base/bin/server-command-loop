@@ -1,0 +1,62 @@
+#!/bin/bash
+
+INPUT_FIFO="/tmp/smapi-input"
+
+send_to_server() {
+    local command="$1"
+    echo "$command" >> "$INPUT_FIFO"
+}
+
+clear
+stty -echoctl  # hide ^C
+
+# Function to redraw prompt and clear line on CTRL+C
+handle_sigint() {
+    # Move to beginning of line, clear it, show prompt again
+    printf "\r\033[Kserver> "
+}
+
+# Trap SIGINT
+trap 'handle_sigint' INT
+
+while true; do
+    # Read input into REPLY
+    if ! read -r -e -p "server> "; then
+        # CTRL+D (EOF)
+        echo
+        tmux detach-client 2>/dev/null || exit 0
+        break
+    fi
+
+    # Always clear to keep the panel at one visible line (+ one empty for bottom "padding")
+    clear
+
+    case "$REPLY" in
+        "cli exit"|"cli quit"|"cli detach")
+            tmux detach-client 2>/dev/null || exit 0
+            break
+            ;;
+        "cli clear")
+            clear
+            continue
+            ;;
+        "cli help")
+            echo ""
+            echo "Local CLI commands:"
+            echo "  cli help   - Show this help message"
+            echo "  cli clear  - Clear console output"
+            echo "  cli exit   - Detach from console"
+            echo "Keyboard shortcuts:"
+            echo "  Ctrl+C     - Cancel current input line"
+            echo "  Ctrl+D     - Detach from console"
+            echo ""
+            continue
+            ;;
+        "")
+            continue
+            ;;
+        *)
+            send_to_server "$REPLY"
+            ;;
+    esac
+done
