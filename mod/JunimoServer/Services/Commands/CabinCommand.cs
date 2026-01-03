@@ -13,10 +13,10 @@ namespace JunimoServer.Services.Commands
     {
         public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleSerivce, CabinManagerService cabinService, PersistentOptions options)
         {
-            Console.WriteLine("Registering cabin command");
             chatCommandsService.RegisterCommand("cabin",
                 "Moves your cabin to the right of your player.\nThis will clear basic debris to make space.",
-                (args, msg) => {
+                (args, msg) =>
+                {
                     if (cabinService.options.IsFarmHouseStack)
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin. The host has chosen to keep all cabins in the farmhouse.");

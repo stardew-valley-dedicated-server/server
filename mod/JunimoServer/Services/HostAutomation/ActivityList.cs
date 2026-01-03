@@ -7,7 +7,10 @@ namespace JunimoServer.Services.HostAutomation
   public class ActivityList : List<Activity>
   {
     private IModHelper _helper;
+
+    #pragma warning disable CS0169 // Ignore unused field `_activities`
     private List<Activity> _activities;
+    #pragma warning restore CS0169
 
     public ActivityList(IModHelper helper, IMonitor monitor)
     {

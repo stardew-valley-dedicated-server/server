@@ -19,7 +19,7 @@ namespace JunimoServer
 {
     internal class ModEntry : Mod
     {
-        public static ServiceProvider Services;
+        private ServiceProvider _services;
 
         private readonly Type modServiceBaseType = typeof(IModService);
 
@@ -70,7 +70,7 @@ namespace JunimoServer
 
         private void RegisterServices()
         {
-            Monitor.Log("Loading services...", LogLevel.Trace);
+            Monitor.Log("Loading services...", LogLevel.Info);
 
             var services = new ServiceCollection();
 
@@ -78,7 +78,7 @@ namespace JunimoServer
             LoadServices(services);
             StartServices(services);
 
-            Monitor.Log("Services loaded and ready!", LogLevel.Trace);
+            Monitor.Log("Services loaded and ready!", LogLevel.Info);
         }
 
         private void LoadServiceDependencies(ServiceCollection services)
@@ -98,12 +98,12 @@ namespace JunimoServer
             {
                 services.AddSingleton(serviceType);
             }
-
-            Services = services.BuildServiceProvider();
         }
 
         private void StartServices(ServiceCollection services)
         {
+            _services = services.BuildServiceProvider();
+
             // Filter and sort services
             var servicesAll = services
                 .Where(d => d.ImplementationType != null)
@@ -118,7 +118,7 @@ namespace JunimoServer
                 try
                 {
                     // Retrieve service at least once to run constructors and possible side-effects
-                    var serviceInstance = Services.GetRequiredService(serviceType);
+                    var serviceInstance = _services.GetRequiredService(serviceType);
 
                     // Call service entry point
                     if (HasModServiceBaseType(serviceType))
@@ -128,6 +128,7 @@ namespace JunimoServer
                 }
                 catch (Exception e)
                 {
+                    // TODO: Currently fails silently. Should throw to fail fast, with bypass via config if users want to keep trying/fiddling
                     Monitor.Log($"   {serviceName} ({serviceType}) FAILED: {e}", LogLevel.Error);
                     continue;
                 }
@@ -153,11 +154,11 @@ namespace JunimoServer
 
         private void RegisterChatCommands()
         {
-            var cabinService = Services.GetRequiredService<CabinManagerService>();
-            var chatCommandsService = Services.GetRequiredService<ChatCommandsService>();
-            var roleService = Services.GetRequiredService<RoleService>();
-            var alwaysOnConfig = Services.GetRequiredService<AlwaysOnConfig>();
-            var persistentOptions = Services.GetRequiredService<PersistentOptions>();
+            var cabinService = _services.GetRequiredService<CabinManagerService>();
+            var chatCommandsService = _services.GetRequiredService<ChatCommandsService>();
+            var roleService = _services.GetRequiredService<RoleService>();
+            var alwaysOnConfig = _services.GetRequiredService<AlwaysOnConfig>();
+            var persistentOptions = _services.GetRequiredService<PersistentOptions>();
 
             CabinCommand.Register(Helper, chatCommandsService, roleService, cabinService, persistentOptions);
             RoleCommands.Register(Helper, chatCommandsService, roleService);

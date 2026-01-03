@@ -3,6 +3,7 @@ using Microsoft.VisualBasic;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewValley;
 using StardewValley.SDKs.GogGalaxy;
 using System;
 using System.Diagnostics;
@@ -34,6 +35,36 @@ namespace JunimoServer.Services.ServerOptim
                 original: AccessTools.Method("StardewValley.Game1:updateMusic"),
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
             );
+
+            // harmony.Patch(
+            //     original: AccessTools.Method("StardewValley.Game1:changeMusicTrack"),
+            //     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            // );
+
+            harmony.Patch(
+                original: AccessTools.Method("StardewValley.Game1:initializeVolumeLevels"),
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            );
+
+            harmony.Patch(
+                original: AccessTools.Method("StardewValley.Audio.SoundsHelper:PlayLocal"),
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            );
+
+            // harmony.Patch(
+            //     original: AccessTools.Method("StardewValley.Game1:CheckGamepadMode"),
+            //     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            // );
+
+            // harmony.Patch(
+            //     original: AccessTools.Method("StardewValley.Game1:updateRaindropPosition"),
+            //     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            // );
+
+            // harmony.Patch(
+            //     original: AccessTools.Method("StardewValley.Game1:updateRainDropPositionForPlayerMovement"),
+            //     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+            // );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.BellsAndWhistles.Butterfly:update"),
