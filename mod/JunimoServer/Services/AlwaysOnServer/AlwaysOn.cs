@@ -50,6 +50,7 @@ namespace JunimoServer.Services.AlwaysOn
             alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandService, config);
         }
 
+        // TODO: Rename to OnStart, OnLoad or whatever fits best.. need to double-check
         public override void Entry()
         {
             Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -561,7 +562,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void HandleJojaMarket()
         {
-            if (!Config.IsCommunityCenterRun)
+            if (Config.IsCommunityCenterRun)
             {
                 return;
             }
