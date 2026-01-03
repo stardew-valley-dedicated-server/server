@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 
 namespace JunimoServer.Util
@@ -60,24 +61,30 @@ namespace JunimoServer.Util
                 .First()
                 .GetIPProperties()
                 .UnicastAddresses
-                .Where(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                .First()
+                .First(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                 .Address;
         }
 
+        // WebClient is deprecated, not sure if we still need this.. so commenting out for now
         public static IPAddress GetIpAddressExternal()
         {
             IPAddress address;
 
+
+#pragma warning disable CS0168 // Ignore unused variable `ex`
             try
             {
-                string pubIp = new WebClient().DownloadString("https://api.ipify.org");
+                HttpClient client = new HttpClient();
+
+                // Refactor this, just replaced deprecated WebClient quickly
+                string pubIp = client.GetStringAsync("https://api.ipify.org").GetAwaiter().GetResult();
                 return IPAddress.Parse(pubIp);
             }
             catch (Exception ex)
             {
                 address = IPAddress.None;
             }
+#pragma warning restore CS0168
 
             return address;
         }
@@ -177,7 +184,7 @@ namespace JunimoServer.Util
     /// Not sure if we want to implement per-message structs like this, it's nice to use but probably less so to maintain them.
     /// For now leaveing it here for thought, usage:
     /// var message = new LocationIntroductionMessage(Game1.serverHost, context);
-    /// if (context.MessageType == Multiplayer.xxxMessageType) 
+    /// if (context.MessageType == Multiplayer.xxxMessageType)
     /// context.ModifiedMessage = message.ToOutgoingMessage();
     /// </summary>
     public struct LocationIntroductionMessage

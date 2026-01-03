@@ -1,9 +1,21 @@
 using StardewModdingAPI;
+using System.Reflection;
+using System.Linq;
 
 namespace JunimoServer.Util
 {
     public static class MonitorExtensions
     {
+        public static string Dump(this IMonitor monitor, object obj)
+        {
+            var data = string.Join("\n",
+                obj.GetType()
+                   .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                   .Select(p => $"\t{p.Name}: {p.GetValue(obj)}"));
+
+            return $"{{\n{data}\n}}";
+        }
+
         public static void LogBanner(this IMonitor monitor, string[] lines, int pad = 4, bool centered = false)
         {
             // Calculate banner width based on longest line

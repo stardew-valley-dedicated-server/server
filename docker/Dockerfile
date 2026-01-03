@@ -136,6 +136,10 @@ COPY docker/rootfs/data/images/junimo.png /data/images/junimo.png
 RUN install_app_icon.sh /data/images/junimo.png && \
     rm /data/images/junimo.png
 
+# Install Node, used for steam-appticket-generator
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y nodejs
+
 # Install .NET SDK, used for the DLL patcher
 RUN curl -fsSL https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -o packages-microsoft-prod.deb && \
     dpkg -i packages-microsoft-prod.deb && \
@@ -155,7 +159,10 @@ RUN \
     # Prevent overriding OpenGL drivers
     rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH
 
-
+# Copy and install steam-appticket-generator
+# TODO: Actually build a bundle (or compile with deno?), then throw away node_modules
+COPY tools/steam-appticket-generator/ /data/Tools/steam-appticket-generator/
+RUN cd /data/Tools/steam-appticket-generator/ && npm ci
 
 # Copy and install DLL patcher
 COPY tools/dll-patcher/ /tmp/dll-patcher/
