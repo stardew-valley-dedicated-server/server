@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libicu-dev
 
-COPY ./tools/download-game.sh /tools/download-game.sh
+COPY --chmod=755 ./tools/download-game.sh /tools/download-game.sh
 
 # Download Stardew Valley
 RUN --mount=type=secret,id=steam_user \
