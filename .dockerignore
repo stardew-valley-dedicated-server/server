@@ -24,7 +24,6 @@ decompiled/
 mod/
 mods/
 sub_modules/
-tools/
 
 # Project files
 .dockerignore
