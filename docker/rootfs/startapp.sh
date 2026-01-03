@@ -37,18 +37,39 @@ init_xauthority() {
 init_stardew() {
     # Installation check
     if [ -e "${GAME_EXECUTABLE}" ]; then
-        # TODO: Check if update necessary, add version to installed.txt
-        # TODO: See new fetch-sdv-version and parse-sdv-version scripts
         echo "Game already initialized, skipping."
-        return;
+        return
+    fi
+
+    # Read Steam credentials from Docker secrets (preferred) or environment variables (fallback)
+    local STEAM_USER_VALUE="${STEAM_USER:-}"
+    local STEAM_PASS_VALUE="${STEAM_PASS:-}"
+
+    if [ -f "/run/secrets/steam_user" ]; then
+        STEAM_USER_VALUE=$(< /run/secrets/steam_user tr -d '\n')
+        echo "Using Steam username from Docker secret"
+    fi
+
+    if [ -f "/run/secrets/steam_pass" ]; then
+        STEAM_PASS_VALUE=$(< /run/secrets/steam_pass tr -d '\n')
+        echo "Using Steam password from Docker secret"
+    fi
+
+    # Validate Steam credentials
+    if [ -z "${STEAM_USER_VALUE}" ] || [ -z "${STEAM_PASS_VALUE}" ]; then
+        print_error "Error: Steam credentials are required for first-time setup"
+        print_error "Please provide credentials via Docker secrets (secrets/steam_user.txt and secrets/steam_pass.txt)"
+        print_error "or environment variables (STEAM_USER and STEAM_PASS)"
+        exit 1
     fi
 
     # Download & Install
     echo "Installing Stardew Valley..."
+    echo "This is a one-time download and may take several minutes..."
 
     steamcmd +@sSteamCmdForcePlatformType linux \
         +force_install_dir ${GAME_DEST_DIR} \
-        +login "${STEAM_USER}" "${STEAM_PASS}" "${STEAM_GUARD_CODE}" \
+        +login "${STEAM_USER_VALUE}" "${STEAM_PASS_VALUE}" "${STEAM_GUARD_CODE}" \
         +app_update 413150 \
         +quit
 
@@ -58,13 +79,14 @@ init_stardew() {
     # Check if the command was successful
     if [ $EXIT_STATUS -ne 0 ]; then
         print_error "Error: steamcmd command failed with exit status $EXIT_STATUS"
+        print_error "Please check your Steam credentials and try again"
         exit 1
     fi
 
     # Removing these files causes a "FileNotFoundException", but it doesn't
     # seem to cause problems but reduces game storage size by about 70-80%.
-    echo "Removing uneccessary files..."
-    rm -rfv "${GAME_DEST_DIR}/Content/XACT/Wave Bank.xwb" "${GAME_DEST_DIR}/Content/XACT/Wave Bank(1.4).xwb"
+    echo "Removing unnecessary files..."
+    rm -fv "${GAME_DEST_DIR}/Content/XACT/Wave Bank.xwb" "${GAME_DEST_DIR}/Content/XACT/Wave Bank(1.4).xwb"
 
     echo "Stardew Valley downloaded successfully!"
 }
@@ -72,21 +94,28 @@ init_stardew() {
 init_smapi() {
     # Installation check
     if [ -e "${SMAPI_EXECUTABLE}" ]; then
-        # TODO: Check if update necessary, add version to installed.txt
         echo "SMAPI already initialized, skipping."
     else
+        echo "Installing SMAPI ${SMAPI_VERSION}..."
+
         # Download
         curl -L https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip -o /data/smapi.zip
         unzip -q /data/smapi.zip -d /data/smapi/
 
         # Install
-        echo -e "2\n\n" | "/data/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
+        printf "2\n\n" | "/data/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
             --install \
             --game-path "${GAME_DEST_DIR}"
 
         # Cleanup
-        rm -rf "/data/smapi"
+        rm -rf "/data/smapi" /data/smapi.zip
+
+        echo "SMAPI installed successfully!"
     fi
+
+    # Always override the config file so we can update the one that is stored inside a volume
+    echo "Applying SMAPI runtime overrides..."
+    cp -rf /data/smapi-config.json ${GAME_DEST_DIR}/smapi-internal/config.user.json
 }
 
 init_mods() {

@@ -1,0 +1,138 @@
+name: Preview Build
+
+on:
+  push:
+    branches:
+      - master
+
+# Prevent multiple builds from running simultaneously
+concurrency:
+  group: preview-build
+  cancel-in-progress: true
+
+jobs:
+  build-preview:
+    name: Build and Push Preview
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for version calculation
+
+      - name: Calculate next version
+        id: version
+        run: |
+          # Get the latest release tag (exclude preview tags)
+          LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
+          echo "Latest release tag: $LATEST_TAG"
+
+          # Extract version number (remove 'v' prefix)
+          CURRENT_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Split version into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Get commits since last release tag
+          COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          # Determine bump type based on conventional commits
+          BUMP_TYPE="patch"
+          if echo "$COMMITS" | grep -qE "^feat(\(.+\))?!:|^BREAKING CHANGE:"; then
+            BUMP_TYPE="major"
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            BUMP_TYPE="minor"
+          elif echo "$COMMITS" | grep -qE "^fix(\(.+\))?:"; then
+            BUMP_TYPE="patch"
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Calculate next version
+          if [ "$BUMP_TYPE" == "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP_TYPE" == "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Next version: $NEXT_VERSION"
+
+          # Create preview version with run number
+          PREVIEW_VERSION="$NEXT_VERSION-preview.${{ github.run_number }}"
+          echo "Preview version: $PREVIEW_VERSION"
+
+          # Export variables
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "preview_version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+
+      - name: Update version in files (for Docker build only)
+        run: |
+          PREVIEW_VERSION="${{ steps.version.outputs.preview_version }}"
+
+          # Update manifest.json
+          sed -i "s/\"Version\": \".*\"/\"Version\": \"$PREVIEW_VERSION\"/" mod/JunimoServer/manifest.json
+
+          # Update csproj
+          sed -i "s|<Version>.*</Version>|<Version>$PREVIEW_VERSION</Version>|g" mod/JunimoServer/JunimoServer.csproj
+
+          echo "Updated files to version $PREVIEW_VERSION (not committed)"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: sdvd/server
+          tags: |
+            type=raw,value=preview
+            type=raw,value=${{ steps.version.outputs.preview_version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          secrets: |
+            steam_user=${{ secrets.STEAM_USER }}
+            steam_pass=${{ secrets.STEAM_PASS }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build summary
+        run: |
+          echo "### Preview Build Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Release:** \`${{ steps.version.outputs.next_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/server:preview\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/server:${{ steps.version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull sdvd/server:preview" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

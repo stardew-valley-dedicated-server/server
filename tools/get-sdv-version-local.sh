@@ -31,7 +31,7 @@ get_dll_version() {
 # Initialize variables
 VERSION_TYPE=""
 SHOW_HELP=false
-FILE="$CI_GAME_PATH\Stardew Valley.dll"
+FILE="$GAME_PATH/Stardew Valley.dll"
 
 # Parse all arguments
 while [[ $# -gt 0 ]]; do
