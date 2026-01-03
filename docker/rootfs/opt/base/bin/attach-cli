@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Attach to the Stardew Valley server tmux session with an interactive CLI
+# This creates a per-invocation isolated session with split-pane view:
+# - Top pane: Server logs (read-only view)
+# - Bottom pane: Interactive command input
+# Each 'docker compose exec' gets its own isolated session
+
+SESSION_NAME="stardew-server-$$"
+LOG_FILE="/tmp/server-output.log"
+
+# Check if server is running by checking if log file exists
+if [ ! -f "$LOG_FILE" ]; then
+    echo "Error: Server log file not found at $LOG_FILE"
+    echo "The server may not be running yet. Please wait for it to start."
+    exit 1
+fi
+
+# Create new session with log viewer
+tmux new-session -d -s "$SESSION_NAME" "tail -n 1000 -f ${LOG_FILE}"
+
+# Add command input pane at bottom (exactly 2 lines - tmux minimum)
+tmux split-window -t "$SESSION_NAME":0 -v -l 2 "bash --rcfile /opt/base/bin/server-command-loop -i"
+
+# Configure tmux options for better UX
+tmux set-option -t "$SESSION_NAME" mouse on 2>/dev/null || true
+tmux set-option -t "$SESSION_NAME" history-limit 50000 2>/dev/null || true
+tmux set-option -t "$SESSION_NAME" prefix C-b 2>/dev/null || true
+
+# Disable tmux text selection while keeping mouse scrolling
+# (allows native terminal selection to work)
+tmux unbind-key -T root MouseDrag1Pane 2>/dev/null || true
+tmux unbind-key -T root MouseDown1Pane 2>/dev/null || true
+
+# Disable dangerous keys to prevent accidental pane/window closing
+tmux unbind-key x 2>/dev/null || true  # Disable kill-pane (Ctrl+B x)
+tmux unbind-key & 2>/dev/null || true  # Disable kill-window (Ctrl+B &)
+
+# Bind Ctrl+Q to detach
+tmux bind-key -n C-q detach-client 2>/dev/null || true
+
+# Set window-size to follow current client (allows window to resize with terminal)
+tmux set-option -t "$SESSION_NAME" window-size latest 2>/dev/null || true
+
+# Set status bar
+tmux set-option -t "$SESSION_NAME" status-left "SDVD CLI " 2>/dev/null || true
+tmux set-option -t "$SESSION_NAME" status-left-length 20 2>/dev/null || true
+tmux set-option -t "$SESSION_NAME" status-right-length 100 2>/dev/null || true
+tmux set-option -t "$SESSION_NAME" status-right "Ctrl+Q or 'cli exit' to detach | Mouse/PgUp/PgDn to scroll" 2>/dev/null || true
+
+# Hide window list (the "0:sh*" part)
+tmux set-window-option -t "$SESSION_NAME" window-status-format "" 2>/dev/null || true
+tmux set-window-option -t "$SESSION_NAME" window-status-current-format "" 2>/dev/null || true
+
+# Add hooks to maintain 2-line bottom pane when window/client resizes
+# Use both hooks to catch all resize events
+tmux set-hook -t "$SESSION_NAME" client-resized "resize-pane -t $SESSION_NAME:0.1 -y 2" 2>/dev/null || true
+tmux set-hook -t "$SESSION_NAME" after-resize-window "resize-pane -t $SESSION_NAME:0.1 -y 2" 2>/dev/null || true
+
+# Set pane borders and labels
+tmux set-window-option -t "$SESSION_NAME" pane-border-status top 2>/dev/null || true
+tmux set-window-option -t "$SESSION_NAME" pane-border-format '#{?#{==:#{pane_index},0},#[bold]Output#[default],#[bold]Input#[default]}' 2>/dev/null || true
+
+# Select the command input pane (so user can type immediately)
+tmux select-pane -t "$SESSION_NAME":0.1
+
+# Cleanup: Kill session when this script exits (on detach or exit)
+trap "tmux kill-session -t '$SESSION_NAME' 2>/dev/null" EXIT
+
+# Attach to the session
+exec tmux attach-session -t "$SESSION_NAME"

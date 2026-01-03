@@ -90,11 +90,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen
 
-# Install SteamCMD
+# Install SteamCMD (needed for runtime game download)
 RUN echo steam steam/question select "I AGREE" | debconf-set-selections && \
     echo steam steam/license note '' | debconf-set-selections && \
-    apt-get install -y \
-    steamcmd && \
+    apt-get install -y steamcmd && \
     mv /usr/games/steamcmd /opt/base/bin/ && \
     steamcmd +force_install_dir /data/steam +@sSteamCmdForcePlatformType linux +login anonymous +app_update 1007 +quit && \
     mkdir -p /root/.steam/sdk64 && \
@@ -114,7 +113,8 @@ RUN apt-get install -y \
 RUN apt-get install -y \
     exa \
     htop \
-    nano
+    nano \
+    tmux
 
 # Install TigerVNC (replaces pre-compiled x11 to include GLX extension)
 RUN apt-get install -y \
@@ -153,6 +153,11 @@ RUN \
 
 # Copy system files
 COPY docker/rootfs/ /
+
+# Make custom scripts executable
+RUN chmod +x \
+    /opt/base/bin/attach-cli \
+    /opt/base/bin/server-command-loop
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
