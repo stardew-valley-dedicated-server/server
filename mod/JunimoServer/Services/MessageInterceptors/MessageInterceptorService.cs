@@ -69,6 +69,8 @@ namespace JunimoServer.Services.MessageInterceptors
                     Monitor.Log($"IncomingMessage {{ Type: {messageType}, From: {message.FarmerID} }}");
                     break;
             }
+
+            // TODO: The actual message interceptor
         }
 
         private void HandleOutgoing(long peerId, ref OutgoingMessage message)

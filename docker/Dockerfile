@@ -116,7 +116,10 @@ RUN apt-get install -y \
     nano \
     tmux
 
-# Install TigerVNC (replaces pre-compiled x11 to include GLX extension)
+# Install vsdbg for remote debugging
+RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /root/vsdbg
+
+# Install TigerVNC (replaces pre-compiled x11, so that it includes the GLX extension)
 RUN apt-get install -y \
     tigervnc-standalone-server && \
     cp /usr/bin/Xvnc /opt/base/bin/Xvnc

@@ -26,15 +26,16 @@ namespace JunimoServer.Util
                 }
             });
 
-            // Console.WriteLine("Setting up WS");
+            // Log("Setting up WS");
             _ws = new WebsocketClient(uri, factory);
 
             _ws.ErrorReconnectTimeout = TimeSpan.FromSeconds(3);
             //_ws.ReconnectTimeout = TimeSpan.FromSeconds(3);
-            //_ws.LostReconnectTimeout = TimeSpan.FromSeconds(3); 
+            //_ws.LostReconnectTimeout = TimeSpan.FromSeconds(3);
 
-            _ws.ReconnectionHappened.Subscribe(msg => {
-                // Console.WriteLine($"Reconnection happened, type: {msg.Type}");
+            _ws.ReconnectionHappened.Subscribe(msg =>
+            {
+                // Log($"Reconnection happened, type: {msg.Type}");
 
                 // var logData = new Dictionary<string, string>
                 // {
@@ -42,12 +43,13 @@ namespace JunimoServer.Util
                 //     { "ToString", msg?.ToString() },
                 // };
 
-                // Console.WriteLine(Serialize(logData));
-                // Console.WriteLine($"+++++++++++++++++++++++++++++++++++");
+                // Log(Serialize(logData));
+                // Log($"+++++++++++++++++++++++++++++++++++");
             });
 
-            _ws.DisconnectionHappened.Subscribe(msg => {
-                // Console.WriteLine($"Disconnection happened type: {msg.Type}");
+            _ws.DisconnectionHappened.Subscribe(msg =>
+            {
+                // Log($"Disconnection happened type: {msg.Type}");
 
                 // var logData = new Dictionary<string, string>
                 // {
@@ -57,29 +59,29 @@ namespace JunimoServer.Util
                 //     { "Exception", msg.Exception?.Message?.ToString() },
                 // };
 
-                // Console.WriteLine(Serialize(logData));
+                // Log(Serialize(logData));
 
                 // if (msg.Type == DisconnectionType.NoMessageReceived)
                 // {
-                //     Console.WriteLine("No message received, server probably starting up...");
+                //     Log("No message received, server probably starting up...");
                 // }
                 // else if (msg.Type == DisconnectionType.Error)
                 // {
-                //     Console.WriteLine("Error");
+                //     Log("Error");
                 // }
 
-                //Console.WriteLine($"Retrying to start WS");
+                //Log($"Retrying to start WS");
                 //_ws.Start();
 
-                // Console.WriteLine($"-----------------------------------");
+                // Log($"-----------------------------------");
             });
 
-            _ws.MessageReceived.Subscribe(msg => Console.WriteLine($"Message received: {msg}"));
+            // _ws.MessageReceived.Subscribe(msg => Log($"Message received: {msg}"));
 
-            // Console.WriteLine("Connecting to WS");
+            // Log("Connecting to WS");
             _ws.Start();
 
-            //Console.WriteLine("Waiting for WS exitEvent...");
+            //Log("Waiting for WS exitEvent...");
             //exitEvent.WaitOne();
         }
 
@@ -107,7 +109,7 @@ namespace JunimoServer.Util
         //{
         //    _ws = new ClientWebSocket();
         //    await _ws.ConnectAsync(new Uri(serverUri), CancellationToken.None);
-        //    Console.WriteLine("Connected to the server. Start sending messages...");
+        //    Log("Connected to the server. Start sending messages...");
         //}
 
         //public async Task ConnectToServer(string serverUri)
@@ -123,7 +125,7 @@ namespace JunimoServer.Util
         //        if (result.MessageType == WebSocketMessageType.Text)
         //        {
         //            string receivedMessage = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
-        //            Console.WriteLine($"Received message from server: {receivedMessage}");
+        //            Log($"Received message from server: {receivedMessage}");
         //        }
         //    }
         //}
@@ -133,7 +135,7 @@ namespace JunimoServer.Util
         //    await _ws.SendAsync(
         //        new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)),
         //        WebSocketMessageType.Text,
-        //        true, 
+        //        true,
         //        CancellationToken.None
         //    );
         //}
