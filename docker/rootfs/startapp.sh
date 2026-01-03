@@ -26,6 +26,27 @@ print_error() {
     echo -e "\e[31m$1\e[0m"
 }
 
+init_time_sync() {
+    echo "Synchronizing system time..."
+
+    # Try hardware clock sync first (works with host in most cases)
+    if hwclock --hctosys 2>/dev/null; then
+        echo "Time synced from hardware clock"
+        return 0
+    fi
+
+    # Fallback to NTP sync (requires internet)
+    if ntpdate -u pool.ntp.org 2>/dev/null; then
+        echo "Time synced from NTP server"
+        return 0
+    fi
+
+    # If both fail, warn but continue (time might already be correct)
+    echo "Warning: Could not sync time automatically"
+    echo "Current time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo "If Galaxy P2P disconnects occur after ~30 seconds, check system time sync"
+}
+
 init_xauthority() {
     # Can not be done in Dockerfile, because xauth needs to access the running display ":0"
     touch ~/.Xauthority
@@ -158,6 +179,7 @@ init_gui() {
 }
 
 # Prepare
+init_time_sync
 init_gui
 init_xauthority
 init_stardew
