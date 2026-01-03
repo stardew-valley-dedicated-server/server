@@ -10,9 +10,9 @@
           "jsonpath": "$.Version"
         },
         {
-          "type": "generic",
+          "type": "xml",
           "path": "mod/JunimoServer/JunimoServer.csproj",
-          "glob": false
+          "xpath": "/Project/PropertyGroup/Version"
         }
       ],
       "changelog-sections": [
