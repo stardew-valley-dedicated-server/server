@@ -93,6 +93,17 @@ init_stardew() {
     echo "Stardew Valley downloaded successfully!"
 }
 
+init_patch_dll() {
+    # Patch the game DLL to disable sound initialization (runs before SMAPI loads)
+    # The patcher itself checks if patching is needed by examining the IL code
+    echo "Running DLL patcher..."
+    /opt/dll-patcher/SDVPatcher "${GAME_DEST_DIR}/Stardew Valley.dll"
+
+    if [ $? -ne 0 ]; then
+        echo "Warning: DLL patching failed, continuing anyway..."
+    fi
+}
+
 init_smapi() {
     # Installation check
     if [ -e "${SMAPI_EXECUTABLE}" ]; then
@@ -151,6 +162,7 @@ init_gui
 init_xauthority
 init_stardew
 init_smapi
+init_patch_dll
 init_mods
 init_permissions
 

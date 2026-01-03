@@ -136,6 +136,13 @@ COPY docker/rootfs/data/images/junimo.png /data/images/junimo.png
 RUN install_app_icon.sh /data/images/junimo.png && \
     rm /data/images/junimo.png
 
+# Install .NET SDK, used for the DLL patcher
+RUN curl -fsSL https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -o packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    rm packages-microsoft-prod.deb && \
+    apt-get update && \
+    apt-get install -y dotnet-sdk-9.0
+
 RUN \
     # Clear apt cache
     apt-get autoremove -y && \
@@ -150,6 +157,11 @@ RUN \
 
 
 
+# Copy and install DLL patcher
+COPY tools/dll-patcher/ /tmp/dll-patcher/
+RUN cd /tmp/dll-patcher && \
+    dotnet publish -c Release -o /opt/dll-patcher && \
+    rm -rf /tmp/dll-patcher
 
 # Copy system files
 COPY docker/rootfs/ /
