@@ -27,11 +27,11 @@ check_dependency_ilspycmd() {
 }
 
 get_src_directory() {
-    if ! var_exists CI_GAME_PATH; then
-        error_ci_game_path_not_set
+    if ! var_exists GAME_PATH; then
+        error_game_path_not_set
     fi
 
-    local -r src="${CI_GAME_PATH}/Stardew Valley.dll"
+    local -r src="${GAME_PATH}/Stardew Valley.dll"
 
     # Directory separators:
     # Windows -> \
@@ -45,8 +45,8 @@ get_src_directory() {
 }
 
 get_dest_directory() {
-    local -r versionLabel=$(tools/parse-sdv-version.sh label)
-    local -r versionBuildNumber=$(tools/parse-sdv-version.sh build)
+    local -r versionLabel=$(tools/get-sdv-version-local.sh label)
+    local -r versionBuildNumber=$(tools/get-sdv-version-local.sh build)
     echo "./decompiled/sdv-${versionLabel}-${versionBuildNumber}"
 }
 
@@ -57,7 +57,7 @@ decompile() {
     local -r dest=$2
 
     echo "Decompiling Stardew Valley..."
-    
+
     printf "Input: \e[90m%s\e[0m\n" "$(realpath "$src")"
     printf "Output: \e[90m%s\e[0m\n\n" "$(realpath "$dest")"
 
@@ -79,13 +79,13 @@ decompile() {
     fi
 }
 
-error_ci_game_path_not_set() {
-    print_error "Error: \"CI_GAME_PATH\" is not set."
+error_game_path_not_set() {
+    print_error "Error: \"GAME_PATH\" is not set."
     exit 2
 }
 
 error_file_not_found() {
-    print_error "Error: Source file \"$1\" does not exist. Did you install Stardew Valley and set \"CI_GAME_PATH\"?"
+    print_error "Error: Source file \"$1\" does not exist. Did you install Stardew Valley and set \"GAME_PATH\"?"
     exit 3
 }
 
@@ -96,15 +96,15 @@ error_ilspycmd_failed() {
 
 main() {
     . tools/utils.sh
-    
+
     trap cleanup SIGINT
-    
+
     src_dir=$(get_src_directory)
     if [ $? -ne 0 ]; then
         echo $src_dir
         exit 1
     fi
-    
+
     dest_dir=$(get_dest_directory)
     if [ $? -ne 0 ]; then
         echo $dest_dir
