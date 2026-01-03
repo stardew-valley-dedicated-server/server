@@ -1,2 +1,3 @@
 # Depot Downloader
-https://github.com/SteamRE/DepotDownloader/releases/tag/DepotDownloader_2.6.0
+
+Download the latest tool version here: https://github.com/SteamRE/DepotDownloader/releases

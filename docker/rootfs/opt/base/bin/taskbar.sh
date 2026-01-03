@@ -1,10 +1,21 @@
 #!/bin/sh
 
-# POLYWINS
-# Original source: https://github.com/uniquepointer/polywins
+# Description:
+#   Custom taskbar implementation.
+#   Original source: https://github.com/uniquepointer/polywins
+#
+# Usage:
+#   Add the following line to your polybar config:
+#
+#   [module/taskbar]
+#   type = custom/script
+#   exec = taskbar.sh 2>/dev/null
+#   format = <label>
+#   label = %output%
+#   label-padding = 1
+#   tail = true
 
-# SETTINGS {{{ ---
-
+# SETTINGS
 active_text_color="#FFFFFF"
 active_bg="#353535"
 active_underline=""
@@ -25,9 +36,6 @@ add_spaces="true"
 resize_increment=16
 wm_border_width=1 # setting this might be required for accurate resize position
 
-# --- }}}
-
-
 main() {
 	# If no argument passed...
 	if [ -z "$2" ]; then
@@ -45,10 +53,7 @@ main() {
 	fi
 }
 
-
-
-# ON-CLICK FUNCTIONS {{{ ---
-
+# ON-CLICK FUNCTIONS
 raise_or_minimize() {
 	if [ "$(get_active_wid)" = "$1" ]; then
 		wmctrl -ir "$1" -b toggle,hidden
@@ -94,12 +99,7 @@ decrement_size() {
 	wmctrl -ir "$1" -e "0,$x,$y,$w,$h"
 }
 
-# --- }}}
-
-
-
-# WINDOW LIST SETUP {{{ ---
-
+# WINDOW LIST SETUP
 active_left="%{F$active_text_color}"
 active_right="%{F-}"
 inactive_left="%{F$inactive_text_color}"
@@ -169,14 +169,14 @@ generate_window_list() {
 			window_count=$(( window_count + 1 ))
 			continue
 		fi
-		
+
 		# Show the user-selected window property
 		case "$show" in
 			"window_class") w_name="$cls" ;;
 			"window_classname") w_name="$cname" ;;
 			"window_title") w_name="$title" ;;
 		esac
-		
+
 		# Use user-selected character case
 		case "$char_case" in
 			"lower") w_name=$(
@@ -234,11 +234,9 @@ generate_window_list() {
 	if [ "$window_count" = 0 ]; then
 		printf "%s" "$empty_desktop_message"
 	fi
-	
+
 	# Print newline
 	echo ""
 }
-
-# --- }}}
 
 main "$@"

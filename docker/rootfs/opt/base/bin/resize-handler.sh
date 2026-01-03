@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Description:
-#   Watch for file changes.
+#   Watch for display resize events to update polybar and wallpaper.
 #
 # Usage:
 #   resize-handler.sh
@@ -31,7 +31,7 @@ while true; do
     # Listen to display resize events
     xev -root -event randr | while read -r line; do
         newSize=$(get_screen_size)
-        
+
         # Check if the screen size has changed
         if [ "$oldSize" != "$newSize" ]; then
             echo "Resize detected: '$oldSize' -> '$newSize'"

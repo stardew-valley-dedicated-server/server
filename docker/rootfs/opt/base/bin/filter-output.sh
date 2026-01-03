@@ -4,7 +4,7 @@
 #   Watch for file changes.
 #
 # Usage:
-#   ./filter-output.sh /path/to/file
+#   ./filter-output.sh regex_pattern
 
 # Check for at least one argument
 if [ "$#" -lt 1 ]; then
