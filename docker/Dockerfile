@@ -173,22 +173,22 @@ RUN cd /tmp/dll-patcher && \
     dotnet publish -c Release -o /opt/dll-patcher && \
     rm -rf /tmp/dll-patcher
 
-# Copy system files
-COPY docker/rootfs/ /
-
 # Set executable permissions for application scripts and Supervisor services.
 #
-# Supervisor service definitions are located in "/etc/services" so permissions can be adjusted
-# without modifying files from the base image. Once permissions are set, the services are copied
-# to "/etc/services.d", which is the directory actually used by the base image.
-#
-# Note: `.dep` files MAY return a boolean. If they do not, they must remain non-executable.
-RUN chmod +x \
-    /startapp.sh \
-    /opt/base/bin/* && \
-    find /etc/services -type f ! -empty -exec chmod +x {} \; && \
-    cp -r /etc/services/* /etc/services.d/ && \
-    rm -rf /etc/services
+# Custom service definitions are copied to temp, chmod'd (non-empty files only), then merged into
+# /etc/services.d after copying all system files. This avoids modifying base image service files.
+# Note: .dep files can be executable scripts (return boolean) or empty markers. The ! -empty check
+# makes only non-empty files executable, handling both cases correctly.
+COPY docker/rootfs/etc/services.d /tmp/our-services/
+RUN find /tmp/our-services -type f ! -empty -exec chmod +x {} \;
+
+# Copy system files (merges with base image)
+COPY docker/rootfs/ /
+
+# Apply our chmod'd services and set other script permissions
+RUN cp -r /tmp/our-services/* /etc/services.d/ && \
+    rm -rf /tmp/our-services && \
+    chmod +x /startapp.sh /opt/base/bin/*
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
