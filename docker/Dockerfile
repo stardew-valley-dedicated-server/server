@@ -186,7 +186,7 @@ RUN find /tmp/our-services -type f ! -empty -exec chmod +x {} \;
 COPY docker/rootfs/ /
 
 # Apply our chmod'd services and set other script permissions
-RUN cp -r /tmp/our-services/* /etc/services.d/ && \
+RUN cp -a /tmp/our-services/. /etc/services.d/ && \
     rm -rf /tmp/our-services && \
     chmod +x /startapp.sh /opt/base/bin/*
 
