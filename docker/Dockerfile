@@ -176,10 +176,9 @@ RUN cd /tmp/dll-patcher && \
 # Copy system files
 COPY docker/rootfs/ /
 
-# Make custom scripts executable
-RUN chmod +x \
-    /opt/base/bin/attach-cli \
-    /opt/base/bin/server-command-loop
+# Make custom scripts and supervisor services executable
+RUN chmod +x /startapp.sh /opt/base/bin/* && \
+    find /etc/services.d -type f \( -name "run" -o -name "is_ready" -o -name "kill" -o -name "finish" \) -exec chmod +x {} \;
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
