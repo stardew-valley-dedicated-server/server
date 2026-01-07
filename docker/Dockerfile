@@ -113,11 +113,18 @@ RUN apt-get install -y \
 RUN apt-get install -y \
     exa \
     htop \
-    nano \
-    tmux
+    nano
+
+# Install latest tmux
+RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v3.6a/tmux-3.6a-linux-x86_64.tar.gz && \
+    tar -xzf tmux-3.6a-linux-x86_64.tar.gz && \
+    install -m 0755 ./tmux /usr/local/bin/tmux && \
+    rm -r ./tmux && \
+    rm ./tmux-3.6a-linux-x86_64.tar.gz
 
 # Install vsdbg for remote debugging
-RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /root/vsdbg
+# TODO: Make installation optional for local/debug builds, commented for now
+# RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /root/vsdbg
 
 # Install TigerVNC (replaces pre-compiled x11, so that it includes the GLX extension)
 RUN apt-get install -y \
