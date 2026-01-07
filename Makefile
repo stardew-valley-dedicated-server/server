@@ -59,6 +59,8 @@ logs:
 # Attach to interactive server CLI (with split-pane view for logs and commands)
 cli:
 	@echo Attaching to server console...
+	@echo Waiting for server to be ready...
+	@docker compose exec server sh -c 'while [ ! -f /tmp/server-output.log ]; do sleep 1; done'
 	@docker compose exec server attach-cli
 
 # Attach to Ink-based CLI (experimental terminal-style interface)
@@ -74,7 +76,7 @@ stop:
 # Clean up everything
 clean:
 	@echo Cleaning up...
-	@docker compose -f docker-compose.yml down -v
+	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose -f docker-compose.yml down -v
 	@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest 2>/dev/null || true
 
 # Show help

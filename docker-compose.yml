@@ -24,6 +24,12 @@ services:
       # Server configuration
       VNC_PASSWORD: "${VNC_PASSWORD:-}"
       DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/server-output.log || exit 1"]
+      interval: 1s
+      timeout: 1s
+      retries: 15
+      start_period: 10s
     restart: unless-stopped
 
   # NOTE: Not currently used and only here for reference.
