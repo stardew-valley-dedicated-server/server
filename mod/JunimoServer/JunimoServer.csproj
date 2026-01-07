@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
-		<Version>1.1.0</Version>
+		<Version>1.2.0</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>true</EnableModDeploy>
@@ -27,12 +27,12 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Google.Protobuf" Version="3.21.5" />
-        <PackageReference Include="Grpc.Net.Client" Version="2.48.0" />
-        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2" />
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
-        <PackageReference Include="Websocket.Client" Version="5.1.0" />
+        <PackageReference Include="Google.Protobuf" Version="3.21.5"/>
+        <PackageReference Include="Grpc.Net.Client" Version="2.48.0"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
+        <PackageReference Include="Websocket.Client" Version="5.1.0"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -61,30 +61,30 @@
         </PropertyGroup>
 
         <!-- Clean and create destination directory -->
-        <RemoveDir Directories="$(DestPath)" />
-        <MakeDir Directories="$(DestPath)" />
+        <RemoveDir Directories="$(DestPath)"/>
+        <MakeDir Directories="$(DestPath)"/>
 
         <!-- Copy required mod files to destination -->
         <ItemGroup>
-            <ModFiles Include="$(OutputPath)\JunimoServer.dll" />
+            <ModFiles Include="$(OutputPath)\JunimoServer.dll"/>
             <!-- <ModFiles Include="$(OutputPath)\JunimoServer.pdb" /> -->
-            <ModFiles Include="$(OutputPath)\Google.Protobuf.dll" />
-            <ModFiles Include="$(OutputPath)\Grpc.Core.Api.dll" />
-            <ModFiles Include="$(OutputPath)\Grpc.Net.Client.dll" />
-            <ModFiles Include="$(OutputPath)\Grpc.Net.Common.dll" />
-            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.DependencyInjection.dll" />
-            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.Logging.Abstractions.dll" />
-            <ModFiles Include="$(OutputPath)\Microsoft.IO.RecyclableMemoryStream.dll" />
-            <ModFiles Include="$(OutputPath)\System.Reactive.dll" />
-            <ModFiles Include="$(OutputPath)\Websocket.Client.dll" />
-            <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json" />
+            <ModFiles Include="$(OutputPath)\Google.Protobuf.dll"/>
+            <ModFiles Include="$(OutputPath)\Grpc.Core.Api.dll"/>
+            <ModFiles Include="$(OutputPath)\Grpc.Net.Client.dll"/>
+            <ModFiles Include="$(OutputPath)\Grpc.Net.Common.dll"/>
+            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.DependencyInjection.dll"/>
+            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.Logging.Abstractions.dll"/>
+            <ModFiles Include="$(OutputPath)\Microsoft.IO.RecyclableMemoryStream.dll"/>
+            <ModFiles Include="$(OutputPath)\System.Reactive.dll"/>
+            <ModFiles Include="$(OutputPath)\Websocket.Client.dll"/>
+            <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json"/>
         </ItemGroup>
-        <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)" />
+        <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)"/>
 
         <!-- Clean up build directory after copying files -->
-        <RemoveDir Directories="$(OutputPath)" />
-        <MakeDir Directories="$(OutputPath)" />
-        <Exec Command="cp -r $(DestPath)/* $(OutputPath)/" Condition="'$(OS)' != 'Windows_NT'" />
-        <Exec Command="xcopy /Y /E &quot;$(DestPath)\*&quot; &quot;$(OutputPath)\&quot;" Condition="'$(OS)' == 'Windows_NT'" />
+        <RemoveDir Directories="$(OutputPath)"/>
+        <MakeDir Directories="$(OutputPath)"/>
+        <Exec Command="cp -r $(DestPath)/* $(OutputPath)/" Condition="'$(OS)' != 'Windows_NT'"/>
+        <Exec Command="xcopy /Y /E &quot;$(DestPath)\*&quot; &quot;$(OutputPath)\&quot;" Condition="'$(OS)' == 'Windows_NT'"/>
     </Target>
 </Project>
