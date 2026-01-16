@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# VitePress
+.vitepress/dist
+.vitepress/cache
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

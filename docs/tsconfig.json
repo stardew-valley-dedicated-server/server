@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"moduleResolution": "Bundler",
+		"module": "ESNext",
+		"target": "ESNext",
+		"lib": ["ES2024", "DOM"],
+
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+
+		"allowJs": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"allowSyntheticDefaultImports": true,
+		"noEmit": true,
+		"isolatedModules": true,
+
+		"types": ["node"]
+	},
+	"include": ["docs/.vitepress/**/*.ts", "docs/.vitepress/**/*.vue"],
+	"exclude": ["node_modules", "docs/.vitepress/dist", "docs/.vitepress/cache"]
+}

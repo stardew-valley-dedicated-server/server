@@ -1,0 +1,32 @@
+{
+	"name": "junimoserver-docs",
+	"version": "1.0.0",
+	"description": "JunimoServer documentation website",
+	"type": "module",
+	"scripts": {
+		"dev": "vitepress dev",
+		"build": "vitepress build",
+		"preview": "vitepress preview",
+		"typecheck": "tsc --noEmit",
+		"lint": "npx @biomejs/biome check --max-diagnostics 20",
+		"lint:fix": "npm run lint -- --write --unsafe",
+		"check": "npm run lint && npm run typecheck"
+	},
+	"keywords": [
+		"stardew-valley",
+		"documentation",
+		"vitepress"
+	],
+	"dependencies": {
+		"vitepress": "^1.5.0",
+		"vue": "^3.5.13"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.8",
+		"@types/node": "^24.0.0",
+		"typescript": "^5.7.2"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	}
+}
