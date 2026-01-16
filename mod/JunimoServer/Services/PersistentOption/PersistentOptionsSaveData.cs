@@ -7,5 +7,7 @@ namespace JunimoServer.Services.PersistentOption
         public int MaxPlayers { get; set; } = 6;
 
         public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
+
+        public bool IpConnectionsEnabled { get; set; } = false;
     }
 }
