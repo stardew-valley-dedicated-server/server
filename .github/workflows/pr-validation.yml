@@ -12,6 +12,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-commits:
+    name: Validate Commits
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate commit messages
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
   validate-build:
     name: Validate Build
     runs-on: ubuntu-latest
@@ -33,8 +56,8 @@ jobs:
           push: false
           tags: sdvd/server:pr-${{ github.event.pull_request.number }}
           secrets: |
-            steam_user=${{ secrets.STEAM_USER }}
-            steam_pass=${{ secrets.STEAM_PASS }}
+            steam_username=${{ secrets.STEAM_USERNAME }}
+            steam_password=${{ secrets.STEAM_PASSWORD }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

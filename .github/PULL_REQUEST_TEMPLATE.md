@@ -10,7 +10,7 @@
 Before creating the pull request, please make sure you do the following:
 
 - Check that there isn't already a PR that solves the problem the same way. If you find a duplicate, please help us reviewing it.
-- Read the contribution docs at https://github.com/stardew-valley-dedicated-server/server/blob/master/docs/contributing.md
+- Read the contribution docs at https://stardew-valley-dedicated-server.github.io/community/contributing
 - Make sure the PR title follows conventional commits (https://www.conventionalcommits.org)
 
 Thank you for contributing!

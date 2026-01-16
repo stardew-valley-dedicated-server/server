@@ -29,7 +29,7 @@ body:
     label: Final checks
     description: "Before submitting, please make sure you do the following:"
     options:
-      - label: Read the [contribution guide](https://github.com/stardew-valley-dedicated-server/server/blob/master/docs/contributing.md).
+      - label: Read the [contribution guide](https://stardew-valley-dedicated-server.github.io/community/contributing).
         required: true
       - label: Check existing [issues](https://github.com/stardew-valley-dedicated-server/server/issues).
         required: true

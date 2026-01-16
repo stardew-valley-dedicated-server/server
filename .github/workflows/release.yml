@@ -69,8 +69,8 @@ jobs:
           provenance: true
           sbom: true
           secrets: |
-            steam_user=${{ secrets.STEAM_USER }}
-            steam_pass=${{ secrets.STEAM_PASS }}
+            steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
+            steam_username=${{ secrets.STEAM_USERNAME }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
