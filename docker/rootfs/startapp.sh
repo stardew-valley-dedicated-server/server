@@ -3,7 +3,7 @@
 set -euo pipefail
 
 MODS_DEST_DIR="/data/Mods"
-GAME_DEST_DIR="/data/Stardew"
+GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
 STEAM_DEST_DIR="/root/.steam/sdk64/"
@@ -64,54 +64,49 @@ init_stardew() {
         return
     fi
 
-    # Read Steam credentials from Docker secrets (preferred) or environment variables (fallback)
-    local STEAM_USER_VALUE="${STEAM_USER:-}"
-    local STEAM_PASS_VALUE="${STEAM_PASS:-}"
+    # Check if using steam-auth service (two-container setup)
+    # if [ -n "${STEAM_AUTH_URL:-}" ]; then
+        init_stardew_from_steam_auth
+        # return
+    # fi
 
-    if [ -f "/run/secrets/steam_user" ]; then
-        STEAM_USER_VALUE=$(< /run/secrets/steam_user tr -d '\n')
-        echo "Using Steam username from Docker secret"
+    # Legacy mode: Use steamcmd directly
+    # init_stardew_from_steamcmd
+}
+
+init_stardew_from_steam_auth() {
+    local STEAM_AUTH_GAME_DIR="/data/game"
+    local STEAM_AUTH_GAME_EXEC="${STEAM_AUTH_GAME_DIR}/StardewValley"
+
+    echo "Using steam-auth service for game files..."
+
+    # Check if game files exist in the shared volume
+    if [ ! -e "${STEAM_AUTH_GAME_EXEC}" ]; then
+        echo ""
+        echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+        echo -e "\e[33m║  Game files not found! Please run setup first:                        ║\e[0m"
+        echo -e "\e[33m║                                                                       ║\e[0m"
+        echo -e "\e[33m║  make setup                                                           ║\e[0m"
+        echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+        echo ""
+        echo "Waiting for game files to appear..."
+
+        # Poll until game files appear
+        while [ ! -e "${STEAM_AUTH_GAME_EXEC}" ]; do
+            sleep 5
+            echo "Still waiting for game files at ${STEAM_AUTH_GAME_DIR}..."
+        done
+
+        echo "Game files detected!"
     fi
 
-    if [ -f "/run/secrets/steam_pass" ]; then
-        STEAM_PASS_VALUE=$(< /run/secrets/steam_pass tr -d '\n')
-        echo "Using Steam password from Docker secret"
+    # Symlink the game directory to expected location
+    if [ ! -e "${GAME_DEST_DIR}" ]; then
+        echo "Linking game files from ${STEAM_AUTH_GAME_DIR} to ${GAME_DEST_DIR}..."
+        ln -s "${STEAM_AUTH_GAME_DIR}" "${GAME_DEST_DIR}"
     fi
 
-    # Validate Steam credentials
-    if [ -z "${STEAM_USER_VALUE}" ] || [ -z "${STEAM_PASS_VALUE}" ]; then
-        print_error "Error: Steam credentials are required for first-time setup"
-        print_error "Please provide credentials via Docker secrets (secrets/steam_user.txt and secrets/steam_pass.txt)"
-        print_error "or environment variables (STEAM_USER and STEAM_PASS)"
-        exit 1
-    fi
-
-    # Download & Install
-    echo "Installing Stardew Valley..."
-    echo "This is a one-time download and may take several minutes..."
-
-    steamcmd +@sSteamCmdForcePlatformType linux \
-        +force_install_dir ${GAME_DEST_DIR} \
-        +login "${STEAM_USER_VALUE}" "${STEAM_PASS_VALUE}" "${STEAM_GUARD_CODE}" \
-        +app_update 413150 \
-        +quit
-
-    # Capture the exit status of the steamcmd command
-    EXIT_STATUS=$?
-
-    # Check if the command was successful
-    if [ $EXIT_STATUS -ne 0 ]; then
-        print_error "Error: steamcmd command failed with exit status $EXIT_STATUS"
-        print_error "Please check your Steam credentials and try again"
-        exit 1
-    fi
-
-    # Removing these files causes a "FileNotFoundException", but it doesn't
-    # seem to cause problems but reduces game storage size by about 70-80%.
-    echo "Removing unnecessary files..."
-    rm -fv "${GAME_DEST_DIR}/Content/XACT/Wave Bank.xwb" "${GAME_DEST_DIR}/Content/XACT/Wave Bank(1.4).xwb"
-
-    echo "Stardew Valley downloaded successfully!"
+    echo "Game files ready (via steam-auth service)"
 }
 
 init_patch_dll() {
@@ -200,6 +195,7 @@ touch "${LOG_FILE}"
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 
+# FIXME: I think this is the culprit for duplicate output in docker compose logs
 # Start a background tail to stdout (so 'docker compose logs' works)
 tail -f "${LOG_FILE}" &
 TAIL_PID=$!

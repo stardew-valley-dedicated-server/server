@@ -28,7 +28,7 @@ mods/
 sub_modules/
 
 # Dependency folders
-node_modules/
+**/node_modules/
 
 # Project files
 .dockerignore
@@ -37,3 +37,22 @@ docker-compose*.yml
 LICENSE
 Makefile
 README.md
+
+# Documentation (not needed in build context)
+docs/
+*.md
+!.env.example
+
+# Development tools (not needed in build context)
+.claude/
+commitlint.config.js
+lefthook.yml
+CONTRIBUTING.md
+
+# Tools not used in Docker build
+tools/cli/
+tools/rag-system/
+
+# Root package management (not used in Docker build)
+/package.json
+/package-lock.json
