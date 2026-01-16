@@ -1,51 +1,55 @@
 services:
+  # Main game server
   server:
-    image: sdvd/server:latest
+    image: sdvd/server:${IMAGE_VERSION:-latest}
+    container_name: sdvd-server
     stdin_open: true
     tty: true
-    # container_name: sdvd-server
-    # network_mode: host  # Required for Galaxy P2P UDP connections
-    # ports section is ignored in host mode - ports are directly exposed
     ports:
-      - ${GAME_PORT:-24642}:24642/udp # Now uses host port 24642
-      - ${VNC_PORT:-5800}:5800 # Now uses host port 5800
+      - ${GAME_PORT:-24642}:24642/udp
+      - ${VNC_PORT:-5800}:5800
     cap_add:
-      - SYS_TIME # Required for container time sync with host
+      # Required to sync time, ensures GOG GalaxyAuth works
+      # TODO: Document/mention underlying library + extra debug info file for GOG, in case shtf
+      - SYS_TIME
     volumes:
-      # Game files are downloaded on first run into this volume
-      - game-files:/data/Stardew
-      # Save data and config
+      - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
     environment:
-      # Required for first-time game download and ingame lobby auth
-      STEAM_USER: "${STEAM_USER}"
-      STEAM_PASS: "${STEAM_PASS}"
-      STEAM_GUARD_CODE: "${STEAM_GUARD_CODE:-}"
+      # Steam auth service URL (for runtime ticket requests)
+      STEAM_AUTH_URL: "http://steam-auth:3001"
       # Server configuration
       VNC_PASSWORD: "${VNC_PASSWORD:-}"
       DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
-    healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/server-output.log || exit 1"]
-      interval: 1s
-      timeout: 1s
-      retries: 15
-      start_period: 10s
+      ALLOW_IP_CONNECTIONS: "${ALLOW_IP_CONNECTIONS:-false}"
+    depends_on:
+      steam-auth:
+        condition: service_healthy
     restart: unless-stopped
 
-  # NOTE: Not currently used and only here for reference.
-  # web:
-  #   image: stardew-dedicated-web:latest
-  #   profiles: [web]
-  #   build:
-  #     context: ./../web
-  #     dockerfile: ./../web/Dockerfile
-  #   container_name: stardew-dedicated-web
-  #   ports:
-  #     - ${WEB_UI_PORT}:3000
-  #     - ${WEB_HMR_PORT}:24678
-  #   volumes:
-  #     - data:/data:ro
+  steam-auth:
+    build:
+      context: ./tools/steam-service
+      dockerfile: Dockerfile
+    image: sdvd/steam-auth:latest
+    container_name: sdvd-steam-auth
+    stdin_open: true
+    tty: true
+    ports:
+      - "${STEAM_AUTH_PORT:-3001}:3001"
+    volumes:
+      - steam-session:/data/steam-session
+      - game-data:/data/game
+    environment:
+      PORT: "3001"
+      GAME_DIR: "/data/game"
+      SESSION_DIR: "/data/steam-session"
+      STEAM_USERNAME: "${STEAM_USERNAME:-}"
+      STEAM_PASSWORD: "${STEAM_PASSWORD:-}"
+      STEAM_REFRESH_TOKEN: "${STEAM_REFRESH_TOKEN:-}"
+    restart: unless-stopped
 
 volumes:
-  game-files:
+  steam-session:
+  game-data:
   saves:
