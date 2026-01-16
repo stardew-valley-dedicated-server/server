@@ -15,11 +15,11 @@ namespace JunimoServer.Services.CabinManager
             CabinChosen = cabinChosen;
         }
 
-        public static StackLocation Create()
+        public static StackLocation Create(CabinManagerData cabinManagerData)
         {
-            if (CabinManagerOverrides.cabinManagerData.DefaultCabinLocation.HasValue)
+            if (cabinManagerData.DefaultCabinLocation.HasValue)
             {
-                return new StackLocation(CabinManagerOverrides.cabinManagerData.DefaultCabinLocation.Value, null);
+                return new StackLocation(cabinManagerData.DefaultCabinLocation.Value, null);
             }
 
             // Hardcoded fallback

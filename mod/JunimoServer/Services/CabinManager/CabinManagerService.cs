@@ -5,6 +5,7 @@ using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Util;
 using Microsoft.Xna.Framework;
+using Netcode;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -33,37 +34,45 @@ namespace JunimoServer.Services.CabinManager
 
     public class CabinManagerService : ModService
     {
-        private CabinManagerData _data;
-
         public CabinManagerData Data
         {
-            get => _data;
+            get => _cabinManagerData;
             set
             {
-                CabinManagerOverrides.cabinManagerData = _data = value;
+                _cabinManagerData = value;
             }
         }
 
         public static readonly Point HiddenCabinLocation = new Point(-20, -20);
 
         public readonly PersistentOptions options;
+
         private readonly RoleService roleService;
 
-        private const int minEmptyCabins = 1;
+        private static readonly int minEmptyCabins = 1;
 
         private readonly HashSet<long> farmersInFarmhouse = new HashSet<long>();
 
+
+        // Static reference ONLY for Harmony patches (unavoidable)
+        private static CabinManagerService _instance;
+
+        // Instance data - NOT static
+        private CabinManagerData _cabinManagerData;
+
         public CabinManagerService(IModHelper helper, IMonitor monitor, Harmony harmony, RoleService roleService, MessageInterceptorsService messageInterceptorsService, PersistentOptions options) : base(helper, monitor)
         {
+            _instance = this;
+
             this.roleService = roleService;
             this.options = options;
 
             Data = new CabinManagerData(helper, monitor);
-            CabinManagerOverrides.Initialize(options, OnServerJoined);
 
             Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
             Helper.Events.GameLoop.UpdateTicked += OnTicked;
 
+            // Disable default starting cabin logic, we handle it
             harmony.Patch(
                 original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.BuildStartingCabins)),
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
@@ -71,23 +80,20 @@ namespace JunimoServer.Services.CabinManager
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
-                postfix: new HarmonyMethod(typeof(CabinManagerOverrides), nameof(CabinManagerOverrides.sendServerIntroduction_Postfix))
+                postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnServerJoined_Postfix))
             );
 
+            // Hijack outgoing messages
             messageInterceptorsService
-                .Add(Multiplayer.locationIntroduction, CabinManagerOverrides.OnLocationIntroductionMessage)
-                .Add(Multiplayer.locationDelta, CabinManagerOverrides.OnLocationDeltaMessage);
+                .Add(Multiplayer.locationIntroduction, OnLocationIntroductionMessage)
+                .Add(Multiplayer.locationDelta, OnLocationDeltaMessage);
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
+            // Load saved cabin data
+            // TODO: Check for proper persistence, see https://github.com/stardew-valley-dedicated-server/server/issues/64
             Data.Read();
-            EnsureAtLeastXCabins();
-        }
-
-        private void OnServerJoined(object sender, ServerJoinedEventArgs e)
-        {
-            AddPeer(e.PeerId);
             EnsureAtLeastXCabins();
         }
 
@@ -96,10 +102,86 @@ namespace JunimoServer.Services.CabinManager
             MonitorFarmhouse();
         }
 
+        private static void OnServerJoined_Postfix(long peer)
+        {
+            _instance?.OnServerJoined(peer);
+        }
+
+        private void OnServerJoined(long peer)
+        {
+            AddPeer(peer);
+            EnsureAtLeastXCabins();
+        }
+
+        //private void OnServerJoined(object sender, ServerJoinedEventArgs e)
+        //{
+        //    AddPeer(e.PeerId);
+        //    EnsureAtLeastXCabins();
+        //}
+
+        private void OnLocationIntroductionMessage(MessageContext context)
+        {
+            // Parse message
+            var forceCurrentLocation = context.Reader.ReadBoolean();
+            var netRootLocation = NetRoot<GameLocation>.Connect(context.Reader);
+
+            // Check location
+            if (netRootLocation.Value is not Farm netRootFarm)
+            {
+                return;
+            }
+
+            GameLocation farm;
+
+            if (this.options.IsFarmHouseStack)
+            {
+                // Farmhouse stacking strategy:
+                // Update warp coordinates on the server. Since there is only a single
+                // farmhouse building, we adjust its warps while leaving all cabins in
+                // `HiddenCabinLocation`.
+                farm = Game1.getFarm();
+                farm.GetCabin(context.PeerId).SetWarpsToFarmFarmhouseDoor();
+            }
+            else
+            {
+                // Cabin stacking strategy:
+                // Relocate the player's cabin client-side so only the owner sees it.
+                // The cabin is moved from `HiddenCabinLocation` to `DefaultCabinLocation`,
+                // making it visible and interactable for the owner only.
+                // This allows individual cabin repainting even while stacked, unlike the
+                // farmhouse strategy.
+                farm = netRootFarm;
+                farm.GetCabin(context.PeerId).Relocate(StackLocation.Create(_cabinManagerData).ToPoint());
+            }
+
+            // Update the outgoing message
+            context.ModifiedMessage = NetworkHelper.CreateMessageLocationIntroduction(context.PeerId, farm.Root, forceCurrentLocation);
+        }
+
+        private void OnLocationDeltaMessage(MessageContext context)
+        {
+            // TODO: Do we have to do it on each delta, or can it be done once on assignment?
+            // Either way, document reasons/whatabouts here, e.g. "this is the only message we know about the location"
+            if (NetworkHelper.IsLocationDeltaMessageForLocation(context, out Cabin cabin))
+            {
+                if (this.options.IsFarmHouseStack)
+                {
+                    cabin.SetWarpsToFarmFarmhouseDoor();
+                }
+                else
+                {
+                    cabin.SetWarpsToFarmCabinDoor();
+                }
+            }
+        }
+
         private void AddPeer(long peerId)
         {
             Monitor.Log($"Adding peer '{peerId}'", LogLevel.Debug);
             Data.AllPlayerIdsEverJoined.Add(peerId);
+
+            // Save/persist/store cabin data
+            // TODO: Should happen after adding cabin, so that we can store the moved cabin location alongside.
             Data.Write();
         }
 
@@ -124,8 +206,9 @@ namespace JunimoServer.Services.CabinManager
                 {
                     farmersInFarmhouse.Add(farmer.UniqueMultiplayerID);
 
-                    // TODO: a) Prevent entering instead of porting player out after entering the farmhouse
-                    // TODO: b) Send request to allow entering to farmhouse owner, could this be useful?
+                    // TODO: This handling is rather awkward and inefficient, we should act and not react!
+                    // a) Prevent entering instead of porting player out after entering the farmhouse
+                    // b) Send request to allow entering to farmhouse owner, could this be useful?
                     if (!roleService.IsPlayerOwner(farmer))
                     {
                         Game1.Multiplayer.sendChatMessage(
@@ -148,12 +231,17 @@ namespace JunimoServer.Services.CabinManager
             var emptyCabinCount = GetCabinHiddenCount(farm);
             var cabinsMissingCount = minEmptyCabins - emptyCabinCount;
 
-            // TODO: Currently using hardcoded minEmptyCabins = 1, essentially creates a new empty cabin as soon as the "current" free cabin got picked... lets see if that works with concurrency.
-            Monitor.Log($"Cabin check: {{ min: '{minEmptyCabins}', empty: '{emptyCabinCount}', missing: '{cabinsMissingCount}' }}", LogLevel.Debug);
+            // TODO: Currently using hardcoded minEmptyCabins = 1, essentially creates
+            // a new empty cabin as soon as the "current" free cabin got picked...
+            // lets see if that works with concurrency.
+            Monitor.Log($"Cabin check:", LogLevel.Debug);
+            Monitor.Log($"\tRequired: {minEmptyCabins}", LogLevel.Debug);
+            Monitor.Log($"\tCurrent: {emptyCabinCount}", LogLevel.Debug);
+            Monitor.Log($"\tMissing: {cabinsMissingCount}", LogLevel.Debug);
 
             for (var i = 0; i < cabinsMissingCount; i++)
             {
-                Monitor.Log($"Cabin check: building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Debug);
+                Monitor.Log($"Cabin check: building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Trace);
 
                 if (!BuildNewCabin(farm))
                 {
