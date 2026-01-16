@@ -60,9 +60,8 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 ## Documentation
 
-Explore the [full documentation](docs/1.getting-started/1.introduction.md) to get started. Here’s what you’ll find:
+Explore the [full documentation](https://stardew-valley-dedicated-server.github.io) to get started. Here's what you'll find:
 
--   **[Getting started](docs/1.getting-started/1.introduction.md):** Step-by-step instructions on setting up and managing your server.
--   **[Guide](docs/2.guide/1.architecture.md):** Learn more about the key concepts behind the server.
--   **[API](docs/3.api/):** Learn more about the concepts of the server.
--   **[Community](docs/4.community/):** Find out how to get involved.
+-   **[Getting Started](https://stardew-valley-dedicated-server.github.io/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
+-   **[Server Guide](https://stardew-valley-dedicated-server.github.io/guide/using-the-server):** Learn how to use and manage your server.
+-   **[Community](https://stardew-valley-dedicated-server.github.io/community/getting-help):** Find out how to get involved and get help.

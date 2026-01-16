@@ -41,7 +41,7 @@ try
     var patchInfoPath = dllPath + ".patch-info";
 
     // Get the patcher executable path
-    var patcherExePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+    var patcherExePath = Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
 
     if (string.IsNullOrEmpty(patcherExePath))
     {
@@ -235,18 +235,25 @@ try
                 {
                     Log("  Adding runtime log statement...");
 
-                    // Import Console.WriteLine(string) method
                     var writeLineMethod = module.ImportReference(
-                        typeof(Console).GetMethod("WriteLine", new[] { typeof(string) })
+                        typeof(Console).GetMethod("WriteLine", [typeof(string)])
                     );
 
                     // Create log message with timestamp prefix
+                    var ansiBlack = "\u001b[30m";
+                    var ansiReset = "\u001b[0m";
+                    var logLevel = "TRACE";
+                    var logName = "patch";
                     var timestamp = DateTime.Now.ToString("HH:mm:ss");
-                    var logMessage = $"[{timestamp} INFO  Patched] Skipped InitializeSounds call (patched by SDVPatcher)";
+
+                    var logFormat = "DLL patched successfully";
+                    var logMessage = $"{ansiBlack}[{timestamp} {logLevel} {logName}] {logFormat}{ansiReset}";
+
+                    // Create instructions for insertion
                     var ldstr = processor.Create(OpCodes.Ldstr, logMessage);
                     var callWriteLine = processor.Create(OpCodes.Call, writeLineMethod);
 
-                    // Insert after the instruction before the removed block
+                    // Insert after the instruction that comes before the removed block
                     processor.InsertAfter(insertAfterInstruction, ldstr);
                     processor.InsertAfter(ldstr, callWriteLine);
 

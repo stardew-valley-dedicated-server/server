@@ -22,8 +22,8 @@ run_depot_downloader() {
     tools/depot-downloader/DepotDownloader.exe \
         -app $APP_ID \
         -depot $DEPOT_ID \
-        -username "$STEAM_USER" \
-        -password "$STEAM_PASS" \
+        -username "$STEAM_USERNAME" \
+        -password "$STEAM_PASSWORD" \
         -dir "$TEMP_DIR" \
         -filelist "$TEMP_FILE"
 }
