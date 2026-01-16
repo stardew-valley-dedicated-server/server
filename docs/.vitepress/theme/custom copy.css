@@ -1,0 +1,156 @@
+/* Custom brand colors */
+:root {
+    /*
+        SDV WEBSITE COLOR PALETTE
+        #0785F2
+        #055BA6
+        #3DD925
+        #55A61B
+        #D98E04
+    */
+
+    /* Aqua-Gold */
+    --vp-c-brand-1: #63dbe4ff;
+    --vp-c-brand-2: #25ac8aff;
+    --vp-c-brand-3: #dda122ff;
+
+    /* Blue-Green */
+    /* --vp-c-brand-1: #0571d7ff;
+    --vp-c-brand-2: #2b7eb8ff;
+    --vp-c-brand-3: #25ac8aff; */
+
+    /* Blue-Deep */
+    /* --vp-c-brand-1: #0571d7ff;
+    --vp-c-brand-2: #0b4373ff;
+    --vp-c-brand-3: #0a2969ff; */
+
+    /* Green */
+    --vp-c-brand-1: #066636ff;
+    --vp-c-brand-2: #25ac8aff;
+    --vp-c-brand-3: #39c63cff;
+
+    /* Night Market */
+    /* --vp-c-brand-1: #281075ff;
+    --vp-c-brand-2: #41b824ff;
+    --vp-c-brand-3: #420375ff; */
+
+    /* Purple - Manual #1 */
+    --vp-c-brand-1: #9370db;
+    --vp-c-brand-2: #6e2bff;
+    --vp-c-brand-3: #34327a;
+
+    /* Purple - Manual #2 */
+    /* --vp-c-brand-1: #9370db;
+    --vp-c-brand-2: #A014DC;
+    --vp-c-brand-3: #34327a; */
+
+    /* Gree - Manual #1 */
+    /* --vp-c-brand-1: #34327a;
+    --vp-c-brand-2: #6e2bff;
+    --vp-c-brand-3: #8a2be2; */
+
+    /* Green - initial */
+    /* --vp-c-brand-1: #34d058;
+    --vp-c-brand-2: #28a745;
+    --vp-c-brand-3: #22863a; */
+
+    /* --vp-c-brand-1: #adff2f;
+    --vp-c-brand-2: #00ff00;
+    --vp-c-brand-3: #006100; */
+
+    /* --vp-c-brand-1: #adff2f;
+    --vp-c-brand-2: #7cfc00;
+    --vp-c-brand-3: #98fb98; */
+
+    --vp-home-hero-name-color: transparent;
+    --vp-home-hero-name-background: linear-gradient(
+        135deg,
+        var(--vp-c-brand-1) 10%,
+        var(--vp-c-brand-2) 50%,
+        var(--vp-c-brand-3) 90%
+    );
+
+    /* Hero image gradient background */
+    --vp-home-hero-image-filter: blur(48px);
+    --vp-home-hero-image-background-image: linear-gradient(
+        -45deg,
+        var(--vp-c-brand-1) 50%,
+        var(--vp-c-brand-3) 50%
+    );
+}
+
+#app {
+    /*************************************************************************
+     * Announcement bar adjustments
+     * Push nav, sidebars, and content down when announcement bar is present.
+     *************************************************************************/
+
+    .VPNav {
+        top: var(--announcement-offset, 0px) !important;
+        transition: top 0.3s ease;
+    }
+
+    .VPSidebar,
+    .VPContent {
+        padding-top: calc(
+            var(--vp-nav-height) + var(--announcement-offset, 0px)
+        );
+    }
+
+    .aside-container {
+        padding-top: calc(
+            var(--vp-nav-height) + var(--vp-layout-top-height, 0px) +
+                var(--vp-doc-top-height, 0px) + 48px +
+                var(--announcement-offset, 0px)
+        );
+
+        .aside-content {
+            min-height: calc(
+                100vh -
+                    (
+                        var(--vp-nav-height) + var(--vp-layout-top-height, 0px) +
+                            48px + var(--announcement-offset, 0px)
+                    )
+            );
+        }
+    }
+
+    /*************************************************************************
+     * Other styles
+     *************************************************************************/
+
+    /* Background color doesn't fit nicely with our icon style */
+    .VPLink .icon {
+        background: none;
+    }
+
+    /* Icon8 feature icon wobble on hover */
+    .VPFeature .icon img {
+        transition: transform 0.3s ease !important;
+        display: inline-block !important;
+        transform-origin: center center !important;
+    }
+
+    .item:hover .icon img {
+        animation: wobble 0.5s ease-in-out !important;
+    }
+}
+
+/* Wobble animation for Icon8 icons (not used by AnimatedIcons) */
+@keyframes wobble {
+    0% {
+        transform: translateX(0) rotate(0deg);
+    }
+    25% {
+        transform: translateX(3px) rotate(5deg);
+    }
+    50% {
+        transform: translateX(-3px) rotate(-5deg);
+    }
+    75% {
+        transform: translateX(2px) rotate(3deg);
+    }
+    100% {
+        transform: translateX(0) rotate(0deg);
+    }
+}
