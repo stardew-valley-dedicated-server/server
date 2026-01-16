@@ -1,34 +1,72 @@
 #!/bin/bash
 
+# Take session name as first argument
+SESSION_NAME="$1"
 INPUT_FIFO="/tmp/smapi-input"
+PASSWORD_MODE_FILE="/tmp/smapi-password-mode"
 
 send_to_server() {
     local command="$1"
     echo "$command" >> "$INPUT_FIFO"
 }
 
+# Read password with asterisk masking and backspace support
+read_password() {
+    local prompt="$1"
+    local password=""
+    local char
+
+    printf "%s" "$prompt"
+
+    while IFS= read -rsn1 char; do
+        # Enter key (empty char)
+        if [[ -z "$char" ]]; then
+            break
+        fi
+
+        # Backspace or Delete (ASCII 127 or ctrl-h)
+        if [[ "$char" == $'\x7f' ]] || [[ "$char" == $'\b' ]]; then
+            if [ -n "$password" ]; then
+                password="${password%?}"  # Remove last character
+                printf "\b \b"  # Erase asterisk from display
+            fi
+        else
+            # Regular character
+            password+="$char"
+            printf "*"
+        fi
+    done
+
+    echo  # Newline after password input
+    REPLY="$password"
+}
+
 clear
 stty -echoctl  # hide ^C
 
-# Function to redraw prompt and clear line on CTRL+C
+# Trap Ctrl+C to cancel the current input line
 handle_sigint() {
-    # Move to beginning of line, clear it, show prompt again
     printf "\r\033[Kserver> "
 }
-
-# Trap SIGINT
 trap 'handle_sigint' INT
 
 while true; do
-    # Read input into REPLY
-    if ! read -r -e -p "server> "; then
-        # CTRL+D (EOF)
-        echo
-        tmux detach-client 2>/dev/null || exit 0
-        break
+    # Check if next read should be in password mode
+    if [ -f "$PASSWORD_MODE_FILE" ]; then
+        # Delete signal file so we don't stay in password mode
+        rm -f "$PASSWORD_MODE_FILE"
+
+        # Password mode: use asterisk-masked input
+        read_password "password> "
+    else
+        # Normal mode: use regular input with readline support
+        if ! read -r -e -p "server> "; then
+            echo
+            tmux kill-session -t "$SESSION_NAME" 2>/dev/null || exit 0
+            break
+        fi
     fi
 
-    # Always clear to keep the panel at one visible line (+ one empty for bottom "padding")
     clear
 
     case "$REPLY" in
@@ -38,21 +76,6 @@ while true; do
             ;;
         "cli clear")
             clear
-            continue
-            ;;
-        "cli help")
-            echo ""
-            echo "Local CLI commands:"
-            echo "  cli help   - Show this help message"
-            echo "  cli clear  - Clear console output"
-            echo "  cli exit   - Detach from console"
-            echo "Keyboard shortcuts:"
-            echo "  Ctrl+C     - Cancel current input line"
-            echo "  Ctrl+D     - Detach from console"
-            echo ""
-            continue
-            ;;
-        "")
             continue
             ;;
         *)

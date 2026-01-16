@@ -18,7 +18,7 @@ To interact with the server:
 
 Common shell tasks:
   ls /config/xdg/config/StardewValley/Saves  - View save files
-  ls /data/Stardew/Mods                       - View installed mods
+  ls /data/game/Mods                       - View installed mods
   cat /tmp/server-output.log                  - View raw server logs
 
 To exit this shell:

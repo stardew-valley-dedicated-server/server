@@ -6,66 +6,141 @@
 # - Bottom pane: Interactive command input
 # Each 'docker compose exec' gets its own isolated session
 
+# Ensure full color support
+export COLORTERM=truecolor
+
 SESSION_NAME="stardew-server-$$"
 LOG_FILE="/tmp/server-output.log"
 
-# Check if server is running by checking if log file exists
+COLOR_BRAND_1="#066636"
+COLOR_BRAND_2="#25ac8a"
+COLOR_BRAND_3="#39c63c"
+
+COLOR_BORDER=$COLOR_BRAND_3
+COLOR_BORDER_ACTIVE=$COLOR_BRAND_3
+COLOR_STATUSBAR_BACKGROUND=$COLOR_BRAND_3
+COLOR_STATUSBAR_TEXT=$COLOR_BRAND_1
+
+# Check if server is ready
 if [ ! -f "$LOG_FILE" ]; then
     echo "Error: Server log file not found at $LOG_FILE"
     echo "The server may not be running yet. Please wait for it to start."
     exit 1
 fi
 
-# Create new session with log viewer
-tmux new-session -d -s "$SESSION_NAME" "tail -n 1000 -f ${LOG_FILE}"
+start_output_pane() {
+    local session_name="$1"
+    local log_file="$2"
+
+    # Using `stty` to prevent user input (focus is still possible, and needed for scrolling)
+    # Using `sed` to replace black text with gray to make trace logs easier to read
+    tmux new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | sed 's/\x1b\[30m/\x1b[90m/g'"
+}
 
 # Add command input pane at bottom (exactly 2 lines - tmux minimum)
-tmux split-window -t "$SESSION_NAME":0 -v -l 2 "bash --rcfile /opt/base/bin/server-command-loop -i"
+start_input_pane_split() {
+    local session_name="$1"
 
-# Configure tmux options for better UX
-tmux set-option -t "$SESSION_NAME" mouse on 2>/dev/null || true
+    # Add command input pane at bottom (exactly 2 lines - tmux minimum)
+    tmux split-window -t "$session_name":0 -v -l 2 \
+        "bash --rcfile /opt/base/bin/server-command-loop -i '$session_name'"
+}
+
+# Prevent mouse wheel from changing focus when scrolling top pane
+# When scrolling in top pane (index 0), scroll it but immediately return focus to bottom pane
+init_mouse() {
+    local session_name="$1"
+
+    tmux set-option -t "$session_name" mouse on 2>/dev/null || true
+
+    # Prevent mouse wheel from changing focus when scrolling top pane
+    # When scrolling in top pane (index 0), scroll it but immediately return focus to bottom pane
+    tmux unbind-key -T root WheelUpPane 2>/dev/null || true
+    tmux unbind-key -T root WheelDownPane 2>/dev/null || true
+    tmux bind-key -T root WheelUpPane if-shell -F "#{==:#{pane_index},0}" "copy-mode -e -t 0.0 ; send-keys -t 0.0 -X scroll-up ; select-pane -t 0.1" "send-keys -M" 2>/dev/null || true
+    tmux bind-key -T root WheelDownPane if-shell -F "#{==:#{pane_index},0}" "send-keys -t 0.0 -X scroll-down ; select-pane -t 0.1" "send-keys -M" 2>/dev/null || true
+}
+
+init_keybinds() {
+    local session_name="$1"
+
+    # Disable default keybind prefix
+    tmux set-option -t "$session_name" prefix C-b 2>/dev/null || true
+
+    # # Disable kill-pane (prefix x)
+    # tmux unbind-key x 2>/dev/null || true
+
+    # Key binds
+    tmux bind-key -n C-c kill-session -t "$session_name" 2>/dev/null || true  # Close session
+    tmux bind-key -n Tab select-pane -t 0.1 2>/dev/null || true  # Switch to input pane
+}
+
+init_statusbar() {
+    local session_name="$1"
+
+    # Set status bar
+    tmux set-option -t "$session_name" status-interval 1
+
+    # Status bar: Left side
+    tmux set-option -t "$session_name" status-left " #(bash /opt/base/bin/mem-cpu.sh)"
+    tmux set-option -t "$session_name" status-left-length 100 2>/dev/null || true
+
+    # Status bar: Right sidee
+    tmux set-option -t "$session_name" status-right "#[align=absolute-centre]#(if [ -f /tmp/invite-code.txt ]; then cat /tmp/invite-code.txt; else echo 'Waiting for invite code...'; fi)#[align=right]#[fg=#ffffff]Ctrl+C#[default] or #[fg=#ffffff]\`cli exit\`#[default] to detach | #[fg=#ffffff]Mousewheel#[default] to scroll #[default]" 2>/dev/null || true
+    tmux set-option -t "$session_name" status-right-length 100 2>/dev/null || true
+
+    # Status bar: Hide window list next to left-side text (e.g. "0:sh*")
+    tmux set-window-option -t "$session_name" window-status-format "" 2>/dev/null || true
+    tmux set-window-option -t "$session_name" window-status-current-format "" 2>/dev/null || true
+
+    # Status bar: Custom color
+    tmux set-option -t "$session_name" status-bg "$COLOR_STATUSBAR_BACKGROUND" 2>/dev/null || true
+    tmux set-option -t "$session_name" status-fg "$COLOR_STATUSBAR_TEXT" 2>/dev/null || true
+}
+
+init_styling() {
+    local session_name="$1"
+
+    # set-option -g default-terminal "tmux-256color"
+    # set-option -ga terminal-overrides ",xterm-256color:Tc"
+    # set -g terminal-overrides ',xterm-256color:rgb:0/0/0:rgb:80/80/80'
+    # set -g @black "colour235"
+
+    # Pane borders and labels
+    tmux set-option -t "$session_name" pane-border-status top 2>/dev/null || true
+    tmux set-option -t "$session_name" pane-border-format '#{?#{==:#{pane_index},0},#[bold]Output#[default],#[bold]Input#[default]}' 2>/dev/null || true
+    tmux set-option -t "$session_name" pane-border-style "fg=$COLOR_BORDER" 2>/dev/null || true
+    tmux set-option -t "$session_name" pane-active-border-style "fg=$COLOR_BORDER_ACTIVE" 2>/dev/null || true
+    tmux set-option -t "$session_name" mode-style "bg=$COLOR_BRAND_2,fg=$COLOR_BRAND_1" 2>/dev/null || true # Copy mode colors
+}
+
+init_resizing() {
+    local session_name="$1"
+
+    # Set window-size to resize with terminal
+    tmux set-option -t "$session_name" window-size latest 2>/dev/null || true
+
+    # Input pane: Add hooks to maintain 2-line bottom pane when window/client resizes
+    tmux set-hook -t "$session_name" client-resized "resize-pane -t $session_name:0.1 -y 2" 2>/dev/null || true
+    tmux set-hook -t "$session_name" after-resize-window "resize-pane -t $session_name:0.1 -y 2" 2>/dev/null || true
+}
+
+# Start tmux session and panes
+start_output_pane $SESSION_NAME $LOG_FILE
+start_input_pane_split $SESSION_NAME
+
+# Init setup
+init_mouse $SESSION_NAME
+init_keybinds $SESSION_NAME
+init_statusbar $SESSION_NAME
+init_styling $SESSION_NAME
+init_resizing $SESSION_NAME
+
 tmux set-option -t "$SESSION_NAME" history-limit 50000 2>/dev/null || true
-tmux set-option -t "$SESSION_NAME" prefix C-b 2>/dev/null || true
 
-# Disable tmux text selection while keeping mouse scrolling
-# (allows native terminal selection to work)
-tmux unbind-key -T root MouseDrag1Pane 2>/dev/null || true
-tmux unbind-key -T root MouseDown1Pane 2>/dev/null || true
-
-# Disable dangerous keys to prevent accidental pane/window closing
-tmux unbind-key x 2>/dev/null || true  # Disable kill-pane (Ctrl+B x)
-tmux unbind-key & 2>/dev/null || true  # Disable kill-window (Ctrl+B &)
-
-# Bind Ctrl+Q to detach
-tmux bind-key -n C-q detach-client 2>/dev/null || true
-
-# Set window-size to follow current client (allows window to resize with terminal)
-tmux set-option -t "$SESSION_NAME" window-size latest 2>/dev/null || true
-
-# Set status bar
-tmux set-option -t "$SESSION_NAME" status-left "SDVD CLI " 2>/dev/null || true
-tmux set-option -t "$SESSION_NAME" status-left-length 20 2>/dev/null || true
-tmux set-option -t "$SESSION_NAME" status-right-length 100 2>/dev/null || true
-tmux set-option -t "$SESSION_NAME" status-right "Ctrl+Q or 'cli exit' to detach | Mouse/PgUp/PgDn to scroll" 2>/dev/null || true
-
-# Hide window list (the "0:sh*" part)
-tmux set-window-option -t "$SESSION_NAME" window-status-format "" 2>/dev/null || true
-tmux set-window-option -t "$SESSION_NAME" window-status-current-format "" 2>/dev/null || true
-
-# Add hooks to maintain 2-line bottom pane when window/client resizes
-# Use both hooks to catch all resize events
-tmux set-hook -t "$SESSION_NAME" client-resized "resize-pane -t $SESSION_NAME:0.1 -y 2" 2>/dev/null || true
-tmux set-hook -t "$SESSION_NAME" after-resize-window "resize-pane -t $SESSION_NAME:0.1 -y 2" 2>/dev/null || true
-
-# Set pane borders and labels
-tmux set-window-option -t "$SESSION_NAME" pane-border-status top 2>/dev/null || true
-tmux set-window-option -t "$SESSION_NAME" pane-border-format '#{?#{==:#{pane_index},0},#[bold]Output#[default],#[bold]Input#[default]}' 2>/dev/null || true
-
-# Select the command input pane (so user can type immediately)
-tmux select-pane -t "$SESSION_NAME":0.1
-
-# Cleanup: Kill session when this script exits (on detach or exit)
+# Exit cleanup
 trap "tmux kill-session -t '$SESSION_NAME' 2>/dev/null" EXIT
 
-# Attach to the session
+# Focus input pane and attach to the session
+tmux select-pane -t "$SESSION_NAME":0.1
 exec tmux attach-session -t "$SESSION_NAME"
