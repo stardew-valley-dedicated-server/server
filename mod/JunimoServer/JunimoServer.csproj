@@ -10,6 +10,8 @@
 		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
         <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
         <IgnoreModFilePaths>System.Threading.Channels.dll</IgnoreModFilePaths>
+        <!-- Force SMAPI to use our System.Collections.Immutable 7.0.0 instead of game's 6.0.0 -->
+        <BundleIgnoreConflictingAssemblies>false</BundleIgnoreConflictingAssemblies>
         <Nullable>annotations</Nullable>
     </PropertyGroup>
 
@@ -32,6 +34,7 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
         <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
+        <PackageReference Include="SteamKit2" Version="2.5.0"/>
         <PackageReference Include="Websocket.Client" Version="5.1.0"/>
     </ItemGroup>
 

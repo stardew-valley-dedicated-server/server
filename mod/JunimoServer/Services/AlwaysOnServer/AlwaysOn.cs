@@ -88,6 +88,24 @@ namespace JunimoServer.Services.AlwaysOn
                     Game1.player.Equip(ItemRegistry.Create<Hat>($"{ItemRegistry.type_hat}JunimoHat"), Game1.player.hat);
                     Game1.player.ignoreCollisions = true;
                 }
+
+                // Print startup banner after a delay (fallback if auth is skipped)
+                Helper.Events.GameLoop.UpdateTicked += PrintBannerAfterDelay;
+            }
+        }
+
+        private int _bannerDelayTicks = 0;
+        private const int BannerDelaySeconds = 5;
+
+        private void PrintBannerAfterDelay(object sender, UpdateTickedEventArgs e)
+        {
+            _bannerDelayTicks++;
+
+            // Wait ~5 seconds (60 ticks per second)
+            if (_bannerDelayTicks >= BannerDelaySeconds * 60)
+            {
+                Helper.Events.GameLoop.UpdateTicked -= PrintBannerAfterDelay;
+                ServerBanner.Print(Monitor, Helper);
             }
         }
 
@@ -264,20 +282,11 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            if (!IsAutomating)
-            {
-                Game1.chatBox.addInfoMessage("The host is in automatic mode!");
-                var hudMessage = new HUDMessage("Auto Mode On!");
-                Game1.addHUDMessage(hudMessage);
-                Monitor.Log(hudMessage.message, LogLevel.Info);
-            }
-            else
-            {
-                Game1.chatBox.addInfoMessage("The host has returned!");
-                var hudMessage = new HUDMessage("Auto Mode Off!");
-                Game1.addHUDMessage(hudMessage);
-                Monitor.Log(hudMessage.message, LogLevel.Info);
-            }
+            var message = $"Host automation: {(!IsAutomating ? "Enabled" : "Disabled")}";
+
+            Game1.chatBox.addInfoMessage(message);
+            Game1.addHUDMessage(new HUDMessage(message));
+            Monitor.Log(message, LogLevel.Info);
 
             IsAutomating = !IsAutomating;
             Game1.displayHUD = true;

@@ -12,7 +12,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using System;
 using System.Linq;
-using System.Net;
 using System.Reflection;
 
 namespace JunimoServer
@@ -38,7 +37,8 @@ namespace JunimoServer
                 return;
             }
 
-            PrintStartupBanner();
+            // Clear invite code file on startup
+            JunimoServer.Util.InviteCodeFile.Clear();
 
             RegisterServices();
             RegisterChatCommands();
@@ -52,20 +52,6 @@ namespace JunimoServer
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
             Game1.options.pauseWhenOutOfFocus = false;
-        }
-
-        private void PrintStartupBanner()
-        {
-            var externalIp = NetworkHelper.GetIpAddressExternal();
-            var externalIpValue = externalIp == IPAddress.None ? "n/a" : externalIp.ToString();
-            var externalIcon = externalIp == IPAddress.None ? "х" : "✓";
-
-            Monitor.LogBanner(new[] {
-                $"JunimoServer {ModManifest.Version}",
-                "",
-                $"✓ Local:   {NetworkHelper.GetIpAddressLocal()}",
-                $"{externalIcon} Network: {externalIpValue}",
-            });
         }
 
         private void RegisterServices()
@@ -170,6 +156,7 @@ namespace JunimoServer
             ChangeWalletCommand.Register(Helper, chatCommandsService, roleService);
             JojaCommand.Register(Helper, chatCommandsService, roleService, alwaysOnConfig);
             ConsoleCommand.Register(Helper, chatCommandsService, roleService);
+            InviteCodeCommand.Register(Helper, Monitor, chatCommandsService);
         }
     }
 }
