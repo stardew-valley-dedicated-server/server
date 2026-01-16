@@ -23,7 +23,7 @@ namespace JunimoServer.Services.CabinManager
 
         public void Read()
         {
-            Monitor.Log($"Reading {_storageDataKey}", LogLevel.Debug);
+            Monitor.Log($"Reading saved data '{_storageDataKey}'", LogLevel.Trace);
             CabinManagerData Data = Helper.Data.ReadSaveData<CabinManagerData>(_storageDataKey) ?? new CabinManagerData(Helper, Monitor);
             DefaultCabinLocation = Data.DefaultCabinLocation;
             AllPlayerIdsEverJoined = Data.AllPlayerIdsEverJoined;
@@ -31,7 +31,7 @@ namespace JunimoServer.Services.CabinManager
 
         public void Write()
         {
-            Monitor.Log($"Writing {_storageDataKey}", LogLevel.Debug);
+            Monitor.Log($"Writing saved data '{_storageDataKey}'", LogLevel.Trace);
             Helper.Data.WriteSaveData(_storageDataKey, this);
         }
     }
