@@ -1,14 +1,15 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
+    base: "/server/",
     title: "JunimoServer",
     description: "Stardew Valley dedicated server documentation",
     head: [
-        ["link", { rel: "icon", href: "/logo.svg" }],
+        ["link", { rel: "icon", href: "/server/logo.svg" }],
         ["meta", { property: "og:type", content: "website" }],
         ["meta", { property: "og:title", content: "JunimoServer" }],
         ["meta", { property: "og:description", content: "Stardew Valley dedicated server documentation" }],
-        ["meta", { property: "og:image", content: "https://stardew-valley-dedicated-server.github.io/logo.svg" }],
+        ["meta", { property: "og:image", content: "https://stardew-valley-dedicated-server.github.io/server/logo.svg" }],
         ["meta", { name: "twitter:card", content: "summary" }],
         ["meta", { name: "twitter:title", content: "JunimoServer" }],
         ["meta", { name: "twitter:description", content: "Stardew Valley dedicated server documentation" }],
