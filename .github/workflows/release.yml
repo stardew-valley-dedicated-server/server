@@ -99,3 +99,23 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "New Release Published",
+                "color": 5763719,
+                "fields": [
+                  {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`", "inline": true},
+                  {"name": "Image", "value": "`sdvd/server:latest`", "inline": true},
+                  {"name": "Pull Command", "value": "```docker pull sdvd/server:latest```"},
+                  {"name": "Release Notes", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }})"}
+                ]
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"

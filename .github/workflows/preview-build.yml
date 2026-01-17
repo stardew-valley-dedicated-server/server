@@ -175,3 +175,23 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull sdvd/server:preview" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "Preview Build Published",
+                "color": 16753920,
+                "fields": [
+                  {"name": "Version", "value": "`${{ steps.version.outputs.preview_version }}`", "inline": true},
+                  {"name": "Image", "value": "`sdvd/server:preview`", "inline": true},
+                  {"name": "Pull Command", "value": "```docker pull sdvd/server:preview```"}
+                ],
+                "footer": {"text": "Commit: ${{ github.sha }}"}
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"
