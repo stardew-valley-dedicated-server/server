@@ -46,8 +46,15 @@ var command = args.Length > 0 ? args[0].ToLower() : "serve";
 var steamService = new SteamAuthService(sessionDir, gameDir);
 
 // Check for token from environment (CI mode)
-var envToken = Environment.GetEnvironmentVariable("STEAM_REFRESH_TOKEN");
-var envUsername = Environment.GetEnvironmentVariable("STEAM_USERNAME");
+// Use helper that treats whitespace-only as null (for optional GitHub secrets)
+var envToken = GetEnvTrimmed("STEAM_REFRESH_TOKEN");
+var envUsername = GetEnvTrimmed("STEAM_USERNAME");
+
+string? GetEnvTrimmed(string name)
+{
+    var value = Environment.GetEnvironmentVariable(name)?.Trim();
+    return string.IsNullOrEmpty(value) ? null : value;
+}
 
 switch (command)
 {
@@ -79,8 +86,8 @@ switch (command)
 
     case "download":
         // Support: refresh token, saved session, or username+password
-        var envPass = Environment.GetEnvironmentVariable("STEAM_PASSWORD");
-        if (!string.IsNullOrEmpty(envToken) && !string.IsNullOrEmpty(envUsername))
+        var envPass = GetEnvTrimmed("STEAM_PASSWORD");
+        if (envToken != null && envUsername != null)
         {
             Logger.Log("[SteamService] Using STEAM_REFRESH_TOKEN from environment (CI mode)");
             await steamService.LoginWithTokenAsync(envUsername, envToken);
@@ -89,7 +96,7 @@ switch (command)
         {
             await steamService.LoginWithSavedSessionAsync();
         }
-        else if (!string.IsNullOrEmpty(envUsername) && !string.IsNullOrEmpty(envPass))
+        else if (envUsername != null && envPass != null)
         {
             Logger.Log("[SteamService] Using STEAM_USERNAME + STEAM_PASSWORD from environment");
             await steamService.LoginWithCredentialsAsync(envUsername, envPass);
@@ -106,8 +113,8 @@ switch (command)
         break;
 
     case "ticket":
-        var envPassTicket = Environment.GetEnvironmentVariable("STEAM_PASSWORD");
-        if (!string.IsNullOrEmpty(envToken) && !string.IsNullOrEmpty(envUsername))
+        var envPassTicket = GetEnvTrimmed("STEAM_PASSWORD");
+        if (envToken != null && envUsername != null)
         {
             await steamService.LoginWithTokenAsync(envUsername, envToken);
         }
@@ -115,7 +122,7 @@ switch (command)
         {
             await steamService.LoginWithSavedSessionAsync();
         }
-        else if (!string.IsNullOrEmpty(envUsername) && !string.IsNullOrEmpty(envPassTicket))
+        else if (envUsername != null && envPassTicket != null)
         {
             Logger.Log("[SteamService] Using STEAM_USERNAME + STEAM_PASSWORD from environment");
             await steamService.LoginWithCredentialsAsync(envUsername, envPassTicket);

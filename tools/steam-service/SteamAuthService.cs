@@ -584,6 +584,22 @@ public class SteamAuthService
 
         try
         {
+            // Check license ownership first for better error messages
+            Logger.Log("[Steam] Checking game license...");
+            var licenseList = await _steamApps.GetAppOwnershipTicket(appId);
+            if (licenseList.Result == EResult.AccessDenied)
+            {
+                throw new Exception($"Account does not own App {appId}. Please purchase the game or check that you're using the correct Steam account.");
+            }
+            else if (licenseList.Result != EResult.OK)
+            {
+                Logger.Log($"[Steam] License check returned: {licenseList.Result} (continuing anyway)");
+            }
+            else
+            {
+                Logger.Log("[Steam] Game license verified");
+            }
+
             // Get product info
             Logger.Log("[Steam] Getting product info...");
 
@@ -685,16 +701,36 @@ public class SteamAuthService
 
             Logger.Log($"[Steam] Found {cdnServers.Count} CDN servers");
 
-            var server = cdnServers.First();
+            // Try multiple CDN servers until one works (some may reject certain IP ranges)
+            Server? server = null;
+            SteamContent.CDNAuthToken? cdnAuthResult = null;
+            var serversToTry = cdnServers.Take(5).ToList(); // Try up to 5 servers
 
-            // Get CDN auth token
-            Logger.Log("[Steam] Getting CDN auth token...");
-            var cdnAuthResult = await _steamContent.GetCDNAuthToken(appId, depotId, server.Host!);
-            if (cdnAuthResult.Result != EResult.OK)
+            foreach (var candidateServer in serversToTry)
             {
-                throw new Exception($"Failed to get CDN auth token: {cdnAuthResult.Result}");
+                try
+                {
+                    Logger.Log($"[Steam] Trying CDN server: {candidateServer.Host}...");
+                    var authResult = await _steamContent.GetCDNAuthToken(appId, depotId, candidateServer.Host!);
+                    if (authResult.Result == EResult.OK)
+                    {
+                        server = candidateServer;
+                        cdnAuthResult = authResult;
+                        Logger.Log("[Steam] CDN auth token obtained");
+                        break;
+                    }
+                    Logger.Log($"[Steam] CDN server {candidateServer.Host} returned: {authResult.Result}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[Steam] CDN server {candidateServer.Host} failed: {ex.Message}");
+                }
             }
-            Logger.Log("[Steam] CDN auth token obtained");
+
+            if (server == null || cdnAuthResult == null)
+            {
+                throw new Exception($"Failed to get CDN auth token from any server. This usually means the Steam account doesn't own the game, or there's a regional/IP restriction.");
+            }
 
             // Get manifest request code
             Logger.Log("[Steam] Getting manifest request code...");
