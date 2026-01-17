@@ -727,9 +727,16 @@ public class SteamAuthService
                 }
             }
 
+            // If CDN auth failed on all servers, try without auth token (works for some public depots)
+            string? cdnAuthToken = null;
             if (server == null || cdnAuthResult == null)
             {
-                throw new Exception($"Failed to get CDN auth token from any server. This usually means the Steam account doesn't own the game, or there's a regional/IP restriction.");
+                Logger.Log("[Steam] CDN auth failed on all servers, attempting download without auth token...");
+                server = serversToTry.First();
+            }
+            else
+            {
+                cdnAuthToken = cdnAuthResult.Token;
             }
 
             // Get manifest request code
@@ -748,7 +755,7 @@ public class SteamAuthService
                 manifestCode,
                 server,
                 depotKeyResult.DepotKey,
-                cdnAuthToken: cdnAuthResult.Token);
+                cdnAuthToken: cdnAuthToken);
 
             // Calculate totals and savings from filtering
             var skippedByFilter = manifest.Files!
@@ -831,7 +838,7 @@ public class SteamAuthService
                                     server,
                                     buffer,
                                     depotKeyResult.DepotKey,
-                                    cdnAuthToken: cdnAuthResult.Token);
+                                    cdnAuthToken: cdnAuthToken);
                                 break; // Success
                             }
                             catch (Exception ex) when (retry < maxRetries - 1)
