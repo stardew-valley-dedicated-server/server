@@ -44,7 +44,7 @@ Your Steam credentials are only used to download the Stardew Valley server files
 Run the interactive setup to authenticate with Steam and download the game files:
 
 ```sh
-docker compose run -it steam-auth setup
+docker compose run --rm -it steam-auth setup
 ```
 
 This will prompt you for Steam Guard authentication (email code, mobile app, or QR code) and save a refresh token for future use.

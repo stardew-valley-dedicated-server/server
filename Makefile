@@ -92,12 +92,13 @@ help:
 	@echo Stardew Valley Dedicated Server
 	@echo.
 	@echo Targets:
-	@echo   make setup    - Install development dependencies (commitlint, git hooks)
-	@echo   make run      - Build and start server
+	@echo   make install  - Install development dependencies (commitlint, git hooks)
+	@echo   make setup    - Run first-time Steam authentication and game download
+	@echo   make up       - Build and start server
 	@echo   make build    - Build docker image (tag: local)
 	@echo   make logs     - View server logs
 	@echo   make cli      - Attach to interactive server console (tmux-based)
-	@echo   make stop     - Stop the server
+	@echo   make down     - Stop the server
 	@echo   make clean    - Remove containers, volumes and images
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images

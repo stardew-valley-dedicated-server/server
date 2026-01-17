@@ -58,7 +58,7 @@ Run the interactive setup to authenticate with Steam and download the game:
 make setup
 
 # Or using docker compose directly
-docker compose run -it steam-auth setup
+docker compose run --rm -it steam-auth setup
 ```
 
 The setup process will:
