@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.3.0...sdvd-server-v1.4.0) (2026-01-17)
+
+
+### Features
+
+* **ci:** add discord notifications for image pushes ([#93](https://github.com/stardew-valley-dedicated-server/server/issues/93)) ([f3e7286](https://github.com/stardew-valley-dedicated-server/server/commit/f3e72866c282f3b35a2b4642d2eac5049758d630))
+
+
+### Bug Fixes
+
+* **docs:** add base path for github pages deployment ([#95](https://github.com/stardew-valley-dedicated-server/server/issues/95)) ([0f7675e](https://github.com/stardew-valley-dedicated-server/server/commit/0f7675e4512ebd9049495747a333b060ee5e458e))
+
 ## [1.3.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.2.0...sdvd-server-v1.3.0) (2026-01-17)
 
 
