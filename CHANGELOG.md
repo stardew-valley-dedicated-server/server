@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.4.0...sdvd-server-v1.4.1) (2026-01-17)
+
+
+### Bug Fixes
+
+* **ci:** remove duplicate release-please from steam-service workflow ([#96](https://github.com/stardew-valley-dedicated-server/server/issues/96)) ([0821d63](https://github.com/stardew-valley-dedicated-server/server/commit/0821d63091579fc4ef898728503ac72a3beb29ba))
+
 ## [1.4.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.3.0...sdvd-server-v1.4.0) (2026-01-17)
 
 
