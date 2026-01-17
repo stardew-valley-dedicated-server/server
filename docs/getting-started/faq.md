@@ -108,17 +108,6 @@ See the [Upgrading](/guide/upgrading) guide for detailed instructions. The basic
 2. Remove the game volume
 3. Restart - latest version downloads automatically
 
-### Can I migrate from another server solution?
-
-Yes! If you're coming from another Stardew Valley server solution, you can:
-
-1. Export your save files from the old server
-2. Import them into JunimoServer's `data/Saves` directory
-3. Install any mods you were using
-4. Start the server
-
-Make sure to test thoroughly before switching production servers.
-
 ## Troubleshooting
 
 ### The server won't start

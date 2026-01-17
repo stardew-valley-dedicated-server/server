@@ -41,20 +41,30 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
     ```sh
     # Steam Account Details (required for downloading the game server)
-    STEAM_USER=""
-    STEAM_PASS=""
+    STEAM_USERNAME=""
+    STEAM_PASSWORD=""
 
     # VNC Server (for web-based administration access)
     VNC_PASSWORD=""
     ```
 
-2. **Start the Server**:
+2. **First-Time Setup**:
 
-    To start the server as a background process using your configuration, run `docker compose up -d`.
+    Run the interactive setup to authenticate with Steam and download the game files:
+
+    ```sh
+    docker compose run --rm -it steam-auth setup
+    ```
+
+    This will prompt you for Steam Guard authentication if enabled on your account.
+
+3. **Start the Server**:
+
+    To start the server as a background process, run `docker compose up -d`.
 
     To see logs, run `docker compose logs -f`.
 
-3. **Stop the Server**:
+4. **Stop the Server**:
 
     To save and stop the server, run `docker compose down`.
 

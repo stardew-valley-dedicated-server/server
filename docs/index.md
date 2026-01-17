@@ -27,8 +27,6 @@ features:
     - icon: <animated-icon name="SLA" />
       title: Always-On Hosting
       details: Your farm runs 24/7 — no player or game client needs to stay open.
-      link: guide/reference/default-theme-home-page
-      linkText: Read more
 
     - icon: <animated-icon name="Staff" />
       title: Multi-Player Ready

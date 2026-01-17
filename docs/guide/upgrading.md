@@ -39,7 +39,7 @@ git submodule update --recursive
 **2. Rebuild and Restart**
 
 ```sh
-make run
+make up
 ```
 
 ## Updating Game Files (Stardew Valley & SMAPI)
