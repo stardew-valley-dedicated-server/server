@@ -31,7 +31,7 @@ services:
     build:
       context: ./tools/steam-service
       dockerfile: Dockerfile
-    image: sdvd/steam-auth:latest
+    image: sdvd/steam-service:${IMAGE_VERSION:-latest}
     container_name: sdvd-steam-auth
     stdin_open: true
     tty: true

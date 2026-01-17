@@ -1,0 +1,164 @@
+name: Preview Build Steam Service
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'tools/steam-service/**'
+      - '.github/workflows/preview-build-steam-service.yml'
+
+# Prevent multiple builds from running simultaneously
+concurrency:
+  group: preview-build-steam-service
+  cancel-in-progress: true
+
+jobs:
+  build-preview:
+    name: Build and Push Steam Service Preview
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for version calculation
+
+      - name: Calculate next version
+        id: version
+        run: |
+          # Get the latest release tag (exclude preview tags)
+          LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
+          echo "Latest release tag: $LATEST_TAG"
+
+          # Extract version number (remove 'v' prefix)
+          CURRENT_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Split version into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Get commits since last release tag
+          COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          # Determine bump type based on conventional commits
+          BUMP_TYPE="patch"
+          if echo "$COMMITS" | grep -qE "^feat(\(.+\))?!:|^BREAKING CHANGE:"; then
+            BUMP_TYPE="major"
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            BUMP_TYPE="minor"
+          elif echo "$COMMITS" | grep -qE "^fix(\(.+\))?:"; then
+            BUMP_TYPE="patch"
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Calculate next version
+          if [ "$BUMP_TYPE" == "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP_TYPE" == "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Next version: $NEXT_VERSION"
+
+          # Get current preview tag to determine counter (steam-service specific)
+          PREVIEW_TAG=$(git tag -l 'preview-steam-service-*' | head -n 1)
+          if [ -n "$PREVIEW_TAG" ]; then
+            # Parse existing tag: preview-steam-service-{version}.{counter}
+            PREVIEW_TAG_VERSION=$(echo "$PREVIEW_TAG" | sed 's/preview-steam-service-\(.*\)\.[0-9]*$/\1/')
+            PREVIEW_TAG_COUNTER=$(echo "$PREVIEW_TAG" | sed 's/.*\.\([0-9]*\)$/\1/')
+            echo "Found preview tag: $PREVIEW_TAG (version: $PREVIEW_TAG_VERSION, counter: $PREVIEW_TAG_COUNTER)"
+
+            if [ "$PREVIEW_TAG_VERSION" == "$NEXT_VERSION" ]; then
+              # Same version, increment counter
+              PREVIEW_NUMBER=$((PREVIEW_TAG_COUNTER + 1))
+            else
+              # Version changed, reset counter
+              PREVIEW_NUMBER=1
+            fi
+          else
+            # No preview tag exists yet
+            PREVIEW_NUMBER=1
+          fi
+          echo "Preview number: $PREVIEW_NUMBER"
+
+          # Create preview version
+          PREVIEW_VERSION="$NEXT_VERSION-preview.$PREVIEW_NUMBER"
+          echo "Preview version: $PREVIEW_VERSION"
+
+          # Export variables
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "preview_version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
+          echo "preview_number=$PREVIEW_NUMBER" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: sdvd/steam-service
+          tags: |
+            type=raw,value=preview
+            type=raw,value=${{ steps.version.outputs.preview_version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tools/steam-service
+          file: ./tools/steam-service/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=steam-service
+          cache-to: type=gha,mode=max,scope=steam-service
+
+      - name: Update preview tracking tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete old preview tag if it exists
+          git tag -d preview-steam-service-* 2>/dev/null || true
+          git push origin --delete $(git ls-remote --tags origin | grep 'preview-steam-service-' | awk '{print $2}' | sed 's|refs/tags/||') 2>/dev/null || true
+
+          # Create new tracking tag (format: preview-steam-service-{version}.{counter})
+          TRACKING_TAG="preview-steam-service-${{ steps.version.outputs.next_version }}.${{ steps.version.outputs.preview_number }}"
+          git tag "$TRACKING_TAG"
+          git push origin "$TRACKING_TAG"
+
+      - name: Build summary
+        run: |
+          echo "### Steam Service Preview Build Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Release:** \`${{ steps.version.outputs.next_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/steam-service:preview\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/steam-service:${{ steps.version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull sdvd/steam-service:preview" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
