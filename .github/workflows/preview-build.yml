@@ -65,13 +65,35 @@ jobs:
           NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
           echo "Next version: $NEXT_VERSION"
 
-          # Create preview version with run number
-          PREVIEW_VERSION="$NEXT_VERSION-preview.${{ github.run_number }}"
+          # Get current preview tag to determine counter
+          PREVIEW_TAG=$(git tag -l 'preview-*' | head -n 1)
+          if [ -n "$PREVIEW_TAG" ]; then
+            # Parse existing tag: preview-{version}.{counter}
+            PREVIEW_TAG_VERSION=$(echo "$PREVIEW_TAG" | sed 's/preview-\(.*\)\.[0-9]*$/\1/')
+            PREVIEW_TAG_COUNTER=$(echo "$PREVIEW_TAG" | sed 's/.*\.\([0-9]*\)$/\1/')
+            echo "Found preview tag: $PREVIEW_TAG (version: $PREVIEW_TAG_VERSION, counter: $PREVIEW_TAG_COUNTER)"
+
+            if [ "$PREVIEW_TAG_VERSION" == "$NEXT_VERSION" ]; then
+              # Same version, increment counter
+              PREVIEW_NUMBER=$((PREVIEW_TAG_COUNTER + 1))
+            else
+              # Version changed, reset counter
+              PREVIEW_NUMBER=1
+            fi
+          else
+            # No preview tag exists yet
+            PREVIEW_NUMBER=1
+          fi
+          echo "Preview number: $PREVIEW_NUMBER"
+
+          # Create preview version
+          PREVIEW_VERSION="$NEXT_VERSION-preview.$PREVIEW_NUMBER"
           echo "Preview version: $PREVIEW_VERSION"
 
           # Export variables
           echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
           echo "preview_version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
+          echo "preview_number=$PREVIEW_NUMBER" >> $GITHUB_OUTPUT
           echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
 
       - name: Update version in files (for Docker build only)
@@ -120,6 +142,20 @@ jobs:
             steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Update preview tracking tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete old preview tag if it exists
+          git tag -d preview-* 2>/dev/null || true
+          git push origin --delete $(git ls-remote --tags origin | grep 'preview-' | awk '{print $2}' | sed 's|refs/tags/||') 2>/dev/null || true
+
+          # Create new tracking tag (format: preview-{version}.{counter})
+          TRACKING_TAG="preview-${{ steps.version.outputs.next_version }}.${{ steps.version.outputs.preview_number }}"
+          git tag "$TRACKING_TAG"
+          git push origin "$TRACKING_TAG"
 
       - name: Build summary
         run: |
