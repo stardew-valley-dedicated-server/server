@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.2.0...sdvd-server-v1.3.0) (2026-01-17)
+
+
+### Features
+
+* **auth:** add invite code system and improved steam authentication ([b38c85f](https://github.com/stardew-valley-dedicated-server/server/commit/b38c85fcbd5ce958a3e79eae0987f5e268b9c143))
+* **cabin:** improve cabin management and add invite code command ([fdbefee](https://github.com/stardew-valley-dedicated-server/server/commit/fdbefee6e4b005953f1ef6048187c48fd5d56864))
+* **ci:** add build and push workflows for steam-service image ([#91](https://github.com/stardew-valley-dedicated-server/server/issues/91)) ([b864de1](https://github.com/stardew-valley-dedicated-server/server/commit/b864de1fb35b0470d6bcb3103c0ff71bd4090428))
+* **ci:** add write permissions for preview tag updates ([#90](https://github.com/stardew-valley-dedicated-server/server/issues/90)) ([ee0b407](https://github.com/stardew-valley-dedicated-server/server/commit/ee0b407f52415d9f90ac3c02882295c5a1b9105f))
+* **ci:** reset preview version counter per release ([#89](https://github.com/stardew-valley-dedicated-server/server/issues/89)) ([3f077d8](https://github.com/stardew-valley-dedicated-server/server/commit/3f077d8f035110241c6e87075c0c7a25f9063a18))
+* **ci:** sync readme to docker hub on release ([#88](https://github.com/stardew-valley-dedicated-server/server/issues/88)) ([2c5e093](https://github.com/stardew-valley-dedicated-server/server/commit/2c5e0936febe2876f87c18c6f7c7c197aad7d8f8))
+* **cli:** enhance terminal interface with memory monitoring ([d422b0b](https://github.com/stardew-valley-dedicated-server/server/commit/d422b0b7bcfcac0b1ec8f2232823c72fe285ddf0))
+* **docker:** optimize build process and simplify configuration ([6bd1ecd](https://github.com/stardew-valley-dedicated-server/server/commit/6bd1ecde2736cfc337ec6706bfa42bd73b01512e))
+* **mod:** add server banner and improve core services ([8cd56d2](https://github.com/stardew-valley-dedicated-server/server/commit/8cd56d20ad3bde5f618a58cd0ab5f005190a01e5))
+
+
+### Bug Fixes
+
+* **docs:** sync documentation with actual implementation ([#92](https://github.com/stardew-valley-dedicated-server/server/issues/92)) ([00b1749](https://github.com/stardew-valley-dedicated-server/server/commit/00b174924b872db5c7779e38c190b9d80be137b2))
+* **steam-service:** fallback to download without cdn auth token ([7c75633](https://github.com/stardew-valley-dedicated-server/server/commit/7c75633899fa089bf1bc80cec0de47ace0f10a2b))
+* **steam-service:** improve cdn auth with retry logic and license check ([56010ba](https://github.com/stardew-valley-dedicated-server/server/commit/56010bafb9f3092c267a43b652fc7e475a72720b))
+* **steam-service:** remove unnecessary cdn auth token logic ([3ae7a6d](https://github.com/stardew-valley-dedicated-server/server/commit/3ae7a6d963ccda39984b8b4857d1a5571c09bb0d))
+
+
+### Documentation
+
+* migrate documentation to vitepress ([8f0872f](https://github.com/stardew-valley-dedicated-server/server/commit/8f0872fe44912c02f5991ccc7d2253de1270778e))
+
 ## [1.2.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.1.0...sdvd-server-v1.2.0) (2026-01-07)
 
 
