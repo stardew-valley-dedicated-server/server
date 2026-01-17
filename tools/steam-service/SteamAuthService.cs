@@ -701,43 +701,8 @@ public class SteamAuthService
 
             Logger.Log($"[Steam] Found {cdnServers.Count} CDN servers");
 
-            // Try multiple CDN servers until one works (some may reject certain IP ranges)
-            Server? server = null;
-            SteamContent.CDNAuthToken? cdnAuthResult = null;
-            var serversToTry = cdnServers.Take(5).ToList(); // Try up to 5 servers
-
-            foreach (var candidateServer in serversToTry)
-            {
-                try
-                {
-                    Logger.Log($"[Steam] Trying CDN server: {candidateServer.Host}...");
-                    var authResult = await _steamContent.GetCDNAuthToken(appId, depotId, candidateServer.Host!);
-                    if (authResult.Result == EResult.OK)
-                    {
-                        server = candidateServer;
-                        cdnAuthResult = authResult;
-                        Logger.Log("[Steam] CDN auth token obtained");
-                        break;
-                    }
-                    Logger.Log($"[Steam] CDN server {candidateServer.Host} returned: {authResult.Result}");
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[Steam] CDN server {candidateServer.Host} failed: {ex.Message}");
-                }
-            }
-
-            // If CDN auth failed on all servers, try without auth token (works for some public depots)
-            string? cdnAuthToken = null;
-            if (server == null || cdnAuthResult == null)
-            {
-                Logger.Log("[Steam] CDN auth failed on all servers, attempting download without auth token...");
-                server = serversToTry.First();
-            }
-            else
-            {
-                cdnAuthToken = cdnAuthResult.Token;
-            }
+            // Use first available CDN server (no auth token needed for Stardew Valley)
+            var server = cdnServers.First();
 
             // Get manifest request code
             Logger.Log("[Steam] Getting manifest request code...");
@@ -754,8 +719,7 @@ public class SteamAuthService
                 manifestId,
                 manifestCode,
                 server,
-                depotKeyResult.DepotKey,
-                cdnAuthToken: cdnAuthToken);
+                depotKeyResult.DepotKey);
 
             // Calculate totals and savings from filtering
             var skippedByFilter = manifest.Files!
@@ -837,8 +801,7 @@ public class SteamAuthService
                                     chunk,
                                     server,
                                     buffer,
-                                    depotKeyResult.DepotKey,
-                                    cdnAuthToken: cdnAuthToken);
+                                    depotKeyResult.DepotKey);
                                 break; // Success
                             }
                             catch (Exception ex) when (retry < maxRetries - 1)
