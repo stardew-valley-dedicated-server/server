@@ -1,39 +1,19 @@
 name: Release Steam Service
 
 on:
-  push:
-    branches:
-      - master
+  release:
+    types: [published]
 
 concurrency:
   group: release-steam-service
   cancel-in-progress: false
 
 jobs:
-  release-please:
-    name: Create Release PR
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
-
-    steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   build-and-publish:
     name: Build and Publish Steam Service Image
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
 
     steps:
@@ -49,6 +29,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#sdvd-server-v}" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -56,7 +40,7 @@ jobs:
           images: sdvd/steam-service
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ needs.release-please.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -75,11 +59,11 @@ jobs:
         run: |
           echo "### Steam Service Release Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ needs.release-please.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/steam-service:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`sdvd/steam-service:${{ needs.release-please.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/steam-service:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
