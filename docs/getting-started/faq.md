@@ -110,6 +110,22 @@ See the [Upgrading](/guide/upgrading) guide for detailed instructions. The basic
 
 ## Troubleshooting
 
+### Docker Container Names
+
+JunimoServer uses two containers with fixed names for easy debugging:
+
+| Container | Name | Purpose |
+|-----------|------|---------|
+| Game Server | `sdvd-server` | Main Stardew Valley server |
+| Steam Auth | `sdvd-steam-auth` | Steam authentication and game downloads |
+
+You can use these names directly with Docker commands:
+```sh
+docker logs sdvd-server
+docker logs sdvd-steam-auth
+docker exec -it sdvd-server bash
+```
+
 ### The server won't start
 
 Common fixes:
