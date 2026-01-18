@@ -112,8 +112,7 @@ jobs:
                 "color": 5763719,
                 "fields": [
                   {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`", "inline": true},
-                  {"name": "Image", "value": "`sdvd/server:latest`", "inline": true},
-                  {"name": "Pull Command", "value": "```docker pull sdvd/server:latest```"},
+                  {"name": "Pull Commands", "value": "```docker pull sdvd/server:latest && docker pull sdvd/steam-service:latest```"},
                   {"name": "Release Notes", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }})"}
                 ]
               }]

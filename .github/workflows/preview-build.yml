@@ -188,11 +188,28 @@ jobs:
           echo "docker pull sdvd/server:preview" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
+      - name: Get merged PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_JSON=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[0] // empty')
+          if [ -n "$PR_JSON" ]; then
+            echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> $GITHUB_OUTPUT
+            echo "title=$(echo "$PR_JSON" | jq -r '.title')" >> $GITHUB_OUTPUT
+            echo "url=$(echo "$PR_JSON" | jq -r '.html_url')" >> $GITHUB_OUTPUT
+          fi
+
       - name: Discord notification
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          PR_FIELD=""
+          if [ -n "${{ steps.pr.outputs.number }}" ]; then
+            PR_FIELD=',{"name": "Changes", "value": "[#${{ steps.pr.outputs.number }} - ${{ steps.pr.outputs.title }}](${{ steps.pr.outputs.url }})"}'
+          fi
+
           curl -H "Content-Type: application/json" \
             -d '{
               "embeds": [{
@@ -200,8 +217,7 @@ jobs:
                 "color": 16753920,
                 "fields": [
                   {"name": "Version", "value": "`${{ needs.calculate-version.outputs.preview_version }}`", "inline": true},
-                  {"name": "Image", "value": "`sdvd/server:preview`", "inline": true},
-                  {"name": "Pull Command", "value": "```docker pull sdvd/server:preview```"}
+                  {"name": "Pull Commands", "value": "```docker pull sdvd/server:preview && docker pull sdvd/steam-service:preview```"}'"$PR_FIELD"'
                 ],
                 "footer": {"text": "Commit: ${{ github.sha }}"}
               }]
