@@ -64,17 +64,6 @@ init_stardew() {
         return
     fi
 
-    # Check if using steam-auth service (two-container setup)
-    # if [ -n "${STEAM_AUTH_URL:-}" ]; then
-        init_stardew_from_steam_auth
-        # return
-    # fi
-
-    # Legacy mode: Use steamcmd directly
-    # init_stardew_from_steamcmd
-}
-
-init_stardew_from_steam_auth() {
     local STEAM_AUTH_GAME_DIR="/data/game"
     local STEAM_AUTH_GAME_EXEC="${STEAM_AUTH_GAME_DIR}/StardewValley"
 
