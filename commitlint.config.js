@@ -23,7 +23,7 @@ module.exports = {
     'subject-empty': [2, 'never'],
     // Ensure type is not empty
     'type-empty': [2, 'never'],
-    // Subject should be lowercase
-    'subject-case': [2, 'always', 'lower-case']
+    // Allow mixed case for acronyms like PR, CLI, STEAM_AUTH_PORT
+    'subject-case': [0]
   }
 };
