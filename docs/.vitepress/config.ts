@@ -39,6 +39,7 @@ export default defineConfig({
                 text: "Getting Started",
                 items: [
                     { text: "Introduction", link: "/getting-started/introduction" },
+                    { text: "Prerequisites", link: "/getting-started/prerequisites" },
                     { text: "Installation", link: "/getting-started/installation" },
                     { text: "Configuration", link: "/getting-started/configuration" },
                     { text: "Authentication", link: "/getting-started/auth" },
@@ -49,6 +50,7 @@ export default defineConfig({
                 text: "Guide",
                 items: [
                     { text: "Using the Server", link: "/guide/using-the-server" },
+                    { text: "Networking", link: "/guide/networking" },
                     { text: "Managing Mods", link: "/guide/managing-mods" },
                     { text: "Upgrading", link: "/guide/upgrading" },
                     { text: "Advanced Topics", link: "/guide/advanced-topics" },
@@ -77,7 +79,7 @@ export default defineConfig({
         },
 
         editLink: {
-            pattern: "https://github.com/stardew-valley-dedicated-server/server/edit/master/website/docs/:path",
+            pattern: "https://github.com/stardew-valley-dedicated-server/server/edit/master/docs/:path",
             text: "Edit this page on GitHub",
         },
 
