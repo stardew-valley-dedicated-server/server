@@ -193,23 +193,41 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_TITLE: ${{ steps.pr.outputs.title }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          PREVIEW_VERSION: ${{ needs.calculate-version.outputs.preview_version }}
         run: |
-          PR_FIELD=""
-          if [ -n "${{ steps.pr.outputs.number }}" ]; then
-            PR_FIELD='{"name": "Changes", "value": "[#${{ steps.pr.outputs.number }} - ${{ steps.pr.outputs.title }}](${{ steps.pr.outputs.url }})"}'
+          if [ -n "$PR_NUMBER" ]; then
+            # Use jq to safely build JSON with user-provided content
+            jq -n \
+              --arg version "$PREVIEW_VERSION" \
+              --arg pr_num "$PR_NUMBER" \
+              --arg pr_title "$PR_TITLE" \
+              --arg pr_url "$PR_URL" \
+              '{
+                embeds: [{
+                  title: "Preview Build Published",
+                  color: 16753920,
+                  fields: [
+                    {name: "Version", value: "`\($version)`"},
+                    {name: "Changes", value: "[#\($pr_num) - \($pr_title)](\($pr_url))"}
+                  ]
+                }]
+              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
+          else
+            jq -n \
+              --arg version "$PREVIEW_VERSION" \
+              '{
+                embeds: [{
+                  title: "Preview Build Published",
+                  color: 16753920,
+                  fields: [
+                    {name: "Version", value: "`\($version)`"}
+                  ]
+                }]
+              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
-
-          curl -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "Preview Build Published",
-                "color": 16753920,
-                "fields": [
-                  {"name": "Version", "value": "`${{ needs.calculate-version.outputs.preview_version }}`"}'"${PR_FIELD:+,$PR_FIELD}"'
-                ]
-              }]
-            }' \
-            "$DISCORD_WEBHOOK"
 
   build-steam-service-preview:
     name: Build and Push Steam Service Preview
