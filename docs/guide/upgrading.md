@@ -58,6 +58,10 @@ docker compose down
 docker volume rm server_game-data
 ```
 
+::: info Volume Names
+Docker prefixes volume names with your project directory name. If your directory is called `server`, volumes will be named `server_game-data`, `server_saves`, etc. Run `docker volume ls` to see your actual volume names.
+:::
+
 ::: warning
 This only removes game files. Your save data is stored in a separate `saves` volume and will **not** be affected.
 :::
