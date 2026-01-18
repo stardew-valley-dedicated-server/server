@@ -268,3 +268,8 @@ The download process skips unnecessary files to reduce download size:
 - Other assets not needed for dedicated server operation
 
 This reduces the download from ~1.5GB to ~600MB.
+
+## Next Steps
+
+- [Configuration](/getting-started/configuration) - Configure your server settings
+- [Using the Server](/guide/using-the-server) - Learn how to manage your running server
