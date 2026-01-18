@@ -1,12 +1,9 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - "docs/**"
-      - ".github/workflows/deploy-docs.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
 
 concurrency:
   group: deploy-docs
@@ -67,3 +64,20 @@ jobs:
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "Documentation Updated",
+                "color": 3447003,
+                "fields": [
+                  {"name": "View Docs", "value": "[stardew-valley-dedicated-server.github.io/server](${{ steps.deployment.outputs.page_url }})"}
+                ]
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"
