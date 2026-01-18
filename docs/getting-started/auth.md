@@ -146,13 +146,13 @@ Example usage:
 
 ```bash
 # Re-download game files after update
-docker compose run steam-auth download
+docker compose run --rm steam-auth download
 
 # Export token for CI pipelines
-docker compose run steam-auth export-token > token.json
+docker compose run --rm steam-auth export-token > token.json
 
 # Get a ticket manually
-docker compose run steam-auth ticket
+docker compose run --rm steam-auth ticket
 ```
 
 ## API Endpoints
@@ -226,7 +226,7 @@ docker compose exec server wget -qO- http://steam-auth:3001/health
 
 ```bash
 # Re-run setup to get a new token
-docker compose run -it steam-auth setup
+docker compose run --rm -it steam-auth setup
 ```
 
 ### Token persistence not working
