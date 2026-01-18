@@ -196,7 +196,7 @@ jobs:
         run: |
           PR_FIELD=""
           if [ -n "${{ steps.pr.outputs.number }}" ]; then
-            PR_FIELD=',{"name": "Changes", "value": "[#${{ steps.pr.outputs.number }} - ${{ steps.pr.outputs.title }}](${{ steps.pr.outputs.url }})"}'
+            PR_FIELD='{"name": "Changes", "value": "[#${{ steps.pr.outputs.number }} - ${{ steps.pr.outputs.title }}](${{ steps.pr.outputs.url }})"}'
           fi
 
           curl -H "Content-Type: application/json" \
@@ -205,10 +205,8 @@ jobs:
                 "title": "Preview Build Published",
                 "color": 16753920,
                 "fields": [
-                  {"name": "Version", "value": "`${{ needs.calculate-version.outputs.preview_version }}`", "inline": true},
-                  {"name": "Pull Commands", "value": "```docker pull sdvd/server:preview && docker pull sdvd/steam-service:preview```"}'"$PR_FIELD"'
-                ],
-                "footer": {"text": "Commit: ${{ github.sha }}"}
+                  {"name": "Version", "value": "`${{ needs.calculate-version.outputs.preview_version }}`"}'"${PR_FIELD:+,$PR_FIELD}"'
+                ]
               }]
             }' \
             "$DISCORD_WEBHOOK"
