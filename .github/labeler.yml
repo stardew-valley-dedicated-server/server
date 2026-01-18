@@ -1,0 +1,19 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "docs/**"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file: "docker/**"
+
+mod:
+  - changed-files:
+      - any-glob-to-any-file: "mod/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+tools:
+  - changed-files:
+      - any-glob-to-any-file: "tools/**"
