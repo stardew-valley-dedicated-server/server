@@ -41,6 +41,30 @@ These variables are only relevant during the build process when compiling from s
 Build variables are only needed when building from source. If you're using the pre-built Docker images, you can ignore these settings.
 :::
 
+## Variable Details
+
+### DISABLE_RENDERING
+
+When `true`, the game skips rendering frames to the display. The game still runs normally and VNC still works, but CPU usage is significantly reduced. Only set to `false` if you need to debug visual issues.
+
+### ALLOW_IP_CONNECTIONS
+
+Controls whether players can connect using direct IP addresses instead of invite codes.
+
+Disabled by default because direct IP connections don't provide Steam/GOG user IDs. Without user IDs, the server can't track which player owns which farmhand - players may lose access to their farmhands if they reconnect from a different IP or if multiple players share a network.
+
+Use invite codes (GOG Galaxy) for reliable farmhand ownership tracking. See [Networking](/guide/networking) for more details.
+
+### STEAM_REFRESH_TOKEN
+
+Alternative to username/password for automated environments. After running `setup` once, you can export the refresh token for CI use:
+
+```sh
+docker compose run --rm steam-auth export-token
+```
+
+See [Authentication](/getting-started/auth) for details.
+
 ## Example Configuration
 
 Here's a complete example `.env` file with all common settings:
