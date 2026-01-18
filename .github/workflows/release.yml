@@ -111,8 +111,8 @@ jobs:
                 "title": "New Release Published",
                 "color": 5763719,
                 "fields": [
-                  {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`", "inline": true},
-                  {"name": "Pull Commands", "value": "```docker pull sdvd/server:latest && docker pull sdvd/steam-service:latest```"},
+                  {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`"},
+                  {"name": "How to update", "value": "```docker compose pull```"},
                   {"name": "Release Notes", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }})"}
                 ]
               }]
