@@ -10,7 +10,7 @@ This open-source project enables 24/7 multiplayer farms without needing to keep 
 
 ### Table of Contents
 
-<!-- REGENRATE TOC: npx markdown-toc -i README.md -->
+<!-- REGENERATE TOC: npx markdown-toc -i README.md -->
 
 <!-- toc -->
 
@@ -35,9 +35,11 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 1. **Create Configuration**:
 
-    Copy the `docker-compose.yml` and `.env.example` files from the repository, then rename `.env.example` to `.env` and open it to configure your server.
+    Download the configuration files from GitHub:
+    - [`docker-compose.yml`](https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/docker-compose.yml)
+    - [`.env.example`](https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/.env.example)
 
-    Here is a minimal example configuration:
+    Rename `.env.example` to `.env` and configure your server. Here is a minimal example:
 
     ```sh
     # Steam Account Details (required for downloading the game server)
@@ -67,6 +69,8 @@ JunimoServer gives you everything you need to host Stardew Valley:
 4. **Stop the Server**:
 
     To save and stop the server, run `docker compose down`.
+
+    Your save files and Steam session are stored in Docker volumes (`saves` and `steam-session`) and persist across restarts.
 
 ## Documentation
 
