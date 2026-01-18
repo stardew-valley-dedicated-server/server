@@ -14,6 +14,9 @@ jobs:
   calculate-version:
     name: Calculate Version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       next_version: ${{ steps.version.outputs.next_version }}
       preview_version: ${{ steps.version.outputs.preview_version }}
@@ -25,48 +28,34 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for version calculation
 
-      - name: Calculate next version
+      - name: Get next version from release-please PR
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the latest release tag (exclude preview tags)
-          LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
-          echo "Latest release tag: $LATEST_TAG"
+          # Try to get version from release-please PR
+          echo "Looking for release-please PR..."
+          PR_TITLE=$(gh pr list --label "autorelease: pending" --json title --jq '.[0].title // empty')
 
-          # Extract version number (remove 'v' prefix)
-          CURRENT_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
-          echo "Current version: $CURRENT_VERSION"
-
-          # Split version into major.minor.patch
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-
-          # Get commits since last release tag
-          COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-
-          # Determine bump type based on conventional commits
-          BUMP_TYPE="patch"
-          if echo "$COMMITS" | grep -qE "^feat(\(.+\))?!:|^BREAKING CHANGE:"; then
-            BUMP_TYPE="major"
-          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
-            BUMP_TYPE="minor"
-          elif echo "$COMMITS" | grep -qE "^fix(\(.+\))?:"; then
-            BUMP_TYPE="patch"
+          if [ -n "$PR_TITLE" ]; then
+            echo "Found release-please PR: $PR_TITLE"
+            # Extract version from PR title (e.g., "chore(master): release 1.4.0" or "chore: release 1.4.0")
+            NEXT_VERSION=$(echo "$PR_TITLE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
           fi
 
-          echo "Bump type: $BUMP_TYPE"
-
-          # Calculate next version
-          if [ "$BUMP_TYPE" == "major" ]; then
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-          elif [ "$BUMP_TYPE" == "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else
-            PATCH=$((PATCH + 1))
+          # Fallback: if no PR or couldn't extract version, bump patch from current release
+          if [ -z "$NEXT_VERSION" ]; then
+            echo "No release-please PR found, bumping patch version"
+            LATEST_TAG=$(git tag -l 'sdvd-server-v*' --sort=-version:refname | head -n 1)
+            if [ -z "$LATEST_TAG" ]; then
+              LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
+            fi
+            echo "Latest release tag: $LATEST_TAG"
+            CURRENT_VERSION=$(echo "$LATEST_TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+            NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
 
-          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
           echo "Next version: $NEXT_VERSION"
 
           # Get current preview tag to determine counter
