@@ -30,8 +30,7 @@ RUN apt-get update && apt-get install -y \
 COPY --from=steam-service-builder /app /steam-service
 WORKDIR /steam-service
 
-# Download game using refresh token from secrets
-# The steam-service will filter out unnecessary files (Content folder, etc.)
+# Download game, using steam-service binary that was built in previous stage
 RUN --mount=type=secret,id=steam_username \
     --mount=type=secret,id=steam_password \
     --mount=type=secret,id=steam_refresh_token \
@@ -41,7 +40,7 @@ RUN --mount=type=secret,id=steam_username \
     export GAME_DIR=/game && \
     dotnet SteamService.dll download
 
-# Install SMAPI (needed for mod compilation DLL references)
+# Download and install SMAPI
 RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
     unzip -q /tmp/smapi.zip -d /tmp/smapi && \
     printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \

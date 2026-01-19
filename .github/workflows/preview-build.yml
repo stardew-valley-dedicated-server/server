@@ -10,6 +10,8 @@ concurrency:
   group: preview-build
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   calculate-version:
     name: Calculate Version
@@ -24,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           fetch-depth: 0 # Fetch all history for version calculation
 
@@ -97,7 +99,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Update version in files (for Docker build only)
         run: |
@@ -112,17 +114,17 @@ jobs:
           echo "Updated files to version $PREVIEW_VERSION (not committed)"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: sdvd/server
           tags: |
@@ -130,7 +132,7 @@ jobs:
             type=raw,value=${{ needs.calculate-version.outputs.preview_version }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@67a2d409c0a876cbe6b11854e3e25193efe4e62d # v6.12.0
         with:
           context: .
           file: ./docker/Dockerfile
@@ -193,23 +195,41 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_TITLE: ${{ steps.pr.outputs.title }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          PREVIEW_VERSION: ${{ needs.calculate-version.outputs.preview_version }}
         run: |
-          PR_FIELD=""
-          if [ -n "${{ steps.pr.outputs.number }}" ]; then
-            PR_FIELD='{"name": "Changes", "value": "[#${{ steps.pr.outputs.number }} - ${{ steps.pr.outputs.title }}](${{ steps.pr.outputs.url }})"}'
+          if [ -n "$PR_NUMBER" ]; then
+            # Use jq to safely build JSON with user-provided content
+            jq -n \
+              --arg version "$PREVIEW_VERSION" \
+              --arg pr_num "$PR_NUMBER" \
+              --arg pr_title "$PR_TITLE" \
+              --arg pr_url "$PR_URL" \
+              '{
+                embeds: [{
+                  title: "Preview Build Published",
+                  color: 16753920,
+                  fields: [
+                    {name: "Version", value: "`\($version)`"},
+                    {name: "Changes", value: "[#\($pr_num) - \($pr_title)](\($pr_url))"}
+                  ]
+                }]
+              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
+          else
+            jq -n \
+              --arg version "$PREVIEW_VERSION" \
+              '{
+                embeds: [{
+                  title: "Preview Build Published",
+                  color: 16753920,
+                  fields: [
+                    {name: "Version", value: "`\($version)`"}
+                  ]
+                }]
+              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
-
-          curl -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "Preview Build Published",
-                "color": 16753920,
-                "fields": [
-                  {"name": "Version", "value": "`${{ needs.calculate-version.outputs.preview_version }}`"}'"${PR_FIELD:+,$PR_FIELD}"'
-                ]
-              }]
-            }' \
-            "$DISCORD_WEBHOOK"
 
   build-steam-service-preview:
     name: Build and Push Steam Service Preview
@@ -220,20 +240,20 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: sdvd/steam-service
           tags: |
@@ -241,7 +261,7 @@ jobs:
             type=raw,value=${{ needs.calculate-version.outputs.preview_version }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@67a2d409c0a876cbe6b11854e3e25193efe4e62d # v6.12.0
         with:
           context: ./tools/steam-service
           file: ./tools/steam-service/Dockerfile
