@@ -8,7 +8,7 @@ JunimoServer uses GitHub Actions for automated building, testing, and deployment
 |----------|---------|---------|
 | [Release](#release-pipeline) | Merge to `master` | Creates releases and publishes stable Docker images |
 | [Preview Build](#preview-build-pipeline) | Push to `master` | Builds and publishes preview Docker images |
-| [Deploy Preview](#deploy-preview-pipeline) | After preview build | Deploys preview images to VPS |
+| [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 
 ## Release Pipeline
 
@@ -82,14 +82,30 @@ services:
 Preview builds may contain experimental features or bugs. Use stable releases for production servers.
 :::
 
-## Deploy Preview Pipeline
+## Deploy Server Pipeline
 
-The deploy preview pipeline automatically deploys preview builds to a VPS for testing.
+The deploy server pipeline deploys server instances to a VPS. It supports multiple instances (preview, latest) that can be individually enabled or disabled.
 
 ### When It Runs
 
-- Automatically after a successful preview build
-- Manually via GitHub Actions "Run workflow" button
+- **Automatically** after a successful preview build (deploys preview instance only)
+- **Manually** via GitHub Actions "Run workflow" button (choose which instance to deploy)
+
+### Instances
+
+| Instance | Image Tag | Default Path | Default Enabled |
+|----------|-----------|--------------|-----------------|
+| `preview` | `preview` | `/srv/sdvd/preview` | Yes |
+| `latest` | `latest` | `/srv/sdvd/latest` | No |
+
+### Enabling/Disabling Instances
+
+Control which instances are deployed via **Repository Variables** (Settings → Variables → Actions):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEPLOY_PREVIEW_ENABLED` | `true` | Enable preview instance deployment |
+| `DEPLOY_LATEST_ENABLED` | `false` | Enable latest (stable) instance deployment |
 
 ### Setup Requirements
 
@@ -103,7 +119,13 @@ To use this pipeline, configure the following GitHub Secrets in your repository:
 | `DEPLOY_SSH_USER` | Yes | SSH username |
 | `DEPLOY_SSH_KEY` | Yes | SSH private key (Ed25519 recommended) |
 | `DEPLOY_SSH_PORT` | No | SSH port (defaults to 22) |
-| `DEPLOY_PATH` | No | Deploy directory (defaults to `/srv/sdvd/preview`) |
+
+**Deploy Paths (optional, have sensible defaults):**
+
+| Secret | Default | Description |
+|--------|---------|-------------|
+| `DEPLOY_PATH_PREVIEW` | `/srv/sdvd/preview` | Preview instance deploy directory |
+| `DEPLOY_PATH_LATEST` | `/srv/sdvd/latest` | Latest instance deploy directory |
 
 **Application Secrets:**
 
@@ -127,17 +149,23 @@ curl -fsSL https://get.docker.com | sh
 apt-get install docker-compose-plugin
 ```
 
-**2. Create Deploy Directory**
+**2. Create Deploy Directories**
 
 ```sh
 mkdir -p /srv/sdvd/preview
+mkdir -p /srv/sdvd/latest  # If using latest instance
 ```
 
 **3. Configure Firewall**
 
 ```sh
+# Preview instance
 ufw allow 24642/udp  # Game port
 ufw allow 5800/tcp   # VNC web interface
+
+# Latest instance (use different ports if running both)
+# ufw allow 24643/udp
+# ufw allow 5801/tcp
 ```
 
 **4. Create SSH Key**
@@ -154,22 +182,23 @@ Add the public key to `~/.ssh/authorized_keys` on your server, and add the priva
 
 To manually trigger a deployment:
 
-1. Go to **Actions** → **Deploy Preview to VPS**
+1. Go to **Actions** → **Deploy Server**
 2. Click **Run workflow**
-3. Optionally check "Skip graceful shutdown" for emergency deploys
-4. Click **Run workflow**
+3. Select which instance to deploy: `preview`, `latest`, or `all`
+4. Optionally check "Skip graceful shutdown" for emergency deploys
+5. Click **Run workflow**
 
 ### What Gets Deployed
 
 The pipeline:
-1. Creates/updates `.env` file with secrets
+1. Creates/updates `.env` file with secrets and correct `IMAGE_VERSION`
 2. Copies `docker-compose.yml` to VPS
-3. Pulls latest preview images
+3. Pulls the appropriate Docker images
 4. Restarts containers
 5. Verifies deployment health
 
 ::: tip
-The pipeline uses the same `docker-compose.yml` from the repository, ensuring consistency between local development and deployed environments.
+The pipeline uses the same `docker-compose.yml` from the repository, ensuring consistency between local development and deployed environments. The `IMAGE_VERSION` environment variable controls which image tag is used.
 :::
 
 ## Discord Notifications
