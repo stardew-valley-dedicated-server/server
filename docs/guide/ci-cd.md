@@ -99,21 +99,21 @@ To use this pipeline, configure the following GitHub Secrets in your repository:
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `VPS_SSH_HOST` | Yes | VPS IP address or hostname |
-| `VPS_SSH_USER` | Yes | SSH username |
-| `VPS_SSH_PRIVATE_KEY` | Yes | SSH private key (Ed25519 recommended) |
-| `VPS_SSH_PORT` | No | SSH port (defaults to 22) |
+| `DEPLOY_SSH_HOST` | Yes | Server IP address or hostname |
+| `DEPLOY_SSH_USER` | Yes | SSH username |
+| `DEPLOY_SSH_KEY` | Yes | SSH private key (Ed25519 recommended) |
+| `DEPLOY_SSH_PORT` | No | SSH port (defaults to 22) |
 
 **Application Secrets:**
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `VPS_STEAM_USERNAME` | Yes | Steam account username |
-| `VPS_STEAM_PASSWORD` | No* | Steam account password |
-| `VPS_STEAM_REFRESH_TOKEN` | No* | Steam OAuth refresh token |
-| `VPS_VNC_PASSWORD` | Yes | VNC access password |
+| `DEPLOY_STEAM_USERNAME` | Yes | Steam account username |
+| `DEPLOY_STEAM_PASSWORD` | No* | Steam account password |
+| `DEPLOY_STEAM_REFRESH_TOKEN` | No* | Steam OAuth refresh token |
+| `DEPLOY_VNC_PASSWORD` | Yes | VNC access password |
 
-*\*Steam authentication: Provide `VPS_STEAM_PASSWORD` OR `VPS_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used).*
+*\*Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used).*
 
 ### VPS Preparation
 
@@ -147,7 +147,7 @@ Generate a dedicated deployment key:
 ssh-keygen -t ed25519 -C "github-deploy" -f ~/.ssh/github-deploy
 ```
 
-Add the public key to `~/.ssh/authorized_keys` on your VPS, and add the private key as the `VPS_SSH_PRIVATE_KEY` secret in GitHub.
+Add the public key to `~/.ssh/authorized_keys` on your server, and add the private key as the `DEPLOY_SSH_KEY` secret in GitHub.
 
 ### Manual Deployment
 

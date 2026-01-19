@@ -48,12 +48,12 @@ jobs:
       - name: Setup SSH
         uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
-          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Add VPS to known hosts
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts
@@ -69,9 +69,9 @@ jobs:
       - name: Graceful shutdown preparation
         if: inputs.skip_graceful_shutdown != true
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
           echo "::notice::Graceful shutdown hook placeholder - implement server notification here"
           # Future implementation example:
@@ -83,13 +83,13 @@ jobs:
 
       - name: Create .env file on VPS
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
-          STEAM_USERNAME: ${{ secrets.VPS_STEAM_USERNAME }}
-          STEAM_PASSWORD: ${{ secrets.VPS_STEAM_PASSWORD }}
-          STEAM_REFRESH_TOKEN: ${{ secrets.VPS_STEAM_REFRESH_TOKEN }}
-          VNC_PASSWORD: ${{ secrets.VPS_VNC_PASSWORD }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          STEAM_USERNAME: ${{ secrets.DEPLOY_STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.DEPLOY_STEAM_PASSWORD }}
+          STEAM_REFRESH_TOKEN: ${{ secrets.DEPLOY_STEAM_REFRESH_TOKEN }}
+          VNC_PASSWORD: ${{ secrets.DEPLOY_VNC_PASSWORD }}
         run: |
           PORT="${SSH_PORT:-22}"
           # Create deploy directory if it doesn't exist
@@ -122,17 +122,17 @@ jobs:
 
       - name: Copy docker-compose.yml to VPS
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
           scp -P "${SSH_PORT:-22}" docker-compose.yml "$SSH_USER@$SSH_HOST:${{ env.DEPLOY_PATH }}/docker-compose.yml"
 
       - name: Pull and restart containers
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
           ssh -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" << DEPLOY_SCRIPT
           set -e
@@ -156,9 +156,9 @@ jobs:
 
       - name: Verify deployment
         env:
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
         run: |
           # Wait for containers to start
           sleep 30
