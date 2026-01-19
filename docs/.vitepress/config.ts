@@ -53,6 +53,7 @@ export default defineConfig({
                     { text: "Networking", link: "/guide/networking" },
                     { text: "Managing Mods", link: "/guide/managing-mods" },
                     { text: "Upgrading", link: "/guide/upgrading" },
+                    { text: "CI/CD Pipelines", link: "/guide/ci-cd" },
                     { text: "Advanced Topics", link: "/guide/advanced-topics" },
                 ],
             },
