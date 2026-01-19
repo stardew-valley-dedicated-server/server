@@ -103,6 +103,7 @@ To use this pipeline, configure the following GitHub Secrets in your repository:
 | `DEPLOY_SSH_USER` | Yes | SSH username |
 | `DEPLOY_SSH_KEY` | Yes | SSH private key (Ed25519 recommended) |
 | `DEPLOY_SSH_PORT` | No | SSH port (defaults to 22) |
+| `DEPLOY_PATH` | No | Deploy directory (defaults to `/srv/sdvd/preview`) |
 
 **Application Secrets:**
 
