@@ -15,8 +15,12 @@ This open-source project enables 24/7 multiplayer farms without needing to keep 
 <!-- toc -->
 
 -   [Features](#features)
--   [Documentation](#documentation)
 -   [Quick start](#quick-start)
+    -   [Prerequisites](#prerequisites)
+    -   [Getting started](#getting-started)
+    -   [Updating to a new version](#updating-to-a-new-version)
+    -   [Using preview releases](#using-preview-releases)
+-   [Documentation](#documentation)
 
 <!-- tocstop -->
 
@@ -32,6 +36,13 @@ JunimoServer gives you everything you need to host Stardew Valley:
 -   **Mod-Friendly**: Supports SMAPI mods to enhance your Stardew Valley experience with customizations and extra content.
 
 ## Quick start
+
+### Prerequisites
+
+-   **Docker**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
+-   **Steam account**: A Steam account that owns Stardew Valley (required to download game files)
+
+### Getting started
 
 1. **Create Configuration**:
 
@@ -71,6 +82,43 @@ JunimoServer gives you everything you need to host Stardew Valley:
     To save and stop the server, run `docker compose down`.
 
     Your save files and Steam session are stored in Docker volumes (`saves` and `steam-session`) and persist across restarts.
+
+### Updating to a new version
+
+When a new version is released, update your server with:
+
+```sh
+docker compose pull
+docker compose down
+docker compose up -d
+```
+
+### Using preview releases
+
+> **Note:** JunimoServer is under heavy development. If the latest stable release isn't working for you, try the preview release — it often contains fixes that haven't been officially released yet. As the project matures, stable releases will become more reliable.
+
+Preview builds are published automatically with every code change. To use a preview release, add this to your `.env` file:
+
+```sh
+# Use the latest preview build
+IMAGE_VERSION=preview
+```
+
+To switch back to stable releases, remove the line or set it to `latest`:
+
+```sh
+IMAGE_VERSION=latest
+```
+
+After changing the version, run:
+
+```sh
+docker compose pull
+docker compose down
+docker compose up -d
+```
+
+You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
 
 ## Documentation
 
