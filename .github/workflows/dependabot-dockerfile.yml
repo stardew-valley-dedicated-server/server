@@ -1,0 +1,114 @@
+name: "Dependabot: Dockerfile"
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Weekly on Monday at midnight UTC
+  workflow_dispatch: # Allow manual trigger
+
+permissions: {}
+
+jobs:
+  update-dockerfile-deps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Check for SMAPI updates
+        id: smapi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get current version from Dockerfile
+          CURRENT_VERSION=$(grep -oP 'ARG SMAPI_VERSION=\K[0-9.]+' docker/Dockerfile)
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          # Get latest release from GitHub API (excluding pre-releases)
+          LATEST_VERSION=$(gh api repos/Pathoschild/SMAPI/releases --jq '[.[] | select(.prerelease == false)][0].tag_name')
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+          # Compare versions
+          if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+            echo "update_available=true" >> $GITHUB_OUTPUT
+            echo "SMAPI update available: $CURRENT_VERSION -> $LATEST_VERSION"
+          else
+            echo "update_available=false" >> $GITHUB_OUTPUT
+            echo "SMAPI is up to date: $CURRENT_VERSION"
+          fi
+
+      - name: Check for tmux updates
+        id: tmux
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get current version from Dockerfile (e.g., "3.6a" from the URL)
+          CURRENT_VERSION=$(grep -oP 'tmux-builds/releases/download/v\K[0-9.a-z]+' docker/Dockerfile | head -1)
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          # Get latest release from GitHub API
+          LATEST_VERSION=$(gh api repos/tmux/tmux-builds/releases/latest --jq '.tag_name | ltrimstr("v")')
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+          # Compare versions
+          if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+            echo "update_available=true" >> $GITHUB_OUTPUT
+            echo "tmux update available: $CURRENT_VERSION -> $LATEST_VERSION"
+          else
+            echo "update_available=false" >> $GITHUB_OUTPUT
+            echo "tmux is up to date: $CURRENT_VERSION"
+          fi
+
+      - name: Update SMAPI in Dockerfile
+        if: steps.smapi.outputs.update_available == 'true'
+        run: |
+          sed -i "s/ARG SMAPI_VERSION=${{ steps.smapi.outputs.current_version }}/ARG SMAPI_VERSION=${{ steps.smapi.outputs.latest_version }}/" docker/Dockerfile
+
+      - name: Create SMAPI Pull Request
+        if: steps.smapi.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725 # v8.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): bump SMAPI from ${{ steps.smapi.outputs.current_version }} to ${{ steps.smapi.outputs.latest_version }}"
+          title: "chore(deps): bump SMAPI from ${{ steps.smapi.outputs.current_version }} to ${{ steps.smapi.outputs.latest_version }}"
+          body: |
+            Bumps [SMAPI](https://github.com/Pathoschild/SMAPI) from ${{ steps.smapi.outputs.current_version }} to ${{ steps.smapi.outputs.latest_version }}.
+
+            Release notes: https://github.com/Pathoschild/SMAPI/releases/tag/${{ steps.smapi.outputs.latest_version }}
+
+            ---
+            This PR was automatically created by the [Dependabot: Dockerfile](${{ github.server_url }}/${{ github.repository }}/actions/workflows/dependabot-dockerfile.yml) workflow.
+          branch: deps/smapi-${{ steps.smapi.outputs.latest_version }}
+          labels: dependencies
+          delete-branch: true
+
+      - name: Reset working directory
+        if: steps.smapi.outputs.update_available == 'true'
+        run: git checkout -- .
+
+      - name: Update tmux in Dockerfile
+        if: steps.tmux.outputs.update_available == 'true'
+        run: |
+          sed -i "s/tmux-${{ steps.tmux.outputs.current_version }}/tmux-${{ steps.tmux.outputs.latest_version }}/g" docker/Dockerfile
+          sed -i "s/download\/v${{ steps.tmux.outputs.current_version }}/download\/v${{ steps.tmux.outputs.latest_version }}/g" docker/Dockerfile
+
+      - name: Create tmux Pull Request
+        if: steps.tmux.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725 # v8.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): bump tmux from ${{ steps.tmux.outputs.current_version }} to ${{ steps.tmux.outputs.latest_version }}"
+          title: "chore(deps): bump tmux from ${{ steps.tmux.outputs.current_version }} to ${{ steps.tmux.outputs.latest_version }}"
+          body: |
+            Bumps [tmux](https://github.com/tmux/tmux) from ${{ steps.tmux.outputs.current_version }} to ${{ steps.tmux.outputs.latest_version }}.
+
+            Release notes: https://github.com/tmux/tmux-builds/releases/tag/v${{ steps.tmux.outputs.latest_version }}
+
+            ---
+            This PR was automatically created by the [Dependabot: Dockerfile](${{ github.server_url }}/${{ github.repository }}/actions/workflows/dependabot-dockerfile.yml) workflow.
+          branch: deps/tmux-${{ steps.tmux.outputs.latest_version }}
+          labels: dependencies
+          delete-branch: true

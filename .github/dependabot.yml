@@ -23,6 +23,15 @@ updates:
     schedule:
       interval: "weekly"
 
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      dotnet-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
