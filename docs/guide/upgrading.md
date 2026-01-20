@@ -2,9 +2,7 @@
 
 Keep your JunimoServer up to date to get the latest features, bug fixes, and game updates.
 
-## Upgrading JunimoServer
-
-### For Docker Release Users
+## For Docker Release Users
 
 If you're using the pre-built Docker images, upgrading JunimoServer is straightforward:
 
@@ -111,8 +109,8 @@ If you need to rollback to a previous version:
 
 ```yml
 services:
-  server:
-    image: sdvd/server:1.0.0
+    server:
+        image: sdvd/server:1.0.0
 ```
 
 Replace `1.0.0` with your desired version.

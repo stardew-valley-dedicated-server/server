@@ -1,0 +1,217 @@
+# CI/CD Pipelines
+
+We use GitHub Actions for automated building, testing, and deployment. This guide covers the pipelines relevant for maintainers of this project.
+
+## Overview
+
+| Pipeline                                 | Trigger                                | Purpose                                             |
+| ---------------------------------------- | -------------------------------------- | --------------------------------------------------- |
+| [Release Build](#release-pipeline)       | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
+| [Preview Build](#preview-build-pipeline) | Merge feature to `master`              | Builds and publishes preview Docker images          |
+| [Deploy Server](#deploy-server-pipeline) | After preview build / manual           | Deploys server instances to VPS                     |
+
+## Release Build Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/release.yml)
+
+The release pipeline handles version bumping, changelog generation, and publishing stable Docker images to DockerHub once a [release-please](https://github.com/googleapis/release-please) release candidate PR has been merged to master.
+
+### Versioning
+
+Version bumps are determined by commit message prefixes:
+
+| Prefix                         | Version Bump          | Example           |
+| ------------------------------ | --------------------- | ----------------- |
+| `fix:`                         | Patch (1.0.0 → 1.0.1) | Bug fix           |
+| `feat:`                        | Minor (1.0.0 → 1.1.0) | New feature added |
+| `feat!:` or `BREAKING CHANGE:` | Major (1.0.0 → 2.0.0) | Breaking change   |
+
+### Docker Images
+
+On release, images are tagged with:
+
+- `sdvd/server:latest` - Latest stable version
+- `sdvd/server:X.Y.Z` - Specific version (e.g., `1.5.0`)
+
+```sh
+# Pull latest stable release
+docker pull sdvd/server:latest
+
+# Pull specific version
+docker pull sdvd/server:1.5.0
+```
+
+## Preview Build Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/preview-build.yml)
+
+::: warning
+Preview builds may contain experimental features or bugs. Use stable releases for production servers.
+:::
+
+The preview build pipeline runs on every push to `master` and creates pre-release Docker images for testing new features before they're officially released.
+
+### Versioning
+
+Preview versions follow the format: `X.Y.Z-preview.N`
+
+- `X.Y.Z` - The next expected release version
+- `N` - Preview counter (increments with each build)
+
+Example: `1.5.0-preview.3` is the third preview build for the upcoming 1.5.0 release.
+
+### Docker Images
+
+Preview images are tagged with:
+
+- `sdvd/server:preview` - Latest preview build
+- `sdvd/server:X.Y.Z-preview.N` - Specific preview version (e.g., `1.5.0-preview.3`)
+
+```sh
+# Pull latest preview
+docker pull sdvd/server:preview
+
+# Use preview in docker-compose.yml
+services:
+  server:
+    image: sdvd/server:preview
+```
+
+## Deploy Docs Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-docs.yml)
+
+Placeholder
+
+## Deploy Server Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-server.yml)
+
+The deploy server pipeline deploys server instances to a VPS. It supports multiple environments that can be individually configured.
+
+### When It Runs
+
+- **Automatically** after a successful preview build
+- **Automatically** when a release is published
+- **Manually** via GitHub Actions "Run workflow" button
+
+### Adding a New Server
+
+1. **Create a GitHub Environment** matching your server name
+2. **Add the environment to the workflow matrix** in `.github/workflows/deploy-server.yml`
+3. **Update the workflow dispatch options** to include the new environment
+
+Example matrix entry:
+
+```yaml
+matrix:
+    include:
+        - environment: public-test
+          image_tag: preview
+          on_preview_build: true
+          on_release: false
+
+        - environment: production
+          image_tag: latest
+          on_preview_build: false
+          on_release: true
+```
+
+### Setup Requirements
+
+Each deployment target needs a **GitHub Environment** with its configuration.
+
+#### Creating Environments
+
+1. Go to **Settings** → **Environments** in your repository
+2. Click **New environment**
+3. Name it to match the workflow matrix (e.g., `public-test`, `production`)
+4. Add the secrets listed below
+
+#### Environment Secrets
+
+All secrets use the `DEPLOY_` prefix.
+
+| Secret                       | Required                               | Description                           |
+| ---------------------------- | -------------------------------------- | ------------------------------------- |
+| `DEPLOY_GAME_PORT`           | Yes                                    | UDP port for game connections         |
+| `DEPLOY_SSH_HOST`            | Yes                                    | Server IP address or hostname         |
+| `DEPLOY_SSH_KEY`             | Yes                                    | SSH private key (Ed25519 recommended) |
+| `DEPLOY_SSH_PORT`            | No                                     | SSH port (defaults to 22)             |
+| `DEPLOY_SSH_USER`            | Yes                                    | SSH username                          |
+| `DEPLOY_STEAM_AUTH_PORT`     | Yes                                    | TCP port for Steam auth service       |
+| `DEPLOY_STEAM_PASSWORD`      | No <a id="tip-0-0" href="#tip-0">1</a> | Steam account password                |
+| `DEPLOY_STEAM_REFRESH_TOKEN` | No <a id="tip-0-1" href="#tip-0">1</a> | Steam OAuth refresh token             |
+| `DEPLOY_STEAM_USERNAME`      | Yes                                    | Steam account username                |
+| `DEPLOY_VNC_PASSWORD`        | Yes                                    | VNC access password                   |
+| `DEPLOY_VNC_PORT`            | Yes                                    | TCP port for VNC web interface        |
+
+_<a id="tip-0" href="#tip-0-0">[1]</a> Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used)._
+
+::: tip
+If multiple servers share the same VPS and credentials, **repository-level** secrets can be used as fallbacks. Environment-level secrets override repository-level secrets with the same name.
+:::
+
+### VPS Preparation
+
+Before the pipeline can deploy, prepare your VPS.
+
+**1. Install Docker**
+
+```sh
+curl -fsSL https://get.docker.com | sh
+apt-get install docker-compose-plugin
+```
+
+**2. Create Deploy User**
+
+Run the setup script from the repository (as root):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/tools/create-ssh-user.sh | bash
+```
+
+This creates a `github_deploy` user with:
+- Docker group membership
+- SSH key for authentication
+- Deploy directory at `~/srv/` (environments deploy to `~/srv/<environment-name>`)
+
+The script outputs the private key to add as `DEPLOY_SSH_KEY` in GitHub.
+
+**3. Configure Firewall**
+
+```sh
+# Example for public-test environment
+ufw allow 24642/udp  # Game port
+ufw allow 5800/tcp   # VNC web interface
+```
+
+### Manual Deployment
+
+To manually trigger a deployment:
+
+1. Go to **Actions** → **Deploy Server**
+2. Click **Run workflow**
+3. Select which environment to deploy (e.g., `public-test`)
+4. Optionally check "Skip graceful shutdown" for emergency deploys
+5. Click **Run workflow**
+
+### What Gets Deployed
+
+The pipeline:
+
+1. Creates/updates `.env` file with secrets and correct `IMAGE_VERSION`
+2. Copies `docker-compose.yml` to VPS
+3. Pulls the appropriate Docker images
+4. Restarts containers
+5. Verifies deployment health
+
+::: tip
+The pipeline uses the same `docker-compose.yml` from the repository, ensuring consistency between local development and deployed environments. The `IMAGE_VERSION` environment variable controls which image tag is used.
+:::
+
+## Discord Notifications
+
+Most pipelines try to send notifications to Discord when builds complete or deployments finish.
+
+To enable notifications, the `DISCORD_WEBHOOK_URL` repository secret needs to be set with a [Discord webhook URL](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
