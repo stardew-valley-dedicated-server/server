@@ -32,31 +32,44 @@ concurrency:
 permissions: {}
 
 jobs:
+  prepare:
+    name: Prepare deployment
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has_targets: ${{ steps.set-matrix.outputs.has_targets }}
+    steps:
+      - name: Build deployment matrix
+        id: set-matrix
+        env:
+          TRIGGER: ${{ github.event_name }}
+          SELECTED: ${{ github.event.inputs.environment }}
+          WORKFLOW_SUCCESS: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          # Define deployment targets as JSON
+          TARGETS='[
+            {"environment": "public-test", "image_tag": "preview", "on_preview": true, "on_release": false}
+          ]'
+          # {"environment": "production", "image_tag": "latest", "on_preview": false, "on_release": true}
+
+          MATRIX=$(echo "$TARGETS" | jq -c '[.[] | select(
+            (env.TRIGGER == "workflow_dispatch" and env.SELECTED == .environment) or
+            (env.TRIGGER == "workflow_run" and env.WORKFLOW_SUCCESS == "success" and .on_preview) or
+            (env.TRIGGER == "release" and .on_release)
+          ) | {environment, image_tag}]')
+
+          echo "matrix={\"include\":$MATRIX}" >> $GITHUB_OUTPUT
+          echo "has_targets=$([ "$MATRIX" != "[]" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
   deploy:
     name: Deploy ${{ matrix.environment }}
+    needs: prepare
+    if: needs.prepare.outputs.has_targets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Define all deployment targets here
-    # Each environment needs a matching GitHub Environment with secrets configured
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - environment: public-test
-            image_tag: preview
-            on_preview_build: true
-            on_release: false
-
-          # - environment: production
-          #   image_tag: latest
-          #   on_preview_build: false
-          #   on_release: true
-
-    # Filter based on trigger type (matrix context in job-level if is valid, VSCode lint is wrong)
-    if: |
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == matrix.environment) ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && matrix.on_preview_build) ||
-      (github.event_name == 'release' && matrix.on_release)
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
 
     environment: ${{ matrix.environment }}
 
@@ -233,4 +246,3 @@ jobs:
                 }]
               }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
-
