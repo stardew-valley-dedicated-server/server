@@ -162,6 +162,10 @@ jobs:
             docker compose down --timeout 30 || true
             echo "::endgroup::"
 
+            echo "::group::Setup steam-auth and download game"
+            docker compose run --rm steam-auth setup
+            echo "::endgroup::"
+
             echo "::group::Start containers"
             docker compose up -d
             echo "::endgroup::"
