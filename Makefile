@@ -1,3 +1,5 @@
+.PHONY: docs
+
 # Load configuration
 -include .env
 
@@ -81,7 +83,11 @@ logs:
 	@docker compose logs -f
 	@printf '\033[0m'
 
-# Clean up everything
+# Start docs dev server
+docs:
+	@npm --prefix ./docs run dev
+
+# Clean up everything, including all volumes
 clean:
 	@echo Cleaning up...
 	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v

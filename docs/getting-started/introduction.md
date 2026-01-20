@@ -1,39 +1,30 @@
 # Introduction
 
-**JunimoServer** makes [Stardew Valley](https://www.stardewvalley.net/) multiplayer hosting simple and flexible. Host your farm anytime, anywhere — on your local machine, a VPS, or a dedicated server.
+**JunimoServer** is a Docker-based dedicated server for [Stardew Valley](https://www.stardewvalley.net/) multiplayer. It lets you run a farm that stays online 24/7, so players can join whenever they want without you needing to be there.
 
-This open-source project enables 24/7 multiplayer farms without needing to keep the game running on your machine. Players can connect at any time without requiring you to be online. With customizable settings, SMAPI's built-in backup system, and support for larger farms, JunimoServer makes multiplayer management easier than ever.
+## Why use a dedicated server?
 
-You can get started quickly by following the setup instructions and running the server with minimal configuration. For more advanced use cases, JunimoServer provides extensive options to adapt the server to your needs.
+In normal Stardew Valley multiplayer, one player hosts the game. When they quit, everyone gets disconnected and the farm goes offline. This means coordinating schedules and hoping the host doesn't need to step away.
+
+With JunimoServer, the farm runs independently on a server. Players drop in and out freely. The game keeps going. No more waiting for the host to get back online.
+
+## What you'll need
+
+- **Docker** - JunimoServer runs in containers, so Docker is required
+- **A copy of Stardew Valley** - The server downloads game files using your Steam account
+- **A place to run it** - Your own PC, a VPS, or any machine that can run Docker
+
+The server works on Linux, macOS, and Windows. Most people run it on a Linux VPS for better uptime, but local hosting works fine for testing or casual use.
 
 ## Features
 
-JunimoServer gives you everything you need to host Stardew Valley:
+- **Always-on hosting** - The farm runs continuously without needing anyone to keep the game open
+- **Web-based management** - Control the server through a VNC interface in your browser
+- **Automatic backups** - SMAPI's backup system keeps your save files safe
+- **Docker volumes** - Farm data persists across container restarts and updates
+- **Mod support** - Install SMAPI mods just like you would in single-player
+- **Configurable** - Adjust game settings, player limits, and server behavior
 
-- **Always-On Hosting**: Keep your farm running 24/7 without needing to leave the game open.
-- **Easy Management**: Control your server through a web-based VNC interface and dedicated CLI.
-- **Persistent Progress**: Protect your crops and ensure your farm continues to thrive, even when no one's online.
-- **Save File Persistence**: Your farm data is stored in Docker volumes, safe from container restarts and updates.
-- **Fully Customizable**: Change game modes, tweak settings, and optimize performance to fit your needs.
-- **Mod-Friendly**: Supports SMAPI mods to enhance your Stardew Valley experience with customizations and extra content.
+## Next steps
 
-## Architecture
-
-JunimoServer is composed of different core packages:
-
-| Repo | Description |
-|------|-------------|
-| [Server](https://github.com/stardew-valley-dedicated-server/server) | This repository |
-| [Web UI](https://github.com/stardew-valley-dedicated-server/web) | Web based admin interface based on Nuxt3 (**not fully released yet**) |
-| [AsyncAPI TS](https://github.com/stardew-valley-dedicated-server/asyncapi-generator-template-ts) | AsyncAPI template to generate a strongly typed TS websocket client |
-| [AsyncAPI C#](https://github.com/stardew-valley-dedicated-server/asyncapi-generator-template-cs) | AsyncAPI template to generate a strongly typed C# websocket client |
-
-We recommend reading each concept to have a full vision of the capabilities and the scope of each package.
-
-## Hosting
-
-JunimoServer supports various hosting environments:
-
-- **Local Hosting:** Run the server on your PC for personal use or testing.
-- **VPS or Dedicated Servers:** Set up the server on remote machines for continuous uptime.
-- **Cross-platform Compatibility:** Fully supported on Linux, macOS, and Windows through Docker.
+Ready to set up your server? Head to the [Prerequisites](/getting-started/prerequisites) page to make sure you have everything you need, then follow the [Installation](/getting-started/installation) guide.
