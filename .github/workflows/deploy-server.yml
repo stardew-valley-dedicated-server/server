@@ -7,99 +7,61 @@ on:
       - completed
     branches:
       - master
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
-      instance:
-        description: 'Which instance to deploy'
+      environment:
+        description: 'Environment to deploy'
         required: true
-        default: 'preview'
         type: choice
         options:
-          - preview
-          - latest
-          - all
+          - public-test
+          # - production
       skip_graceful_shutdown:
         description: 'Skip graceful shutdown (emergency deploy)'
         required: false
         default: false
         type: boolean
 
-# Queue deployments - don't cancel in-progress deploys (could leave server in broken state)
 concurrency:
-  group: server-deploy-${{ github.event.inputs.instance || 'auto' }}
+  group: deploy-${{ github.event.inputs.environment || 'auto' }}
   cancel-in-progress: false
 
 permissions: {}
 
 jobs:
-  # Determine which instances to deploy
-  prepare:
-    name: Prepare deployment matrix
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-      has_instances: ${{ steps.set-matrix.outputs.has_instances }}
-    steps:
-      - name: Set deployment matrix
-        id: set-matrix
-        env:
-          # Enable/disable instances via repository variables (Settings > Variables)
-          # Set to 'true' to enable, anything else to disable
-          PREVIEW_ENABLED: ${{ vars.DEPLOY_PREVIEW_ENABLED || 'true' }}
-          LATEST_ENABLED: ${{ vars.DEPLOY_LATEST_ENABLED || 'false' }}
-          TRIGGER: ${{ github.event_name }}
-          SELECTED_INSTANCE: ${{ github.event.inputs.instance }}
-        run: |
-          instances='[]'
-
-          # Preview instance configuration
-          if [[ "$TRIGGER" == "workflow_dispatch" ]]; then
-            # Manual trigger - deploy selected instance(s)
-            if [[ "$SELECTED_INSTANCE" == "preview" || "$SELECTED_INSTANCE" == "all" ]]; then
-              if [[ "$PREVIEW_ENABLED" == "true" ]]; then
-                instances=$(echo "$instances" | jq -c '. + [{"name": "preview", "image_tag": "preview", "path_secret": "DEPLOY_PATH_PREVIEW", "path_default": "/srv/sdvd/preview"}]')
-              fi
-            fi
-            if [[ "$SELECTED_INSTANCE" == "latest" || "$SELECTED_INSTANCE" == "all" ]]; then
-              if [[ "$LATEST_ENABLED" == "true" ]]; then
-                instances=$(echo "$instances" | jq -c '. + [{"name": "latest", "image_tag": "latest", "path_secret": "DEPLOY_PATH_LATEST", "path_default": "/srv/sdvd/latest"}]')
-              fi
-            fi
-          else
-            # Automatic trigger (workflow_run) - only deploy preview
-            if [[ "$PREVIEW_ENABLED" == "true" ]]; then
-              instances=$(echo "$instances" | jq -c '. + [{"name": "preview", "image_tag": "preview", "path_secret": "DEPLOY_PATH_PREVIEW", "path_default": "/srv/sdvd/preview"}]')
-            fi
-          fi
-
-          echo "matrix={\"instance\":$instances}" >> $GITHUB_OUTPUT
-
-          # Check if we have any instances to deploy
-          if [[ "$instances" == "[]" ]]; then
-            echo "has_instances=false" >> $GITHUB_OUTPUT
-            echo "::warning::No instances enabled for deployment"
-          else
-            echo "has_instances=true" >> $GITHUB_OUTPUT
-            echo "Instances to deploy: $instances"
-          fi
-
   deploy:
-    name: Deploy ${{ matrix.instance.name }}
-    needs: prepare
-    if: >
-      needs.prepare.outputs.has_instances == 'true' &&
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    name: Deploy ${{ matrix.environment }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Define all deployment targets here
+    # Each environment needs a matching GitHub Environment with secrets configured
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      matrix:
+        include:
+          - environment: public-test
+            image_tag: preview
+            on_preview_build: true
+            on_release: false
+
+          # - environment: production
+          #   image_tag: latest
+          #   on_preview_build: false
+          #   on_release: true
+
+    # Filter based on trigger type (matrix context in job-level if is valid, VSCode lint is wrong)
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == matrix.environment) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && matrix.on_preview_build) ||
+      (github.event_name == 'release' && matrix.on_release)
+
+    environment: ${{ matrix.environment }}
 
     permissions:
       contents: read
-
-    env:
-      DEPLOY_PATH: ${{ secrets[matrix.instance.path_secret] || matrix.instance.path_default }}
-      IMAGE_TAG: ${{ matrix.instance.image_tag }}
 
     steps:
       - name: Checkout code
@@ -109,28 +71,41 @@ jobs:
             docker-compose.yml
           sparse-checkout-cone-mode: false
 
-      # ============================================================
-      # PLACEHOLDER: Future Graceful Shutdown Hook
-      # ============================================================
       - name: Graceful shutdown preparation
         if: github.event.inputs.skip_graceful_shutdown != 'true'
         run: |
-          echo "::notice::Graceful shutdown hook placeholder for ${{ matrix.instance.name }}"
+          echo "::notice::Graceful shutdown hook placeholder for ${{ matrix.environment }}"
 
       - name: Create .env file
+        env:
+          DEPLOY_GAME_PORT: ${{ secrets.DEPLOY_GAME_PORT }}
+          DEPLOY_VNC_PORT: ${{ secrets.DEPLOY_VNC_PORT }}
+          DEPLOY_STEAM_AUTH_PORT: ${{ secrets.DEPLOY_STEAM_AUTH_PORT }}
         run: |
-          echo "::group::Generate .env file for ${{ matrix.instance.name }}"
+          echo "::group::Generate .env file for ${{ matrix.environment }}"
+
+          # Validate required secrets
+          missing=""
+          [[ -z "$DEPLOY_GAME_PORT" ]] && missing="$missing DEPLOY_GAME_PORT"
+          [[ -z "$DEPLOY_VNC_PORT" ]] && missing="$missing DEPLOY_VNC_PORT"
+          [[ -z "$DEPLOY_STEAM_AUTH_PORT" ]] && missing="$missing DEPLOY_STEAM_AUTH_PORT"
+          if [[ -n "$missing" ]]; then
+            echo "::error::Missing secrets:$missing"
+            echo "Configure these in Settings → Environments → ${{ matrix.environment }}"
+            exit 1
+          fi
+
           cat > .env << EOF
-          # Auto-generated by GitHub Actions deploy workflow
-          # Instance: ${{ matrix.instance.name }}
-          IMAGE_VERSION=${{ env.IMAGE_TAG }}
+          # Auto-generated by GitHub Actions
+          # Environment: ${{ matrix.environment }}
+          IMAGE_VERSION=${{ matrix.image_tag }}
           STEAM_USERNAME=${{ secrets.DEPLOY_STEAM_USERNAME }}
           STEAM_PASSWORD=${{ secrets.DEPLOY_STEAM_PASSWORD }}
           STEAM_REFRESH_TOKEN=${{ secrets.DEPLOY_STEAM_REFRESH_TOKEN }}
           VNC_PASSWORD=${{ secrets.DEPLOY_VNC_PASSWORD }}
-          GAME_PORT=24642
-          VNC_PORT=5800
-          STEAM_AUTH_PORT=3001
+          GAME_PORT=$DEPLOY_GAME_PORT
+          VNC_PORT=$DEPLOY_VNC_PORT
+          STEAM_AUTH_PORT=$DEPLOY_STEAM_AUTH_PORT
           DISABLE_RENDERING=true
           EOF
           sed -i 's/^          //' .env
@@ -143,7 +118,7 @@ jobs:
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          script: mkdir -p ${{ env.DEPLOY_PATH }}
+          script: mkdir -p ~/srv/${{ matrix.environment }}
 
       - name: Copy files to server
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
@@ -153,7 +128,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           source: "docker-compose.yml,.env"
-          target: ${{ env.DEPLOY_PATH }}
+          target: ~/srv/${{ matrix.environment }}
 
       - name: Pull and restart containers
         uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
@@ -164,13 +139,13 @@ jobs:
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           script: |
             set -e
-            cd ${{ env.DEPLOY_PATH }}
+            cd ~/srv/${{ matrix.environment }}
 
-            echo "::group::Pull latest images"
+            echo "::group::Pull images"
             docker compose pull
             echo "::endgroup::"
 
-            echo "::group::Stop existing containers"
+            echo "::group::Stop containers"
             docker compose down --timeout 30 || true
             echo "::endgroup::"
 
@@ -178,7 +153,7 @@ jobs:
             docker compose up -d
             echo "::endgroup::"
 
-            echo "::group::Cleanup old images"
+            echo "::group::Cleanup"
             docker image prune -f
             echo "::endgroup::"
 
@@ -191,31 +166,29 @@ jobs:
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           script: |
             set -e
-            cd ${{ env.DEPLOY_PATH }}
+            cd ~/srv/${{ matrix.environment }}
 
-            echo "::group::Wait for containers to start"
+            echo "::group::Wait for startup"
             sleep 30
             echo "::endgroup::"
 
-            echo "::group::Check container health"
+            echo "::group::Health check"
             if docker compose ps | grep -qE "unhealthy|Exit"; then
-              echo "::error::One or more containers are unhealthy or exited"
+              echo "::error::Container health check failed"
               docker compose logs --tail=50
               exit 1
             fi
-            echo "All containers running successfully"
             docker compose ps
             echo "::endgroup::"
 
       - name: Build summary
         run: |
-          echo "### Deployment Complete: ${{ matrix.instance.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployed: ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Instance:** \`${{ matrix.instance.name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Image tag:** \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Deploy path:** \`${{ env.DEPLOY_PATH }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Trigger:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ matrix.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ matrix.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
 
       - name: Discord notification
         if: success()
@@ -224,15 +197,15 @@ jobs:
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
             jq -n \
-              --arg instance "${{ matrix.instance.name }}" \
-              --arg tag "${{ env.IMAGE_TAG }}" \
+              --arg env "${{ matrix.environment }}" \
+              --arg tag "${{ matrix.image_tag }}" \
               --arg commit "${GITHUB_SHA:0:7}" \
               '{
                 embeds: [{
                   title: "Server Deployed",
                   color: 3066993,
                   fields: [
-                    {name: "Instance", value: $instance, inline: true},
+                    {name: "Environment", value: $env, inline: true},
                     {name: "Image", value: ("`" + $tag + "`"), inline: true},
                     {name: "Commit", value: ("`" + $commit + "`"), inline: true}
                   ]
@@ -247,17 +220,17 @@ jobs:
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
             jq -n \
-              --arg instance "${{ matrix.instance.name }}" \
+              --arg env "${{ matrix.environment }}" \
               --arg commit "${GITHUB_SHA:0:7}" \
               '{
                 embeds: [{
-                  title: "Server Deployment Failed",
+                  title: "Deployment Failed",
                   color: 15158332,
                   fields: [
-                    {name: "Instance", value: $instance, inline: true},
-                    {name: "Commit", value: ("`" + $commit + "`"), inline: true},
-                    {name: "Status", value: "Check GitHub Actions logs"}
+                    {name: "Environment", value: $env, inline: true},
+                    {name: "Commit", value: ("`" + $commit + "`"), inline: true}
                   ]
                 }]
               }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
+
