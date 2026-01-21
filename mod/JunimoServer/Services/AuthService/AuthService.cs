@@ -257,7 +257,7 @@ namespace JunimoServer.Services.Auth
                 __result = GalaxyNetHelper.GalaxyInvitePrefix + Base36.Encode(lobby.GetRealID());
 
                 // Write invite code to file for CLI display
-                InviteCodeFile.Write(__result);
+                InviteCodeFile.Write(__result, _monitor);
 
                 // Print startup banner with invite code
                 ServerBanner.Print(_monitor, _helper);

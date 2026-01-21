@@ -38,7 +38,7 @@ namespace JunimoServer
             }
 
             // Clear invite code file on startup
-            JunimoServer.Util.InviteCodeFile.Clear();
+            JunimoServer.Util.InviteCodeFile.Clear(Monitor);
 
             RegisterServices();
             RegisterChatCommands();
