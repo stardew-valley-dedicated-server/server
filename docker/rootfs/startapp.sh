@@ -155,8 +155,8 @@ init_gui() {
 
     /etc/services.d/polybar/run &
 
-    if [ -e "/data/images/wallpaper.png" ]; then
-        xwallpaper --zoom /data/images/wallpaper.png
+    if [ -e "/data/images/wallpaper-junimo-server.png" ]; then
+        xwallpaper --zoom /data/images/wallpaper-junimo-server.png
     fi
 
     bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green
