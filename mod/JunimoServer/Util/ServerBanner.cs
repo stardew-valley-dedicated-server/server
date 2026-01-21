@@ -35,8 +35,8 @@ namespace JunimoServer.Util
             var externalIpValue = externalIp == IPAddress.None ? "n/a" : externalIp.ToString();
             var externalIcon = externalIp == IPAddress.None ? "х" : "✓";
 
-            var inviteCode = InviteCodeFile.Read();
-            var inviteCodeValue = string.IsNullOrEmpty(inviteCode) ? "n/a" : inviteCode;
+            var inviteCode = InviteCodeFile.Read(monitor);
+            var inviteCodeValue = inviteCode ?? "n/a";
 
             monitor.LogBanner(new[] {
                 $"JunimoServer {version}",
