@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
 using Galaxy.Api;
 using Steamworks;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Network;
 using StardewValley.SDKs;
 using StardewValley.SDKs.Steam;
 using StardewValley.SDKs.GogGalaxy;
@@ -120,6 +122,46 @@ namespace JunimoServer.Services.Auth
         private static void IncrementGalaxyConnectionProgress(GalaxyHelper __instance) => _helper.Reflection.GetProperty<int>(__instance, "ConnectionProgress").SetValue(__instance.ConnectionProgress + 1);
         private static void SetGalaxyActive(GalaxyHelper __instance) => _helper.Reflection.GetField<bool>(__instance, "active").SetValue(true);
         private static void SetGalaxyConnectionFinished(GalaxyHelper __instance) => _helper.Reflection.GetProperty<bool>(__instance, "ConnectionFinished").SetValue(true);
+
+        /// <summary>
+        /// Fix for race condition: If the GameServer was created before Galaxy auth completed,
+        /// it won't have a GalaxyNetServer. This method late-adds one if needed.
+        /// </summary>
+        private static void TryLateAddGalaxyServer()
+        {
+            try
+            {
+                // Check if server exists and Networking is available
+                if (Game1.server == null || replacementSdk?.Networking == null)
+                {
+                    return;
+                }
+
+                // Access the internal 'servers' list via reflection
+                var serversField = _helper.Reflection.GetField<List<Server>>(Game1.server, "servers");
+                var servers = serversField.GetValue();
+
+                // Check if a GalaxyNetServer already exists
+                if (servers.Any(s => s.GetType().Name == "GalaxyNetServer"))
+                {
+                    return;
+                }
+
+                // Late-add the Galaxy server
+                _monitor.Log("Late-adding Galaxy server (race condition recovery)...", LogLevel.Info);
+                var galaxyServer = replacementSdk.Networking.CreateServer(Game1.server);
+                if (galaxyServer != null)
+                {
+                    servers.Add(galaxyServer);
+                    galaxyServer.initialize();
+                    _monitor.Log("Galaxy server added successfully, invite codes should now work.", LogLevel.Info);
+                }
+            }
+            catch (Exception ex)
+            {
+                _monitor.Log($"Failed to late-add Galaxy server: {ex.Message}", LogLevel.Error);
+            }
+        }
 
         private string _steamUser = "";
         private string _steamPass = "";
@@ -325,6 +367,14 @@ namespace JunimoServer.Services.Auth
             {
                 _monitor.Log($"GalaxySDK auth state changed to '{num}'", LogLevel.Info);
                 onGalaxyStateChangeOriginal.Invoke(num);
+
+                // Fix for race condition: If "Galaxy logged on" (bit 2) fires after the server
+                // already started, the GameServer constructor would have skipped adding a Galaxy
+                // server because Networking was null at that time. Late-add it now.
+                if ((num & 2u) != 0)
+                {
+                    TryLateAddGalaxyServer();
+                }
 
                 // TODO: Come back to this, should have low priority
                 // By default, `StardewDisplayName` is set in `SteamHelper` but not in `GalaxyHelper`.
