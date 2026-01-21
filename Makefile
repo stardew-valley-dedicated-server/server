@@ -78,11 +78,8 @@ down:
 	@echo Stopping server...
 	@docker compose down --remove-orphans
 
-# Attach to interactive split-pane server CLI TODO: Move wait into attach script
+# Attach to interactive split-pane server CLI
 cli:
-	@echo Attaching to server console...
-	@echo Waiting for server to be ready...
-	@docker compose exec server sh -c 'while [ ! -f /tmp/server-output.log ]; do sleep 1; done'
 	@docker compose exec server attach-cli
 
 # View server logs (escape sequence to reset colors)

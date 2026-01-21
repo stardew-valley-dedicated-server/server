@@ -184,20 +184,13 @@ touch "${LOG_FILE}"
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 
-# FIXME: I think this is the culprit for duplicate output in docker compose logs
-# Start a background tail to stdout (so 'docker compose logs' works)
-tail -f "${LOG_FILE}" &
-TAIL_PID=$!
-
-# Start SMAPI with stdin from FIFO, output to log file
+# Start SMAPI with stdin from FIFO, output to log file and stdout
 # Using 'script' to create a PTY so SMAPI outputs colors (thinks it's a terminal)
 # Using tail -f on the FIFO to keep it open and avoid blocking
+# Note: 'script' writes to both stdout (for docker logs) and the typescript file simultaneously
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
 
 # Wait for SMAPI process to exit (when it exits, the server has stopped)
 wait $SMAPI_PID
-
-# Cleanup
-kill $TAIL_PID 2>/dev/null || true
 echo "Server session ended"

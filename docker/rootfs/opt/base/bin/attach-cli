@@ -21,11 +21,12 @@ COLOR_BORDER_ACTIVE=$COLOR_BRAND_3
 COLOR_STATUSBAR_BACKGROUND=$COLOR_BRAND_3
 COLOR_STATUSBAR_TEXT=$COLOR_BRAND_1
 
-# Check if server is ready
+# Wait for server to be ready
 if [ ! -f "$LOG_FILE" ]; then
-    echo "Error: Server log file not found at $LOG_FILE"
-    echo "The server may not be running yet. Please wait for it to start."
-    exit 1
+    echo "Waiting for server to be ready..."
+    while [ ! -f "$LOG_FILE" ]; do
+        sleep 1
+    done
 fi
 
 start_output_pane() {
