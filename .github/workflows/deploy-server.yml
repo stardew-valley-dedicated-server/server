@@ -120,6 +120,8 @@ jobs:
           VNC_PORT=$DEPLOY_VNC_PORT
           STEAM_AUTH_PORT=$DEPLOY_STEAM_AUTH_PORT
           DISABLE_RENDERING=true
+          # Discord bot (optional)
+          DISCORD_BOT_TOKEN=${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
           EOF
           sed -i 's/^          //' .env
           echo "::endgroup::"

@@ -132,19 +132,20 @@ Each deployment target needs a **GitHub Environment** with its configuration.
 
 All secrets use the `DEPLOY_` prefix.
 
-| Secret                       | Required                               | Description                           |
-| ---------------------------- | -------------------------------------- | ------------------------------------- |
-| `DEPLOY_GAME_PORT`           | Yes                                    | UDP port for game connections         |
-| `DEPLOY_SSH_HOST`            | Yes                                    | Server IP address or hostname         |
-| `DEPLOY_SSH_KEY`             | Yes                                    | SSH private key (Ed25519 recommended) |
-| `DEPLOY_SSH_PORT`            | No                                     | SSH port (defaults to 22)             |
-| `DEPLOY_SSH_USER`            | Yes                                    | SSH username                          |
-| `DEPLOY_STEAM_AUTH_PORT`     | Yes                                    | TCP port for Steam auth service       |
-| `DEPLOY_STEAM_PASSWORD`      | No <a id="tip-0-0" href="#tip-0">1</a> | Steam account password                |
-| `DEPLOY_STEAM_REFRESH_TOKEN` | No <a id="tip-0-1" href="#tip-0">1</a> | Steam OAuth refresh token             |
-| `DEPLOY_STEAM_USERNAME`      | Yes                                    | Steam account username                |
-| `DEPLOY_VNC_PASSWORD`        | Yes                                    | VNC access password                   |
-| `DEPLOY_VNC_PORT`            | Yes                                    | TCP port for VNC web interface        |
+| Secret                       | Required                               | Description                             |
+| ---------------------------- | -------------------------------------- | --------------------------------------- |
+| `DEPLOY_DISCORD_BOT_TOKEN`   | No                                     | Discord bot token for status display    |
+| `DEPLOY_GAME_PORT`           | Yes                                    | UDP port for game connections           |
+| `DEPLOY_SSH_HOST`            | Yes                                    | Server IP address or hostname           |
+| `DEPLOY_SSH_KEY`             | Yes                                    | SSH private key (Ed25519 recommended)   |
+| `DEPLOY_SSH_PORT`            | No                                     | SSH port (defaults to 22)               |
+| `DEPLOY_SSH_USER`            | Yes                                    | SSH username                            |
+| `DEPLOY_STEAM_AUTH_PORT`     | Yes                                    | TCP port for Steam auth service         |
+| `DEPLOY_STEAM_PASSWORD`      | No <a id="tip-0-0" href="#tip-0">1</a> | Steam account password                  |
+| `DEPLOY_STEAM_REFRESH_TOKEN` | No <a id="tip-0-1" href="#tip-0">1</a> | Steam OAuth refresh token               |
+| `DEPLOY_STEAM_USERNAME`      | Yes                                    | Steam account username                  |
+| `DEPLOY_VNC_PASSWORD`        | Yes                                    | VNC access password                     |
+| `DEPLOY_VNC_PORT`            | Yes                                    | TCP port for VNC web interface          |
 
 _<a id="tip-0" href="#tip-0-0">[1]</a> Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used)._
 

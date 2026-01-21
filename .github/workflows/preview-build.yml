@@ -282,3 +282,55 @@ jobs:
           echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/steam-service:preview\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/steam-service:${{ needs.calculate-version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+
+  build-discord-bot-preview:
+    name: Build and Push Discord Bot Preview
+    needs: calculate-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: sdvd/discord-bot
+          tags: |
+            type=raw,value=preview
+            type=raw,value=${{ needs.calculate-version.outputs.preview_version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ./tools/discord-bot
+          file: ./tools/discord-bot/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=discord-bot
+          cache-to: type=gha,mode=max,scope=discord-bot
+
+      - name: Build summary
+        run: |
+          echo "### Discord Bot Preview Build Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ needs.calculate-version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/discord-bot:preview\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/discord-bot:${{ needs.calculate-version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
