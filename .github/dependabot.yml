@@ -18,6 +18,15 @@ updates:
           - "vitepress*"
           - "@vitepress/*"
 
+  - package-ecosystem: "npm"
+    directory: "/tools/discord-bot"
+    schedule:
+      interval: "weekly"
+    groups:
+      discord-bot:
+        patterns:
+          - "*"
+
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
