@@ -15,6 +15,7 @@ services:
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
+      - server-status:/tmp
     environment:
       # Steam auth service URL (for runtime ticket requests)
       STEAM_AUTH_URL: "http://steam-auth:3001"
@@ -49,7 +50,27 @@ services:
       STEAM_REFRESH_TOKEN: "${STEAM_REFRESH_TOKEN:-}"
     restart: unless-stopped
 
+  # Discord bot for server status display
+  discord-bot:
+    build:
+      context: ./tools/discord-bot
+      dockerfile: Dockerfile
+    image: sdvd/discord-bot:${IMAGE_VERSION:-latest}
+    container_name: sdvd-discord-bot
+    volumes:
+      - server-status:/tmp:ro
+    environment:
+      DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
+      STATUS_FILE_PATH: "/tmp/server-status.json"
+      # Min 20s to respect Discord rate limits, default 30s
+      UPDATE_INTERVAL_MS: "30000"
+    depends_on:
+      - server
+    # on-failure: won't restart when disabled (exit 0), will restart on crashes
+    restart: on-failure
+
 volumes:
   steam-session:
   game-data:
   saves:
+  server-status:
