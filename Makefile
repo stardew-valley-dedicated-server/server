@@ -28,6 +28,13 @@ export STEAM_USERNAME := $(call strip_quotes,STEAM_USERNAME)
 export STEAM_PASSWORD := $(call strip_quotes,STEAM_PASSWORD)
 export STEAM_REFRESH_TOKEN := $(call strip_quotes,STEAM_REFRESH_TOKEN)
 
+# Cross-platform ISO 8601 UTC timestamp (safe for use with filenames etc.)
+ifeq ($(OS),Windows_NT)
+    TIMESTAMP := $(shell powershell -NoProfile -Command "(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH-mm-ss')")Z
+else
+    TIMESTAMP := $(shell date -u '+%Y-%m-%dT%H-%M-%S')Z
+endif
+
 # Install development dependencies
 install:
 	@echo Installing development dependencies...
@@ -71,7 +78,7 @@ down:
 	@echo Stopping server...
 	@docker compose down --remove-orphans
 
-# Attach to interactive split-pane server CLI
+# Attach to interactive split-pane server CLI TODO: Move wait into attach script
 cli:
 	@echo Attaching to server console...
 	@echo Waiting for server to be ready...
@@ -82,6 +89,10 @@ cli:
 logs:
 	@docker compose logs -f
 	@printf '\033[0m'
+
+dumplogs:
+	@echo "Writing logs to logs_$(TIMESTAMP).txt"
+	@docker compose logs > "logs_$(TIMESTAMP).txt"
 
 # Start docs dev server
 docs:
@@ -101,11 +112,12 @@ help:
 	@echo   make install  - Install development dependencies (commitlint, git hooks)
 	@echo   make setup    - Run first-time Steam authentication and game download
 	@echo   make up       - Build and start server
-	@echo   make build    - Build docker image (tag: local)
+	@echo   make build    - Build docker image
 	@echo   make logs     - View server logs
+	@echo   make dumplogs - Dump server logs to file on host
 	@echo   make cli      - Attach to interactive server console (tmux-based)
 	@echo   make down     - Stop the server
-	@echo   make clean    - Remove containers, volumes and images
+	@echo   make clean    - Remove ALL containers, volumes and images
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images
 
