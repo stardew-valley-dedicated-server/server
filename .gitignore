@@ -1,4 +1,5 @@
 # Misc
+.claude
 .DS_Store
 .fleet
 
@@ -30,12 +31,11 @@ logs
 !.env.example
 
 # Build output
-/.output
-/build
-/bin
-/debug
-/decompiled
-/.game-files
+**/.output
+**/bin
+**/obj
+**/debug
+**/decompiled
 
 # Dependency folders
 node_modules/
@@ -43,10 +43,10 @@ node_modules/
 # Decompiler version file
 /version.txt
 
-/tools/.playground
 # Used by fetch-sdv-version.sh
 /tools/depot-downloader/DepotDownloader.exe
 /tools/depot-downloader/DepotDownloader.xml
+/tools/.playground
 
 # Extra mods
 /mods

@@ -12,6 +12,8 @@ services:
       # Required to sync time, ensures GOG GalaxyAuth works
       # TODO: Document/mention underlying library + extra debug info file for GOG, in case shtf
       - SYS_TIME
+    networks:
+      - sdvd-net
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
@@ -38,6 +40,8 @@ services:
     tty: true
     ports:
       - "${STEAM_AUTH_PORT:-3001}:3001"
+    networks:
+      - sdvd-net
     volumes:
       - steam-session:/data/steam-session
       - game-data:/data/game
@@ -59,6 +63,8 @@ services:
     container_name: sdvd-discord-bot
     volumes:
       - server-status:/tmp:ro
+    networks:
+      - sdvd-net
     environment:
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
       STATUS_FILE_PATH: "/tmp/server-status.json"
@@ -74,3 +80,21 @@ volumes:
   game-data:
   saves:
   server-status:
+
+networks:
+  sdvd-net:
+    driver: bridge
+    driver_opts:
+      # Required for Docker 28+ to allow same-machine connections via GOG Galaxy P2P
+      # See: https://docs.docker.com/engine/release-notes/28/
+      com.docker.network.bridge.gateway_mode_ipv4: nat-unprotected
+
+# networks:
+#   internal:
+#     internal: true   # no access from host or outside
+#   public:
+#     driver: bridge   # default; allows host access
+
+# networks:
+#   - internal       # can talk to A
+#   - public         # can talk to the host / be accessed externally
