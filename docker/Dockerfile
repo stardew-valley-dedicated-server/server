@@ -77,6 +77,17 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     -p:PublishTrimmed=true \
     -o /output/dll-patcher
 
+# Build netdebug tool
+COPY ./tools/netdebug /src/netdebug
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish /src/netdebug \
+    --configuration Release \
+    --self-contained true \
+    --runtime linux-x64 \
+    -p:PublishSingleFile=true \
+    -p:PublishTrimmed=true \
+    -o /output/netdebug
+
 # Build server mod
 COPY ./mod /src/mod
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -133,6 +144,7 @@ RUN apt-get update && apt-get install -y \
     exa \
     htop \
     nano \
+    tcpdump \
     # TigerVNC
     tigervnc-standalone-server \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
@@ -180,6 +192,7 @@ RUN \
 
 # Copy pre-built tools from build stages
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher
+COPY --from=mod-builder /output/netdebug /opt/netdebug
 
 # Set executable permissions for application scripts and Supervisor services.
 #

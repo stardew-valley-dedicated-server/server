@@ -74,7 +74,7 @@ namespace JunimoServer.Util
                     return null;
                 }
 
-                monitor.Log($"Invite code read from '{FilePath}'", LogLevel.Trace);
+                // monitor.Log($"Invite code read from '{FilePath}'", LogLevel.Trace);
                 return content;
             }
             catch (Exception ex)
