@@ -22,7 +22,7 @@
 		"vue": "^3.5.27"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.3.11",
+		"@biomejs/biome": "2.3.12",
 		"@types/node": "^24.10.9",
 		"typescript": "^5.7.2"
 	},
