@@ -1,9 +1,13 @@
 name: Deploy Documentation
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to extract OpenAPI spec from'
+        required: false
+        default: 'latest'
+        type: string
 
 concurrency:
   group: deploy-docs
@@ -22,6 +26,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract OpenAPI spec from Docker image
+        run: |
+          docker pull sdvd/server:${{ inputs.image_tag }}
+          CONTAINER_ID=$(docker create sdvd/server:${{ inputs.image_tag }})
+          mkdir -p docs/assets
+          docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
+          docker rm "$CONTAINER_ID"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0
