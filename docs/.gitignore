@@ -5,6 +5,9 @@ node_modules/
 .vitepress/dist
 .vitepress/cache
 
+# Generated at build time from Docker image (see scripts/fetch-openapi.sh)
+assets/openapi.json
+
 # Logs
 *.log
 npm-debug.log*

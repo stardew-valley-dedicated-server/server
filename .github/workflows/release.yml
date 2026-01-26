@@ -228,3 +228,88 @@ jobs:
           echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/discord-bot:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/discord-bot:${{ needs.release-please.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+
+  build-docs:
+    name: Build Documentation
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract OpenAPI spec from Docker image
+        run: |
+          docker pull sdvd/server:latest
+          CONTAINER_ID=$(docker create sdvd/server:latest)
+          mkdir -p docs/assets
+          docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
+          docker rm "$CONTAINER_ID"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0
+
+      - name: Setup Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Install dependencies
+        run: bun install
+        working-directory: docs
+
+      - name: Build documentation
+        run: bun run build
+        working-directory: docs
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: docs/.vitepress/dist
+
+  deploy-docs:
+    name: Deploy Documentation
+    needs: build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+
+      - name: Build summary
+        run: |
+          echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "Documentation Updated",
+                "color": 3447003,
+                "fields": [
+                  {"name": "View Docs", "value": "[stardew-valley-dedicated-server.github.io/server](${{ steps.deployment.outputs.page_url }})"}
+                ]
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"
