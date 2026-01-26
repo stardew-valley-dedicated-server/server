@@ -25,6 +25,10 @@ features:
       title: Multi-Player Ready
       details: Automatic cabin management and crop protection for multiple players.
 
+    - icon: <animated-icon name="Security" />
+      title: Password Protection
+      details: Secure your farm with customizable lobby cabins. Players authenticate before entering.
+
     - icon: <animated-icon name="API" />
       title: Mod Support
       details: Supports SMAPI mods for enhanced Stardew Valley gameplay.

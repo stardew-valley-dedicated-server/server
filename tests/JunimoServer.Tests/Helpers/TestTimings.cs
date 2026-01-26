@@ -40,16 +40,16 @@ public static class TestTimings
     #region Network & Sync Delays
 
     /// <summary>
-    /// Time to wait for network data to sync after connecting to the server.
-    /// Used after joining world to allow player data to propagate.
+    /// Maximum time to wait for network data to sync after connecting to the server.
+    /// Used as timeout for polling; actual wait is usually much shorter.
     /// </summary>
-    public static readonly TimeSpan NetworkSyncDelay = TimeSpan.FromMilliseconds(2000);
+    public static readonly TimeSpan NetworkSyncTimeout = TimeSpan.FromMilliseconds(5000);
 
     /// <summary>
     /// Time to wait after disconnecting before checking server state.
-    /// Allows server to process the disconnection event.
+    /// Only used as a fallback; prefer polling with FarmerDeleteTimeout.
     /// </summary>
-    public static readonly TimeSpan DisconnectProcessingDelay = TimeSpan.FromMilliseconds(3000);
+    public static readonly TimeSpan DisconnectProcessingDelay = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// Brief delay for game to sync textbox values during character creation.
@@ -59,17 +59,17 @@ public static class TestTimings
     /// <summary>
     /// Brief pause between connection retry attempts.
     /// </summary>
-    public static readonly TimeSpan RetryPauseDelay = TimeSpan.FromMilliseconds(1000);
+    public static readonly TimeSpan RetryPauseDelay = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
-    /// Delay before retrying farmer deletion (wait for server to process disconnect).
+    /// Total timeout for farmer deletion polling during cleanup.
+    /// The delete API is called immediately after disconnect; if the server
+    /// hasn't processed the disconnect yet ("currently online" error), we
+    /// retry with FastPollInterval until this timeout. The server processes
+    /// disconnects within one game tick (~16ms), so this rarely needs more
+    /// than one retry.
     /// </summary>
-    public static readonly TimeSpan FarmerDeleteRetryDelay = TimeSpan.FromMilliseconds(1000);
-
-    /// <summary>
-    /// Maximum attempts for farmer deletion during cleanup.
-    /// </summary>
-    public const int FarmerDeleteMaxAttempts = 3;
+    public static readonly TimeSpan FarmerDeleteTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Delay after killing game processes to ensure they fully exit.
@@ -103,15 +103,15 @@ public static class TestTimings
     /// <summary>
     /// Time to wait for game time to advance.
     /// Stardew advances time every ~7 seconds (10 game-minutes per tick).
-    /// 16 seconds ensures at least 2 time advances.
+    /// 8 seconds is sufficient to detect at least 1 tick.
     /// </summary>
-    public static readonly TimeSpan TimeAdvanceWait = TimeSpan.FromSeconds(16);
+    public static readonly TimeSpan TimeAdvanceWait = TimeSpan.FromSeconds(8);
 
     /// <summary>
     /// Time to wait when verifying time is paused.
-    /// Long enough for multiple time advances if game were unpaused (~15 seconds = ~2 advances).
+    /// 8 seconds is longer than one tick (7s), sufficient to detect if game were unpaused.
     /// </summary>
-    public static readonly TimeSpan TimePausedVerification = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan TimePausedVerification = TimeSpan.FromSeconds(8);
 
     /// <summary>
     /// Small delay to let game loop process a time change.
@@ -129,8 +129,15 @@ public static class TestTimings
 
     /// <summary>
     /// Interval between status polls when waiting for day change.
+    /// The /status endpoint is lightweight; 500ms reduces detection latency.
     /// </summary>
-    public static readonly TimeSpan DayChangePollInterval = TimeSpan.FromMilliseconds(2000);
+    public static readonly TimeSpan DayChangePollInterval = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Interval for tight polling loops in tests (chat responses, state sync, etc.).
+    /// Short interval to minimize wasted time while avoiding busy-spinning.
+    /// </summary>
+    public static readonly TimeSpan FastPollInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// Interval for polling server container logs.
@@ -174,6 +181,34 @@ public static class TestTimings
     /// Timeout for quick HTTP health checks.
     /// </summary>
     public static readonly TimeSpan HttpHealthCheckTimeout = TimeSpan.FromSeconds(5);
+
+    #endregion
+
+    #region Chat & Command Delays
+
+    /// <summary>
+    /// Maximum time to wait for server welcome message after joining (sent ~2s after join).
+    /// Used as timeout for polling; actual wait is usually much shorter.
+    /// </summary>
+    public static readonly TimeSpan WelcomeMessageTimeout = TimeSpan.FromMilliseconds(5000);
+
+    /// <summary>
+    /// Maximum time to wait for chat command response.
+    /// Used as timeout for polling; actual wait is usually much shorter.
+    /// </summary>
+    public static readonly TimeSpan ChatCommandTimeout = TimeSpan.FromMilliseconds(3000);
+
+    /// <summary>
+    /// Time to wait for chat message to be delivered via WebSocket API.
+    /// WebSocket delivery is async but typically completes in <1s.
+    /// </summary>
+    public static readonly TimeSpan ChatDeliveryDelay = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Time to wait during layout cleanup operations.
+    /// Layout deletion is synchronous; 500ms provides safe buffer.
+    /// </summary>
+    public static readonly TimeSpan LayoutCleanupDelay = TimeSpan.FromMilliseconds(200);
 
     #endregion
 

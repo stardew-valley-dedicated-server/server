@@ -6,7 +6,8 @@
       "version": "0.0.4",
       "commands": [
         "TrxToExtentReport"
-      ]
+      ],
+      "rollForward": false
     }
   }
 }

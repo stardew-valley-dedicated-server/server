@@ -28,11 +28,13 @@ public class ServerApiTests : IntegrationTestBase
     {
         await EnsureDisconnectedAsync();
 
-        var response = await ServerApi.GetPlayers();
-
-        Assert.NotNull(response);
-        Assert.NotNull(response.Players);
-        Assert.Empty(response.Players);
+        // Wait for server to report no players (previous test cleanup may still be processing)
+        var noPlayers = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            var players = await ServerApi.GetPlayers();
+            return players?.Players?.Count == 0;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(noPlayers, "Server should have no players connected");
         Log("Verified: no players connected");
     }
 
@@ -50,10 +52,14 @@ public class ServerApiTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
 
-        // Wait for server to register the connection
-        await Task.Delay(TestTimings.NetworkSyncDelay);
-
-        var response = await ServerApi.GetPlayers();
+        // Poll until player appears in the /players API
+        PlayersResponse? response = null;
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            response = await ServerApi.GetPlayers();
+            return response?.Players?.Any(p =>
+                p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)) == true;
+        }, TestTimings.NetworkSyncTimeout);
 
         Assert.NotNull(response);
         Assert.NotNull(response.Players);
@@ -208,10 +214,15 @@ public class ServerApiTests : IntegrationTestBase
         TrackFarmer(farmerName);
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
-        await Task.Delay(TestTimings.NetworkSyncDelay);
 
-        // Check count increased
-        var duringStatus = await ServerApi.GetStatus();
+        // Poll until player count increases
+        ServerStatus? duringStatus = null;
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            duringStatus = await ServerApi.GetStatus();
+            return duringStatus?.PlayerCount > initialCount;
+        }, TestTimings.NetworkSyncTimeout);
+
         Assert.NotNull(duringStatus);
         Assert.True(duringStatus.PlayerCount > initialCount,
             $"Player count should increase after join: was {initialCount}, now {duringStatus.PlayerCount}");
@@ -220,13 +231,17 @@ public class ServerApiTests : IntegrationTestBase
         // Disconnect
         await GameClient.Exit();
         await GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
-        // Check count decreased
-        var afterStatus = await ServerApi.GetStatus();
-        Assert.NotNull(afterStatus);
-        Assert.Equal(initialCount, afterStatus.PlayerCount);
-        Log($"After disconnect: {afterStatus.PlayerCount}");
+        // Poll until player count returns to initial
+        ServerStatus? afterStatus = null;
+        var countDecreased = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            afterStatus = await ServerApi.GetStatus();
+            return afterStatus?.PlayerCount == initialCount;
+        }, TestTimings.FarmerDeleteTimeout);
+
+        Assert.True(countDecreased, $"Player count should return to {initialCount} after disconnect");
+        Log($"After disconnect: {afterStatus?.PlayerCount}");
     }
 
     #endregion
@@ -311,26 +326,52 @@ public class ServerApiTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// Verifies chat_send message is accepted via WebSocket.
+    /// Verifies chat_send message via WebSocket is delivered to the game.
+    /// Connects a player, sends a message via WebSocket, and verifies it appears in chat history.
     /// </summary>
     [Fact]
-    public async Task WebSocket_ChatSend_Succeeds()
+    public async Task WebSocket_ChatSend_MessageAppearsInGame()
     {
+        await EnsureDisconnectedAsync();
+
+        // Connect a player to receive the chat message
+        var farmerName = GenerateFarmerName("WsChat");
+        TrackFarmer(farmerName);
+        var joinResult = await JoinWorldWithRetryAsync(farmerName);
+        AssertJoinSuccess(joinResult);
+
+        // Send message via WebSocket API
         using var ws = new ClientWebSocket();
         var wsUrl = ServerApi.GetWebSocketUrl();
-
         await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
         Assert.Equal(WebSocketState.Open, ws.State);
 
-        // Send chat message
-        var chatMessage = "{\"type\":\"chat_send\",\"payload\":{\"author\":\"TestUser\",\"message\":\"Hello from test!\"}}";
-        var chatBytes = Encoding.UTF8.GetBytes(chatMessage);
+        var testMessage = $"WS-Test-{DateTime.UtcNow.Ticks % 10000}";
+        var chatJson = $"{{\"type\":\"chat_send\",\"payload\":{{\"author\":\"API\",\"message\":\"{testMessage}\"}}}}";
+        var chatBytes = Encoding.UTF8.GetBytes(chatJson);
         await ws.SendAsync(new ArraySegment<byte>(chatBytes), WebSocketMessageType.Text, true, CancellationToken.None);
-        Log("Sent chat_send message");
+        Log($"Sent chat_send message: {testMessage}");
 
-        // No exception = success (message is sent to game, we can't easily verify that in integration test)
-        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
-        Log("WebSocket chat_send test completed successfully");
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+
+        // Wait for message to be delivered to the game
+        await Task.Delay(TestTimings.ChatDeliveryDelay);
+
+        // Verify the message appeared in-game chat history
+        var chatHistory = await GameClient.GetChatHistory(20);
+        Assert.NotNull(chatHistory);
+
+        Log($"Chat history ({chatHistory.Messages.Count} messages):");
+        foreach (var msg in chatHistory.Messages)
+        {
+            Log($"  {msg.Message}");
+        }
+
+        var messageDelivered = chatHistory.Messages.Any(m =>
+            m.Message.Contains(testMessage, StringComparison.OrdinalIgnoreCase));
+        Assert.True(messageDelivered, $"WebSocket chat message '{testMessage}' should appear in game chat");
+
+        Log("WebSocket chat message successfully delivered to game");
     }
 
     #endregion

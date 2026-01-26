@@ -40,7 +40,9 @@ docker compose cp ./server-settings.json server:/data/settings/server-settings.j
     "SeparateWallets": false,
     "ExistingCabinBehavior": "KeepExisting",
     "VerboseLogging": false,
-    "AllowIpConnections": false
+    "AllowIpConnections": false,
+    "LobbyMode": "Shared",
+    "ActiveLobbyLayout": "default"
   }
 }
 ```
@@ -82,6 +84,8 @@ These settings are applied on every startup and can be changed between runs.
 | `ExistingCabinBehavior` | How to handle visible cabins that already exist on the farm (see below) | `"KeepExisting"` |
 | `VerboseLogging` | Enable detailed debug logging for troubleshooting | `false` |
 | `AllowIpConnections` | Allow direct IP connections (see [Networking](/guide/networking)) | `false` |
+| `LobbyMode` | Lobby mode for password protection (see [Password Protection](#password-protection)) | `"Shared"` |
+| `ActiveLobbyLayout` | Name of the active lobby layout for waiting players | `"default"` |
 
 ### Cabin Strategies
 
@@ -226,6 +230,75 @@ DISABLE_RENDERING=true
 ::: info
 Game settings (farm name, farm type, cabin strategy, etc.) are configured in `server-settings.json`, not in the `.env` file. See [Game Settings](#game-settings-server-settings-json) above.
 :::
+
+## Password Protection
+
+Optional server password requires players to authenticate before they can play.
+
+::: tip Full Guide Available
+For comprehensive documentation including lobby customization, layout sharing, and advanced configuration, see the [Password Protection & Lobby System](/guide/password-protection) guide.
+:::
+
+### How It Works
+
+When password protection is enabled:
+
+1. New players connect and are warped to a **lobby cabin** (a holding area)
+2. Players can only use `!login <password>` or `!help` commands
+3. On successful authentication, players are warped to their destination:
+   - **New players**: Their cabin entry point
+   - **Returning players**: Their last saved position
+4. Unauthenticated players are kicked after a configurable timeout
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SERVER_PASSWORD` | Server password. Leave empty to disable password protection. | (empty) |
+| `MAX_LOGIN_ATTEMPTS` | Maximum failed login attempts before player is kicked | `3` |
+| `AUTH_TIMEOUT_SECONDS` | Seconds before unauthenticated players are kicked. Set to `0` to disable timeout. | `120` |
+
+### Lobby Modes
+
+The `LobbyMode` setting in `server-settings.json` controls how the lobby cabin works:
+
+| Mode | Description |
+|------|-------------|
+| `Shared` | All unauthenticated players wait in the same lobby cabin. Good for smaller servers. |
+| `Individual` | Each unauthenticated player gets their own isolated lobby cabin. Prevents interaction between unauthenticated players. |
+
+### Custom Lobby Layouts
+
+Admins can customize the lobby cabin's appearance using the `!lobby` commands:
+
+1. `!lobby create my-lobby` - Create a new layout and enter edit mode
+2. Decorate the cabin (furniture, wallpaper, flooring, objects)
+3. `!lobby spawn` - Stand where you want players to appear and set the spawn point
+4. `!lobby save` - Save the current layout
+5. `!lobby set my-lobby` - Activate the layout for new players
+
+Layout names can only contain letters, numbers, dashes (`-`), and underscores (`_`).
+
+See [Chat Commands](/guide/using-the-server#chat-commands) for full command reference.
+
+### Example Configuration
+
+**.env:**
+```sh
+SERVER_PASSWORD=your_secure_password
+MAX_LOGIN_ATTEMPTS=3
+AUTH_TIMEOUT_SECONDS=120
+```
+
+**server-settings.json:**
+```json
+{
+  "Server": {
+    "LobbyMode": "Shared",
+    "ActiveLobbyLayout": "default"
+  }
+}
+```
 
 ## Next Steps
 

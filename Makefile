@@ -135,9 +135,15 @@ clean:
 	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v
 	@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest 2>/dev/null || true
 
+# Run tests. Use FILTER to run specific tests:
+#   make test FILTER=PasswordProtection
+#   make test FILTER="Login_WithCorrectPassword"
+#   make test (runs all tests)
+FILTER ?=
+export COLUMNS=160
 test:
 	@dotnet tool restore
-	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings
+	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings $(if $(FILTER),--filter "$(FILTER)")
 	@echo Generating test report...
 	@dotnet TrxToExtentReport -t ./TestResults/TestResults.trx -o ./TestResults/TestReport.html
 
@@ -156,6 +162,7 @@ help:
 	@echo   make down     - Stop the server
 	@echo   make docs     - Start docs dev server (requires built image)
 	@echo   make clean    - Remove ALL containers, volumes and images
+	@echo   make test     - Run E2E tests (use FILTER=X to filter, e.g. FILTER=PasswordProtection)
 	@echo   make build-test-client - Build test client container image (for E2E tests)
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images

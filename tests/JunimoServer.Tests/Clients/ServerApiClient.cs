@@ -199,6 +199,27 @@ public class TimeSetResponse
 }
 
 /// <summary>
+/// Response from /roles/admin POST endpoint.
+/// </summary>
+public class RoleGrantResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("playerId")]
+    public long PlayerId { get; set; }
+
+    [JsonPropertyName("playerName")]
+    public string? PlayerName { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
 /// Response from /settings GET endpoint.
 /// </summary>
 public class SettingsResponse
@@ -283,6 +304,12 @@ public class CabinInfoResponse
 
     [JsonPropertyName("isHidden")]
     public bool IsHidden { get; set; }
+
+    /// <summary>
+    /// The cabin type: "Normal", "CabinStack", "FarmhouseStack", or "Lobby".
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "Normal";
 
     [JsonPropertyName("ownerId")]
     public long OwnerId { get; set; }
@@ -460,6 +487,17 @@ public class ServerApiClient : IDisposable
     {
         var response = await _httpClient.PostAsync($"/time?value={value}", null);
         return await response.Content.ReadFromJsonAsync<TimeSetResponse>();
+    }
+
+    /// <summary>
+    /// Grants admin role to a player by name.
+    /// POST /roles/admin?name=PlayerName
+    /// </summary>
+    public async Task<RoleGrantResponse?> GrantAdmin(string playerName)
+    {
+        var response = await _httpClient.PostAsync($"/roles/admin?name={Uri.EscapeDataString(playerName)}", null);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RoleGrantResponse>();
     }
 
     /// <summary>

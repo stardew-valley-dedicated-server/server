@@ -81,6 +81,12 @@ namespace JunimoServer.Tests.Fixtures;
 /// </remarks>
 public class IntegrationTestFixture : IAsyncLifetime
 {
+    /// <summary>
+    /// Gets the collection name for test registration with assembly fixture.
+    /// Override in derived classes (e.g., NoPasswordFixture).
+    /// </summary>
+    protected virtual string CollectionName => "Integration";
+
     private IContainer? _serverContainer;
     private IContainer? _steamAuthContainer;
     private INetwork? _network;
@@ -126,6 +132,22 @@ public class IntegrationTestFixture : IAsyncLifetime
     private static readonly bool UseContainerizedClients = string.Equals(
         Environment.GetEnvironmentVariable("SDVD_CONTAINERIZED_CLIENTS"), "true", StringComparison.OrdinalIgnoreCase);
     private GameClientManager? _clientManager;
+
+    // Password protection for tests
+    // Override GetServerPassword() in derived classes to change behavior
+    public const string TestServerPassword = "test-password-123";
+
+    /// <summary>
+    /// Gets the server password to use for this fixture.
+    /// Override in derived classes to disable password protection (return null).
+    /// </summary>
+    protected virtual string? GetServerPassword() => TestServerPassword;
+
+    /// <summary>
+    /// Gets the server password for test access (calls GetServerPassword()).
+    /// Used by IntegrationTestBase for auto-login functionality.
+    /// </summary>
+    public string? ServerPassword => GetServerPassword();
 
     // Ports
     private const int ServerApiPort = 8080;
@@ -176,7 +198,7 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     // Test run timing and statistics
     private DateTime _testRunStartTime;
-    private readonly Dictionary<string, int> _testCountsByClass = new();
+    private readonly Dictionary<string, List<string>> _testsByClass = new();
     private readonly object _testCountLock = new();
 
     // Cancellation token that gets triggered when a server error is detected
@@ -333,15 +355,39 @@ public class IntegrationTestFixture : IAsyncLifetime
     /// Registers a test for counting, grouped by class name.
     /// Called by IntegrationTestBase.InitializeAsync or directly by lightweight test classes.
     /// </summary>
-    public void RegisterTest(string className)
+    /// <param name="className">The test class name</param>
+    /// <param name="testName">The individual test method name (optional)</param>
+    public void RegisterTest(string className, string? testName = null)
     {
         lock (_testCountLock)
         {
-            if (_testCountsByClass.TryGetValue(className, out var count))
-                _testCountsByClass[className] = count + 1;
-            else
-                _testCountsByClass[className] = 1;
+            if (!_testsByClass.TryGetValue(className, out var tests))
+            {
+                tests = new List<string>();
+                _testsByClass[className] = tests;
+            }
+            tests.Add(testName ?? "(unknown)");
         }
+
+        // Also register with assembly fixture for unified summary
+        TestSummaryFixture.Instance?.RegisterTest(CollectionName, className, testName);
+    }
+
+    /// <summary>
+    /// Records the duration for a completed test.
+    /// </summary>
+    public void CompleteTest(string className, string? testName, TimeSpan duration)
+    {
+        TestSummaryFixture.Instance?.CompleteTest(CollectionName, className, testName, duration);
+    }
+
+    /// <summary>
+    /// Records a test failure with optional details for the failure summary.
+    /// </summary>
+    public void RecordFailure(string className, string? testName, string error,
+        string? phase = null, string? screenshotPath = null)
+    {
+        TestSummaryFixture.Instance?.RecordFailure(CollectionName, className, testName, error, phase, screenshotPath);
     }
 
     /// <summary>
@@ -353,21 +399,23 @@ public class IntegrationTestFixture : IAsyncLifetime
         {
             lock (_testCountLock)
             {
-                return _testCountsByClass.Values.Sum();
+                return _testsByClass.Values.Sum(tests => tests.Count);
             }
         }
     }
 
     /// <summary>
-    /// Gets test counts grouped by class name.
+    /// Gets test names grouped by class name.
     /// </summary>
-    public IReadOnlyDictionary<string, int> TestCountsByClass
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> TestsByClass
     {
         get
         {
             lock (_testCountLock)
             {
-                return new Dictionary<string, int>(_testCountsByClass);
+                return _testsByClass.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => (IReadOnlyList<string>)kvp.Value.ToList());
             }
         }
     }
@@ -381,11 +429,14 @@ public class IntegrationTestFixture : IAsyncLifetime
     private static readonly bool UseColor = ResolveColorSupport();
 
     /// <summary>
-    /// Static constructor to configure Spectre.Console color support
+    /// Static constructor to configure Spectre.Console color support and terminal width
     /// based on the same detection logic we use for manual ANSI codes.
     /// </summary>
     static IntegrationTestFixture()
     {
+        // Wrap Console.Out with timestamping writer (must be done BEFORE configuring AnsiConsole)
+        Console.SetOut(new TimestampingTextWriter(Console.Out));
+
         if (UseColor)
         {
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.TrueColor;
@@ -395,6 +446,14 @@ public class IntegrationTestFixture : IAsyncLifetime
         {
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
             AnsiConsole.Profile.Capabilities.Ansi = false;
+        }
+
+        // Set terminal width from COLUMNS env var (passed by Makefile)
+        // This fixes Spectre.Console using 80 cols when output is piped
+        var columnsEnv = Environment.GetEnvironmentVariable("COLUMNS");
+        if (int.TryParse(columnsEnv, out var columns) && columns > 0)
+        {
+            AnsiConsole.Profile.Width = columns;
         }
     }
 
@@ -925,8 +984,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         var stdoutLines = new List<string>();
         var stderrLines = new List<string>();
 
-        var stdoutTask = Task.Run(async () =>
-        {
+        var stdoutTask = Task.Run(async () => {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
                 stdoutLines.Add(line);
@@ -937,8 +995,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             }
         });
 
-        var stderrTask = Task.Run(async () =>
-        {
+        var stderrTask = Task.Run(async () => {
             while (await process.StandardError.ReadLineAsync() is { } line)
             {
                 stderrLines.Add(line);
@@ -1098,18 +1155,17 @@ public class IntegrationTestFixture : IAsyncLifetime
             .WithPortBinding(ServerApiPort, true)
             .WithPortBinding(VncPort, true)
             .WithPortBinding(GamePort, true) // UDP port for LAN connections (dynamic host port)
-            // Mount game data (existing) and fresh saves volume
+                                             // Mount game data (existing) and fresh saves volume
             .WithVolumeMount($"{_volumePrefix}_game-data", "/data/game")
             .WithVolumeMount(testSavesVolume, "/config/xdg/config/StardewValley")
             .WithEnvironment("STEAM_AUTH_URL", $"http://steam-auth:{SteamAuthPort}")
             .WithEnvironment("API_ENABLED", "true")
             .WithEnvironment("API_PORT", ServerApiPort.ToString())
-            .WithEnvironment("DISABLE_RENDERING", "true")
+            .WithEnvironment("DISABLE_RENDERING", "false")
             // Fail-fast mode: exit immediately on ERROR logs (for fast test failure detection)
             .WithEnvironment("TEST_FAIL_FAST", "true")
             // SYS_TIME capability for GOG Galaxy auth
-            .WithCreateParameterModifier(p =>
-            {
+            .WithCreateParameterModifier(p => {
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
             })
@@ -1128,6 +1184,13 @@ public class IntegrationTestFixture : IAsyncLifetime
             serverBuilder = serverBuilder.WithEnvironment("STEAM_USERNAME", serverSteamUser);
         if (envVars.TryGetValue("STEAM_PASSWORD", out var serverSteamPass) && !string.IsNullOrEmpty(serverSteamPass))
             serverBuilder = serverBuilder.WithEnvironment("STEAM_PASSWORD", serverSteamPass);
+
+        // Enable password protection for tests (if configured)
+        var serverPassword = GetServerPassword();
+        if (!string.IsNullOrEmpty(serverPassword))
+        {
+            serverBuilder = serverBuilder.WithEnvironment("SERVER_PASSWORD", serverPassword);
+        }
 
         _serverContainer = serverBuilder.Build();
 
@@ -1284,6 +1347,17 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         LogPhaseHeader("Setup", "Waiting for Game Client");
         var stepStart = DateTime.UtcNow;
+
+        // Check if Steam is running (required for invite code connections)
+        if (!IsSteamRunning())
+        {
+            throw new InvalidOperationException(
+                "Steam is not running!\n\n" +
+                "The E2E tests require Steam to be running and logged in for invite code connections.\n" +
+                "Please start Steam, log in, and run the tests again.\n\n" +
+                "Alternatively, set SDVD_CONTAINERIZED_CLIENTS=true to use LAN connections instead.");
+        }
+        Log("Steam is running", LogLevel.Success);
 
         // Use file-based logging to avoid pipe buffer deadlocks when debugging.
         // When hitting a breakpoint, pipe readers pause, the buffer fills, and the
@@ -1477,8 +1551,11 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         LogStepDuration(stepStart);
 
-        // Print summary panel
-        PrintTestSummary();
+        // Propagate abort state to assembly fixture (unified summary)
+        if (_testRunAborted)
+        {
+            TestSummaryFixture.Instance?.SetAborted(_abortReason ?? "Unknown abort");
+        }
     }
 
     /// <summary>
@@ -1498,21 +1575,39 @@ public class IntegrationTestFixture : IAsyncLifetime
             .Border(TableBorder.Rounded)
             .BorderColor(_testRunAborted ? Color.Red : Color.Green)
             .Title($"[bold {statusColor}]{statusIcon} Test Run {statusText}[/]")
-            .AddColumn(new TableColumn("[white]Test Class[/]").LeftAligned())
+            .AddColumn(new TableColumn("[white]Test[/]").LeftAligned())
             .AddColumn(new TableColumn("[white]Count[/]").RightAligned())
             .Expand();
 
-        // Add rows for each test class, sorted by name
-        var testCounts = TestCountsByClass;
-        foreach (var (className, count) in testCounts.OrderBy(x => x.Key))
+        // Add rows for each test class with individual test names, sorted by class name
+        var testsByClass = TestsByClass;
+        foreach (var (className, tests) in testsByClass.OrderBy(x => x.Key))
         {
             // Remove "Tests" suffix for cleaner display
             var displayName = className.EndsWith("Tests")
                 ? className[..^5]
                 : className;
+
+            // Add class header row with count
             table.AddRow(
-                new Markup($"[grey]{Markup.Escape(displayName)}[/]"),
-                new Markup($"[grey]{count}[/]"));
+                new Markup($"[white bold]{Markup.Escape(displayName)}[/]"),
+                new Markup($"[cyan]{tests.Count}[/]"));
+
+            // Add individual test names (indented)
+            foreach (var testName in tests)
+            {
+                // Extract just the method name from full display name if present
+                // Format can be "Namespace.ClassName.MethodName" or just "MethodName"
+                var methodName = testName;
+                if (testName.Contains('.'))
+                {
+                    var lastDot = testName.LastIndexOf('.');
+                    methodName = testName[(lastDot + 1)..];
+                }
+                table.AddRow(
+                    new Markup($"[grey]  {Markup.Escape(methodName)}[/]"),
+                    new Markup(""));
+            }
         }
 
         // Add separator and total
@@ -1643,6 +1738,22 @@ public class IntegrationTestFixture : IAsyncLifetime
         {
             var health = await client.GetHealth();
             return health?.Status == "ok";
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Check if Steam is running by looking for the Steam process.
+    /// Required for invite code connections when using local game client.
+    /// </summary>
+    private static bool IsSteamRunning()
+    {
+        try
+        {
+            return Process.GetProcessesByName("steam").Length > 0;
         }
         catch
         {
@@ -1948,7 +2059,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         result = result.Replace(@"D:\GitlabRunner\builds\Gq5qA5P4\0\ConcernedApe\stardewvalley", "StardewValley");
         result = result.Replace(ProjectParentDir, "");
 
-        return result.Trim();
+        return result.TrimEnd();
     }
 }
 

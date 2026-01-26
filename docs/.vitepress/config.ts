@@ -1,11 +1,12 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 import { useSidebar } from "vitepress-openapi";
 import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
 import spec from "../assets/openapi.json" with { type: "json" };
 
 const openApiSidebar = useSidebar({ spec, linkPrefix: "/api/" });
 
-export default defineConfig({
+export default withMermaid(defineConfig({
     vite: {
         plugins: [
             groupIconVitePlugin({
@@ -31,6 +32,37 @@ export default defineConfig({
         ["meta", { name: "twitter:card", content: "summary" }],
         ["meta", { name: "twitter:title", content: "JunimoServer" }],
         ["meta", { name: "twitter:description", content: "Stardew Valley dedicated server documentation" }],
+        // Inline script to prevent FOUC for theme and announcement bar
+        ["script", {}, `
+(function() {
+    // Theme colors map (must match themes.ts)
+    var themes = {
+        "aqua-gold": { brand1: "#63dbe4ff", brand2: "#25ac8aff", brand3: "#dda122ff" },
+        "blue-green": { brand1: "#0571d7ff", brand2: "#2b7eb8ff", brand3: "#25ac8aff" },
+        "blue-deep": { brand1: "#0571d7ff", brand2: "#0b4373ff", brand3: "#0a2969ff" },
+        "green": { brand1: "#066636ff", brand2: "#25ac8aff", brand3: "#39c63cff" },
+        "night-market": { brand1: "#281075ff", brand2: "#41b824ff", brand3: "#420375ff" },
+        "purple-1": { brand1: "#9370db", brand2: "#6e2bff", brand3: "#34327a" },
+        "purple-2": { brand1: "#9370db", brand2: "#A014DC", brand3: "#34327a" }
+    };
+    var defaultTheme = "purple-1";
+
+    try {
+        // Apply saved theme immediately
+        var savedTheme = localStorage.getItem("vitepress-theme-preference");
+        var theme = themes[savedTheme] || themes[defaultTheme];
+        if (theme) {
+            document.documentElement.style.setProperty("--vp-c-brand-1", theme.brand1);
+            document.documentElement.style.setProperty("--vp-c-brand-2", theme.brand2);
+            document.documentElement.style.setProperty("--vp-c-brand-3", theme.brand3);
+        }
+
+        // Apply announcement offset if not closed
+        var announcementClosed = localStorage.getItem("announcement-closed") === "true";
+        document.documentElement.style.setProperty("--announcement-offset", announcementClosed ? "0px" : "42px");
+    } catch (e) {}
+})();
+        `],
     ],
     lastUpdated: true,
     sitemap: {
@@ -68,6 +100,16 @@ export default defineConfig({
                 text: "Guide",
                 items: [
                     { text: "Using the Server", link: "/guide/using-the-server" },
+                    {
+                        text: "Password Protection",
+                        collapsed: false,
+                        items: [
+                            { text: "Overview", link: "/guide/password-protection/" },
+                            { text: "Lobby Layouts", link: "/guide/password-protection/lobby-layouts" },
+                            { text: "Commands", link: "/guide/password-protection/commands" },
+                            { text: "Security & Config", link: "/guide/password-protection/security" },
+                        ],
+                    },
                     { text: "Networking", link: "/guide/networking" },
                     { text: "Managing Mods", link: "/guide/managing-mods" },
                     { text: "Upgrading", link: "/guide/upgrading" },
@@ -124,4 +166,4 @@ export default defineConfig({
             label: "On this page",
         },
     },
-});
+}));

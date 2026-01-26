@@ -57,18 +57,19 @@ namespace JunimoServer.Services.MessageInterceptors
         private void HandleIncoming(ref IncomingMessage message)
         {
             // Just some temporary (?) trace logging
-            switch (message.MessageType)
-            {
-                // Filter noisy messages
-                case Multiplayer.worldDelta:
-                case Multiplayer.locationDelta:
-                    break;
+            // switch (message.MessageType)
+            // {
+            //     // Filter noisy messages
+            //     case Multiplayer.worldDelta:
+            //     case Multiplayer.locationDelta:
+            //         break;
 
-                default:
-                    string messageType = Enum.GetName(typeof(MessageTypes), message.MessageType);
-                    Monitor.Log($"IncomingMessage {{ Type: {messageType}, From: {message.FarmerID} }}");
-                    break;
-            }
+            //     default:
+            //         // TODO: network message verbose traces should be separately toggleable (via per module monitor)
+            //         string messageType = Enum.GetName(typeof(MessageTypes), message.MessageType);
+            //         Monitor.Log($"IncomingMessage {{ Type: {messageType}, From: {message.FarmerID} }}");
+            //         break;
+            // }
 
             // TODO: The actual message interceptor
         }
@@ -76,18 +77,19 @@ namespace JunimoServer.Services.MessageInterceptors
         private void HandleOutgoing(long peerId, ref OutgoingMessage message)
         {
             // Just some temporary (?) trace logging
-            switch (message.MessageType)
-            {
-                // Filter noisy messages
-                case Multiplayer.worldDelta:
-                case Multiplayer.locationDelta:
-                    break;
+            // switch (message.MessageType)
+            // {
+            //     // Filter noisy messages
+            //     case Multiplayer.worldDelta:
+            //     case Multiplayer.locationDelta:
+            //         break;
 
-                default:
-                    string messageType = Enum.GetName(typeof(MessageTypes), message.MessageType);
-                    Monitor.Log($"OutgoingMessage {{ Type: {messageType}, To: {peerId} }}");
-                    break;
-            }
+            //     default:
+            //         // TODO: network message verbose traces should be separately toggleable (via per module monitor)
+            //         string messageType = Enum.GetName(typeof(MessageTypes), message.MessageType);
+            //         Monitor.Log($"OutgoingMessage {{ Type: {messageType}, To: {peerId} }}");
+            //         break;
+            // }
 
 
             // The actual message interceptor

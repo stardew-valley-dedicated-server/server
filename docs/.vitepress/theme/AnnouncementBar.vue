@@ -1,34 +1,35 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { withBase } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import ThemeSelector from "./ThemeSelector.vue";
 
 const { Layout } = DefaultTheme;
 
-const announcementText = "🎉 Welcome to the new JunimoServer documentation!";
-const announcementLink = "/guide";
+const announcementLink = withBase("/guide/upgrading#preview");
 
-const showAnnouncement = ref(false);
+// Check localStorage immediately if available (for SSR, default to true so CSS offset is applied)
+function getInitialState(): boolean {
+    if (typeof localStorage === "undefined") return true;
+    try {
+        return localStorage.getItem("announcement-closed") !== "true";
+    } catch {
+        return true;
+    }
+}
+
+const showAnnouncement = ref(getInitialState());
 
 onMounted(() => {
+    // Re-check on mount in case SSR state differs
     const isClosed = localStorage.getItem("announcement-closed") === "true";
     showAnnouncement.value = !isClosed;
-    updateNavOffset();
 });
 
 function closeAnnouncement() {
     showAnnouncement.value = false;
     localStorage.setItem("announcement-closed", "true");
-    updateNavOffset();
-}
-
-function updateNavOffset() {
-    if (typeof document !== "undefined") {
-        document.documentElement.style.setProperty(
-            "--announcement-offset",
-            showAnnouncement.value ? "42px" : "0px"
-        );
-    }
+    document.documentElement.style.setProperty("--announcement-offset", "0px");
 }
 </script>
 
@@ -36,9 +37,9 @@ function updateNavOffset() {
     <Layout>
         <template #layout-top>
             <div v-if="showAnnouncement" class="announcement-bar">
-                <a :href="announcementLink" class="announcement-content">
-                    {{ announcementText }}
-                </a>
+                <span class="announcement-content">
+                    ⚠️ Latest release unstable — use <a :href="announcementLink" class="announcement-link">preview builds</a> instead
+                </span>
                 <button
                     class="announcement-close"
                     @click="closeAnnouncement"
@@ -70,8 +71,8 @@ function updateNavOffset() {
     height: var(--announcement-height);
     background: linear-gradient(
         90deg,
-        var(--vp-c-brand-1) 0%,
-        var(--vp-c-brand-3) 100%
+        #d97706 0%,
+        #b45309 100%
     );
     z-index: 100;
     display: flex;
@@ -84,13 +85,17 @@ function updateNavOffset() {
     color: white;
     font-size: 0.9rem;
     font-weight: 500;
-    text-decoration: none;
     flex: 1;
     text-align: center;
 }
 
-.announcement-content:hover {
+.announcement-link {
+    color: #93c5fd;
     text-decoration: underline;
+}
+
+.announcement-link:hover {
+    color: #bfdbfe;
 }
 
 .announcement-close {

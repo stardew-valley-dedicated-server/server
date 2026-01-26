@@ -107,13 +107,20 @@ public class TestApiServer : IDisposable
         }
     }
 
+    // High-frequency polling endpoints that should not be logged
+    private static readonly HashSet<string> QuietEndpoints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chat/history"
+    };
+
     private void HandleRequest(HttpListenerContext context)
     {
         var request = context.Request;
         var response = context.Response;
         var path = request.Url?.AbsolutePath.TrimStart('/') ?? "";
 
-        _monitor.Log($"{request.HttpMethod} /{path}", LogLevel.Trace);
+        if (!QuietEndpoints.Contains(path))
+            _monitor.Log($"{request.HttpMethod} /{path}", LogLevel.Trace);
 
         try
         {

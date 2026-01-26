@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DotNet.Testcontainers.Containers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -15,9 +16,26 @@ public static class VncScreenshotHelper
     private const string ScreenshotPath = "/tmp/screen.png";
 
     /// <summary>
-    /// Captures a screenshot from the container's X display and returns it as an ImageSharp image.
+    /// Default container name used when reusing an existing server.
     /// </summary>
-    public static async Task<Image<Rgba32>> CaptureScreenshot(IContainer container)
+    public const string DefaultContainerName = "sdvd-server";
+
+    /// <summary>
+    /// Captures a screenshot from the container's X display and returns it as an ImageSharp image.
+    /// Works with both Testcontainers-managed containers and externally-started containers.
+    /// </summary>
+    /// <param name="container">Optional Testcontainers container. If null, uses docker exec with the default container name.</param>
+    /// <param name="containerName">Container name to use when container is null. Defaults to "sdvd-server".</param>
+    public static async Task<Image<Rgba32>> CaptureScreenshot(IContainer? container = null, string containerName = DefaultContainerName)
+    {
+        if (container != null)
+        {
+            return await CaptureViaTestcontainers(container);
+        }
+        return await CaptureViaDockerExec(containerName);
+    }
+
+    private static async Task<Image<Rgba32>> CaptureViaTestcontainers(IContainer container)
     {
         // Capture X display to PNG using scrot
         var captureResult = await container.ExecAsync(new[]
@@ -47,6 +65,56 @@ public static class VncScreenshotHelper
         return Image.Load<Rgba32>(pngBytes);
     }
 
+    private static async Task<Image<Rgba32>> CaptureViaDockerExec(string containerName)
+    {
+        // Capture X display to PNG using scrot
+        var captureResult = await RunDockerExec(containerName,
+            "scrot --overwrite --pointer --multidisp " + ScreenshotPath);
+
+        if (captureResult.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"scrot failed (exit {captureResult.ExitCode}): {captureResult.Stderr}");
+        }
+
+        // Base64-encode the PNG for text transport
+        var base64Result = await RunDockerExec(containerName,
+            $"base64 -w0 {ScreenshotPath}");
+
+        if (base64Result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"base64 encoding failed (exit {base64Result.ExitCode}): {base64Result.Stderr}");
+        }
+
+        var pngBytes = Convert.FromBase64String(base64Result.Stdout.Trim());
+        return Image.Load<Rgba32>(pngBytes);
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunDockerExec(
+        string containerName, string command)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = $"exec {containerName} sh -c \"{command}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        var stdout = await process.StandardOutput.ReadToEndAsync();
+        var stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        return (process.ExitCode, stdout, stderr);
+    }
+
     /// <summary>
     /// Saves a screenshot to the test artifacts directory, organized by test class and method.
     /// Displays a small preview in the terminal using Spectre.Console.
@@ -58,15 +126,11 @@ public static class VncScreenshotHelper
         var path = Path.Combine(dir, $"{label}.png");
         await image.SaveAsPngAsync(path);
 
-        // Display screenshot info
-        var fileInfo = new FileInfo(path);
-        var sizeKb = fileInfo.Length / 1024.0;
-        AnsiConsole.MarkupLine($"[grey][[Test]] Screenshot saved: {image.Width}x{image.Height}, {sizeKb:F1} KB[/]");
-        AnsiConsole.Write(new Markup("[grey]         [/]"));
+        // Display screenshot path
         AnsiConsole.Write(new TextPath(path)
-            .RootColor(Spectre.Console.Color.Cyan1)
-            .SeparatorColor(Spectre.Console.Color.Cyan1)
-            .StemColor(Spectre.Console.Color.Cyan1)
+            .RootColor(Spectre.Console.Color.Grey)
+            .SeparatorColor(Spectre.Console.Color.Grey)
+            .StemColor(Spectre.Console.Color.Grey)
             .LeafColor(Spectre.Console.Color.Cyan1));
         AnsiConsole.WriteLine();
     }

@@ -224,6 +224,62 @@ Players can use chat commands in-game by typing them in the chat box:
 | `!invitecode` | Show the current invite code |
 | `!cabin` | Move your cabin to your current position on the farm (clears debris to make space) |
 
+#### Password Protection Commands
+
+When password protection is enabled (see [Configuration](/getting-started/configuration#password-protection)):
+
+| Command | Description |
+|---------|-------------|
+| `!login <password>` | Authenticate with the server password to leave the lobby and play |
+
+Admin-only password protection commands:
+
+| Command | Description |
+|---------|-------------|
+| `!authstatus` | Show authentication status of all connected players |
+| `!lobby help` | Show all lobby management commands |
+
+**Lobby layout editing commands** (use while in edit mode):
+
+| Command | Description |
+|---------|-------------|
+| `!lobby create <name>` | Create a new layout and enter edit mode |
+| `!lobby edit <name>` | Edit an existing layout |
+| `!lobby save` | Save changes and exit edit mode |
+| `!lobby cancel` | Discard changes and exit edit mode |
+| `!lobby spawn` | Set player spawn point at your current position |
+| `!lobby reset` | Clear all furniture/decorations in the editing cabin |
+
+**Lobby layout management commands:**
+
+| Command | Description |
+|---------|-------------|
+| `!lobby list` | List all saved layouts with item counts |
+| `!lobby info <name>` | Show detailed layout info (furniture, spawn point, etc.) |
+| `!lobby set <name>` | Set the active layout for new players |
+| `!lobby rename <old> <new>` | Rename a layout |
+| `!lobby copy <src> <dest>` | Duplicate a layout |
+| `!lobby delete <name>` | Delete a layout |
+| `!lobby export <name>` | Export layout as a shareable string |
+| `!lobby import <name> <string>` | Import layout from a shared string |
+
+::: tip Layout Names
+Layout names can only contain letters, numbers, dashes (`-`), and underscores (`_`). Maximum 32 characters. Spaces are automatically converted to dashes.
+:::
+
+**Lobby layout workflow:**
+1. `!lobby create my-lobby` - Creates a new layout and warps you into an editing cabin
+2. Decorate the cabin with furniture, wallpaper, flooring, and objects
+3. `!lobby spawn` - Stand where you want players to spawn and set the spawn point
+4. `!lobby save` - Saves your decorated cabin as the layout
+5. `!lobby set my-lobby` - Activates the layout for new players joining the lobby
+
+::: info Edit Mode Features
+While in edit mode: time is frozen at 6 AM, stamina/health are maintained, and your inventory is temporarily cleared (restored when you save or cancel).
+:::
+
+#### Admin Commands
+
 Admin-only chat commands (requires admin role):
 
 | Command | Description |
@@ -234,6 +290,8 @@ Admin-only chat commands (requires admin role):
 | `!listadmins` / `!listbans` | List admins or banned players |
 | `!changewallet` | Toggle between shared and separate wallets |
 | `!event` | Start the current festival's event (useful if stuck) |
+
+#### Owner Commands
 
 Owner-only chat commands (requires server owner):
 

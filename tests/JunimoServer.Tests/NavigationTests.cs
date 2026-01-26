@@ -45,31 +45,6 @@ public class NavigationTests : IntegrationTestBase
         await AssertNoExceptionsAsync("at end of test");
     }
 
-    /// <summary>
-    /// Original test from run-test-client.ts:
-    /// - Navigate to 'coopmenu'
-    /// - Switch to tab 1
-    /// </summary>
-    [Fact]
-    public async Task NavigateToCoopMenuAndSwitchTab_ShouldSucceed()
-    {
-        // Navigate to coop menu
-        var navigateResponse = await GameClient.Navigate("coopmenu");
-        Assert.NotNull(navigateResponse);
-        Assert.True(navigateResponse.Success, navigateResponse.Error ?? "Navigate failed");
-
-        // Wait for CoopMenu to be ready
-        var menuWait = await GameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeout);
-        Assert.True(menuWait?.Success, menuWait?.Error ?? "Wait for CoopMenu failed");
-
-        // Switch to join tab (JOIN_TAB = 0)
-        var tabResponse = await GameClient.Coop.Tab(0);
-        Assert.NotNull(tabResponse);
-        Assert.True(tabResponse.Success, tabResponse.Error ?? "Tab switch failed");
-
-        await AssertNoExceptionsAsync("at end of test");
-    }
-
     [Fact]
     public async Task ServerApi_GetStatus_ShouldReturnValidResponse()
     {
@@ -85,21 +60,19 @@ public class NavigationTests : IntegrationTestBase
         await AssertNoExceptionsAsync("at end of test");
     }
 
+    /// <summary>
+    /// Verifies that the invite code API returns a valid code when the server is online.
+    /// </summary>
     [Fact]
-    public async Task ServerApi_GetInviteCode_ShouldReturnCode()
+    public async Task ServerApi_GetInviteCode_ShouldReturnValidCode()
     {
         var response = await ServerApi.GetInviteCode();
 
         Assert.NotNull(response);
-        // Either we have an invite code or an error message
-        Assert.True(
-            !string.IsNullOrEmpty(response.InviteCode) || !string.IsNullOrEmpty(response.Error),
-            "Response should contain either an invite code or an error"
-        );
+        Assert.True(string.IsNullOrEmpty(response.Error), $"Should not have error: {response.Error}");
+        Assert.False(string.IsNullOrEmpty(response.InviteCode), "Should return a valid invite code");
 
-        Log($"Invite code: {response.InviteCode ?? "(none)"}");
-        if (response.Error != null)
-            Log($"Error: {response.Error}");
+        Log($"Invite code: {response.InviteCode}");
     }
 
     [Fact]

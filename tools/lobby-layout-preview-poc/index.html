@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stardew Valley Lobby Layout Gallery</title>
+    <script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="site-header">
+            <h1>Cabin Layout Gallery</h1>
+            <p class="subtitle">Browse, preview &amp; share cabin layouts for Stardew Valley Dedicated Server</p>
+        </header>
+
+        <div id="loadingIndicator" class="loading-indicator">
+            Loading...
+        </div>
+
+        <!-- Gallery View -->
+        <div id="galleryView" class="hidden">
+            <div class="gallery-header">
+                <div class="gallery-actions">
+                    <button class="btn-primary" onclick="App.showUploadModal()">
+                        <span class="btn-icon">+</span> Upload Layout
+                    </button>
+                </div>
+                <div class="gallery-search">
+                    <input type="text" id="searchInput" placeholder="Search layouts..." onkeyup="App.filterGallery()">
+                </div>
+            </div>
+
+            <div id="galleryGrid" class="gallery-grid">
+                <!-- Gallery items will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Detail View -->
+        <div id="detailView" class="hidden">
+            <nav class="breadcrumb">
+                <a href="#" onclick="event.preventDefault(); history.back();" class="breadcrumb-item breadcrumb-link" title="Back to gallery (Esc)">&larr; Gallery</a>
+                <span class="breadcrumb-sep">&rsaquo;</span>
+                <span id="breadcrumbCabin" class="breadcrumb-item breadcrumb-link">Log Cabins</span>
+                <span class="breadcrumb-sep">&rsaquo;</span>
+                <span id="breadcrumbName" class="breadcrumb-item breadcrumb-current">Layout Name</span>
+            </nav>
+
+            <div class="detail-content">
+                <div class="detail-main">
+                    <div class="preview-section">
+                        <div class="preview-header">
+                            <div class="layout-info">
+                                <div class="info-item">
+                                    <span class="info-label">Name:</span>
+                                    <span id="layoutName">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Cabin:</span>
+                                    <span id="cabinSkin">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Upgrade:</span>
+                                    <span id="upgradeLevel">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Spawn:</span>
+                                    <span id="spawnPoint">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="canvas-container">
+                            <canvas id="previewCanvas"></canvas>
+                            <div class="zoom-controls-overlay">
+                                <button class="btn-zoom btn-toggle" id="gridToggle" onclick="App.toggleGrid()" title="Toggle tile grid (G)">&#9638;</button>
+                                <span class="zoom-divider"></span>
+                                <button class="zoom-level" id="zoomLevel" onclick="App.resetZoom()" title="Reset zoom (0)">100%</button>
+                                <button class="btn-zoom" onclick="App.zoomOut()" title="Zoom out (-)">-</button>
+                                <button class="btn-zoom" onclick="App.zoomIn()" title="Zoom in (+)">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="detail-sidebar">
+                    <div class="sidebar-card">
+                        <h3 id="detailLayoutName">Layout Name</h3>
+                        <p class="sidebar-meta">
+                            <span>By <strong id="detailAuthor">Author</strong></span>
+                            <span id="detailDate">-</span>
+                        </p>
+                        <p id="detailDescription" class="sidebar-description">Description</p>
+                        <div class="sidebar-stats">
+                            <span class="stat-item">
+                                <span class="stat-icon">&hearts;</span>
+                                <span id="detailDownloads">0</span> downloads
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <h4>Import Code</h4>
+                        <textarea id="exportCodeDisplay" class="export-code" readonly></textarea>
+                        <button class="btn-primary btn-full" onclick="App.copyExportCode(event)">Click to Copy Code</button>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <h4>Actions</h4>
+                        <button class="btn-secondary btn-full" onclick="App.saveImage(event)">Save as Image</button>
+                        <button class="btn-secondary btn-full" onclick="App.copyShareLink(event)">Copy Share Link</button>
+                        <button class="btn-primary btn-full" onclick="App.downloadLayout(event)">Download Layout</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Modal (placeholder) -->
+        <div id="uploadModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Upload Layout</h2>
+                    <button class="modal-close" onclick="App.hideUploadModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="uploadName">Layout Name</label>
+                        <input type="text" id="uploadName" placeholder="My Awesome Layout">
+                    </div>
+                    <div class="form-group">
+                        <label for="uploadAuthor">Author</label>
+                        <input type="text" id="uploadAuthor" placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="uploadDescription">Description</label>
+                        <textarea id="uploadDescription" placeholder="Describe your layout..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="uploadCode">Export Code (SDVL0...)</label>
+                        <textarea id="uploadCode" placeholder="Paste your SDVL0... export code here"></textarea>
+                    </div>
+                    <div id="uploadPreviewContainer" class="upload-preview hidden">
+                        <label>Preview</label>
+                        <canvas id="uploadPreviewCanvas"></canvas>
+                        <div id="uploadPreviewInfo" class="upload-preview-info"></div>
+                    </div>
+                    <div id="uploadError" class="upload-error hidden"></div>
+                    <p class="modal-note">Upload functionality coming soon! This is a placeholder.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="App.hideUploadModal()">Cancel</button>
+                    <button class="btn-primary" onclick="App.submitUpload(event)">Upload</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="decorative-star" aria-hidden="true">&#x2726;</div>
+
+    <script src="js/furniture-parser.js"></script>
+    <script src="js/big-craftables-parser.js"></script>
+    <script src="js/sprite-loader.js"></script>
+    <script src="js/layout-decoder.js"></script>
+    <script src="js/cabin-renderer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

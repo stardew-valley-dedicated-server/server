@@ -2,6 +2,38 @@
 
 Keep your JunimoServer up to date to get the latest features, bug fixes, and game updates.
 
+## Using Preview Builds {#preview}
+
+Preview builds contain the latest changes from the `master` branch. Use these when the latest stable release has known issues, or if you want to test new features before they're officially released.
+
+**1. Update your `docker-compose.yml`**
+
+Change the image tags from `latest` to `preview`:
+
+```yaml
+services:
+    server:
+        image: sdvd/server:preview  # [!code highlight]
+    steam-service:
+        image: sdvd/steam-service:preview  # [!code highlight]
+    discord-bot:
+        image: sdvd/discord-bot:preview  # [!code highlight]
+```
+
+**2. Pull and restart**
+
+```sh
+docker compose pull
+docker compose down
+docker compose up -d
+```
+
+::: warning
+Preview builds may contain experimental features or bugs. They're tested but not as thoroughly as stable releases. Back up your saves before switching.
+:::
+
+To switch back to stable releases, change `preview` back to `latest` and repeat the pull/restart steps.
+
 ## For Docker Release Users
 
 If you're using the pre-built Docker images, upgrading JunimoServer is straightforward:
