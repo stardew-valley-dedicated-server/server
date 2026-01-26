@@ -1,0 +1,9 @@
+{
+  "Name": "JunimoTestClient",
+  "Author": "JunimoHost",
+  "Version": "0.1.0",
+  "Description": "HTTP API for automated testing of Stardew Valley client",
+  "UniqueID": "JunimoHost.TestClient",
+  "EntryDll": "JunimoTestClient.dll",
+  "MinimumApiVersion": "3.0.0"
+}
