@@ -97,6 +97,16 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     /p:GamePath=/game \
     -o /output/JunimoServer
 
+# Build openapi-generator tool and generate OpenAPI spec from mod
+COPY ./tools/openapi-generator /src/openapi-generator
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet build /src/openapi-generator/openapi-generator.csproj \
+    --configuration Release \
+    -o /output/openapi-generator && \
+    dotnet /output/openapi-generator/openapi-generator.dll \
+    /output/JunimoServer/JunimoServer.dll \
+    /output/openapi.json
+
 # ============================================================================
 # Stage 4: Final runtime image (no game files, downloads on first run)
 # ============================================================================
@@ -214,8 +224,14 @@ RUN cp -a /tmp/services/. /etc/services.d/ && \
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
 
+# Copy OpenAPI spec (for extraction via: docker cp or docker run --rm sdvd/server cat /data/openapi.json)
+COPY --from=mod-builder /output/openapi.json /data/openapi.json
+
 # Game files and save data are in volumes (game downloaded at runtime)
 VOLUME [ "/data/game", "/config/xdg/config/StardewValley" ]
+
+# Expose HTTP API port for external tools and automated testing
+EXPOSE 8080
 
 HEALTHCHECK --interval=1s --timeout=1s --start-period=10s --retries=15 \
     CMD test -f /tmp/server-output.log || exit 1

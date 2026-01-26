@@ -1,0 +1,256 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Stardew Dedicated Server API",
+    "description": "HTTP API for monitoring and interacting with the Stardew Valley dedicated server",
+    "version": "v1"
+  },
+  "paths": {
+    "/status": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Get server status",
+        "operationId": "HandleGetStatus",
+        "responses": {
+          "200": {
+            "description": "Server status and game state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/players": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Get connected players",
+        "operationId": "HandleGetPlayers",
+        "responses": {
+          "200": {
+            "description": "List of connected players",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invite-code": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Get invite code",
+        "operationId": "HandleGetInviteCode",
+        "responses": {
+          "200": {
+            "description": "Current server invite code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCodeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "operationId": "HandleGetHealth",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/farmhands": {
+      "get": {
+        "tags": [
+          "Farmhands"
+        ],
+        "summary": "Get all farmhand slots",
+        "operationId": "HandleGetFarmhands",
+        "responses": {
+          "200": {
+            "description": "List of farmhand slots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmhandsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Farmhands"
+        ],
+        "summary": "Delete a farmhand by name",
+        "operationId": "HandleDeleteFarmhand",
+        "responses": {
+          "200": {
+            "description": "Farmhand deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmhandResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ServerStatus": {
+        "type": "object",
+        "properties": {
+          "playerCount": {
+            "type": "integer"
+          },
+          "maxPlayers": {
+            "type": "integer"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "isOnline": {
+            "type": "boolean"
+          },
+          "lastUpdated": {
+            "type": "string"
+          },
+          "farmName": {
+            "type": "string"
+          },
+          "day": {
+            "type": "integer"
+          },
+          "season": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "timeOfDay": {
+            "type": "integer"
+          }
+        }
+      },
+      "PlayersResponse": {
+        "type": "object",
+        "properties": {
+          "players": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isOnline": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InviteCodeResponse": {
+        "type": "object",
+        "properties": {
+          "inviteCode": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        }
+      },
+      "FarmhandsResponse": {
+        "type": "object",
+        "properties": {
+          "farmhands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "isCustomized": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "FarmhandResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
