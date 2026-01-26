@@ -1,0 +1,29 @@
+<Project>
+    <!--
+    GamePath Configuration for JunimoTestClient
+
+    This file loads the Stardew Valley game path from either:
+    1. A local .env file in this directory
+    2. The repo root .env file (../../.env)
+    3. An environment variable GAME_PATH
+
+    Priority: command line > local .env > server .env > environment variable
+    -->
+
+    <PropertyGroup>
+        <!-- Try local .env first -->
+        <DotEnvPath>$(MSBuildThisFileDirectory).env</DotEnvPath>
+        <DotEnvContent Condition="Exists('$(DotEnvPath)')">$([System.IO.File]::ReadAllText('$(DotEnvPath)'))</DotEnvContent>
+
+        <!-- Fall back to repo root .env -->
+        <ServerDotEnvPath>$(MSBuildThisFileDirectory)..\..\.env</ServerDotEnvPath>
+        <DotEnvContent Condition="'$(DotEnvContent)' == '' AND Exists('$(ServerDotEnvPath)')">$([System.IO.File]::ReadAllText('$(ServerDotEnvPath)'))</DotEnvContent>
+
+        <!-- Extract GAME_PATH from .env content -->
+        <_EnvGamePath Condition="'$(DotEnvContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(DotEnvContent), 'GAME_PATH\s*=\s*"?([^"\r\n]+)"?').Groups[1].Value)</_EnvGamePath>
+
+        <!-- Set GamePath with priority: command line > .env file > environment variable -->
+        <GamePath Condition="'$(GamePath)' == '' AND '$(_EnvGamePath)' != ''">$(_EnvGamePath)</GamePath>
+        <GamePath Condition="'$(GamePath)' == '' AND '$(GAME_PATH)' != ''">$(GAME_PATH)</GamePath>
+    </PropertyGroup>
+</Project>
