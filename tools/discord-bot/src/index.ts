@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, ActivityType } from "discord.js";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const STATUS_FILE_PATH = process.env.STATUS_FILE_PATH || "/tmp/server-status.json";
+const API_URL = process.env.API_URL || "http://server:8080";
 
 // Discord rate limit for presence updates is ~5 per 20 seconds.
 // 30 seconds is a safe default that won't trigger rate limits.
@@ -31,17 +31,28 @@ const client = new Client({
 });
 
 /**
- * Reads the server status from the JSON file written by the game mod.
+ * Fetches the server status from the HTTP API.
  */
-async function readServerStatus(): Promise<ServerStatus | null> {
+async function fetchServerStatus(): Promise<ServerStatus | null> {
   try {
-    const file = Bun.file(STATUS_FILE_PATH);
-    if (!(await file.exists())) {
+    const response = await fetch(`${API_URL}/status`, {
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[Discord Bot] API request failed: ${response.status} ${response.statusText}`
+      );
       return null;
     }
-    return await file.json();
+
+    return await response.json();
   } catch (error) {
-    console.error(`[Discord Bot] Failed to read status file: ${error}`);
+    if (error instanceof Error) {
+      console.error(`[Discord Bot] Failed to fetch status: ${error.message}`);
+    } else {
+      console.error(`[Discord Bot] Failed to fetch status: ${error}`);
+    }
     return null;
   }
 }
@@ -50,7 +61,7 @@ async function readServerStatus(): Promise<ServerStatus | null> {
  * Updates the bot's presence/status based on server state.
  */
 async function updatePresence(): Promise<void> {
-  const status = await readServerStatus();
+  const status = await fetchServerStatus();
 
   let activityName: string;
 
@@ -77,7 +88,7 @@ async function updatePresence(): Promise<void> {
 
 client.once(Events.ClientReady, () => {
   console.log(`[Discord Bot] Logged in as ${client.user?.tag}`);
-  console.log(`[Discord Bot] Monitoring status file: ${STATUS_FILE_PATH}`);
+  console.log(`[Discord Bot] API URL: ${API_URL}`);
   console.log(`[Discord Bot] Update interval: ${UPDATE_INTERVAL_MS}ms`);
 
   // Initial status update

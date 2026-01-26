@@ -1,6 +1,24 @@
 import { defineConfig } from "vitepress";
+import { useSidebar } from "vitepress-openapi";
+import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
+import spec from "../assets/openapi.json" with { type: "json" };
+
+const openApiSidebar = useSidebar({ spec, linkPrefix: "/api/" });
 
 export default defineConfig({
+    vite: {
+        plugins: [
+            groupIconVitePlugin({
+                // Add custom icons which are not available otherwise
+                customIcon: {
+                    curl: "simple-icons:curl",
+                    ".cs": "vscode-icons:file-type-csharp2",
+                },
+                // Set default labels for code blocks (labels for API samples are defined separately in `theme/index.ts`)
+                defaultLabels: ["curl", ".cs", ".ts", ".py"],
+            }),
+        ],
+    },
     base: "/server/",
     title: "JunimoServer",
     description: "Stardew Valley dedicated server documentation",
@@ -54,6 +72,17 @@ export default defineConfig({
                     { text: "Managing Mods", link: "/guide/managing-mods" },
                     { text: "Upgrading", link: "/guide/upgrading" },
                     { text: "CI/CD Pipelines", link: "/guide/ci-cd" },
+                    {
+                        text: "REST API",
+                        collapsed: false,
+                        items: [
+                            { text: "Introduction", link: "/api/introduction" },
+                            ...openApiSidebar.generateSidebarGroups().map(group => ({
+                                ...group,
+                                collapsed: true,
+                            })),
+                        ],
+                    },
                     { text: "Advanced Topics", link: "/guide/advanced-topics" },
                 ],
             },
@@ -63,6 +92,7 @@ export default defineConfig({
                     { text: "Getting Help", link: "/community/getting-help" },
                     { text: "Reporting Bugs", link: "/community/reporting-bugs" },
                     { text: "Contributing", link: "/community/contributing" },
+                    { text: "Resources", link: "/community/resources" },
                     { text: "Roadmap", link: "/community/roadmap" },
                     { text: "Changelog", link: "/community/changelog" },
                     { text: "Contributors", link: "/community/contributors" },

@@ -19,6 +19,11 @@ These variables are used during server operation, either at startup or throughou
 | `VNC_PASSWORD` | Web VNC password for authentication | - | 1.0.0 |
 | `ALLOW_IP_CONNECTIONS` | Allow direct IP connections (disabled by default as they don't provide user IDs for farmhand ownership) | false | 1.2.0 |
 | `STEAM_AUTH_PORT` | Port for the steam-auth service HTTP API | 3001 | 1.2.0 |
+| `SERVER_PASSWORD` | Server password for player authentication (leave empty to disable) | - | 1.5.0 |
+| `MAX_LOGIN_ATTEMPTS` | Maximum failed login attempts before auto-kick | 3 | 1.5.0 |
+| `AUTH_TIMEOUT_SECONDS` | Seconds before unauthenticated players are kicked (0 to disable) | 600 | 1.5.0 |
+| `API_ENABLED` | Enable HTTP API for external tools and monitoring | true | 1.5.0 |
+| `API_PORT` | Port for the HTTP API server | 8080 | 1.5.0 |
 
 ::: tip
 Set `DISABLE_RENDERING=true` to improve performance when using VNC. The game will still run normally, but rendering will be optimized for server environments.
