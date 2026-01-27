@@ -42,6 +42,7 @@ namespace JunimoServer
 
             RegisterServices();
             RegisterChatCommands();
+            RenderingCommand.Register(Helper, Monitor);
         }
 
         private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
