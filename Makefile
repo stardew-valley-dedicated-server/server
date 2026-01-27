@@ -91,8 +91,14 @@ dumplogs:
 	@echo "Writing logs to logs_$(TIMESTAMP).txt"
 	@docker compose logs > "logs_$(TIMESTAMP).txt"
 
-# Start docs dev server
+# Start docs dev server (extracts OpenAPI spec from Docker image first)
 docs:
+	@echo Extracting OpenAPI spec from $(IMAGE_NAME):$(IMAGE_VERSION) image...
+	@mkdir -p docs/assets
+	@CONTAINER_ID=$$(docker create $(IMAGE_NAME):$(IMAGE_VERSION)) && \
+		docker cp "$$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json && \
+		docker rm "$$CONTAINER_ID" > /dev/null
+	@echo OpenAPI spec ready.
 	@npm --prefix ./docs run dev
 
 # Clean up everything, including all volumes
@@ -114,6 +120,7 @@ help:
 	@echo   make dumplogs - Dump server logs to file on host
 	@echo   make cli      - Attach to interactive server console (tmux-based)
 	@echo   make down     - Stop the server
+	@echo   make docs     - Start docs dev server (requires built image)
 	@echo   make clean    - Remove ALL containers, volumes and images
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images
