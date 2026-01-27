@@ -158,6 +158,7 @@ namespace JunimoServer
             JojaCommand.Register(Helper, chatCommandsService, roleService, alwaysOnConfig);
             ConsoleCommand.Register(Helper, chatCommandsService, roleService);
             InviteCodeCommand.Register(Helper, Monitor, chatCommandsService);
+            ServerCommand.Register(Helper, Monitor, chatCommandsService);
         }
     }
 }
