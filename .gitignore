@@ -37,6 +37,9 @@ logs
 **/debug
 **/decompiled
 
+# Test artifacts (screenshots, etc.)
+TestResults/
+
 # Dependency folders
 node_modules/
 
