@@ -149,17 +149,16 @@ init_permissions() {
 }
 
 init_gui() {
-    if [ "$DISABLE_RENDERING" = "true" ]; then
-        return;
-    fi
-
+    # Always start polybar for the rendering toggle button
     /etc/services.d/polybar/run &
 
-    if [ -e "/data/images/wallpaper-junimo-server.png" ]; then
-        xwallpaper --zoom /data/images/wallpaper-junimo-server.png
-    fi
+    if [ "$DISABLE_RENDERING" != "true" ]; then
+        if [ -e "/data/images/wallpaper-junimo-server.png" ]; then
+            xwallpaper --zoom /data/images/wallpaper-junimo-server.png
+        fi
 
-    bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green
+        bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green
+    fi
 }
 
 # Prepare

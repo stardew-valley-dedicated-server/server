@@ -32,6 +32,11 @@ namespace JunimoServer.Services.ServerOptim
             );
 
             harmony.Patch(
+                original: AccessTools.Method(typeof(Game), "Draw", new[] { typeof(GameTime) }),
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.GameDraw_Prefix))
+            );
+
+            harmony.Patch(
                 original: AccessTools.Method("StardewValley.Game1:updateMusic"),
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
             );
@@ -81,19 +86,15 @@ namespace JunimoServer.Services.ServerOptim
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.CreateLobby_Prefix))
             );
 
+            // Always patch UpdateControlInput — blocks input when rendering is disabled
+            // or host automation is active (e.g. toggled via F9 on VNC).
+            harmony.Patch(
+                original: AccessTools.Method("StardewValley.Game1:UpdateControlInput"),
+                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.UpdateControlInput_Prefix))
+            );
+
             if (_disableRendering)
             {
-                harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.SCore:OnInstanceContentLoaded"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.AssignNullDisplay_Prefix))
-                );
-
-                // TODO: This seem to have moved to Game1.mapDisplayDevice
-                //harmony.Patch(
-                //    original: AccessTools.Method("StardewModdingAPI.Framework.SCore:GetMapDisplayDevice"),
-                //    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.ReturnNullDisplay_Prefix))
-                //);
-
                 harmony.Patch(
                     original: AccessTools.Method("Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"),
                     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
@@ -101,11 +102,6 @@ namespace JunimoServer.Services.ServerOptim
 
                 harmony.Patch(
                     original: AccessTools.Method("Microsoft.Xna.Framework.Input.Mouse:PlatformGetState"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
-                );
-
-                harmony.Patch(
-                    original: AccessTools.Method("StardewValley.Game1:UpdateControlInput"),
                     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
                 );
             }
@@ -140,13 +136,36 @@ namespace JunimoServer.Services.ServerOptim
                         nameof(ServerOptimizerOverrides.Disable_Prefix)));
             }
 
+            helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             helper.Events.GameLoop.DayStarted += OnDayStarted;
             helper.Events.GameLoop.Saving += OnSaving;
             helper.Events.GameLoop.DayEnding += OnDayEnding;
         }
 
+        private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
+        {
+            // Capture the original display device now that the game has initialized it.
+            // This allows runtime toggling between the real device and NullDisplayDevice.
+            ServerOptimizerOverrides.SaveOriginalDisplayDevice(Game1.mapDisplayDevice);
+
+            if (_disableRendering)
+            {
+                ServerOptimizerOverrides.ToggleRendering(false, _monitor);
+            }
+        }
+
         private void OnDayEnding(object sender, DayEndingEventArgs e)
         {
+            // Enable drawing for the end-of-night phase.
+            // SaveGameMenu.update() requires hasDrawn (set in draw()) before it starts
+            // saving. If drawing is suppressed, draw() never runs and the save deadlocks.
+            // DayEnding fires before the SaveGameMenu is created, so enabling here
+            // ensures draw() can run. OnDayStarted re-disables drawing afterward.
+            if (!ServerOptimizerOverrides.IsRenderingEnabled())
+            {
+                ServerOptimizerOverrides.EnableDrawing();
+            }
+
             var before = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
             _monitor.Log($"Running GC", LogLevel.Info);
             GC.Collect(generation: 0, GCCollectionMode.Forced, blocking: true);
@@ -160,7 +179,8 @@ namespace JunimoServer.Services.ServerOptim
 
         private void OnDayStarted(object sender, DayStartedEventArgs e)
         {
-            if (_disableRendering)
+            // Re-apply the current rendering state after each day transition
+            if (!ServerOptimizerOverrides.IsRenderingEnabled())
             {
                 ServerOptimizerOverrides.DisableDrawing();
             }
@@ -168,7 +188,10 @@ namespace JunimoServer.Services.ServerOptim
 
         private void OnSaving(object sender, SavingEventArgs e)
         {
-            if (_disableRendering)
+            // Safety net: ensure drawing is enabled during save.
+            // OnDayEnding already enables it, but this covers edge cases where
+            // a save is triggered outside the normal day-end flow.
+            if (!ServerOptimizerOverrides.IsRenderingEnabled())
             {
                 ServerOptimizerOverrides.EnableDrawing();
             }
