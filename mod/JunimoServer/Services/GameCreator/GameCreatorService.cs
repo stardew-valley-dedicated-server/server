@@ -116,6 +116,12 @@ namespace JunimoServer.Services.GameCreator
 
             // From TitleMenu.createdNewCharacter
             Game1.game1.loadForNewGame();
+
+            // NOTE: The game has a built-in dedicated host mode (hasDedicatedHost)
+            // that activates instant fades, skips end-of-night UI, etc.
+            // We deliberately do NOT use it — our mod handles automation independently.
+            // Game1.player.team.hasDedicatedHost.Value = true;
+
             Game1.saveOnNewDay = true;
             Game1.player.eventsSeen.Add("60367");
             Game1.player.currentLocation = Utility.getHomeOfFarmer(Game1.player);

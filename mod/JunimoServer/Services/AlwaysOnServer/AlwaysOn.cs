@@ -1,10 +1,12 @@
 using JunimoServer.Services.ChatCommands;
+using JunimoServer.Services.ServerOptim;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
+using StardewValley.Minigames;
 using StardewValley.Network;
 using StardewValley.Objects;
 using System.Linq;
@@ -69,6 +71,7 @@ namespace JunimoServer.Services.AlwaysOn
         {
             // TODO: Restart the server if we happen to return to the title, this should not happen during regular operations
             IsAutomating = false;
+            ServerOptimizerOverrides.SetAutomationInputSuppression(false);
         }
 
         private void OnDayEnd(object sender, DayEndingEventArgs e)
@@ -81,6 +84,10 @@ namespace JunimoServer.Services.AlwaysOn
         {
             if (Game1.IsServer)
             {
+                // NOTE: The game has a built-in dedicated host mode (hasDedicatedHost)
+                // that we deliberately do NOT use — our mod handles automation independently.
+                // Game1.player.team.hasDedicatedHost.Value = true;
+
                 ToggleAutoMode();
 
                 if (Game1.player != null)
@@ -126,7 +133,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void OnButtonPressed(object sender, ButtonPressedEventArgs e)
         {
-            if (!Context.IsWorldReady)
+            if (Game1.gameMode != 3)
             {
                 return;
             }
@@ -151,6 +158,7 @@ namespace JunimoServer.Services.AlwaysOn
             HandleNextDayWarp();
             HandleDialogueBox();
             HandleSkippableEvent();
+            HandleMinigame();
             alwaysOnServerFestivals.HandleFestivalEvents();
             HandleLevelUpMenu();
             HandlePetChoice();
@@ -277,7 +285,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void ToggleAutoMode()
         {
-            if (!Context.IsWorldReady)
+            if (Game1.gameMode != 3)
             {
                 return;
             }
@@ -290,11 +298,17 @@ namespace JunimoServer.Services.AlwaysOn
 
             IsAutomating = !IsAutomating;
             Game1.displayHUD = true;
+
+            ServerOptimizerOverrides.SetAutomationInputSuppression(IsAutomating);
+            if (IsAutomating)
+            {
+                Game1.player.Halt();
+            }
         }
 
         private void ToggleVisibility()
         {
-            if (!Context.IsWorldReady)
+            if (Game1.gameMode != 3)
             {
                 return;
             }
@@ -391,13 +405,13 @@ namespace JunimoServer.Services.AlwaysOn
         }
 
         /// <summary>
-        /// Skip events that have a skip button.
+        /// Skip all events to keep the server unblocked.
+        /// On a dedicated server, no one is watching — skip everything,
+        /// including non-skippable intro events that would block clients.
         /// </summary>
         private void HandleSkippableEvent()
         {
-            // Left click menu spammer and event skipper to get through random events happening
-            // also moves player around, this seems to free host from random bugs sometimes
-            if (!IsAutomating || Game1.CurrentEvent == null || !Game1.CurrentEvent.skippable)
+            if (!IsAutomating || Game1.CurrentEvent == null)
             {
                 return;
             }
@@ -407,10 +421,25 @@ namespace JunimoServer.Services.AlwaysOn
 
             if (!skipped && !finished)
             {
-                Monitor.Log("Skipping event", LogLevel.Info);
+                Monitor.Log($"Skipping event (skippable={Game1.CurrentEvent.skippable})", LogLevel.Info);
                 Game1.CurrentEvent.skipEvent();
                 Game1.CurrentEvent.receiveMouseClick(1, 2);
             }
+        }
+
+        /// <summary>
+        /// Clear any active minigame (e.g. the Intro bus ride on a new save).
+        /// Minigames block isGameAvailable() and prevent clients from connecting.
+        /// </summary>
+        private void HandleMinigame()
+        {
+            if (!IsAutomating || Game1.currentMinigame == null)
+            {
+                return;
+            }
+
+            Monitor.Log($"Clearing minigame: {Game1.currentMinigame.GetType().Name}", LogLevel.Info);
+            Game1.currentMinigame.forceQuit();
         }
 
         /// <summary>
