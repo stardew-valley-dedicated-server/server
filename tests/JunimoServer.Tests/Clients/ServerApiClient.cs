@@ -24,6 +24,9 @@ public class ServerStatus
     [JsonPropertyName("isOnline")]
     public bool IsOnline { get; set; }
 
+    [JsonPropertyName("isReady")]
+    public bool IsReady { get; set; }
+
     [JsonPropertyName("lastUpdated")]
     public string LastUpdated { get; set; } = string.Empty;
 
@@ -132,6 +135,51 @@ public class ServerFarmhandsResponse
 }
 
 /// <summary>
+/// Response from /rendering GET endpoint.
+/// </summary>
+public class RenderingStatusResponse
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+}
+
+/// <summary>
+/// Response from /rendering POST endpoint.
+/// </summary>
+public class RenderingToggleResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Response from /time POST endpoint.
+/// </summary>
+public class TimeSetResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("timeOfDay")]
+    public int TimeOfDay { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
 /// HTTP client for the JunimoServer API.
 /// Default port is 8080 (configurable via API_PORT env var in the server).
 /// </summary>
@@ -224,6 +272,47 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
+    /// Gets the current rendering status.
+    /// GET /rendering
+    /// </summary>
+    public async Task<RenderingStatusResponse?> GetRendering()
+    {
+        var response = await _httpClient.GetAsync("/rendering");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RenderingStatusResponse>();
+    }
+
+    /// <summary>
+    /// Sets the rendering state.
+    /// POST /rendering?enabled=true|false
+    /// </summary>
+    public async Task<RenderingToggleResponse?> SetRendering(bool enabled)
+    {
+        var response = await _httpClient.PostAsync($"/rendering?enabled={enabled.ToString().ToLowerInvariant()}", null);
+        return await response.Content.ReadFromJsonAsync<RenderingToggleResponse>();
+    }
+
+    /// <summary>
+    /// Sets the game time of day.
+    /// POST /time?value=XXXX
+    /// </summary>
+    public async Task<TimeSetResponse?> SetTime(int value)
+    {
+        var response = await _httpClient.PostAsync($"/time?value={value}", null);
+        return await response.Content.ReadFromJsonAsync<TimeSetResponse>();
+    }
+
+    /// <summary>
+    /// Posts to the rendering endpoint without the enabled parameter (for error testing).
+    /// POST /rendering
+    /// </summary>
+    public async Task<RenderingToggleResponse?> PostRenderingRaw()
+    {
+        var response = await _httpClient.PostAsync("/rendering", null);
+        return await response.Content.ReadFromJsonAsync<RenderingToggleResponse>();
+    }
+
+    /// <summary>
     /// Waits for the server to come online with a valid invite code.
     /// </summary>
     /// <param name="timeout">Maximum time to wait</param>
@@ -233,25 +322,39 @@ public class ServerApiClient : IDisposable
     {
         var interval = pollInterval ?? TimeSpan.FromSeconds(1);
         var deadline = DateTime.UtcNow + timeout;
+        var attempt = 0;
+        string lastReason = "no attempts made";
 
         while (DateTime.UtcNow < deadline)
         {
+            attempt++;
             try
             {
                 var status = await GetStatus();
-                if (status?.IsOnline == true && !string.IsNullOrEmpty(status.InviteCode))
+                if (status?.IsOnline == true && status.IsReady && !string.IsNullOrEmpty(status.InviteCode))
                 {
+                    Console.WriteLine($"[WaitForServerOnline] Server online and ready after {attempt} attempts");
                     return status;
                 }
+
+                lastReason = $"IsOnline={status?.IsOnline}, IsReady={status?.IsReady}, InviteCode='{status?.InviteCode ?? "(null)"}'";
             }
-            catch (HttpRequestException)
+            catch (Exception ex)
             {
-                // Server not ready yet
+                lastReason = $"{ex.GetType().Name}: {ex.Message}";
+            }
+
+            // Log progress every 10 attempts
+            if (attempt % 10 == 0)
+            {
+                var remaining = deadline - DateTime.UtcNow;
+                Console.WriteLine($"[WaitForServerOnline] Attempt {attempt}, {remaining.TotalSeconds:0}s remaining — {lastReason}");
             }
 
             await Task.Delay(interval);
         }
 
+        Console.WriteLine($"[WaitForServerOnline] Timed out after {attempt} attempts. Last: {lastReason}");
         return null;
     }
 

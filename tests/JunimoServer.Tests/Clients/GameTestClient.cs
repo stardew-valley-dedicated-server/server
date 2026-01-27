@@ -135,6 +135,21 @@ public class CustomizeResult
     public string? Error { get; set; }
 }
 
+public class SleepResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("location")]
+    public string? Location { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 #endregion
 
 #region Sub-Clients
@@ -254,6 +269,25 @@ public class CharacterClient
     }
 }
 
+public class ActionsClient
+{
+    private readonly GameTestClient _client;
+
+    public ActionsClient(GameTestClient client)
+    {
+        _client = client;
+    }
+
+    /// <summary>
+    /// Make the player go to sleep.
+    /// POST /actions/sleep
+    /// </summary>
+    public Task<SleepResult?> Sleep()
+    {
+        return _client.PostAsync<SleepResult>("/actions/sleep", new { });
+    }
+}
+
 public class WaitClient
 {
     private readonly GameTestClient _client;
@@ -360,6 +394,7 @@ public class GameTestClient : IDisposable
     public CoopClient Coop { get; }
     public FarmhandClient Farmhands { get; }
     public CharacterClient Character { get; }
+    public ActionsClient Actions { get; }
     public WaitClient Wait { get; }
 
     public GameTestClient(string baseUrl = "http://localhost:5123", int defaultWaitTimeout = 30000)
@@ -372,6 +407,7 @@ public class GameTestClient : IDisposable
         Coop = new CoopClient(this);
         Farmhands = new FarmhandClient(this);
         Character = new CharacterClient(this);
+        Actions = new ActionsClient(this);
         Wait = new WaitClient(this, defaultWaitTimeout);
     }
 
