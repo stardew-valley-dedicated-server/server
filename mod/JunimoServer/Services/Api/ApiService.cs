@@ -1,3 +1,4 @@
+using JunimoServer.Services.ServerOptim;
 using JunimoServer.Util;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -33,8 +34,11 @@ namespace JunimoServer.Services.Api
         /// <summary>Server mod version.</summary>
         public string ServerVersion { get; set; } = "";
 
-        /// <summary>Whether the server is online and ready.</summary>
+        /// <summary>Whether the server is online and hosting.</summary>
         public bool IsOnline { get; set; }
+
+        /// <summary>Whether the server is ready to accept new connections (false during day transitions, saving, etc.).</summary>
+        public bool IsReady { get; set; }
 
         /// <summary>ISO 8601 timestamp of last update.</summary>
         public string LastUpdated { get; set; } = "";
@@ -142,6 +146,51 @@ namespace JunimoServer.Services.Api
         public List<FarmhandInfo> Farmhands { get; set; } = new();
     }
 
+    /// <summary>
+    /// Current rendering status.
+    /// </summary>
+    public class RenderingStatus
+    {
+        /// <summary>Whether rendering is currently enabled.</summary>
+        public bool Enabled { get; set; }
+    }
+
+    /// <summary>
+    /// Response from rendering toggle operation.
+    /// </summary>
+    public class RenderingToggleResponse
+    {
+        /// <summary>Whether the operation succeeded.</summary>
+        public bool Success { get; set; }
+
+        /// <summary>Current rendering state after the operation.</summary>
+        public bool Enabled { get; set; }
+
+        /// <summary>Message describing the result.</summary>
+        public string? Message { get; set; }
+
+        /// <summary>Error message if operation failed.</summary>
+        public string? Error { get; set; }
+    }
+
+    /// <summary>
+    /// Response from time set operation.
+    /// </summary>
+    public class TimeSetResponse
+    {
+        /// <summary>Whether the operation succeeded.</summary>
+        public bool Success { get; set; }
+
+        /// <summary>Current time of day after the operation.</summary>
+        public int TimeOfDay { get; set; }
+
+        /// <summary>Message describing the result.</summary>
+        public string? Message { get; set; }
+
+        /// <summary>Error message if operation failed.</summary>
+        public string? Error { get; set; }
+    }
+
     #endregion
 
     /// <summary>
@@ -207,19 +256,27 @@ namespace JunimoServer.Services.Api
 
                 _isRunning = true;
 
-                Monitor.Log($"API server started on port {Env.ApiPort}", LogLevel.Info);
-                Monitor.Log($"  GET  /status             - Server status and game state", LogLevel.Info);
-                Monitor.Log($"  GET  /players            - Connected players list", LogLevel.Info);
-                Monitor.Log($"  GET  /invite-code        - Current invite code", LogLevel.Info);
-                Monitor.Log($"  GET  /farmhands          - List all farmhand slots", LogLevel.Info);
-                Monitor.Log($"  DELETE /farmhands?name=X - Delete farmhand by name", LogLevel.Info);
-                Monitor.Log($"  GET  /health             - Health check", LogLevel.Info);
-                Monitor.Log($"  GET  /swagger/v1/swagger.json - OpenAPI specification", LogLevel.Info);
-                Monitor.Log($"  GET  /docs               - Interactive API documentation", LogLevel.Info);
+                Monitor.Log("*******************************************************************", LogLevel.Info);
+                Monitor.Log("*                                                                 *", LogLevel.Info);
+                Monitor.Log($"*    API server listening on port {Env.ApiPort,-33}*", LogLevel.Info);
+                Monitor.Log("*                                                                 *", LogLevel.Info);
+                Monitor.Log("*    GET    /status              Server status and game state      *", LogLevel.Info);
+                Monitor.Log("*    GET    /players             Connected players list            *", LogLevel.Info);
+                Monitor.Log("*    GET    /invite-code         Current invite code               *", LogLevel.Info);
+                Monitor.Log("*    GET    /farmhands           List all farmhand slots           *", LogLevel.Info);
+                Monitor.Log("*    DELETE /farmhands?name=X    Delete farmhand by name           *", LogLevel.Info);
+                Monitor.Log("*    GET    /rendering           Current rendering status          *", LogLevel.Info);
+                Monitor.Log("*    POST   /rendering?enabled=  Toggle rendering                  *", LogLevel.Info);
+                Monitor.Log("*    POST   /time?value=         Set game time of day              *", LogLevel.Info);
+                Monitor.Log("*    GET    /health              Health check                      *", LogLevel.Info);
+                Monitor.Log("*                                                                 *", LogLevel.Info);
+                Monitor.Log($"*    Docs: {"http://localhost:" + Env.ApiPort + "/docs",-55}*", LogLevel.Info);
+                Monitor.Log("*                                                                 *", LogLevel.Info);
+                Monitor.Log("*******************************************************************", LogLevel.Info);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Failed to start API server: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Failed to start API server: {ex}", LogLevel.Error);
             }
         }
 
@@ -243,7 +300,7 @@ namespace JunimoServer.Services.Api
                 }
                 catch (Exception ex)
                 {
-                    Monitor.Log($"Error accepting request: {ex.Message}", LogLevel.Warn);
+                    Monitor.Log($"Error accepting request: {ex}", LogLevel.Warn);
                 }
             }
         }
@@ -278,11 +335,32 @@ namespace JunimoServer.Services.Api
                         case "/health":
                             await WriteJsonAsync(response, HandleGetHealth());
                             break;
+                        case "/rendering":
+                            await WriteJsonAsync(response, HandleGetRendering());
+                            break;
                         case "/swagger/v1/swagger.json":
                             await WriteJsonRawAsync(response, _openApiSpec ?? "{}");
                             break;
                         case "/docs":
                             await WriteHtmlAsync(response, GetScalarHtml());
+                            break;
+                        default:
+                            response.StatusCode = 404;
+                            await WriteJsonAsync(response, new { error = "Not found" });
+                            break;
+                    }
+                }
+                else if (method == "POST")
+                {
+                    switch (path)
+                    {
+                        case "/rendering":
+                            var enabledParam = request.QueryString["enabled"];
+                            await WriteJsonAsync(response, HandlePostRendering(enabledParam));
+                            break;
+                        case "/time":
+                            var timeParam = request.QueryString["value"];
+                            await WriteJsonAsync(response, HandlePostTime(timeParam));
                             break;
                         default:
                             response.StatusCode = 404;
@@ -312,17 +390,24 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error handling request: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"Error handling request: {ex}", LogLevel.Warn);
                 try
                 {
                     response.StatusCode = 500;
                     await WriteJsonAsync(response, new { error = "Internal server error" });
                 }
-                catch { /* Ignore errors when writing error response */ }
+                catch (Exception writeEx)
+                {
+                    Monitor.Log($"Failed to write error response: {writeEx}", LogLevel.Warn);
+                }
             }
             finally
             {
-                try { response.Close(); } catch { }
+                try { response.Close(); }
+                catch (Exception closeEx)
+                {
+                    Monitor.Log($"Failed to close response: {closeEx}", LogLevel.Debug);
+                }
             }
         }
 
@@ -335,7 +420,13 @@ namespace JunimoServer.Services.Api
             var modInfo = Helper.ModRegistry.Get("JunimoHost.Server");
             var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
 
-            if (!Context.IsWorldReady || !Game1.IsServer)
+            // Use invite code file as the source of truth for "online" status.
+            // Context.IsWorldReady may not be set during new game creation, even though
+            // the server is fully hosting and accepting connections.
+            var inviteCode = InviteCodeFile.Read(Monitor);
+            var isOnline = !string.IsNullOrEmpty(inviteCode) && Game1.IsServer;
+
+            if (!isOnline)
             {
                 return new ServerStatus
                 {
@@ -344,28 +435,47 @@ namespace JunimoServer.Services.Api
                     InviteCode = "",
                     ServerVersion = version,
                     IsOnline = false,
+                    IsReady = false,
                     LastUpdated = DateTime.UtcNow.ToString("o")
                 };
             }
 
-            var inviteCode = InviteCodeFile.Read(Monitor);
-            var playerCount = Game1.server?.connectionsCount ?? 0;
-            var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
-
-            return new ServerStatus
+            try
             {
-                PlayerCount = playerCount,
-                MaxPlayers = maxPlayers,
-                InviteCode = inviteCode ?? "",
-                ServerVersion = version,
-                IsOnline = true,
-                LastUpdated = DateTime.UtcNow.ToString("o"),
-                FarmName = Game1.player?.farmName.Value ?? "",
-                Day = Game1.dayOfMonth,
-                Season = Game1.currentSeason ?? "",
-                Year = Game1.year,
-                TimeOfDay = Game1.timeOfDay
-            };
+                var playerCount = Game1.server?.connectionsCount ?? 0;
+                var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
+                var isReady = Game1.server?.isGameAvailable() ?? false;
+
+                return new ServerStatus
+                {
+                    PlayerCount = playerCount,
+                    MaxPlayers = maxPlayers,
+                    InviteCode = inviteCode!,
+                    ServerVersion = version,
+                    IsOnline = true,
+                    IsReady = isReady,
+                    LastUpdated = DateTime.UtcNow.ToString("o"),
+                    FarmName = Game1.player?.farmName.Value ?? "",
+                    Day = Game1.dayOfMonth,
+                    Season = Game1.currentSeason ?? "",
+                    Year = Game1.year,
+                    TimeOfDay = Game1.timeOfDay
+                };
+            }
+            catch (Exception ex)
+            {
+                // Game state access from the API thread can race with the game loop;
+                // return a minimal online response if property reads fail.
+                Monitor.Log($"Game state read failed (race with game loop): {ex}", LogLevel.Debug);
+                return new ServerStatus
+                {
+                    InviteCode = inviteCode!,
+                    ServerVersion = version,
+                    IsOnline = true,
+                    IsReady = false,
+                    LastUpdated = DateTime.UtcNow.ToString("o")
+                };
+            }
         }
 
         [ApiEndpoint("GET", "/players", Summary = "Get connected players", Tag = "Server")]
@@ -374,7 +484,7 @@ namespace JunimoServer.Services.Api
         {
             var players = new List<PlayerInfo>();
 
-            if (!Context.IsWorldReady || !Game1.IsServer)
+            if (Game1.gameMode != 3 || !Game1.IsServer)
             {
                 return new PlayersResponse { Players = players };
             }
@@ -399,7 +509,7 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error building player list: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"Error building player list: {ex}", LogLevel.Warn);
             }
 
             return new PlayersResponse { Players = players };
@@ -434,7 +544,7 @@ namespace JunimoServer.Services.Api
         {
             var farmhands = new List<FarmhandInfo>();
 
-            if (!Context.IsWorldReady || !Game1.IsServer)
+            if (Game1.gameMode != 3 || !Game1.IsServer)
             {
                 return new FarmhandsResponse { Farmhands = farmhands };
             }
@@ -453,10 +563,99 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error getting farmhands: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"Error getting farmhands: {ex}", LogLevel.Warn);
             }
 
             return new FarmhandsResponse { Farmhands = farmhands };
+        }
+
+        [ApiEndpoint("GET", "/rendering", Summary = "Get rendering status", Tag = "Server")]
+        [ApiResponse(typeof(RenderingStatus), 200, Description = "Current rendering state")]
+        private RenderingStatus HandleGetRendering()
+        {
+            return new RenderingStatus
+            {
+                Enabled = ServerOptimizerOverrides.IsRenderingEnabled()
+            };
+        }
+
+        [ApiEndpoint("POST", "/rendering", Summary = "Toggle rendering on or off", Tag = "Server")]
+        [ApiResponse(typeof(RenderingToggleResponse), 200, Description = "Rendering toggled")]
+        private RenderingToggleResponse HandlePostRendering(string? enabled)
+        {
+            if (string.IsNullOrEmpty(enabled))
+            {
+                return new RenderingToggleResponse
+                {
+                    Success = false,
+                    Enabled = ServerOptimizerOverrides.IsRenderingEnabled(),
+                    Error = "Missing 'enabled' query parameter (true or false)"
+                };
+            }
+
+            if (!bool.TryParse(enabled, out var enableRendering))
+            {
+                return new RenderingToggleResponse
+                {
+                    Success = false,
+                    Enabled = ServerOptimizerOverrides.IsRenderingEnabled(),
+                    Error = $"Invalid value '{enabled}' for 'enabled' parameter (expected true or false)"
+                };
+            }
+
+            ServerOptimizerOverrides.ToggleRendering(enableRendering, Monitor);
+
+            return new RenderingToggleResponse
+            {
+                Success = true,
+                Enabled = enableRendering,
+                Message = enableRendering ? "Rendering enabled" : "Rendering disabled"
+            };
+        }
+
+        [ApiEndpoint("POST", "/time", Summary = "Set game time of day", Tag = "Server")]
+        [ApiResponse(typeof(TimeSetResponse), 200, Description = "Time set")]
+        private TimeSetResponse HandlePostTime(string? value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return new TimeSetResponse
+                {
+                    Success = false,
+                    TimeOfDay = Game1.timeOfDay,
+                    Error = "Missing 'value' query parameter (e.g., 1200 for noon)"
+                };
+            }
+
+            if (!int.TryParse(value, out var time))
+            {
+                return new TimeSetResponse
+                {
+                    Success = false,
+                    TimeOfDay = Game1.timeOfDay,
+                    Error = $"Invalid value '{value}' (expected integer like 1200 for noon)"
+                };
+            }
+
+            if (time < 600 || time > 2600)
+            {
+                return new TimeSetResponse
+                {
+                    Success = false,
+                    TimeOfDay = Game1.timeOfDay,
+                    Error = $"Value {time} out of range (600-2600)"
+                };
+            }
+
+            Game1.timeOfDay = time;
+            Monitor.Log($"Time set to {time} via API", LogLevel.Info);
+
+            return new TimeSetResponse
+            {
+                Success = true,
+                TimeOfDay = time,
+                Message = $"Time set to {time}"
+            };
         }
 
         [ApiEndpoint("DELETE", "/farmhands", Summary = "Delete a farmhand by name", Tag = "Farmhands")]
@@ -468,7 +667,7 @@ namespace JunimoServer.Services.Api
                 return new FarmhandResponse { Success = false, Error = "Missing 'name' query parameter" };
             }
 
-            if (!Context.IsWorldReady || !Game1.IsServer)
+            if (Game1.gameMode != 3 || !Game1.IsServer)
             {
                 return new FarmhandResponse { Success = false, Error = "Server not ready" };
             }
@@ -511,7 +710,7 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error deleting farmhand: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Error deleting farmhand: {ex}", LogLevel.Error);
                 return new FarmhandResponse { Success = false, Error = ex.Message };
             }
         }
@@ -581,7 +780,7 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error stopping API server: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"Error stopping API server: {ex}", LogLevel.Warn);
             }
         }
     }
