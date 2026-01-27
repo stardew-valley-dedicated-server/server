@@ -1,12 +1,12 @@
-using System.Diagnostics;
-using System.Text;
-using System.Text.RegularExpressions;
 using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
 using JunimoServer.Tests.Clients;
+using JunimoServer.Tests.Helpers;
+using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace JunimoServer.Tests.Fixtures;
@@ -49,9 +49,12 @@ public class IntegrationTestFixture : IAsyncLifetime
     // Use "local" for locally built images, or a specific version/latest for CI
     private static readonly string ImageTag = Environment.GetEnvironmentVariable("SDVD_IMAGE_TAG") ?? "local";
     private static readonly bool UseLocalImages = ImageTag == "local";
+    private static readonly bool SkipBuild = string.Equals(
+        Environment.GetEnvironmentVariable("SDVD_SKIP_BUILD"), "true", StringComparison.OrdinalIgnoreCase);
 
     // Ports
     private const int ServerApiPort = 8080;
+    private const int VncPort = 5800;
     private const int TestClientApiPort = 5123;
     private const int SteamAuthPort = 3001;
 
@@ -61,21 +64,138 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     public bool IsReady { get; private set; }
     public int ServerPort { get; private set; } = ServerApiPort;
+    public int ServerVncPort { get; private set; } = VncPort;
     public string ServerBaseUrl => $"http://localhost:{ServerPort}";
+    public string ServerVncUrl => $"http://localhost:{ServerVncPort}";
     public string GameClientBaseUrl => $"http://localhost:{TestClientApiPort}";
+    public IContainer? ServerContainer => _serverContainer;
+    public string? InviteCode { get; private set; }
     public string OutputLog => _outputLog.ToString();
     public string ErrorLog => _errorLog.ToString();
 
+    // ---------------------------------------------------------------------------
+    //  Logging helpers
+    // ---------------------------------------------------------------------------
+
+    private enum LogLevel { Header, Info, Success, Warn, Error, Detail }
+
+    private static readonly bool UseColor = ResolveColorSupport();
+
+    /// <summary>
+    /// Detect whether the output terminal supports ANSI color codes.
+    /// VS Test Explorer and piped output get plain text; Windows Terminal / CI get color.
+    /// Override with SDVD_COLOR=true|false or the standard NO_COLOR variable.
+    /// </summary>
+    private static bool ResolveColorSupport()
+    {
+        // Explicit override
+        var colorEnv = Environment.GetEnvironmentVariable("SDVD_COLOR");
+        if (string.Equals(colorEnv, "true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(colorEnv, "false", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // NO_COLOR standard (https://no-color.org/)
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"))) return false;
+
+        // Positive indicators of color-capable environments
+        // (checked before IsOutputRedirected which is unreliable under dotnet test)
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WT_SESSION"))) return true;
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))) return true;
+        var term = Environment.GetEnvironmentVariable("TERM");
+        if (!string.IsNullOrEmpty(term) && term != "dumb") return true;
+
+        // No positive signal — fall back to redirect check (catches VS Test Explorer, piped output)
+        return !Console.IsOutputRedirected;
+    }
+
+    /// <summary>
+    /// Return the ANSI escape sequence when color is supported, empty string otherwise.
+    /// </summary>
+    private static string Ansi(string code) => UseColor ? $"\x1b[{code}m" : "";
+
+    // Commonly used ANSI sequences (resolved once)
+    private static readonly string Reset    = Ansi("0");
+    private static readonly string Bold     = Ansi("1");
+    private static readonly string BoldCyan = Ansi("1;36");
+    private static readonly string Green    = Ansi("32");
+    private static readonly string Yellow   = Ansi("33");
+    private static readonly string Red      = Ansi("31");
+    private static readonly string Dim      = Ansi("90");
+    private static readonly string Cyan     = Ansi("36");
+
+    private static void Log(string message, LogLevel level = LogLevel.Info)
+    {
+        var (color, tag) = level switch
+        {
+            LogLevel.Header  => (BoldCyan, ">>>"),
+            LogLevel.Success => (Green,    " + "),
+            LogLevel.Warn    => (Yellow,   " ! "),
+            LogLevel.Error   => (Red,      " x "),
+            LogLevel.Detail  => (Dim,      " . "),
+            _                => ("",       "   "),
+        };
+
+        if (level == LogLevel.Header)
+            Console.WriteLine($"{color}{tag}{Reset} {Bold}{message}{Reset}");
+        else if (level == LogLevel.Info)
+            Console.WriteLine($"    {message}");
+        else
+            Console.WriteLine($"{color}{tag} {message}{Reset}");
+    }
+
+    private static void PrintInfoPanel(string title, (string label, string value)[] rows)
+    {
+        var contentRows = rows.Where(r => !string.IsNullOrEmpty(r.label) || !string.IsNullOrEmpty(r.value)).ToArray();
+        var maxLabel = contentRows.Length > 0 ? contentRows.Max(r => r.label.Length) : 0;
+        var maxContent = contentRows.Length > 0
+            ? contentRows.Max(r => r.label.Length + r.value.Length + 2)
+            : 0;
+        var innerWidth = Math.Max(Math.Max(maxContent, title.Length) + 4, 44);
+        var totalWidth = innerWidth + 6; // "***" on each side
+
+        var fullBorder = new string('*', totalWidth);
+        var emptyLine = $"***{new string(' ', innerWidth)}***";
+
+        Console.WriteLine();
+        Console.WriteLine($"{Cyan}{fullBorder}{Reset}");
+        Console.WriteLine($"{Cyan}{emptyLine}{Reset}");
+
+        var titlePad = $"  {title}".PadRight(innerWidth);
+        Console.WriteLine($"{Cyan}***{Reset}{Bold}{titlePad}{Reset}{Cyan}***{Reset}");
+        Console.WriteLine($"{Cyan}{emptyLine}{Reset}");
+
+        foreach (var (label, value) in rows)
+        {
+            if (string.IsNullOrEmpty(label) && string.IsNullOrEmpty(value))
+            {
+                Console.WriteLine($"{Cyan}{emptyLine}{Reset}");
+                continue;
+            }
+            var content = $"  {label.PadRight(maxLabel)}  {value}";
+            Console.WriteLine($"{Cyan}***{Reset}{content.PadRight(innerWidth)}{Cyan}***{Reset}");
+        }
+
+        Console.WriteLine($"{Cyan}{emptyLine}{Reset}");
+        Console.WriteLine($"{Cyan}{fullBorder}{Reset}");
+        Console.WriteLine();
+    }
+
+    // ---------------------------------------------------------------------------
+    //  Lifecycle
+    // ---------------------------------------------------------------------------
+
     public async Task InitializeAsync()
     {
-        Console.WriteLine("[IntegrationTestFixture] Starting integration test environment...");
-        Console.WriteLine($"[IntegrationTestFixture] Server repo dir: {ServerRepoDir}");
+        Log("Starting integration test environment", LogLevel.Header);
+        Log($"Repo: {ServerRepoDir}", LogLevel.Detail);
+
+        // Prepare test artifacts output directory (clean slate each run)
+        TestArtifacts.InitializeScreenshotsDir();
 
         // Check if server is already running (for local development)
         var serverApi = new ServerApiClient();
         if (await IsServerResponding(serverApi))
         {
-            Console.WriteLine("[IntegrationTestFixture] Server already running on port 8080, reusing");
+            Log($"Server already running on port {ServerApiPort}, reusing", LogLevel.Success);
             _usingExistingServer = true;
             ServerPort = ServerApiPort;
         }
@@ -88,7 +208,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         // Check if game client is already running
         if (await IsGameClientResponding())
         {
-            Console.WriteLine("[IntegrationTestFixture] Game client already running, reusing");
+            Log("Game client already running, reusing", LogLevel.Success);
             _usingExistingGameClient = true;
         }
         else
@@ -97,14 +217,176 @@ public class IntegrationTestFixture : IAsyncLifetime
         }
 
         IsReady = true;
-        Console.WriteLine("[IntegrationTestFixture] Integration test environment is ready!");
+
+        PrintInfoPanel("Integration Test Environment Ready", new[]
+        {
+            ("Server API:", ServerBaseUrl),
+            ("Server VNC:", ServerVncUrl),
+            ("Game Client:", GameClientBaseUrl),
+            ("Invite Code:", InviteCode ?? "N/A"),
+            ("", ""),
+            ("Image Tag:", ImageTag),
+            ("Server:", _usingExistingServer ? "Reused (existing)" : "Fresh container"),
+            ("Game Client:", _usingExistingGameClient ? "Reused (existing)" : "Fresh process"),
+        });
+    }
+
+    /// <summary>
+    /// Remove containers, networks, and volumes left behind by previous test runs that crashed
+    /// or were killed before cleanup could run.
+    /// </summary>
+    private static async Task CleanupStaleTestResources()
+    {
+        Log("Checking for stale test resources", LogLevel.Detail);
+
+        await CleanupDockerResources("container", "ls -a --filter name=sdvd-server-test- --filter name=sdvd-steam-auth-test- -q", "rm -f");
+        await CleanupDockerResources("network", "network ls --filter name=sdvd-test- -q", "network rm");
+        await CleanupDockerResources("volume", "volume ls --filter name=sdvd-test-saves- -q", "volume rm");
+    }
+
+    private static async Task CleanupDockerResources(string resourceType, string listArgs, string removeCmd)
+    {
+        try
+        {
+            var listProc = Process.Start(new ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = listArgs,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            if (listProc == null) return;
+
+            var output = await listProc.StandardOutput.ReadToEndAsync();
+            await listProc.WaitForExitAsync();
+
+            var ids = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (ids.Length == 0) return;
+
+            Log($"Found {ids.Length} stale test {resourceType}(s), removing...", LogLevel.Warn);
+
+            var rmProc = Process.Start(new ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = $"{removeCmd} {string.Join(' ', ids)}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            if (rmProc != null)
+            {
+                await rmProc.WaitForExitAsync();
+                Log($"Removed stale test {resourceType}(s)", LogLevel.Detail);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Error cleaning stale {resourceType}s: {ex.Message}", LogLevel.Error);
+        }
+    }
+
+    /// <summary>
+    /// Build local Docker images, equivalent to running `make build` + building the steam-service image.
+    /// This ensures the test always runs against the latest code, just like `make up` does.
+    /// Set SDVD_SKIP_BUILD=true to skip this step when iterating on tests.
+    /// </summary>
+    private async Task BuildLocalImages()
+    {
+        Log("Building local Docker images", LogLevel.Header);
+
+        // Build server image (equivalent to `make build`)
+        await RunBuildCommand(
+            "make", "build",
+            ServerRepoDir,
+            "server image (make build)",
+            TimeSpan.FromMinutes(10));
+
+        // Build steam-service image (equivalent to `docker compose build steam-auth`)
+        await RunBuildCommand(
+            "docker", $"compose build steam-auth",
+            ServerRepoDir,
+            "steam-service image",
+            TimeSpan.FromMinutes(5));
+
+        Log("Local Docker images built", LogLevel.Success);
+    }
+
+    private async Task RunBuildCommand(string command, string arguments, string workingDirectory, string description, TimeSpan timeout)
+    {
+        Log($"Building {description}...", LogLevel.Detail);
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = command,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{command} {arguments}'");
+
+        // Stream output to console (dim so it doesn't dominate)
+        var stdoutTask = Task.Run(async () => {
+            while (await process.StandardOutput.ReadLineAsync() is { } line)
+            {
+                Console.WriteLine($"{Dim}  [Build] {line}{Reset}");
+            }
+        });
+
+        var stderrTask = Task.Run(async () => {
+            while (await process.StandardError.ReadLineAsync() is { } line)
+            {
+                Console.WriteLine($"{Dim}  [Build] {line}{Reset}");
+            }
+        });
+
+        using var cts = new CancellationTokenSource(timeout);
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException($"Building {description} timed out after {timeout.TotalMinutes:0} minutes");
+        }
+
+        await Task.WhenAll(stdoutTask, stderrTask);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Building {description} failed with exit code {process.ExitCode}. " +
+                $"Check build output above for details.");
+        }
+
+        Log($"{description} built", LogLevel.Success);
     }
 
     private async Task StartServerContainers()
     {
-        Console.WriteLine("[IntegrationTestFixture] Starting server containers...");
-        Console.WriteLine($"[IntegrationTestFixture] Using image tag: {ImageTag} (local images: {UseLocalImages})");
-        Console.WriteLine($"[IntegrationTestFixture] Server repo dir: {ServerRepoDir}");
+        Log("Starting server containers", LogLevel.Header);
+        Log($"Image tag: {ImageTag} (local: {UseLocalImages})", LogLevel.Detail);
+
+        // Clean up stale resources from previous test runs that may have crashed
+        await CleanupStaleTestResources();
+
+        // Build local images automatically (like `make up` does)
+        if (UseLocalImages && !SkipBuild)
+        {
+            await BuildLocalImages();
+        }
+        else if (SkipBuild)
+        {
+            Log("Skipping image build (SDVD_SKIP_BUILD=true)", LogLevel.Detail);
+        }
 
         // Load environment variables from .env file if it exists
         var envFilePath = FindEnvFile();
@@ -117,9 +399,9 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         if (!hasSteamCreds)
         {
-            Console.WriteLine("[IntegrationTestFixture] WARNING: No Steam credentials found in .env file!");
-            Console.WriteLine("[IntegrationTestFixture] Steam-auth container may fail to authenticate.");
-            Console.WriteLine("[IntegrationTestFixture] Set STEAM_REFRESH_TOKEN or STEAM_USERNAME/STEAM_PASSWORD in .env");
+            Log("No Steam credentials found in .env file!", LogLevel.Warn);
+            Log("Steam-auth container may fail to authenticate", LogLevel.Warn);
+            Log("Set STEAM_REFRESH_TOKEN or STEAM_USERNAME/STEAM_PASSWORD in .env", LogLevel.Warn);
         }
 
         // Create a network for the containers
@@ -129,7 +411,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             .Build();
 
         await _network.CreateAsync();
-        Console.WriteLine($"[IntegrationTestFixture] Created network: {networkName}");
+        Log($"Created network: {networkName}", LogLevel.Detail);
 
         // Build steam-auth container
         // Mount existing Docker volumes to reuse downloaded game files and Steam session
@@ -140,9 +422,9 @@ public class IntegrationTestFixture : IAsyncLifetime
         var testRunId = Guid.NewGuid().ToString("N")[..8];
         var testSavesVolume = $"sdvd-test-saves-{testRunId}";
 
-        Console.WriteLine($"[IntegrationTestFixture] Using volume prefix: {volumePrefix}");
-        Console.WriteLine($"[IntegrationTestFixture] Using fresh saves volume: {testSavesVolume}");
-        Console.WriteLine($"[IntegrationTestFixture] Reusing volumes: {volumePrefix}_steam-session, {volumePrefix}_game-data");
+        Log($"Volume prefix: {volumePrefix}", LogLevel.Detail);
+        Log($"Fresh saves volume: {testSavesVolume}", LogLevel.Detail);
+        Log($"Reusing volumes: {volumePrefix}_steam-session, {volumePrefix}_game-data", LogLevel.Detail);
 
         var steamAuthBuilder = new ContainerBuilder()
             .WithImage($"sdvd/steam-service:{ImageTag}")
@@ -154,12 +436,12 @@ public class IntegrationTestFixture : IAsyncLifetime
             // Mount existing volumes for game data and steam session
             .WithVolumeMount($"{volumePrefix}_steam-session", "/data/steam-session")
             .WithVolumeMount($"{volumePrefix}_game-data", "/data/game")
-            .WithEnvironment("PORT", "3001")
+            .WithEnvironment("PORT", SteamAuthPort.ToString())
             .WithEnvironment("GAME_DIR", "/data/game")
             .WithEnvironment("SESSION_DIR", "/data/steam-session")
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r
-                    .ForPort(3001)
+                    .ForPort(SteamAuthPort)
                     .ForPath("/health")
                     .ForStatusCode(System.Net.HttpStatusCode.OK)));
 
@@ -173,14 +455,14 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         _steamAuthContainer = steamAuthBuilder.Build();
 
-        Console.WriteLine("[IntegrationTestFixture] Starting steam-auth container...");
+        Log("Starting steam-auth container...");
         try
         {
             // Use a CancellationToken with timeout for container startup
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             await _steamAuthContainer.StartAsync(cts.Token);
-            var steamAuthMappedPort = _steamAuthContainer.GetMappedPublicPort(3001);
-            Console.WriteLine($"[IntegrationTestFixture] Steam-auth container started on port {steamAuthMappedPort}");
+            var steamAuthMappedPort = _steamAuthContainer.GetMappedPublicPort(SteamAuthPort);
+            Log($"Steam-auth ready on port {steamAuthMappedPort}", LogLevel.Success);
         }
         catch (OperationCanceledException)
         {
@@ -202,17 +484,17 @@ public class IntegrationTestFixture : IAsyncLifetime
             .WithName($"sdvd-server-test-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithPortBinding(ServerApiPort, true)
+            .WithPortBinding(VncPort, true)
             // Mount game data (existing) and fresh saves volume
             .WithVolumeMount($"{volumePrefix}_game-data", "/data/game")
             .WithVolumeMount(testSavesVolume, "/config/xdg/config/StardewValley")
-            .WithEnvironment("STEAM_AUTH_URL", "http://steam-auth:3001")
+            .WithEnvironment("STEAM_AUTH_URL", $"http://steam-auth:{SteamAuthPort}")
             .WithEnvironment("API_ENABLED", "true")
             .WithEnvironment("API_PORT", ServerApiPort.ToString())
             .WithEnvironment("DISABLE_RENDERING", "true")
-            .WithEnvironment("ALLOW_IP_CONNECTIONS", "true")
+            .WithEnvironment("ALLOW_IP_CONNECTIONS", "false")
             // SYS_TIME capability for GOG Galaxy auth
-            .WithCreateParameterModifier(p =>
-            {
+            .WithCreateParameterModifier(p => {
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
             })
@@ -228,14 +510,14 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         _serverContainer = serverBuilder.Build();
 
-        Console.WriteLine("[IntegrationTestFixture] Starting server container...");
+        Log("Starting server container...");
         await _serverContainer.StartAsync();
 
         ServerPort = _serverContainer.GetMappedPublicPort(ServerApiPort);
-        Console.WriteLine($"[IntegrationTestFixture] Server container started on port {ServerPort}");
+        ServerVncPort = _serverContainer.GetMappedPublicPort(VncPort);
 
         // Wait for server to be fully ready (with invite code)
-        Console.WriteLine("[IntegrationTestFixture] Waiting for server to have valid invite code...");
+        Log("Waiting for server to produce a valid invite code...");
         var serverApi = new ServerApiClient($"http://localhost:{ServerPort}");
         var status = await serverApi.WaitForServerOnline(
             TimeSpan.FromSeconds(ServerReadyTimeoutSeconds),
@@ -251,18 +533,19 @@ public class IntegrationTestFixture : IAsyncLifetime
                 $"Logs:\n{logs.Stdout}\n\nErrors:\n{logs.Stderr}");
         }
 
-        Console.WriteLine($"[IntegrationTestFixture] Server ready with invite code: {status.InviteCode}");
+        InviteCode = status.InviteCode;
+        Log($"Server ready (invite code: {InviteCode})", LogLevel.Success);
     }
 
     private async Task StartGameClient()
     {
-        Console.WriteLine("[IntegrationTestFixture] Starting game test client...");
+        Log("Starting game test client", LogLevel.Header);
 
         // Use file-based logging to avoid pipe buffer deadlocks when debugging.
         // When hitting a breakpoint, pipe readers pause, the buffer fills, and the
         // game process blocks on writes - causing "Not Responding". Files don't block.
         _gameLogFile = Path.Combine(Path.GetTempPath(), $"sdvd-test-client-{Guid.NewGuid():N}.log");
-        Console.WriteLine($"[IntegrationTestFixture] Game client log file: {_gameLogFile}");
+        Log($"Game log file: {_gameLogFile}", LogLevel.Detail);
 
         // Start process with output redirected to file via cmd shell
         var startInfo = new ProcessStartInfo
@@ -283,14 +566,14 @@ public class IntegrationTestFixture : IAsyncLifetime
         _logTailCts = new CancellationTokenSource();
         _logTailTask = Task.Run(() => TailLogFile(_gameLogFile, _logTailCts.Token));
 
-        Console.WriteLine("[IntegrationTestFixture] Waiting for game client to be ready...");
+        Log("Waiting for game client to be ready...");
 
         var deadline = DateTime.UtcNow.AddSeconds(GameReadyTimeoutSeconds);
         while (DateTime.UtcNow < deadline)
         {
             if (await IsGameClientResponding())
             {
-                Console.WriteLine("[IntegrationTestFixture] Game client is ready!");
+                Log("Game client is ready", LogLevel.Success);
                 return;
             }
             await Task.Delay(2000);
@@ -329,7 +612,7 @@ public class IntegrationTestFixture : IAsyncLifetime
                     if (cleanedLine.Length > 0)
                     {
                         _outputLog.AppendLine(cleanedLine);
-                        Console.WriteLine($"[TestClient] {cleanedLine}");
+                        Console.WriteLine($"{Dim}  [Game] {Reset}{cleanedLine}");
                     }
                 }
                 else
@@ -341,13 +624,13 @@ public class IntegrationTestFixture : IAsyncLifetime
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Console.WriteLine($"[IntegrationTestFixture] Log tail error: {ex.Message}");
+            Log($"Log tail error: {ex.Message}", LogLevel.Error);
         }
     }
 
     public async Task DisposeAsync()
     {
-        Console.WriteLine("[IntegrationTestFixture] Cleaning up integration test environment...");
+        Log("Cleaning up", LogLevel.Header);
 
         // Stop game client (only if we started it) - always try even if exceptions occur
         if (!_usingExistingGameClient)
@@ -358,7 +641,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IntegrationTestFixture] Error in StopGameClient: {ex.Message}");
+                Log($"Error in StopGameClient: {ex.Message}", LogLevel.Error);
                 // Still try to kill processes as last resort
                 try { await KillGameProcesses(); } catch { }
             }
@@ -367,81 +650,126 @@ public class IntegrationTestFixture : IAsyncLifetime
         // Stop server containers (only if we started them)
         if (!_usingExistingServer)
         {
-            if (_serverContainer != null)
-            {
-                try
-                {
-                    Console.WriteLine("[IntegrationTestFixture] Stopping server container...");
-                    await _serverContainer.StopAsync();
-                    await _serverContainer.DisposeAsync();
-                    Console.WriteLine("[IntegrationTestFixture] Server container stopped");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IntegrationTestFixture] Error stopping server container: {ex.Message}");
-                }
-            }
-
-            if (_steamAuthContainer != null)
-            {
-                try
-                {
-                    Console.WriteLine("[IntegrationTestFixture] Stopping steam-auth container...");
-                    await _steamAuthContainer.StopAsync();
-                    await _steamAuthContainer.DisposeAsync();
-                    Console.WriteLine("[IntegrationTestFixture] Steam-auth container stopped");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IntegrationTestFixture] Error stopping steam-auth container: {ex.Message}");
-                }
-            }
+            // Dispose containers — DisposeAsync handles stop + remove.
+            // If that fails, fall back to docker rm -f.
+            await DisposeContainerSafely(_serverContainer, "server");
+            await DisposeContainerSafely(_steamAuthContainer, "steam-auth");
 
             if (_network != null)
             {
                 try
                 {
-                    Console.WriteLine("[IntegrationTestFixture] Removing test network...");
-                    await _network.DeleteAsync();
+                    Log("Removing test network...", LogLevel.Detail);
                     await _network.DisposeAsync();
-                    Console.WriteLine("[IntegrationTestFixture] Test network removed");
+                    Log("Test network removed", LogLevel.Detail);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[IntegrationTestFixture] Error removing network: {ex.Message}");
+                    Log($"Error removing network: {ex.Message}", LogLevel.Error);
                 }
             }
 
             // Clean up test saves volume
-            if (!string.IsNullOrEmpty(_testSavesVolume))
-            {
-                try
-                {
-                    Console.WriteLine($"[IntegrationTestFixture] Removing test saves volume: {_testSavesVolume}");
-                    var removeVolume = new ProcessStartInfo
-                    {
-                        FileName = "docker",
-                        Arguments = $"volume rm {_testSavesVolume}",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true
-                    };
-                    using var proc = Process.Start(removeVolume);
-                    if (proc != null)
-                    {
-                        await proc.WaitForExitAsync();
-                        Console.WriteLine("[IntegrationTestFixture] Test saves volume removed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IntegrationTestFixture] Error removing saves volume: {ex.Message}");
-                }
-            }
+            await RemoveDockerVolume(_testSavesVolume);
         }
 
-        Console.WriteLine("[IntegrationTestFixture] Cleanup complete");
+        Log("Cleanup complete", LogLevel.Success);
+    }
+
+    /// <summary>
+    /// Dispose a container safely with a docker rm -f fallback.
+    /// Testcontainers' DisposeAsync handles stop + remove in one call.
+    /// If that fails for any reason, we force-remove via Docker CLI.
+    /// </summary>
+    private static async Task DisposeContainerSafely(IContainer? container, string label)
+    {
+        if (container == null) return;
+
+        string? containerName = null;
+        try
+        {
+            containerName = container.Name;
+        }
+        catch
+        {
+            // Container may not have been created yet
+        }
+
+        try
+        {
+            Log($"Disposing {label} container...", LogLevel.Detail);
+            await container.DisposeAsync();
+            Log($"{label} container disposed", LogLevel.Detail);
+        }
+        catch (Exception ex)
+        {
+            Log($"Error disposing {label} container: {ex.Message}", LogLevel.Error);
+
+            // Fallback: force-remove via Docker CLI
+            if (containerName != null)
+            {
+                await ForceRemoveContainer(containerName, label);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Force-remove a container by name using the Docker CLI.
+    /// </summary>
+    private static async Task ForceRemoveContainer(string containerName, string label)
+    {
+        try
+        {
+            Log($"Force-removing {label} container: {containerName}", LogLevel.Warn);
+            var proc = Process.Start(new ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = $"rm -f {containerName}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            if (proc != null)
+            {
+                await proc.WaitForExitAsync();
+                Log($"Force-removed {label} container (exit code {proc.ExitCode})", LogLevel.Detail);
+            }
+        }
+        catch (Exception ex2)
+        {
+            Log($"Force-remove also failed for {label}: {ex2.Message}", LogLevel.Error);
+        }
+    }
+
+    /// <summary>
+    /// Remove a Docker volume by name, ignoring errors.
+    /// </summary>
+    private static async Task RemoveDockerVolume(string? volumeName)
+    {
+        if (string.IsNullOrEmpty(volumeName)) return;
+        try
+        {
+            Log($"Removing volume: {volumeName}", LogLevel.Detail);
+            var proc = Process.Start(new ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = $"volume rm {volumeName}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            if (proc != null)
+            {
+                await proc.WaitForExitAsync();
+                Log($"Volume {volumeName} removed", LogLevel.Detail);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Error removing volume {volumeName}: {ex.Message}", LogLevel.Error);
+        }
     }
 
     private async Task<bool> IsServerResponding(ServerApiClient client)
@@ -476,7 +804,7 @@ public class IntegrationTestFixture : IAsyncLifetime
     /// </summary>
     private async Task StopGameClient()
     {
-        Console.WriteLine("[IntegrationTestFixture] Stopping game client...");
+        Log("Stopping game client...", LogLevel.Detail);
 
         // Stop the log tail task first
         if (_logTailCts != null)
@@ -491,11 +819,11 @@ public class IntegrationTestFixture : IAsyncLifetime
             }
             catch (TimeoutException)
             {
-                Console.WriteLine("[IntegrationTestFixture] Log tail task didn't stop in time");
+                Log("Log tail task didn't stop in time", LogLevel.Warn);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IntegrationTestFixture] Error stopping log tail: {ex.Message}");
+                Log($"Error stopping log tail: {ex.Message}", LogLevel.Error);
             }
             finally
             {
@@ -510,37 +838,70 @@ public class IntegrationTestFixture : IAsyncLifetime
         // Strategy 2: If make stop failed or timed out, kill processes directly
         if (!stopped)
         {
-            Console.WriteLine("[IntegrationTestFixture] make stop failed, killing processes directly...");
+            Log("make stop failed, killing processes directly...", LogLevel.Warn);
             await KillGameProcesses();
         }
 
-        // Strategy 3: Verify the game is actually stopped
-        await Task.Delay(1000);
-        if (await IsGameClientResponding())
-        {
-            Console.WriteLine("[IntegrationTestFixture] Game still responding, force killing...");
-            await KillGameProcesses();
-        }
-
-        // Clean up log file
-        if (!string.IsNullOrEmpty(_gameLogFile))
+        // Strategy 3: Kill the launcher process (cmd.exe) that may hold the log file
+        if (_gameProcess != null)
         {
             try
             {
-                if (File.Exists(_gameLogFile))
+                if (!_gameProcess.HasExited)
                 {
-                    File.Delete(_gameLogFile);
-                    Console.WriteLine($"[IntegrationTestFixture] Deleted log file: {_gameLogFile}");
+                    Log("Killing launcher process...", LogLevel.Detail);
+                    _gameProcess.Kill(entireProcessTree: true);
+                    await _gameProcess.WaitForExitAsync();
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IntegrationTestFixture] Error deleting log file: {ex.Message}");
+                Log($"Error killing launcher: {ex.Message}", LogLevel.Error);
+            }
+            finally
+            {
+                _gameProcess.Dispose();
+                _gameProcess = null;
+            }
+        }
+
+        // Strategy 4: Verify the game is actually stopped
+        await Task.Delay(1000);
+        if (await IsGameClientResponding())
+        {
+            Log("Game still responding after stop, force killing...", LogLevel.Warn);
+            await KillGameProcesses();
+        }
+
+        // Clean up log file (retry with delay — file handles may take a moment to release)
+        if (!string.IsNullOrEmpty(_gameLogFile))
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(_gameLogFile))
+                    {
+                        File.Delete(_gameLogFile);
+                        Log($"Deleted log file: {_gameLogFile}", LogLevel.Detail);
+                    }
+                    break;
+                }
+                catch (IOException) when (attempt < 2)
+                {
+                    Log("Log file still locked, retrying in 1s...", LogLevel.Detail);
+                    await Task.Delay(1000);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Error deleting log file: {ex.Message}", LogLevel.Error);
+                    break;
+                }
             }
             _gameLogFile = null;
         }
 
-        Console.WriteLine("[IntegrationTestFixture] Game client stopped");
+        Log("Game client stopped", LogLevel.Detail);
     }
 
     private async Task<bool> TryMakeStop()
@@ -570,14 +931,14 @@ public class IntegrationTestFixture : IAsyncLifetime
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("[IntegrationTestFixture] make stop timed out");
+                Log("make stop timed out", LogLevel.Warn);
                 try { stopProcess.Kill(); } catch { }
                 return false;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[IntegrationTestFixture] make stop error: {ex.Message}");
+            Log($"make stop error: {ex.Message}", LogLevel.Error);
             return false;
         }
     }
@@ -595,13 +956,13 @@ public class IntegrationTestFixture : IAsyncLifetime
                 {
                     try
                     {
-                        Console.WriteLine($"[IntegrationTestFixture] Killing process: {proc.ProcessName} (PID: {proc.Id})");
+                        Log($"Killing process: {proc.ProcessName} (PID: {proc.Id})", LogLevel.Detail);
                         proc.Kill(entireProcessTree: true);
                         await proc.WaitForExitAsync();
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[IntegrationTestFixture] Failed to kill {proc.ProcessName}: {ex.Message}");
+                        Log($"Failed to kill {proc.ProcessName}: {ex.Message}", LogLevel.Error);
                     }
                     finally
                     {
@@ -611,7 +972,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IntegrationTestFixture] Error finding processes '{name}': {ex.Message}");
+                Log($"Error finding processes '{name}': {ex.Message}", LogLevel.Error);
             }
         }
     }
@@ -665,11 +1026,11 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         if (path == null || !File.Exists(path))
         {
-            Console.WriteLine($"[IntegrationTestFixture] No .env file found");
+            Log("No .env file found", LogLevel.Detail);
             return result;
         }
 
-        Console.WriteLine($"[IntegrationTestFixture] Loading environment from {path}");
+        Log($"Loading environment from {path}", LogLevel.Detail);
 
         foreach (var line in File.ReadAllLines(path))
         {
@@ -700,7 +1061,10 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     private static string CleanLine(string? input)
     {
-        if (string.IsNullOrEmpty(input)) return "";
+        if (string.IsNullOrEmpty(input))
+        {
+            return "";
+        }
 
         // Remove ANSI escape sequences
         var result = Regex.Replace(input, @"\x1B\[[0-9;]*[a-zA-Z]", "");

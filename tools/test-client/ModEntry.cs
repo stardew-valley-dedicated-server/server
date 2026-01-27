@@ -20,6 +20,7 @@ public class ModEntry : Mod
     private CoopController? _coopController;
     private ChatController? _chatController;
     private CharacterController? _characterController;
+    private ActionsController? _actionsController;
 
     // Tweaks
     private ConvenienceTweaks? _tweaks;
@@ -41,6 +42,7 @@ public class ModEntry : Mod
         _coopController = new CoopController(helper, Monitor);
         _chatController = new ChatController(Monitor);
         _characterController = new CharacterController(Monitor);
+        _actionsController = new ActionsController(Monitor);
 
         // Tweaks
         _tweaks = new ConvenienceTweaks(helper, Monitor);
@@ -105,6 +107,7 @@ public class ModEntry : Mod
         RegisterCoopEndpoints();
         RegisterCharacterEndpoints();
         RegisterChatEndpoints();
+        RegisterActionEndpoints();
         RegisterWaitEndpoints();
         RegisterDiagnosticsEndpoints();
     }
@@ -332,6 +335,13 @@ public class ModEntry : Mod
             });
             return result;
         });
+    }
+
+    private void RegisterActionEndpoints()
+    {
+        // POST /actions/sleep - Make the player go to sleep
+        _server!.Post("actions/sleep", _ =>
+            ExecuteOnGameThread(() => _actionsController!.GoToSleep()));
     }
 
     private void RegisterWaitEndpoints()

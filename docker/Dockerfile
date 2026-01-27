@@ -154,6 +154,7 @@ RUN apt-get update && apt-get install -y \
     exa \
     htop \
     nano \
+    scrot \
     tcpdump \
     # TigerVNC
     tigervnc-standalone-server \
