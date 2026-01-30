@@ -1,10 +1,15 @@
+using JunimoServer.Services.CabinManager;
+using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.ServerOptim;
+using JunimoServer.Services.Settings;
 using JunimoServer.Util;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Buildings;
+using StardewValley.Locations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -191,6 +196,102 @@ namespace JunimoServer.Services.Api
         public string? Error { get; set; }
     }
 
+    /// <summary>
+    /// Current server settings (from server-settings.json).
+    /// </summary>
+    public class SettingsResponse
+    {
+        /// <summary>Game creation settings (immutable after game created).</summary>
+        public GameSettingsInfo Game { get; set; } = new();
+
+        /// <summary>Server runtime settings (applied on every startup).</summary>
+        public ServerRuntimeSettingsInfo Server { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Game creation settings.
+    /// </summary>
+    public class GameSettingsInfo
+    {
+        /// <summary>Farm name.</summary>
+        public string FarmName { get; set; } = "";
+
+        /// <summary>Farm type ID (0=Standard, 1=Riverland, 2=Forest, 3=Hilltop, 4=Wilderness, 5=Four Corners, 6=Beach, 7=Meadowlands).</summary>
+        public int FarmType { get; set; }
+
+        /// <summary>Profit margin multiplier (1.0 = normal).</summary>
+        public float ProfitMargin { get; set; }
+
+        /// <summary>Number of starting cabins.</summary>
+        public int StartingCabins { get; set; }
+
+        /// <summary>Spawn monsters at night: "true", "false", or "auto".</summary>
+        public string SpawnMonstersAtNight { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Server runtime settings.
+    /// </summary>
+    public class ServerRuntimeSettingsInfo
+    {
+        /// <summary>Maximum number of players allowed.</summary>
+        public int MaxPlayers { get; set; }
+
+        /// <summary>Cabin strategy: CabinStack, FarmhouseStack, or None.</summary>
+        public string CabinStrategy { get; set; } = "";
+
+        /// <summary>Whether each player has a separate wallet.</summary>
+        public bool SeparateWallets { get; set; }
+
+        /// <summary>How to handle existing visible cabins: KeepExisting or MoveToStack.</summary>
+        public string ExistingCabinBehavior { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Cabin state snapshot.
+    /// </summary>
+    public class CabinsResponse
+    {
+        /// <summary>Active cabin strategy.</summary>
+        public string Strategy { get; set; } = "";
+
+        /// <summary>Total number of cabins on the farm.</summary>
+        public int TotalCount { get; set; }
+
+        /// <summary>Number of cabins assigned to players.</summary>
+        public int AssignedCount { get; set; }
+
+        /// <summary>Number of cabins available for new players.</summary>
+        public int AvailableCount { get; set; }
+
+        /// <summary>Individual cabin details.</summary>
+        public List<CabinInfo> Cabins { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Information about a single cabin.
+    /// </summary>
+    public class CabinInfo
+    {
+        /// <summary>Tile X position on the farm.</summary>
+        public int TileX { get; set; }
+
+        /// <summary>Tile Y position on the farm.</summary>
+        public int TileY { get; set; }
+
+        /// <summary>Whether the cabin is at the hidden out-of-bounds location.</summary>
+        public bool IsHidden { get; set; }
+
+        /// <summary>Owner's multiplayer ID (0 if unassigned).</summary>
+        public long OwnerId { get; set; }
+
+        /// <summary>Owner's display name (empty if unassigned).</summary>
+        public string OwnerName { get; set; } = "";
+
+        /// <summary>Whether the cabin has an assigned owner.</summary>
+        public bool IsAssigned { get; set; }
+    }
+
     #endregion
 
     /// <summary>
@@ -204,14 +305,21 @@ namespace JunimoServer.Services.Api
         private bool _isRunning;
         private string? _openApiSpec;
 
+        private readonly ServerSettingsLoader _settings;
+        private readonly PersistentOptions _persistentOptions;
+        private readonly CabinManagerService _cabinManager;
+
         private static readonly JsonSerializerSettings JsonSettings = new()
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
             NullValueHandling = NullValueHandling.Ignore
         };
 
-        public ApiService(IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public ApiService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, PersistentOptions persistentOptions, CabinManagerService cabinManager) : base(helper, monitor)
         {
+            _settings = settings;
+            _persistentOptions = persistentOptions;
+            _cabinManager = cabinManager;
         }
 
         public override void Entry()
@@ -256,23 +364,7 @@ namespace JunimoServer.Services.Api
 
                 _isRunning = true;
 
-                Monitor.Log("*******************************************************************", LogLevel.Info);
-                Monitor.Log("*                                                                 *", LogLevel.Info);
-                Monitor.Log($"*    API server listening on port {Env.ApiPort,-33}*", LogLevel.Info);
-                Monitor.Log("*                                                                 *", LogLevel.Info);
-                Monitor.Log("*    GET    /status              Server status and game state      *", LogLevel.Info);
-                Monitor.Log("*    GET    /players             Connected players list            *", LogLevel.Info);
-                Monitor.Log("*    GET    /invite-code         Current invite code               *", LogLevel.Info);
-                Monitor.Log("*    GET    /farmhands           List all farmhand slots           *", LogLevel.Info);
-                Monitor.Log("*    DELETE /farmhands?name=X    Delete farmhand by name           *", LogLevel.Info);
-                Monitor.Log("*    GET    /rendering           Current rendering status          *", LogLevel.Info);
-                Monitor.Log("*    POST   /rendering?enabled=  Toggle rendering                  *", LogLevel.Info);
-                Monitor.Log("*    POST   /time?value=         Set game time of day              *", LogLevel.Info);
-                Monitor.Log("*    GET    /health              Health check                      *", LogLevel.Info);
-                Monitor.Log("*                                                                 *", LogLevel.Info);
-                Monitor.Log($"*    Docs: {"http://localhost:" + Env.ApiPort + "/docs",-55}*", LogLevel.Info);
-                Monitor.Log("*                                                                 *", LogLevel.Info);
-                Monitor.Log("*******************************************************************", LogLevel.Info);
+                Monitor.Log($"API server listening on port {Env.ApiPort} (docs: http://localhost:{Env.ApiPort}/docs)", LogLevel.Info);
             }
             catch (Exception ex)
             {
@@ -334,6 +426,12 @@ namespace JunimoServer.Services.Api
                             break;
                         case "/health":
                             await WriteJsonAsync(response, HandleGetHealth());
+                            break;
+                        case "/settings":
+                            await WriteJsonAsync(response, HandleGetSettings());
+                            break;
+                        case "/cabins":
+                            await WriteJsonAsync(response, HandleGetCabins());
                             break;
                         case "/rendering":
                             await WriteJsonAsync(response, HandleGetRendering());
@@ -569,6 +667,80 @@ namespace JunimoServer.Services.Api
             return new FarmhandsResponse { Farmhands = farmhands };
         }
 
+        [ApiEndpoint("GET", "/settings", Summary = "Get server settings", Tag = "Settings")]
+        [ApiResponse(typeof(SettingsResponse), 200, Description = "Current server settings")]
+        private SettingsResponse HandleGetSettings()
+        {
+            var raw = _settings.Raw;
+            return new SettingsResponse
+            {
+                Game = new GameSettingsInfo
+                {
+                    FarmName = raw.Game.FarmName,
+                    FarmType = raw.Game.FarmType,
+                    ProfitMargin = raw.Game.ProfitMargin,
+                    StartingCabins = raw.Game.StartingCabins,
+                    SpawnMonstersAtNight = raw.Game.SpawnMonstersAtNight
+                },
+                Server = new ServerRuntimeSettingsInfo
+                {
+                    MaxPlayers = raw.Server.MaxPlayers,
+                    CabinStrategy = raw.Server.CabinStrategy,
+                    SeparateWallets = raw.Server.SeparateWallets,
+                    ExistingCabinBehavior = raw.Server.ExistingCabinBehavior
+                }
+            };
+        }
+
+        [ApiEndpoint("GET", "/cabins", Summary = "Get cabin state and positions", Tag = "Cabins")]
+        [ApiResponse(typeof(CabinsResponse), 200, Description = "Cabin state snapshot")]
+        private CabinsResponse HandleGetCabins()
+        {
+            var result = new CabinsResponse
+            {
+                Strategy = _persistentOptions.Data.CabinStrategy.ToString()
+            };
+
+            if (Game1.gameMode != 3 || !Game1.IsServer)
+            {
+                return result;
+            }
+
+            try
+            {
+                var farm = Game1.getFarm();
+                var cabinBuildings = farm.buildings.Where(b => b.isCabin).ToList();
+
+                foreach (var building in cabinBuildings)
+                {
+                    var cabin = building.GetIndoors<Cabin>();
+                    var ownerId = cabin?.owner?.UniqueMultiplayerID ?? 0;
+                    var ownerName = cabin?.owner?.Name ?? "";
+                    var isAssigned = ownerId != 0 && cabin?.owner?.isCustomized.Value == true;
+
+                    result.Cabins.Add(new CabinInfo
+                    {
+                        TileX = building.tileX.Value,
+                        TileY = building.tileY.Value,
+                        IsHidden = building.IsInHiddenStack(),
+                        OwnerId = ownerId,
+                        OwnerName = ownerName,
+                        IsAssigned = isAssigned
+                    });
+                }
+
+                result.TotalCount = result.Cabins.Count;
+                result.AssignedCount = result.Cabins.Count(c => c.IsAssigned);
+                result.AvailableCount = result.TotalCount - result.AssignedCount;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Error getting cabin state: {ex}", LogLevel.Warn);
+            }
+
+            return result;
+        }
+
         [ApiEndpoint("GET", "/rendering", Summary = "Get rendering status", Tag = "Server")]
         [ApiResponse(typeof(RenderingStatus), 200, Description = "Current rendering state")]
         private RenderingStatus HandleGetRendering()
@@ -696,9 +868,37 @@ namespace JunimoServer.Services.Api
                     return new FarmhandResponse { Success = false, Error = $"Cannot delete farmhand '{name}' - currently online" };
                 }
 
-                // Remove from farmhandData
                 var farmhandId = targetFarmhand.UniqueMultiplayerID;
-                Game1.netWorldState.Value.farmhandData.Remove(farmhandId);
+
+                // Find and reset the cabin owned by this farmhand
+                var farm = Game1.getFarm();
+                foreach (var building in farm.buildings)
+                {
+                    if (!building.isCabin) continue;
+
+                    var cabin = building.GetIndoors<Cabin>();
+                    if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
+                    {
+                        // Reset the cabin owner to make the slot available again
+                        // This resets isCustomized to false and clears player data
+                        cabin.owner.isCustomized.Value = false;
+                        cabin.owner.Name = "";
+                        cabin.owner.displayName = "";
+                        cabin.owner.userID.Value = "";
+                        Monitor.Log($"Reset cabin owner for farmhand '{name}'", LogLevel.Debug);
+                        break;
+                    }
+                }
+
+                // Remove from cabin manager tracking so the cabin is counted as available
+                if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
+                {
+                    _cabinManager.Data.Write();
+                    Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
+                }
+
+                // NOTE: Do NOT remove from farmhandData - the entry must stay for the slot
+                // to be visible to clients. We've already reset the farmer properties above.
 
                 Monitor.Log($"Deleted farmhand '{name}' (ID: {farmhandId})", LogLevel.Info);
 
