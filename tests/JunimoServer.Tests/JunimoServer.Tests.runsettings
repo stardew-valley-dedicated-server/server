@@ -12,4 +12,12 @@
       </Logger>
     </Loggers>
   </LoggerRunSettings>
+  <!-- xUnit.net configuration -->
+  <xUnit>
+    <!-- Stop running further tests once a test has failed -->
+    <StopOnFail>true</StopOnFail>
+    <!-- Disable parallel test execution for predictable order -->
+    <ParallelizeTestCollections>false</ParallelizeTestCollections>
+    <ParallelizeAssembly>false</ParallelizeAssembly>
+  </xUnit>
 </RunSettings>

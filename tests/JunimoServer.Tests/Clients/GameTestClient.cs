@@ -17,7 +17,7 @@ public class TabParams
     public int Tab { get; set; }
 }
 
-public class JoinInviteParams
+public class InviteCodeParams
 {
     [JsonPropertyName("inviteCode")]
     public string InviteCode { get; set; } = string.Empty;
@@ -41,6 +41,39 @@ public class CustomizeCharacterParams
 #endregion
 
 #region Response DTOs
+
+public class CapturedError
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("timestamp")]
+    public DateTime Timestamp { get; set; }
+
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "";
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = "";
+
+    [JsonPropertyName("stackTrace")]
+    public string? StackTrace { get; set; }
+
+    [JsonPropertyName("exceptionType")]
+    public string? ExceptionType { get; set; }
+
+    public override string ToString() =>
+        $"[{Timestamp:HH:mm:ss}] {Source}: {ExceptionType ?? "Error"} - {Message}";
+}
+
+public class ErrorsResponse
+{
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; set; }
+
+    [JsonPropertyName("errors")]
+    public List<CapturedError> Errors { get; set; } = new();
+}
 
 public class NavigationResult
 {
@@ -187,20 +220,9 @@ public class CoopClient
     /// </summary>
     public Task<NavigationResult?> SubmitInviteCode(string inviteCode)
     {
-        return _client.PostAsync<NavigationResult>("/coop/invite-code/submit", new JoinInviteParams { InviteCode = inviteCode });
+        return _client.PostAsync<NavigationResult>("/coop/invite-code/submit", new InviteCodeParams { InviteCode = inviteCode });
     }
 
-    /// <summary>
-    /// Join a server using an invite code.
-    /// </summary>
-    /// <remarks>
-    /// Deprecated: Use OpenInviteCodeMenu → wait for text input → SubmitInviteCode instead.
-    /// </remarks>
-    [Obsolete("Use OpenInviteCodeMenu + SubmitInviteCode instead.")]
-    public Task<NavigationResult?> JoinInvite(string inviteCode)
-    {
-        return _client.PostAsync<NavigationResult>("/coop/join-invite", new JoinInviteParams { InviteCode = inviteCode });
-    }
 }
 
 public class FarmhandClient
@@ -390,12 +412,22 @@ public class WaitClient
 public class GameTestClient : IDisposable
 {
     private readonly HttpClient _httpClient;
+    private CancellationToken _errorCancellationToken = CancellationToken.None;
 
     public CoopClient Coop { get; }
     public FarmhandClient Farmhands { get; }
     public CharacterClient Character { get; }
     public ActionsClient Actions { get; }
     public WaitClient Wait { get; }
+
+    /// <summary>
+    /// Sets the cancellation token that will abort HTTP calls when a server error is detected.
+    /// This token is provided by IntegrationTestFixture.GetErrorCancellationToken().
+    /// </summary>
+    public void SetErrorCancellationToken(CancellationToken token)
+    {
+        _errorCancellationToken = token;
+    }
 
     public GameTestClient(string baseUrl = "http://localhost:5123", int defaultWaitTimeout = 30000)
     {
@@ -438,31 +470,56 @@ public class GameTestClient : IDisposable
         return GetAsync<MenuInfo>("/menu");
     }
 
+    /// <summary>
+    /// Get captured errors from the game client.
+    /// GET /errors
+    /// </summary>
+    /// <param name="limit">Optional limit on number of errors returned.</param>
+    /// <param name="clear">If true, clears errors after retrieval.</param>
+    public Task<ErrorsResponse?> GetErrors(int? limit = null, bool clear = false)
+    {
+        var query = new List<string>();
+        if (limit.HasValue) query.Add($"limit={limit.Value}");
+        if (clear) query.Add("clear=true");
+
+        var path = query.Count > 0 ? $"/errors?{string.Join("&", query)}" : "/errors";
+        return GetAsync<ErrorsResponse>(path);
+    }
+
+    /// <summary>
+    /// Clear all captured errors.
+    /// POST /errors/clear
+    /// </summary>
+    public Task ClearErrors()
+    {
+        return PostAsync<object>("/errors/clear", new { });
+    }
+
     #region HTTP Helpers
 
     public async Task<T?> GetAsync<T>(string path) where T : class
     {
-        var response = await _httpClient.GetAsync(path);
+        var response = await _httpClient.GetAsync(path, _errorCancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>();
+        return await response.Content.ReadFromJsonAsync<T>(_errorCancellationToken);
     }
 
     public async Task<T?> PostAsync<T>(string path, object body) where T : class
     {
-        var response = await _httpClient.PostAsJsonAsync(path, body);
+        var response = await _httpClient.PostAsJsonAsync(path, body, _errorCancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>();
+        return await response.Content.ReadFromJsonAsync<T>(_errorCancellationToken);
     }
 
     // Keep old methods for backward compatibility with existing tests
     public Task<HttpResponseMessage> Navigate(NavigateParams navigateParams)
     {
-        return _httpClient.PostAsJsonAsync("/navigate", navigateParams);
+        return _httpClient.PostAsJsonAsync("/navigate", navigateParams, _errorCancellationToken);
     }
 
     public Task<HttpResponseMessage> Post(string path, object body)
     {
-        return _httpClient.PostAsJsonAsync(path, body);
+        return _httpClient.PostAsJsonAsync(path, body, _errorCancellationToken);
     }
 
     #endregion

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "trxtoextentreport": {
+      "version": "0.0.4",
+      "commands": [
+        "TrxToExtentReport"
+      ]
+    }
+  }
+}
