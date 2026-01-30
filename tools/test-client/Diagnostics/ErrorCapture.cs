@@ -24,7 +24,7 @@ public class ErrorCapture
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-        _monitor.Log("Error capture started", LogLevel.Debug);
+        _monitor.Log("Error capture started", LogLevel.Trace);
     }
 
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)

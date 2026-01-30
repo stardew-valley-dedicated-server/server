@@ -104,7 +104,7 @@ public class CoopController
             // Activate it - this opens TitleTextInputMenu
             inviteSlot.Activate();
 
-            _monitor.Log("Opened invite code input menu", LogLevel.Debug);
+            _monitor.Log("Opened invite code input menu", LogLevel.Trace);
 
             return new JoinResult
             {
@@ -136,7 +136,7 @@ public class CoopController
             // Set the invite code text
             inputMenu.textBox.Text = inviteCode;
 
-            _monitor.Log($"Submitting invite code: {inviteCode}", LogLevel.Debug);
+            _monitor.Log($"Submitting invite code: {inviteCode}", LogLevel.Trace);
 
             // Submit by calling textBoxEnter (same as pressing Enter or clicking OK)
             inputMenu.textBoxEnter(inputMenu.textBox);
@@ -211,7 +211,7 @@ public class CoopController
             var client = multiplayer.InitClient(new LidgrenClient(address));
             SetMenu(new FarmhandMenu(client));
 
-            _monitor.Log($"Connecting to LAN address: {address}", LogLevel.Debug);
+            _monitor.Log($"Connecting to LAN address: {address}", LogLevel.Trace);
 
             return new JoinResult
             {
@@ -273,7 +273,7 @@ public class CoopController
                         }
                         catch (Exception ex)
                         {
-                            _monitor.Log($"Error reading farmer slot {i}: {ex.Message}", LogLevel.Debug);
+                            _monitor.Log($"Error reading farmer slot {i}: {ex.Message}", LogLevel.Trace);
                             // Slot exists but farmer data couldn't be read
                             slotInfo.Name = "(error reading)";
                         }
@@ -323,7 +323,7 @@ public class CoopController
             var slot = slots[slotIndex];
             slot.Activate();
 
-            _monitor.Log($"Selected farmhand slot {slotIndex}", LogLevel.Debug);
+            _monitor.Log($"Selected farmhand slot {slotIndex}", LogLevel.Trace);
 
             return new JoinResult
             {

@@ -28,7 +28,7 @@ public class HealthWatchdog
     public void Start()
     {
         _helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-        _monitor.Log("Health watchdog started", LogLevel.Debug);
+        _monitor.Log("Health watchdog started", LogLevel.Trace);
     }
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
