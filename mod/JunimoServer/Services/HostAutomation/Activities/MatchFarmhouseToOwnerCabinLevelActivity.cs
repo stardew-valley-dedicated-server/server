@@ -1,3 +1,4 @@
+using JunimoServer.Util;
 using StardewValley;
 using StardewValley.Locations;
 using System.Linq;
@@ -18,13 +19,19 @@ namespace JunimoServer.Services.HostAutomation.Activities
         // Sets host farmer HouseUpgradeLevel to the first player/cabin owner, which it is currently always assumed to be the owner
         private void SyncFarmhouseLevel()
         {
-            var cabin = Game1.getFarm().buildings.FirstOrDefault(building => building.isCabin);
+            var cabin = Game1.getFarm()?.buildings.FirstOrDefault(building => building.isCabin);
             if (cabin == null)
             {
                 return;
             }
 
-            var owner = ((Cabin)cabin.GetIndoors()).owner;
+            var indoors = cabin.GetIndoors<Cabin>();
+            if (indoors?.owner == null)
+            {
+                return;
+            }
+
+            var owner = indoors.owner;
 
             if (owner.HouseUpgradeLevel != Game1.player.HouseUpgradeLevel)
             {

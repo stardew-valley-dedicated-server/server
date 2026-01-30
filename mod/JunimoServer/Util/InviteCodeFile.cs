@@ -1,6 +1,6 @@
+using StardewModdingAPI;
 using System;
 using System.IO;
-using StardewModdingAPI;
 
 namespace JunimoServer.Util
 {
@@ -60,7 +60,7 @@ namespace JunimoServer.Util
         {
             if (!File.Exists(FilePath))
             {
-                monitor.Log($"Failed to read invite code from '{FilePath}': file does not exist (was Write ever called?)", LogLevel.Warn);
+                //monitor.Log($"Failed to read invite code from '{FilePath}': file does not exist (was Write ever called?)", LogLevel.Warn);
                 return null;
             }
 
@@ -70,7 +70,7 @@ namespace JunimoServer.Util
 
                 if (string.IsNullOrEmpty(content))
                 {
-                    monitor.Log($"Failed to read invite code from '{FilePath}': file is empty", LogLevel.Error);
+                    //monitor.Log($"Failed to read invite code from '{FilePath}': file is empty", LogLevel.Error);
                     return null;
                 }
 

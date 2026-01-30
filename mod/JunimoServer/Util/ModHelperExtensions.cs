@@ -74,9 +74,8 @@ namespace JunimoServer.Util
                 return -1;
             }
 
-            var indoors = ((Cabin)building.GetIndoors());
-            var ownerId = indoors.owner.UniqueMultiplayerID;
-            var ownerName = indoors.owner.Name;
+            var indoors = building.GetIndoors() as Cabin;
+            var ownerId = indoors?.owner?.UniqueMultiplayerID ?? -1;
 
             return ownerId;
         }

@@ -6,7 +6,7 @@ using StardewValley;
 using StardewValley.Network;
 using System.Collections.Generic;
 
-namespace JunimoServer.Services.CabinManager
+namespace JunimoServer.Services.Security
 {
     public class SecurityService : ModService
     {
