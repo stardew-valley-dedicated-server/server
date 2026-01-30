@@ -6,6 +6,8 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
+using System.Runtime.ExceptionServices;
+using System.Threading.Tasks;
 
 namespace JunimoTestClient;
 
@@ -198,18 +200,6 @@ public class ModEntry : Mod
             }
 
             return ExecuteOnGameThread(() => _coopController!.SubmitInviteCode(body.InviteCode));
-        });
-
-        // POST /coop/join-invite - Deprecated: use /coop/invite-code/open + /coop/invite-code/submit instead
-        _server.Post("coop/join-invite", req =>
-        {
-            var body = TestApiServer.ReadBody<JoinInviteRequest>(req);
-            if (body == null || string.IsNullOrEmpty(body.InviteCode))
-            {
-                return new JoinResult { Success = false, Error = "Missing 'inviteCode' in request body" };
-            }
-
-            return ExecuteOnGameThread(() => _coopController!.EnterInviteCode(body.InviteCode));
         });
 
         // POST /coop/join-lan - Join via LAN/IP address
@@ -583,10 +573,22 @@ public class ModEntry : Mod
         });
 
         // GET /openapi.json - OpenAPI 3.0 specification
-        _server.GetRaw("openapi.json", _ => (OpenApiGenerator.GenerateJson(), "application/json"));
+        _server.GetRaw("openapi.json", _ => (
+            OpenApiGenerator.GenerateJson(
+                typeof(ApiDefinitions),
+                "JunimoTestClient API",
+                "0.1.0",
+                "HTTP API for automated testing of Stardew Valley client"),
+            "application/json"));
 
         // GET /openapi.yaml - OpenAPI 3.0 specification (YAML)
-        _server.GetRaw("openapi.yaml", _ => (OpenApiGenerator.GenerateYaml(), "application/x-yaml"));
+        _server.GetRaw("openapi.yaml", _ => (
+            OpenApiGenerator.GenerateYaml(
+                typeof(ApiDefinitions),
+                "JunimoTestClient API",
+                "0.1.0",
+                "HTTP API for automated testing of Stardew Valley client"),
+            "application/x-yaml"));
 
         // GET /docs - Scalar API documentation UI
         _server.GetRaw("docs", _ => (GetScalarHtml(), "text/html"));
@@ -783,13 +785,14 @@ public class ModEntry : Mod
 
     private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
     {
-        Monitor.Log("Returned to title screen", LogLevel.Debug);
+        Monitor.Log("Returned to title screen", LogLevel.Trace);
     }
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
-        Monitor.Log($"Save loaded - Farmer: {StardewValley.Game1.player?.Name}", LogLevel.Debug);
+        Monitor.Log($"Save loaded - Farmer: {StardewValley.Game1.player?.Name}", LogLevel.Trace);
     }
+
 
     #endregion
 }

@@ -27,7 +27,7 @@ public class SkipIntro
             var postfix = new HarmonyMethod(typeof(SkipIntro), nameof(TitleMenu_Postfix));
             _harmony.Patch(constructor, postfix: postfix);
 
-            _monitor.Log("Skip intro patch applied", LogLevel.Debug);
+            _monitor.Log("Skip intro patch applied", LogLevel.Trace);
         }
         catch (Exception ex)
         {
