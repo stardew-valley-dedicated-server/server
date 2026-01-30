@@ -3,6 +3,10 @@ using System.Linq;
 
 namespace JunimoServer
 {
+    /// <summary>
+    /// Environment variables for Docker infrastructure, credentials, and internal settings.
+    /// Game configuration has moved to server-settings.json — see Services/Settings/.
+    /// </summary>
     internal class Env
     {
         public static readonly bool EnableModIncompatibleOptimizations =
@@ -63,5 +67,22 @@ namespace JunimoServer
         /// </summary>
         public static readonly int ApiPort =
             Int32.Parse(Environment.GetEnvironmentVariable("API_PORT") ?? "8080");
+
+        /// <summary>
+        /// Override verbose logging setting from environment.
+        /// Returns null if not set (uses config file value).
+        /// Set to "true" or "false" to override.
+        /// </summary>
+        public static readonly bool? VerboseLogging = ParseNullableBool("VERBOSE_LOGGING");
+
+        private static bool? ParseNullableBool(string envVar)
+        {
+            var value = Environment.GetEnvironmentVariable(envVar);
+            if (string.IsNullOrEmpty(value))
+                return null;
+            if (bool.TryParse(value, out var result))
+                return result;
+            return null;
+        }
     }
 }
