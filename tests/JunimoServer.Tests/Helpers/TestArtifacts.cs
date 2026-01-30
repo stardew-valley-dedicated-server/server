@@ -28,7 +28,6 @@ public static class TestArtifacts
             Directory.Delete(ScreenshotsDir, recursive: true);
         }
         Directory.CreateDirectory(ScreenshotsDir);
-        Console.WriteLine($"[TestArtifacts] Screenshots dir: {ScreenshotsDir}");
     }
 
     /// <summary>
