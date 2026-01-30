@@ -159,6 +159,88 @@ The CLI provides a split-pane tmux interface:
 
 You can also run standard SMAPI console commands by typing them in the CLI input pane.
 
+### Server Console Commands
+
+JunimoServer registers the following console commands in the SMAPI console:
+
+#### `info`
+
+Displays server status: farm name, version, uptime, in-game date, player count, invite code, and rendering state.
+
+```
+info
+```
+
+#### `settings`
+
+Server settings and game creation management.
+
+| Command | Description |
+|---------|-------------|
+| `settings show` | Show current configuration from `server-settings.json` |
+| `settings validate` | Run configuration and state validation checks |
+| `settings newgame` | Preview what a new game would look like with current settings |
+| `settings newgame --confirm` | Clear active save so a new game is created on next restart |
+
+#### `cabins`
+
+Cabin status and management.
+
+| Command | Description |
+|---------|-------------|
+| `cabins` | List all cabins with position, owner, and strategy info |
+| `cabins add` | Create a new cabin (hidden or visible depending on strategy) |
+
+#### `saves`
+
+Save file management.
+
+| Command | Description |
+|---------|-------------|
+| `saves` | List available saves (marks the currently active one) |
+| `saves info <name>` | Show details for a specific save (farm type, cabins, players) |
+| `saves select <name>` | Preview what importing a save would do |
+| `saves select <name> --confirm` | Set a save as active (loaded on next restart) |
+
+#### `rendering`
+
+Toggle rendering for performance management.
+
+| Command | Description |
+|---------|-------------|
+| `rendering on` | Enable rendering |
+| `rendering off` | Disable rendering |
+| `rendering toggle` | Toggle rendering state |
+| `rendering status` | Show current rendering state |
+
+### Chat Commands
+
+Players can use chat commands in-game by typing them in the chat box:
+
+| Command | Description |
+|---------|-------------|
+| `!help` | Show available chat commands |
+| `!info` | Show server info (farm, version, uptime, players, ping) |
+| `!invitecode` | Show the current invite code |
+| `!cabin` | Move your cabin to your current position on the farm (clears debris to make space) |
+
+Admin-only chat commands (requires admin role):
+
+| Command | Description |
+|---------|-------------|
+| `!admin <player>` / `!unadmin <player>` | Grant/revoke admin role |
+| `!kick <player>` | Kick a player |
+| `!ban <player>` / `!unban <player>` | Ban/unban a player |
+| `!listadmins` / `!listbans` | List admins or banned players |
+| `!changewallet` | Toggle between shared and separate wallets |
+| `!event` | Start the current festival's event (useful if stuck) |
+
+Owner-only chat commands (requires server owner):
+
+| Command | Description |
+|---------|-------------|
+| `!joja IRREVERSIBLY_ENABLE_JOJA_RUN` | Permanently enable Joja route and disable Community Center |
+
 ## Next Steps
 
 - [Managing Mods](/guide/managing-mods) - Learn how to add SMAPI mods to your server

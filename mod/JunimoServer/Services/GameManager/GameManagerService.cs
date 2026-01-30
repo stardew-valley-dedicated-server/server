@@ -1,5 +1,6 @@
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
+using JunimoServer.Services.Settings;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -12,16 +13,18 @@ namespace JunimoServer.Services.GameManager
     {
         private readonly GameCreatorService _gameCreatorService;
         private readonly GameLoaderService _gameLoaderService;
+        private readonly ServerSettingsLoader _settings;
 
         private bool _titleLaunched = false;
         private bool _gameStarted = false;
         private int _healthCheckTimer = 0;
         private DateTime? _lastNullCodeTime = null;
 
-        public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, ServerSettingsLoader settings, IModHelper helper, IMonitor monitor) : base(helper, monitor)
         {
             _gameCreatorService = gameCreator;
             _gameLoaderService = gameLoader;
+            _settings = settings;
         }
 
         public override void Entry()
@@ -66,11 +69,7 @@ namespace JunimoServer.Services.GameManager
 
             if (Env.ForceNewDebugGame)
             {
-                var config = new NewGameConfig
-                {
-                    WhichFarm = 0,
-                    MaxPlayers = 4,
-                };
+                var config = NewGameConfig.FromSettings(_settings);
                 _gameCreatorService.CreateNewGame(config);
                 return;
             }

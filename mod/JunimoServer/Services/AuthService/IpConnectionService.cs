@@ -1,4 +1,4 @@
-using System;
+using JunimoServer.Services.Settings;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -8,27 +8,20 @@ namespace JunimoServer.Services.Auth
     /// <summary>
     /// Controls whether IP connections are allowed.
     /// Disabled by default because IP connections don't send user IDs needed for farmhand ownership.
-    /// Set ALLOW_IP_CONNECTIONS=true to enable.
+    /// Configure via Server.AllowIpConnections in server-settings.json.
     /// </summary>
     public class IpConnectionService : ModService
     {
         private readonly IModHelper _helper;
-        private readonly bool _allowIpConnections;
+        private readonly ServerSettingsLoader _settings;
 
-        public IpConnectionService(IMonitor monitor, IModHelper helper)
+        public IpConnectionService(IMonitor monitor, IModHelper helper, ServerSettingsLoader settings)
             : base(monitor)
         {
             _helper = helper;
-            _allowIpConnections = GetAllowIpConnectionsSetting();
+            _settings = settings;
 
             _helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
-        }
-
-        private static bool GetAllowIpConnectionsSetting()
-        {
-            var envValue = Environment.GetEnvironmentVariable("ALLOW_IP_CONNECTIONS");
-            return string.Equals(envValue, "true", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(envValue, "1", StringComparison.OrdinalIgnoreCase);
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
@@ -38,17 +31,16 @@ namespace JunimoServer.Services.Auth
 
         private void ApplyIpConnectionSetting()
         {
-            Game1.options.ipConnectionsEnabled = _allowIpConnections;
+            Game1.options.ipConnectionsEnabled = _settings.AllowIpConnections;
 
-            if (_allowIpConnections)
+            if (_settings.AllowIpConnections)
             {
-                Monitor.Log("IP connections enabled (ALLOW_IP_CONNECTIONS=true)", LogLevel.Info);
+                Monitor.Log("IP connections enabled (AllowIpConnections=true)", LogLevel.Info);
                 Monitor.Log("Warning: IP clients don't provide user IDs - farmhand ownership may not work correctly.", LogLevel.Warn);
             }
             else
             {
                 Monitor.Log("IP connections disabled (default). Players must use invite codes to join.", LogLevel.Debug);
-                Monitor.Log("Set ALLOW_IP_CONNECTIONS=true to enable IP-based connections.", LogLevel.Debug);
             }
         }
     }

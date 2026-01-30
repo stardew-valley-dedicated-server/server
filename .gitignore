@@ -33,6 +33,7 @@ logs
 # Build output
 **/.output
 **/bin
+!docker/rootfs/opt/base/bin/
 **/obj
 **/debug
 **/decompiled

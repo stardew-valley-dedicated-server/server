@@ -1,13 +1,13 @@
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
+using JunimoServer.Services.Settings;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
 using System;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -17,46 +17,28 @@ namespace JunimoServer.Services.GameCreator
         private readonly GameLoaderService _gameLoader;
         private static readonly Mutex CreateGameMutex = new Mutex();
         private readonly PersistentOptions _options;
+        private readonly ServerSettingsLoader _settings;
         private readonly IMonitor _monitor;
         private readonly IModHelper _helper;
 
         public bool GameIsCreating { get; private set; }
 
-        public GameCreatorService(IModHelper helper, IMonitor monitor, GameLoaderService gameLoader, CabinManagerService cabinManagerService, PersistentOptions options)
+        public GameCreatorService(IModHelper helper, IMonitor monitor, GameLoaderService gameLoader, CabinManagerService cabinManagerService, PersistentOptions options, ServerSettingsLoader settings)
         {
             _options = options;
+            _settings = settings;
             _gameLoader = gameLoader;
             _monitor = monitor;
             _cabinManagerService = cabinManagerService;
             _helper = helper;
         }
 
-        public async Task<NewGameConfig> GetConfig()
-        {
-            // TODO: Make this configurable again
-            NewGameConfig config = new NewGameConfig()
-            {
-                WhichFarm = 0,
-                UseSeparateWallets = false,
-                StartingCabins = 1,
-                CatPerson = false,
-                FarmName = "Test",
-                MaxPlayers = 10,
-                CabinStrategy = 0,
-            };
-
-            _monitor.Log($"Using config: {config}", LogLevel.Info);
-
-            return await Task.Run(() => { return config; });
-        }
-
         public bool CreateNewGameFromConfig()
         {
             try
             {
-                var configTask = GetConfig();
-                configTask.Wait();
-                var config = configTask.Result;
+                var config = NewGameConfig.FromSettings(_settings);
+                _monitor.Log($"Using config: {config}", LogLevel.Info);
 
                 CreateNewGame(config);
                 return true;
@@ -68,27 +50,37 @@ namespace JunimoServer.Services.GameCreator
             }
         }
 
+        /// <summary>
+        /// These settings are ONLY applied when creating a new game.
+        /// When loading an existing save, the save file contains these values
+        /// and they must not be overwritten.
+        /// </summary>
         public void CreateNewGame(NewGameConfig config)
         {
-            CreateGameMutex.WaitOne(); //prevent trying to start new game while in the middle of creating a game
+            CreateGameMutex.WaitOne();
             GameIsCreating = true;
 
             _options.SetPersistentOptions(new PersistentOptionsSaveData
             {
                 MaxPlayers = config.MaxPlayers,
-                CabinStrategy = (CabinStrategy)config.CabinStrategy
+                CabinStrategy = config.CabinStrategy,
+                ExistingCabinBehavior = _settings.ExistingCabinBehavior,
             });
 
-
             Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
-            // TODO: Should be fine as hardcoded value, cabins are supposed to be built on the fly when players join
-            Game1.startingCabins = 1;
 
-            // Ultimate Farm CP compat
-            var isUltimateFarmModLoaded = _helper.ModRegistry.GetAll().Any(mod => mod.Manifest.Name == "Ultimate Farm CP");
+            // For CabinStack/FarmhouseStack: BuildStartingCabins is patched out, so this value
+            // is unused — we create cabins ourselves at the hidden location.
+            // For None strategy: this controls how many vanilla cabins are placed at
+            // map-designated positions by the unpatched BuildStartingCabins.
+            Game1.startingCabins = config.StartingCabins;
+
+            // Ultimate Farm CP compat: the mod expects whichFarm to be set to Riverland (1)
+            // to correctly apply its custom farm map. Override the user's farm type setting.
+            var isUltimateFarmModLoaded = _helper.ModRegistry.GetAll()
+                .Any(mod => mod.Manifest.Name == "Ultimate Farm CP");
             if (isUltimateFarmModLoaded)
             {
-                // Ultimate Farm CP expects riverland == 1
                 Game1.whichFarm = 1;
             }
             else
@@ -96,13 +88,11 @@ namespace JunimoServer.Services.GameCreator
                 Game1.whichFarm = config.WhichFarm;
             }
 
-            var isWildernessFarm = config.WhichFarm == 4;
-            Game1.spawnMonstersAtNight = isWildernessFarm;
+            // Monster spawning: explicit override or auto-detect from farm type
+            Game1.spawnMonstersAtNight = config.SpawnMonstersAtNight ?? (config.WhichFarm == 4);
 
-            if (config.CatPerson)
-            {
-                Game1.player.whichPetType = "Cat";
-            }
+            // Dedicated server always uses cat as the farm pet
+            Game1.player.whichPetType = "Cat";
 
             Game1.player.Name = "Server";
             Game1.player.displayName = Game1.player.Name;
@@ -112,15 +102,17 @@ namespace JunimoServer.Services.GameCreator
             Game1.player.isCustomized.Value = true;
             Game1.player.ConvertClothingOverrideToClothesItems();
 
-            Game1.multiplayerMode = 2; // multiplayer enabled
+            Game1.multiplayerMode = 2; // Server mode (Game1.IsServer)
 
             // From TitleMenu.createdNewCharacter
             Game1.game1.loadForNewGame();
 
+            // Must be set AFTER loadForNewGame() because it resets difficultyModifier to 1.0
+            Game1.player.difficultyModifier = config.ProfitMargin;
+
             // NOTE: The game has a built-in dedicated host mode (hasDedicatedHost)
             // that activates instant fades, skips end-of-night UI, etc.
             // We deliberately do NOT use it — our mod handles automation independently.
-            // Game1.player.team.hasDedicatedHost.Value = true;
 
             Game1.saveOnNewDay = true;
             Game1.player.eventsSeen.Add("60367");

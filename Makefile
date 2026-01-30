@@ -19,6 +19,9 @@ DOCKERFILE_PATH=docker/Dockerfile
 # Build configuration (Debug for local, Release for CI/production)
 BUILD_CONFIGURATION ?= Debug
 
+# Docker build progress output (plain, tty, auto, quiet)
+DOCKER_PROGRESS ?= plain
+
 # Export IMAGE_VERSION for usage in docker compose commands
 export IMAGE_VERSION
 
@@ -54,7 +57,7 @@ build:
 		--secret id=steam_refresh_token,env=STEAM_REFRESH_TOKEN \
 		-f $(DOCKERFILE_PATH) \
 		--load \
-		--progress=plain \
+		--progress=$(DOCKER_PROGRESS) \
 		.
 	@echo Build complete.
 
@@ -94,10 +97,18 @@ dumplogs:
 # Start docs dev server (extracts OpenAPI spec from Docker image first)
 docs:
 	@echo Extracting OpenAPI spec from $(IMAGE_NAME):$(IMAGE_VERSION) image...
+ifeq ($(OS),Windows_NT)
+	@if not exist docs\assets mkdir docs\assets
+	-@docker rm openapi-extract >NUL 2>&1
+	@docker create --name openapi-extract $(IMAGE_NAME):$(IMAGE_VERSION) >NUL 2>&1
+	@docker cp openapi-extract:/data/openapi.json docs/assets/openapi.json
+	-@docker rm openapi-extract >NUL 2>&1
+else
 	@mkdir -p docs/assets
 	@CONTAINER_ID=$$(docker create $(IMAGE_NAME):$(IMAGE_VERSION)) && \
 		docker cp "$$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json && \
 		docker rm "$$CONTAINER_ID" > /dev/null
+endif
 	@echo OpenAPI spec ready.
 	@npm --prefix ./docs run dev
 
@@ -106,6 +117,12 @@ clean:
 	@echo Cleaning up...
 	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v
 	@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest 2>/dev/null || true
+
+test:
+	@dotnet tool restore
+	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings || true
+	@echo Generating test report...
+	@dotnet TrxToExtentReport -t ./TestResults/TestResults.trx -o ./TestResults/TestReport.html
 
 # Show help
 help:

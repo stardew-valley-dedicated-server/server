@@ -17,13 +17,15 @@ services:
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
+      - settings:/data/settings
     environment:
       # Steam auth service URL (for runtime ticket requests)
       STEAM_AUTH_URL: "http://steam-auth:3001"
       # Server configuration
       VNC_PASSWORD: "${VNC_PASSWORD:-}"
       DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
-      ALLOW_IP_CONNECTIONS: "${ALLOW_IP_CONNECTIONS:-false}"
+      # Game settings file path (auto-created with defaults if missing)
+      SETTINGS_PATH: "/data/settings/server-settings.json"
       # Password protection (leave empty to disable)
       SERVER_PASSWORD: "${SERVER_PASSWORD:-}"
       MAX_LOGIN_ATTEMPTS: "${MAX_LOGIN_ATTEMPTS:-3}"
@@ -84,6 +86,7 @@ volumes:
   steam-session:
   game-data:
   saves:
+  settings:
 
 networks:
   sdvd-net:

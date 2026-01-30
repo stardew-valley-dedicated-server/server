@@ -9,6 +9,7 @@ We use GitHub Actions for automated building, testing, and deployment. This guid
 | [Release Build](#release-pipeline)       | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
 | [Preview Build](#preview-build-pipeline) | Merge feature to `master`              | Builds and publishes preview Docker images          |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual           | Deploys server instances to VPS                     |
+| [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual               | Deletes old preview tags from DockerHub             |
 
 ## Release Build Pipeline
 
@@ -76,6 +77,26 @@ services:
   server:
     image: sdvd/server:preview
 ```
+
+## Cleanup Preview Tags
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/cleanup-preview-tags.yml)
+
+Over time, versioned preview tags (`X.Y.Z-preview.N`) accumulate on DockerHub. This pipeline removes old ones, keeping the 10 most recent per repository (`server`, `steam-service`, `discord-bot`).
+
+The floating `preview`, `latest`, and release `X.Y.Z` tags are never touched.
+
+### When It Runs
+
+- **Weekly** on Monday at 06:00 UTC
+- **Manually** via GitHub Actions "Run workflow" button
+
+### Manual Options
+
+| Input        | Default | Description                                      |
+| ------------ | ------- | ------------------------------------------------ |
+| `keep_count` | `10`    | Number of most recent preview tags to keep        |
+| `dry_run`    | `false` | List tags that would be deleted without deleting  |
 
 ## Deploy Docs Pipeline
 

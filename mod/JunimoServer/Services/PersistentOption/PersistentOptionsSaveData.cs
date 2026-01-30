@@ -8,6 +8,6 @@ namespace JunimoServer.Services.PersistentOption
 
         public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
 
-        public bool IpConnectionsEnabled { get; set; } = false;
+        public ExistingCabinBehavior ExistingCabinBehavior { get; set; } = ExistingCabinBehavior.KeepExisting;
     }
 }
