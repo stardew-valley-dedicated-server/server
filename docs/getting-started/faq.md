@@ -52,12 +52,12 @@ For optimal performance and compatibility, a Linux environment is recommended fo
 
 ### How many players can join?
 
-Stardew Valley officially supports up to 4 players by default. However, with JunimoServer and proper cabin management, you can support more players by adding cabins to your farm.
+Stardew Valley officially supports up to 4 players by default. JunimoServer raises this limit — configure `MaxPlayers` in [`server-settings.json`](/getting-started/configuration#server-runtime-settings) (default: 10). The server automatically creates cabins as players join.
 
-The actual player limit depends on:
+The practical player limit depends on:
 - Your server hardware
 - Network bandwidth
-- Mods installed (some mods increase limits)
+- The `MaxPlayers` setting in your server-settings.json
 
 ### Do players need mods installed?
 

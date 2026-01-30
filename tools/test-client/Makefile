@@ -28,13 +28,13 @@ clean:
 run: deploy
 	@echo "Starting Stardew Valley with SMAPI..."
 	@echo "Test API will be available at http://localhost:$(JUNIMO_TEST_PORT)/"
-	cd "$(GAME_DIR)" && "./StardewModdingAPI.exe"
+	cd "$(GAME_DIR)" && "./StardewModdingAPI.exe" --client
 
 # Run the game with SMAPI (background)
 run-bg: deploy
 	@echo "Starting Stardew Valley with SMAPI in background..."
 	@echo "Test API will be available at http://localhost:$(JUNIMO_TEST_PORT)/"
-	cd "$(GAME_DIR)" && "./StardewModdingAPI.exe" &
+	cd "$(GAME_DIR)" && "./StardewModdingAPI.exe" --client &
 	@echo "Game started. Use 'make stop' to terminate."
 
 # Stop the game (Windows)

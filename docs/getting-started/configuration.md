@@ -1,29 +1,124 @@
 # Configuration
 
-JunimoServer uses environment variables for customization. When running the server with Docker, you can set these variables in your `.env` file at runtime or during the build process.
+JunimoServer uses two configuration mechanisms:
+
+- **`server-settings.json`** — Game and server settings (farm name, cabin strategy, player limit, etc.)
+- **`.env` file** — Docker infrastructure, credentials, and networking
+
+## Game Settings (`server-settings.json`)
+
+Game and server settings are configured via a JSON file. On first startup, the mod auto-creates `server-settings.json` with sensible defaults inside the Docker `settings` volume.
+
+To customize, edit the file directly. When running in Docker, you can access it with:
+
+```sh
+docker compose exec server cat /data/settings/server-settings.json
+```
+
+Or copy it out for editing:
+
+```sh
+docker compose cp server:/data/settings/server-settings.json ./server-settings.json
+# ... edit the file ...
+docker compose cp ./server-settings.json server:/data/settings/server-settings.json
+```
+
+### Default Settings File
+
+```json
+{
+  "Game": {
+    "FarmName": "Junimo",
+    "FarmType": 0,
+    "ProfitMargin": 1.0,
+    "StartingCabins": 1,
+    "SpawnMonstersAtNight": "auto"
+  },
+  "Server": {
+    "MaxPlayers": 10,
+    "CabinStrategy": "CabinStack",
+    "SeparateWallets": false,
+    "ExistingCabinBehavior": "KeepExisting",
+    "VerboseLogging": false,
+    "AllowIpConnections": false
+  }
+}
+```
+
+### Game Creation Settings
+
+These settings only take effect when creating a **new** game. They are ignored when loading an existing save.
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `FarmName` | Farm name displayed in-game | `"Junimo"` |
+| `FarmType` | Farm map type (see table below) | `0` |
+| `ProfitMargin` | Sell price multiplier (`1.0` = normal, `0.75`/`0.5`/`0.25` for harder economy) | `1.0` |
+| `StartingCabins` | Number of cabins created with a new game | `1` |
+| `SpawnMonstersAtNight` | Monster spawning: `"true"`, `"false"`, or `"auto"` (auto = only for Wilderness farm) | `"auto"` |
+
+**Farm Types:**
+
+| Value | Farm Type |
+|-------|-----------|
+| `0` | Standard |
+| `1` | Riverland |
+| `2` | Forest |
+| `3` | Hilltop |
+| `4` | Wilderness |
+| `5` | Four Corners |
+| `6` | Beach |
+| `7` | Meadowlands |
+
+### Server Runtime Settings
+
+These settings are applied on every startup and can be changed between runs.
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `MaxPlayers` | Maximum concurrent players | `10` |
+| `CabinStrategy` | Cabin management strategy (see below) | `"CabinStack"` |
+| `SeparateWallets` | Whether each player has their own wallet | `false` |
+| `ExistingCabinBehavior` | How to handle visible cabins that already exist on the farm (see below) | `"KeepExisting"` |
+| `VerboseLogging` | Enable detailed debug logging for troubleshooting | `false` |
+| `AllowIpConnections` | Allow direct IP connections (see [Networking](/guide/networking)) | `false` |
+
+### Cabin Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `CabinStack` | Cabins are hidden off-map. Each player sees only their own cabin at a shared visible position. |
+| `FarmhouseStack` | Cabins are hidden off-map. All players warp to the shared farmhouse interior. |
+| `None` | Vanilla-like behavior. Cabins are placed at real farm positions with normal doors and warps. |
+
+### Existing Cabin Behavior
+
+Controls what happens to visible cabins already on the farm when the server starts with a stacked strategy. This applies to imported saves, map changes, game updates that add cabins, or any other scenario where cabins end up at real farm positions.
+
+| Behavior | Description |
+|----------|-------------|
+| `KeepExisting` | Leave existing cabins at their current positions. Only new cabins follow the active strategy. |
+| `MoveToStack` | Relocate all visible cabins to the hidden stack on startup. |
 
 ## Environment Variables
 
+Environment variables in `.env` control Docker infrastructure, credentials, and networking. They are **not** used for game settings.
+
 ### Runtime Variables
 
-These variables are used during server operation, either at startup or throughout the server's lifecycle:
-
-| Variable Name | Description | Default | Available in |
-|---------------|-------------|---------|--------------|
-| `GAME_PORT` | Game port for multiplayer connections | 24642 | 1.0.0 |
-| `DISABLE_RENDERING` | Disables rendering in VNC (improves performance) | true | 1.0.0 |
-| `STEAM_USERNAME` | Steam username (required for initial game download and updates) | - | 1.0.0 |
-| `STEAM_PASSWORD` | Steam password (required for initial game download and updates) | - | 1.0.0 |
-| `STEAM_REFRESH_TOKEN` | Steam refresh token for automated/CI builds (alternative to username/password) | - | 1.2.0 |
-| `VNC_PORT` | Web VNC port for browser access | 5800 | 1.0.0 |
-| `VNC_PASSWORD` | Web VNC password for authentication | - | 1.0.0 |
-| `ALLOW_IP_CONNECTIONS` | Allow direct IP connections (disabled by default as they don't provide user IDs for farmhand ownership) | false | 1.2.0 |
-| `STEAM_AUTH_PORT` | Port for the steam-auth service HTTP API | 3001 | 1.2.0 |
-| `SERVER_PASSWORD` | Server password for player authentication (leave empty to disable) | - | 1.5.0 |
-| `MAX_LOGIN_ATTEMPTS` | Maximum failed login attempts before auto-kick | 3 | 1.5.0 |
-| `AUTH_TIMEOUT_SECONDS` | Seconds before unauthenticated players are kicked (0 to disable) | 600 | 1.5.0 |
-| `API_ENABLED` | Enable HTTP API for external tools and monitoring | true | 1.5.0 |
-| `API_PORT` | Port for the HTTP API server | 8080 | 1.5.0 |
+| Variable Name | Description | Default |
+|---------------|-------------|---------|
+| `GAME_PORT` | Game port for multiplayer connections | 24642 |
+| `DISABLE_RENDERING` | Disables rendering in VNC (improves performance) | true |
+| `STEAM_USERNAME` | Steam username (required for initial game download and updates) | - |
+| `STEAM_PASSWORD` | Steam password (required for initial game download and updates) | - |
+| `STEAM_REFRESH_TOKEN` | Steam refresh token for automated/CI builds (alternative to username/password) | - |
+| `VNC_PORT` | Web VNC port for browser access | 5800 |
+| `VNC_PASSWORD` | Web VNC password for authentication | - |
+| `STEAM_AUTH_PORT` | Port for the steam-auth service HTTP API | 3001 |
+| `API_ENABLED` | Enable HTTP API for external tools and monitoring | true |
+| `API_PORT` | Port for the HTTP API server | 8080 |
+| `VERBOSE_LOGGING` | Override verbose logging setting (overrides `server-settings.json`) | - |
 
 ::: tip
 Set `DISABLE_RENDERING=true` to improve performance when using VNC. The game will still run normally, but rendering will be optimized for server environments.
@@ -37,10 +132,10 @@ Steam credentials (`STEAM_USERNAME` and `STEAM_PASSWORD`) are only used locally 
 
 These variables are only relevant during the build process when compiling from source:
 
-| Variable Name | Description | Default | Available in |
-|---------------|-------------|---------|--------------|
-| `GAME_PATH` | Path to local Stardew Valley installation (used by Directory.Build.props for building the mod) | `C:/Program Files (x86)/Steam/steamapps/common/Stardew Valley` | 1.0.0 |
-| `BUILD_CONFIGURATION` | Build configuration for the mod (Debug or Release) | Debug | 1.0.0 |
+| Variable Name | Description | Default |
+|---------------|-------------|---------|
+| `GAME_PATH` | Path to local Stardew Valley installation (used by Directory.Build.props for building the mod) | `C:/Program Files (x86)/Steam/steamapps/common/Stardew Valley` |
+| `BUILD_CONFIGURATION` | Build configuration for the mod (Debug or Release) | Debug |
 
 ::: info
 Build variables are only needed when building from source. If you're using the pre-built Docker images, you can ignore these settings.
@@ -52,14 +147,6 @@ Build variables are only needed when building from source. If you're using the p
 
 When `true`, the game skips rendering frames to the display. The game still runs normally and VNC still works, but CPU usage is significantly reduced. Only set to `false` if you need to debug visual issues.
 
-### ALLOW_IP_CONNECTIONS
-
-Controls whether players can connect using direct IP addresses instead of invite codes.
-
-Disabled by default because direct IP connections don't provide Steam/GOG user IDs. Without user IDs, the server can't track which player owns which farmhand - players may lose access to their farmhands if they reconnect from a different IP or if multiple players share a network.
-
-Use invite codes (GOG Galaxy) for reliable farmhand ownership tracking. See [Networking](/guide/networking) for more details.
-
 ### STEAM_REFRESH_TOKEN
 
 Alternative to username/password for automated environments. After running `setup` once, you can export the refresh token for CI use:
@@ -70,7 +157,7 @@ docker compose run --rm steam-auth export-token
 
 See [Authentication](/getting-started/auth) for details.
 
-## Example Configuration
+## Example `.env` File
 
 Here's a complete example `.env` file with all common settings:
 
@@ -90,9 +177,11 @@ VNC_PORT=5800
 GAME_PORT=24642
 DISABLE_RENDERING=true
 
-# Optional: Networking (disabled by default)
-# ALLOW_IP_CONNECTIONS=false
 ```
+
+::: info
+Game settings (farm name, farm type, cabin strategy, etc.) are configured in `server-settings.json`, not in the `.env` file. See [Game Settings](#game-settings-server-settings-json) above.
+:::
 
 ## Next Steps
 

@@ -38,7 +38,7 @@ namespace JunimoServer.Services.ChatCommands
                 postfix: new HarmonyMethod(typeof(ChatWatcher), nameof(ChatWatcher.receiveChatMessage_Postfix))
             );
 
-            RegisterCommand(new ChatCommand("help", "XXXDisplays available commands.", HelpCommand));
+            RegisterCommand(new ChatCommand("help", "Displays available commands.", HelpCommand));
         }
 
         private void HelpCommand(string[] args, ReceivedMessage msg)

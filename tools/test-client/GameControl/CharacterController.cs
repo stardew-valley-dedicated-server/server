@@ -115,7 +115,7 @@ public class CharacterController
             favThingBox.Text = favoriteThing;
             favThingBox.limitWidth = true;
 
-            _monitor.Log($"Set character data - Name: {name}, FavoriteThing: {favoriteThing}", LogLevel.Debug);
+            _monitor.Log($"Set character data - Name: {name}, FavoriteThing: {favoriteThing}", LogLevel.Trace);
 
             return new CustomizeResult { Success = true };
         }
@@ -156,7 +156,7 @@ public class CharacterController
             // Simulate clicking the OK button
             menu.receiveLeftClick(menu.okButton.bounds.X + 1, menu.okButton.bounds.Y + 1);
 
-            _monitor.Log("Confirmed character creation", LogLevel.Debug);
+            _monitor.Log("Confirmed character creation", LogLevel.Trace);
 
             return new CustomizeResult { Success = true, Message = "Character confirmed" };
         }

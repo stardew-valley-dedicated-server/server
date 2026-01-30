@@ -180,6 +180,102 @@ public class TimeSetResponse
 }
 
 /// <summary>
+/// Response from /settings GET endpoint.
+/// </summary>
+public class SettingsResponse
+{
+    [JsonPropertyName("game")]
+    public GameSettingsInfo Game { get; set; } = new();
+
+    [JsonPropertyName("server")]
+    public ServerRuntimeSettingsInfo Server { get; set; } = new();
+}
+
+/// <summary>
+/// Game creation settings from server-settings.json.
+/// </summary>
+public class GameSettingsInfo
+{
+    [JsonPropertyName("farmName")]
+    public string FarmName { get; set; } = string.Empty;
+
+    [JsonPropertyName("farmType")]
+    public int FarmType { get; set; }
+
+    [JsonPropertyName("profitMargin")]
+    public float ProfitMargin { get; set; }
+
+    [JsonPropertyName("startingCabins")]
+    public int StartingCabins { get; set; }
+
+    [JsonPropertyName("spawnMonstersAtNight")]
+    public string SpawnMonstersAtNight { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Server runtime settings from server-settings.json.
+/// </summary>
+public class ServerRuntimeSettingsInfo
+{
+    [JsonPropertyName("maxPlayers")]
+    public int MaxPlayers { get; set; }
+
+    [JsonPropertyName("cabinStrategy")]
+    public string CabinStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("separateWallets")]
+    public bool SeparateWallets { get; set; }
+
+    [JsonPropertyName("existingCabinBehavior")]
+    public string ExistingCabinBehavior { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Response from /cabins GET endpoint.
+/// </summary>
+public class CabinsResponse
+{
+    [JsonPropertyName("strategy")]
+    public string Strategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; set; }
+
+    [JsonPropertyName("assignedCount")]
+    public int AssignedCount { get; set; }
+
+    [JsonPropertyName("availableCount")]
+    public int AvailableCount { get; set; }
+
+    [JsonPropertyName("cabins")]
+    public List<CabinInfoResponse> Cabins { get; set; } = new();
+}
+
+/// <summary>
+/// Information about a single cabin.
+/// </summary>
+public class CabinInfoResponse
+{
+    [JsonPropertyName("tileX")]
+    public int TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int TileY { get; set; }
+
+    [JsonPropertyName("isHidden")]
+    public bool IsHidden { get; set; }
+
+    [JsonPropertyName("ownerId")]
+    public long OwnerId { get; set; }
+
+    [JsonPropertyName("ownerName")]
+    public string OwnerName { get; set; } = string.Empty;
+
+    [JsonPropertyName("isAssigned")]
+    public bool IsAssigned { get; set; }
+}
+
+/// <summary>
 /// HTTP client for the JunimoServer API.
 /// Default port is 8080 (configurable via API_PORT env var in the server).
 /// </summary>
@@ -248,6 +344,28 @@ public class ServerApiClient : IDisposable
         var response = await _httpClient.GetAsync("/swagger/v1/swagger.json");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// Gets the current server settings.
+    /// GET /settings
+    /// </summary>
+    public async Task<SettingsResponse?> GetSettings()
+    {
+        var response = await _httpClient.GetAsync("/settings");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SettingsResponse>();
+    }
+
+    /// <summary>
+    /// Gets the current cabin state and positions.
+    /// GET /cabins
+    /// </summary>
+    public async Task<CabinsResponse?> GetCabins()
+    {
+        var response = await _httpClient.GetAsync("/cabins");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<CabinsResponse>();
     }
 
     /// <summary>
@@ -333,7 +451,7 @@ public class ServerApiClient : IDisposable
                 var status = await GetStatus();
                 if (status?.IsOnline == true && status.IsReady && !string.IsNullOrEmpty(status.InviteCode))
                 {
-                    Console.WriteLine($"[WaitForServerOnline] Server online and ready after {attempt} attempts");
+                    Console.WriteLine($"[Setup] Server online and ready after {attempt} attempts");
                     return status;
                 }
 
@@ -348,13 +466,13 @@ public class ServerApiClient : IDisposable
             if (attempt % 10 == 0)
             {
                 var remaining = deadline - DateTime.UtcNow;
-                Console.WriteLine($"[WaitForServerOnline] Attempt {attempt}, {remaining.TotalSeconds:0}s remaining — {lastReason}");
+                Console.WriteLine($"[Setup] Waiting for server: attempt {attempt}, {remaining.TotalSeconds:0}s remaining - {lastReason}");
             }
 
             await Task.Delay(interval);
         }
 
-        Console.WriteLine($"[WaitForServerOnline] Timed out after {attempt} attempts. Last: {lastReason}");
+        Console.WriteLine($"[Setup] Server wait timed out after {attempt} attempts. Last: {lastReason}");
         return null;
     }
 

@@ -10,6 +10,7 @@ namespace JunimoTestClient.GameTweaks;
 /// Applies convenience tweaks for testing:
 /// - Removes minimum window size restriction (1280x720 -> 400x300)
 /// - Prevents game from pausing when unfocused
+/// - Mutes all audio (music, sound, ambient, footsteps)
 /// </summary>
 public class ConvenienceTweaks
 {
@@ -36,7 +37,10 @@ public class ConvenienceTweaks
         // Disable pause when unfocused
         DisablePauseOnUnfocus();
 
-        _monitor.Log("Convenience tweaks applied: no min window size, no pause on unfocus", LogLevel.Info);
+        // Mute all audio
+        MuteAudio();
+
+        _monitor.Log("Test tweaks applied (no pause, muted)", LogLevel.Trace);
     }
 
     private void PatchWindowSize()
@@ -47,7 +51,7 @@ public class ConvenienceTweaks
             var transpiler = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(SetWindowSize_Transpiler));
 
             _harmony.Patch(originalMethod, transpiler: transpiler);
-            _monitor.Log("Patched SetWindowSize to remove minimum size restriction", LogLevel.Debug);
+            _monitor.Log("Patched SetWindowSize to remove minimum size restriction", LogLevel.Trace);
         }
         catch (Exception ex)
         {
@@ -114,7 +118,28 @@ public class ConvenienceTweaks
         if (Game1.options != null)
         {
             Game1.options.pauseWhenOutOfFocus = value;
-            _monitor.Log($"Set pauseWhenOutOfFocus = {value}", LogLevel.Debug);
+            _monitor.Log($"Set pauseWhenOutOfFocus = {value}", LogLevel.Trace);
+        }
+    }
+
+    private void MuteAudio()
+    {
+        // Replace the sound bank with a dummy that plays nothing
+        _helper.Events.GameLoop.GameLaunched += (_, _) =>
+        {
+            DisableAllAudio();
+        };
+    }
+
+    private void DisableAllAudio()
+    {
+        // Replace the sound bank with a dummy implementation that does nothing
+        // This completely silences all game audio including menu/HUD sounds
+        if (Game1.soundBank is not DummySoundBank)
+        {
+            Game1.soundBank?.Dispose();
+            Game1.soundBank = new DummySoundBank();
+            _monitor.Log("Replaced soundBank with DummySoundBank - all audio disabled", LogLevel.Trace);
         }
     }
 

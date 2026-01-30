@@ -2,6 +2,7 @@ using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
+using static JunimoServer.Tests.Helpers.TestTimings;
 
 namespace JunimoServer.Tests;
 
@@ -89,7 +90,7 @@ public class RenderingTests : IDisposable
 
         // Step 1: Ensure rendering is OFF, capture a "disabled" screenshot
         await _serverApi.SetRendering(false);
-        await Task.Delay(1500); // Wait for frames to stop
+        await Task.Delay(RenderingDisableDelayMs); // Wait for frames to stop
 
         var disabledScreenshot = await VncScreenshotHelper.CaptureScreenshot(_fixture.ServerContainer);
         await VncScreenshotHelper.SaveScreenshot(disabledScreenshot,
@@ -98,7 +99,7 @@ public class RenderingTests : IDisposable
         var (disabledAvgBrightness, disabledMaxBrightness) = VncScreenshotHelper.SampleCenterBrightness(disabledScreenshot);
         disabledScreenshot.Dispose();
 
-        Console.WriteLine($"[RenderingTest] Disabled: avg={disabledAvgBrightness:F1}, max={disabledMaxBrightness}");
+        Console.WriteLine($"[Test] Disabled: avg={disabledAvgBrightness:F1}, max={disabledMaxBrightness}");
 
         // Center of screen should be dark when rendering is disabled
         Assert.True(disabledAvgBrightness < 10,
@@ -106,7 +107,7 @@ public class RenderingTests : IDisposable
 
         // Step 2: Enable rendering, capture an "enabled" screenshot
         await _serverApi.SetRendering(true);
-        await Task.Delay(3000); // Wait for game frames to render
+        await Task.Delay(RenderingEnableDelayMs); // Wait for game frames to render
 
         var enabledScreenshot = await VncScreenshotHelper.CaptureScreenshot(_fixture.ServerContainer);
         await VncScreenshotHelper.SaveScreenshot(enabledScreenshot,
@@ -115,7 +116,7 @@ public class RenderingTests : IDisposable
         var (enabledAvgBrightness, enabledMaxBrightness) = VncScreenshotHelper.SampleCenterBrightness(enabledScreenshot);
         enabledScreenshot.Dispose();
 
-        Console.WriteLine($"[RenderingTest] Enabled: avg={enabledAvgBrightness:F1}, max={enabledMaxBrightness}");
+        Console.WriteLine($"[Test] Enabled: avg={enabledAvgBrightness:F1}, max={enabledMaxBrightness}");
 
         // Center of screen should have visible game content when rendering is enabled
         Assert.True(enabledMaxBrightness > 20,
@@ -127,7 +128,7 @@ public class RenderingTests : IDisposable
 
         // Step 3: Disable rendering again and verify it goes dark
         await _serverApi.SetRendering(false);
-        await Task.Delay(1500);
+        await Task.Delay(RenderingDisableDelayMs);
 
         var reDisabledScreenshot = await VncScreenshotHelper.CaptureScreenshot(_fixture.ServerContainer);
         await VncScreenshotHelper.SaveScreenshot(reDisabledScreenshot,
@@ -136,7 +137,7 @@ public class RenderingTests : IDisposable
         var (reDisabledAvgBrightness, _) = VncScreenshotHelper.SampleCenterBrightness(reDisabledScreenshot);
         reDisabledScreenshot.Dispose();
 
-        Console.WriteLine($"[RenderingTest] Re-disabled: avg={reDisabledAvgBrightness:F1}");
+        Console.WriteLine($"[Test] Re-disabled: avg={reDisabledAvgBrightness:F1}");
 
         Assert.True(reDisabledAvgBrightness < 10,
             $"Center pixels should be near-black after re-disabling rendering, but average brightness was {reDisabledAvgBrightness:F1}");

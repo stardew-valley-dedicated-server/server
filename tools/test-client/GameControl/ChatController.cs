@@ -43,7 +43,7 @@ public class ChatController
             // This handles both regular messages and commands (starting with /)
             Game1.chatBox.textBoxEnter(message);
 
-            _monitor.Log($"Sent chat message: {message}", LogLevel.Debug);
+            _monitor.Log($"Sent chat message: {message}", LogLevel.Trace);
 
             return new ChatResult
             {

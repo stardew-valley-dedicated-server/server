@@ -64,7 +64,6 @@ public class TestApiServer : IDisposable
         try
         {
             _listener.Start();
-            _monitor.Log($"Test API server started on http://localhost:{Port}/", LogLevel.Info);
             _listenTask = ListenAsync(_cts.Token);
         }
         catch (Exception ex)
@@ -104,7 +103,7 @@ public class TestApiServer : IDisposable
         var response = context.Response;
         var path = request.Url?.AbsolutePath.TrimStart('/') ?? "";
 
-        _monitor.Log($"{request.HttpMethod} /{path}", LogLevel.Debug);
+        _monitor.Log($"{request.HttpMethod} /{path}", LogLevel.Trace);
 
         try
         {

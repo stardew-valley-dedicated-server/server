@@ -108,7 +108,7 @@ public class ScreenshotCapture
         using var stream = File.Create(filePath);
         texture.SaveAsPng(stream, width, height);
 
-        _monitor.Log($"Screenshot saved: {filePath}", LogLevel.Debug);
+        _monitor.Log($"Screenshot saved: {filePath}", LogLevel.Trace);
 
         return new ScreenshotResult
         {

@@ -10,7 +10,7 @@ namespace JunimoServer.Util
     {
         public static bool IsOwnedBy(this Cabin cabin, long ownerId)
         {
-            return cabin?.owner.UniqueMultiplayerID == ownerId;
+            return cabin?.owner?.UniqueMultiplayerID == ownerId;
         }
 
 

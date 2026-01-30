@@ -41,7 +41,7 @@ public class PerformanceStats
         _helper.Events.GameLoop.UpdateTicking += OnUpdateTicking;
         _helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         _helper.Events.Display.Rendered += OnRendered;
-        _monitor.Log("Performance stats tracking started", LogLevel.Debug);
+        _monitor.Log("Performance stats tracking started", LogLevel.Trace);
     }
 
     private void OnUpdateTicking(object? sender, UpdateTickingEventArgs e)

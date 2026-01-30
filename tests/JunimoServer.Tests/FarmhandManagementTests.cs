@@ -1,5 +1,5 @@
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
+using JunimoServer.Tests.Helpers;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -8,61 +8,17 @@ namespace JunimoServer.Tests;
 /// <summary>
 /// Integration tests for farmhand management via the server API.
 /// Verifies farmhand listing, customization state, and deletion behavior.
+///
+/// Uses IntegrationTestBase which provides:
+/// - Automatic retry on connection failures
+/// - Exception monitoring with early abort
+/// - Server/client log streaming
 /// </summary>
 [Collection("Integration")]
-public class FarmhandManagementTests : IDisposable, IAsyncLifetime
+public class FarmhandManagementTests : IntegrationTestBase
 {
-    private readonly IntegrationTestFixture _fixture;
-    private readonly GameTestClient _gameClient;
-    private readonly ServerApiClient _serverApi;
-    private readonly ITestOutputHelper _output;
-    private readonly List<string> _createdFarmers = new();
-
     public FarmhandManagementTests(IntegrationTestFixture fixture, ITestOutputHelper output)
-    {
-        _fixture = fixture;
-        _output = output;
-        _gameClient = new GameTestClient();
-        _serverApi = new ServerApiClient(_fixture.ServerBaseUrl);
-    }
-
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public async Task DisposeAsync()
-    {
-        // Ensure we're disconnected so online farmers can be deleted
-        try
-        {
-            await _gameClient.Navigate("title");
-            await _gameClient.Wait.ForDisconnected(10000);
-        }
-        catch (Exception ex)
-        {
-            _output.WriteLine($"  Error disconnecting during cleanup: {ex.Message}");
-        }
-
-        // Wait for server to process disconnection
-        await Task.Delay(3000);
-
-        foreach (var farmerName in _createdFarmers)
-        {
-            try
-            {
-                _output.WriteLine($"Cleaning up farmer: {farmerName}");
-                var result = await _serverApi.DeleteFarmhand(farmerName);
-                if (result?.Success == true)
-                    _output.WriteLine($"  Deleted successfully");
-                else if (result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
-                    _output.WriteLine($"  Farmer not found (ok)");
-                else
-                    _output.WriteLine($"  Delete failed: {result?.Error ?? "unknown error"}");
-            }
-            catch (Exception ex)
-            {
-                _output.WriteLine($"  Cleanup error: {ex.Message}");
-            }
-        }
-    }
+        : base(fixture, output) { }
 
     /// <summary>
     /// Verifies that GET /farmhands (server API) correctly reflects which farmhand
@@ -71,21 +27,24 @@ public class FarmhandManagementTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task ServerFarmhands_ReflectCustomizationState()
     {
-        await EnsureDisconnected();
+        await EnsureDisconnectedAsync();
 
-        var farmerName = $"Cust{DateTime.UtcNow.Ticks % 1000}";
-        _createdFarmers.Add(farmerName);
-        await JoinAndEnterWorld(farmerName);
+        var farmerName = GenerateFarmerName("Cust");
+        TrackFarmer(farmerName);
+
+        // Join and enter world using retry helper
+        var joinResult = await JoinWorldWithRetryAsync(farmerName);
+        AssertJoinSuccess(joinResult);
 
         // Check server-side farmhand list
-        var farmhands = await _serverApi.GetFarmhands();
+        var farmhands = await ServerApi.GetFarmhands();
         Assert.NotNull(farmhands);
         Assert.NotEmpty(farmhands.Farmhands);
 
-        _output.WriteLine($"Server reports {farmhands.Farmhands.Count} farmhand(s):");
+        Log($"Server reports {farmhands.Farmhands.Count} farmhand(s):");
         foreach (var fh in farmhands.Farmhands)
         {
-            _output.WriteLine($"  Name='{fh.Name}', IsCustomized={fh.IsCustomized}, Id={fh.Id}");
+            Log($"  Name='{fh.Name}', IsCustomized={fh.IsCustomized}, Id={fh.Id}");
         }
 
         // Our farmer should be listed as customized
@@ -98,9 +57,9 @@ public class FarmhandManagementTests : IDisposable, IAsyncLifetime
         // There should be at least one uncustomized slot (the default cabins)
         var uncustomized = farmhands.Farmhands.Where(f => !f.IsCustomized).ToList();
         Assert.NotEmpty(uncustomized);
-        _output.WriteLine($"Found {uncustomized.Count} uncustomized slot(s) as expected");
+        Log($"Found {uncustomized.Count} uncustomized slot(s) as expected");
 
-        await DisconnectFromServer();
+        await AssertNoExceptionsAsync("at end of test");
     }
 
     /// <summary>
@@ -110,35 +69,105 @@ public class FarmhandManagementTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task DeleteFarmhand_WhenOffline_Succeeds()
     {
-        await EnsureDisconnected();
+        await EnsureDisconnectedAsync();
 
-        var farmerName = $"Del{DateTime.UtcNow.Ticks % 1000}";
-        _createdFarmers.Add(farmerName);
-        await JoinAndEnterWorld(farmerName);
+        var farmerName = GenerateFarmerName("Del");
+        TrackFarmer(farmerName);
+
+        // Join and enter world
+        var joinResult = await JoinWorldWithRetryAsync(farmerName);
+        AssertJoinSuccess(joinResult);
 
         // Disconnect so the farmhand is offline
-        await DisconnectFromServer();
+        await DisconnectAsync();
 
         // Wait for server to fully process the disconnection
-        await Task.Delay(3000);
+        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
 
         // Delete the farmhand
-        _output.WriteLine($"Deleting offline farmhand '{farmerName}'...");
-        var deleteResult = await _serverApi.DeleteFarmhand(farmerName);
+        Log($"Deleting offline farmhand '{farmerName}'...");
+        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
         Assert.NotNull(deleteResult);
         Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
-        _output.WriteLine($"Delete response: {deleteResult.Message}");
+        Log($"Delete response: {deleteResult.Message}");
 
         // Verify the farmhand is gone
-        var farmhands = await _serverApi.GetFarmhands();
+        var farmhands = await ServerApi.GetFarmhands();
         Assert.NotNull(farmhands);
         var deleted = farmhands.Farmhands.FirstOrDefault(f =>
             f.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
         Assert.Null(deleted);
-        _output.WriteLine($"Verified: farmhand '{farmerName}' no longer in list");
+        Log($"Verified: farmhand '{farmerName}' no longer in list");
 
         // Remove from cleanup list since we already deleted it
-        _createdFarmers.Remove(farmerName);
+        CreatedFarmers.Remove(farmerName);
+
+        await AssertNoExceptionsAsync("at end of test");
+    }
+
+    /// <summary>
+    /// Verifies that after deleting an offline farmhand, the slot becomes available
+    /// and a new player can join using that freed slot.
+    /// This tests the full create → delete → reuse cycle.
+    /// </summary>
+    [Fact]
+    public async Task DeleteFarmhand_SlotBecomesReusable()
+    {
+        await EnsureDisconnectedAsync();
+
+        // Get initial slot count
+        var initialFarmhands = await ServerApi.GetFarmhands();
+        Assert.NotNull(initialFarmhands);
+        var initialSlotCount = initialFarmhands.Farmhands.Count;
+        Log($"Initial state: {initialSlotCount} farmhand slot(s)");
+
+        // Create first farmer
+        var farmerName1 = GenerateFarmerName("Reuse1");
+        TrackFarmer(farmerName1);
+
+        var joinResult1 = await JoinWorldWithRetryAsync(farmerName1);
+        AssertJoinSuccess(joinResult1);
+        await DisconnectAsync();
+        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+
+        // Verify farmer1 exists
+        var afterJoin = await ServerApi.GetFarmhands();
+        Assert.NotNull(afterJoin);
+        var farmer1Exists = afterJoin.Farmhands.Any(f =>
+            f.Name.Equals(farmerName1, StringComparison.OrdinalIgnoreCase) && f.IsCustomized);
+        Assert.True(farmer1Exists, $"Farmer '{farmerName1}' should exist after joining");
+        Log($"After first join: farmer '{farmerName1}' exists");
+
+        // Delete farmer1
+        Log($"Deleting farmhand '{farmerName1}'...");
+        var deleteResult = await ServerApi.DeleteFarmhand(farmerName1);
+        Assert.NotNull(deleteResult);
+        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
+        CreatedFarmers.Remove(farmerName1);
+
+        // Verify slot is available (uncustomized)
+        var afterDelete = await ServerApi.GetFarmhands();
+        Assert.NotNull(afterDelete);
+        var uncustomizedSlots = afterDelete.Farmhands.Count(f => !f.IsCustomized);
+        Assert.True(uncustomizedSlots >= 1, "Should have at least 1 uncustomized slot after deletion");
+        Log($"After delete: {uncustomizedSlots} uncustomized slot(s) available");
+
+        // Create second farmer using the freed slot
+        var farmerName2 = GenerateFarmerName("Reuse2");
+        TrackFarmer(farmerName2);
+
+        var joinResult2 = await JoinWorldWithRetryAsync(farmerName2);
+        AssertJoinSuccess(joinResult2);
+
+        // Verify farmer2 exists
+        var afterReuse = await ServerApi.GetFarmhands();
+        Assert.NotNull(afterReuse);
+        var farmer2Exists = afterReuse.Farmhands.Any(f =>
+            f.Name.Equals(farmerName2, StringComparison.OrdinalIgnoreCase) && f.IsCustomized);
+        Assert.True(farmer2Exists, $"Farmer '{farmerName2}' should exist after reusing slot");
+        Log($"Slot reuse successful: farmer '{farmerName2}' joined using freed slot");
+
+        await AssertNoExceptionsAsync("at end of test");
     }
 
     /// <summary>
@@ -148,115 +177,33 @@ public class FarmhandManagementTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task DeleteFarmhand_WhenOnline_Fails()
     {
-        await EnsureDisconnected();
+        await EnsureDisconnectedAsync();
 
-        var farmerName = $"Onl{DateTime.UtcNow.Ticks % 1000}";
-        _createdFarmers.Add(farmerName);
-        await JoinAndEnterWorld(farmerName);
+        var farmerName = GenerateFarmerName("Onl");
+        TrackFarmer(farmerName);
 
-        // Try to delete while still connected — should fail
-        _output.WriteLine($"Attempting to delete online farmhand '{farmerName}'...");
-        var deleteResult = await _serverApi.DeleteFarmhand(farmerName);
+        // Join and enter world
+        var joinResult = await JoinWorldWithRetryAsync(farmerName);
+        AssertJoinSuccess(joinResult);
+
+        // Try to delete while still connected - should fail
+        Log($"Attempting to delete online farmhand '{farmerName}'...");
+        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
         Assert.NotNull(deleteResult);
         Assert.False(deleteResult.Success, "Delete should fail for an online farmhand");
         Assert.NotNull(deleteResult.Error);
         Assert.Contains("online", deleteResult.Error, StringComparison.OrdinalIgnoreCase);
-        _output.WriteLine($"Delete correctly refused: {deleteResult.Error}");
+        Log($"Delete correctly refused: {deleteResult.Error}");
 
         // Verify the farmhand still exists
-        var farmhands = await _serverApi.GetFarmhands();
+        var farmhands = await ServerApi.GetFarmhands();
         Assert.NotNull(farmhands);
         var stillExists = farmhands.Farmhands.FirstOrDefault(f =>
             f.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(stillExists);
-        _output.WriteLine($"Verified: farmhand '{farmerName}' still exists after failed delete");
+        Log($"Verified: farmhand '{farmerName}' still exists after failed delete");
 
-        await DisconnectFromServer();
+        await AssertNoExceptionsAsync("at end of test");
     }
 
-    private async Task EnsureDisconnected()
-    {
-        await _gameClient.Navigate("title");
-        var disconnectWait = await _gameClient.Wait.ForDisconnected(10000);
-        Assert.True(disconnectWait?.Success, "Should be disconnected before starting test");
-    }
-
-    private async Task DisconnectFromServer()
-    {
-        var exitResult = await _gameClient.Exit();
-        Assert.True(exitResult?.Success, $"Exit failed: {exitResult?.Error}");
-
-        await _gameClient.Wait.ForTitle(30000);
-        await _gameClient.Wait.ForDisconnected(10000);
-        _output.WriteLine("Disconnected from server");
-    }
-
-    /// <summary>
-    /// Joins the server with a new farmer and enters the game world.
-    /// </summary>
-    private async Task JoinAndEnterWorld(string farmerName)
-    {
-        var status = await _serverApi.GetStatus();
-        Assert.NotNull(status);
-        Assert.True(status.IsOnline, "Server should be online");
-        Assert.False(string.IsNullOrEmpty(status.InviteCode), "Server should have an invite code");
-
-        var navigateResult = await _gameClient.Navigate("coopmenu");
-        Assert.True(navigateResult?.Success, $"Navigate failed: {navigateResult?.Error}");
-
-        var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", 10000);
-        Assert.True(menuWait?.Success, $"Wait for CoopMenu failed: {menuWait?.Error}");
-
-        var tabResult = await _gameClient.Coop.Tab(0);
-        Assert.True(tabResult?.Success, $"Tab switch failed: {tabResult?.Error}");
-
-        var openResult = await _gameClient.Coop.OpenInviteCodeMenu();
-        Assert.True(openResult?.Success, $"Open invite code menu failed: {openResult?.Error}");
-
-        var textInputWait = await _gameClient.Wait.ForTextInput(10000);
-        Assert.True(textInputWait?.Success, $"Wait for text input failed: {textInputWait?.Error}");
-
-        var submitResult = await _gameClient.Coop.SubmitInviteCode(status.InviteCode);
-        Assert.True(submitResult?.Success, $"Submit invite code failed: {submitResult?.Error}");
-
-        var farmhandWait = await _gameClient.Wait.ForFarmhands(60000);
-        Assert.True(farmhandWait?.Success, $"Wait for farmhands failed: {farmhandWait?.Error}");
-
-        await Task.Delay(2000);
-
-        var farmhands = await _gameClient.Farmhands.GetSlots();
-        Assert.NotNull(farmhands);
-        Assert.True(farmhands.Success, $"Get farmhands failed: {farmhands.Error}");
-        Assert.NotEmpty(farmhands.Slots);
-
-        var newSlot = farmhands.Slots.FirstOrDefault(s => !s.IsCustomized);
-        Assert.NotNull(newSlot);
-
-        var selectResult = await _gameClient.Farmhands.Select(newSlot.Index);
-        Assert.True(selectResult?.Success, $"Select farmhand failed: {selectResult?.Error}");
-
-        var charWait = await _gameClient.Wait.ForCharacter(30000);
-        Assert.True(charWait?.Success, $"Wait for character menu failed: {charWait?.Error}");
-
-        var customizeResult = await _gameClient.Character.Customize(farmerName, "Testing");
-        Assert.True(customizeResult?.Success, $"Customize failed: {customizeResult?.Error}");
-
-        await Task.Delay(200);
-
-        var confirmResult = await _gameClient.Character.Confirm();
-        Assert.True(confirmResult?.Success, $"Confirm failed: {confirmResult?.Error}");
-
-        var worldWait = await _gameClient.Wait.ForWorldReady(60000);
-        Assert.True(worldWait?.Success, $"Wait for world ready failed: {worldWait?.Error}");
-
-        // Wait for network sync to propagate player data to server
-        await Task.Delay(2000);
-        _output.WriteLine($"Entered world as '{farmerName}'");
-    }
-
-    public void Dispose()
-    {
-        _gameClient.Dispose();
-        _serverApi.Dispose();
-    }
 }

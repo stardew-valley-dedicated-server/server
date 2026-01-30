@@ -3,8 +3,10 @@ using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
+using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
+using JunimoServer.Services.Settings;
 using JunimoServer.Util;
 using Microsoft.Extensions.DependencyInjection;
 using StardewModdingAPI;
@@ -21,9 +23,22 @@ namespace JunimoServer
         private ServiceProvider _services;
 
         private readonly Type modServiceBaseType = typeof(IModService);
+        private bool _failFastEnabled;
 
         public override void Entry(IModHelper helper)
         {
+            // Check for fail-fast mode (used in E2E testing)
+            _failFastEnabled = string.Equals(
+                Environment.GetEnvironmentVariable("TEST_FAIL_FAST"),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (_failFastEnabled)
+            {
+                Monitor.Log("TEST_FAIL_FAST mode enabled - will exit on unhandled exceptions", LogLevel.Warn);
+                AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            }
+
             // TODO:
             // a) Create "SDVD Debug Client" mod (features: disable pause when out of focus)
             // b) Create "SDVD Client" mod: POC for enhanced server <-> client functions with custom network message/behavior
@@ -42,7 +57,14 @@ namespace JunimoServer
 
             RegisterServices();
             RegisterChatCommands();
-            RenderingCommand.Register(Helper, Monitor);
+            RegisterConsoleCommands();
+        }
+
+        private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Monitor.Log($"FAIL_FAST: Unhandled exception detected - {e.ExceptionObject}", LogLevel.Error);
+            Monitor.Log("Exiting due to TEST_FAIL_FAST mode", LogLevel.Error);
+            Environment.Exit(1);
         }
 
         private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
@@ -73,6 +95,16 @@ namespace JunimoServer
             services.AddSingleton(Helper);
             services.AddSingleton(Monitor);
             services.AddSingleton(new Harmony(ModManifest.UniqueID));
+
+            // Load settings first so we can apply verbose logging before other services start
+            var settingsLoader = new ServerSettingsLoader(Helper, Monitor);
+            services.AddSingleton(settingsLoader);
+
+            // Apply verbose logging setting (env var overrides config file)
+            var verboseLogging = Env.VerboseLogging ?? settingsLoader.VerboseLogging;
+            Monitor.Log($"Applying VerboseLogging={verboseLogging} (env={Env.VerboseLogging}, config={settingsLoader.VerboseLogging})", LogLevel.Info);
+            SmapiLogConfig.SetVerboseLogging(ModManifest.UniqueID, verboseLogging, Monitor);
+
             services.AddSingleton<PersistentOptions>();
             services.AddSingleton<AlwaysOnConfig>();
         }
@@ -139,6 +171,19 @@ namespace JunimoServer
             return modServiceBaseType.IsAssignableFrom(service);
         }
 
+        private void RegisterConsoleCommands()
+        {
+            var gameLoader = _services.GetRequiredService<GameLoaderService>();
+            var cabinManager = _services.GetRequiredService<CabinManagerService>();
+            var persistentOptions = _services.GetRequiredService<PersistentOptions>();
+            var settings = _services.GetRequiredService<ServerSettingsLoader>();
+
+            RenderingCommand.Register(Helper, Monitor);
+            SettingsCommand.Register(Helper, Monitor, gameLoader, persistentOptions, settings);
+            CabinsConsoleCommand.Register(Helper, Monitor, cabinManager, persistentOptions);
+            SavesCommand.Register(Helper, Monitor, gameLoader, settings);
+        }
+
         private void RegisterChatCommands()
         {
             var cabinService = _services.GetRequiredService<CabinManagerService>();
@@ -160,5 +205,6 @@ namespace JunimoServer
             InviteCodeCommand.Register(Helper, Monitor, chatCommandsService);
             ServerCommand.Register(Helper, Monitor, chatCommandsService);
         }
+
     }
 }

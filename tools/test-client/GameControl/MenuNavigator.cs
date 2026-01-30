@@ -176,7 +176,7 @@ public class MenuNavigator
             var tab = (CoopMenu.Tab)tabIndex;
             coopMenu.currentTab = tab;
 
-            _monitor.Log($"Switched to tab {tab}", LogLevel.Debug);
+            _monitor.Log($"Switched to tab {tab}", LogLevel.Trace);
 
             return new NavigationResult
             {

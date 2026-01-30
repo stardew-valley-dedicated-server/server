@@ -1,6 +1,7 @@
 using DotNet.Testcontainers.Containers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using Spectre.Console;
 
 namespace JunimoServer.Tests.Helpers;
 
@@ -48,6 +49,7 @@ public static class VncScreenshotHelper
 
     /// <summary>
     /// Saves a screenshot to the test artifacts directory, organized by test class and method.
+    /// Displays a small preview in the terminal using Spectre.Console.
     /// </summary>
     public static async Task SaveScreenshot(
         Image<Rgba32> image, string testClass, string testMethod, string label)
@@ -55,7 +57,18 @@ public static class VncScreenshotHelper
         var dir = TestArtifacts.GetScreenshotDir(testClass, testMethod);
         var path = Path.Combine(dir, $"{label}.png");
         await image.SaveAsPngAsync(path);
-        Console.WriteLine($"[Screenshot] Saved: {Path.GetRelativePath(TestArtifacts.OutputDir, path)}");
+
+        // Display screenshot info
+        var fileInfo = new FileInfo(path);
+        var sizeKb = fileInfo.Length / 1024.0;
+        AnsiConsole.MarkupLine($"[grey][[Test]] Screenshot saved: {image.Width}x{image.Height}, {sizeKb:F1} KB[/]");
+        AnsiConsole.Write(new Markup("[grey]         [/]"));
+        AnsiConsole.Write(new TextPath(path)
+            .RootColor(Spectre.Console.Color.Cyan1)
+            .SeparatorColor(Spectre.Console.Color.Cyan1)
+            .StemColor(Spectre.Console.Color.Cyan1)
+            .LeafColor(Spectre.Console.Color.Cyan1));
+        AnsiConsole.WriteLine();
     }
 
     /// <summary>

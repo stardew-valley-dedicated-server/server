@@ -1,328 +1,236 @@
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
+using JunimoServer.Tests.Helpers;
 using Xunit;
 using Xunit.Abstractions;
+using static JunimoServer.Tests.Helpers.TestTimings;
 
 namespace JunimoServer.Tests;
 
 /// <summary>
 /// Integration tests for farmer creation and persistence.
 ///
-/// Uses IntegrationTestFixture which automatically manages:
-/// - Server container (via Testcontainers)
-/// - Game test client (local Stardew Valley)
+/// Uses IntegrationTestBase which provides:
+/// - Automatic retry on connection failures
+/// - Exception monitoring with early abort
+/// - Server/client log streaming
 /// </summary>
 [Collection("Integration")]
-public class FarmerCreationTests : IDisposable, IAsyncLifetime
+public class FarmerCreationTests : IntegrationTestBase
 {
-    private readonly IntegrationTestFixture _fixture;
-    private readonly GameTestClient _gameClient;
-    private readonly ServerApiClient _serverApi;
-    private readonly ITestOutputHelper _output;
-    private readonly List<string> _createdFarmers = new();
-
     public FarmerCreationTests(IntegrationTestFixture fixture, ITestOutputHelper output)
-    {
-        _fixture = fixture;
-        _output = output;
-        _gameClient = new GameTestClient();
-        _serverApi = new ServerApiClient(_fixture.ServerBaseUrl);
-    }
-
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public async Task DisposeAsync()
-    {
-        // Clean up any farmers created during tests
-        foreach (var farmerName in _createdFarmers)
-        {
-            try
-            {
-                _output.WriteLine($"Cleaning up farmer: {farmerName}");
-                var result = await _serverApi.DeleteFarmhand(farmerName);
-                if (result?.Success == true)
-                {
-                    _output.WriteLine($"  Deleted successfully");
-                }
-                else if (result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    // Farmer doesn't exist, that's fine (test may have failed before creating it)
-                    _output.WriteLine($"  Farmer not found (ok)");
-                }
-                else
-                {
-                    _output.WriteLine($"  Delete failed: {result?.Error ?? "unknown error"}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _output.WriteLine($"  Cleanup error: {ex.Message}");
-            }
-        }
-    }
+        : base(fixture, output) { }
 
     /// <summary>
-    /// Tests that a newly created farmer persists after disconnecting and reconnecting:
-    /// 1. Join server via invite code
-    /// 2. Select an uncustomized farmhand slot
-    /// 3. Create a new farmer (set name and favorite thing)
-    /// 4. Enter the game world
-    /// 5. Exit to title
-    /// 6. Reconnect to the server
-    /// 7. Verify the created farmer exists with the correct name
+    /// Tests that a newly created farmer persists after disconnecting and reconnecting.
+    /// Uses retry logic for the connection which can sometimes get stuck.
     /// </summary>
     [Fact]
     public async Task CreateFarmer_ExitAndReconnect_FarmerPersists()
     {
-        // Ensure we're fully disconnected first (no leftover connection from previous test)
-        await _gameClient.Navigate("title");
-        var disconnectWait = await _gameClient.Wait.ForDisconnected(10000);
-        Assert.True(disconnectWait?.Success, "Should be disconnected before starting test");
+        // Ensure we're fully disconnected first
+        await EnsureDisconnectedAsync();
+        await AssertNoExceptionsAsync("initial disconnect");
 
-        // Keep name short — the game's TextBox UI truncates text exceeding its pixel width.
-        // The test-client bypasses this via limitWidth, but we use a short name for safety.
-        var farmerName = $"Test{DateTime.UtcNow.Ticks % 1000}";
+        // Generate unique farmer name and track for cleanup
+        var farmerName = GenerateFarmerName();
         var favoriteThing = "Testing";
+        TrackFarmer(farmerName);
 
-        // Track for cleanup
-        _createdFarmers.Add(farmerName);
+        Log($"Creating farmer with name: {farmerName}");
 
-        _output.WriteLine($"Creating farmer with name: {farmerName}");
+        // Verify server is online
+        Assert.NotNull(ServerStatus);
+        Assert.True(ServerStatus.IsOnline, "Server should be online");
+        Assert.False(string.IsNullOrEmpty(InviteCode), "Server should have an invite code");
+        Log($"Server online with invite code: {InviteCode}");
 
-        // Step 1: Get the invite code from server API
-        var status = await _serverApi.GetStatus();
-        Assert.NotNull(status);
-        Assert.True(status.IsOnline, "Server should be online");
-        Assert.False(string.IsNullOrEmpty(status.InviteCode), "Server should have an invite code");
-        _output.WriteLine($"Server online with invite code: {status.InviteCode}");
+        // Step 1: Connect to server with retry (handles "stuck connecting" issue)
+        LogSection("Connecting to server");
+        var connectResult = await ConnectWithRetryAsync();
+        AssertConnectionSuccess(connectResult);
+        Log($"Connected after {connectResult.AttemptsUsed} attempt(s)");
 
-        // Step 2: Navigate to coop menu, wait for it to load, then switch to join tab
-        var navigateResult = await _gameClient.Navigate("coopmenu");
-        Assert.NotNull(navigateResult);
-        Assert.True(navigateResult.Success, $"Navigate failed: {navigateResult.Error}");
+        await AssertNoExceptionsAsync("after connecting");
 
-        // Wait for CoopMenu to be ready
-        var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", 10000);
-        Assert.True(menuWait?.Success, $"Wait for CoopMenu failed: {menuWait?.Error}");
-
-        var tabResult = await _gameClient.Coop.Tab(0); // 0 = JOIN_TAB
-        Assert.NotNull(tabResult);
-        Assert.True(tabResult.Success, $"Tab switch failed: {tabResult.Error}");
-
-        // Step 3: Open invite code input dialog
-        var openResult = await _gameClient.Coop.OpenInviteCodeMenu();
-        Assert.NotNull(openResult);
-        Assert.True(openResult.Success, $"Open invite code menu failed: {openResult.Error}");
-
-        // Step 4: Wait for text input menu to appear
-        var textInputWait = await _gameClient.Wait.ForTextInput(10000);
-        Assert.NotNull(textInputWait);
-        Assert.True(textInputWait.Success, $"Wait for text input menu failed: {textInputWait.Error}");
-        _output.WriteLine($"Text input menu appeared after {textInputWait.WaitedMs}ms");
-
-        // Step 5: Submit the invite code
-        var submitResult = await _gameClient.Coop.SubmitInviteCode(status.InviteCode);
-        Assert.NotNull(submitResult);
-        Assert.True(submitResult.Success, $"Submit invite code failed: {submitResult.Error}");
-        _output.WriteLine("Submitted invite code, waiting for farmhand selection...");
-
-        // Step 6: Wait for farmhand selection screen
-        var farmhandWait = await _gameClient.Wait.ForFarmhands(60000);
-        Assert.NotNull(farmhandWait);
-        Assert.True(farmhandWait.Success, $"Wait for farmhands failed: {farmhandWait.Error}");
-        _output.WriteLine($"Farmhand menu appeared after {farmhandWait.WaitedMs}ms");
-
-        // Give the game time to load farmhand data
-        await Task.Delay(2000);
-
-        // Step 7: Get available farmhand slots and find an uncustomized one
-        var farmhands = await _gameClient.Farmhands.GetSlots();
-        Assert.NotNull(farmhands);
-        Assert.True(farmhands.Success, $"Get farmhands failed: {farmhands.Error}");
-        Assert.NotEmpty(farmhands.Slots);
-
+        // Step 2: Find an uncustomized slot
+        var farmhands = connectResult.Farmhands!;
         var newSlot = farmhands.Slots.FirstOrDefault(s => !s.IsCustomized);
         Assert.NotNull(newSlot);
-        _output.WriteLine($"Found uncustomized slot at index {newSlot.Index}");
+        Log($"Found uncustomized slot at index {newSlot.Index}");
 
-        // Step 8: Select the uncustomized farmhand slot (opens CharacterCustomization)
-        var selectResult = await _gameClient.Farmhands.Select(newSlot.Index);
+        // Step 3: Select the uncustomized farmhand slot
+        LogSection("Creating character");
+        var selectResult = await GameClient.Farmhands.Select(newSlot.Index);
         Assert.NotNull(selectResult);
         Assert.True(selectResult.Success, $"Select farmhand failed: {selectResult.Error}");
 
-        // Step 9: Wait for character customization menu
-        var charWait = await _gameClient.Wait.ForCharacter(30000);
+        // Step 4: Wait for character customization menu
+        var charWait = await GameClient.Wait.ForCharacter(CharacterMenuTimeoutMs);
         Assert.NotNull(charWait);
         Assert.True(charWait.Success, $"Wait for character menu failed: {charWait.Error}");
-        _output.WriteLine($"Character customization menu appeared after {charWait.WaitedMs}ms");
+        Log($"Character customization menu appeared after {charWait.WaitedMs}ms");
 
-        // Step 10: Set name and favorite thing
-        var customizeResult = await _gameClient.Character.Customize(farmerName, favoriteThing);
+        await AssertNoExceptionsAsync("after opening character menu");
+
+        // Step 5: Set name and favorite thing
+        var customizeResult = await GameClient.Character.Customize(farmerName, favoriteThing);
         Assert.NotNull(customizeResult);
         Assert.True(customizeResult.Success, $"Customize failed: {customizeResult.Error}");
-        _output.WriteLine($"Set character data - Name: {farmerName}, FavoriteThing: {favoriteThing}");
+        Log($"Set character data - Name: {farmerName}, FavoriteThing: {favoriteThing}");
 
-        // Wait for game to sync textbox values to player properties (happens in draw cycle)
-        await Task.Delay(200);
+        // Wait for game to sync textbox values
+        await Task.Delay(CharacterCreationSyncDelayMs);
 
-        // Step 11: Confirm character creation
-        var confirmResult = await _gameClient.Character.Confirm();
+        // Step 6: Confirm character creation
+        var confirmResult = await GameClient.Character.Confirm();
         Assert.NotNull(confirmResult);
         Assert.True(confirmResult.Success, $"Confirm failed: {confirmResult.Error}");
-        _output.WriteLine("Character confirmed");
+        Log("Character confirmed");
 
-        // Step 12: Wait for world to be ready (we're now in the game)
-        var worldWait = await _gameClient.Wait.ForWorldReady(60000);
+        // Step 7: Wait for world to be ready
+        LogSection("Entering world");
+        var worldWait = await GameClient.Wait.ForWorldReady(WorldReadyTimeoutMs);
         Assert.NotNull(worldWait);
         Assert.True(worldWait.Success, $"Wait for world ready failed: {worldWait.Error}");
-        _output.WriteLine($"World ready after {worldWait.WaitedMs}ms");
+        Log($"World ready after {worldWait.WaitedMs}ms");
 
-        // Wait for network sync to propagate player data to server
-        // NetFields sync is asynchronous and may take a few ticks
-        await Task.Delay(2000);
-        _output.WriteLine("Waited for network sync");
+        // Wait for network sync
+        await Task.Delay(NetworkSyncDelayMs);
+        Log("Waited for network sync");
 
-        // Step 13: Exit to title
-        var exitResult = await _gameClient.Exit();
+        await AssertNoExceptionsAsync("after entering world");
+
+        // Step 8: Exit to title
+        LogSection("Disconnecting");
+        var exitResult = await GameClient.Exit();
         Assert.NotNull(exitResult);
         Assert.True(exitResult.Success, $"Exit failed: {exitResult.Error}");
 
-        // Step 14: Wait for title screen and full disconnection
-        var titleWait = await _gameClient.Wait.ForTitle(30000);
+        var titleWait = await GameClient.Wait.ForTitle(TitleScreenTimeoutMs);
         Assert.NotNull(titleWait);
         Assert.True(titleWait.Success, $"Wait for title failed: {titleWait.Error}");
-        _output.WriteLine($"Returned to title after {titleWait.WaitedMs}ms");
+        Log($"Returned to title after {titleWait.WaitedMs}ms");
 
-        // Wait for full disconnection before reconnecting
-        var disconnectBeforeReconnect = await _gameClient.Wait.ForDisconnected(10000);
-        Assert.True(disconnectBeforeReconnect?.Success, "Should be fully disconnected before reconnecting");
-        _output.WriteLine("Fully disconnected, ready to reconnect");
+        // Wait for full disconnection
+        await EnsureDisconnectedAsync();
+        Log("Fully disconnected, ready to reconnect");
 
-        // Step 15: Reconnect - navigate to coop menu, wait for it, then switch to join tab
-        var reconnectNav = await _gameClient.Navigate("coopmenu");
-        Assert.NotNull(reconnectNav);
-        Assert.True(reconnectNav.Success, $"Reconnect navigate failed: {reconnectNav.Error}");
+        await AssertNoExceptionsAsync("after disconnecting");
 
-        // Wait for CoopMenu to be ready
-        var reconnectMenuWait = await _gameClient.Wait.ForMenu("CoopMenu", 10000);
-        Assert.True(reconnectMenuWait?.Success, $"Wait for CoopMenu on reconnect failed: {reconnectMenuWait?.Error}");
+        // Step 9: Reconnect with retry
+        LogSection("Reconnecting");
+        var reconnectResult = await ConnectWithRetryAsync();
+        AssertConnectionSuccess(reconnectResult);
+        Log($"Reconnected after {reconnectResult.AttemptsUsed} attempt(s)");
 
-        var reconnectTab = await _gameClient.Coop.Tab(0); // 0 = JOIN_TAB
-        Assert.NotNull(reconnectTab);
-        Assert.True(reconnectTab.Success, $"Reconnect tab failed: {reconnectTab.Error}");
-
-        // Step 16: Open invite code menu for reconnection
-        var reconnectOpenResult = await _gameClient.Coop.OpenInviteCodeMenu();
-        Assert.NotNull(reconnectOpenResult);
-        Assert.True(reconnectOpenResult.Success, $"Reconnect open invite code menu failed: {reconnectOpenResult.Error}");
-
-        // Step 17: Wait for text input menu
-        var reconnectTextInputWait = await _gameClient.Wait.ForTextInput(10000);
-        Assert.NotNull(reconnectTextInputWait);
-        Assert.True(reconnectTextInputWait.Success, $"Wait for text input on reconnect failed: {reconnectTextInputWait.Error}");
-
-        // Step 18: Submit invite code to rejoin
-        var rejoinResult = await _gameClient.Coop.SubmitInviteCode(status.InviteCode);
-        Assert.NotNull(rejoinResult);
-        Assert.True(rejoinResult.Success, $"Rejoin failed: {rejoinResult.Error}");
-
-        // Step 19: Wait for farmhand selection again
-        var reconnectFarmhandWait = await _gameClient.Wait.ForFarmhands(60000);
-        Assert.NotNull(reconnectFarmhandWait);
-        Assert.True(reconnectFarmhandWait.Success, $"Wait for farmhands on reconnect failed: {reconnectFarmhandWait.Error}");
-        _output.WriteLine($"Farmhand menu appeared on reconnect after {reconnectFarmhandWait.WaitedMs}ms");
-
-        // Give the game time to load farmhand data
-        await Task.Delay(2000);
-
-        // Step 20: Verify the farmer we created exists with the correct name
-        var reconnectFarmhands = await _gameClient.Farmhands.GetSlots();
-        Assert.NotNull(reconnectFarmhands);
-        Assert.True(reconnectFarmhands.Success, $"Get farmhands on reconnect failed: {reconnectFarmhands.Error}");
-
-        _output.WriteLine($"Found {reconnectFarmhands.Slots.Count} farmhand slots on reconnect:");
+        // Step 10: Verify the farmer we created exists
+        LogSection("Verifying farmer");
+        var reconnectFarmhands = reconnectResult.Farmhands!;
+        Log($"Found {reconnectFarmhands.Slots.Count} farmhand slots on reconnect:");
         foreach (var slot in reconnectFarmhands.Slots)
         {
-            _output.WriteLine($"  Slot {slot.Index}: Name='{slot.Name}', IsCustomized={slot.IsCustomized}, IsEmpty={slot.IsEmpty}");
+            Log($"  Slot {slot.Index}: Name='{slot.Name}', IsCustomized={slot.IsCustomized}, IsEmpty={slot.IsEmpty}");
         }
 
         var ourFarmer = reconnectFarmhands.Slots.FirstOrDefault(s =>
             s.Name == farmerName && s.IsCustomized);
 
         Assert.NotNull(ourFarmer);
-        _output.WriteLine($"SUCCESS: Found our farmer '{farmerName}' at slot index {ourFarmer.Index}");
+        Log($"SUCCESS: Found our farmer '{farmerName}' at slot index {ourFarmer.Index}");
 
-        // Return to title and wait for full disconnection
-        await _gameClient.Navigate("title");
-        await _gameClient.Wait.ForDisconnected(10000);
+        await AssertNoExceptionsAsync("at end of test");
     }
 
     /// <summary>
     /// Tests that we can join a server and see the farmhand selection screen.
+    /// Uses the retry connection helper.
     /// </summary>
     [Fact]
     public async Task JoinServer_ShouldShowFarmhandSelection()
     {
-        // Ensure we're fully disconnected first (no leftover connection from previous test)
-        await _gameClient.Navigate("title");
-        var disconnectWait = await _gameClient.Wait.ForDisconnected(10000);
-        Assert.True(disconnectWait?.Success, "Should be disconnected before starting test");
+        // Ensure disconnected
+        await EnsureDisconnectedAsync();
 
-        // Get invite code
-        var status = await _serverApi.GetStatus();
-        Assert.NotNull(status);
-        Assert.True(status.IsOnline, "Server should be online");
+        // Verify server is online
+        Assert.NotNull(ServerStatus);
+        Assert.True(ServerStatus.IsOnline, "Server should be online");
 
-        // Navigate and join (JOIN_TAB = 0)
-        var navigateResult = await _gameClient.Navigate("coopmenu");
-        Assert.True(navigateResult?.Success, "Navigate failed");
+        // Connect with retry
+        var connectResult = await ConnectWithRetryAsync();
+        AssertConnectionSuccess(connectResult);
 
-        // Wait for CoopMenu to be ready
-        var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", 10000);
-        Assert.True(menuWait?.Success, "Wait for CoopMenu failed");
+        // Verify we have farmhand slots
+        Assert.NotNull(connectResult.Farmhands);
+        Assert.NotEmpty(connectResult.Farmhands.Slots);
 
-        var tabResult = await _gameClient.Coop.Tab(0); // 0 = JOIN_TAB
-        Assert.True(tabResult?.Success, "Tab switch failed");
-
-        // Open invite code menu
-        var openResult = await _gameClient.Coop.OpenInviteCodeMenu();
-        Assert.True(openResult?.Success, "Open invite code menu failed");
-
-        // Wait for text input menu
-        var textInputWait = await _gameClient.Wait.ForTextInput(10000);
-        Assert.True(textInputWait?.Success, "Wait for text input failed");
-
-        // Submit invite code
-        var submitResult = await _gameClient.Coop.SubmitInviteCode(status.InviteCode);
-        Assert.True(submitResult?.Success, "Submit invite code failed");
-
-        // Wait for farmhand selection
-        var farmhandWait = await _gameClient.Wait.ForFarmhands(60000);
-        Assert.True(farmhandWait?.Success, "Should reach farmhand selection screen");
-
-        // Give the game time to load farmhand data
-        await Task.Delay(2000);
-
-        // Verify we can get farmhand slots
-        var farmhands = await _gameClient.Farmhands.GetSlots();
-        Assert.NotNull(farmhands);
-        Assert.True(farmhands.Success, "Should be able to get farmhand slots");
-        Assert.NotEmpty(farmhands.Slots);
-
-        _output.WriteLine($"Found {farmhands.Slots.Count} farmhand slots");
-        foreach (var slot in farmhands.Slots)
+        Log($"Found {connectResult.Farmhands.Slots.Count} farmhand slots (connected after {connectResult.AttemptsUsed} attempt(s))");
+        foreach (var slot in connectResult.Farmhands.Slots)
         {
-            _output.WriteLine($"  Slot {slot.Index}: {slot.Name} (customized: {slot.IsCustomized}, empty: {slot.IsEmpty})");
+            Log($"  Slot {slot.Index}: {slot.Name} (customized: {slot.IsCustomized}, empty: {slot.IsEmpty})");
         }
 
-        // Return to title and wait for full disconnection
-        await _gameClient.Navigate("title");
-        await _gameClient.Wait.ForDisconnected(10000);
+        await AssertNoExceptionsAsync("at end of test");
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Demonstrates using JoinWorldWithRetryAsync for a complete join flow.
+    /// </summary>
+    [Fact]
+    public async Task JoinWorld_WithRetry_ShouldEnterGame()
     {
-        _gameClient.Dispose();
-        _serverApi.Dispose();
+        await EnsureDisconnectedAsync();
+
+        var farmerName = GenerateFarmerName("Retry");
+        TrackFarmer(farmerName);
+
+        Log($"Joining world with farmer: {farmerName}");
+
+        // This single call handles:
+        // - Connecting to server (with retry)
+        // - Selecting farmhand slot
+        // - Character creation (if needed)
+        // - Waiting for world ready
+        var joinResult = await JoinWorldWithRetryAsync(
+            farmerName,
+            favoriteThing: "RetryTesting",
+            preferExistingFarmer: false);
+
+        AssertJoinSuccess(joinResult);
+        Log($"Successfully joined world at slot {joinResult.SlotIndex} after {joinResult.AttemptsUsed} attempt(s)");
+
+        // Verify we're in the game
+        var status = await GameClient.GetMenu();
+        Log($"Current menu after join: {status?.Type ?? "none"}");
+
+        await AssertNoExceptionsAsync("after joining world");
+    }
+
+    /// <summary>
+    /// Test demonstrating how to temporarily suppress exception abort
+    /// for scenarios where exceptions are expected.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionSuppression_CanBeTemporarilyDisabled()
+    {
+        await EnsureDisconnectedAsync();
+
+        // Connect normally
+        var connectResult = await ConnectWithRetryAsync();
+        AssertConnectionSuccess(connectResult);
+
+        // Temporarily suppress exception abort for a section where
+        // we might see expected errors (e.g., testing error handling)
+        using (SuppressExceptionAbort())
+        {
+            Log("Exception abort suppressed for this section");
+
+            // Even if exceptions occur here, they won't fail the test immediately
+            // (In a real scenario, you might trigger expected errors here)
+        }
+
+        Log("Exception abort re-enabled");
+
+        // Check for exceptions at the end (this will fail if there were any)
+        await AssertNoExceptionsAsync("at end of test");
     }
 }
