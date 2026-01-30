@@ -53,7 +53,6 @@ namespace JunimoServer.Services.CabinManager
 
         private readonly HashSet<long> farmersInFarmhouse = new HashSet<long>();
 
-
         // Static reference ONLY for Harmony patches (unavoidable)
         private static CabinManagerService _instance;
 
@@ -70,30 +69,43 @@ namespace JunimoServer.Services.CabinManager
             Data = new CabinManagerData(helper, monitor);
 
             Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
-            Helper.Events.GameLoop.UpdateTicked += OnTicked;
 
-            // Disable default starting cabin logic, we handle it
-            harmony.Patch(
-                original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.BuildStartingCabins)),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
-            );
+            // For None strategy, let vanilla handle starting cabins and skip message
+            // interception and farmhouse monitoring — cabins are real and visible.
+            if (!options.IsNone)
+            {
+                // Disable default starting cabin logic, we handle it
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.BuildStartingCabins)),
+                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                );
 
+                // Hijack outgoing messages for cabin warp manipulation
+                messageInterceptorsService
+                    .Add(Multiplayer.locationIntroduction, OnLocationIntroductionMessage)
+                    .Add(Multiplayer.locationDelta, OnLocationDeltaMessage);
+
+                // Monitor farmhouse access — only owner can enter
+                Helper.Events.GameLoop.UpdateTicked += OnTicked;
+            }
+
+            // Always hook player join — needed for peer tracking and auto-cabin creation
             harmony.Patch(
                 original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
                 postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnServerJoined_Postfix))
             );
-
-            // Hijack outgoing messages
-            messageInterceptorsService
-                .Add(Multiplayer.locationIntroduction, OnLocationIntroductionMessage)
-                .Add(Multiplayer.locationDelta, OnLocationDeltaMessage);
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
-            // Load saved cabin data
-            // TODO: Check for proper persistence, see https://github.com/stardew-valley-dedicated-server/server/issues/64
             Data.Read();
+
+            // Detect and handle strategy changes between runs
+            DetectAndMigrateStrategyChange();
+
+            // Register existing cabin owners from imported saves
+            SyncExistingCabins();
+
             EnsureAtLeastXCabins();
         }
 
@@ -113,11 +125,117 @@ namespace JunimoServer.Services.CabinManager
             EnsureAtLeastXCabins();
         }
 
-        //private void OnServerJoined(object sender, ServerJoinedEventArgs e)
-        //{
-        //    AddPeer(e.PeerId);
-        //    EnsureAtLeastXCabins();
-        //}
+        #region Strategy Change Migration
+
+        private void DetectAndMigrateStrategyChange()
+        {
+            var previousStrategy = options.PreviousCabinStrategy;
+            var currentStrategy = options.Data.CabinStrategy;
+
+            if (previousStrategy == currentStrategy)
+            {
+                return;
+            }
+
+            Monitor.Log($"CabinStrategy changed from {previousStrategy} to {currentStrategy}, migrating cabins...", LogLevel.Warn);
+            MigrateCabins(previousStrategy, currentStrategy);
+        }
+
+        private void MigrateCabins(CabinStrategy from, CabinStrategy to)
+        {
+            var farm = Game1.getFarm();
+            bool fromUsesHidden = (from == CabinStrategy.CabinStack || from == CabinStrategy.FarmhouseStack);
+            bool toUsesHidden = (to == CabinStrategy.CabinStack || to == CabinStrategy.FarmhouseStack);
+
+            if (fromUsesHidden && !toUsesHidden)
+            {
+                // Stacked → None: move hidden cabins to visible farm positions
+                var hiddenCabins = farm.buildings
+                    .Where(b => b.isCabin && b.IsInHiddenStack())
+                    .ToList();
+
+                foreach (var cabin in hiddenCabins)
+                {
+                    var nextPos = FarmCabinPositions.GetNextAvailablePosition(farm);
+                    if (nextPos.HasValue)
+                    {
+                        cabin.Relocate(nextPos.Value);
+                        Monitor.Log($"  Migrated cabin to ({nextPos.Value.X}, {nextPos.Value.Y})", LogLevel.Info);
+                    }
+                    else
+                    {
+                        Monitor.Log("  No available farm position for cabin migration", LogLevel.Error);
+                    }
+                }
+            }
+            else if (!fromUsesHidden && toUsesHidden)
+            {
+                // None → Stacked: move visible cabins to hidden stack
+                var visibleCabins = farm.buildings
+                    .Where(b => b.isCabin && !b.IsInHiddenStack())
+                    .ToList();
+
+                foreach (var cabin in visibleCabins)
+                {
+                    cabin.SetPosition(HiddenCabinLocation);
+                    Monitor.Log($"  Migrated cabin to hidden stack", LogLevel.Info);
+                }
+            }
+            // Stacked ↔ Stacked: no relocation needed, only warp behavior changes
+        }
+
+        #endregion
+
+        #region Existing Cabin Import Handling
+
+        private void SyncExistingCabins()
+        {
+            var farm = Game1.getFarm();
+            var allCabins = farm.buildings.Where(b => b.isCabin).ToList();
+            var syncedCount = 0;
+
+            foreach (var cabin in allCabins)
+            {
+                var indoors = cabin.GetIndoors<Cabin>();
+                if (indoors?.owner == null)
+                {
+                    continue;
+                }
+
+                // Only sync cabins that are actually claimed by a real player.
+                // Unassigned cabins have auto-generated UniqueMultiplayerIDs but empty userIDs.
+                var owner = indoors.owner;
+                var ownerId = owner.UniqueMultiplayerID;
+                if (ownerId != 0 && !string.IsNullOrEmpty(owner.userID.Value) && Data.AllPlayerIdsEverJoined.Add(ownerId))
+                {
+                    syncedCount++;
+                }
+            }
+
+            if (syncedCount > 0)
+            {
+                Monitor.Log($"Synced {syncedCount} existing cabin owner(s) from save", LogLevel.Info);
+                Data.Write();
+            }
+
+            // Handle ExistingCabinBehavior for stacked strategies
+            if (options.UsesHiddenCabins && options.Data.ExistingCabinBehavior == ExistingCabinBehavior.MoveToStack)
+            {
+                var visibleCabins = allCabins.Where(b => !b.IsInHiddenStack()).ToList();
+                if (visibleCabins.Count > 0)
+                {
+                    Monitor.Log($"MoveToStack: relocating {visibleCabins.Count} visible cabin(s) to hidden stack", LogLevel.Info);
+                    foreach (var cabin in visibleCabins)
+                    {
+                        cabin.SetPosition(HiddenCabinLocation);
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Message Interception
 
         private void OnLocationIntroductionMessage(MessageContext context)
         {
@@ -146,12 +264,14 @@ namespace JunimoServer.Services.CabinManager
             {
                 // Cabin stacking strategy:
                 // Relocate the player's cabin client-side so only the owner sees it.
-                // The cabin is moved from `HiddenCabinLocation` to `DefaultCabinLocation`,
-                // making it visible and interactable for the owner only.
-                // This allows individual cabin repainting even while stacked, unlike the
-                // farmhouse strategy.
+                // Only relocate cabins that are in the hidden stack — cabins at real
+                // positions (e.g. from imported saves with KeepExisting) stay put.
                 farm = netRootFarm;
-                farm.GetCabin(context.PeerId).Relocate(StackLocation.Create(_cabinManagerData).ToPoint());
+                var cabin = farm.GetCabin(context.PeerId);
+                if (cabin != null && cabin.IsInHiddenStack())
+                {
+                    cabin.Relocate(StackLocation.Create(_cabinManagerData).ToPoint());
+                }
             }
 
             // Update the outgoing message
@@ -160,8 +280,6 @@ namespace JunimoServer.Services.CabinManager
 
         private void OnLocationDeltaMessage(MessageContext context)
         {
-            // TODO: Do we have to do it on each delta, or can it be done once on assignment?
-            // Either way, document reasons/whatabouts here, e.g. "this is the only message we know about the location"
             if (NetworkHelper.IsLocationDeltaMessageForLocation(context, out Cabin cabin))
             {
                 if (this.options.IsFarmHouseStack)
@@ -175,15 +293,20 @@ namespace JunimoServer.Services.CabinManager
             }
         }
 
+        #endregion
+
+        #region Peer Management
+
         private void AddPeer(long peerId)
         {
             Monitor.Log($"Adding peer '{peerId}'", LogLevel.Debug);
             Data.AllPlayerIdsEverJoined.Add(peerId);
-
-            // Save/persist/store cabin data
-            // TODO: Should happen after adding cabin, so that we can store the moved cabin location alongside.
             Data.Write();
         }
+
+        #endregion
+
+        #region Farmhouse Access Control
 
         private void MonitorFarmhouse()
         {
@@ -206,9 +329,6 @@ namespace JunimoServer.Services.CabinManager
                 {
                     farmersInFarmhouse.Add(farmer.UniqueMultiplayerID);
 
-                    // TODO: This handling is rather awkward and inefficient, we should act and not react!
-                    // a) Prevent entering instead of porting player out after entering the farmhouse
-                    // b) Send request to allow entering to farmhouse owner, could this be useful?
                     if (!roleService.IsPlayerOwner(farmer))
                     {
                         Game1.Multiplayer.sendChatMessage(
@@ -225,38 +345,61 @@ namespace JunimoServer.Services.CabinManager
             farmersInFarmhouse.RemoveWhere(farmerId => !farmersInFarmHouseCurrent.Contains(farmerId));
         }
 
+        #endregion
+
+        #region Cabin Creation
+
         public void EnsureAtLeastXCabins()
         {
             var farm = Game1.getFarm();
-            var emptyCabinCount = GetCabinHiddenCount(farm);
-            var cabinsMissingCount = minEmptyCabins - emptyCabinCount;
+            var availableCount = GetAvailableCabinCount(farm);
+            var cabinsMissingCount = minEmptyCabins - availableCount;
 
-            // TODO: Currently using hardcoded minEmptyCabins = 1, essentially creates
-            // a new empty cabin as soon as the "current" free cabin got picked...
-            // lets see if that works with concurrency.
             Monitor.Log($"Cabin check:", LogLevel.Debug);
             Monitor.Log($"\tRequired: {minEmptyCabins}", LogLevel.Debug);
-            Monitor.Log($"\tCurrent: {emptyCabinCount}", LogLevel.Debug);
+            Monitor.Log($"\tAvailable: {availableCount}", LogLevel.Debug);
             Monitor.Log($"\tMissing: {cabinsMissingCount}", LogLevel.Debug);
 
             for (var i = 0; i < cabinsMissingCount; i++)
             {
                 Monitor.Log($"Cabin check: building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Trace);
 
-                if (!BuildNewCabin(farm))
+                bool success = options.IsNone
+                    ? BuildNewCabinVisible(farm)
+                    : BuildNewCabin(farm);
+
+                if (!success)
                 {
-                    Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}'", LogLevel.Error);
+                    Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Error);
                 }
             }
         }
 
-        private int GetCabinHiddenCount(GameLocation farm)
+        /// <summary>
+        /// Count available (unassigned) cabins, strategy-aware.
+        /// For stacked strategies: count cabins at hidden position without owners.
+        /// For None: count ALL cabins without owners regardless of position.
+        /// </summary>
+        private int GetAvailableCabinCount(GameLocation farm)
         {
+            if (options.IsNone)
+            {
+                return farm.buildings
+                    .Where(b => b.isCabin)
+                    .Count(b => !Data.AllPlayerIdsEverJoined.Contains(
+                        b.GetIndoors<Cabin>()?.owner?.UniqueMultiplayerID ?? 0));
+            }
+
+            // For stacked strategies, only count hidden cabins
             return farm.buildings
-                .Where(building => building.isCabin)
-                .Count(cabin => !Data.AllPlayerIdsEverJoined.Contains(cabin.GetIndoors<Cabin>().owner.UniqueMultiplayerID));
+                .Where(b => b.isCabin)
+                .Count(b => !Data.AllPlayerIdsEverJoined.Contains(
+                    b.GetIndoors<Cabin>()?.owner?.UniqueMultiplayerID ?? 0));
         }
 
+        /// <summary>
+        /// Build a cabin at the hidden out-of-bounds location (for CabinStack/FarmhouseStack).
+        /// </summary>
         public bool BuildNewCabin(GameLocation location)
         {
             var cabinTilePosition = HiddenCabinLocation.ToVector2();
@@ -267,15 +410,46 @@ namespace JunimoServer.Services.CabinManager
             cabin.daysOfConstructionLeft.Value = 0;
             cabin.load();
 
-            // Cabin now exists within the game data, but still needs to be placed in its desired location
             if (location.buildStructure(cabin, cabinTilePosition, Game1.player, true))
             {
-                // Usually cabins are placed out-of-bounds, so this is just for good measure
                 cabin.ClearTerrainBelow();
                 return true;
             }
 
             return false;
         }
+
+        /// <summary>
+        /// Build a cabin at a real, visible farm position (for None strategy).
+        /// Uses map-designated positions from the Paths layer.
+        /// </summary>
+        public bool BuildNewCabinVisible(GameLocation location)
+        {
+            var farm = location as Farm ?? Game1.getFarm();
+            var position = FarmCabinPositions.GetNextAvailablePosition(farm);
+
+            if (!position.HasValue)
+            {
+                Monitor.Log("No available designated cabin position on farm map", LogLevel.Warn);
+                return false;
+            }
+
+            var cabin = new Building("Cabin", position.Value);
+            cabin.skinId.Value = "Log Cabin";
+            cabin.magical.Value = true;
+            cabin.daysOfConstructionLeft.Value = 0;
+            cabin.load();
+
+            if (location.buildStructure(cabin, position.Value, Game1.player, true))
+            {
+                cabin.ClearTerrainBelow();
+                Monitor.Log($"Built visible cabin at ({position.Value.X}, {position.Value.Y})", LogLevel.Info);
+                return true;
+            }
+
+            return false;
+        }
+
+        #endregion
     }
 }
