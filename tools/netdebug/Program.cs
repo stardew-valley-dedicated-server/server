@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using DnsClient;
+using Spectre.Console;
 
 class Program
 {
@@ -63,13 +64,19 @@ class Program
                 break;
             case "gog-ports":
             case "gog-requests":
+                if (!await CheckTcpDumpAvailable())
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] tcpdump is not installed or not in PATH");
+                    AnsiConsole.MarkupLine("[dim]Install tcpdump to use gog-ports/gog-requests[/]");
+                    return;
+                }
                 var udpTask = RunTcpDump("udp", udpRegex);
                 var tcpTask = RunTcpDump("tcp", tcpRegex);
                 await Task.WhenAll(udpTask, tcpTask);
                 break;
             default:
-                Console.WriteLine($"{Red}Error: Unknown action '{action}'{Reset}");
-                Console.WriteLine();
+                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown action '[yellow]{action}[/]'");
+                AnsiConsole.WriteLine();
                 PrintHelp();
                 break;
         }
@@ -77,135 +84,223 @@ class Program
 
     private static void PrintHelp()
     {
-        Console.WriteLine("Usage: netdebug <action> [options]");
-        Console.WriteLine();
-        Console.WriteLine("Actions:");
-        Console.WriteLine("  gog-ports      Track unique ports used for GOG Galaxy traffic");
-        Console.WriteLine("  gog-requests   Show live GOG Galaxy requests with resolved domains");
-        Console.WriteLine("  nat            Discover NAT type (mapping, filtering, hairpinning)");
-        Console.WriteLine("  ping [host]    Test latency (default: auth.gog.com)");
-        Console.WriteLine("  speed          Test download speed via Cloudflare");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --sort         Sort ports numerically (gog-ports only)");
+        var panel = new Panel(
+            new Rows(
+                new Markup("[bold]netdebug[/] [dim]<action>[/] [dim][[options]][/]"),
+                new Rule().RuleStyle("dim"),
+                new Markup("\n[cyan]Actions:[/]"),
+                new Markup("  [white]nat[/]            Discover NAT type (mapping, filtering, hairpinning)"),
+                new Markup("  [white]ping[/] [dim][[host]][/]   Test latency (default: auth.gog.com)"),
+                new Markup("  [white]speed[/]          Test download speed via Cloudflare"),
+                new Markup("  [white]gog-ports[/]      Track unique ports used for GOG Galaxy traffic"),
+                new Markup("  [white]gog-requests[/]   Show live GOG Galaxy requests with resolved domains"),
+                new Markup("\n[cyan]Options:[/]"),
+                new Markup("  [white]--sort[/]         Sort ports numerically (gog-ports only)")
+            ))
+        {
+            Header = new PanelHeader(" Network Diagnostics ", Justify.Center),
+            Border = BoxBorder.Rounded,
+            Padding = new Padding(2, 1)
+        };
+
+        AnsiConsole.Write(panel);
     }
 
     private static async Task PingHost(string host)
     {
-        Console.WriteLine($"{Bold}Ping Test{Reset} {Dim}({host}){Reset}\n");
+        AnsiConsole.Write(new Rule($"[cyan]Ping Test[/] [dim]({host})[/]").LeftJustified());
+        AnsiConsole.WriteLine();
 
         using var ping = new Ping();
         var results = new List<long>();
         var failed = 0;
 
         // Resolve host first
-        Console.Write($"  {Dim}Resolving...{Reset} ");
-        IPAddress? ip;
-        try
-        {
-            ip = (await Dns.GetHostAddressesAsync(host)).FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
-            if (ip == null)
+        IPAddress? ip = null;
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("Resolving hostname...", async ctx =>
             {
-                Console.WriteLine($"{Red}failed (no IPv4 address){Reset}");
-                return;
-            }
-            Console.WriteLine($"{ip}");
-        }
-        catch (Exception ex)
+                try
+                {
+                    ip = (await Dns.GetHostAddressesAsync(host)).FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+                }
+                catch { }
+            });
+
+        if (ip == null)
         {
-            Console.WriteLine($"{Red}failed ({ex.Message}){Reset}");
+            AnsiConsole.MarkupLine("[red]Failed to resolve hostname (no IPv4 address)[/]");
             return;
         }
 
-        Console.WriteLine();
+        AnsiConsole.MarkupLine($"[dim]Resolved to:[/] [white]{ip}[/]");
+        AnsiConsole.WriteLine();
 
-        // Send 10 pings
-        for (int i = 0; i < 10; i++)
-        {
-            Console.Write($"  {Dim}Ping {i + 1}/10:{Reset} ");
-            try
+        // Send 10 pings with progress
+        await AnsiConsole.Progress()
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new SpinnerColumn()
+            )
+            .StartAsync(async ctx =>
             {
-                var reply = await ping.SendPingAsync(ip, 3000);
-                if (reply.Status == IPStatus.Success)
-                {
-                    results.Add(reply.RoundtripTime);
-                    Console.WriteLine($"{Green}{reply.RoundtripTime}ms{Reset}");
-                }
-                else
-                {
-                    failed++;
-                    Console.WriteLine($"{Yellow}{reply.Status}{Reset}");
-                }
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                Console.WriteLine($"{Red}error: {ex.Message}{Reset}");
-            }
+                var task = ctx.AddTask("[cyan]Pinging...[/]", maxValue: 10);
 
-            if (i < 9) await Task.Delay(500);
-        }
+                for (int i = 0; i < 10; i++)
+                {
+                    try
+                    {
+                        var reply = await ping.SendPingAsync(ip, 3000);
+                        if (reply.Status == IPStatus.Success)
+                        {
+                            results.Add(reply.RoundtripTime);
+                        }
+                        else
+                        {
+                            failed++;
+                        }
+                    }
+                    catch
+                    {
+                        failed++;
+                    }
 
-        // Summary
-        Console.WriteLine($"\n{Cyan}● Results{Reset}\n");
+                    task.Increment(1);
+                    if (i < 9) await Task.Delay(500);
+                }
+            });
+
+        AnsiConsole.WriteLine();
+
+        // Results table
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn(new TableColumn("[cyan]Metric[/]").Centered())
+            .AddColumn(new TableColumn("[cyan]Value[/]").Centered());
 
         if (results.Count > 0)
         {
-            Console.WriteLine($"  {Dim}Min:{Reset} {results.Min()}ms");
-            Console.WriteLine($"  {Dim}Max:{Reset} {results.Max()}ms");
-            Console.WriteLine($"  {Dim}Avg:{Reset} {results.Average():F1}ms");
+            table.AddRow("Min", $"[green]{results.Min()}ms[/]");
+            table.AddRow("Max", $"[yellow]{results.Max()}ms[/]");
+            table.AddRow("Avg", $"[white]{results.Average():F1}ms[/]");
         }
 
-        Console.WriteLine($"  {Dim}Loss:{Reset} {failed}/10 ({failed * 10}%)");
-        Console.WriteLine();
+        var lossColor = failed == 0 ? "green" : (failed < 5 ? "yellow" : "red");
+        table.AddRow("Packet Loss", $"[{lossColor}]{failed}/10 ({failed * 10}%)[/]");
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
     }
 
     private static async Task SpeedTest()
     {
-        Console.WriteLine($"{Bold}Speed Test{Reset} {Dim}(Cloudflare){Reset}\n");
+        AnsiConsole.Write(new Rule("[cyan]Speed Test[/] [dim](Cloudflare)[/]").LeftJustified());
+        AnsiConsole.WriteLine();
 
         using var client = new HttpClient();
         client.Timeout = TimeSpan.FromSeconds(30);
 
-        var testSizes = new[] { (10, "10MB"), (50, "50MB"), (100, "100MB") };
+        var testSizes = new[] { (10, "10 MB"), (50, "50 MB"), (100, "100 MB") };
+        var speedResults = new List<(string size, double mbps, double seconds)>();
 
-        foreach (var (sizeMb, label) in testSizes)
-        {
-            var bytes = sizeMb * 1_000_000;
-            var url = $"https://speed.cloudflare.com/__down?bytes={bytes}";
-
-            Console.Write($"  {Dim}Downloading {label}...{Reset} ");
-
-            try
+        await AnsiConsole.Progress()
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new TransferSpeedColumn(),
+                new SpinnerColumn()
+            )
+            .StartAsync(async ctx =>
             {
-                var sw = Stopwatch.StartNew();
-                var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
-
-                var buffer = new byte[81920];
-                long totalRead = 0;
-                using var stream = await response.Content.ReadAsStreamAsync();
-
-                int read;
-                while ((read = await stream.ReadAsync(buffer)) > 0)
+                foreach (var (sizeMb, label) in testSizes)
                 {
-                    totalRead += read;
+                    var bytes = sizeMb * 1_000_000;
+                    var url = $"https://speed.cloudflare.com/__down?bytes={bytes}";
+                    var task = ctx.AddTask($"[cyan]{label}[/]", maxValue: bytes);
+
+                    try
+                    {
+                        var sw = Stopwatch.StartNew();
+                        var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                        response.EnsureSuccessStatusCode();
+
+                        var buffer = new byte[81920];
+                        long totalRead = 0;
+                        using var stream = await response.Content.ReadAsStreamAsync();
+
+                        int read;
+                        while ((read = await stream.ReadAsync(buffer)) > 0)
+                        {
+                            totalRead += read;
+                            task.Value = totalRead;
+                        }
+
+                        sw.Stop();
+                        var seconds = sw.Elapsed.TotalSeconds;
+                        var mbps = (totalRead * 8.0 / 1_000_000) / seconds;
+                        speedResults.Add((label, mbps, seconds));
+                    }
+                    catch
+                    {
+                        task.StopTask();
+                        speedResults.Add((label, -1, 0));
+                    }
                 }
+            });
 
-                sw.Stop();
+        AnsiConsole.WriteLine();
 
-                var seconds = sw.Elapsed.TotalSeconds;
-                var mbps = (totalRead * 8 / 1_000_000) / seconds;
+        // Results table
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn(new TableColumn("[cyan]Size[/]").Centered())
+            .AddColumn(new TableColumn("[cyan]Speed[/]").Centered())
+            .AddColumn(new TableColumn("[cyan]Time[/]").Centered());
 
-                Console.WriteLine($"{Green}{mbps:F1} Mbps{Reset} {Dim}({seconds:F1}s){Reset}");
-            }
-            catch (Exception ex)
+        foreach (var (size, mbps, seconds) in speedResults)
+        {
+            if (mbps < 0)
             {
-                Console.WriteLine($"{Red}failed: {ex.Message}{Reset}");
+                table.AddRow(size, "[red]Failed[/]", "-");
+            }
+            else
+            {
+                var speedColor = mbps > 50 ? "green" : (mbps > 10 ? "yellow" : "red");
+                table.AddRow(size, $"[{speedColor}]{mbps:F1} Mbps[/]", $"[dim]{seconds:F1}s[/]");
             }
         }
 
-        Console.WriteLine();
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+    }
+
+    private static async Task<bool> CheckTcpDumpAvailable()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "tcpdump",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+            await process.WaitForExitAsync();
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task RunTcpDump(string protocol, Regex regex)
@@ -222,7 +317,13 @@ class Program
 
         using var process = new Process { StartInfo = startInfo };
         process.OutputDataReceived += (sender, e) => ProcessOutput(e, protocol, regex);
-        process.ErrorDataReceived += (sender, e) => { };
+        process.ErrorDataReceived += (sender, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+            {
+                AnsiConsole.MarkupLine($"[red]tcpdump ({protocol}):[/] {Markup.Escape(e.Data)}");
+            }
+        };
 
         process.Start();
         process.BeginOutputReadLine();
@@ -281,13 +382,14 @@ class Program
             var proto = protocol.ToUpper();
 
             // Always show GOG on the right side
-            string localSide, gogSide, arrow;
+            string localSide, gogSide, arrow, arrowColor;
             if (IsGogHost(dstHost))
             {
                 // Outgoing: server -> GOG
                 localSide = $"{srcHost}:{srcPort}";
                 gogSide = $"{dstHost}:{dstPort}";
                 arrow = "->";
+                arrowColor = "green";
             }
             else
             {
@@ -295,9 +397,10 @@ class Program
                 localSide = $"{dstHost}:{dstPort}";
                 gogSide = $"{srcHost}:{srcPort}";
                 arrow = "<-";
+                arrowColor = "cyan";
             }
 
-            Console.WriteLine($"[{timestamp}] {proto}\t{localSide}\t{arrow}\t{gogSide}\t({length} bytes)");
+            AnsiConsole.MarkupLine($"[dim]{timestamp}[/] [yellow]{proto}[/] {Markup.Escape(localSide)} [{arrowColor}]{arrow}[/] [cyan]{Markup.Escape(gogSide)}[/] [dim]({length} bytes)[/]");
         }
         else // gog-ports
         {
@@ -326,12 +429,66 @@ class Program
         var udpOut = sortOutput ? udpOutgoing.OrderBy(p => p) : udpOutgoing.AsEnumerable();
         var udpIn = sortOutput ? udpIncoming.OrderBy(p => p) : udpIncoming.AsEnumerable();
 
-        Console.Clear();
-        Console.WriteLine("TCP Outgoing (server -> GOG): " + string.Join(", ", tcpOut));
-        Console.WriteLine("TCP Incoming (GOG -> server): " + string.Join(", ", tcpIn));
-        Console.WriteLine();
-        Console.WriteLine("UDP Outgoing (server -> GOG): " + string.Join(", ", udpOut));
-        Console.WriteLine("UDP Incoming (GOG -> server): " + string.Join(", ", udpIn));
+        AnsiConsole.Clear();
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .Title("[cyan]GOG Galaxy Ports[/]")
+            .AddColumn(new TableColumn("[yellow]Protocol[/]").Centered())
+            .AddColumn(new TableColumn("[green]Outgoing (Server -> GOG)[/]"))
+            .AddColumn(new TableColumn("[cyan]Incoming (GOG -> Server)[/]"));
+
+        table.AddRow(
+            "[yellow]TCP[/]",
+            string.Join(", ", tcpOut),
+            string.Join(", ", tcpIn)
+        );
+        table.AddRow(
+            "[yellow]UDP[/]",
+            string.Join(", ", udpOut),
+            string.Join(", ", udpIn)
+        );
+
+        AnsiConsole.Write(table);
+    }
+
+    /// <summary>
+    /// Redacts a public IP address for privacy, showing only the first octet.
+    /// Example: 203.45.67.89 becomes 203.x.x.x
+    /// </summary>
+    private static string RedactPublicIp(IPAddress ip)
+    {
+        var bytes = ip.GetAddressBytes();
+        if (bytes.Length == 4)
+        {
+            // Check if it's a private IP (don't redact those)
+            if (IsPrivateIp(bytes))
+                return ip.ToString();
+            return $"{bytes[0]}.x.x.x";
+        }
+        return ip.ToString();
+    }
+
+    private static bool IsPrivateIp(byte[] bytes)
+    {
+        // 10.0.0.0/8
+        if (bytes[0] == 10) return true;
+        // 172.16.0.0/12
+        if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+        // 192.168.0.0/16
+        if (bytes[0] == 192 && bytes[1] == 168) return true;
+        // 127.0.0.0/8 (loopback)
+        if (bytes[0] == 127) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Formats an endpoint with redacted public IP for display.
+    /// </summary>
+    private static string FormatEndpoint(IPEndPoint endpoint, bool redactIp = true)
+    {
+        var ip = redactIp ? RedactPublicIp(endpoint.Address) : endpoint.Address.ToString();
+        return $"{ip}:{endpoint.Port}";
     }
 
     // STUN servers for basic mapping tests
@@ -352,18 +509,10 @@ class Program
         ("stun.signalwire.com", 3478),
     };
 
-    // ANSI color codes
-    private const string Reset = "\x1b[0m";
-    private const string Bold = "\x1b[1m";
-    private const string Dim = "\x1b[2m";
-    private const string Green = "\x1b[32m";
-    private const string Yellow = "\x1b[33m";
-    private const string Cyan = "\x1b[36m";
-    private const string Red = "\x1b[31m";
-
     private static async Task DiscoverNatType()
     {
-        Console.WriteLine($"{Bold}NAT Behavior Discovery{Reset} {Dim}(RFC 4787){Reset}\n");
+        AnsiConsole.Write(new Rule("[bold blue]NAT Behavior Discovery[/] [grey](RFC 4787)[/]").LeftJustified());
+        AnsiConsole.WriteLine();
 
         // Create a single UDP socket to use for all tests
         using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -371,232 +520,299 @@ class Program
         socket.ReceiveTimeout = 3000;
 
         var localEndpoint = (IPEndPoint)socket.LocalEndPoint!;
-        Console.WriteLine($"  {Dim}Local endpoint:{Reset} {localEndpoint}\n");
+        AnsiConsole.MarkupLine($"  [grey]Local endpoint:[/] [white]{localEndpoint}[/]");
+        AnsiConsole.WriteLine();
 
         // Track results for final summary
+        var mappings = new List<(string server, IPEndPoint mapped)>();
         bool? isEndpointIndependentMapping = null;
         string? filteringResult = null;
         string? finalNatType = null;
+        bool? hairpinSupported = null;
+        bool? portPreserved = null;
 
         // Test 1: Mapping Behavior
-        Console.WriteLine($"{Cyan}● Mapping Behavior{Reset}\n");
+        AnsiConsole.Write(new Rule("[blue]Mapping Behavior[/]").LeftJustified().RuleStyle("grey"));
 
-        var mappings = new List<(string server, IPEndPoint mapped)>();
+        var mappingTable = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .AddColumn(new TableColumn("[white]STUN Server[/]"))
+            .AddColumn(new TableColumn("[white]External Endpoint[/]"))
+            .AddColumn(new TableColumn("[white]Status[/]").Centered());
 
-        foreach (var (host, port) in stunServers)
-        {
-            Console.Write($"  {Dim}{host}:{port} →{Reset} ");
-            try
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("blue"))
+            .StartAsync("Testing mapping behavior...", async ctx =>
             {
-                var serverAddr = await ResolveHostAsync(host);
-                var serverEndpoint = new IPEndPoint(serverAddr, port);
-                var mapped = await StunBindingRequest(socket, serverEndpoint);
-
-                if (mapped != null)
+                foreach (var (host, port) in stunServers)
                 {
-                    Console.WriteLine($"{mapped}");
-                    mappings.Add((host, mapped));
-                }
-                else
-                {
-                    Console.WriteLine($"{Yellow}no response{Reset}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"{Red}error: {ex.Message}{Reset}");
-            }
-        }
+                    ctx.Status($"[grey]Querying {host}...[/]");
+                    try
+                    {
+                        var serverAddr = await ResolveHostAsync(host);
+                        var serverEndpoint = new IPEndPoint(serverAddr, port);
+                        var mapped = await StunBindingRequest(socket, serverEndpoint);
 
-        Console.WriteLine();
+                        if (mapped != null)
+                        {
+                            mappings.Add((host, mapped));
+                            mappingTable.AddRow(
+                                $"[grey]{host}:{port}[/]",
+                                $"[white]{FormatEndpoint(mapped)}[/]",
+                                "[green]OK[/]"
+                            );
+                        }
+                        else
+                        {
+                            mappingTable.AddRow(
+                                $"[grey]{host}:{port}[/]",
+                                "[grey]-[/]",
+                                "[red]No response[/]"
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        mappingTable.AddRow(
+                            $"[grey]{host}:{port}[/]",
+                            "[grey]-[/]",
+                            $"[red]{Markup.Escape(ex.Message)}[/]"
+                        );
+                    }
+                }
+            });
 
-        if (mappings.Count < 2)
-        {
-            Console.WriteLine($"  {Yellow}[!] Unable to determine (not enough responses){Reset}\n");
-        }
-        else
+        AnsiConsole.Write(mappingTable);
+
+        if (mappings.Count >= 2)
         {
             var uniquePorts = mappings.Select(m => m.mapped.Port).Distinct().ToList();
-            var uniqueIps = mappings.Select(m => m.mapped.Address.ToString()).Distinct().ToList();
+            var uniqueIps = mappings.Select(m => RedactPublicIp(m.mapped.Address)).Distinct().ToList();
 
-            Console.WriteLine($"  {Dim}Public IP:{Reset} {string.Join(", ", uniqueIps)}");
-            Console.WriteLine($"  {Dim}Mapped ports:{Reset} {string.Join(", ", mappings.Select(m => m.mapped.Port))}");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"  [grey]Public IP:[/] [white]{string.Join(", ", uniqueIps)}[/]");
+            AnsiConsole.MarkupLine($"  [grey]Mapped ports:[/] [white]{string.Join(", ", mappings.Select(m => m.mapped.Port))}[/]");
 
             isEndpointIndependentMapping = uniquePorts.Count == 1;
 
             if (isEndpointIndependentMapping == true)
             {
-                Console.WriteLine($"  {Green}[✓] Endpoint-Independent Mapping{Reset}");
-                Console.WriteLine($"    {Dim}Full Cone / Restricted Cone / Port Restricted Cone (NAT 1/2/3){Reset}");
+                AnsiConsole.MarkupLine("  [green][[OK]][/] Endpoint-Independent Mapping [grey](Full/Restricted/Port Restricted Cone)[/]");
             }
             else
             {
-                Console.WriteLine($"  {Yellow}[!] Address- and Port-Dependent Mapping{Reset}");
-                Console.WriteLine($"    {Dim}Symmetric NAT (NAT 4){Reset}");
+                AnsiConsole.MarkupLine("  [red][[!!]][/] Address- and Port-Dependent Mapping [grey](Symmetric NAT)[/]");
                 finalNatType = "Strict";
-            }
-        }
-
-        // Test 2: Hairpinning
-        Console.WriteLine($"\n{Cyan}● Hairpinning{Reset}\n");
-
-        if (mappings.Count > 0)
-        {
-            var externalEndpoint = mappings[0].mapped;
-            Console.Write($"  {Dim}Loopback via {externalEndpoint} →{Reset} ");
-
-            var hairpinResult = await TestHairpinning(socket, externalEndpoint);
-
-            if (hairpinResult)
-            {
-                Console.WriteLine($"{Green}[✓] Supported{Reset}");
-                Console.WriteLine($"    {Dim}Internal hosts can communicate via external address{Reset}");
-            }
-            else
-            {
-                Console.WriteLine($"{Yellow}[✗] Not supported{Reset}");
-                Console.WriteLine($"    {Dim}Internal hosts must use internal addresses{Reset}");
             }
         }
         else
         {
-            Console.WriteLine($"  {Dim}Skipped (no external mapping available){Reset}");
+            AnsiConsole.MarkupLine("  [red][[!!]][/] Unable to determine mapping behavior [grey](not enough responses)[/]");
         }
 
+        AnsiConsole.WriteLine();
+
+        // Test 2: Hairpinning
+        AnsiConsole.Write(new Rule("[blue]Hairpinning[/]").LeftJustified().RuleStyle("grey"));
+
+        if (mappings.Count > 0)
+        {
+            var externalEndpoint = mappings[0].mapped;
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("blue"))
+                .StartAsync($"[grey]Testing hairpinning via {FormatEndpoint(externalEndpoint)}...[/]", async ctx =>
+                {
+                    hairpinSupported = await TestHairpinning(socket, externalEndpoint);
+                });
+
+            if (hairpinSupported == true)
+            {
+                AnsiConsole.MarkupLine("  [green][[OK]][/] Supported [grey]- Internal hosts can communicate via external address[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("  [red][[!!]][/] Not supported [grey]- Internal hosts must use internal addresses[/]");
+            }
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("  [grey]Skipped (no external mapping available)[/]");
+        }
+
+        AnsiConsole.WriteLine();
+
         // Test 3: Port Preservation
-        Console.WriteLine($"\n{Cyan}● Port Preservation{Reset}\n");
+        AnsiConsole.Write(new Rule("[blue]Port Preservation[/]").LeftJustified().RuleStyle("grey"));
 
         if (mappings.Count > 0)
         {
             var localPort = localEndpoint.Port;
             var externalPort = mappings[0].mapped.Port;
-            var preserved = localPort == externalPort;
+            portPreserved = localPort == externalPort;
 
-            Console.WriteLine($"  {Dim}Local port:{Reset} {localPort}");
-            Console.WriteLine($"  {Dim}External port:{Reset} {externalPort}");
+            AnsiConsole.MarkupLine($"  [grey]Local port:[/] [white]{localPort}[/]  [grey]External port:[/] [white]{externalPort}[/]");
 
-            if (preserved)
-                Console.WriteLine($"  {Green}[✓] Port preserved{Reset}");
+            if (portPreserved == true)
+            {
+                AnsiConsole.MarkupLine("  [green][[OK]][/] Port preserved");
+            }
             else
-                Console.WriteLine($"  {Yellow}[✗] Port not preserved{Reset}");
+            {
+                AnsiConsole.MarkupLine("  [grey][[--]][/] Port not preserved [grey](normal behavior)[/]");
+            }
         }
 
-        // Test 4: Filtering Behavior (only if mapping is Endpoint-Independent)
-        Console.WriteLine($"\n{Cyan}● Filtering Behavior{Reset}\n");
+        AnsiConsole.WriteLine();
+
+        // Test 4: Filtering Behavior
+        AnsiConsole.Write(new Rule("[blue]Filtering Behavior[/]").LeftJustified().RuleStyle("grey"));
 
         if (finalNatType == "Strict")
         {
-            Console.WriteLine($"  {Dim}Skipped (Symmetric NAT - filtering irrelevant for NAT type){Reset}");
+            AnsiConsole.MarkupLine("  [grey]Skipped (NAT type already determined as Strict)[/]");
         }
         else if (isEndpointIndependentMapping == true)
         {
-            foreach (var (host, port) in natTestServers)
-            {
-                Console.Write($"  {Dim}Testing {host}:{port}...{Reset} ");
-                try
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("blue"))
+                .StartAsync("[grey]Testing filtering behavior...[/]", async ctx =>
                 {
-                    var serverAddr = await ResolveHostAsync(host);
-                    var serverEndpoint = new IPEndPoint(serverAddr, port);
-
-                    // Test 1: Change IP + Change Port (Full Cone test)
-                    var fullConeResult = await StunChangeRequest(socket, serverEndpoint, changeIp: true, changePort: true);
-                    if (fullConeResult)
+                    foreach (var (host, port) in natTestServers)
                     {
-                        Console.WriteLine($"{Green}✓{Reset}");
-                        filteringResult = "full_cone";
-                        break;
-                    }
+                        ctx.Status($"[grey]Testing {host}...[/]");
+                        try
+                        {
+                            var serverAddr = await ResolveHostAsync(host);
+                            var serverEndpoint = new IPEndPoint(serverAddr, port);
 
-                    // Test 2: Change Port only (Restricted Cone test)
-                    var restrictedResult = await StunChangeRequest(socket, serverEndpoint, changeIp: false, changePort: true);
-                    if (restrictedResult)
-                    {
-                        Console.WriteLine($"{Green}✓{Reset}");
-                        filteringResult = "restricted_cone";
-                        break;
-                    }
+                            // First verify this server responds to basic binding
+                            var basicTest = await StunBindingRequest(socket, serverEndpoint);
+                            if (basicTest == null)
+                                continue;
 
-                    // If we got mapping but no change responses, it's Port Restricted
-                    var basicTest = await StunBindingRequest(socket, serverEndpoint);
-                    if (basicTest != null)
-                    {
-                        Console.WriteLine($"{Green}✓{Reset}");
-                        filteringResult = "port_restricted";
-                        break;
-                    }
+                            // Test 1: Change IP + Change Port (Full Cone test)
+                            var fullConeResult = await StunChangeRequest(socket, serverEndpoint, changeIp: true, changePort: true);
+                            if (fullConeResult)
+                            {
+                                filteringResult = "full_cone";
+                                break;
+                            }
 
-                    Console.WriteLine($"{Dim}no RFC 5780 support{Reset}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"{Dim}error: {ex.Message}{Reset}");
-                }
-            }
+                            // Test 2: Change Port only (Restricted Cone test)
+                            var restrictedResult = await StunChangeRequest(socket, serverEndpoint, changeIp: false, changePort: true);
+                            if (restrictedResult)
+                            {
+                                filteringResult = "restricted_cone";
+                                break;
+                            }
+
+                            // Server responds to basic binding but not to change requests
+                            filteringResult = "port_restricted";
+                            break;
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                    }
+                });
 
             if (filteringResult != null)
             {
                 switch (filteringResult)
                 {
                     case "full_cone":
-                        Console.WriteLine($"\n  {Green}[✓] Endpoint-Independent Filtering{Reset}");
-                        Console.WriteLine($"    {Dim}Full Cone NAT (NAT 1){Reset}");
+                        AnsiConsole.MarkupLine("  [green][[OK]][/] Endpoint-Independent Filtering [grey](Full Cone NAT)[/]");
                         finalNatType = "Open";
                         break;
                     case "restricted_cone":
-                        Console.WriteLine($"\n  {Green}[✓] Address-Dependent Filtering{Reset}");
-                        Console.WriteLine($"    {Dim}Restricted Cone NAT (NAT 2){Reset}");
+                        AnsiConsole.MarkupLine("  [green][[OK]][/] Address-Dependent Filtering [grey](Restricted Cone NAT)[/]");
                         finalNatType = "Moderate";
                         break;
                     case "port_restricted":
-                        Console.WriteLine($"\n  {Yellow}[!] Address- and Port-Dependent Filtering{Reset}");
-                        Console.WriteLine($"    {Dim}Port Restricted Cone NAT (NAT 3){Reset}");
+                        AnsiConsole.MarkupLine("  [green][[OK]][/] Address- and Port-Dependent Filtering [grey](Port Restricted Cone NAT)[/]");
                         finalNatType = "Moderate";
                         break;
                 }
             }
             else
             {
-                Console.WriteLine($"\n  {Dim}Could not determine (no RFC 5780 servers responded){Reset}");
+                AnsiConsole.MarkupLine("  [grey]Could not determine (no RFC 5780 servers responded)[/]");
             }
         }
         else
         {
-            Console.WriteLine($"  {Dim}Skipped (mapping test incomplete){Reset}");
+            AnsiConsole.MarkupLine("  [grey]Skipped (mapping test incomplete)[/]");
         }
 
-        // Final Summary
-        Console.WriteLine($"\n{Cyan}● NAT Type{Reset}\n");
+        AnsiConsole.WriteLine();
 
+        // Final Summary
+        AnsiConsole.Write(new Rule("[bold blue]Summary[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var summaryTable = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .AddColumn(new TableColumn("[white]Property[/]"))
+            .AddColumn(new TableColumn("[white]Result[/]"));
+
+        // NAT Type
         if (finalNatType != null)
         {
-            var color = finalNatType == "Open" ? Green : (finalNatType == "Moderate" ? Yellow : Red);
-            var icon = finalNatType == "Open" ? "[✓]" : "[!]";
-            Console.WriteLine($"  {color}{icon} {finalNatType}{Reset}");
-
-            switch (finalNatType)
+            var (natColor, natDesc) = finalNatType switch
             {
-                case "Open":
-                    Console.WriteLine($"    {Dim}Full Cone NAT - best for P2P, all connections work{Reset}");
-                    break;
-                case "Moderate":
-                    Console.WriteLine($"    {Dim}Restricted/Port Restricted - most connections work{Reset}");
-                    break;
-                case "Strict":
-                    Console.WriteLine($"    {Dim}Symmetric NAT - may require relay for some connections{Reset}");
-                    break;
-            }
+                "Open" => ("green", "Full Cone NAT - best for P2P"),
+                "Moderate" => ("blue", "Restricted/Port Restricted - most connections work"),
+                "Strict" => ("red", "Symmetric NAT - may require relay"),
+                _ => ("grey", "Unknown")
+            };
+            summaryTable.AddRow("NAT Type", $"[{natColor} bold]{finalNatType}[/] [grey]({natDesc})[/]");
         }
         else if (isEndpointIndependentMapping == true)
         {
-            Console.WriteLine($"  {Yellow}[!] Open or Moderate{Reset}");
-            Console.WriteLine($"    {Dim}Endpoint-Independent mapping, but filtering unknown{Reset}");
+            summaryTable.AddRow("NAT Type", "[blue]Open or Moderate[/] [grey](filtering unknown)[/]");
         }
         else
         {
-            Console.WriteLine($"  {Dim}Unable to determine{Reset}");
+            summaryTable.AddRow("NAT Type", "[grey]Unable to determine[/]");
         }
 
-        Console.WriteLine();
+        // Other properties
+        if (mappings.Count > 0)
+        {
+            var uniqueIps = mappings.Select(m => RedactPublicIp(m.mapped.Address)).Distinct();
+            summaryTable.AddRow("Public IP", $"[white]{string.Join(", ", uniqueIps)}[/]");
+        }
+
+        if (isEndpointIndependentMapping.HasValue)
+        {
+            summaryTable.AddRow("Mapping", isEndpointIndependentMapping.Value
+                ? "[green]Endpoint-Independent[/]"
+                : "[red]Address/Port-Dependent[/]");
+        }
+
+        if (hairpinSupported.HasValue)
+        {
+            summaryTable.AddRow("Hairpinning", hairpinSupported.Value
+                ? "[green]Supported[/]"
+                : "[red]Not Supported[/]");
+        }
+
+        if (portPreserved.HasValue)
+        {
+            summaryTable.AddRow("Port Preservation", portPreserved.Value
+                ? "[green]Yes[/]"
+                : "[grey]No[/]");
+        }
+
+        AnsiConsole.Write(summaryTable);
+        AnsiConsole.WriteLine();
     }
 
     private static async Task<bool> StunChangeRequest(Socket socket, IPEndPoint server, bool changeIp, bool changePort)
@@ -641,15 +857,24 @@ class Program
         // Send request
         await socket.SendToAsync(request, SocketFlags.None, server);
 
-        // Wait for response with short timeout
+        // Wait for response with timeout
         var buffer = new byte[512];
-        var cts = new CancellationTokenSource(2000);
+        var cts = new CancellationTokenSource(3000);
 
         try
         {
             var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, new IPEndPoint(IPAddress.Any, 0), cts.Token);
             // Verify it's a Binding Response (0x0101)
-            return result.ReceivedBytes >= 20 && buffer[0] == 0x01 && buffer[1] == 0x01;
+            if (result.ReceivedBytes < 20 || buffer[0] != 0x01 || buffer[1] != 0x01)
+                return false;
+
+            // Verify transaction ID matches (bytes 8-19)
+            for (int i = 0; i < 12; i++)
+            {
+                if (buffer[8 + i] != transactionId[i])
+                    return false;
+            }
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -661,27 +886,72 @@ class Program
         }
     }
 
-    private static async Task<bool> TestHairpinning(Socket socket, IPEndPoint externalEndpoint)
+    private static async Task<bool> TestHairpinning(Socket mainSocket, IPEndPoint mainExternalEndpoint)
     {
+        // Proper hairpinning test using two sockets:
+        // 1. Create a second socket (receiver) and get its external mapping
+        // 2. Send a packet from the main socket to the receiver's external address
+        // 3. If the receiver gets the packet, hairpinning is supported
+        //
+        // This tests: internal host A -> NAT external address of B -> internal host B
+
+        using var receiverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        receiverSocket.Bind(new IPEndPoint(IPAddress.Any, 0));
+        receiverSocket.ReceiveTimeout = 2000;
+
         try
         {
-            // Try to send a packet to our own external address
-            var testData = new byte[] { 0x00 };
-            await socket.SendToAsync(testData, SocketFlags.None, externalEndpoint);
+            // Get the external mapping for the receiver socket using the first STUN server
+            var (host, port) = stunServers[0];
+            var serverAddr = await ResolveHostAsync(host);
+            var serverEndpoint = new IPEndPoint(serverAddr, port);
 
-            // Try to receive it back (with short timeout)
-            var buffer = new byte[64];
-            var cts = new CancellationTokenSource(1000);
-
-            try
-            {
-                var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, externalEndpoint, cts.Token);
-                return result.ReceivedBytes > 0;
-            }
-            catch (OperationCanceledException)
-            {
+            var receiverExternal = await StunBindingRequest(receiverSocket, serverEndpoint);
+            if (receiverExternal == null)
                 return false;
-            }
+
+            // Generate a unique test packet
+            var testData = RandomNumberGenerator.GetBytes(16);
+
+            // Start listening on receiver socket before sending
+            var receiveTask = Task.Run(async () =>
+            {
+                var buffer = new byte[64];
+                var cts = new CancellationTokenSource(2000);
+                try
+                {
+                    var result = await receiverSocket.ReceiveFromAsync(
+                        buffer,
+                        SocketFlags.None,
+                        new IPEndPoint(IPAddress.Any, 0),
+                        cts.Token);
+
+                    // Verify we received our test data
+                    if (result.ReceivedBytes == testData.Length)
+                    {
+                        for (int i = 0; i < testData.Length; i++)
+                        {
+                            if (buffer[i] != testData[i])
+                                return false;
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+
+            // Small delay to ensure receiver is listening
+            await Task.Delay(50);
+
+            // Send from main socket to receiver's external address
+            await mainSocket.SendToAsync(testData, SocketFlags.None, receiverExternal);
+
+            // Wait for result
+            return await receiveTask;
         }
         catch
         {
@@ -736,6 +1006,13 @@ class Program
         // Verify it's a Binding Response (0x0101)
         if (response[0] != 0x01 || response[1] != 0x01)
             return null;
+
+        // Verify transaction ID matches (bytes 8-19)
+        for (int i = 0; i < 12; i++)
+        {
+            if (response[8 + i] != transactionId[i])
+                return null;
+        }
 
         // Parse attributes
         int pos = 20; // Skip header
