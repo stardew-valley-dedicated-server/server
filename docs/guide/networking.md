@@ -17,7 +17,7 @@ Players connect using invite codes (prefixed with "G"). This works through most 
 
 ### Direct IP
 
-Disabled by default via `ALLOW_IP_CONNECTIONS=false`.
+Disabled by default via `Server.AllowIpConnections` in `server-settings.json`.
 
 ::: warning
 Direct IP connections don't provide user IDs, so the server can't track farmhand ownership. Players may lose access to their farmhands if they reconnect from a different IP. Only enable if you understand these limitations.

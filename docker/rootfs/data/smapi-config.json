@@ -1,11 +1,11 @@
 {
-    // Test comment
-    "VerboseLogging": ["SMAPI", "JunimoHost.Server"],
+    // Only here for reference, verbose logging is now controlled via server-settings.json, env var or console command
+    // "VerboseLogging": ["SMAPI", "JunimoHost.Server"],
     "SuppressUpdateChecks": ["JunimoHost.Server"],
     "CheckForUpdates": false,
     "CheckContentIntegrity": false,
     "ListenForConsoleInput": true,
-    "DeveloperMode": true,
+    // "DeveloperMode": true,
     "ParanoidWarnings": false,
     "LogTechnicalDetailsForBrokenMods": true,
     "ConsoleColors": {
