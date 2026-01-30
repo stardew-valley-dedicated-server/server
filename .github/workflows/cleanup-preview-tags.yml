@@ -1,0 +1,90 @@
+name: Cleanup Preview Tags
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Weekly on Monday at 6:00 UTC
+  workflow_dispatch:
+    inputs:
+      keep_count:
+        description: "Number of preview tags to keep per repository"
+        required: false
+        default: "10"
+      dry_run:
+        description: "List tags to delete without actually deleting them"
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Cleanup ${{ matrix.repository }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repository: [server, steam-service, discord-bot]
+
+    steps:
+      - name: Delete old preview tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          REPO: ${{ matrix.repository }}
+          KEEP_COUNT: ${{ inputs.keep_count || '10' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          NS="sdvd"
+
+          # Authenticate
+          TOKEN=$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" \
+            '{"username":$u,"password":$p}' \
+            | curl -s -X POST "https://hub.docker.com/v2/users/login" \
+              -H "Content-Type: application/json" -d @- | jq -r '.token')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Failed to authenticate with DockerHub"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+
+          # Fetch tags and filter versioned preview tags (X.Y.Z-preview.N), newest first
+          PREVIEW_TAGS=$(curl -s \
+            "https://hub.docker.com/v2/repositories/$NS/$REPO/tags?page_size=100&ordering=-last_updated" \
+            -H "Authorization: Bearer $TOKEN" \
+            | jq '[.results[] | select(.name | test("^[0-9]+\\.[0-9]+\\.[0-9]+-preview\\.[0-9]+$"))]
+                  | sort_by(.last_updated) | reverse | [.[].name]')
+
+          TOTAL=$(echo "$PREVIEW_TAGS" | jq 'length')
+          echo "Found $TOTAL preview tags for $NS/$REPO"
+
+          if [ "$TOTAL" -le "$KEEP_COUNT" ]; then
+            echo "Nothing to delete (have $TOTAL, keeping $KEEP_COUNT)"
+            exit 0
+          fi
+
+          DELETE_TAGS=$(echo "$PREVIEW_TAGS" | jq -r ".[$KEEP_COUNT:][]")
+          DELETE_COUNT=$(echo "$PREVIEW_TAGS" | jq ".[$KEEP_COUNT:] | length")
+          echo "Deleting $DELETE_COUNT tags (keeping $KEEP_COUNT most recent)"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run — would delete:" && echo "$DELETE_TAGS" | sed 's/^/  /'
+            exit 0
+          fi
+
+          DELETED=0
+          for TAG in $DELETE_TAGS; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              "https://hub.docker.com/v2/repositories/$NS/$REPO/tags/$TAG/" \
+              -H "Authorization: Bearer $TOKEN")
+            if [ "$CODE" -eq 204 ]; then
+              echo "Deleted $TAG"
+              DELETED=$((DELETED + 1))
+            else
+              echo "::warning::Failed to delete $TAG (HTTP $CODE)"
+            fi
+          done
+
+          echo "### $NS/$REPO" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deleted **$DELETED** / $DELETE_COUNT old preview tags." >> "$GITHUB_STEP_SUMMARY"
