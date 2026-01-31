@@ -210,8 +210,9 @@ Go to **Settings → Secrets → Actions** and add:
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | DockerHub username |
 | `DOCKERHUB_TOKEN` | [Create token](https://hub.docker.com/settings/security) |
-| `STEAM_USER` | Steam username (for game download during build) |
-| `STEAM_PASS` | Steam password |
+| `STEAM_USERNAME` | Steam username (for game download during build) |
+| `STEAM_PASSWORD` | Steam password |
+| `STEAM_REFRESH_TOKEN` | Steam refresh token (optional, for persistent auth) |
 
 #### 2. Configure Branch Protection
 
@@ -233,7 +234,7 @@ Settings → Actions → General → Fork pull request workflows:
 ### Build Issues
 
 **Build fails with Steam auth error:**
-- Verify `STEAM_USER` and `STEAM_PASS` secrets are set
+- Verify `STEAM_USERNAME` and `STEAM_PASSWORD` secrets are set
 - Ensure Steam account owns Stardew Valley
 
 **Docker push fails:**
