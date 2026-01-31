@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.5.0](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.4.1...sdvd-server-v1.5.0) (2026-01-31)
+
+
+### Features
+
+* add E2E integration test infrastructure ([#138](https://github.com/stardew-valley-dedicated-server/server/issues/138)) ([84d0469](https://github.com/stardew-valley-dedicated-server/server/commit/84d04693f17d33be6c98d50bf4ae8a99ddf78bb2))
+* add netdebug network diagnostic tool ([#134](https://github.com/stardew-valley-dedicated-server/server/issues/134)) ([c2a5a8c](https://github.com/stardew-valley-dedicated-server/server/commit/c2a5a8c74734bf4b754aabd756c64df5adb44b3e))
+* add REST API service with OpenAPI support ([#139](https://github.com/stardew-valley-dedicated-server/server/issues/139)) ([9aa2d5f](https://github.com/stardew-valley-dedicated-server/server/commit/9aa2d5fcabc728589aae48a17a04d7b6dbcc1e12))
+* cabin strategy improvements ([#149](https://github.com/stardew-valley-dedicated-server/server/issues/149)) ([0446b11](https://github.com/stardew-valley-dedicated-server/server/commit/0446b11da7a710034a8eae8d7e1bbba2d6dfde0e))
+* **ci:** add CODEOWNERS for automatic reviewer assignment ([cbc89de](https://github.com/stardew-valley-dedicated-server/server/commit/cbc89de3cdb2c896a6c6561250b44f5e1eea2015))
+* **ci:** add Dependabot configuration for automated dependency updates ([1f9a8e4](https://github.com/stardew-valley-dedicated-server/server/commit/1f9a8e432b8bd28c1c31c0afeea70af006a3e8b5))
+* **ci:** add manual preview builds and PR preview workflow ([#155](https://github.com/stardew-valley-dedicated-server/server/issues/155)) ([11ab9de](https://github.com/stardew-valley-dedicated-server/server/commit/11ab9de3730cce82c08849e28db435bd048cd837))
+* **ci:** add PR auto-labeler based on changed files ([8a6dadd](https://github.com/stardew-valley-dedicated-server/server/commit/8a6dadd8a1d0c14797fdae02098ae2b6b72d1caa))
+* **commands:** add new !info command to show basic server info ([#145](https://github.com/stardew-valley-dedicated-server/server/issues/145)) ([dea0c3e](https://github.com/stardew-valley-dedicated-server/server/commit/dea0c3ea227916d3b4468bfa09aaa48199ba73c5))
+* host automation ([#142](https://github.com/stardew-valley-dedicated-server/server/issues/142)) ([79c8a8f](https://github.com/stardew-valley-dedicated-server/server/commit/79c8a8fea697f62857832494f0ba77e8710513bb))
+* semi-internal discord status bot ([#127](https://github.com/stardew-valley-dedicated-server/server/issues/127)) ([484a18c](https://github.com/stardew-valley-dedicated-server/server/commit/484a18cc0f95d56f94b8469916a08d71ae5917e3))
+* server and saves console commands ([#150](https://github.com/stardew-valley-dedicated-server/server/issues/150)) ([b5050fa](https://github.com/stardew-valley-dedicated-server/server/commit/b5050fa051b2ef03c8b7e371c31332338df5a1f2))
+* server settings system ([#148](https://github.com/stardew-valley-dedicated-server/server/issues/148)) ([f403549](https://github.com/stardew-valley-dedicated-server/server/commit/f4035499e0530e0d016e26cb81b1df8b49714675))
+* **test:** add e2e test orchestration MVP ([#143](https://github.com/stardew-valley-dedicated-server/server/issues/143)) ([f0989d9](https://github.com/stardew-valley-dedicated-server/server/commit/f0989d99a6ac1a790e0a225fc5447bc8f26b1f3c))
+
+
+### Bug Fixes
+
+* **auth:** resolve n/a invite code by late-adding Galaxy server on au… ([#126](https://github.com/stardew-valley-dedicated-server/server/issues/126)) ([e174208](https://github.com/stardew-valley-dedicated-server/server/commit/e1742085492f5abd2a5ebecca00d87291ea3caaa))
+* **ci:** security hardening ([#111](https://github.com/stardew-valley-dedicated-server/server/issues/111)) ([7710524](https://github.com/stardew-valley-dedicated-server/server/commit/7710524c3a6959ca521d30930ab07a7154a80e39))
+* **ci:** simplify discord notifications ([300d668](https://github.com/stardew-valley-dedicated-server/server/commit/300d66808be38c2d216d331f1de6cd523b75d8e5))
+* **ci:** use prepare job for dynamic matrix filtering ([#114](https://github.com/stardew-valley-dedicated-server/server/issues/114)) ([3e91209](https://github.com/stardew-valley-dedicated-server/server/commit/3e9120919d94649438668cd67f7ab4f33b3d2d49))
+* **ci:** use release-please pr for preview version calculation ([7df78c1](https://github.com/stardew-valley-dedicated-server/server/commit/7df78c18a63e3bb93ec89911fc9f90539cdd1a70))
+* **docker:** remove redundant tail process causing duplicate logs ([#125](https://github.com/stardew-valley-dedicated-server/server/issues/125)) ([b9ce425](https://github.com/stardew-valley-dedicated-server/server/commit/b9ce425848351ffd94782f24a1b7e39d2c45245e))
+* **invite-code:** add logging and improve error handling for InviteCo… ([#123](https://github.com/stardew-valley-dedicated-server/server/issues/123)) ([193d240](https://github.com/stardew-valley-dedicated-server/server/commit/193d240fd0d0742dec59c9cd62822d08fd8a7ec6))
+
+
+### Documentation
+
+* add direct github links for config files in readme ([49fdf26](https://github.com/stardew-valley-dedicated-server/server/commit/49fdf2698cb8eb6796dfd4e2ec6bc9132a9775c7))
+* add networking guide with GOG Galaxy vs Direct IP explanation ([56f1081](https://github.com/stardew-valley-dedicated-server/server/commit/56f10813508b4b730c81cc72f6e4bafe9f47f814))
+* add Next Steps section to auth guide ([59be46f](https://github.com/stardew-valley-dedicated-server/server/commit/59be46ffbc86cd087b0c49a64a66bf0faf1fca75))
+* add prerequisites guide for Docker verification ([34bb540](https://github.com/stardew-valley-dedicated-server/server/commit/34bb54055b12d15617035a8c489319d6930f14f1))
+* add steam_auth_port to env example ([eddc2db](https://github.com/stardew-valley-dedicated-server/server/commit/eddc2dbd365bcae6b206940aa64246fe43b425bd))
+* add variable details section to configuration guide ([6449215](https://github.com/stardew-valley-dedicated-server/server/commit/644921540b4e29efa3151c530b570f7076aed72c))
+* add volume name prefixing explanation ([1f99a7c](https://github.com/stardew-valley-dedicated-server/server/commit/1f99a7c87aa365dee758b3324116439f6db6e0a2))
+* document container names in faq ([fcb8a9a](https://github.com/stardew-valley-dedicated-server/server/commit/fcb8a9a5618c397a8a2de3ea5c73833fc384ae8f))
+* fix edit link path and add prerequisites/networking to sidebar ([c2018b4](https://github.com/stardew-valley-dedicated-server/server/commit/c2018b44deec66ba870a840b365c7a5e015ceeae))
+* standardize docker command flags in auth docs ([7c34d1b](https://github.com/stardew-valley-dedicated-server/server/commit/7c34d1b86f295bc5b0047aadb19e24c82cd7fb4b))
+
 ## [1.4.1](https://github.com/stardew-valley-dedicated-server/server/compare/sdvd-server-v1.4.0...sdvd-server-v1.4.1) (2026-01-17)
 
 
