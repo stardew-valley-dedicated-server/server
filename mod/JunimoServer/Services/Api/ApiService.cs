@@ -10,6 +10,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
+using StardewValley.SDKs.GogGalaxy;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,8 +34,11 @@ namespace JunimoServer.Services.Api
         /// <summary>Maximum allowed players.</summary>
         public int MaxPlayers { get; set; }
 
-        /// <summary>Server invite code for joining.</summary>
-        public string InviteCode { get; set; } = "";
+        /// <summary>Steam invite code (S-prefixed). Only available when Steam SDR is enabled.</summary>
+        public string? SteamInviteCode { get; set; }
+
+        /// <summary>GOG/Galaxy invite code (G-prefixed). Always available when server is online.</summary>
+        public string? GogInviteCode { get; set; }
 
         /// <summary>Server mod version.</summary>
         public string ServerVersion { get; set; } = "";
@@ -524,13 +528,25 @@ namespace JunimoServer.Services.Api
             var inviteCode = InviteCodeFile.Read(Monitor);
             var isOnline = !string.IsNullOrEmpty(inviteCode) && Game1.IsServer;
 
+            // Derive Steam and GOG invite codes from the base code
+            string? steamInviteCode = null;
+            string? gogInviteCode = null;
+            if (!string.IsNullOrEmpty(inviteCode))
+            {
+                var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
+                gogInviteCode = GalaxyNetHelper.GalaxyInvitePrefix + baseCode;
+                if (SteamGameServer.SteamGameServerService.IsInitialized)
+                {
+                    steamInviteCode = GalaxyNetHelper.SteamInvitePrefix + baseCode;
+                }
+            }
+
             if (!isOnline)
             {
                 return new ServerStatus
                 {
                     PlayerCount = 0,
                     MaxPlayers = 4,
-                    InviteCode = "",
                     ServerVersion = version,
                     IsOnline = false,
                     IsReady = false,
@@ -548,7 +564,8 @@ namespace JunimoServer.Services.Api
                 {
                     PlayerCount = playerCount,
                     MaxPlayers = maxPlayers,
-                    InviteCode = inviteCode!,
+                    SteamInviteCode = steamInviteCode,
+                    GogInviteCode = gogInviteCode,
                     ServerVersion = version,
                     IsOnline = true,
                     IsReady = isReady,
@@ -567,7 +584,8 @@ namespace JunimoServer.Services.Api
                 Monitor.Log($"Game state read failed (race with game loop): {ex}", LogLevel.Debug);
                 return new ServerStatus
                 {
-                    InviteCode = inviteCode!,
+                    SteamInviteCode = steamInviteCode,
+                    GogInviteCode = gogInviteCode,
                     ServerVersion = version,
                     IsOnline = true,
                     IsReady = false,
@@ -870,8 +888,9 @@ namespace JunimoServer.Services.Api
 
                 var farmhandId = targetFarmhand.UniqueMultiplayerID;
 
-                // Find and reset the cabin owned by this farmhand
+                // Find and remove the cabin owned by this farmhand
                 var farm = Game1.getFarm();
+                Building? cabinToRemove = null;
                 foreach (var building in farm.buildings)
                 {
                     if (!building.isCabin) continue;
@@ -879,26 +898,31 @@ namespace JunimoServer.Services.Api
                     var cabin = building.GetIndoors<Cabin>();
                     if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
                     {
-                        // Reset the cabin owner to make the slot available again
-                        // This resets isCustomized to false and clears player data
-                        cabin.owner.isCustomized.Value = false;
-                        cabin.owner.Name = "";
-                        cabin.owner.displayName = "";
-                        cabin.owner.userID.Value = "";
-                        Monitor.Log($"Reset cabin owner for farmhand '{name}'", LogLevel.Debug);
+                        cabinToRemove = building;
                         break;
                     }
                 }
 
-                // Remove from cabin manager tracking so the cabin is counted as available
+                // Remove the cabin building entirely
+                if (cabinToRemove != null)
+                {
+                    farm.buildings.Remove(cabinToRemove);
+                    Monitor.Log($"Removed cabin building for farmhand '{name}'", LogLevel.Debug);
+                }
+
+                // Remove from farmhandData so the slot no longer appears to clients
+                if (Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(farmhandId))
+                {
+                    Game1.netWorldState.Value.farmhandData.FieldDict.Remove(farmhandId);
+                    Monitor.Log($"Removed farmhand from farmhandData", LogLevel.Debug);
+                }
+
+                // Remove from cabin manager tracking
                 if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
                 {
                     _cabinManager.Data.Write();
                     Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
                 }
-
-                // NOTE: Do NOT remove from farmhandData - the entry must stay for the slot
-                // to be visible to clients. We've already reset the farmer properties above.
 
                 Monitor.Log($"Deleted farmhand '{name}' (ID: {farmhandId})", LogLevel.Info);
 
