@@ -16,7 +16,8 @@ namespace JunimoServer.Services.Commands
             _monitor = monitor;
 
             // Register chat command
-            chatCommandsService.RegisterCommand("invitecode", "Displays the current server invite code.", (args, msg) => {
+            chatCommandsService.RegisterCommand("invitecode", "Displays the current server invite code.", (args, msg) =>
+            {
                 if (Game1.server == null)
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "Server is not running.");

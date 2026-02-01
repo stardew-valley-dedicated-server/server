@@ -49,7 +49,7 @@ public class ServerApiTests : IntegrationTestBase
         AssertJoinSuccess(joinResult);
 
         // Wait for server to register the connection
-        await Task.Delay(TestTimings.NetworkSyncDelayMs);
+        await Task.Delay(TestTimings.NetworkSyncDelay);
 
         var response = await ServerApi.GetPlayers();
 
@@ -206,7 +206,7 @@ public class ServerApiTests : IntegrationTestBase
         TrackFarmer(farmerName);
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
-        await Task.Delay(TestTimings.NetworkSyncDelayMs);
+        await Task.Delay(TestTimings.NetworkSyncDelay);
 
         // Check count increased
         var duringStatus = await ServerApi.GetStatus();
@@ -217,8 +217,8 @@ public class ServerApiTests : IntegrationTestBase
 
         // Disconnect
         await GameClient.Exit();
-        await GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeoutMs);
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Check count decreased
         var afterStatus = await ServerApi.GetStatus();

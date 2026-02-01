@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y \
 COPY --from=steam-service-builder /app /steam-service
 WORKDIR /steam-service
 
-# Download game, using steam-service binary that was built in previous stage
+# Download game (skip SDK during build, not needed for compiling the mod and downloaded at runtime via setup)
 RUN --mount=type=secret,id=steam_username \
     --mount=type=secret,id=steam_password \
     --mount=type=secret,id=steam_refresh_token \
@@ -38,7 +38,7 @@ RUN --mount=type=secret,id=steam_username \
     if [ -f /run/secrets/steam_password ]; then export STEAM_PASSWORD="$(cat /run/secrets/steam_password)"; fi && \
     if [ -f /run/secrets/steam_refresh_token ]; then export STEAM_REFRESH_TOKEN="$(cat /run/secrets/steam_refresh_token)"; fi && \
     export GAME_DIR=/game && \
-    dotnet SteamService.dll download
+    dotnet SteamService.dll download --skip-sdk
 
 # Download and install SMAPI
 RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \

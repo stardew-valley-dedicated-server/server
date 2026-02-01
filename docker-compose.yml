@@ -6,14 +6,12 @@ services:
     stdin_open: true
     tty: true
     ports:
-      - ${VNC_PORT:-5800}:5800
-      - ${API_PORT:-8080}:8080
+      - "${VNC_PORT:-5800}:5800"
+      - "${API_PORT:-8080}:8080"
+      - "${GAME_PORT:-24642}:24642/udp"
     cap_add:
       # Required to sync time, ensures GOG GalaxyAuth works
-      # TODO: Document/mention underlying library + extra debug info file for GOG, in case shtf
       - SYS_TIME
-    networks:
-      - sdvd-net
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
@@ -26,11 +24,7 @@ services:
       DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
       # Game settings file path (auto-created with defaults if missing)
       SETTINGS_PATH: "/data/settings/server-settings.json"
-      # Password protection (leave empty to disable)
-      SERVER_PASSWORD: "${SERVER_PASSWORD:-}"
-      MAX_LOGIN_ATTEMPTS: "${MAX_LOGIN_ATTEMPTS:-3}"
-      AUTH_TIMEOUT_SECONDS: "${AUTH_TIMEOUT_SECONDS:-600}"
-      # HTTP API for external tools and automated testing
+      # HTTP API for external tools and automation
       API_ENABLED: "${API_ENABLED:-true}"
       API_PORT: "${API_PORT:-8080}"
     depends_on:
@@ -46,10 +40,8 @@ services:
     container_name: sdvd-steam-auth
     stdin_open: true
     tty: true
-    ports:
-      - "${STEAM_AUTH_PORT:-3001}:3001"
-    networks:
-      - sdvd-net
+    expose:
+      - "3001"
     volumes:
       - steam-session:/data/steam-session
       - game-data:/data/game
@@ -69,8 +61,6 @@ services:
       dockerfile: Dockerfile
     image: sdvd/discord-bot:${IMAGE_VERSION:-latest}
     container_name: sdvd-discord-bot
-    networks:
-      - sdvd-net
     environment:
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
       # HTTP API URL for fetching server status
@@ -87,21 +77,3 @@ volumes:
   game-data:
   saves:
   settings:
-
-networks:
-  sdvd-net:
-    driver: bridge
-    driver_opts:
-      # Required for Docker 28+ to allow same-machine connections via GOG Galaxy P2P
-      # See: https://docs.docker.com/engine/release-notes/28/
-      com.docker.network.bridge.gateway_mode_ipv4: nat-unprotected
-
-# networks:
-#   internal:
-#     internal: true   # no access from host or outside
-#   public:
-#     driver: bridge   # default; allows host access
-
-# networks:
-#   - internal       # can talk to A
-#   - public         # can talk to the host / be accessed externally

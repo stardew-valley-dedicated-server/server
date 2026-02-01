@@ -59,7 +59,7 @@ public class NavigationTests : IntegrationTestBase
         Assert.True(navigateResponse.Success, navigateResponse.Error ?? "Navigate failed");
 
         // Wait for CoopMenu to be ready
-        var menuWait = await GameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeoutMs);
+        var menuWait = await GameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeout);
         Assert.True(menuWait?.Success, menuWait?.Error ?? "Wait for CoopMenu failed");
 
         // Switch to join tab (JOIN_TAB = 0)

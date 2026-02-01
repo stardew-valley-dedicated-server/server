@@ -85,7 +85,7 @@ public class PlayerTrackingTests : IntegrationTestBase
         await DisconnectAsync();
 
         // Wait for server to process the disconnection
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Verify the client is removed from /players
         var afterDisconnectPlayers = await ServerApi.GetPlayers();

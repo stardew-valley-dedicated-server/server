@@ -1,4 +1,4 @@
-﻿namespace JunimoServer.Services.GameLoader
+namespace JunimoServer.Services.GameLoader
 {
     class GameLoaderSaveData
     {

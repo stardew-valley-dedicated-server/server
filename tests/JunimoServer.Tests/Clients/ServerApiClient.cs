@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using Spectre.Console;
 
 namespace JunimoServer.Tests.Clients;
 
@@ -15,8 +16,17 @@ public class ServerStatus
     [JsonPropertyName("maxPlayers")]
     public int MaxPlayers { get; set; }
 
-    [JsonPropertyName("inviteCode")]
-    public string InviteCode { get; set; } = string.Empty;
+    [JsonPropertyName("steamInviteCode")]
+    public string? SteamInviteCode { get; set; }
+
+    [JsonPropertyName("gogInviteCode")]
+    public string? GogInviteCode { get; set; }
+
+    /// <summary>
+    /// Gets the preferred invite code (Steam if available, otherwise GOG).
+    /// </summary>
+    [JsonIgnore]
+    public string InviteCode => SteamInviteCode ?? GogInviteCode ?? string.Empty;
 
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; set; } = string.Empty;
@@ -386,6 +396,7 @@ public class ServerApiClient : IDisposable
     public async Task<FarmhandOperationResponse?> DeleteFarmhand(string name)
     {
         var response = await _httpClient.DeleteAsync($"/farmhands?name={Uri.EscapeDataString(name)}");
+        response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<FarmhandOperationResponse>();
     }
 
@@ -451,7 +462,7 @@ public class ServerApiClient : IDisposable
                 var status = await GetStatus();
                 if (status?.IsOnline == true && status.IsReady && !string.IsNullOrEmpty(status.InviteCode))
                 {
-                    Console.WriteLine($"[Setup] Server online and ready after {attempt} attempts");
+                    AnsiConsole.MarkupLine($"[[Setup]] [green]✓ Server online and ready after {attempt} attempt(s)[/]");
                     return status;
                 }
 
@@ -466,13 +477,13 @@ public class ServerApiClient : IDisposable
             if (attempt % 10 == 0)
             {
                 var remaining = deadline - DateTime.UtcNow;
-                Console.WriteLine($"[Setup] Waiting for server: attempt {attempt}, {remaining.TotalSeconds:0}s remaining - {lastReason}");
+                AnsiConsole.MarkupLine($"[[Setup]] [grey]→ Still waiting for server (attempt {attempt}, {remaining.TotalSeconds:0}s remaining)[/]");
             }
 
             await Task.Delay(interval);
         }
 
-        Console.WriteLine($"[Setup] Server wait timed out after {attempt} attempts. Last: {lastReason}");
+        AnsiConsole.MarkupLine($"[[Setup]] [red]✗ Server wait timed out after {attempt} attempts[/]");
         return null;
     }
 

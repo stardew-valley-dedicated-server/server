@@ -147,7 +147,7 @@ public class CabinStrategyTests : IntegrationTestBase
         await DisconnectAsync();
 
         // Wait for server to process disconnection and replenish cabins
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Check cabin state after join+disconnect
         var cabinsAfter = await ServerApi.GetCabins();
@@ -245,7 +245,7 @@ public class CabinStrategyTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
         await DisconnectAsync();
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Delete the farmhand
         Log($"Deleting farmhand '{farmerName}'...");
@@ -254,7 +254,7 @@ public class CabinStrategyTests : IntegrationTestBase
         Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
         CreatedFarmers.Remove(farmerName);
 
-        await Task.Delay(TestTimings.NetworkSyncDelayMs);
+        await Task.Delay(TestTimings.NetworkSyncDelay);
 
         // Verify counts are consistent after deletion
         var cabins = await ServerApi.GetCabins();

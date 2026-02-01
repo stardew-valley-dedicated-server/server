@@ -1,4 +1,4 @@
-﻿using StardewModdingAPI.Utilities;
+using StardewModdingAPI.Utilities;
 
 namespace JunimoServer.Util
 {
@@ -52,7 +52,7 @@ namespace JunimoServer.Util
         {
             return SDate.Now().EqualsIgnoreYear(FlowerDance);
         }
-        
+
         public static bool IsLuauToday()
         {
             return SDate.Now().EqualsIgnoreYear(Luau);
