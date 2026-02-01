@@ -148,6 +148,27 @@ init_permissions() {
     chown -R 1000:1000 "${GAME_DEST_DIR}"
 }
 
+init_steam_sdk() {
+    # Set up Steam SDK for GameServer mode (SDR networking)
+    # The SDK is downloaded by steam-service to .steam-sdk subfolder in the game volume
+    local SDK_SOURCE="${GAME_DEST_DIR}/.steam-sdk/linux64/steamclient.so"
+
+    if [ ! -e "${SDK_SOURCE}" ]; then
+        echo "Steam SDK not found at ${SDK_SOURCE}, skipping SDK setup"
+        echo "Steam GameServer (SDR) mode may not work without the SDK"
+        return
+    fi
+
+    # Create the target directory and symlink
+    mkdir -p "${STEAM_DEST_DIR}"
+    if [ ! -e "${STEAM_DEST_DIR}/steamclient.so" ]; then
+        echo "Linking Steam SDK to ${STEAM_DEST_DIR}..."
+        ln -s "${SDK_SOURCE}" "${STEAM_DEST_DIR}/steamclient.so"
+    else
+        echo "Steam SDK already linked"
+    fi
+}
+
 init_gui() {
     # Always start polybar for the rendering toggle button
     /etc/services.d/polybar/run &
@@ -166,6 +187,7 @@ init_time_sync
 init_gui
 init_xauthority
 init_stardew
+init_steam_sdk
 init_smapi
 init_patch_dll
 init_mods
