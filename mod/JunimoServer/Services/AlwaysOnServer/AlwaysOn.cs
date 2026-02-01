@@ -69,7 +69,9 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void OnReturnedToTitle(object sender, ReturnedToTitleEventArgs e)
         {
-            // TODO: Restart the server if we happen to return to the title, this should not happen during regular operations
+            // This should not happen during regular operations - log error for operators
+            Monitor.Log("CRITICAL: Server unexpectedly returned to title screen. Automation disabled.", LogLevel.Error);
+            Monitor.Log("Container may need restart. Check game logs for crash details.", LogLevel.Error);
             IsAutomating = false;
             ServerOptimizerOverrides.SetAutomationInputSuppression(false);
         }
