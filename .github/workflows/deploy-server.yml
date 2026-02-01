@@ -1,6 +1,12 @@
 name: Deploy Server
 
 on:
+  workflow_run:
+    workflows: ["Preview Build"]
+    types:
+      - completed
+    branches:
+      - master
   release:
     types:
       - published
@@ -18,15 +24,9 @@ on:
         required: false
         default: false
         type: boolean
-  workflow_call:
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        type: string
 
 concurrency:
-  group: deploy-${{ inputs.environment || 'auto' }}
+  group: deploy-${{ github.event.inputs.environment || 'auto' }}
   cancel-in-progress: false
 
 permissions: {}
@@ -43,17 +43,18 @@ jobs:
         id: set-matrix
         env:
           TRIGGER: ${{ github.event_name }}
-          SELECTED: ${{ inputs.environment }}
+          SELECTED: ${{ github.event.inputs.environment }}
+          WORKFLOW_SUCCESS: ${{ github.event.workflow_run.conclusion }}
         run: |
           # Define deployment targets as JSON
           TARGETS='[
-            {"environment": "public-test", "image_tag": "preview", "on_release": false}
+            {"environment": "public-test", "image_tag": "preview", "on_preview": true, "on_release": false}
           ]'
-          # {"environment": "production", "image_tag": "latest", "on_release": true}
+          # {"environment": "production", "image_tag": "latest", "on_preview": false, "on_release": true}
 
           MATRIX=$(echo "$TARGETS" | jq -c '[.[] | select(
             (env.TRIGGER == "workflow_dispatch" and env.SELECTED == .environment) or
-            (env.TRIGGER == "workflow_call" and env.SELECTED == .environment) or
+            (env.TRIGGER == "workflow_run" and env.WORKFLOW_SUCCESS == "success" and .on_preview) or
             (env.TRIGGER == "release" and .on_release)
           ) | {environment, image_tag}]')
 
@@ -126,7 +127,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Create deploy directory
-        uses: appleboy/ssh-action@823bd89e131d8d508129f9443cad5855e9ba96f0 # v1.2.4
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
@@ -145,7 +146,7 @@ jobs:
           target: ~/srv/${{ matrix.environment }}
 
       - name: Pull and restart containers
-        uses: appleboy/ssh-action@823bd89e131d8d508129f9443cad5855e9ba96f0 # v1.2.4
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
@@ -176,7 +177,7 @@ jobs:
             echo "::endgroup::"
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@823bd89e131d8d508129f9443cad5855e9ba96f0 # v1.2.4
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}

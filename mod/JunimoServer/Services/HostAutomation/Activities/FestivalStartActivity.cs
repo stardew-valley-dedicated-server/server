@@ -1,6 +1,6 @@
 namespace JunimoServer.Services.HostAutomation.Activities
 {
-    public class FestivalStartActivity: Activity
+    public class FestivalStartActivity : Activity
     {
 
         protected override void OnTick()

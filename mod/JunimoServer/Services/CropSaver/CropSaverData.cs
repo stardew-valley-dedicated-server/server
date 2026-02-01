@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI.Utilities;
@@ -60,7 +60,7 @@ namespace JunimoServer.Services.CropSaver
         public Crop TryGetCoorespondingCrop()
         {
             var dirt = TryGetCoorespondingDirt();
-            return dirt is {crop: { }} ? dirt.crop : null;
+            return dirt is { crop: { } } ? dirt.crop : null;
         }
 
         protected bool Equals(SaverCrop other)
@@ -74,7 +74,7 @@ namespace JunimoServer.Services.CropSaver
             if (ReferenceEquals(null, obj)) return false;
             if (ReferenceEquals(this, obj)) return true;
             if (obj.GetType() != this.GetType()) return false;
-            return Equals((SaverCrop) obj);
+            return Equals((SaverCrop)obj);
         }
 
         public override int GetHashCode()

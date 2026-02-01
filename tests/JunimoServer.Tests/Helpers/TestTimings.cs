@@ -3,46 +3,98 @@ namespace JunimoServer.Tests.Helpers;
 /// <summary>
 /// Centralized timing constants for integration tests.
 /// Provides consistent, documented delays and timeouts across all tests.
+/// All values use TimeSpan for clarity and type safety.
 /// </summary>
 public static class TestTimings
 {
+    #region Fixture Setup Timeouts
+
+    /// <summary>
+    /// Timeout for server container to become ready and report a valid invite code.
+    /// </summary>
+    public static readonly TimeSpan ServerReadyTimeout = TimeSpan.FromSeconds(180);
+
+    /// <summary>
+    /// Timeout for game client to start and respond to API calls.
+    /// </summary>
+    public static readonly TimeSpan GameReadyTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// Timeout for Docker image builds.
+    /// </summary>
+    public static readonly TimeSpan DockerBuildServerTimeout = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan DockerBuildSteamAuthTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Timeout for starting Docker containers.
+    /// </summary>
+    public static readonly TimeSpan ContainerStartTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Timeout for stopping Docker containers during cleanup.
+    /// </summary>
+    public static readonly TimeSpan ContainerStopTimeout = TimeSpan.FromSeconds(10);
+
+    #endregion
+
     #region Network & Sync Delays
 
     /// <summary>
     /// Time to wait for network data to sync after connecting to the server.
     /// Used after joining world to allow player data to propagate.
     /// </summary>
-    public const int NetworkSyncDelayMs = 2000;
+    public static readonly TimeSpan NetworkSyncDelay = TimeSpan.FromMilliseconds(2000);
 
     /// <summary>
     /// Time to wait after disconnecting before checking server state.
     /// Allows server to process the disconnection event.
     /// </summary>
-    public const int DisconnectProcessingDelayMs = 3000;
+    public static readonly TimeSpan DisconnectProcessingDelay = TimeSpan.FromMilliseconds(3000);
 
     /// <summary>
     /// Brief delay for game to sync textbox values during character creation.
     /// </summary>
-    public const int CharacterCreationSyncDelayMs = 200;
+    public static readonly TimeSpan CharacterCreationSyncDelay = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
     /// Brief pause between connection retry attempts.
     /// </summary>
-    public const int RetryPauseDelayMs = 1000;
+    public static readonly TimeSpan RetryPauseDelay = TimeSpan.FromMilliseconds(1000);
+
+    /// <summary>
+    /// Delay before retrying farmer deletion (wait for server to process disconnect).
+    /// </summary>
+    public static readonly TimeSpan FarmerDeleteRetryDelay = TimeSpan.FromMilliseconds(1000);
+
+    /// <summary>
+    /// Maximum attempts for farmer deletion during cleanup.
+    /// </summary>
+    public const int FarmerDeleteMaxAttempts = 3;
+
+    /// <summary>
+    /// Delay after killing game processes to ensure they fully exit.
+    /// </summary>
+    public static readonly TimeSpan ProcessExitDelay = TimeSpan.Zero;
+
+    /// <summary>
+    /// Short delay between attempts when waiting for game client to respond.
+    /// </summary>
+    public static readonly TimeSpan GameClientPollDelay = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Delay between connection checks during game client startup.
+    /// </summary>
+    public static readonly TimeSpan GameClientStartupPollDelay = TimeSpan.FromMilliseconds(500);
 
     #endregion
 
     #region Rendering & Visual Delays
 
     /// <summary>
-    /// Time to wait after disabling rendering for frames to stop.
+    /// Time to wait after toggling rendering for the change to take effect.
+    /// Allows frames to start/stop rendering before capturing screenshots.
     /// </summary>
-    public const int RenderingDisableDelayMs = 1500;
-
-    /// <summary>
-    /// Time to wait after enabling rendering for game frames to render.
-    /// </summary>
-    public const int RenderingEnableDelayMs = 3000;
+    public static readonly TimeSpan RenderingToggleDelay = TimeSpan.FromMilliseconds(1000);
 
     #endregion
 
@@ -53,66 +105,105 @@ public static class TestTimings
     /// Stardew advances time every ~7 seconds (10 game-minutes per tick).
     /// 16 seconds ensures at least 2 time advances.
     /// </summary>
-    public const int TimeAdvanceWaitMs = 16000;
+    public static readonly TimeSpan TimeAdvanceWait = TimeSpan.FromSeconds(16);
 
     /// <summary>
     /// Time to wait when verifying time is paused.
     /// Long enough for multiple time advances if game were unpaused (~15 seconds = ~2 advances).
     /// </summary>
-    public const int TimePausedVerificationMs = 15000;
+    public static readonly TimeSpan TimePausedVerification = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// Small delay to let game loop process a time change.
     /// </summary>
-    public const int TimeChangeProcessingDelayMs = 1000;
+    public static readonly TimeSpan TimeChangeProcessingDelay = TimeSpan.Zero;
 
     #endregion
 
     #region Polling Intervals
 
     /// <summary>
+    /// Interval between status polls when waiting for server to become ready.
+    /// </summary>
+    public static readonly TimeSpan ServerPollInterval = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Interval between status polls when waiting for day change.
     /// </summary>
-    public const int DayChangePollIntervalMs = 2000;
+    public static readonly TimeSpan DayChangePollInterval = TimeSpan.FromMilliseconds(2000);
+
+    /// <summary>
+    /// Interval for polling server container logs.
+    /// </summary>
+    public static readonly TimeSpan ServerLogPollInterval = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Delay before retrying after server log streaming error.
+    /// </summary>
+    public static readonly TimeSpan ServerLogErrorRetryDelay = TimeSpan.FromMilliseconds(2000);
 
     #endregion
 
-    #region Timeouts
+    #region Cleanup Delays
+
+    /// <summary>
+    /// Delay between kill command retries during cleanup.
+    /// </summary>
+    public static readonly TimeSpan KillRetryDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Time to wait for background tasks to complete during cleanup.
+    /// </summary>
+    public static readonly TimeSpan TaskCleanupTimeout = TimeSpan.FromSeconds(2);
+
+    #endregion
+
+    #region HTTP Client Timeouts
+
+    /// <summary>
+    /// Timeout for quick HTTP health checks.
+    /// </summary>
+    public static readonly TimeSpan HttpHealthCheckTimeout = TimeSpan.FromSeconds(5);
+
+    #endregion
+
+    #region Game Client Wait Timeouts
 
     /// <summary>
     /// Timeout for waiting for the farmhand selection menu.
+    /// Reduced from 60s to allow faster retries on connection failures.
     /// </summary>
-    public const int FarmhandMenuTimeoutMs = 60000;
+    public static readonly TimeSpan FarmhandMenuTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
     /// Timeout for waiting for the world to be ready after joining.
     /// </summary>
-    public const int WorldReadyTimeoutMs = 60000;
+    public static readonly TimeSpan WorldReadyTimeout = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Timeout for waiting for character customization menu.
     /// </summary>
-    public const int CharacterMenuTimeoutMs = 30000;
+    public static readonly TimeSpan CharacterMenuTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Timeout for waiting for title screen after exit.
     /// </summary>
-    public const int TitleScreenTimeoutMs = 30000;
+    public static readonly TimeSpan TitleScreenTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Timeout for waiting for disconnected state.
     /// </summary>
-    public const int DisconnectedTimeoutMs = 10000;
+    public static readonly TimeSpan DisconnectedTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Timeout for waiting for CoopMenu.
     /// </summary>
-    public const int MenuWaitTimeoutMs = 10000;
+    public static readonly TimeSpan MenuWaitTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Timeout for waiting for text input menu.
     /// </summary>
-    public const int TextInputTimeoutMs = 10000;
+    public static readonly TimeSpan TextInputTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Timeout for waiting for day change (sleep/pass-out transitions).

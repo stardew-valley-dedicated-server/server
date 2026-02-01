@@ -28,6 +28,7 @@
   <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
     <PackageReference Include="Microsoft.OpenApi" Version="1.6.14" />
+    <PackageReference Include="Steamworks.NET" Version="20.1.0" />
   </ItemGroup>
 
   <!-- Bundle dependencies with the mod -->

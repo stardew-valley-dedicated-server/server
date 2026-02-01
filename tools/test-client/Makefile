@@ -91,7 +91,7 @@ endpoints:
 	@echo "  GET  /stats             - Performance stats"
 	@echo "  POST /stats/reset       - Reset max tick tracking"
 	@echo "  GET  /errors            - Get captured errors"
-	@echo "  POST /errors/clear      - Clear errors"
+	@echo "  DELETE /errors          - Clear errors"
 	@echo "  POST /screenshot        - Capture screenshot (base64)"
 	@echo "  POST /screenshot/file   - Capture screenshot to file"
 	@echo "  POST /exit              - Exit to title"

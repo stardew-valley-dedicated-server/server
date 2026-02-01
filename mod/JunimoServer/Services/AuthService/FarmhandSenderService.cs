@@ -53,6 +53,25 @@ namespace JunimoServer.Services.Auth
         }
 
         /// <summary>
+        /// Parses the transport type from a connection ID.
+        /// Connection ID formats: "GN_..." (Galaxy), "SN_..." (Steam SDR), "L_..." (LAN/Lidgren)
+        /// </summary>
+        private static string GetTransportName(string connectionId)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+                return "Unknown";
+
+            if (connectionId.StartsWith("GN_"))
+                return "Galaxy P2P";
+            if (connectionId.StartsWith("SN_"))
+                return "Steam SDR";
+            if (connectionId.StartsWith("L_"))
+                return "LAN";
+
+            return "Unknown";
+        }
+
+        /// <summary>
         /// Prevent sending farmhands to users without an userID, i.e. on direct IP connections or or client side tampering.<br/><br/>
         /// Adds additional condition `IsFarmhandSelectableByUserId` for sending available farmhands and more detailed logging.
         /// </summary>
@@ -63,7 +82,11 @@ namespace JunimoServer.Services.Auth
             var isConnectionActive = __instance.isConnectionActive;
             var IsFarmhandAvailable = __instance.IsFarmhandAvailable;
 
-            var connectionInfoDump = _monitor.Dump(new { userId, connectionId });
+            var transport = GetTransportName(connectionId);
+            var connectionInfoDump = _monitor.Dump(new { userId, connectionId, transport });
+
+            // Log the incoming connection with transport info prominently
+            _monitor.Log($"Client connected via {transport}", LogLevel.Info);
 
             // When the game is not ready,
             if (!isGameAvailable())
@@ -72,11 +95,11 @@ namespace JunimoServer.Services.Auth
 
                 if (pendingAvailableFarmhands.Contains(connectionId))
                 {
-                    _monitor.Log($"Connection is already waiting for available farmhands\n{connectionInfoDump}", LogLevel.Info);
+                    _monitor.Log($"Connection is already waiting for available farmhands\n{connectionInfoDump}", LogLevel.Debug);
                     return false;
                 }
 
-                _monitor.Log($"Postponing sending available farmhands\n{connectionInfoDump}", LogLevel.Info);
+                _monitor.Log($"Postponing sending available farmhands\n{connectionInfoDump}", LogLevel.Debug);
                 pendingAvailableFarmhands.Add(connectionId);
 
                 whenGameAvailable(() =>
@@ -88,7 +111,7 @@ namespace JunimoServer.Services.Auth
                     }
                     else
                     {
-                        _monitor.Log($"Failed to send available farmhands: Connection not active.\n{connectionInfoDump}", LogLevel.Info);
+                        _monitor.Log($"Failed to send available farmhands: Connection not active.\n{connectionInfoDump}", LogLevel.Debug);
                     }
                 });
 
@@ -109,7 +132,7 @@ namespace JunimoServer.Services.Auth
 
             // Filter farmhands efficiently
             IEnumerable<NetRef<Farmer>> farmhandRefsAll = Game1.netWorldState.Value.farmhandData.FieldDict.Values;
-            _monitor.Log($"Filtering {farmhandRefsAll.Count()} available farmhands\n{connectionInfoDump}", LogLevel.Info);
+            _monitor.Log($"Filtering {farmhandRefsAll.Count()} available farmhands\n{connectionInfoDump}", LogLevel.Debug);
 
             List<NetRef<Farmer>> availableFarmers = new List<NetRef<Farmer>>();
             foreach (var farmhandRef in farmhandRefsAll)
@@ -129,7 +152,7 @@ namespace JunimoServer.Services.Auth
                     farmhand.userID,
                     farmhand.UniqueMultiplayerID
                 });
-                _monitor.Log($"Processing farmhand\n{logData}", LogLevel.Info);
+                _monitor.Log($"Processing farmhand\n{logData}", LogLevel.Trace);
 
                 if (isValid)
                 {
@@ -138,7 +161,7 @@ namespace JunimoServer.Services.Auth
 
             }
 
-            _monitor.Log($"Sending {availableFarmers.Count} available farmhands", LogLevel.Info);
+            _monitor.Log($"Sending {availableFarmers.Count} available farmhands to {transport} connection", LogLevel.Debug);
 
             // Prepare outgoing message
             using var memoryStream = new MemoryStream();
@@ -172,33 +195,21 @@ namespace JunimoServer.Services.Auth
 
         private static bool IsFarmhandSelectableByUserId(Farmer farmhand, string userId)
         {
+            // UNCLAIMED: Allow if farmhand creation enabled
+            if (string.IsNullOrEmpty(farmhand.userID.Value))
+            {
+                bool canCreate = Game1.options.enableFarmhandCreation;
+                _monitor.Log($"Farmhand '{farmhand.Name}' unclaimed. Creation enabled: {canCreate}", LogLevel.Debug);
+                return canCreate;
+            }
+
+            // OWNED: Show to all clients - authCheck() during join handles actual verification.
+            // This matches vanilla behavior where SteamNetServer passes empty userId.
+            // Note: Steam SDR connections provide Steam ID, but farmhand.userID may be a Galaxy ID
+            // (set by GalaxyNetClient when player joined via invite code). These IDs are from
+            // different ID spaces and cannot be compared directly.
+            _monitor.Log($"Farmhand '{farmhand.Name}' is owned (userID={farmhand.userID.Value}), showing to client", LogLevel.Debug);
             return true;
-
-            // // Get server-assigned userId if client sent empty
-            // userId = GetOrAssignUserId(userId, GetCurrentConnectionId());
-
-            // // REJECT if still no userId (shouldn't happen)
-            // if (string.IsNullOrEmpty(userId))
-            // {
-            //     _monitor.Log($"Rejected: No userId available", LogLevel.Warn);
-            //     return false;
-            // }
-
-            // // UNCLAIMED: Allow if farmhand creation enabled
-            // if (string.IsNullOrEmpty(farmhand.userID.Value))
-            // {
-            //     bool canCreate = Game1.options.enableFarmhandCreation;
-            //     _monitor.Log($"Farmhand '{farmhand.Name}' unclaimed. Creation enabled: {canCreate}", LogLevel.Info);
-            //     return canCreate;
-            // }
-
-            // // OWNED: Must match exactly
-            // bool matches = farmhand.userID.Value == userId;
-            // if (!matches)
-            // {
-            //     _monitor.Log($"Rejected: '{farmhand.Name}' belongs to '{farmhand.userID.Value}', not '{userId}'", LogLevel.Warn);
-            // }
-            // return matches;
         }
     }
 }

@@ -38,7 +38,8 @@ var sessionDir = Environment.GetEnvironmentVariable("SESSION_DIR") ?? "/data/ste
 var gameDir = Environment.GetEnvironmentVariable("GAME_DIR") ?? "/data/game";
 var port = int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "3001");
 
-const uint AppId = 413150; // Stardew Valley
+const uint StardewValleyAppId = 413150;
+const uint SteamworksSdkAppId = 1007; // Steamworks SDK Redistributable (steamclient.so)
 
 // Parse command
 var command = args.Length > 0 ? args[0].ToLower() : "serve";
@@ -76,7 +77,7 @@ switch (command)
         await steamService.LoginInteractiveAsync();
         if (steamService.IsLoggedIn)
         {
-            await steamService.DownloadGameAsync(AppId);
+            await DownloadAllAsync();
         }
         break;
 
@@ -109,7 +110,7 @@ switch (command)
             Logger.Log("[SteamService]   - Or run 'login' first to save a session");
             Environment.Exit(1);
         }
-        await steamService.DownloadGameAsync(AppId);
+        await DownloadAllAsync();
         break;
 
     case "ticket":
@@ -135,7 +136,7 @@ switch (command)
             Logger.Log("[SteamService]   - Or run 'login' first to save a session");
             Environment.Exit(1);
         }
-        var ticket = await steamService.GetAppTicketAsync(AppId);
+        var ticket = await steamService.GetAppTicketAsync(StardewValleyAppId);
         Console.WriteLine(ticket); // Just the base64 ticket to stdout
         break;
 
@@ -176,11 +177,29 @@ switch (command)
         Console.WriteLine("  STEAM_PASSWORD           Password for credential-based auth");
         Console.WriteLine("  FORCE_REDOWNLOAD     Set to '1' to force re-download");
         Environment.Exit(1);
-        break;
+        return; // Required by compiler, but Exit never returns
 }
 
 steamService.Disconnect();
 return;
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+async Task DownloadAllAsync()
+{
+    await steamService.DownloadGameAsync(StardewValleyAppId);
+
+    // Also download Steamworks SDK for GameServer mode (unless --skip-sdk)
+    // This provides steamclient.so needed for SteamGameServerNetworkingSockets
+    // Downloaded to .steam-sdk subfolder; server container symlinks to /root/.steam/sdk64/
+    if (!args.Contains("--skip-sdk"))
+    {
+        var steamSdkDir = Path.Combine(gameDir, ".steam-sdk");
+        await steamService.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
+    }
+}
 
 // ============================================================================
 // HTTP Server for runtime
@@ -234,7 +253,7 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
                 await service.LoginWithSavedSessionAsync();
             }
 
-            var ticketBase64 = await service.GetAppTicketAsync(AppId);
+            var ticketBase64 = await service.GetAppTicketAsync(StardewValleyAppId);
             return Results.Json(new
             {
                 app_ticket = ticketBase64,
@@ -246,6 +265,144 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
             Logger.Log($"[HTTP] Error getting ticket: {ex.Message}");
             return Results.Json(new { error = ex.Message }, statusCode: 500);
         }
+    });
+
+    // Endpoint for SteamKit2 lobby creation - returns refresh token for login
+    app.MapGet("/steam/refresh-token", () =>
+    {
+        try
+        {
+            var session = service.GetSavedSession();
+            if (session == null)
+            {
+                return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
+            }
+
+            return Results.Json(new
+            {
+                username = session.Value.username,
+                refresh_token = session.Value.refreshToken
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HTTP] Error getting refresh token: {ex.Message}");
+            return Results.Json(new { error = ex.Message }, statusCode: 500);
+        }
+    });
+
+    // ========================================================================
+    // Lobby Management Endpoints
+    // Uses the same SteamClient session as auth - no separate login needed
+    // ========================================================================
+
+    app.MapPost("/steam/lobby/create", async (HttpContext ctx) =>
+    {
+        try
+        {
+            if (!service.IsLoggedIn)
+            {
+                if (!service.HasSavedSession())
+                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
+                await service.LoginWithSavedSessionAsync();
+            }
+
+            var body = await ctx.Request.ReadFromJsonAsync<CreateLobbyRequest>();
+            if (body == null)
+                return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+
+            var lobbyId = await service.CreateLobbyAsync(
+                appId: StardewValleyAppId,
+                maxMembers: body.max_members,
+                gameServerSteamId: body.game_server_steam_id,
+                protocolVersion: body.protocol_version);
+
+            return Results.Json(new
+            {
+                lobby_id = lobbyId.ToString(),
+                app_id = StardewValleyAppId
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HTTP] Error creating lobby: {ex.Message}");
+            return Results.Json(new { error = ex.Message }, statusCode: 500);
+        }
+    });
+
+    app.MapPost("/steam/lobby/set-data", async (HttpContext ctx) =>
+    {
+        try
+        {
+            if (!service.IsLoggedIn)
+            {
+                if (!service.HasSavedSession())
+                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
+                await service.LoginWithSavedSessionAsync();
+            }
+
+            var body = await ctx.Request.ReadFromJsonAsync<SetLobbyDataRequest>();
+            if (body == null)
+                return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+
+            await service.SetLobbyDataAsync(
+                appId: StardewValleyAppId,
+                lobbyId: body.lobby_id,
+                additionalMetadata: body.metadata);
+
+            return Results.Json(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HTTP] Error setting lobby data: {ex.Message}");
+            return Results.Json(new { error = ex.Message }, statusCode: 500);
+        }
+    });
+
+    app.MapPost("/steam/lobby/set-privacy", async (HttpContext ctx) =>
+    {
+        try
+        {
+            if (!service.IsLoggedIn)
+            {
+                if (!service.HasSavedSession())
+                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
+                await service.LoginWithSavedSessionAsync();
+            }
+
+            var body = await ctx.Request.ReadFromJsonAsync<SetLobbyPrivacyRequest>();
+            if (body == null)
+                return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+
+            var lobbyType = body.privacy?.ToLower() switch
+            {
+                "private" => SteamKit2.ELobbyType.Private,
+                "friendsonly" => SteamKit2.ELobbyType.FriendsOnly,
+                "invisible" => SteamKit2.ELobbyType.Invisible,
+                _ => SteamKit2.ELobbyType.Public
+            };
+
+            await service.SetLobbyPrivacyAsync(
+                appId: StardewValleyAppId,
+                lobbyId: body.lobby_id,
+                lobbyType: lobbyType);
+
+            return Results.Json(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HTTP] Error setting lobby privacy: {ex.Message}");
+            return Results.Json(new { error = ex.Message }, statusCode: 500);
+        }
+    });
+
+    app.MapGet("/steam/lobby/status", () =>
+    {
+        return Results.Json(new
+        {
+            lobby_id = service.CurrentLobbyId == 0 ? null : service.CurrentLobbyId.ToString(),
+            is_logged_in = service.IsLoggedIn
+        });
     });
 
     Logger.Log($"[SteamService] HTTP API listening on port {httpPort}");
@@ -275,3 +432,20 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
 
     await app.RunAsync();
 }
+
+// ============================================================================
+// Request DTOs for Lobby Endpoints
+// ============================================================================
+
+record CreateLobbyRequest(
+    ulong game_server_steam_id,
+    string protocol_version,
+    int max_members);
+
+record SetLobbyDataRequest(
+    ulong lobby_id,
+    Dictionary<string, string>? metadata = null);
+
+record SetLobbyPrivacyRequest(
+    ulong lobby_id,
+    string? privacy = "public");

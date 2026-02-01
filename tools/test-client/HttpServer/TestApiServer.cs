@@ -15,6 +15,7 @@ public class TestApiServer : IDisposable
     private readonly CancellationTokenSource _cts;
     private readonly Dictionary<string, Func<HttpListenerRequest, object?>> _getRoutes;
     private readonly Dictionary<string, Func<HttpListenerRequest, object?>> _postRoutes;
+    private readonly Dictionary<string, Func<HttpListenerRequest, object?>> _deleteRoutes;
     private Task? _listenTask;
 
     public int Port { get; }
@@ -28,6 +29,7 @@ public class TestApiServer : IDisposable
         _cts = new CancellationTokenSource();
         _getRoutes = new Dictionary<string, Func<HttpListenerRequest, object?>>();
         _postRoutes = new Dictionary<string, Func<HttpListenerRequest, object?>>();
+        _deleteRoutes = new Dictionary<string, Func<HttpListenerRequest, object?>>();
     }
 
     /// <summary>
@@ -44,6 +46,14 @@ public class TestApiServer : IDisposable
     public void Post(string path, Func<HttpListenerRequest, object?> handler)
     {
         _postRoutes[path.TrimStart('/')] = handler;
+    }
+
+    /// <summary>
+    /// Register a DELETE endpoint handler.
+    /// </summary>
+    public void Delete(string path, Func<HttpListenerRequest, object?> handler)
+    {
+        _deleteRoutes[path.TrimStart('/')] = handler;
     }
 
     /// <summary>
@@ -126,6 +136,11 @@ public class TestApiServer : IDisposable
             else if (request.HttpMethod == "POST" && _postRoutes.TryGetValue(path, out var postHandler))
             {
                 result = postHandler(request);
+                found = true;
+            }
+            else if (request.HttpMethod == "DELETE" && _deleteRoutes.TryGetValue(path, out var deleteHandler))
+            {
+                result = deleteHandler(request);
                 found = true;
             }
 

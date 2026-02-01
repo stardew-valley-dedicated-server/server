@@ -1,4 +1,4 @@
-﻿using StardewValley;
+using StardewValley;
 using System;
 
 namespace JunimoServer.Services.ChatCommands
@@ -20,7 +20,7 @@ namespace JunimoServer.Services.ChatCommands
 
         public bool IsCommand
         {
-            get 
+            get
             {
                 return !String.IsNullOrEmpty(Message) && Message[0] == '!' && Message.Length > 1;
             }

@@ -1,3 +1,4 @@
+using HarmonyLib;
 using JunimoTestClient.Diagnostics;
 using JunimoTestClient.GameControl;
 using JunimoTestClient.GameTweaks;
@@ -6,6 +7,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
+using Steamworks;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 
@@ -52,6 +54,9 @@ public class ModEntry : Mod
 
         _skipIntro = new SkipIntro(Monitor);
         _skipIntro.Apply();
+
+        // Apply Steam diagnostics patches
+        ApplySteamDiagnostics(helper);
 
         // Diagnostics
         _healthWatchdog = new HealthWatchdog(helper, Monitor);
@@ -528,7 +533,7 @@ public class ModEntry : Mod
         });
 
         // DELETE /errors - Clear all errors
-        _server.Post("errors/clear", _ =>
+        _server.Delete("errors", _ =>
         {
             _errorCapture!.Clear();
             return new { success = true, message = "Errors cleared" };
@@ -570,6 +575,29 @@ public class ModEntry : Mod
                 Success = false,
                 Error = "Screenshot capture timed out"
             };
+        });
+
+        // GET /steam/lobby - Diagnose Steam lobby by ID (pass ?id=123456)
+        _server.Get("steam/lobby", req =>
+        {
+            var lobbyIdStr = req.QueryString["id"];
+            if (string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId))
+            {
+                return new { error = "Missing or invalid 'id' query parameter" };
+            }
+            return _coopController!.DiagnoseSteamLobby(lobbyId);
+        });
+
+        // POST /steam/lobby/join-diagnose - Join lobby, diagnose, then leave (pass ?id=123456)
+        _server.Post("steam/lobby/join-diagnose", req =>
+        {
+            var lobbyIdStr = req.QueryString["id"];
+            if (string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId))
+            {
+                return new { error = "Missing or invalid 'id' query parameter" };
+            }
+            _coopController!.DiagnoseSteamLobbyWithJoin(lobbyId);
+            return new { success = true, message = "Join initiated - check logs for diagnostic output" };
         });
 
         // GET /openapi.json - OpenAPI 3.0 specification
@@ -793,6 +821,56 @@ public class ModEntry : Mod
         Monitor.Log($"Save loaded - Farmer: {StardewValley.Game1.player?.Name}", LogLevel.Trace);
     }
 
+    #endregion
+
+    #region Steam Diagnostics
+
+    private static IMonitor? _staticMonitor;
+
+    private void ApplySteamDiagnostics(IModHelper helper)
+    {
+        _staticMonitor = Monitor;
+
+        try
+        {
+            var harmony = new Harmony("JunimoTestClient.SteamDiagnostics");
+
+            // Patch SteamMatchmaking.SetLobbyGameServer to log what the vanilla client sends
+            var setLobbyGameServerMethod = AccessTools.Method(
+                typeof(SteamMatchmaking),
+                nameof(SteamMatchmaking.SetLobbyGameServer));
+
+            if (setLobbyGameServerMethod != null)
+            {
+                harmony.Patch(
+                    setLobbyGameServerMethod,
+                    prefix: new HarmonyMethod(typeof(ModEntry), nameof(SetLobbyGameServer_Prefix)));
+                Monitor.Log("Patched SteamMatchmaking.SetLobbyGameServer for diagnostics", LogLevel.Debug);
+            }
+            else
+            {
+                Monitor.Log("Could not find SteamMatchmaking.SetLobbyGameServer method", LogLevel.Warn);
+            }
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log($"Failed to apply Steam diagnostics: {ex.Message}", LogLevel.Error);
+        }
+    }
+
+    private static bool SetLobbyGameServer_Prefix(CSteamID steamIDLobby, uint unGameServerIP, ushort unGameServerPort, CSteamID steamIDGameServer)
+    {
+        _staticMonitor?.Log("=== SetLobbyGameServer CALLED ===", LogLevel.Alert);
+        _staticMonitor?.Log($"  Lobby ID: {steamIDLobby.m_SteamID}", LogLevel.Alert);
+        _staticMonitor?.Log($"  Game Server IP: {unGameServerIP} (0x{unGameServerIP:X8})", LogLevel.Alert);
+        _staticMonitor?.Log($"  Game Server Port: {unGameServerPort}", LogLevel.Alert);
+        _staticMonitor?.Log($"  Game Server Steam ID: {steamIDGameServer.m_SteamID}", LogLevel.Alert);
+        _staticMonitor?.Log($"  Game Server Steam ID Valid: {steamIDGameServer.IsValid()}", LogLevel.Alert);
+        _staticMonitor?.Log("=================================", LogLevel.Alert);
+
+        // Let the original method run
+        return true;
+    }
 
     #endregion
 }
