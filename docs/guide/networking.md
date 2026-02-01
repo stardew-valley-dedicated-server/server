@@ -34,12 +34,21 @@ Direct IP connections don't provide user IDs, so the server can't track farmhand
 
 ## Ports
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 24642 | UDP | Direct IP connections (disabled by default) |
-| 5800 | TCP | VNC web interface |
+| Port | Protocol | Purpose | Forwarding Required |
+|------|----------|---------|---------------------|
+| 24642 | UDP | Steam SDR game port | No (relay handles NAT) |
+| 27015 | UDP | Steam SDR query port | No (relay handles NAT) |
+| 5800 | TCP | VNC web interface | Only for remote access |
+| 8080 | TCP | HTTP API | Only for external access |
 
-Steam SDR and GOG Galaxy use dynamic ports and handle NAT traversal automatically.
+Steam SDR uses these ports internally but traffic goes through Valve's relay network - no port forwarding required. GOG Galaxy uses dynamic ports.
+
+To change the host-side port mappings (e.g., if you have port conflicts):
+
+```bash
+SDR_GAME_PORT=24643
+SDR_QUERY_PORT=27016
+```
 
 ## Troubleshooting
 
