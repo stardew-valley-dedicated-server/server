@@ -42,7 +42,7 @@ jobs:
           docker rm "$CONTAINER_ID"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2.1.2
 
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
