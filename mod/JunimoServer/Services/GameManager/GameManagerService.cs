@@ -40,9 +40,13 @@ namespace JunimoServer.Services.GameManager
 
         private void OnOneSecondTicked(object sender, OneSecondUpdateTickedEventArgs e)
         {
-            // TODO: Healthcheck triggers during init, should be postponed until "gameMode was 'loadingMode (6)', set to 'playingGameMode (3)'."
-            RunHealthCheck();
             ConditionallyStartGame();
+
+            // Only run healthcheck after game has started (prevents false negatives during init)
+            if (_gameStarted)
+            {
+                RunHealthCheck();
+            }
         }
 
         private void OnRenderedActiveMenu(object sender, RenderedActiveMenuEventArgs e)

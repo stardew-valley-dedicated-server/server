@@ -120,7 +120,7 @@ clean:
 
 test:
 	@dotnet tool restore
-	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings || true
+	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings
 	@echo Generating test report...
 	@dotnet TrxToExtentReport -t ./TestResults/TestResults.trx -o ./TestResults/TestReport.html
 
@@ -142,4 +142,4 @@ help:
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images
 
-.DEFAULT_GOAL := run
+.DEFAULT_GOAL := help
