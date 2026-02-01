@@ -167,6 +167,10 @@ init_steam_sdk() {
     else
         echo "Steam SDK already linked"
     fi
+
+    # Create steam_appid.txt with Stardew Valley's AppID
+    # The SDK defaults to 480 (Spacewar) which causes SDR connection failures
+    echo "413150" > "${GAME_DEST_DIR}/steam_appid.txt"
 }
 
 init_gui() {
