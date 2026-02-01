@@ -5,44 +5,15 @@ namespace JunimoServer.Tests.Helpers;
 
 /// <summary>
 /// Configuration for connection retry behavior.
+/// Timeouts are centralized in TestTimings.
 /// </summary>
 public class ConnectionRetryOptions
 {
     /// <summary>
     /// Maximum number of attempts to connect to the server.
-    /// Default is 3 attempts.
+    /// Default is 5 attempts (increased to compensate for reduced FarmhandMenuTimeout).
     /// </summary>
-    public int MaxAttempts { get; set; } = 3;
-
-    /// <summary>
-    /// Timeout in milliseconds for waiting for the farmhand menu.
-    /// Default is 30 seconds.
-    /// </summary>
-    public int FarmhandWaitTimeoutMs { get; set; } = 30000;
-
-    /// <summary>
-    /// Timeout in milliseconds for waiting for world ready.
-    /// Default is 60 seconds.
-    /// </summary>
-    public int WorldReadyTimeoutMs { get; set; } = 60000;
-
-    /// <summary>
-    /// Timeout in milliseconds for waiting for text input menu.
-    /// Default is 10 seconds.
-    /// </summary>
-    public int TextInputTimeoutMs { get; set; } = 10000;
-
-    /// <summary>
-    /// Timeout in milliseconds for waiting for CoopMenu.
-    /// Default is 10 seconds.
-    /// </summary>
-    public int MenuWaitTimeoutMs { get; set; } = 10000;
-
-    /// <summary>
-    /// Delay in milliseconds to wait for game data to sync after loading.
-    /// Default is 2 seconds.
-    /// </summary>
-    public int DataSyncDelayMs { get; set; } = 2000;
+    public int MaxAttempts { get; set; } = 5;
 
     /// <summary>
     /// Default options for standard connection scenarios.
@@ -50,16 +21,11 @@ public class ConnectionRetryOptions
     public static ConnectionRetryOptions Default => new();
 
     /// <summary>
-    /// Options with longer timeouts for slow connections or CI environments.
+    /// Options with more retries for slow connections or CI environments.
     /// </summary>
     public static ConnectionRetryOptions SlowConnection => new()
     {
-        MaxAttempts = 5,
-        FarmhandWaitTimeoutMs = 60000,
-        WorldReadyTimeoutMs = 90000,
-        TextInputTimeoutMs = 15000,
-        MenuWaitTimeoutMs = 15000,
-        DataSyncDelayMs = 3000
+        MaxAttempts = 5
     };
 }
 
@@ -119,10 +85,10 @@ public class ConnectionHelper
     /// <summary>
     /// Ensures the client is fully disconnected and at the title screen.
     /// </summary>
-    public async Task<bool> EnsureDisconnectedAsync(int timeoutMs = 10000)
+    public async Task<bool> EnsureDisconnectedAsync(TimeSpan? timeout = null)
     {
         await _gameClient.Navigate("title");
-        var result = await _gameClient.Wait.ForDisconnected(timeoutMs);
+        var result = await _gameClient.Wait.ForDisconnected(timeout ?? TestTimings.DisconnectedTimeout);
         return result?.Success == true;
     }
 
@@ -135,6 +101,8 @@ public class ConnectionHelper
     /// <returns>Connection result with farmhand slots if successful.</returns>
     public async Task<ConnectionResult> ConnectToServerAsync(string inviteCode, CancellationToken cancellationToken = default)
     {
+        var errors = new List<string>();
+
         for (var attempt = 1; attempt <= _options.MaxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -148,7 +116,7 @@ public class ConnectionHelper
                 {
                     Log("Returning to title for retry...");
                     await EnsureDisconnectedAsync();
-                    await Task.Delay(1000, cancellationToken); // Brief pause between attempts
+                    await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken); // Brief pause between attempts
                 }
 
                 // Navigate to coop menu
@@ -160,7 +128,7 @@ public class ConnectionHelper
                 }
 
                 // Wait for CoopMenu to be ready
-                var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", _options.MenuWaitTimeoutMs);
+                var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeout);
                 if (menuWait?.Success != true)
                 {
                     Log($"Wait for CoopMenu failed: {menuWait?.Error}");
@@ -184,7 +152,7 @@ public class ConnectionHelper
                 }
 
                 // Wait for text input menu
-                var textInputWait = await _gameClient.Wait.ForTextInput(_options.TextInputTimeoutMs);
+                var textInputWait = await _gameClient.Wait.ForTextInput(TestTimings.TextInputTimeout);
                 if (textInputWait?.Success != true)
                 {
                     Log($"Wait for text input failed: {textInputWait?.Error}");
@@ -202,17 +170,17 @@ public class ConnectionHelper
                 Log("Invite code submitted, waiting for farmhand selection...");
 
                 // Wait for farmhand selection screen (this is where "stuck connecting" typically occurs)
-                var farmhandWait = await _gameClient.Wait.ForFarmhands(_options.FarmhandWaitTimeoutMs);
+                var farmhandWait = await _gameClient.Wait.ForFarmhands(TestTimings.FarmhandMenuTimeout);
                 if (farmhandWait?.Success != true)
                 {
-                    Log($"Wait for farmhands timed out after {_options.FarmhandWaitTimeoutMs}ms (attempt {attempt})");
+                    Log($"Wait for farmhands timed out after {TestTimings.FarmhandMenuTimeout.TotalMilliseconds}ms (attempt {attempt})");
                     continue;
                 }
 
                 Log($"Farmhand menu appeared after {farmhandWait.WaitedMs}ms");
 
                 // Give the game time to load farmhand data
-                await Task.Delay(_options.DataSyncDelayMs, cancellationToken);
+                await Task.Delay(TestTimings.NetworkSyncDelay, cancellationToken);
 
                 // Get farmhand slots
                 var farmhands = await _gameClient.Farmhands.GetSlots();
@@ -231,15 +199,16 @@ public class ConnectionHelper
             }
             catch (Exception ex)
             {
+                var error = $"Attempt {attempt}: {ex.Message}";
                 Log($"Exception during connection attempt {attempt}: {ex.Message}");
-                if (attempt == _options.MaxAttempts)
-                {
-                    return ConnectionResult.Failed($"All {_options.MaxAttempts} connection attempts failed. Last error: {ex.Message}", attempt);
-                }
+                errors.Add(error);
             }
         }
 
-        return ConnectionResult.Failed($"All {_options.MaxAttempts} connection attempts failed", _options.MaxAttempts);
+        var errorSummary = errors.Count > 0
+            ? string.Join("; ", errors)
+            : "Unknown failure";
+        return ConnectionResult.Failed($"All {_options.MaxAttempts} connection attempts failed. Errors: {errorSummary}", _options.MaxAttempts);
     }
 
     /// <summary>
@@ -315,7 +284,7 @@ public class ConnectionHelper
                 if (!targetSlot.IsCustomized)
                 {
                     // Wait for character customization menu
-                    var charWait = await _gameClient.Wait.ForCharacter(_options.MenuWaitTimeoutMs);
+                    var charWait = await _gameClient.Wait.ForCharacter(TestTimings.CharacterMenuTimeout);
                     if (charWait?.Success != true)
                     {
                         Log($"Wait for character menu failed: {charWait?.Error}");
@@ -331,7 +300,7 @@ public class ConnectionHelper
                     }
 
                     // Brief delay for game to sync textbox values
-                    await Task.Delay(200, cancellationToken);
+                    await Task.Delay(TestTimings.CharacterCreationSyncDelay, cancellationToken);
 
                     // Confirm character creation
                     var confirmResult = await _gameClient.Character.Confirm();
@@ -345,7 +314,7 @@ public class ConnectionHelper
                 }
 
                 // Wait for world to be ready
-                var worldWait = await _gameClient.Wait.ForWorldReady(_options.WorldReadyTimeoutMs);
+                var worldWait = await _gameClient.Wait.ForWorldReady(TestTimings.WorldReadyTimeout);
                 if (worldWait?.Success != true)
                 {
                     Log($"Wait for world ready failed: {worldWait?.Error}");
@@ -355,7 +324,7 @@ public class ConnectionHelper
                 Log($"Successfully joined world on attempt {attempt}, world ready after {worldWait.WaitedMs}ms");
 
                 // Wait for network sync
-                await Task.Delay(_options.DataSyncDelayMs, cancellationToken);
+                await Task.Delay(TestTimings.NetworkSyncDelay, cancellationToken);
 
                 return JoinWorldResult.Succeeded(attempt, targetSlot.Index);
             }
@@ -374,7 +343,7 @@ public class ConnectionHelper
 
             // Return to title before retry
             await EnsureDisconnectedAsync();
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
         }
 
         return JoinWorldResult.Failed($"All {_options.MaxAttempts} join attempts failed", _options.MaxAttempts);

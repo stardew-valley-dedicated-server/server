@@ -313,92 +313,86 @@ public class ActionsClient
 public class WaitClient
 {
     private readonly GameTestClient _client;
-    private readonly int _defaultTimeout;
+    private readonly TimeSpan _defaultTimeout;
 
-    public WaitClient(GameTestClient client, int defaultTimeout = 30000)
+    public WaitClient(GameTestClient client, TimeSpan? defaultTimeout = null)
     {
         _client = client;
-        _defaultTimeout = defaultTimeout;
+        _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(30);
     }
+
+    private int ToMs(TimeSpan? timeout) => (int)(timeout ?? _defaultTimeout).TotalMilliseconds;
 
     /// <summary>
     /// Wait for a specific menu type.
     /// GET /wait/menu?type=X
     /// </summary>
-    public Task<WaitResult?> ForMenu(string menuType, int? timeout = null)
+    public Task<WaitResult?> ForMenu(string menuType, TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/menu?type={Uri.EscapeDataString(menuType)}&timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/menu?type={Uri.EscapeDataString(menuType)}&timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for farmhand selection screen.
     /// GET /wait/farmhands
     /// </summary>
-    public Task<WaitResult?> ForFarmhands(int? timeout = null)
+    public Task<WaitResult?> ForFarmhands(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/farmhands?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/farmhands?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for character customization menu.
     /// GET /wait/character
     /// </summary>
-    public Task<WaitResult?> ForCharacter(int? timeout = null)
+    public Task<WaitResult?> ForCharacter(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/character?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/character?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for world to be ready (in-game).
     /// GET /wait/world-ready
     /// </summary>
-    public Task<WaitResult?> ForWorldReady(int? timeout = null)
+    public Task<WaitResult?> ForWorldReady(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/world-ready?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/world-ready?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for title screen.
     /// GET /wait/title
     /// </summary>
-    public Task<WaitResult?> ForTitle(int? timeout = null)
+    public Task<WaitResult?> ForTitle(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/title?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/title?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for text input menu (invite code / LAN input dialog).
     /// GET /wait/text-input
     /// </summary>
-    public Task<WaitResult?> ForTextInput(int? timeout = null)
+    public Task<WaitResult?> ForTextInput(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/text-input?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/text-input?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for connection to server.
     /// GET /wait/connected
     /// </summary>
-    public Task<WaitResult?> ForConnected(int? timeout = null)
+    public Task<WaitResult?> ForConnected(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/connected?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/connected?timeout={ToMs(timeout)}");
     }
 
     /// <summary>
     /// Wait for full disconnection (no active connection).
     /// GET /wait/disconnected
     /// </summary>
-    public Task<WaitResult?> ForDisconnected(int? timeout = null)
+    public Task<WaitResult?> ForDisconnected(TimeSpan? timeout = null)
     {
-        var t = timeout ?? _defaultTimeout;
-        return _client.GetAsync<WaitResult>($"/wait/disconnected?timeout={t}");
+        return _client.GetAsync<WaitResult>($"/wait/disconnected?timeout={ToMs(timeout)}");
     }
 }
 
@@ -429,7 +423,7 @@ public class GameTestClient : IDisposable
         _errorCancellationToken = token;
     }
 
-    public GameTestClient(string baseUrl = "http://localhost:5123", int defaultWaitTimeout = 30000)
+    public GameTestClient(string baseUrl = "http://localhost:5123", TimeSpan? defaultWaitTimeout = null)
     {
         _httpClient = new HttpClient
         {
@@ -488,11 +482,11 @@ public class GameTestClient : IDisposable
 
     /// <summary>
     /// Clear all captured errors.
-    /// POST /errors/clear
+    /// DELETE /errors
     /// </summary>
     public Task ClearErrors()
     {
-        return PostAsync<object>("/errors/clear", new { });
+        return DeleteAsync("/errors");
     }
 
     #region HTTP Helpers
@@ -509,6 +503,12 @@ public class GameTestClient : IDisposable
         var response = await _httpClient.PostAsJsonAsync(path, body, _errorCancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<T>(_errorCancellationToken);
+    }
+
+    public async Task DeleteAsync(string path)
+    {
+        var response = await _httpClient.DeleteAsync(path, _errorCancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 
     // Keep old methods for backward compatibility with existing tests

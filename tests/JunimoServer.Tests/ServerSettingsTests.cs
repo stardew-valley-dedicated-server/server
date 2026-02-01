@@ -24,6 +24,9 @@ public class ServerSettingsTests : IDisposable
         _fixture = fixture;
         _output = output;
         _serverApi = new ServerApiClient(_fixture.ServerBaseUrl);
+
+        // Register for test counting
+        _fixture.RegisterTest(nameof(ServerSettingsTests));
     }
 
     #region GET /settings — default values
