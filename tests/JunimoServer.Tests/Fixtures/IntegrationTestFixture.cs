@@ -32,14 +32,14 @@ namespace JunimoServer.Tests.Fixtures;
 /// Please read this before modifying.
 /// </para>
 ///
-/// <h3>1. Environment.Exit(1) for Server Errors</h3>
+/// <h3>1. Cancellation-Based Server Error Handling</h3>
 /// <para>
-/// When fatal errors are detected in server logs, we call Environment.Exit(1) to abort the
-/// entire test process. This is unusual but necessary because:
-/// - Server log monitoring runs in a background task
-/// - Background tasks cannot throw exceptions that fail the current test
-/// - Continuing tests after server failure produces cascading failures
-/// - This provides fast, clean abort of the test run
+/// When fatal errors are detected in server logs, we use cancellation tokens to abort
+/// inflight operations cleanly:
+/// - SignalServerError() cancels the error cancellation token
+/// - Tests pass GetErrorCancellationToken() to HTTP calls and waits
+/// - AbortTestRun() is called to skip remaining tests
+/// - This allows proper cleanup of containers and processes
 /// </para>
 ///
 /// <h3>2. Reflection to Extract Test Names</h3>
@@ -86,7 +86,6 @@ public class IntegrationTestFixture : IAsyncLifetime
     private string? _testSavesVolume;
     private Process? _gameProcess;
     private readonly StringBuilder _outputLog = new();
-    private readonly StringBuilder _errorLog = new();
     private bool _usingExistingServer;
 
     // File-based logging to avoid pipe buffer deadlocks when debugging
@@ -128,9 +127,7 @@ public class IntegrationTestFixture : IAsyncLifetime
     private const int TestClientApiPort = 5123;
     private const int SteamAuthPort = 3001;
 
-    // Timeouts
-    private const int ServerReadyTimeoutSeconds = 180;
-    private const int GameReadyTimeoutSeconds = 120;
+    // Timeouts - use TestTimings for centralized values
 
     public bool IsReady { get; private set; }
     public int ServerPort { get; private set; } = ServerApiPort;
@@ -141,7 +138,6 @@ public class IntegrationTestFixture : IAsyncLifetime
     public IContainer? ServerContainer => _serverContainer;
     public string? InviteCode { get; private set; }
     public string OutputLog => _outputLog.ToString();
-    public string ErrorLog => _errorLog.ToString();
 
     // Test run abort state - shared across all tests in the collection
     private volatile bool _testRunAborted;
@@ -156,8 +152,10 @@ public class IntegrationTestFixture : IAsyncLifetime
     private string? _envFilePath;
     private string? _volumePrefix;
 
-    // Test run timing
+    // Test run timing and statistics
     private DateTime _testRunStartTime;
+    private readonly Dictionary<string, int> _testCountsByClass = new();
+    private readonly object _testCountLock = new();
 
     // Cancellation token that gets triggered when a server error is detected
     // Tests can use this to abort waiting HTTP calls immediately
@@ -270,8 +268,30 @@ public class IntegrationTestFixture : IAsyncLifetime
         LogError("FATAL: Server error detected", error);
         Console.Error.Flush();
 
-        // Exit immediately - this is the only way to reliably abort a blocked test
-        Environment.Exit(1);
+        // Record the error
+        lock (_serverErrorsLock)
+        {
+            _serverErrors.Add(error);
+        }
+
+        // Abort the test run so remaining tests are skipped
+        AbortTestRun($"Server error: {error}");
+
+        // Cancel the error token to abort any inflight HTTP calls or waits
+        lock (_errorCancellationLock)
+        {
+            try
+            {
+                _errorCancellation?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Token already disposed, ignore
+            }
+        }
+
+        // Stop server log streaming to prevent further error signals
+        _serverLogCts?.Cancel();
     }
 
     /// <summary>
@@ -284,6 +304,49 @@ public class IntegrationTestFixture : IAsyncLifetime
         {
             _errorCancellation?.Dispose();
             _errorCancellation = new CancellationTokenSource();
+        }
+    }
+
+    /// <summary>
+    /// Registers a test for counting, grouped by class name.
+    /// Called by IntegrationTestBase.InitializeAsync or directly by lightweight test classes.
+    /// </summary>
+    public void RegisterTest(string className)
+    {
+        lock (_testCountLock)
+        {
+            if (_testCountsByClass.TryGetValue(className, out var count))
+                _testCountsByClass[className] = count + 1;
+            else
+                _testCountsByClass[className] = 1;
+        }
+    }
+
+    /// <summary>
+    /// Gets the total test count across all classes.
+    /// </summary>
+    public int TestCount
+    {
+        get
+        {
+            lock (_testCountLock)
+            {
+                return _testCountsByClass.Values.Sum();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets test counts grouped by class name.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> TestCountsByClass
+    {
+        get
+        {
+            lock (_testCountLock)
+            {
+                return new Dictionary<string, int>(_testCountsByClass);
+            }
         }
     }
 
@@ -311,56 +374,6 @@ public class IntegrationTestFixture : IAsyncLifetime
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
             AnsiConsole.Profile.Capabilities.Ansi = false;
         }
-
-        // Sample dashboard layout
-        //var layout = new Layout("Root")
-        //    .SplitRows(
-        //        new Layout("Header").Size(3),
-        //        new Layout("Main"),
-        //        new Layout("Footer").Size(3));
-
-        //layout["Header"].Update(
-        //    new Panel("[bold yellow]System Dashboard[/]")
-        //        .BorderColor(Color.Yellow)
-        //        .RoundedBorder()
-        //        .Expand());
-
-        //layout["Main"].SplitColumns(
-        //    new Layout("Left").Ratio(1),
-        //    new Layout("Right").Ratio(2));
-
-        //layout["Left"].SplitRows(
-        //    new Layout("Metrics"),
-        //    new Layout("Logs"));
-
-        //layout["Metrics"].Update(
-        //    new Panel("[green]CPU: 45%\nRAM: 62%\nDisk: 78%[/]")
-        //        .Header("System Metrics")
-        //        .BorderColor(Color.Green)
-        //        .RoundedBorder()
-        //        .Expand());
-
-        //layout["Logs"].Update(
-        //    new Panel("[dim]12:03 Process started\n12:05 Connected\n12:07 Ready[/]")
-        //        .Header("Recent Logs")
-        //        .BorderColor(Color.Blue)
-        //        .RoundedBorder()
-        //        .Expand());
-
-        //layout["Right"].Update(
-        //    new Panel("[white]Main application content area\nDisplays real-time data and visualizations[/]")
-        //        .Header("Content")
-        //        .BorderColor(Color.Cyan1)
-        //        .RoundedBorder()
-        //        .Expand());
-
-        //layout["Footer"].Update(
-        //    new Panel("[dim]Connected | Uptime: 2h 34m | Last Update: 12:07:45[/]")
-        //        .BorderColor(Color.Grey)
-        //        .RoundedBorder()
-        //        .Expand());
-
-        //AnsiConsole.Write(layout);
     }
 
     /// <summary>
@@ -433,6 +446,38 @@ public class IntegrationTestFixture : IAsyncLifetime
     // Zero-width space - invisible but not whitespace, so it won't be filtered by vstest
     // The vstest ConsoleLogger uses IsNullOrWhiteSpace() to filter lines
     private const string BlankLine = "\u200B";
+
+    /// <summary>
+    /// Log step duration as a grey detail message.
+    /// </summary>
+    private static void LogStepDuration(DateTime startTime)
+    {
+        var duration = DateTime.UtcNow - startTime;
+        Log($"Step took {duration.TotalSeconds:F1}s", LogLevel.Detail);
+    }
+
+    /// <summary>
+    /// Print the main test banner.
+    /// </summary>
+    private static void PrintTestBanner()
+    {
+        Console.Out.WriteLine();
+
+        var content = new Markup(
+            "[green bold]🧪 Junimo Server[/]  [grey]—[/]  [white]Integration Tests[/]\n\n" +
+            $"[grey]Starting test run at {DateTime.Now:yyyy-MM-dd HH:mm:ss}[/]"
+        );
+
+        var panel = new Panel(content)
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Green)
+            .Padding(2, 1)
+            .Expand();
+
+        AnsiConsole.Write(panel);
+        Console.Out.WriteLine();
+        Console.Out.Flush();
+    }
 
     /// <summary>
     /// Print a major phase header using Spectre.Console Panel.
@@ -577,7 +622,10 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         _testRunStartTime = DateTime.UtcNow;
 
-        LogPhaseHeader("Setup", "Integration Tests");
+        PrintTestBanner();
+
+        LogPhaseHeader("Setup", "Initializing Test Environment");
+        var stepStart = DateTime.UtcNow;
 
         // Initialize error cancellation token early (before log streaming starts)
         // This ensures it's available when server errors are detected during startup
@@ -593,10 +641,11 @@ public class IntegrationTestFixture : IAsyncLifetime
             Log($"Server already running on port {ServerApiPort}, reusing", LogLevel.Success);
             _usingExistingServer = true;
             ServerPort = ServerApiPort;
+            LogStepDuration(stepStart);
         }
         else
         {
-            await StartServerContainers();
+            await StartServerContainers(stepStart);
         }
         serverApi.Dispose();
 
@@ -606,7 +655,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             // Kill existing game client so we can start fresh with log capture
             Log("Game client already running, stopping it for fresh start with log capture...", LogLevel.Warn);
             await KillGameProcesses();
-            await Task.Delay(2000); // Wait for processes to fully exit
+            await Task.Delay(TestTimings.ProcessExitDelay); // Wait for processes to fully exit
         }
 
         await StartGameClient();
@@ -689,7 +738,8 @@ public class IntegrationTestFixture : IAsyncLifetime
     /// </summary>
     private async Task BuildLocalImages()
     {
-        LogTestSubPhase("Building Images");
+        LogPhaseHeader("Setup", "Building Images");
+        var stepStart = DateTime.UtcNow;
 
         // Build server image (equivalent to `make build`)
         await RunBuildCommand(
@@ -697,7 +747,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             "build",
             ServerRepoDir,
             "server image",
-            TimeSpan.FromMinutes(10)
+            TestTimings.DockerBuildServerTimeout
         );
 
         // Build steam-service image (equivalent to `docker compose build steam-auth`)
@@ -706,8 +756,10 @@ public class IntegrationTestFixture : IAsyncLifetime
             "compose build steam-auth",
             ServerRepoDir,
             "steam-service image",
-            TimeSpan.FromMinutes(5)
+            TestTimings.DockerBuildSteamAuthTimeout
         );
+
+        LogStepDuration(stepStart);
     }
 
     private async Task RunBuildCommand(string command, string arguments, string workingDirectory, string description, TimeSpan timeout, bool quiet = true)
@@ -731,26 +783,30 @@ public class IntegrationTestFixture : IAsyncLifetime
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start '{command} {arguments}'");
 
-        // Stream output to console (dim so it doesn't dominate)
-        var stdoutTask = Task.Run(async () => {
-            if (quiet) return;
+        // Capture output (always capture so we can show on failure)
+        var stdoutLines = new List<string>();
+        var stderrLines = new List<string>();
 
+        var stdoutTask = Task.Run(async () =>
+        {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
+                stdoutLines.Add(line);
                 if (!quiet)
                 {
-                    AnsiConsole.MarkupLine($"[grey]{BuildPrefix} {Markup.Escape(line)}[/]");
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
                 }
             }
         });
 
-        var stderrTask = Task.Run(async () => {
-
+        var stderrTask = Task.Run(async () =>
+        {
             while (await process.StandardError.ReadLineAsync() is { } line)
             {
+                stderrLines.Add(line);
                 if (!quiet)
                 {
-                    AnsiConsole.MarkupLine($"[grey]{BuildPrefix} {Markup.Escape(line)}[/]");
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
                 }
             }
         });
@@ -770,18 +826,31 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         if (process.ExitCode != 0)
         {
+            // Print captured output on failure
+            AnsiConsole.MarkupLine($"[red]Build output for {description}:[/]");
+            foreach (var line in stdoutLines)
+            {
+                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
+            }
+            foreach (var line in stderrLines)
+            {
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
+            }
+
             throw new InvalidOperationException(
-                $"Building {description} failed with exit code {process.ExitCode}. " +
-                $"Check build output above for details.");
+                $"Building {description} failed with exit code {process.ExitCode}.");
         }
 
         Log($"Built {description}", LogLevel.Success);
     }
 
-    private async Task StartServerContainers()
+    private async Task StartServerContainers(DateTime initStepStart)
     {
         // Clean up stale resources from previous test runs that may have crashed
         await CleanupStaleTestResources();
+
+        // Log duration for "Initializing Test Environment" phase (after stale cleanup)
+        LogStepDuration(initStepStart);
 
         // Build local images automatically (like `make up` does)
         if (UseLocalImages && !SkipBuild)
@@ -793,7 +862,8 @@ public class IntegrationTestFixture : IAsyncLifetime
             Log("Skipping image build (SDVD_SKIP_BUILD=true)", LogLevel.Detail);
         }
 
-        LogTestSubPhase("Starting Containers");
+        LogPhaseHeader("Setup", "Starting Containers");
+        var stepStart = DateTime.UtcNow;
 
         // Load environment variables from .env file if it exists
         _envFilePath = FindEnvFile();
@@ -862,7 +932,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         try
         {
             // Use a CancellationToken with timeout for container startup
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var cts = new CancellationTokenSource(TestTimings.ContainerStartTimeout);
             await _steamAuthContainer.StartAsync(cts.Token);
             Log("Started steam-auth container", LogLevel.Success);
         }
@@ -898,7 +968,8 @@ public class IntegrationTestFixture : IAsyncLifetime
             // Fail-fast mode: exit immediately on ERROR logs (for fast test failure detection)
             .WithEnvironment("TEST_FAIL_FAST", "true")
             // SYS_TIME capability for GOG Galaxy auth
-            .WithCreateParameterModifier(p => {
+            .WithCreateParameterModifier(p =>
+            {
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
             })
@@ -911,6 +982,12 @@ public class IntegrationTestFixture : IAsyncLifetime
         // Add optional env vars
         if (envVars.TryGetValue("VNC_PASSWORD", out var vncPass) && !string.IsNullOrEmpty(vncPass))
             serverBuilder = serverBuilder.WithEnvironment("VNC_PASSWORD", vncPass);
+
+        // Pass Steam credentials to server for SteamKit2 lobby creation
+        if (envVars.TryGetValue("STEAM_USERNAME", out var serverSteamUser) && !string.IsNullOrEmpty(serverSteamUser))
+            serverBuilder = serverBuilder.WithEnvironment("STEAM_USERNAME", serverSteamUser);
+        if (envVars.TryGetValue("STEAM_PASSWORD", out var serverSteamPass) && !string.IsNullOrEmpty(serverSteamPass))
+            serverBuilder = serverBuilder.WithEnvironment("STEAM_PASSWORD", serverSteamPass);
 
         _serverContainer = serverBuilder.Build();
 
@@ -925,12 +1002,16 @@ public class IntegrationTestFixture : IAsyncLifetime
         _serverLogCts = new CancellationTokenSource();
         _serverLogTask = Task.Run(() => StreamServerLogsAsync(_serverLogCts.Token));
 
+        LogStepDuration(stepStart);
+
         // Wait for server to be fully ready (with invite code)
-        LogTestSubPhase("Waiting for Server Container");
+        LogPhaseHeader("Setup", "Waiting for Server");
+        stepStart = DateTime.UtcNow;
+
         var serverApi = new ServerApiClient($"http://localhost:{ServerPort}");
         var status = await serverApi.WaitForServerOnline(
-            TimeSpan.FromSeconds(ServerReadyTimeoutSeconds),
-            TimeSpan.FromSeconds(2));
+            TestTimings.ServerReadyTimeout,
+            TestTimings.ServerPollInterval);
         serverApi.Dispose();
 
         if (status == null)
@@ -938,11 +1019,12 @@ public class IntegrationTestFixture : IAsyncLifetime
             // Get container logs for debugging
             var logs = await _serverContainer.GetLogsAsync();
             throw new TimeoutException(
-                $"Server did not become ready within {ServerReadyTimeoutSeconds} seconds.\n" +
+                $"Server did not become ready within {TestTimings.ServerReadyTimeout.TotalSeconds} seconds.\n" +
                 $"Logs:\n{logs.Stdout}\n\nErrors:\n{logs.Stderr}");
         }
 
         InviteCode = status.InviteCode;
+        LogStepDuration(stepStart);
     }
 
     /// <summary>
@@ -982,8 +1064,11 @@ public class IntegrationTestFixture : IAsyncLifetime
                         if (IsContainerNoise(cleanedLine))
                             continue;
 
-                        // Write to console (visible with verbosity=detailed) - dark grey for server logs
-                        AnsiConsole.MarkupLine($"[grey42]{Markup.Escape(ServerPrefix)} {Markup.Escape(cleanedLine)}[/]");
+                        // Write to console only in verbose mode - dark grey for server logs
+                        if (VerboseContainerLogs)
+                        {
+                            AnsiConsole.MarkupLine($"[grey42]{Markup.Escape(ServerPrefix)} {Markup.Escape(cleanedLine)}[/]");
+                        }
 
                         // Detect server errors (SMAPI log format: [timestamp ERROR module] or [timestamp FATAL module])
                         // Use word boundary regex for robust matching regardless of surrounding characters
@@ -996,7 +1081,7 @@ public class IntegrationTestFixture : IAsyncLifetime
 
                 _serverLogPosition = allLines.Length;
 
-                await Task.Delay(500, ct); // Poll every 500ms
+                await Task.Delay(TestTimings.ServerLogPollInterval, ct);
             }
             catch (OperationCanceledException)
             {
@@ -1008,7 +1093,7 @@ public class IntegrationTestFixture : IAsyncLifetime
                 if (!ct.IsCancellationRequested)
                 {
                     Log($"Error streaming server logs: {ex.Message}", LogLevel.Error);
-                    await Task.Delay(2000, ct);
+                    await Task.Delay(TestTimings.ServerLogErrorRetryDelay, ct);
                 }
             }
         }
@@ -1016,7 +1101,8 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     private async Task StartGameClient()
     {
-        LogTestSubPhase("Waiting for Game Client");
+        LogPhaseHeader("Setup", "Waiting for Game Client");
+        var stepStart = DateTime.UtcNow;
 
         // Use file-based logging to avoid pipe buffer deadlocks when debugging.
         // When hitting a breakpoint, pipe readers pause, the buffer fills, and the
@@ -1045,21 +1131,22 @@ public class IntegrationTestFixture : IAsyncLifetime
         _logTailCts = new CancellationTokenSource();
         _logTailTask = Task.Run(() => TailLogFile(_gameLogFile, _logTailCts.Token));
 
-        var deadline = DateTime.UtcNow.AddSeconds(GameReadyTimeoutSeconds);
+        var deadline = DateTime.UtcNow + TestTimings.GameReadyTimeout;
         while (DateTime.UtcNow < deadline)
         {
             if (await IsGameClientResponding())
             {
                 // Brief delay to let the log tailer catch up with the /ping request
-                await Task.Delay(100);
+                await Task.Delay(TestTimings.GameClientPollDelay);
+                LogStepDuration(stepStart);
                 return;
             }
-            await Task.Delay(2000);
+            await Task.Delay(TestTimings.GameClientStartupPollDelay);
         }
 
         throw new TimeoutException(
-            $"Game client did not become ready within {GameReadyTimeoutSeconds} seconds.\n" +
-            $"Output:\n{_outputLog}\n\nErrors:\n{_errorLog}");
+            $"Game client did not become ready within {TestTimings.GameReadyTimeout.TotalSeconds} seconds.\n" +
+            $"Output:\n{_outputLog}");
     }
 
     /// <summary>
@@ -1068,7 +1155,6 @@ public class IntegrationTestFixture : IAsyncLifetime
     ///
     /// Behavior:
     /// - Always notifies log subscribers (routes to test output helper during tests)
-    /// - When SDVD_STREAM_LOGS=true: Also writes to Console for direct visibility
     /// </summary>
     private void TailLogFile(string filePath, CancellationToken ct)
     {
@@ -1095,8 +1181,11 @@ public class IntegrationTestFixture : IAsyncLifetime
                     {
                         _outputLog.AppendLine(cleanedLine);
 
-                        // Write to console (visible with verbosity=detailed) - light grey for game logs
-                        AnsiConsole.MarkupLine($"[grey46]{Markup.Escape(GamePrefix)} {Markup.Escape(cleanedLine)}[/]");
+                        // Write to console only in verbose mode - light grey for game logs
+                        if (VerboseContainerLogs)
+                        {
+                            AnsiConsole.MarkupLine($"[grey46]{Markup.Escape(GamePrefix)} {Markup.Escape(cleanedLine)}[/]");
+                        }
                     }
                 }
                 else
@@ -1117,7 +1206,8 @@ public class IntegrationTestFixture : IAsyncLifetime
     /// </summary>
     public async Task DisposeAsync()
     {
-        LogTestSubPhase("Tests finished");
+        LogPhaseHeader("Cleanup", "Tests Finished");
+        var stepStart = DateTime.UtcNow;
 
         // Stop game client - always try even if exceptions occur
         try
@@ -1139,7 +1229,7 @@ public class IntegrationTestFixture : IAsyncLifetime
                 _serverLogCts.Cancel();
                 if (_serverLogTask != null)
                 {
-                    await _serverLogTask.WaitAsync(TimeSpan.FromSeconds(2));
+                    await _serverLogTask.WaitAsync(TestTimings.TaskCleanupTimeout);
                 }
             }
             catch (TimeoutException)
@@ -1182,9 +1272,70 @@ public class IntegrationTestFixture : IAsyncLifetime
             await RemoveDockerVolume(_testSavesVolume);
         }
 
+        LogStepDuration(stepStart);
+
+        // Print summary panel
+        PrintTestSummary();
+    }
+
+    /// <summary>
+    /// Prints a summary panel showing test run statistics.
+    /// </summary>
+    private void PrintTestSummary()
+    {
         var totalDuration = DateTime.UtcNow - _testRunStartTime;
-        AnsiConsole.MarkupLine($"[[Test]] [green]{IconSuccess} Done ({totalDuration.TotalSeconds:F1}s total)[/]");
+
         Console.Out.WriteLine(BlankLine);
+
+        var statusIcon = _testRunAborted ? IconError : IconSuccess;
+        var statusColor = _testRunAborted ? "red" : "green";
+        var statusText = _testRunAborted ? "Aborted" : "Passed";
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(_testRunAborted ? Color.Red : Color.Green)
+            .Title($"[bold {statusColor}]{statusIcon} Test Run {statusText}[/]")
+            .AddColumn(new TableColumn("[white]Test Class[/]").LeftAligned())
+            .AddColumn(new TableColumn("[white]Count[/]").RightAligned())
+            .Expand();
+
+        // Add rows for each test class, sorted by name
+        var testCounts = TestCountsByClass;
+        foreach (var (className, count) in testCounts.OrderBy(x => x.Key))
+        {
+            // Remove "Tests" suffix for cleaner display
+            var displayName = className.EndsWith("Tests")
+                ? className[..^5]
+                : className;
+            table.AddRow(
+                new Markup($"[grey]{Markup.Escape(displayName)}[/]"),
+                new Markup($"[grey]{count}[/]"));
+        }
+
+        // Add separator and total
+        table.AddEmptyRow();
+        table.AddRow(
+            new Markup("[white bold]Total[/]"),
+            new Markup($"[cyan bold]{TestCount}[/]"));
+
+        table.AddRow(
+            new Markup("[white]Duration[/]"),
+            new Markup($"[cyan]{totalDuration.TotalSeconds:F1}s[/]"));
+
+        if (_testRunAborted && !string.IsNullOrEmpty(_abortReason))
+        {
+            // Truncate reason if too long
+            var reason = _abortReason.Length > 60
+                ? _abortReason[..57] + "..."
+                : _abortReason;
+            table.AddRow(
+                new Markup("[white]Abort Reason[/]"),
+                new Markup($"[red]{Markup.Escape(reason)}[/]"));
+        }
+
+        AnsiConsole.Write(table);
+        Console.Out.WriteLine(BlankLine);
+        Console.Out.Flush();
     }
 
     /// <summary>
@@ -1300,7 +1451,7 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var client = new HttpClient { Timeout = TestTimings.HttpHealthCheckTimeout };
             var response = await client.GetAsync($"http://localhost:{TestClientApiPort}/ping");
             return response.IsSuccessStatusCode;
         }
@@ -1325,7 +1476,7 @@ public class IntegrationTestFixture : IAsyncLifetime
                 _logTailCts.Cancel();
                 if (_logTailTask != null)
                 {
-                    await _logTailTask.WaitAsync(TimeSpan.FromSeconds(2));
+                    await _logTailTask.WaitAsync(TestTimings.TaskCleanupTimeout);
                 }
             }
             catch (TimeoutException)
@@ -1377,7 +1528,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         }
 
         // Strategy 4: Verify the game is actually stopped
-        await Task.Delay(1000);
+        await Task.Delay(TestTimings.KillRetryDelay);
         if (await IsGameClientResponding())
         {
             Log("Game still responding after stop, force killing...", LogLevel.Warn);
@@ -1400,8 +1551,8 @@ public class IntegrationTestFixture : IAsyncLifetime
                 }
                 catch (IOException) when (attempt < 2)
                 {
-                    Log("Log file still locked, retrying in 1s...", LogLevel.Detail);
-                    await Task.Delay(1000);
+                    Log("Log file still locked, retrying...", LogLevel.Detail);
+                    await Task.Delay(TestTimings.KillRetryDelay);
                 }
                 catch (Exception ex)
                 {
@@ -1434,7 +1585,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             if (stopProcess == null) return false;
 
             // Wait max 10 seconds for make stop
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var cts = new CancellationTokenSource(TestTimings.ContainerStopTimeout);
             try
             {
                 await stopProcess.WaitForExitAsync(cts.Token);

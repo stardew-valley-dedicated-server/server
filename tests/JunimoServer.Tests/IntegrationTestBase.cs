@@ -125,6 +125,9 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
         // Try to extract test name from the xUnit output helper
         _currentTestName = ExtractTestName();
 
+        // Track test count for summary
+        Fixture.RegisterTest(_testClassName);
+
         // Print test header
         PrintTestHeader();
 
@@ -157,37 +160,26 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
     {
         LogDetail("Cleaning up...");
 
-        // Return to title screen
+        // Return to title screen and ensure fully disconnected
         try
         {
             await GameClient.Navigate("title");
-            await GameClient.Wait.ForDisconnected(10000);
+            await GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
+            // Wait for server to process the disconnect before attempting farmer deletion
+            await Task.Delay(TestTimings.DisconnectProcessingDelay);
         }
         catch (Exception ex)
         {
             LogWarning($"Failed to return to title: {ex.Message}");
         }
 
-        // Clean up any farmers created during tests
+        // Clean up any farmers created during tests (with retry logic)
         if (CreatedFarmers.Count > 0)
         {
             Log($"Cleaning up {CreatedFarmers.Count} farmer(s)...");
             foreach (var farmerName in CreatedFarmers)
             {
-                try
-                {
-                    var result = await ServerApi.DeleteFarmhand(farmerName);
-                    if (result?.Success == true)
-                        LogDetail($"Deleted: {farmerName}");
-                    else if (result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
-                        LogDetail($"Not found (ok): {farmerName}");
-                    else
-                        LogWarning($"Failed to delete {farmerName}: {result?.Error ?? "unknown error"}");
-                }
-                catch (Exception ex)
-                {
-                    LogWarning($"Error deleting {farmerName}: {ex.Message}");
-                }
+                await DeleteFarmerWithRetry(farmerName);
             }
         }
 
@@ -210,6 +202,50 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
 
         // Print test footer
         PrintTestFooter();
+    }
+
+    /// <summary>
+    /// Attempts to delete a farmer with retry logic for "currently online" errors.
+    /// </summary>
+    private async Task DeleteFarmerWithRetry(string farmerName)
+    {
+        for (var attempt = 1; attempt <= TestTimings.FarmerDeleteMaxAttempts; attempt++)
+        {
+            try
+            {
+                var result = await ServerApi.DeleteFarmhand(farmerName);
+                if (result?.Success == true)
+                {
+                    LogDetail($"Deleted: {farmerName}");
+                    return;
+                }
+
+                if (result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    LogDetail($"Not found (ok): {farmerName}");
+                    return;
+                }
+
+                // Check if farmer is still online - retry after delay
+                if (result?.Error?.Contains("online", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    if (attempt < TestTimings.FarmerDeleteMaxAttempts)
+                    {
+                        LogDetail($"Farmer '{farmerName}' still online, retrying in {TestTimings.FarmerDeleteRetryDelay.TotalSeconds}s...");
+                        await Task.Delay(TestTimings.FarmerDeleteRetryDelay);
+                        continue;
+                    }
+                }
+
+                LogWarning($"Failed to delete {farmerName}: {result?.Error ?? "unknown error"}");
+                return;
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Error deleting {farmerName}: {ex.Message}");
+                return;
+            }
+        }
     }
 
     /// <summary>
@@ -258,7 +294,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
         var duration = DateTime.UtcNow - _testStartTime;
 
         // Write to console with color treatment matching fixture style
-        AnsiConsole.MarkupLine($"[[Test]] [green]{IconSuccess} Done ({duration.TotalSeconds:F2}s)[/]");
+        LogSuccess($"Done ({duration.TotalSeconds:F2}s)");
         IntegrationTestFixture.LogTestMessage("");
     }
 
@@ -442,11 +478,11 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
     /// Ensures the game client is disconnected and at the title screen.
     /// Throws ExceptionMonitorException if a server error is detected.
     /// </summary>
-    protected async Task<bool> EnsureDisconnectedAsync(int timeoutMs = 10000)
+    protected async Task<bool> EnsureDisconnectedAsync(TimeSpan? timeout = null)
     {
         try
         {
-            return await Connection.EnsureDisconnectedAsync(timeoutMs);
+            return await Connection.EnsureDisconnectedAsync(timeout ?? TestTimings.DisconnectedTimeout);
         }
         catch (OperationCanceledException ex)
         {
@@ -464,8 +500,8 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
         var exitResult = await GameClient.Exit();
         Assert.True(exitResult?.Success, $"Exit failed: {exitResult?.Error}");
 
-        await GameClient.Wait.ForTitle(Helpers.TestTimings.TitleScreenTimeoutMs);
-        await GameClient.Wait.ForDisconnected(Helpers.TestTimings.DisconnectedTimeoutMs);
+        await GameClient.Wait.ForTitle(TestTimings.TitleScreenTimeout);
+        await GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
         Log("Disconnected from server");
     }
 

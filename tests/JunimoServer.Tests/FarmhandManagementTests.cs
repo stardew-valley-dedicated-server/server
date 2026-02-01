@@ -82,7 +82,7 @@ public class FarmhandManagementTests : IntegrationTestBase
         await DisconnectAsync();
 
         // Wait for server to fully process the disconnection
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Delete the farmhand
         Log($"Deleting offline farmhand '{farmerName}'...");
@@ -128,7 +128,7 @@ public class FarmhandManagementTests : IntegrationTestBase
         var joinResult1 = await JoinWorldWithRetryAsync(farmerName1);
         AssertJoinSuccess(joinResult1);
         await DisconnectAsync();
-        await Task.Delay(TestTimings.DisconnectProcessingDelayMs);
+        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Verify farmer1 exists
         var afterJoin = await ServerApi.GetFarmhands();
