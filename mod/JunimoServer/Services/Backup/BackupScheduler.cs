@@ -1,4 +1,4 @@
-﻿using JunimoServer.Util;
+using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 

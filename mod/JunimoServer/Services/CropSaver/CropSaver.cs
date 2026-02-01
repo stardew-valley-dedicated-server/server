@@ -45,7 +45,8 @@ namespace JunimoServer.Services.CropSaver
             }
 
 
-            _cropSaverDataLoader.GetSaverCrops().ForEach(saverCrop => {
+            _cropSaverDataLoader.GetSaverCrops().ForEach(saverCrop =>
+            {
                 var dirt = saverCrop.TryGetCoorespondingDirt();
                 if (dirt != null)
                 {

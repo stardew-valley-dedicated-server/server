@@ -9,7 +9,8 @@ namespace JunimoServer.Services.Commands
     {
         public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandsService.RegisterCommand("admin", "\"farmerName|userName\" to assign admin status to the player.", (args, msg) => {
+            chatCommandsService.RegisterCommand("admin", "\"farmerName|userName\" to assign admin status to the player.", (args, msg) =>
+            {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
@@ -34,7 +35,8 @@ namespace JunimoServer.Services.Commands
                 helper.SendPrivateMessage(msg.SourceFarmer, "Assigned Admin to: " + farmerToAdmin.Name);
             });
 
-            chatCommandsService.RegisterCommand("unadmin", "\"farmerName|userName\" to take away admin status from the player.", (args, msg) => {
+            chatCommandsService.RegisterCommand("unadmin", "\"farmerName|userName\" to take away admin status from the player.", (args, msg) =>
+            {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");

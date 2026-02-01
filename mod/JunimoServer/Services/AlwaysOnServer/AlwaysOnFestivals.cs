@@ -432,7 +432,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime is >= 900 and <= 1400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Town", 1, 20, 1);
                 });
@@ -455,7 +456,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime is >= 900 and <= 1400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Forest", 1, 20, 1);
                 });
@@ -477,7 +479,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime is >= 900 and <= 1400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Beach", 1, 20, 1);
                 });
@@ -500,7 +503,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime >= 2200 && currentTime <= 2400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Beach", 1, 20, 1);
                 });
@@ -523,7 +527,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime >= 900 && currentTime <= 1500)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Town", 1, 20, 1);
                 });
@@ -547,7 +552,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime is >= 2200 and <= 2350)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Town", 1, 20, 1);
                 });
@@ -571,7 +577,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime >= 900 && currentTime <= 1400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Forest", 1, 20, 1);
                 });
@@ -594,7 +601,8 @@ namespace JunimoServer.Services.AlwaysOn
             if (currentTime >= 900 && currentTime <= 1400)
             {
                 Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who => {
+                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
+                {
                     Game1.exitActiveMenu();
                     Game1.warpFarmer("Town", 1, 20, 1);
                 });
@@ -673,7 +681,8 @@ namespace JunimoServer.Services.AlwaysOn
             _monitor.Log("Leaving festival");
 
             Game1.netReady.SetLocalReady("festivalEnd", true);
-            Game1.activeClickableMenu = new ReadyCheckDialog("festivalEnd", true, who => {
+            Game1.activeClickableMenu = new ReadyCheckDialog("festivalEnd", true, who =>
+            {
                 Game1.exitActiveMenu();
                 AlwaysOnUtil.WarpToHidingSpot();
 

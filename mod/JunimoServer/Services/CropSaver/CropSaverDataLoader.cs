@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -9,7 +9,7 @@ namespace JunimoServer.Services.CropSaver
     {
         private const string CropSaverDataKey = "JunimoHost.CropSaver.data";
         private readonly IModHelper _helper;
-        
+
         private CropSaverData _data = new CropSaverData();
 
         public CropSaverDataLoader(IModHelper helper)
@@ -27,7 +27,7 @@ namespace JunimoServer.Services.CropSaver
         {
             _data.Crops.Remove(crop);
         }
-        
+
         public void RemoveCrop(string locationName, Vector2 tileLocation)
         {
             var crop = GetSaverCrop(locationName, tileLocation);

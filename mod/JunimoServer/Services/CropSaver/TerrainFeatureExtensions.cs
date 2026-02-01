@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using StardewValley;
 using StardewValley.TerrainFeatures;
 
@@ -10,7 +10,7 @@ namespace JunimoServer.Services.CropSaver
         {
             return feature is HoeDirt dirt && dirt.crop != null;
         }
-        
+
         public static Crop? TryGetCrop(this TerrainFeature feature)
         {
             if (feature is HoeDirt dirt && dirt.crop != null)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -14,7 +14,7 @@ namespace JunimoServer.Services.CropSaver
 
         private readonly Action<TerrainFeature> _onCropAdded;
         private readonly Action<TerrainFeature> _onCropRemoved;
-        
+
         private const int UpdateEveryTicks = 5;
 
         public CropWatcher(IModHelper helper, Action<TerrainFeature> onCropAdded, Action<TerrainFeature> onCropRemoved)
@@ -32,7 +32,7 @@ namespace JunimoServer.Services.CropSaver
                 _timer--;
                 return;
             }
-            
+
             _timer = UpdateEveryTicks;
             var farmLocation = Game1.getLocationFromName("Farm");
             if (farmLocation == null) return;
