@@ -11,10 +11,16 @@ namespace JunimoServer.Services.Auth
     /// This implementation isolates Steam credentials and tokens in a separate service,
     /// exposing only the minimal encrypted app ticket to the game server.
     ///
-    /// Using WebSockets or SSE was also considered, but not used (yet) to for simplicty.
+    /// Using WebSockets or SSE was also considered, but not used (yet) for simplicity.
     /// </summary>
     public class SteamAppTicketFetcherHttp
     {
+        // Steam Guard action types (from SteamKit2.Authentication.EAuthSessionGuardType)
+        private const int ActionType_EmailCode = 2;
+        private const int ActionType_DeviceCode = 3;
+        private const int ActionType_DeviceConfirmation = 4;
+        private const int ActionType_EmailConfirmation = 5;
+
         private readonly SteamAuthApiClient _api;
         private readonly int _timeoutMs;
         private readonly IMonitor _monitor;
@@ -23,6 +29,13 @@ namespace JunimoServer.Services.Auth
         private bool _hasShownAuthChoice = false;
         private bool _hasShownQrCode = false;
         private string _lastStatus = "";
+        private string _refreshToken = null;
+
+        /// <summary>
+        /// The Steam refresh token obtained during authentication.
+        /// Can be used for SteamKit2 login.
+        /// </summary>
+        public string RefreshToken => _refreshToken;
 
         /// <summary>
         /// Creates a new SteamAppTicketFetcherHttp instance.
@@ -42,6 +55,7 @@ namespace JunimoServer.Services.Auth
         /// <summary>
         /// Verifies that the steam-auth service is healthy and logged in.
         /// Used in external mode to check if setup was completed.
+        /// Also fetches the refresh token for SteamKit2 login.
         /// </summary>
         public void VerifyServiceReady()
         {
@@ -60,6 +74,21 @@ namespace JunimoServer.Services.Auth
             if (!health.logged_in)
             {
                 throw new Exception("Steam-auth service is not logged in. Run 'docker compose run -it steam-auth setup' first.");
+            }
+
+            // Fetch refresh token for SteamKit2 lobby creation
+            try
+            {
+                var tokenResponse = _api.GetRefreshToken();
+                if (!string.IsNullOrEmpty(tokenResponse?.refresh_token))
+                {
+                    _refreshToken = tokenResponse.refresh_token;
+                    _monitor.Log("Steam refresh token fetched from steam-auth service ✓", LogLevel.Debug);
+                }
+            }
+            catch (Exception ex)
+            {
+                _monitor.Log($"Warning: Could not fetch refresh token for SteamKit2: {ex.Message}", LogLevel.Warn);
             }
         }
 
@@ -106,6 +135,12 @@ namespace JunimoServer.Services.Auth
                     switch (status.status)
                     {
                         case "authenticated":
+                            // Save the refresh token for SteamKit2 login
+                            if (!string.IsNullOrEmpty(status.refreshToken))
+                            {
+                                _refreshToken = status.refreshToken;
+                                _monitor.Log("Steam refresh token saved for SteamKit2 ✓", LogLevel.Debug);
+                            }
                             _monitor.Log("Steam authentication successful ✓", LogLevel.Info);
                             return;
 
@@ -190,20 +225,20 @@ namespace JunimoServer.Services.Auth
             {
                 switch (action.type)
                 {
-                    case 2: // EmailCode
+                    case ActionType_EmailCode:
                         hasEmailCode = true;
                         emailDetail = action.detail ?? "your email";
                         _monitor.Log($"*    [1] Enter code from email                                      *", LogLevel.Info);
                         break;
-                    case 3: // DeviceCode
+                    case ActionType_DeviceCode:
                         hasDeviceCode = true;
                         _monitor.Log("*    [2] Enter code from Steam mobile app                            *", LogLevel.Info);
                         break;
-                    case 4: // DeviceConfirmation
+                    case ActionType_DeviceConfirmation:
                         hasDeviceConfirmation = true;
                         _monitor.Log("*    [3] Approve in Steam mobile app (no code needed)                *", LogLevel.Info);
                         break;
-                    case 5: // EmailConfirmation
+                    case ActionType_EmailConfirmation:
                         hasEmailConfirmation = true;
                         _monitor.Log("*    [4] Click link in email (no code needed)                        *", LogLevel.Info);
                         break;
