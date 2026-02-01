@@ -13,6 +13,7 @@
         <!-- Force SMAPI to use our System.Collections.Immutable 7.0.0 instead of game's 6.0.0 -->
         <BundleIgnoreConflictingAssemblies>false</BundleIgnoreConflictingAssemblies>
         <Nullable>annotations</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <!-- Debug settings -->
@@ -34,7 +35,7 @@
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
         <PackageReference Include="NSwag.Core" Version="14.0.3"/>
         <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
-        <PackageReference Include="SteamKit2" Version="2.5.0"/>
+        <PackageReference Include="SteamKit2" Version="2.4.1"/>
         <PackageReference Include="Websocket.Client" Version="4.6.1"/>
     </ItemGroup>
 
@@ -85,6 +86,10 @@
             <ModFiles Include="$(OutputPath)\Namotion.Reflection.dll"/>
             <ModFiles Include="$(OutputPath)\System.Reactive.dll"/>
             <ModFiles Include="$(OutputPath)\Websocket.Client.dll"/>
+            <!-- SteamKit2 for Steam lobby creation -->
+            <ModFiles Include="$(OutputPath)\SteamKit2.dll"/>
+            <ModFiles Include="$(OutputPath)\protobuf-net.dll"/>
+            <ModFiles Include="$(OutputPath)\protobuf-net.Core.dll"/>
             <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json"/>
         </ItemGroup>
         <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)"/>

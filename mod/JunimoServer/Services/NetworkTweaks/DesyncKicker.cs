@@ -45,7 +45,8 @@ namespace JunimoServer.Services.NetworkTweaks
             _currentEndOfDayCancelToken = new CancellationTokenSource();
             var token = _currentEndOfDayCancelToken.Token;
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 _monitor.Log($"waiting {endOfDayDesyncMaxTime} sec to kick non-ready players");
 
                 await Task.Delay(endOfDayDesyncMaxTime * 1000);
@@ -68,7 +69,8 @@ namespace JunimoServer.Services.NetworkTweaks
             _currentNewDayBarrierCancelToken = new CancellationTokenSource();
             var token = _currentNewDayBarrierCancelToken.Token;
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 _monitor.Log($"waiting {barrierDesyncMaxTime} sec to kick barrier");
 
                 await Task.Delay(barrierDesyncMaxTime * 1000);

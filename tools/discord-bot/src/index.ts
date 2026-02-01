@@ -20,7 +20,8 @@ if (!DISCORD_BOT_TOKEN) {
 interface ServerStatus {
   playerCount: number;
   maxPlayers: number;
-  inviteCode: string;
+  steamInviteCode: string | null;
+  gogInviteCode: string | null;
   serverVersion: string;
   isOnline: boolean;
   lastUpdated: string;
@@ -69,7 +70,7 @@ async function updatePresence(): Promise<void> {
     activityName = "Server Offline";
   } else {
     const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
-    const inviteCode = status.inviteCode || "No code";
+    const inviteCode = status.steamInviteCode || status.gogInviteCode || "No code";
     activityName = `${playerInfo} | ${inviteCode}`;
   }
 
