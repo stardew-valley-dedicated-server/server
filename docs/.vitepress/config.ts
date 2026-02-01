@@ -5,9 +5,6 @@ import spec from "../assets/openapi.json" with { type: "json" };
 
 const openApiSidebar = useSidebar({ spec, linkPrefix: "/api/" });
 
-// Allow overriding base path via environment variable (for preview deployments)
-const basePath = process.env.VITEPRESS_BASE || "/server/";
-
 export default defineConfig({
     vite: {
         plugins: [
@@ -22,15 +19,15 @@ export default defineConfig({
             }),
         ],
     },
-    base: basePath,
+    base: "/server/",
     title: "JunimoServer",
     description: "Stardew Valley dedicated server documentation",
     head: [
-        ["link", { rel: "icon", href: `${basePath}logo.svg` }],
+        ["link", { rel: "icon", href: "/server/logo.svg" }],
         ["meta", { property: "og:type", content: "website" }],
         ["meta", { property: "og:title", content: "JunimoServer" }],
         ["meta", { property: "og:description", content: "Stardew Valley dedicated server documentation" }],
-        ["meta", { property: "og:image", content: `https://stardew-valley-dedicated-server.github.io${basePath}logo.svg` }],
+        ["meta", { property: "og:image", content: "https://stardew-valley-dedicated-server.github.io/server/logo.svg" }],
         ["meta", { name: "twitter:card", content: "summary" }],
         ["meta", { name: "twitter:title", content: "JunimoServer" }],
         ["meta", { name: "twitter:description", content: "Stardew Valley dedicated server documentation" }],
