@@ -78,10 +78,10 @@ async function updatePresence(): Promise<void> {
     activities: [
       {
         name: activityName,
-        type: ActivityType.Custom,
+        type: ActivityType.Watching,
       },
     ],
-    status: "online",
+    status: status?.isOnline ? "online" : "idle",
   });
 
   console.log(`[Discord Bot] Status updated: ${activityName}`);
