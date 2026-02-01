@@ -377,24 +377,81 @@ namespace JunimoServer.Services.CabinManager
 
         /// <summary>
         /// Count available (unassigned) cabins, strategy-aware.
-        /// For stacked strategies: count cabins at hidden position without owners.
-        /// For None: count ALL cabins without owners regardless of position.
+        /// A cabin is available if its owner has NOT been customized (isCustomized = false)
+        /// and has no userID assigned. This matches how SyncExistingCabins determines claimed cabins.
         /// </summary>
         private int GetAvailableCabinCount(GameLocation farm)
         {
-            if (options.IsNone)
-            {
-                return farm.buildings
-                    .Where(b => b.isCabin)
-                    .Count(b => !Data.AllPlayerIdsEverJoined.Contains(
-                        b.GetIndoors<Cabin>()?.owner?.UniqueMultiplayerID ?? 0));
-            }
-
-            // For stacked strategies, only count hidden cabins
             return farm.buildings
                 .Where(b => b.isCabin)
-                .Count(b => !Data.AllPlayerIdsEverJoined.Contains(
-                    b.GetIndoors<Cabin>()?.owner?.UniqueMultiplayerID ?? 0));
+                .Count(b => IsCabinAvailable(b));
+        }
+
+        /// <summary>
+        /// Determines if a cabin is available for a new player to claim.
+        /// A cabin is available if it has NOT been customized by a player yet.
+        /// </summary>
+        private static bool IsCabinAvailable(Building cabinBuilding)
+        {
+            var cabin = cabinBuilding.GetIndoors<Cabin>();
+            var owner = cabin?.owner;
+
+            if (owner == null)
+            {
+                // No owner object = definitely available
+                return true;
+            }
+
+            // A cabin is "taken" if the owner has been customized OR has a userID assigned
+            // (userID is set when a player claims the farmhand slot via Steam/GOG)
+            if (owner.isCustomized.Value)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(owner.userID.Value))
+            {
+                return false;
+            }
+
+            // Owner exists but is not customized and has no userID = available slot
+            return true;
+        }
+
+        /// <summary>
+        /// Cleans up an abandoned cabin claim when a player disconnects before completing character customization.
+        /// If a cabin has userID set (player claimed it) but isCustomized is false (didn't finish customization),
+        /// clear the userID to release the slot for other players.
+        /// </summary>
+        /// <param name="odId">The platform ID (Steam/GOG) of the disconnecting player as a string</param>
+        public static void CleanupAbandonedCabinClaim(string odId)
+        {
+            if (string.IsNullOrEmpty(odId) || _instance == null)
+                return;
+
+            var farm = Game1.getFarm();
+            if (farm == null)
+                return;
+
+            foreach (var building in farm.buildings)
+            {
+                if (!building.isCabin)
+                    continue;
+
+                var cabin = building.GetIndoors<Cabin>();
+                var owner = cabin?.owner;
+                if (owner == null)
+                    continue;
+
+                // Check if this cabin was claimed by the disconnecting player but not customized
+                if (owner.userID.Value == odId && !owner.isCustomized.Value)
+                {
+                    _instance.Monitor.Log($"Cleaning up abandoned cabin claim for user '{odId}' (slot was claimed but not customized)", LogLevel.Info);
+                    owner.userID.Value = "";
+                    // No need to clear other fields - they should already be in default state
+                    return; // A player can only claim one cabin at a time
+                }
+            }
         }
 
         /// <summary>

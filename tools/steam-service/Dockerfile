@@ -5,7 +5,7 @@ COPY *.csproj ./
 RUN dotnet restore
 
 COPY . .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app
     # -p:EnableCompressionInSingleFile=true \
     # -p:PublishSingleFile=true \
     # -p:PublishTrimmed=true \

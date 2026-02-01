@@ -10,7 +10,8 @@ namespace JunimoServer.Services.Commands
     {
         public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
         {
-            chatCommandsService.RegisterCommand("kick", "\"farmerName|userName\" to kick the player.", (args, msg) => {
+            chatCommandsService.RegisterCommand("kick", "\"farmerName|userName\" to kick the player.", (args, msg) =>
+            {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");

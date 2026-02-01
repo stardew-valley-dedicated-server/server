@@ -193,7 +193,7 @@ public class ApiDefinitions
     [ApiResponse(typeof(ErrorsResponse), 200)]
     private void GetErrors() { }
 
-    [ApiEndpoint("POST", "/errors/clear", Summary = "Clear errors", Description = "Clear all captured errors", Tag = "Diagnostics")]
+    [ApiEndpoint("DELETE", "/errors", Summary = "Clear errors", Description = "Clear all captured errors", Tag = "Diagnostics")]
     [ApiResponse(typeof(SuccessResponse), 200)]
     private void ClearErrors() { }
 
@@ -205,6 +205,16 @@ public class ApiDefinitions
     [ApiRequestBody(typeof(ScreenshotFileRequest))]
     [ApiResponse(typeof(ScreenshotResult), 200)]
     private void SaveScreenshot() { }
+
+    [ApiEndpoint("GET", "/steam/lobby", Summary = "Diagnose Steam lobby", Description = "Query all available data from a Steam lobby (for debugging connection issues)", Tag = "Diagnostics")]
+    [ApiQueryParam("id", typeof(ulong), Required = true, Description = "Steam lobby ID to diagnose")]
+    [ApiResponse(typeof(SteamLobbyDiagnostics), 200)]
+    private void DiagnoseSteamLobby() { }
+
+    [ApiEndpoint("POST", "/steam/lobby/join-diagnose", Summary = "Join and diagnose Steam lobby", Description = "Join a Steam lobby temporarily to get full diagnostic data, then leave", Tag = "Diagnostics")]
+    [ApiQueryParam("id", typeof(ulong), Required = true, Description = "Steam lobby ID to join and diagnose")]
+    [ApiResponse(typeof(SuccessResponse), 200)]
+    private void JoinAndDiagnoseSteamLobby() { }
 
     // ============================================================
     // Meta Endpoints

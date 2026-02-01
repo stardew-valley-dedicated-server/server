@@ -101,7 +101,8 @@ namespace JunimoServer.Services.MessageInterceptors
                     }
 
                     message = context.ModifiedMessage;
-                };
+                }
+                ;
             }
         }
 

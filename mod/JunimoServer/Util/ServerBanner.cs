@@ -1,4 +1,7 @@
+using JunimoServer.Services.SteamGameServer;
 using StardewModdingAPI;
+using StardewValley.SDKs.GogGalaxy;
+using System.Collections.Generic;
 using System.Net;
 
 namespace JunimoServer.Util
@@ -36,16 +39,57 @@ namespace JunimoServer.Util
             var externalIcon = externalIp == IPAddress.None ? "х" : "✓";
 
             var inviteCode = InviteCodeFile.Read(monitor);
-            var inviteCodeValue = inviteCode ?? "n/a";
 
-            monitor.LogBanner(new[] {
+            // Build networking status
+            var networkingLines = GetNetworkingStatus();
+
+            var bannerLines = new List<string>
+            {
                 $"JunimoServer {version}",
                 "",
                 $"✓ Local:   {NetworkHelper.GetIpAddressLocal()}",
                 $"{externalIcon} Network: {externalIpValue}",
                 "",
-                $"Invite Code: {inviteCodeValue}",
-            });
+            };
+
+            bannerLines.AddRange(networkingLines);
+            bannerLines.Add("");
+
+            // Show invite codes - in hybrid mode both Steam and Galaxy clients can connect
+            if (SteamGameServerService.IsInitialized && inviteCode != null)
+            {
+                // Extract the base code (without prefix) and show both variants
+                var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
+                bannerLines.Add($"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{baseCode}");
+                bannerLines.Add($"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{baseCode}");
+            }
+            else
+            {
+                bannerLines.Add($"Invite Code: {inviteCode ?? "n/a"}");
+            }
+
+            monitor.LogBanner(bannerLines.ToArray());
+        }
+
+        private static List<string> GetNetworkingStatus()
+        {
+            var lines = new List<string>();
+
+            // Steam GameServer (SDR) status
+            if (SteamGameServerService.IsInitialized)
+            {
+                var steamId = SteamGameServerService.ServerSteamId.m_SteamID;
+                lines.Add($"✓ Steam SDR: {steamId}");
+            }
+            else
+            {
+                lines.Add("⏳ Steam SDR: initializing...");
+            }
+
+            // Galaxy is always enabled (default game networking)
+            lines.Add("✓ Galaxy P2P: enabled");
+
+            return lines;
         }
 
         /// <summary>

@@ -2,7 +2,6 @@ using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
 using Xunit.Abstractions;
-using static JunimoServer.Tests.Helpers.TestTimings;
 
 namespace JunimoServer.Tests;
 
@@ -65,7 +64,7 @@ public class FarmerCreationTests : IntegrationTestBase
         Assert.True(selectResult.Success, $"Select farmhand failed: {selectResult.Error}");
 
         // Step 4: Wait for character customization menu
-        var charWait = await GameClient.Wait.ForCharacter(CharacterMenuTimeoutMs);
+        var charWait = await GameClient.Wait.ForCharacter(TestTimings.CharacterMenuTimeout);
         Assert.NotNull(charWait);
         Assert.True(charWait.Success, $"Wait for character menu failed: {charWait.Error}");
         Log($"Character customization menu appeared after {charWait.WaitedMs}ms");
@@ -79,7 +78,7 @@ public class FarmerCreationTests : IntegrationTestBase
         Log($"Set character data - Name: {farmerName}, FavoriteThing: {favoriteThing}");
 
         // Wait for game to sync textbox values
-        await Task.Delay(CharacterCreationSyncDelayMs);
+        await Task.Delay(TestTimings.CharacterCreationSyncDelay);
 
         // Step 6: Confirm character creation
         var confirmResult = await GameClient.Character.Confirm();
@@ -89,13 +88,13 @@ public class FarmerCreationTests : IntegrationTestBase
 
         // Step 7: Wait for world to be ready
         LogSection("Entering world");
-        var worldWait = await GameClient.Wait.ForWorldReady(WorldReadyTimeoutMs);
+        var worldWait = await GameClient.Wait.ForWorldReady(TestTimings.WorldReadyTimeout);
         Assert.NotNull(worldWait);
         Assert.True(worldWait.Success, $"Wait for world ready failed: {worldWait.Error}");
         Log($"World ready after {worldWait.WaitedMs}ms");
 
         // Wait for network sync
-        await Task.Delay(NetworkSyncDelayMs);
+        await Task.Delay(TestTimings.NetworkSyncDelay);
         Log("Waited for network sync");
 
         await AssertNoExceptionsAsync("after entering world");
@@ -106,7 +105,7 @@ public class FarmerCreationTests : IntegrationTestBase
         Assert.NotNull(exitResult);
         Assert.True(exitResult.Success, $"Exit failed: {exitResult.Error}");
 
-        var titleWait = await GameClient.Wait.ForTitle(TitleScreenTimeoutMs);
+        var titleWait = await GameClient.Wait.ForTitle(TestTimings.TitleScreenTimeout);
         Assert.NotNull(titleWait);
         Assert.True(titleWait.Success, $"Wait for title failed: {titleWait.Error}");
         Log($"Returned to title after {titleWait.WaitedMs}ms");
@@ -132,8 +131,7 @@ public class FarmerCreationTests : IntegrationTestBase
             Log($"  Slot {slot.Index}: Name='{slot.Name}', IsCustomized={slot.IsCustomized}, IsEmpty={slot.IsEmpty}");
         }
 
-        var ourFarmer = reconnectFarmhands.Slots.FirstOrDefault(s =>
-            s.Name == farmerName && s.IsCustomized);
+        var ourFarmer = reconnectFarmhands.Slots.FirstOrDefault(s => s.Name == farmerName && s.IsCustomized);
 
         Assert.NotNull(ourFarmer);
         Log($"SUCCESS: Found our farmer '{farmerName}' at slot index {ourFarmer.Index}");

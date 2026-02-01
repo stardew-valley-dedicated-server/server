@@ -15,6 +15,11 @@ namespace SteamService;
 /// </summary>
 public class SteamAuthService
 {
+    // Timing constants
+    private static readonly TimeSpan ConnectionEstablishmentDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan TicketRequestTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CallbackPollInterval = TimeSpan.FromMilliseconds(10);
+
     private readonly string _sessionDir;
     private readonly string _gameDir;
 
@@ -23,9 +28,16 @@ public class SteamAuthService
     private readonly SteamUser _steamUser;
     private readonly SteamApps _steamApps;
     private readonly SteamContent _steamContent;
+    private readonly SteamMatchmaking _matchmaking;
 
     // For encrypted app ticket request/response
     private TaskCompletionSource<byte[]>? _encryptedTicketTcs;
+
+    // Lobby state (stored at creation time for use in subsequent SetLobbyData calls)
+    private ulong _currentLobbyId;
+    private ulong _currentGameServerSteamId;
+    private string _currentProtocolVersion = "";
+    private int _currentMaxMembers;
 
     private readonly CancellationTokenSource _cts = new();
     private TaskCompletionSource<bool>? _loginTcs;
@@ -34,6 +46,7 @@ public class SteamAuthService
 
     public bool IsLoggedIn { get; private set; }
     public string? SteamId => _steamClient.SteamID?.ConvertToUInt64().ToString();
+    public ulong CurrentLobbyId => _currentLobbyId;
 
     public SteamAuthService(string sessionDir, string gameDir)
     {
@@ -45,6 +58,7 @@ public class SteamAuthService
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         _steamApps = _steamClient.GetHandler<SteamApps>()!;
         _steamContent = _steamClient.GetHandler<SteamContent>()!;
+        _matchmaking = _steamClient.GetHandler<SteamMatchmaking>()!;
 
         _callbackManager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
         _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
@@ -84,7 +98,7 @@ public class SteamAuthService
         while (!_cts.Token.IsCancellationRequested)
         {
             _callbackManager.RunWaitCallbacks(TimeSpan.FromMilliseconds(50));
-            await Task.Delay(10);
+            await Task.Delay(CallbackPollInterval);
         }
     }
 
@@ -155,8 +169,12 @@ public class SteamAuthService
     {
         Directory.CreateDirectory(_sessionDir);
         var path = Path.Combine(_sessionDir, $"session-{username}.json");
+        var tempPath = path + ".tmp";
         var json = JsonSerializer.Serialize(new { username, refreshToken });
-        File.WriteAllText(path, json);
+
+        // Write to temp file first, then atomically rename to avoid corruption
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, path, overwrite: true);
         Logger.Log($"[Steam] Session saved for {username}");
     }
 
@@ -173,8 +191,9 @@ public class SteamAuthService
             var token = doc.RootElement.GetProperty("refreshToken").GetString()!;
             return (username, token);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException)
         {
+            Logger.Log($"[Steam] Failed to load session: {ex.Message}");
             return null;
         }
     }
@@ -299,7 +318,7 @@ public class SteamAuthService
         // Connect
         Logger.Log("[Steam] Connecting...");
         _steamClient.Connect();
-        await Task.Delay(2000);
+        await Task.Delay(ConnectionEstablishmentDelay);
 
         // Authenticate
         try
@@ -331,7 +350,7 @@ public class SteamAuthService
     {
         Logger.Log("[Steam] Connecting...");
         _steamClient.Connect();
-        await Task.Delay(2000);
+        await Task.Delay(ConnectionEstablishmentDelay);
 
         try
         {
@@ -371,7 +390,7 @@ public class SteamAuthService
     private async Task ConnectAndLoginAsync(string refreshToken)
     {
         _steamClient.Connect();
-        await Task.Delay(2000);
+        await Task.Delay(ConnectionEstablishmentDelay);
         await LoginWithTokenInternalAsync(refreshToken);
     }
 
@@ -379,10 +398,12 @@ public class SteamAuthService
     {
         const int maxRetries = 5;
         const int baseDelaySeconds = 5;
+        var loginTimeout = TimeSpan.FromSeconds(30);
 
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _loginTcs = new TaskCompletionSource<bool>();
+            var tcs = new TaskCompletionSource<bool>();
+            _loginTcs = tcs;
 
             if (attempt == 1)
             {
@@ -401,9 +422,20 @@ public class SteamAuthService
                 ShouldRememberPassword = true
             });
 
-            var success = await _loginTcs.Task;
-            if (success)
-                return;
+            // Wait for login with timeout to avoid hanging forever
+            var timeoutTask = Task.Delay(loginTimeout);
+            var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+
+            if (completedTask == timeoutTask)
+            {
+                Logger.Log($"[Steam] Login attempt {attempt} timed out after {loginTimeout.TotalSeconds}s");
+            }
+            else
+            {
+                var success = await tcs.Task;
+                if (success)
+                    return;
+            }
 
             if (attempt < maxRetries)
             {
@@ -417,7 +449,7 @@ public class SteamAuthService
                 {
                     Logger.Log("[Steam] Reconnecting...");
                     _steamClient.Connect();
-                    await Task.Delay(2000);
+                    await Task.Delay(ConnectionEstablishmentDelay);
                 }
             }
         }
@@ -455,9 +487,9 @@ public class SteamAuthService
                 Logger.Log($"[Steam] Token expires: {expiryDate:yyyy-MM-dd HH:mm:ss} UTC ({remaining.Days} days remaining)");
             }
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or FormatException or KeyNotFoundException)
         {
-            // Ignore parsing errors
+            // Token expiry parsing is non-critical, just skip it
         }
     }
 
@@ -472,7 +504,9 @@ public class SteamAuthService
 
         Logger.Log($"[Steam] Requesting encrypted app ticket for {appId}...");
 
-        _encryptedTicketTcs = new TaskCompletionSource<byte[]>();
+        // Create TCS and capture in local variable to avoid race with callback
+        var tcs = new TaskCompletionSource<byte[]>();
+        _encryptedTicketTcs = tcs;
 
         // Send ClientRequestEncryptedAppTicket - this is what steam-user's getEncryptedAppTicket does
         var request = new ClientMsgProtobuf<CMsgClientRequestEncryptedAppTicket>(EMsg.ClientRequestEncryptedAppTicket);
@@ -480,17 +514,18 @@ public class SteamAuthService
         _steamClient.Send(request);
 
         // Wait for response with timeout
-        var timeoutTask = Task.Delay(30000);
-        var completedTask = await Task.WhenAny(_encryptedTicketTcs.Task, timeoutTask);
+        var timeoutTask = Task.Delay(TicketRequestTimeout);
+        var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+
+        // Clear field before checking result (callback may have already fired)
+        _encryptedTicketTcs = null;
 
         if (completedTask == timeoutTask)
         {
-            _encryptedTicketTcs = null;
             throw new TimeoutException("Timed out waiting for encrypted app ticket");
         }
 
-        var ticketBytes = await _encryptedTicketTcs.Task;
-        _encryptedTicketTcs = null;
+        var ticketBytes = await tcs.Task;
 
         Logger.Log($"[Steam] Encrypted app ticket obtained ({ticketBytes.Length} bytes)");
         return Convert.ToBase64String(ticketBytes);
@@ -500,14 +535,12 @@ public class SteamAuthService
     // Game Download
     // ========================================================================
 
-    private const string ManifestMarkerFileName = ".download-manifest";
-
     /// <summary>
-    /// Checks if the game is already downloaded with the specified manifest.
+    /// Checks if the app is already downloaded with the specified manifest.
     /// </summary>
-    private bool IsGameAlreadyDownloaded(ulong manifestId)
+    private bool IsAlreadyDownloaded(string downloadDir, uint appId, ulong manifestId)
     {
-        var markerPath = Path.Combine(_gameDir, ManifestMarkerFileName);
+        var markerPath = Path.Combine(downloadDir, $".download-manifest-{appId}");
         if (!File.Exists(markerPath))
             return false;
 
@@ -533,9 +566,9 @@ public class SteamAuthService
     /// <summary>
     /// Saves a marker file indicating the download is complete with the given manifest.
     /// </summary>
-    private void SaveDownloadMarker(uint appId, uint depotId, ulong manifestId, string targetOs, long totalBytes, int totalFiles)
+    private void SaveDownloadMarker(string downloadDir, uint appId, uint depotId, ulong manifestId, string targetOs, long totalBytes, int totalFiles)
     {
-        var markerPath = Path.Combine(_gameDir, ManifestMarkerFileName);
+        var markerPath = Path.Combine(downloadDir, $".download-manifest-{appId}");
         var marker = new
         {
             appId,
@@ -571,16 +604,19 @@ public class SteamAuthService
         return false;
     }
 
-    public async Task DownloadGameAsync(uint appId, string targetOs = "linux")
+    public async Task DownloadGameAsync(uint appId, string? targetDir = null)
     {
         if (!IsLoggedIn)
             throw new Exception("Not logged in");
 
-        Logger.Reset(); // Reset timer for download tracking
-        Logger.Log($"[Steam] Downloading game (App: {appId}, OS: {targetOs})...");
-        Logger.Log($"[Steam] Target directory: {_gameDir}");
+        const string targetOs = "linux";
+        var downloadDir = targetDir ?? _gameDir;
 
-        Directory.CreateDirectory(_gameDir);
+        Logger.Reset(); // Reset timer for download tracking
+        Logger.Log($"[Steam] Downloading app {appId}...");
+        Logger.Log($"[Steam] Target directory: {downloadDir}");
+
+        Directory.CreateDirectory(downloadDir);
 
         try
         {
@@ -671,9 +707,9 @@ public class SteamAuthService
             var manifestId = ulong.Parse(manifestIdStr);
             Logger.Log($"[Steam] Manifest ID: {manifestId}");
 
-            // Check if game is already downloaded with this manifest
+            // Check if already downloaded with this manifest
             var forceRedownload = Environment.GetEnvironmentVariable("FORCE_REDOWNLOAD") == "1";
-            if (!forceRedownload && IsGameAlreadyDownloaded(manifestId))
+            if (!forceRedownload && IsAlreadyDownloaded(downloadDir, appId, manifestId))
             {
                 Logger.Log("[Steam] Game already downloaded with current manifest. Skipping download.");
                 Logger.Log("[Steam] Set FORCE_REDOWNLOAD=1 to force re-download.");
@@ -751,7 +787,7 @@ public class SteamAuthService
                     continue;
                 }
 
-                var filePath = Path.Combine(_gameDir, file.FileName);
+                var filePath = Path.Combine(downloadDir, file.FileName);
 
                 // Create directory if needed
                 var dir = Path.GetDirectoryName(filePath);
@@ -842,13 +878,13 @@ public class SteamAuthService
             }
 
             Logger.Log("[Steam] Download complete!");
-            Logger.Log($"[Steam] Game installed to: {_gameDir}");
+            Logger.Log($"[Steam] App installed to: {downloadDir}");
             Logger.Log($"[Steam] Total size: {FormatSize(processedBytes)}");
             if (skippedExisting > 0)
                 Logger.Log($"[Steam] Skipped {skippedExisting} existing files (already up to date)");
 
             // Save download marker to skip re-download next time
-            SaveDownloadMarker(appId, depotId, manifestId, targetOs, totalBytes, totalFiles);
+            SaveDownloadMarker(downloadDir, appId, depotId, manifestId, targetOs, totalBytes, totalFiles);
 
             Logger.LogTotal();
         }
@@ -924,5 +960,134 @@ public class SteamAuthService
                 Console.WriteLine($"{indent}  ... and {kv.Children.Count - 20} more");
             }
         }
+    }
+
+    // ========================================================================
+    // Lobby Management (uses same SteamClient session as auth)
+    // ========================================================================
+
+    /// <summary>
+    /// Creates a Steam lobby with the given parameters.
+    /// Uses the same authenticated session as other operations.
+    /// </summary>
+    public async Task<ulong> CreateLobbyAsync(uint appId, int maxMembers, ulong gameServerSteamId, string protocolVersion)
+    {
+        if (!IsLoggedIn)
+            throw new Exception("Not logged in");
+
+        Logger.Log($"[Steam] Creating lobby for app {appId}, max members: {maxMembers}, gameServer: {gameServerSteamId}, protocol: {protocolVersion}");
+
+        var metadata = BuildLobbyMetadata(gameServerSteamId, protocolVersion);
+
+        var createResult = await _matchmaking!.CreateLobby(
+            appId: appId,
+            lobbyType: ELobbyType.Public,
+            maxMembers: maxMembers,
+            lobbyFlags: 0,
+            metadata: metadata) ?? throw new Exception("CreateLobby returned null");
+
+        if (createResult.Result != EResult.OK)
+            throw new Exception($"Failed to create lobby: {createResult.Result}");
+
+        // Store lobby state for use in SetLobbyData/SetLobbyPrivacy
+        _currentLobbyId = createResult.LobbySteamID.ConvertToUInt64();
+        _currentGameServerSteamId = gameServerSteamId;
+        _currentProtocolVersion = protocolVersion;
+        _currentMaxMembers = maxMembers;
+
+        Logger.Log($"[Steam] Lobby created: {_currentLobbyId}");
+
+        return _currentLobbyId;
+    }
+
+    /// <summary>
+    /// Sets metadata on the current lobby.
+    /// Merges additional metadata with the base lobby metadata (protocolVersion, gameserver keys).
+    /// </summary>
+    public async Task SetLobbyDataAsync(uint appId, ulong lobbyId, Dictionary<string, string>? additionalMetadata = null)
+    {
+        if (!IsLoggedIn)
+            throw new Exception("Not logged in");
+
+        if (_currentLobbyId == 0)
+            throw new Exception("No lobby created yet");
+
+        var metadata = BuildLobbyMetadata(_currentGameServerSteamId, _currentProtocolVersion);
+
+        // Merge additional metadata (e.g., farmName, serverMessage)
+        if (additionalMetadata != null)
+        {
+            foreach (var kvp in additionalMetadata)
+            {
+                metadata[kvp.Key] = kvp.Value;
+            }
+        }
+
+        Logger.Log($"[Steam] Setting lobby {lobbyId} metadata with {metadata.Count} keys");
+
+        var result = await _matchmaking!.SetLobbyData(
+            appId: appId,
+            lobbySteamId: lobbyId,
+            lobbyType: ELobbyType.Public,
+            maxMembers: _currentMaxMembers,
+            lobbyFlags: 0,
+            metadata: metadata);
+
+        if (result == null)
+            throw new Exception("SetLobbyData returned null");
+
+        if (result.Result != EResult.OK)
+            throw new Exception($"Failed to set lobby data: {result.Result}");
+
+        Logger.Log("[Steam] Lobby metadata updated");
+    }
+
+    /// <summary>
+    /// Sets the privacy level on a lobby.
+    /// </summary>
+    public async Task SetLobbyPrivacyAsync(uint appId, ulong lobbyId, ELobbyType lobbyType)
+    {
+        if (!IsLoggedIn)
+            throw new Exception("Not logged in");
+
+        if (_currentLobbyId == 0)
+            throw new Exception("No lobby created yet");
+
+        var metadata = BuildLobbyMetadata(_currentGameServerSteamId, _currentProtocolVersion);
+
+        Logger.Log($"[Steam] Setting lobby {lobbyId} privacy to {lobbyType}");
+
+        var result = await _matchmaking!.SetLobbyData(
+            appId: appId,
+            lobbySteamId: lobbyId,
+            lobbyType: lobbyType,
+            maxMembers: _currentMaxMembers,
+            lobbyFlags: 0,
+            metadata: metadata);
+
+        if (result == null)
+            throw new Exception("SetLobbyData returned null");
+
+        if (result.Result != EResult.OK)
+            throw new Exception($"Failed to set lobby privacy: {result.Result}");
+
+        Logger.Log($"[Steam] Lobby privacy set to {lobbyType}");
+    }
+
+    /// <summary>
+    /// Builds the standard metadata dictionary for Steam lobbies.
+    /// Steam uses special __gameserver* keys to expose game server info to clients.
+    /// </summary>
+    private static Dictionary<string, string> BuildLobbyMetadata(ulong gameServerSteamId, string protocolVersion)
+    {
+        return new Dictionary<string, string>
+        {
+            ["protocolVersion"] = protocolVersion,
+            // Steam's special keys for game server discovery
+            // Setting IP/Port to 0 tells clients to use SteamID for SDR connection
+            ["__gameserverIP"] = "0",
+            ["__gameserverPort"] = "0",
+            ["__gameserverSteamID"] = gameServerSteamId.ToString()
+        };
     }
 }

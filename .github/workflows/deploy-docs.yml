@@ -8,29 +8,9 @@ on:
         required: false
         default: 'latest'
         type: string
-      deployment_type:
-        description: 'Deployment type (release = root, preview = /preview/ subdirectory)'
-        required: false
-        default: 'release'
-        type: choice
-        options:
-          - release
-          - preview
-  workflow_call:
-    inputs:
-      image_tag:
-        description: 'Docker image tag to extract OpenAPI spec from'
-        required: false
-        default: 'latest'
-        type: string
-      deployment_type:
-        description: 'Deployment type (release or preview)'
-        required: false
-        default: 'release'
-        type: string
 
 concurrency:
-  group: deploy-docs-${{ inputs.deployment_type || 'release' }}
+  group: deploy-docs
   cancel-in-progress: false
 
 permissions:
@@ -42,23 +22,8 @@ jobs:
   build:
     name: Build Documentation
     runs-on: ubuntu-latest
-    outputs:
-      deployment_type: ${{ steps.config.outputs.deployment_type }}
-      base_path: ${{ steps.config.outputs.base_path }}
 
     steps:
-      - name: Configure deployment
-        id: config
-        run: |
-          DEPLOYMENT_TYPE="${{ inputs.deployment_type || 'release' }}"
-          echo "deployment_type=$DEPLOYMENT_TYPE" >> $GITHUB_OUTPUT
-
-          if [ "$DEPLOYMENT_TYPE" = "preview" ]; then
-            echo "base_path=/server/preview/" >> $GITHUB_OUTPUT
-          else
-            echo "base_path=/server/" >> $GITHUB_OUTPUT
-          fi
-
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -69,17 +34,15 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract OpenAPI spec from Docker image
-        env:
-          IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
         run: |
-          docker pull "sdvd/server:$IMAGE_TAG"
-          CONTAINER_ID=$(docker create "sdvd/server:$IMAGE_TAG")
+          docker pull sdvd/server:${{ inputs.image_tag }}
+          CONTAINER_ID=$(docker create sdvd/server:${{ inputs.image_tag }})
           mkdir -p docs/assets
           docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
           docker rm "$CONTAINER_ID"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2.1.2
 
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
@@ -89,30 +52,13 @@ jobs:
         working-directory: docs
 
       - name: Build documentation
-        env:
-          VITEPRESS_BASE: ${{ steps.config.outputs.base_path }}
         run: bun run build
         working-directory: docs
-
-      - name: Prepare deployment artifact
-        run: |
-          DEPLOYMENT_TYPE="${{ steps.config.outputs.deployment_type }}"
-
-          if [ "$DEPLOYMENT_TYPE" = "preview" ]; then
-            # For preview: nest output in /preview/ subdirectory
-            mkdir -p _site/preview
-            cp -r docs/.vitepress/dist/* _site/preview/
-            # Create a simple redirect at root for preview deploys
-            echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=preview/"></head></html>' > _site/index.html
-          else
-            # For release: use output directly
-            cp -r docs/.vitepress/dist _site
-          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
-          path: _site
+          path: docs/.vitepress/dist
 
   deploy:
     name: Deploy to GitHub Pages
@@ -128,38 +74,24 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
       - name: Build summary
-        env:
-          DEPLOYMENT_TYPE: ${{ needs.build.outputs.deployment_type }}
         run: |
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Type:** $DEPLOYMENT_TYPE" >> $GITHUB_STEP_SUMMARY
           echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Discord notification
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DEPLOYMENT_TYPE: ${{ needs.build.outputs.deployment_type }}
         run: |
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            TITLE="Documentation Updated"
-            if [ "$DEPLOYMENT_TYPE" = "preview" ]; then
-              TITLE="Preview Documentation Updated"
-            fi
-
-            jq -n \
-              --arg title "$TITLE" \
-              --arg url "${{ steps.deployment.outputs.page_url }}" \
-              --arg type "$DEPLOYMENT_TYPE" \
-              '{
-                embeds: [{
-                  title: $title,
-                  color: 3447003,
-                  fields: [
-                    {name: "Type", value: $type, inline: true},
-                    {name: "View Docs", value: ("[View Documentation](" + $url + ")")}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "Documentation Updated",
+                "color": 3447003,
+                "fields": [
+                  {"name": "View Docs", "value": "[stardew-valley-dedicated-server.github.io/server](${{ steps.deployment.outputs.page_url }})"}
+                ]
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"

@@ -4,6 +4,7 @@ using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
 using StardewValley.Network;
+using Steamworks;
 
 namespace JunimoTestClient.GameControl;
 
@@ -157,36 +158,6 @@ public class CoopController
     /// <summary>
     /// Enter an invite code and attempt to join the game.
     /// </summary>
-    /// <remarks>
-    /// Deprecated: Use OpenInviteCodeMenu → wait for TitleTextInputMenu → SubmitInviteCode instead.
-    /// This single-frame approach is unreliable because the text input menu may not appear until the next frame.
-    /// </remarks>
-    [Obsolete("Use OpenInviteCodeMenu + SubmitInviteCode instead — this single-frame approach is unreliable.")]
-    public JoinResult EnterInviteCode(string inviteCode)
-    {
-        // First open the invite code menu
-        var openResult = OpenInviteCodeMenu();
-        if (!openResult.Success)
-        {
-            return openResult;
-        }
-
-        // The menu should now be TitleTextInputMenu - submit the code
-        // Note: In practice, there might be a frame delay. The test should use the two-step approach.
-        var inputMenu = GetTextInputMenu();
-        if (inputMenu == null)
-        {
-            // Menu hasn't appeared yet - this is expected in single-frame execution
-            // Return success, caller should wait for menu and call SubmitInviteCode
-            return new JoinResult
-            {
-                Success = true,
-                Message = "Invite code menu opening, call SubmitInviteCode after menu appears"
-            };
-        }
-
-        return SubmitInviteCode(inviteCode);
-    }
 
     /// <summary>
     /// Enter a LAN/IP address and attempt to join.
@@ -352,6 +323,130 @@ public class CoopController
             Game1.activeClickableMenu = menu;
         }
     }
+
+    /// <summary>
+    /// Diagnose a Steam lobby by ID - query all available data.
+    /// </summary>
+    public SteamLobbyDiagnostics DiagnoseSteamLobby(ulong lobbyId)
+    {
+        var diag = new SteamLobbyDiagnostics { LobbyId = lobbyId };
+
+        try
+        {
+            var steamLobby = new CSteamID(lobbyId);
+            diag.IsValid = steamLobby.IsValid();
+            diag.IsLobby = steamLobby.IsLobby();
+
+            if (!diag.IsValid || !diag.IsLobby)
+            {
+                diag.Error = "Invalid lobby ID";
+                return diag;
+            }
+
+            // Get lobby owner
+            var owner = SteamMatchmaking.GetLobbyOwner(steamLobby);
+            diag.LobbyOwner = owner.m_SteamID;
+            diag.LobbyOwnerValid = owner.IsValid();
+
+            // Get member count
+            diag.MemberCount = SteamMatchmaking.GetNumLobbyMembers(steamLobby);
+
+            // Get lobby data count and all keys
+            int dataCount = SteamMatchmaking.GetLobbyDataCount(steamLobby);
+            diag.DataCount = dataCount;
+            diag.LobbyData = new Dictionary<string, string>();
+
+            for (int i = 0; i < dataCount; i++)
+            {
+                if (SteamMatchmaking.GetLobbyDataByIndex(steamLobby, i, out string key, 256, out string value, 8192))
+                {
+                    diag.LobbyData[key] = value;
+                }
+            }
+
+            // Try to get specific known keys
+            diag.ProtocolVersion = SteamMatchmaking.GetLobbyData(steamLobby, "protocolVersion");
+
+            // Try GetLobbyGameServer - this is the failing call
+            bool hasGameServer = SteamMatchmaking.GetLobbyGameServer(steamLobby, out uint gameServerIP, out ushort gameServerPort, out CSteamID gameServerSteamID);
+            diag.HasGameServer = hasGameServer;
+            diag.GameServerIP = gameServerIP;
+            diag.GameServerPort = gameServerPort;
+            diag.GameServerSteamID = gameServerSteamID.m_SteamID;
+            diag.GameServerSteamIDValid = gameServerSteamID.IsValid();
+
+            _monitor.Log($"Steam Lobby Diagnostics for {lobbyId}:", LogLevel.Info);
+            _monitor.Log($"  Valid: {diag.IsValid}, IsLobby: {diag.IsLobby}", LogLevel.Info);
+            _monitor.Log($"  Owner: {diag.LobbyOwner} (valid: {diag.LobbyOwnerValid})", LogLevel.Info);
+            _monitor.Log($"  Members: {diag.MemberCount}", LogLevel.Info);
+            _monitor.Log($"  Data entries: {diag.DataCount}", LogLevel.Info);
+            foreach (var kv in diag.LobbyData)
+            {
+                _monitor.Log($"    {kv.Key} = {kv.Value}", LogLevel.Info);
+            }
+            _monitor.Log($"  HasGameServer: {diag.HasGameServer}", LogLevel.Info);
+            _monitor.Log($"  GameServer IP: {diag.GameServerIP}, Port: {diag.GameServerPort}", LogLevel.Info);
+            _monitor.Log($"  GameServer SteamID: {diag.GameServerSteamID} (valid: {diag.GameServerSteamIDValid})", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            diag.Error = ex.Message;
+            _monitor.Log($"Steam lobby diagnostics failed: {ex}", LogLevel.Error);
+        }
+
+        return diag;
+    }
+
+    /// <summary>
+    /// Diagnose a Steam lobby by joining it first (required to access full data).
+    /// </summary>
+    public void DiagnoseSteamLobbyWithJoin(ulong lobbyId)
+    {
+        _monitor.Log($"Joining Steam lobby {lobbyId} for diagnostics...", LogLevel.Info);
+
+        try
+        {
+            var steamLobby = new CSteamID(lobbyId);
+
+            // Request lobby data first
+            SteamMatchmaking.RequestLobbyData(steamLobby);
+
+            // Join the lobby
+            var joinCall = SteamMatchmaking.JoinLobby(steamLobby);
+
+            // Set up callback
+            var callResult = CallResult<LobbyEnter_t>.Create((result, failure) =>
+            {
+                if (failure)
+                {
+                    _monitor.Log("Failed to join lobby (IO failure)", LogLevel.Error);
+                    return;
+                }
+
+                _monitor.Log($"Joined lobby, response: {result.m_EChatRoomEnterResponse}", LogLevel.Info);
+
+                if (result.m_EChatRoomEnterResponse == 1) // Success
+                {
+                    // Now diagnose
+                    DiagnoseSteamLobby(lobbyId);
+
+                    // Leave the lobby
+                    SteamMatchmaking.LeaveLobby(steamLobby);
+                    _monitor.Log("Left lobby after diagnostics", LogLevel.Info);
+                }
+                else
+                {
+                    _monitor.Log($"Lobby join failed with response: {result.m_EChatRoomEnterResponse}", LogLevel.Error);
+                }
+            });
+
+            callResult.Set(joinCall);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Failed to join lobby for diagnostics: {ex}", LogLevel.Error);
+        }
+    }
 }
 
 #region DTOs
@@ -379,6 +474,25 @@ public class FarmhandSlotInfo
     public bool IsEmpty { get; set; }
     public string? Name { get; set; }
     public string? FarmName { get; set; }
+}
+
+public class SteamLobbyDiagnostics
+{
+    public ulong LobbyId { get; set; }
+    public bool IsValid { get; set; }
+    public bool IsLobby { get; set; }
+    public ulong LobbyOwner { get; set; }
+    public bool LobbyOwnerValid { get; set; }
+    public int MemberCount { get; set; }
+    public int DataCount { get; set; }
+    public Dictionary<string, string> LobbyData { get; set; } = new();
+    public string? ProtocolVersion { get; set; }
+    public bool HasGameServer { get; set; }
+    public uint GameServerIP { get; set; }
+    public ushort GameServerPort { get; set; }
+    public ulong GameServerSteamID { get; set; }
+    public bool GameServerSteamIDValid { get; set; }
+    public string? Error { get; set; }
 }
 
 #endregion

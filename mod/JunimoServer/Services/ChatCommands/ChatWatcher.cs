@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using StardewValley;
 using System.Diagnostics;
 
@@ -19,11 +19,11 @@ namespace JunimoServer.Services.ChatCommands
             var msg = new ReceivedMessage
             {
                 SourceFarmer = sourceFarmer,
-                ChatKind = (ReceivedMessage.ChatKinds) chatKind,
+                ChatKind = (ReceivedMessage.ChatKinds)chatKind,
                 Language = language,
                 Message = message
             };
-            
+
             _onChatMessage(msg);
         }
     }

@@ -33,7 +33,7 @@ public class HostAutomationTests : IntegrationTestBase
         Log($"Set time to {setTimeResult.TimeOfDay}");
 
         // Small delay to let the game loop process the time change
-        await Task.Delay(TestTimings.TimeChangeProcessingDelayMs);
+        await Task.Delay(TestTimings.TimeChangeProcessingDelay);
 
         // Read current time
         var status1 = await ServerApi.GetStatus();
@@ -44,7 +44,7 @@ public class HostAutomationTests : IntegrationTestBase
         // Wait long enough for multiple time advances to occur if the game were unpaused.
         // Stardew advances time every 7 seconds (10 game-minutes per tick).
         // 15 seconds = ~2 advances = +20 game-minutes if unpaused.
-        await Task.Delay(TestTimings.TimePausedVerificationMs);
+        await Task.Delay(TestTimings.TimePausedVerification);
 
         // Read time again
         var status2 = await ServerApi.GetStatus();
@@ -79,7 +79,7 @@ public class HostAutomationTests : IntegrationTestBase
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
 
         // Let the game process the time change and advance at least one tick
-        await Task.Delay(TestTimings.NetworkSyncDelayMs);
+        await Task.Delay(TestTimings.NetworkSyncDelay);
 
         // Read current time
         var status1 = await ServerApi.GetStatus();
@@ -88,7 +88,7 @@ public class HostAutomationTests : IntegrationTestBase
         Log($"Time reading 1: {time1}");
 
         // Wait for at least 2 time advances (~14 seconds)
-        await Task.Delay(TestTimings.TimeAdvanceWaitMs);
+        await Task.Delay(TestTimings.TimeAdvanceWait);
 
         // Read time again
         var status2 = await ServerApi.GetStatus();
@@ -215,7 +215,7 @@ public class HostAutomationTests : IntegrationTestBase
         while (DateTime.UtcNow < deadline)
         {
             attempt++;
-            await Task.Delay(TestTimings.DayChangePollIntervalMs);
+            await Task.Delay(TestTimings.DayChangePollInterval);
 
             try
             {
