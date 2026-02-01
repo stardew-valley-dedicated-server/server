@@ -1,18 +1,9 @@
 name: Preview Build
 
 on:
-  workflow_dispatch:
-    inputs:
-      deploy_server:
-        description: 'Deploy to public-test after build'
-        required: false
-        default: false
-        type: boolean
-      deploy_docs:
-        description: 'Deploy preview documentation after build'
-        required: false
-        default: false
-        type: boolean
+  push:
+    branches:
+      - master
 
 # Prevent multiple builds from running simultaneously
 concurrency:
@@ -343,24 +334,3 @@ jobs:
           echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/discord-bot:preview\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`sdvd/discord-bot:${{ needs.calculate-version.outputs.preview_version }}\`" >> $GITHUB_STEP_SUMMARY
-
-  # Optional: Deploy server to public-test
-  deploy-server:
-    name: Deploy to Public Test
-    needs: [build-server-preview, build-steam-service-preview, build-discord-bot-preview]
-    if: inputs.deploy_server == true
-    uses: ./.github/workflows/deploy-server.yml
-    with:
-      environment: public-test
-    secrets: inherit
-
-  # Optional: Deploy preview documentation
-  deploy-docs:
-    name: Deploy Preview Docs
-    needs: build-server-preview
-    if: inputs.deploy_docs == true
-    uses: ./.github/workflows/deploy-docs.yml
-    with:
-      image_tag: preview
-      deployment_type: preview
-    secrets: inherit
