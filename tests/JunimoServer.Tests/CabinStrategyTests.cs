@@ -1,3 +1,4 @@
+using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
@@ -183,24 +184,56 @@ public class CabinStrategyTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
 
-        // Check cabin ownership while connected
-        var cabins = await ServerApi.GetCabins();
-        Assert.NotNull(cabins);
-
-        Log($"Cabins after join ({cabins.Cabins.Count} total):");
-        foreach (var c in cabins.Cabins)
-        {
-            LogDetail($"({c.TileX},{c.TileY}) hidden={c.IsHidden} assigned={c.IsAssigned} owner='{c.OwnerName}' id={c.OwnerId}");
-        }
-
-        var ownedCabin = cabins.Cabins.FirstOrDefault(c =>
-            c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned);
+        // Poll for cabin assignment - server needs time to sync farmhand data
+        var ownedCabin = await WaitForCabinAssignmentAsync(farmerName);
 
         Assert.NotNull(ownedCabin);
         Assert.True(ownedCabin.OwnerId != 0, "Owner ID should be set");
         LogSuccess($"Found cabin owned by '{farmerName}' at ({ownedCabin.TileX},{ownedCabin.TileY})");
 
         await AssertNoExceptionsAsync("at end of test");
+    }
+
+    /// <summary>
+    /// Polls GET /cabins until a cabin with the given owner name shows IsAssigned=true.
+    /// This accounts for the delay between joining the world and farmhand data syncing.
+    /// </summary>
+    private async Task<CabinInfoResponse?> WaitForCabinAssignmentAsync(string ownerName)
+    {
+        var deadline = DateTime.UtcNow + TestTimings.CabinAssignmentTimeout;
+        CabinsResponse? lastCabins = null;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            lastCabins = await ServerApi.GetCabins();
+            if (lastCabins == null)
+            {
+                await Task.Delay(TestTimings.CabinAssignmentPollInterval);
+                continue;
+            }
+
+            var assignedCabin = lastCabins.Cabins.FirstOrDefault(c =>
+                c.OwnerName.Equals(ownerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned);
+
+            if (assignedCabin != null)
+            {
+                return assignedCabin;
+            }
+
+            await Task.Delay(TestTimings.CabinAssignmentPollInterval);
+        }
+
+        // Log final state for debugging
+        if (lastCabins != null)
+        {
+            Log($"Timeout waiting for cabin assignment. Final state ({lastCabins.Cabins.Count} cabins):");
+            foreach (var c in lastCabins.Cabins)
+            {
+                LogDetail($"({c.TileX},{c.TileY}) hidden={c.IsHidden} assigned={c.IsAssigned} owner='{c.OwnerName}' id={c.OwnerId}");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -215,6 +248,10 @@ public class CabinStrategyTests : IntegrationTestBase
         TrackFarmer(farmerName);
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
+
+        // Wait for cabin assignment to sync before checking counts
+        var ownedCabin = await WaitForCabinAssignmentAsync(farmerName);
+        Assert.NotNull(ownedCabin);
 
         var cabins = await ServerApi.GetCabins();
         var farmhands = await ServerApi.GetFarmhands();
@@ -247,14 +284,11 @@ public class CabinStrategyTests : IntegrationTestBase
         await DisconnectAsync();
         await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
-        // Delete the farmhand
+        // Delete the farmhand and wait for deletion to complete
         Log($"Deleting farmhand '{farmerName}'...");
-        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
-        Assert.NotNull(deleteResult);
-        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
+        var deleted = await DeleteFarmhandAndWaitAsync(farmerName);
+        Assert.True(deleted, $"Farmhand '{farmerName}' should have been deleted");
         CreatedFarmers.Remove(farmerName);
-
-        await Task.Delay(TestTimings.NetworkSyncDelay);
 
         // Verify counts are consistent after deletion
         var cabins = await ServerApi.GetCabins();

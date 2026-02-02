@@ -55,6 +55,15 @@ public class ServerStatus
 
     [JsonPropertyName("timeOfDay")]
     public int TimeOfDay { get; set; }
+
+    /// <summary>
+    /// Farm type key as returned by Game1.GetFarmTypeKey().
+    /// Vanilla: "Standard", "Riverland", "Forest", "Hilltop", "Wilderness", "FourCorners", "Beach".
+    /// Meadowlands: "MeadowlandsFarm".
+    /// Modded farms: the mod's farm ID.
+    /// </summary>
+    [JsonPropertyName("farmTypeKey")]
+    public string FarmTypeKey { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -378,6 +387,12 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
+    /// Gets the current server settings (async suffix variant).
+    /// GET /settings
+    /// </summary>
+    public Task<SettingsResponse?> GetSettingsAsync() => GetSettings();
+
+    /// <summary>
     /// Gets the current cabin state and positions.
     /// GET /cabins
     /// </summary>
@@ -387,6 +402,12 @@ public class ServerApiClient : IDisposable
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<CabinsResponse>();
     }
+
+    /// <summary>
+    /// Gets the current cabin state and positions (async suffix variant).
+    /// GET /cabins
+    /// </summary>
+    public Task<CabinsResponse?> GetCabinsAsync() => GetCabins();
 
     /// <summary>
     /// Gets all farmhand slots.

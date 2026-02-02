@@ -18,8 +18,12 @@ namespace JunimoServer.Tests;
 /// These tests use shared volumes to avoid session conflicts.
 ///
 /// Uses IntegrationTestFixture to ensure images are built before tests run.
+///
+/// SKIPPED: Reusing the auth session for our only test account clears auth on other tests,
+/// leading to cascading failures. These tests need a separate Steam account or isolated test run.
 /// </summary>
 [Collection("Integration")]
+[Trait("Category", "Skip")]
 public class DownloadValidationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
@@ -159,7 +163,7 @@ public class DownloadValidationTests : IAsyncLifetime
     /// 4. Verify the file is repaired (valid XNB header)
     /// 5. Restore backup
     /// </summary>
-    [Fact]
+    [Fact(Skip = "Reusing the auth session for our only test account clears auth on other tests, leading to cascading failures")]
     public async Task CorruptedFile_IsDetectedAndRepaired()
     {
         Assert.NotNull(_steamAuthContainer);
@@ -215,7 +219,7 @@ public class DownloadValidationTests : IAsyncLifetime
     /// 4. Verify the file is re-downloaded (exists and valid)
     /// 5. Restore backup (cleanup)
     /// </summary>
-    [Fact]
+    [Fact(Skip = "Reusing the auth session for our only test account clears auth on other tests, leading to cascading failures")]
     public async Task DeletedFile_IsDetectedAndRedownloaded()
     {
         Assert.NotNull(_steamAuthContainer);
