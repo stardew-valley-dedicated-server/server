@@ -707,17 +707,10 @@ public class SteamAuthService
             var manifestId = ulong.Parse(manifestIdStr);
             Logger.Log($"[Steam] Manifest ID: {manifestId}");
 
-            // Check if already downloaded with this manifest
+            // Always validate files to detect corruption/deletion
             var forceRedownload = Environment.GetEnvironmentVariable("FORCE_REDOWNLOAD") == "1";
-            if (!forceRedownload && IsAlreadyDownloaded(downloadDir, appId, manifestId))
-            {
-                Logger.Log("[Steam] Game already downloaded with current manifest. Skipping download.");
-                Logger.Log("[Steam] Set FORCE_REDOWNLOAD=1 to force re-download.");
-                return;
-            }
-
             if (forceRedownload)
-                Logger.Log("[Steam] FORCE_REDOWNLOAD=1 set, forcing full download check");
+                Logger.Log("[Steam] FORCE_REDOWNLOAD=1 set, skipping all validation");
 
             // Get depot key
             var depotKeyResult = await _steamApps.GetDepotDecryptionKey(depotId, appId);
@@ -800,73 +793,120 @@ public class SteamAuthService
                     continue;
                 }
 
-                // Check if file already exists with correct size
+                // Check if file already exists and validate its chunks
+                List<DepotManifest.ChunkData> chunksToDownload = file.Chunks;
+
                 if (!forceRedownload && File.Exists(filePath))
                 {
                     var existingSize = new FileInfo(filePath).Length;
                     if (existingSize == (long)file.TotalSize)
                     {
-                        processedFiles++;
-                        processedBytes += (long)file.TotalSize;
-                        skippedExisting++;
-                        continue;
+                        // Size matches - validate chunk checksums
+                        await using var existingFs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        var invalidChunks = ValidateFileChunks(existingFs, file.Chunks);
+
+                        if (invalidChunks.Count == 0)
+                        {
+                            // All chunks valid, skip this file
+                            processedFiles++;
+                            processedBytes += (long)file.TotalSize;
+                            skippedExisting++;
+                            continue;
+                        }
+
+                        // Some chunks invalid - only download those
+                        chunksToDownload = invalidChunks;
+                        Logger.Log($"[Steam] {file.FileName}: {invalidChunks.Count}/{file.Chunks.Count} chunks need repair");
                     }
                 }
 
                 // Download file chunks - must write at correct offsets
-                await using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                // Track bytes for this file separately to handle cleanup on failure
+                var fileBytes = 0L;
+                var downloadSuccess = false;
 
-                // Pre-allocate file to final size
-                fs.SetLength((long)file.TotalSize);
-
-                foreach (var chunk in file.Chunks)
+                try
                 {
-                    // Rent buffer for chunk data
-                    var buffer = ArrayPool<byte>.Shared.Rent((int)chunk.UncompressedLength);
-                    try
+                    await using var fs = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+                    // Pre-allocate file to final size (no-op if file already exists with correct size)
+                    fs.SetLength((long)file.TotalSize);
+
+                    foreach (var chunk in chunksToDownload)
                     {
-                        // Retry logic for transient network failures
-                        int written = 0;
-                        const int maxRetries = 3;
-                        for (int retry = 0; retry < maxRetries; retry++)
+                        // Rent buffer for chunk data
+                        var buffer = ArrayPool<byte>.Shared.Rent((int)chunk.UncompressedLength);
+                        try
                         {
-                            try
+                            // Retry logic for transient network failures
+                            int written = 0;
+                            const int maxRetries = 3;
+                            for (int retry = 0; retry < maxRetries; retry++)
                             {
-                                written = await cdnClient.DownloadDepotChunkAsync(
-                                    depotId,
-                                    chunk,
-                                    server,
-                                    buffer,
-                                    depotKeyResult.DepotKey);
-                                break; // Success
+                                try
+                                {
+                                    written = await cdnClient.DownloadDepotChunkAsync(
+                                        depotId,
+                                        chunk,
+                                        server,
+                                        buffer,
+                                        depotKeyResult.DepotKey);
+                                    break; // Success
+                                }
+                                catch (Exception ex) when (retry < maxRetries - 1)
+                                {
+                                    Logger.Log($"[Steam] Chunk download failed (attempt {retry + 1}/{maxRetries}): {ex.Message}");
+                                    await Task.Delay(1000 * (retry + 1)); // Exponential backoff
+                                }
                             }
-                            catch (Exception ex) when (retry < maxRetries - 1)
-                            {
-                                Logger.Log($"[Steam] Chunk download failed (attempt {retry + 1}/{maxRetries}): {ex.Message}");
-                                await Task.Delay(1000 * (retry + 1)); // Exponential backoff
-                            }
-                        }
 
-                        // Validate chunk was fully downloaded
-                        if (written != (int)chunk.UncompressedLength)
+                            // Validate chunk was fully downloaded
+                            if (written != (int)chunk.UncompressedLength)
+                            {
+                                throw new Exception($"Chunk size mismatch for {file.FileName}: expected {chunk.UncompressedLength}, got {written}");
+                            }
+
+                            // Write chunk at its designated offset (chunks may be out of order)
+                            fs.Seek((long)chunk.Offset, SeekOrigin.Begin);
+                            await fs.WriteAsync(buffer, 0, written);
+                            fileBytes += written;
+                        }
+                        finally
                         {
-                            throw new Exception($"Chunk size mismatch for {file.FileName}: expected {chunk.UncompressedLength}, got {written}");
+                            ArrayPool<byte>.Shared.Return(buffer);
                         }
-
-                        // Write chunk at its designated offset (chunks may be out of order)
-                        fs.Seek((long)chunk.Offset, SeekOrigin.Begin);
-                        await fs.WriteAsync(buffer, 0, written);
-                        processedBytes += written;
                     }
-                    finally
+
+                    // Flush to ensure all data is written
+                    await fs.FlushAsync();
+
+                    // Verify downloaded chunks by re-reading and checking checksums
+                    var failedChunks = ValidateFileChunks(fs, chunksToDownload);
+                    if (failedChunks.Count > 0)
                     {
-                        ArrayPool<byte>.Shared.Return(buffer);
+                        throw new Exception($"Post-download validation failed for {file.FileName}: {failedChunks.Count} chunks corrupted");
+                    }
+
+                    downloadSuccess = true;
+                }
+                finally
+                {
+                    if (!downloadSuccess)
+                    {
+                        // Delete corrupted/partial file so it will be re-downloaded next time
+                        try
+                        {
+                            File.Delete(filePath);
+                            Logger.Log($"[Steam] Deleted corrupted file: {file.FileName}");
+                        }
+                        catch
+                        {
+                            // Ignore deletion errors
+                        }
                     }
                 }
 
-                // Flush to ensure all data is written
-                await fs.FlushAsync();
-
+                processedBytes += fileBytes;
                 processedFiles++;
 
                 // Progress update every 100 files
@@ -898,6 +938,46 @@ public class SteamAuthService
     // ========================================================================
     // Helpers
     // ========================================================================
+
+    /// <summary>
+    /// Calculates Adler-32 checksum for a portion of a stream.
+    /// This is the same algorithm Steam uses for chunk validation.
+    /// </summary>
+    private static uint AdlerHash(Stream stream, int length)
+    {
+        uint a = 0, b = 0;
+        for (var i = 0; i < length; i++)
+        {
+            var c = (uint)stream.ReadByte();
+            a = (a + c) % 65521;
+            b = (b + a) % 65521;
+        }
+        return a | (b << 16);
+    }
+
+    /// <summary>
+    /// Validates all chunks in a file against their expected checksums.
+    /// Returns list of chunks that need to be (re)downloaded.
+    /// </summary>
+    private static List<DepotManifest.ChunkData> ValidateFileChunks(
+        FileStream fs,
+        IEnumerable<DepotManifest.ChunkData> chunks)
+    {
+        var invalidChunks = new List<DepotManifest.ChunkData>();
+
+        foreach (var chunk in chunks.OrderBy(c => c.Offset))
+        {
+            fs.Seek((long)chunk.Offset, SeekOrigin.Begin);
+            var actualChecksum = AdlerHash(fs, (int)chunk.UncompressedLength);
+
+            if (actualChecksum != chunk.Checksum)
+            {
+                invalidChunks.Add(chunk);
+            }
+        }
+
+        return invalidChunks;
+    }
 
     private static string FormatSize(long bytes)
     {
