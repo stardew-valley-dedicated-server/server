@@ -84,20 +84,10 @@ public class FarmhandManagementTests : IntegrationTestBase
         // Wait for server to fully process the disconnection
         await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
-        // Delete the farmhand
+        // Delete the farmhand and wait for deletion to complete
         Log($"Deleting offline farmhand '{farmerName}'...");
-        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
-        Assert.NotNull(deleteResult);
-        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
-        Log($"Delete response: {deleteResult.Message}");
-
-        // Verify the farmhand is gone
-        var farmhands = await ServerApi.GetFarmhands();
-        Assert.NotNull(farmhands);
-        var deleted = farmhands.Farmhands.FirstOrDefault(f =>
-            f.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
-        Assert.Null(deleted);
-        Log($"Verified: farmhand '{farmerName}' no longer in list");
+        var deleted = await DeleteFarmhandAndWaitAsync(farmerName);
+        Assert.True(deleted, $"Farmhand '{farmerName}' should have been deleted");
 
         // Remove from cleanup list since we already deleted it
         CreatedFarmers.Remove(farmerName);
@@ -138,11 +128,10 @@ public class FarmhandManagementTests : IntegrationTestBase
         Assert.True(farmer1Exists, $"Farmer '{farmerName1}' should exist after joining");
         Log($"After first join: farmer '{farmerName1}' exists");
 
-        // Delete farmer1
+        // Delete farmer1 and wait for deletion to complete
         Log($"Deleting farmhand '{farmerName1}'...");
-        var deleteResult = await ServerApi.DeleteFarmhand(farmerName1);
-        Assert.NotNull(deleteResult);
-        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
+        var deleted = await DeleteFarmhandAndWaitAsync(farmerName1);
+        Assert.True(deleted, $"Farmhand '{farmerName1}' should have been deleted");
         CreatedFarmers.Remove(farmerName1);
 
         // Verify slot is available (uncustomized)

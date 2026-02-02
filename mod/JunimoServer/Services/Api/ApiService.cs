@@ -68,6 +68,14 @@ namespace JunimoServer.Services.Api
 
         /// <summary>Current time in 24-hour format (e.g., 1430 = 2:30 PM).</summary>
         public int TimeOfDay { get; set; }
+
+        /// <summary>
+        /// Farm type key as returned by Game1.GetFarmTypeKey().
+        /// Vanilla: "Standard", "Riverland", "Forest", "Hilltop", "Wilderness", "FourCorners", "Beach".
+        /// Meadowlands: "MeadowlandsFarm".
+        /// Modded farms: the mod's farm ID.
+        /// </summary>
+        public string FarmTypeKey { get; set; } = "";
     }
 
     /// <summary>
@@ -801,7 +809,8 @@ namespace JunimoServer.Services.Api
                     Day = Game1.dayOfMonth,
                     Season = Game1.currentSeason ?? "",
                     Year = Game1.year,
-                    TimeOfDay = Game1.timeOfDay
+                    TimeOfDay = Game1.timeOfDay,
+                    FarmTypeKey = Game1.GetFarmTypeKey()
                 };
             }
             catch (Exception ex)
@@ -1114,49 +1123,66 @@ namespace JunimoServer.Services.Api
                 }
 
                 var farmhandId = targetFarmhand.UniqueMultiplayerID;
+                var farmhandName = name; // Capture for closure
 
-                // Find and remove the cabin owned by this farmhand
-                var farm = Game1.getFarm();
-                Building? cabinToRemove = null;
-                foreach (var building in farm.buildings)
+                // Schedule all game state modifications on the main thread to avoid
+                // "Collection was modified" errors during game update loop iteration
+                Helper.Events.GameLoop.UpdateTicked += OnDeleteFarmhandTick;
+
+                void OnDeleteFarmhandTick(object? sender, UpdateTickedEventArgs e)
                 {
-                    if (!building.isCabin) continue;
+                    Helper.Events.GameLoop.UpdateTicked -= OnDeleteFarmhandTick;
 
-                    var cabin = building.GetIndoors<Cabin>();
-                    if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
+                    try
                     {
-                        cabinToRemove = building;
-                        break;
+                        // Find and remove the cabin owned by this farmhand
+                        var farm = Game1.getFarm();
+                        Building? cabinToRemove = null;
+                        foreach (var building in farm.buildings)
+                        {
+                            if (!building.isCabin) continue;
+
+                            var cabin = building.GetIndoors<Cabin>();
+                            if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
+                            {
+                                cabinToRemove = building;
+                                break;
+                            }
+                        }
+
+                        // Remove the cabin building entirely
+                        if (cabinToRemove != null)
+                        {
+                            farm.buildings.Remove(cabinToRemove);
+                            Monitor.Log($"Removed cabin building for farmhand '{farmhandName}'", LogLevel.Debug);
+                        }
+
+                        // Remove from farmhandData so the slot no longer appears to clients
+                        if (Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(farmhandId))
+                        {
+                            Game1.netWorldState.Value.farmhandData.FieldDict.Remove(farmhandId);
+                            Monitor.Log($"Removed farmhand from farmhandData", LogLevel.Debug);
+                        }
+
+                        // Remove from cabin manager tracking
+                        if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
+                        {
+                            _cabinManager.Data.Write();
+                            Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
+                        }
+
+                        Monitor.Log($"Deleted farmhand '{farmhandName}' (ID: {farmhandId})", LogLevel.Info);
+                    }
+                    catch (Exception ex)
+                    {
+                        Monitor.Log($"Error during farmhand deletion: {ex}", LogLevel.Error);
                     }
                 }
-
-                // Remove the cabin building entirely
-                if (cabinToRemove != null)
-                {
-                    farm.buildings.Remove(cabinToRemove);
-                    Monitor.Log($"Removed cabin building for farmhand '{name}'", LogLevel.Debug);
-                }
-
-                // Remove from farmhandData so the slot no longer appears to clients
-                if (Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(farmhandId))
-                {
-                    Game1.netWorldState.Value.farmhandData.FieldDict.Remove(farmhandId);
-                    Monitor.Log($"Removed farmhand from farmhandData", LogLevel.Debug);
-                }
-
-                // Remove from cabin manager tracking
-                if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
-                {
-                    _cabinManager.Data.Write();
-                    Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
-                }
-
-                Monitor.Log($"Deleted farmhand '{name}' (ID: {farmhandId})", LogLevel.Info);
 
                 return new FarmhandResponse
                 {
                     Success = true,
-                    Message = $"Farmhand '{name}' deleted successfully"
+                    Message = $"Farmhand '{name}' deletion scheduled"
                 };
             }
             catch (Exception ex)

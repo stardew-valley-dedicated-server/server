@@ -506,6 +506,56 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
     }
 
     /// <summary>
+    /// Deletes a farmhand and waits for the deletion to be confirmed by polling
+    /// the farmhands list. The deletion is asynchronous on the server (scheduled
+    /// for next game tick), so we poll until the farmhand disappears.
+    /// </summary>
+    /// <param name="farmerName">Name of the farmhand to delete.</param>
+    /// <param name="timeout">Maximum time to wait for deletion confirmation.</param>
+    /// <returns>True if deletion was confirmed, false if timed out.</returns>
+    protected async Task<bool> DeleteFarmhandAndWaitAsync(string farmerName, TimeSpan? timeout = null)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(5);
+        var pollInterval = TimeSpan.FromMilliseconds(200);
+
+        // Request deletion
+        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
+        if (deleteResult?.Success != true)
+        {
+            LogWarning($"Delete request failed: {deleteResult?.Error}");
+            return false;
+        }
+
+        Log($"Delete response: {deleteResult.Message}");
+
+        // Poll until farmhand is gone
+        var deadline = DateTime.UtcNow + effectiveTimeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var farmhands = await ServerApi.GetFarmhands();
+            if (farmhands == null)
+            {
+                await Task.Delay(pollInterval);
+                continue;
+            }
+
+            var stillExists = farmhands.Farmhands.Any(f =>
+                f.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
+
+            if (!stillExists)
+            {
+                Log($"Verified: farmhand '{farmerName}' no longer in list");
+                return true;
+            }
+
+            await Task.Delay(pollInterval);
+        }
+
+        LogWarning($"Timeout waiting for farmhand '{farmerName}' deletion to complete");
+        return false;
+    }
+
+    /// <summary>
     /// Connects to the server with automatic retry on "stuck connecting" issues.
     /// Throws ExceptionMonitorException if a server error is detected.
     /// </summary>

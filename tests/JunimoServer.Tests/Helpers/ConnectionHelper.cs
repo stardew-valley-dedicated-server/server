@@ -11,9 +11,9 @@ public class ConnectionOptions
 {
     /// <summary>
     /// Maximum number of attempts to connect to the server.
-    /// Default is 5 attempts (increased to compensate for reduced FarmhandMenuTimeout).
+    /// Default is 2 attempts to fail fast while still handling transient issues.
     /// </summary>
-    public int MaxAttempts { get; set; } = 5;
+    public int MaxAttempts { get; set; } = 2;
 
     /// <summary>
     /// Timeout for waiting for the farmhand menu to appear.
@@ -25,14 +25,6 @@ public class ConnectionOptions
     /// Default options for standard connection scenarios.
     /// </summary>
     public static ConnectionOptions Default => new();
-
-    /// <summary>
-    /// Options with more retries for slow connections or CI environments.
-    /// </summary>
-    public static ConnectionOptions SlowConnection => new()
-    {
-        MaxAttempts = 5
-    };
 }
 
 /// <summary>
@@ -44,14 +36,6 @@ public class ConnectionRetryOptions : ConnectionOptions
     /// Default options for standard connection scenarios.
     /// </summary>
     public new static ConnectionRetryOptions Default => new();
-
-    /// <summary>
-    /// Options with more retries for slow connections or CI environments.
-    /// </summary>
-    public new static ConnectionRetryOptions SlowConnection => new()
-    {
-        MaxAttempts = 5
-    };
 }
 
 /// <summary>
@@ -132,14 +116,21 @@ public class ConnectionHelper
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            Log($"Connection attempt {attempt}/{_options.MaxAttempts}");
+            if (attempt == 1)
+            {
+                Log($"[Connect] Attempt {attempt}/{_options.MaxAttempts} - connecting via invite code...");
+            }
+            else
+            {
+                Log($"[Connect] RETRY {attempt}/{_options.MaxAttempts} - previous attempt failed, retrying...");
+            }
 
             try
             {
                 // Ensure we're disconnected before attempting
                 if (attempt > 1)
                 {
-                    Log("Returning to title for retry...");
+                    Log("[Connect] Returning to title for retry...");
                     await EnsureDisconnectedAsync();
                     await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken); // Brief pause between attempts
                 }
@@ -256,14 +247,21 @@ public class ConnectionHelper
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            Log($"LAN connection attempt {attempt}/{_options.MaxAttempts} to {fullAddress}");
+            if (attempt == 1)
+            {
+                Log($"[Connect] Attempt {attempt}/{_options.MaxAttempts} - connecting via LAN to {fullAddress}...");
+            }
+            else
+            {
+                Log($"[Connect] RETRY {attempt}/{_options.MaxAttempts} - previous attempt failed, retrying connection to {fullAddress}...");
+            }
 
             try
             {
                 // Ensure we're disconnected before attempting
                 if (attempt > 1)
                 {
-                    Log("Returning to title for retry...");
+                    Log("[Connect] Returning to title for retry...");
                     await EnsureDisconnectedAsync();
                     await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
                 }

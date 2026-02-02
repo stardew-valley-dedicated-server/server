@@ -142,6 +142,16 @@ public static class TestTimings
     /// </summary>
     public static readonly TimeSpan ServerLogErrorRetryDelay = TimeSpan.FromMilliseconds(2000);
 
+    /// <summary>
+    /// Timeout for waiting for cabin assignment to sync after character creation.
+    /// </summary>
+    public static readonly TimeSpan CabinAssignmentTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Polling interval when waiting for cabin assignment.
+    /// </summary>
+    public static readonly TimeSpan CabinAssignmentPollInterval = TimeSpan.FromMilliseconds(500);
+
     #endregion
 
     #region Cleanup Delays

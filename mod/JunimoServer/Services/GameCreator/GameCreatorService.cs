@@ -82,10 +82,31 @@ namespace JunimoServer.Services.GameCreator
             if (isUltimateFarmModLoaded)
             {
                 Game1.whichFarm = 1;
+                Game1.whichModFarm = null;
             }
             else
             {
                 Game1.whichFarm = config.WhichFarm;
+
+                // Farm type 7 (Meadowlands) uses the AdditionalFarms system.
+                // whichModFarm MUST be set BEFORE loadForNewGame() because the Farm map
+                // is created during loadForNewGame() using Farm.getMapNameFromTypeInt()
+                // which checks whichModFarm when whichFarm is 7.
+                if (config.WhichFarm == 7)
+                {
+                    var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
+                    Game1.whichModFarm = additionalFarms?.FirstOrDefault(f => f.Id == "MeadowlandsFarm");
+
+                    if (Game1.whichModFarm == null)
+                    {
+                        _monitor.Log("Could not find MeadowlandsFarm data, falling back to Standard farm", LogLevel.Warn);
+                        Game1.whichFarm = 0;
+                    }
+                }
+                else
+                {
+                    Game1.whichModFarm = null;
+                }
             }
 
             // Monster spawning: explicit override or auto-detect from farm type
