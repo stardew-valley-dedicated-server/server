@@ -2,6 +2,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
+using JunimoServer.Tests.Fixtures;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
 using Xunit;
@@ -15,10 +16,14 @@ namespace JunimoServer.Tests;
 ///
 /// Prerequisites: Run 'make setup' first to download the game and save Steam session.
 /// These tests use shared volumes to avoid session conflicts.
+///
+/// Uses IntegrationTestFixture to ensure images are built before tests run.
 /// </summary>
+[Collection("Integration")]
 public class DownloadValidationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
+    private readonly IntegrationTestFixture _fixture;
 
     private IContainer? _steamAuthContainer;
     private INetwork? _network;
@@ -39,13 +44,15 @@ public class DownloadValidationTests : IAsyncLifetime
     // Ports
     private const int SteamAuthPort = 3001;
 
-    public DownloadValidationTests(ITestOutputHelper output)
+    public DownloadValidationTests(IntegrationTestFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
     }
 
     public async Task InitializeAsync()
     {
+        // IntegrationTestFixture already built images, just set up our test-specific container
         Log("Setting up download validation test environment...");
         Log($"Using shared volumes: {GameDataVolume}, {SteamSessionVolume}");
 
@@ -236,6 +243,12 @@ public class DownloadValidationTests : IAsyncLifetime
         // Step 4: Trigger download/validation
         Log("Triggering download validation...");
         var (exitCode, stdout, stderr) = await TriggerDownloadWithLogs(_steamAuthContainer);
+
+        // Log download output for debugging
+        if (!string.IsNullOrWhiteSpace(stdout))
+            Log($"Download stdout: {stdout}");
+        if (!string.IsNullOrWhiteSpace(stderr))
+            Log($"Download stderr: {stderr}");
 
         // Step 5: Verify the file is re-downloaded and valid
         exists = await FileExists(_steamAuthContainer, TestFilePath);

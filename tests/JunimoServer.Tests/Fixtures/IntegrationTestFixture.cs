@@ -900,7 +900,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         LogStepDuration(stepStart);
     }
 
-    private async Task RunBuildCommand(string command, string arguments, string workingDirectory, string description, TimeSpan timeout, bool quiet = true)
+    private async Task RunBuildCommand(string command, string arguments, string workingDirectory, string description, TimeSpan timeout)
     {
         Log($"Building {description}...");
 
@@ -930,7 +930,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
                 stdoutLines.Add(line);
-                if (!quiet)
+                if (VerboseContainerLogs)
                 {
                     AnsiConsole.MarkupLine($"[grey]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
                 }
@@ -942,7 +942,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             while (await process.StandardError.ReadLineAsync() is { } line)
             {
                 stderrLines.Add(line);
-                if (!quiet)
+                if (VerboseContainerLogs)
                 {
                     AnsiConsole.MarkupLine($"[grey]{Markup.Escape(BuildPrefix)} {Markup.Escape(line)}[/]");
                 }
