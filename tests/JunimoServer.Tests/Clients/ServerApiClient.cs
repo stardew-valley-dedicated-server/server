@@ -292,13 +292,23 @@ public class CabinInfoResponse
 public class ServerApiClient : IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly string _baseUrl;
 
     public ServerApiClient(string baseUrl = "http://localhost:8080")
     {
+        _baseUrl = baseUrl;
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseUrl)
         };
+    }
+
+    /// <summary>
+    /// Gets the WebSocket URL for the /ws endpoint.
+    /// </summary>
+    public string GetWebSocketUrl()
+    {
+        return _baseUrl.Replace("http://", "ws://").Replace("https://", "wss://") + "/ws";
     }
 
     /// <summary>
