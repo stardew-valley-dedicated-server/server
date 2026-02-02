@@ -119,6 +119,9 @@ Environment variables in `.env` control Docker infrastructure, credentials, and 
 | `API_ENABLED` | Enable HTTP API for external tools and monitoring | true |
 | `API_PORT` | Port for the HTTP API server | 8080 |
 | `VERBOSE_LOGGING` | Override verbose logging setting (overrides `server-settings.json`) | - |
+| `DISCORD_BOT_TOKEN` | Discord bot token for server status and chat relay (see [Discord Integration](#discord-integration)) | - |
+| `DISCORD_BOT_NICKNAME` | Custom bot nickname in Discord servers (optional, defaults to farm name) | - |
+| `DISCORD_CHAT_CHANNEL_ID` | Discord channel ID for two-way chat relay (optional) | - |
 
 ::: tip
 Set `DISABLE_RENDERING=true` to improve performance when using VNC. The game will still run normally, but rendering will be optimized for server environments.
@@ -139,6 +142,43 @@ These variables are only relevant during the build process when compiling from s
 
 ::: info
 Build variables are only needed when building from source. If you're using the pre-built Docker images, you can ignore these settings.
+:::
+
+## Discord Integration
+
+The optional Discord bot provides server status display and two-way chat relay between Discord and the game.
+
+### Setup
+
+1. Create a Discord application at the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Go to the **Bot** tab, click "Reset Token" and copy it
+3. Invite the bot to your server with permissions: Send Messages, Read Message History
+4. Set `DISCORD_BOT_TOKEN` in your `.env` file
+
+This is enough for server status display. For chat relay, see below.
+
+### Bot Nickname
+
+The bot's nickname in Discord servers can be configured:
+
+- **Default**: Uses the farm name from the game server
+- **Custom**: Set `DISCORD_BOT_NICKNAME` to override with a fixed name
+
+### Chat Relay
+
+To enable two-way chat between Discord and the game:
+
+1. Enable the [Message Content Intent](https://support-dev.discord.com/hc/en-us/articles/4404772028055-Message-Content-Privileged-Intent-FAQ) in the [Developer Portal](https://discord.com/developers/applications) (Bot → Privileged Gateway Intents)
+2. Enable Developer Mode in Discord (Settings → Advanced → Developer Mode)
+3. Right-click the channel you want to use → Copy ID
+4. Set `DISCORD_CHAT_CHANNEL_ID` in your `.env` file
+
+Once configured:
+- Messages from players in-game appear in the Discord channel as `**PlayerName**: message`
+- Messages from Discord users appear in-game as `(Web) DiscordName: message`
+
+::: warning Security Note
+The chat relay does not currently implement rate limiting. Discord users could potentially spam the game chat. Consider using Discord's built-in slowmode on the relay channel if this is a concern.
 :::
 
 ## Variable Details
@@ -177,6 +217,10 @@ VNC_PORT=5800
 GAME_PORT=24642
 DISABLE_RENDERING=true
 
+# Optional: Discord Bot
+# DISCORD_BOT_TOKEN=your_bot_token
+# DISCORD_BOT_NICKNAME=My Stardew Server
+# DISCORD_CHAT_CHANNEL_ID=123456789012345678
 ```
 
 ::: info

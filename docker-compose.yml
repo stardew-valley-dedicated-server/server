@@ -56,7 +56,7 @@ services:
       STEAM_REFRESH_TOKEN: "${STEAM_REFRESH_TOKEN:-}"
     restart: unless-stopped
 
-  # Discord bot for server status display
+  # Discord bot for server status display and chat relay
   discord-bot:
     build:
       context: ./tools/discord-bot
@@ -69,6 +69,10 @@ services:
       API_URL: "http://server:8080"
       # Min 20s to respect Discord rate limits, default 30s
       UPDATE_INTERVAL_MS: "30000"
+      # Bot nickname (optional, falls back to farm name)
+      DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
+      # Channel ID for two-way chat relay (optional)
+      DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
     depends_on:
       - server
     # on-failure: won't restart when disabled (exit 0), will restart on crashes
