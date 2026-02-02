@@ -456,8 +456,12 @@ public class ServerApiClient : IDisposable
     /// </summary>
     /// <param name="timeout">Maximum time to wait</param>
     /// <param name="pollInterval">Time between status checks</param>
-    /// <returns>The server status once online, or null if timeout</returns>
-    public async Task<ServerStatus?> WaitForServerOnline(TimeSpan timeout, TimeSpan? pollInterval = null)
+    /// <param name="cancellationToken">Cancellation token for early abort (e.g., on server error)</param>
+    /// <returns>The server status once online, or null if timeout/cancelled</returns>
+    public async Task<ServerStatus?> WaitForServerOnline(
+        TimeSpan timeout,
+        TimeSpan? pollInterval = null,
+        CancellationToken cancellationToken = default)
     {
         var interval = pollInterval ?? TimeSpan.FromSeconds(1);
         var deadline = DateTime.UtcNow + timeout;
@@ -466,6 +470,13 @@ public class ServerApiClient : IDisposable
 
         while (DateTime.UtcNow < deadline)
         {
+            // Check for cancellation (e.g., server error detected)
+            if (cancellationToken.IsCancellationRequested)
+            {
+                AnsiConsole.MarkupLine($"[[Setup]] [yellow]! Server wait cancelled after {attempt} attempts[/]");
+                return null;
+            }
+
             attempt++;
             try
             {
@@ -490,7 +501,15 @@ public class ServerApiClient : IDisposable
                 AnsiConsole.MarkupLine($"[[Setup]] [grey]→ Still waiting for server (attempt {attempt}, {remaining.TotalSeconds:0}s remaining)[/]");
             }
 
-            await Task.Delay(interval);
+            try
+            {
+                await Task.Delay(interval, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                AnsiConsole.MarkupLine($"[[Setup]] [yellow]! Server wait cancelled after {attempt} attempts[/]");
+                return null;
+            }
         }
 
         AnsiConsole.MarkupLine($"[[Setup]] [red]✗ Server wait timed out after {attempt} attempts[/]");

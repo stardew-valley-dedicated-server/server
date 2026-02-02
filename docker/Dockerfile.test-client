@@ -1,0 +1,158 @@
+# Dockerfile for containerized game test client
+# Used by E2E tests to run multiple game client instances
+#
+# Build: make build-test-client
+# Usage: Managed by Testcontainers in IntegrationTestFixture
+#
+# NOTE: This Dockerfile reuses the game-downloader stage from the main Dockerfile
+# to get game DLLs needed for building the test-client mod.
+
+# Global build arguments
+ARG SMAPI_VERSION=4.4.0
+
+# ============================================================================
+# Stage 1: Build steam-service downloader (same as main Dockerfile)
+# ============================================================================
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS steam-service-builder
+WORKDIR /src
+
+COPY ./tools/steam-service/*.csproj ./
+RUN dotnet restore
+
+COPY ./tools/steam-service/ .
+RUN dotnet publish -c Release -o /app --no-restore
+
+# ============================================================================
+# Stage 2: Download game files (same as main Dockerfile)
+# ============================================================================
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS game-downloader
+
+ARG SMAPI_VERSION
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=steam-service-builder /app /steam-service
+WORKDIR /steam-service
+
+# Download game (skip SDK during build)
+RUN --mount=type=secret,id=steam_username \
+    --mount=type=secret,id=steam_password \
+    --mount=type=secret,id=steam_refresh_token \
+    if [ -f /run/secrets/steam_username ]; then export STEAM_USERNAME="$(cat /run/secrets/steam_username)"; fi && \
+    if [ -f /run/secrets/steam_password ]; then export STEAM_PASSWORD="$(cat /run/secrets/steam_password)"; fi && \
+    if [ -f /run/secrets/steam_refresh_token ]; then export STEAM_REFRESH_TOKEN="$(cat /run/secrets/steam_refresh_token)"; fi && \
+    export GAME_DIR=/game && \
+    dotnet SteamService.dll download --skip-sdk
+
+# Download and install SMAPI
+RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
+    unzip -q /tmp/smapi.zip -d /tmp/smapi && \
+    printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
+    --install \
+    --game-path /game && \
+    rm -rf /tmp/smapi /tmp/smapi.zip
+
+# ============================================================================
+# Stage 3: Build test-client mod using game DLLs
+# ============================================================================
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS mod-builder
+
+ARG BUILD_CONFIGURATION=Release
+
+# Copy game DLLs from downloader stage
+COPY --from=game-downloader /game /game
+
+# Copy project files first for better layer caching
+COPY ./Directory.Build.props /src/
+COPY ./tools/test-client/JunimoTestClient.csproj /src/tools/test-client/
+
+# Restore dependencies
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore /src/tools/test-client/JunimoTestClient.csproj
+
+# Copy source and build
+COPY ./tools/test-client /src/tools/test-client
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet build /src/tools/test-client/JunimoTestClient.csproj \
+    --configuration ${BUILD_CONFIGURATION} \
+    --no-restore \
+    /p:GamePath=/game \
+    /p:EnableModDeploy=false \
+    -o /output/JunimoTestClient
+
+# ============================================================================
+# Stage 4: Final runtime image
+# ============================================================================
+FROM jlesage/baseimage-gui:debian-11-v4.10.7 AS client
+
+ARG SMAPI_VERSION
+
+ENV APP_NAME="Stardew Test Client" \
+    USER_ID=0 \
+    GROUP_ID=0 \
+    HOME=/root \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    ACCEPT_EULA=Y \
+    DEBIAN_FRONTEND=noninteractive \
+    TERMINAL=xterm \
+    DARK_MODE=1 \
+    # Display
+    DISPLAY=:0 \
+    DISPLAY_HEIGHT=720 \
+    DISPLAY_WIDTH=1280 \
+    # SMAPI
+    SMAPI_USE_CURRENT_SHELL=true \
+    SMAPI_VERSION=${SMAPI_VERSION} \
+    SMAPI_MODS_PATH=/data/Mods \
+    # Test client API port (can be overridden per container)
+    JUNIMO_TEST_PORT=5123
+
+# Install minimal packages needed for game client
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    locales \
+    procps \
+    unzip \
+    x11-utils \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# System cleanup
+RUN \
+    # Fix stuck dbus statoverride
+    rm -f /var/lib/dpkg/statoverride && \
+    # Prevent unnecessary logs
+    rm -f /etc/cont-init.d/89-info.sh && \
+    # Prevent overriding OpenGL drivers
+    rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH
+
+# Copy SMAPI config (client-specific settings)
+COPY docker/rootfs-test-client/data/smapi-config.json /data/smapi-config.json
+
+# Copy startup script
+COPY docker/rootfs-test-client/startapp.sh /startapp.sh
+RUN chmod +x /startapp.sh
+
+# Copy test-client mod from build stage
+COPY --from=mod-builder /output/JunimoTestClient /data/Mods/JunimoTestClient
+
+# Game files provided via volume mount (shared with server)
+VOLUME [ "/data/game" ]
+
+# Expose test client API port
+EXPOSE 5123
+
+# Health check - wait for test client API to respond
+HEALTHCHECK --interval=2s --timeout=2s --start-period=60s --retries=60 \
+    CMD curl -sf http://localhost:${JUNIMO_TEST_PORT}/ping || exit 1
+
+WORKDIR /data

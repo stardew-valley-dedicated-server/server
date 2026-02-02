@@ -223,6 +223,15 @@ public class CoopClient
         return _client.PostAsync<NavigationResult>("/coop/invite-code/submit", new InviteCodeParams { InviteCode = inviteCode });
     }
 
+    /// <summary>
+    /// Join a server via LAN/IP address.
+    /// POST /coop/join-lan?address=X
+    /// </summary>
+    /// <param name="address">Server address in "host:port" or "host" format.</param>
+    public Task<NavigationResult?> JoinLan(string address = "localhost")
+    {
+        return _client.PostAsync<NavigationResult>($"/coop/join-lan?address={Uri.EscapeDataString(address)}", new { });
+    }
 }
 
 public class FarmhandClient

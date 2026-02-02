@@ -3,6 +3,7 @@ using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
 using JunimoServer.Tests.Clients;
+using JunimoServer.Tests.Containers;
 using JunimoServer.Tests.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
@@ -121,23 +122,44 @@ public class IntegrationTestFixture : IAsyncLifetime
     private static readonly bool UseIcons = !string.Equals(
         Environment.GetEnvironmentVariable("SDVD_TEST_ICONS"), "false", StringComparison.OrdinalIgnoreCase);
 
+    // Containerized game clients (opt-in via SDVD_CONTAINERIZED_CLIENTS=true)
+    private static readonly bool UseContainerizedClients = string.Equals(
+        Environment.GetEnvironmentVariable("SDVD_CONTAINERIZED_CLIENTS"), "true", StringComparison.OrdinalIgnoreCase);
+    private GameClientManager? _clientManager;
+
     // Ports
     private const int ServerApiPort = 8080;
     private const int VncPort = 5800;
     private const int TestClientApiPort = 5123;
     private const int SteamAuthPort = 3001;
+    private const int GamePort = 24642; // UDP port for LAN/IP connections
 
     // Timeouts - use TestTimings for centralized values
 
     public bool IsReady { get; private set; }
     public int ServerPort { get; private set; } = ServerApiPort;
     public int ServerVncPort { get; private set; } = VncPort;
+    public int ServerGamePort { get; private set; } = GamePort;
     public string ServerBaseUrl => $"http://localhost:{ServerPort}";
     public string ServerVncUrl => $"http://localhost:{ServerVncPort}";
     public string GameClientBaseUrl => $"http://localhost:{TestClientApiPort}";
     public IContainer? ServerContainer => _serverContainer;
     public string? InviteCode { get; private set; }
     public string OutputLog => _outputLog.ToString();
+
+    /// <summary>
+    /// Returns true if containerized game clients are enabled.
+    /// Set SDVD_CONTAINERIZED_CLIENTS=true to enable.
+    /// </summary>
+    public bool ContainerizedClientsEnabled => UseContainerizedClients;
+
+    /// <summary>
+    /// Manager for containerized game clients.
+    /// Only available when SDVD_CONTAINERIZED_CLIENTS=true.
+    /// </summary>
+    public GameClientManager ClientManager =>
+        _clientManager ?? throw new InvalidOperationException(
+            "Containerized clients not enabled. Set SDVD_CONTAINERIZED_CLIENTS=true to enable.");
 
     // Test run abort state - shared across all tests in the collection
     private volatile bool _testRunAborted;
@@ -428,6 +450,12 @@ public class IntegrationTestFixture : IAsyncLifetime
         "[dbus]",
     };
 
+    // Server error patterns to ignore - these are known non-fatal errors that shouldn't abort tests
+    private static readonly string[] IgnoredErrorPatterns = new[]
+    {
+        "XACT", // XACT audio initialization fails in headless/container mode but game continues fine
+    };
+
     private static void Log(string message, LogLevel level = LogLevel.Info)
     {
         var (style, icon) = level switch
@@ -456,6 +484,81 @@ public class IntegrationTestFixture : IAsyncLifetime
         Log($"Step took {duration.TotalSeconds:F1}s", LogLevel.Detail);
     }
 
+    // Junimo ASCII art variants with line counts for vertical centering
+    // Content height is 6 lines (title row, separator, info row, image, blank, status row)
+    private const int BannerContentHeight = 6;
+
+    // Junimo ASCII art - small variant - 11 lines
+    private const string JunimoArtSmall = @"[green]        ██
+        ██
+  ██████████████
+ ██            ██
+ ██            ██ █
+███    ██  ██  ███
+█ ██    ██  ██  ██
+ ██            ██
+ ██            ██
+   ████████████
+      ███  ███[/]
+";
+    private const int JunimoArtSmallHeight = 11;
+
+    // Junimo ASCII art - medium variant - 16 lines
+    private const string JunimoArtMedium = @"[green]            ██
+             ████
+              ███
+     ████████████████████
+    ████              ████
+   ███                  ███
+   ███                  ███ ██
+  ████       █     ██   ██████
+██████      ███   ████  ███
+██ ███      ███    ██   ███
+   ███                  ███
+   ███                  ███
+    ███                ███
+     ████████████████████
+           ██    ██
+           ████  █████[/]
+";
+    private const int JunimoArtMediumHeight = 16;
+
+    // Junimo ASCII art - large variant - 22 lines
+    private const string JunimoArtLarge = @"[green]                 █
+                 █████
+                 ██████
+                  █████
+        ████████████████████████
+      ████████████████████████████
+     ████                      ████
+    ████                        ████
+    ████                        ████
+    ████                        ████ ███
+  ██████        ███      ███    ███████
+████████        ████     ████   █████
+███ ████        ████     ████   ████
+    ████         ██       ██    ████
+    ████                        ████
+    ████                        ████
+    ████                        ████
+     █████                    █████
+      ████████████████████████████
+         ██████████████████████
+              ███      ███
+              ██████   ██████[/]
+";
+    private const int JunimoArtLargeHeight = 22;
+
+    /// <summary>
+    /// Get vertical padding to center content within the art height.
+    /// Adds 1 extra line to shift content down for better visual balance.
+    /// </summary>
+    private static string GetVerticalPadding(int artHeight)
+    {
+        var paddingLines = (artHeight - BannerContentHeight) / 2 + 1;
+        return new string('\n', paddingLines);
+    }
+
     /// <summary>
     /// Print the main test banner.
     /// </summary>
@@ -463,12 +566,35 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         Console.Out.WriteLine();
 
-        var content = new Markup(
-            "[green bold]🧪 Junimo Server[/]  [grey]—[/]  [white]Integration Tests[/]\n\n" +
-            $"[grey]Starting test run at {DateTime.Now:yyyy-MM-dd HH:mm:ss}[/]"
+        var verboseIcon = VerboseContainerLogs ? "[green]●[/]" : "[grey]○[/]";
+        var dockerClientsIcon = UseContainerizedClients ? "[green]●[/]" : "[grey]○[/]";
+        var platform = Environment.OSVersion.Platform == PlatformID.Win32NT ? "Windows" : "Linux";
+
+        // Select art variant and calculate vertical padding
+        const string selectedArt = JunimoArtMedium;
+        const int selectedArtHeight = JunimoArtMediumHeight;
+        var verticalPadding = GetVerticalPadding(selectedArtHeight);
+
+        var leftContent = new Markup(
+            verticalPadding +
+            "[bold green]Junimo Server[/] [dim]//[/] [white]Integration Tests[/]\n" +
+            $"[dim]──────────────────────────────────[/]\n" +
+            $"[grey]{DateTime.Now:yyyy-MM-dd HH:mm:ss}[/]  [dim]|[/]  [grey]{platform}[/]\n" +
+            $"[cyan]sdvd/server:{ImageTag}[/]\n\n" +
+            $"{verboseIcon} [white]Verbose Logs[/]   {dockerClientsIcon} [white]Docker Clients[/]"
         );
 
-        var panel = new Panel(content)
+        // Right column: Junimo art
+        var rightContent = new Markup(selectedArt);
+
+        var table = new Table()
+            .Border(TableBorder.None)
+            .HideHeaders()
+            .AddColumn(new TableColumn("Left").PadRight(4))
+            .AddColumn(new TableColumn("Right").NoWrap())
+            .AddRow(leftContent, rightContent);
+
+        var panel = new Panel(table)
             .Border(BoxBorder.Rounded)
             .BorderColor(Color.Green)
             .Padding(2, 1)
@@ -759,6 +885,18 @@ public class IntegrationTestFixture : IAsyncLifetime
             TestTimings.DockerBuildSteamAuthTimeout
         );
 
+        // Build test-client image when containerized clients are enabled
+        if (UseContainerizedClients)
+        {
+            await RunBuildCommand(
+                "make",
+                "build-test-client",
+                ServerRepoDir,
+                "test-client image",
+                TestTimings.DockerBuildServerTimeout // Use same timeout as server build
+            );
+        }
+
         LogStepDuration(stepStart);
     }
 
@@ -869,12 +1007,13 @@ public class IntegrationTestFixture : IAsyncLifetime
         _envFilePath = FindEnvFile();
         var envVars = LoadEnvFile(_envFilePath);
 
-        // Check for Steam credentials
+        // Check for Steam credentials (only warn if not using containerized LAN clients,
+        // since LAN/IP connections don't require Steam authentication)
         var hasSteamCreds = envVars.ContainsKey("STEAM_REFRESH_TOKEN") && !string.IsNullOrEmpty(envVars["STEAM_REFRESH_TOKEN"])
             || (envVars.ContainsKey("STEAM_USERNAME") && !string.IsNullOrEmpty(envVars["STEAM_USERNAME"])
                 && envVars.ContainsKey("STEAM_PASSWORD") && !string.IsNullOrEmpty(envVars["STEAM_PASSWORD"]));
 
-        if (!hasSteamCreds)
+        if (!hasSteamCreds && !UseContainerizedClients)
         {
             Log("No Steam credentials found in .env file!", LogLevel.Warn);
             Log("Steam-auth container may fail to authenticate", LogLevel.Warn);
@@ -958,6 +1097,7 @@ public class IntegrationTestFixture : IAsyncLifetime
             .WithNetwork(_network)
             .WithPortBinding(ServerApiPort, true)
             .WithPortBinding(VncPort, true)
+            .WithPortBinding(GamePort, true) // UDP port for LAN connections (dynamic host port)
             // Mount game data (existing) and fresh saves volume
             .WithVolumeMount($"{_volumePrefix}_game-data", "/data/game")
             .WithVolumeMount(testSavesVolume, "/config/xdg/config/StardewValley")
@@ -997,6 +1137,7 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         ServerPort = _serverContainer.GetMappedPublicPort(ServerApiPort);
         ServerVncPort = _serverContainer.GetMappedPublicPort(VncPort);
+        ServerGamePort = _serverContainer.GetMappedPublicPort(GamePort);
 
         // Start streaming server logs immediately so they appear in real-time while waiting
         _serverLogCts = new CancellationTokenSource();
@@ -1005,14 +1146,22 @@ public class IntegrationTestFixture : IAsyncLifetime
         LogStepDuration(stepStart);
 
         // Wait for server to be fully ready (with invite code)
+        // Pass error cancellation token so we abort immediately on server errors
         LogPhaseHeader("Setup", "Waiting for Server");
         stepStart = DateTime.UtcNow;
 
         var serverApi = new ServerApiClient($"http://localhost:{ServerPort}");
         var status = await serverApi.WaitForServerOnline(
             TestTimings.ServerReadyTimeout,
-            TestTimings.ServerPollInterval);
+            TestTimings.ServerPollInterval,
+            GetErrorCancellationToken());
         serverApi.Dispose();
+
+        // Check if we were aborted due to server error
+        if (_testRunAborted)
+        {
+            throw new TestRunAbortedException(_abortReason ?? "Server error during startup");
+        }
 
         if (status == null)
         {
@@ -1025,6 +1174,27 @@ public class IntegrationTestFixture : IAsyncLifetime
 
         InviteCode = status.InviteCode;
         LogStepDuration(stepStart);
+
+        // Initialize containerized game client manager if enabled
+        if (UseContainerizedClients)
+        {
+            LogPhaseHeader("Setup", "Initializing Client Manager");
+            stepStart = DateTime.UtcNow;
+
+            var clientOptions = new GameClientOptions
+            {
+                ImageTag = ImageTag,
+                GameDataVolume = $"{_volumePrefix}_game-data"
+            };
+
+            _clientManager = new GameClientManager(
+                clientOptions,
+                _network,
+                message => Log(message));
+
+            Log($"Containerized client manager ready (game port: {ServerGamePort})", LogLevel.Success);
+            LogStepDuration(stepStart);
+        }
     }
 
     /// <summary>
@@ -1074,7 +1244,18 @@ public class IntegrationTestFixture : IAsyncLifetime
                         // Use word boundary regex for robust matching regardless of surrounding characters
                         if (Regex.IsMatch(cleanedLine, @"\b(ERROR|FATAL)\b"))
                         {
-                            SignalServerError(cleanedLine);
+                            // Check if this error should be ignored
+                            var isIgnored = IgnoredErrorPatterns.Any(pattern =>
+                                cleanedLine.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+
+                            if (!isIgnored)
+                            {
+                                SignalServerError(cleanedLine);
+                            }
+                            else if (VerboseContainerLogs)
+                            {
+                                AnsiConsole.MarkupLine($"[grey42]{Markup.Escape(ServerPrefix)} [yellow](ignored)[/] {Markup.Escape(cleanedLine)}[/]");
+                            }
                         }
                     }
                 }
@@ -1132,8 +1313,15 @@ public class IntegrationTestFixture : IAsyncLifetime
         _logTailTask = Task.Run(() => TailLogFile(_gameLogFile, _logTailCts.Token));
 
         var deadline = DateTime.UtcNow + TestTimings.GameReadyTimeout;
+        var errorToken = GetErrorCancellationToken();
         while (DateTime.UtcNow < deadline)
         {
+            // Check for abort (e.g., server error detected)
+            if (_testRunAborted || errorToken.IsCancellationRequested)
+            {
+                throw new TestRunAbortedException(_abortReason ?? "Test run aborted during game client startup");
+            }
+
             if (await IsGameClientResponding())
             {
                 // Brief delay to let the log tailer catch up with the /ping request
@@ -1209,7 +1397,22 @@ public class IntegrationTestFixture : IAsyncLifetime
         LogPhaseHeader("Cleanup", "Tests Finished");
         var stepStart = DateTime.UtcNow;
 
-        // Stop game client - always try even if exceptions occur
+        // Stop containerized game clients if enabled
+        if (_clientManager != null)
+        {
+            try
+            {
+                Log("Disposing containerized game clients...");
+                await _clientManager.DisposeAsync();
+                Log("Containerized game clients disposed", LogLevel.Success);
+            }
+            catch (Exception ex)
+            {
+                Log($"Error disposing client manager: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        // Stop game client - always try even if exceptions occur (for local client mode)
         try
         {
             await StopGameClient();
@@ -1760,8 +1963,15 @@ public class IntegrationTestCollection : ICollectionFixture<IntegrationTestFixtu
 
 /// <summary>
 /// Exception thrown when the test run has been aborted due to an exception in a previous test.
+/// Uses xUnit's dynamic skip convention ($XunitDynamicSkip$) to report tests as skipped rather than failed.
+/// See: https://github.com/xunit/xunit/issues/2073
 /// </summary>
 public class TestRunAbortedException : Exception
 {
-    public TestRunAbortedException(string message) : base(message) { }
+    /// <summary>
+    /// xUnit v2 dynamic skip prefix - any exception with message starting with this is reported as "skipped".
+    /// </summary>
+    private const string XunitSkipPrefix = "$XunitDynamicSkip$";
+
+    public TestRunAbortedException(string message) : base($"{XunitSkipPrefix}{message}") { }
 }

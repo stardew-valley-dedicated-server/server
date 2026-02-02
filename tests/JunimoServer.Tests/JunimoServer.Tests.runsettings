@@ -2,6 +2,11 @@
 <RunSettings>
   <RunConfiguration>
     <ResultsDirectory>..\..\TestResults</ResultsDirectory>
+    <EnvironmentVariables>
+      <!-- Set to "true" to use containerized game clients instead of local process -->
+      <SDVD_CONTAINERIZED_CLIENTS>true</SDVD_CONTAINERIZED_CLIENTS>
+      <SDVD_TEST_VERBOSE>true</SDVD_TEST_VERBOSE>
+    </EnvironmentVariables>
   </RunConfiguration>
   <LoggerRunSettings>
     <Loggers>

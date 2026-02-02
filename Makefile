@@ -13,8 +13,10 @@ MAKEFLAGS += --no-print-directory
 
 # Constants
 IMAGE_NAME=sdvd/server
+TEST_CLIENT_IMAGE_NAME=sdvd/test-client
 IMAGE_VERSION ?= local
 DOCKERFILE_PATH=docker/Dockerfile
+TEST_CLIENT_DOCKERFILE_PATH=docker/Dockerfile.test-client
 
 # Build configuration (Debug for local, Release for CI/production)
 BUILD_CONFIGURATION ?= Debug
@@ -60,6 +62,21 @@ build:
 		--progress=$(DOCKER_PROGRESS) \
 		.
 	@echo Build complete.
+
+# Build test client docker image (for containerized E2E tests)
+build-test-client:
+	@echo Building test client image `$(TEST_CLIENT_IMAGE_NAME):$(IMAGE_VERSION)`...
+	@docker buildx build \
+		--platform=linux/amd64 \
+		-t $(TEST_CLIENT_IMAGE_NAME):$(IMAGE_VERSION) \
+		--secret id=steam_username,env=STEAM_USERNAME \
+		--secret id=steam_password,env=STEAM_PASSWORD \
+		--secret id=steam_refresh_token,env=STEAM_REFRESH_TOKEN \
+		-f $(TEST_CLIENT_DOCKERFILE_PATH) \
+		--load \
+		--progress=$(DOCKER_PROGRESS) \
+		.
+	@echo Test client build complete.
 
 # Build and run everything
 up: build
@@ -139,6 +156,7 @@ help:
 	@echo   make down     - Stop the server
 	@echo   make docs     - Start docs dev server (requires built image)
 	@echo   make clean    - Remove ALL containers, volumes and images
+	@echo   make build-test-client - Build test client container image (for E2E tests)
 	@echo.
 	@echo Note: Use GitHub Actions for building and pushing release images
 
