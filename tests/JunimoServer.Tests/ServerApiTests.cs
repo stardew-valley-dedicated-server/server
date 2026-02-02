@@ -1,6 +1,8 @@
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
+using System.Net.WebSockets;
+using System.Text;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -255,6 +257,80 @@ public class ServerApiTests : IntegrationTestBase
         });
 
         Log($"Successfully handled {tasks.Count} concurrent requests");
+    }
+
+    #endregion
+
+    #region WebSocket
+
+    /// <summary>
+    /// Verifies WebSocket connection can be established.
+    /// </summary>
+    [Fact]
+    public async Task WebSocket_CanConnect()
+    {
+        using var ws = new ClientWebSocket();
+        var wsUrl = ServerApi.GetWebSocketUrl();
+        Log($"Connecting to WebSocket: {wsUrl}");
+
+        await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
+
+        Assert.Equal(WebSocketState.Open, ws.State);
+        Log("WebSocket connection established");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Verifies WebSocket ping/pong heartbeat works.
+    /// </summary>
+    [Fact]
+    public async Task WebSocket_PingPong()
+    {
+        using var ws = new ClientWebSocket();
+        var wsUrl = ServerApi.GetWebSocketUrl();
+
+        await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
+        Assert.Equal(WebSocketState.Open, ws.State);
+
+        // Send ping
+        var pingMessage = "{\"type\":\"ping\"}";
+        var pingBytes = Encoding.UTF8.GetBytes(pingMessage);
+        await ws.SendAsync(new ArraySegment<byte>(pingBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        Log("Sent ping");
+
+        // Receive pong
+        var buffer = new byte[1024];
+        var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+        var response = Encoding.UTF8.GetString(buffer, 0, result.Count);
+
+        Assert.Contains("pong", response);
+        Log($"Received pong: {response}");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Verifies chat_send message is accepted via WebSocket.
+    /// </summary>
+    [Fact]
+    public async Task WebSocket_ChatSend_Succeeds()
+    {
+        using var ws = new ClientWebSocket();
+        var wsUrl = ServerApi.GetWebSocketUrl();
+
+        await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
+        Assert.Equal(WebSocketState.Open, ws.State);
+
+        // Send chat message
+        var chatMessage = "{\"type\":\"chat_send\",\"payload\":{\"author\":\"TestUser\",\"message\":\"Hello from test!\"}}";
+        var chatBytes = Encoding.UTF8.GetBytes(chatMessage);
+        await ws.SendAsync(new ArraySegment<byte>(chatBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        Log("Sent chat_send message");
+
+        // No exception = success (message is sent to game, we can't easily verify that in integration test)
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
+        Log("WebSocket chat_send test completed successfully");
     }
 
     #endregion

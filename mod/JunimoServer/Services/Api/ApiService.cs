@@ -15,6 +15,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -313,6 +314,17 @@ namespace JunimoServer.Services.Api
         private readonly PersistentOptions _persistentOptions;
         private readonly CabinManagerService _cabinManager;
 
+        // WebSocket client management
+        private readonly List<WebSocket> _wsClients = new();
+        private readonly object _wsLock = new();
+        private Timer? _wsCleanupTimer;
+
+        /// <summary>
+        /// Event fired when a chat message is received from a WebSocket client (e.g., Discord bot).
+        /// Parameters: author, message
+        /// </summary>
+        public event Action<string, string>? OnExternalChatMessage;
+
         private static readonly JsonSerializerSettings JsonSettings = new()
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
@@ -366,6 +378,9 @@ namespace JunimoServer.Services.Api
                 _cts = new CancellationTokenSource();
                 _serverTask = Task.Run(() => ProcessRequestsAsync(_cts.Token));
 
+                // Start WebSocket cleanup timer (every 30 seconds)
+                _wsCleanupTimer = new Timer(_ => CleanupDeadWebSocketClients(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
                 _isRunning = true;
 
                 Monitor.Log($"API server listening on port {Env.ApiPort} (docs: http://localhost:{Env.ApiPort}/docs)", LogLevel.Info);
@@ -410,6 +425,13 @@ namespace JunimoServer.Services.Api
             {
                 var path = request.Url?.AbsolutePath ?? "/";
                 var method = request.HttpMethod;
+
+                // Handle WebSocket upgrade
+                if (path == "/ws" && request.IsWebSocketRequest)
+                {
+                    await HandleWebSocketAsync(context);
+                    return;
+                }
 
                 // Route request
                 if (method == "GET")
@@ -512,6 +534,210 @@ namespace JunimoServer.Services.Api
                 }
             }
         }
+
+        #region WebSocket
+
+        /// <summary>
+        /// Broadcasts a chat message to all connected WebSocket clients.
+        /// </summary>
+        public void BroadcastChatMessage(string playerName, string message)
+        {
+            var wsMessage = new WebSocketMessage
+            {
+                Type = "chat",
+                Payload = JObject.FromObject(new ChatEventPayload
+                {
+                    PlayerName = playerName,
+                    Message = message,
+                    Timestamp = DateTime.UtcNow.ToString("o")
+                })
+            };
+
+            BroadcastToAllClients(wsMessage);
+        }
+
+        private async Task HandleWebSocketAsync(HttpListenerContext context)
+        {
+            WebSocket? ws = null;
+            try
+            {
+                var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
+                ws = wsContext.WebSocket;
+
+                lock (_wsLock) { _wsClients.Add(ws); }
+                Monitor.Log("[API] WebSocket client connected", LogLevel.Debug);
+
+                await ProcessWebSocketAsync(ws);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[API] WebSocket error: {ex.Message}", LogLevel.Warn);
+            }
+            finally
+            {
+                if (ws != null)
+                {
+                    lock (_wsLock) { _wsClients.Remove(ws); }
+                    try { ws.Dispose(); } catch { }
+                    Monitor.Log("[API] WebSocket client disconnected", LogLevel.Debug);
+                }
+            }
+        }
+
+        private async Task ProcessWebSocketAsync(WebSocket ws)
+        {
+            var buffer = new byte[4096];
+            var messageBuilder = new StringBuilder();
+            const int maxMessageSize = 16384; // 16KB max message size
+
+            while (ws.State == WebSocketState.Open)
+            {
+                try
+                {
+                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                        break;
+                    }
+
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+
+                        // Check if message is too large
+                        if (messageBuilder.Length > maxMessageSize)
+                        {
+                            Monitor.Log("[API] WebSocket message too large, discarding", LogLevel.Warn);
+                            messageBuilder.Clear();
+                            continue;
+                        }
+
+                        // Process complete messages only
+                        if (result.EndOfMessage)
+                        {
+                            var json = messageBuilder.ToString();
+                            messageBuilder.Clear();
+                            await HandleWebSocketMessageAsync(ws, json);
+                        }
+                    }
+                }
+                catch (WebSocketException)
+                {
+                    // Client disconnected
+                    break;
+                }
+            }
+        }
+
+        private async Task HandleWebSocketMessageAsync(WebSocket ws, string json)
+        {
+            try
+            {
+                var msg = JsonConvert.DeserializeObject<WebSocketMessage>(json);
+                if (msg == null) return;
+
+                switch (msg.Type)
+                {
+                    case "ping":
+                        await SendWebSocketMessageAsync(ws, new { type = "pong" });
+                        break;
+
+                    case "chat_send":
+                        if (msg.Payload != null)
+                        {
+                            var chatPayload = msg.Payload.ToObject<ChatSendPayload>();
+                            if (chatPayload != null &&
+                                !string.IsNullOrWhiteSpace(chatPayload.Author) &&
+                                !string.IsNullOrWhiteSpace(chatPayload.Message))
+                            {
+                                OnExternalChatMessage?.Invoke(chatPayload.Author, chatPayload.Message);
+                            }
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[API] Invalid WebSocket message: {ex.Message}", LogLevel.Debug);
+            }
+        }
+
+        private async Task SendWebSocketMessageAsync(WebSocket ws, object message)
+        {
+            if (ws.State != WebSocketState.Open) return;
+
+            var json = JsonConvert.SerializeObject(message, JsonSettings);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var segment = new ArraySegment<byte>(bytes);
+
+            try
+            {
+                await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+            catch (WebSocketException)
+            {
+                // Client disconnected
+            }
+        }
+
+        private void BroadcastToAllClients(object message)
+        {
+            var json = JsonConvert.SerializeObject(message, JsonSettings);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var segment = new ArraySegment<byte>(bytes);
+
+            List<WebSocket> clients;
+            lock (_wsLock) { clients = _wsClients.ToList(); }
+
+            foreach (var ws in clients)
+            {
+                if (ws.State == WebSocketState.Open)
+                {
+                    // Fire and forget - don't block on individual sends
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                        }
+                        catch (WebSocketException)
+                        {
+                            // Client disconnected, will be cleaned up by periodic cleanup
+                        }
+                    });
+                }
+            }
+        }
+
+        private void CleanupDeadWebSocketClients()
+        {
+            List<WebSocket> deadClients;
+            lock (_wsLock)
+            {
+                deadClients = _wsClients
+                    .Where(ws => ws.State != WebSocketState.Open)
+                    .ToList();
+
+                foreach (var ws in deadClients)
+                {
+                    _wsClients.Remove(ws);
+                }
+            }
+
+            if (deadClients.Count > 0)
+            {
+                Monitor.Log($"[API] Cleaned up {deadClients.Count} dead WebSocket client(s)", LogLevel.Debug);
+            }
+
+            foreach (var ws in deadClients)
+            {
+                try { ws.Dispose(); } catch { }
+            }
+        }
+
+        #endregion
 
         #region Endpoint Handlers
 
