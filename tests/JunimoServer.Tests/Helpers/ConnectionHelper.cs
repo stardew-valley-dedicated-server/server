@@ -7,7 +7,7 @@ namespace JunimoServer.Tests.Helpers;
 /// Configuration for connection retry behavior.
 /// Timeouts are centralized in TestTimings.
 /// </summary>
-public class ConnectionRetryOptions
+public class ConnectionOptions
 {
     /// <summary>
     /// Maximum number of attempts to connect to the server.
@@ -16,14 +16,39 @@ public class ConnectionRetryOptions
     public int MaxAttempts { get; set; } = 5;
 
     /// <summary>
+    /// Timeout for waiting for the farmhand menu to appear.
+    /// Can be overridden for slower connections.
+    /// </summary>
+    public TimeSpan? FarmhandMenuTimeout { get; set; }
+
+    /// <summary>
     /// Default options for standard connection scenarios.
     /// </summary>
-    public static ConnectionRetryOptions Default => new();
+    public static ConnectionOptions Default => new();
 
     /// <summary>
     /// Options with more retries for slow connections or CI environments.
     /// </summary>
-    public static ConnectionRetryOptions SlowConnection => new()
+    public static ConnectionOptions SlowConnection => new()
+    {
+        MaxAttempts = 5
+    };
+}
+
+/// <summary>
+/// Alias for backward compatibility.
+/// </summary>
+public class ConnectionRetryOptions : ConnectionOptions
+{
+    /// <summary>
+    /// Default options for standard connection scenarios.
+    /// </summary>
+    public new static ConnectionRetryOptions Default => new();
+
+    /// <summary>
+    /// Options with more retries for slow connections or CI environments.
+    /// </summary>
+    public new static ConnectionRetryOptions SlowConnection => new()
     {
         MaxAttempts = 5
     };
@@ -71,12 +96,12 @@ public class ConnectionHelper
 {
     private readonly GameTestClient _gameClient;
     private readonly ITestOutputHelper? _output;
-    private readonly ConnectionRetryOptions _options;
+    private readonly ConnectionOptions _options;
 
-    public ConnectionHelper(GameTestClient gameClient, ConnectionRetryOptions? options = null, ITestOutputHelper? output = null)
+    public ConnectionHelper(GameTestClient gameClient, ConnectionOptions? options = null, ITestOutputHelper? output = null)
     {
         _gameClient = gameClient;
-        _options = options ?? ConnectionRetryOptions.Default;
+        _options = options ?? ConnectionOptions.Default;
         _output = output;
     }
 
@@ -209,6 +234,115 @@ public class ConnectionHelper
             ? string.Join("; ", errors)
             : "Unknown failure";
         return ConnectionResult.Failed($"All {_options.MaxAttempts} connection attempts failed. Errors: {errorSummary}", _options.MaxAttempts);
+    }
+
+    /// <summary>
+    /// Connects to the server using LAN/IP address with automatic retry on failure.
+    /// Returns when the farmhand selection screen is displayed.
+    /// </summary>
+    /// <param name="address">Server address (hostname or IP).</param>
+    /// <param name="port">Server game port (default: 24642).</param>
+    /// <param name="cancellationToken">Optional cancellation token for early abort.</param>
+    /// <returns>Connection result with farmhand slots if successful.</returns>
+    public async Task<ConnectionResult> ConnectViaLanAsync(
+        string address,
+        int port = 24642,
+        CancellationToken cancellationToken = default)
+    {
+        var errors = new List<string>();
+        var fullAddress = port == 24642 ? address : $"{address}:{port}";
+
+        for (var attempt = 1; attempt <= _options.MaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Log($"LAN connection attempt {attempt}/{_options.MaxAttempts} to {fullAddress}");
+
+            try
+            {
+                // Ensure we're disconnected before attempting
+                if (attempt > 1)
+                {
+                    Log("Returning to title for retry...");
+                    await EnsureDisconnectedAsync();
+                    await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
+                }
+
+                // Navigate to coop menu
+                var navigateResult = await _gameClient.Navigate("coopmenu");
+                if (navigateResult?.Success != true)
+                {
+                    Log($"Navigate to coopmenu failed: {navigateResult?.Error}");
+                    continue;
+                }
+
+                // Wait for CoopMenu to be ready
+                var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeout);
+                if (menuWait?.Success != true)
+                {
+                    Log($"Wait for CoopMenu failed: {menuWait?.Error}");
+                    continue;
+                }
+
+                // Switch to JOIN tab (tab 0)
+                var tabResult = await _gameClient.Coop.Tab(0);
+                if (tabResult?.Success != true)
+                {
+                    Log($"Tab switch failed: {tabResult?.Error}");
+                    continue;
+                }
+
+                // Join via LAN address
+                var joinResult = await _gameClient.Coop.JoinLan(fullAddress);
+                if (joinResult?.Success != true)
+                {
+                    Log($"Join LAN failed: {joinResult?.Error}");
+                    continue;
+                }
+
+                Log($"LAN join initiated to {fullAddress}, waiting for farmhand selection...");
+
+                // Wait for farmhand selection screen
+                var farmhandTimeout = _options.FarmhandMenuTimeout ?? TestTimings.FarmhandMenuTimeout;
+                var farmhandWait = await _gameClient.Wait.ForFarmhands(farmhandTimeout);
+                if (farmhandWait?.Success != true)
+                {
+                    Log($"Wait for farmhands timed out after {farmhandTimeout.TotalMilliseconds}ms (attempt {attempt})");
+                    continue;
+                }
+
+                Log($"Farmhand menu appeared after {farmhandWait.WaitedMs}ms");
+
+                // Give the game time to load farmhand data
+                await Task.Delay(TestTimings.NetworkSyncDelay, cancellationToken);
+
+                // Get farmhand slots
+                var farmhands = await _gameClient.Farmhands.GetSlots();
+                if (farmhands?.Success != true)
+                {
+                    Log($"Get farmhands failed: {farmhands?.Error}");
+                    continue;
+                }
+
+                Log($"Successfully connected via LAN on attempt {attempt}, found {farmhands.Slots.Count} farmhand slots");
+                return ConnectionResult.Succeeded(attempt, farmhands);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var error = $"Attempt {attempt}: {ex.Message}";
+                Log($"Exception during LAN connection attempt {attempt}: {ex.Message}");
+                errors.Add(error);
+            }
+        }
+
+        var errorSummary = errors.Count > 0
+            ? string.Join("; ", errors)
+            : "Unknown failure";
+        return ConnectionResult.Failed($"All {_options.MaxAttempts} LAN connection attempts failed. Errors: {errorSummary}", _options.MaxAttempts);
     }
 
     /// <summary>
