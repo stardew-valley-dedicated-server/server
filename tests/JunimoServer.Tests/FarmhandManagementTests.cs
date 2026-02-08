@@ -1,3 +1,4 @@
+using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
@@ -81,22 +82,24 @@ public class FarmhandManagementTests : IntegrationTestBase
         // Disconnect so the farmhand is offline
         await DisconnectAsync();
 
-        // Wait for server to fully process the disconnection
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
-
-        // Delete the farmhand
+        // Delete the farmhand (poll until server processes disconnect)
         Log($"Deleting offline farmhand '{farmerName}'...");
-        var deleteResult = await ServerApi.DeleteFarmhand(farmerName);
-        Assert.NotNull(deleteResult);
-        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
-        Log($"Delete response: {deleteResult.Message}");
+        FarmhandOperationResponse? deleteResult = null;
+        var deleted = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            deleteResult = await ServerApi.DeleteFarmhand(farmerName);
+            return deleteResult?.Success == true;
+        }, TestTimings.FarmerDeleteTimeout);
+
+        Assert.True(deleted, $"Delete should succeed: {deleteResult?.Error ?? "timeout"}");
+        Log($"Delete response: {deleteResult?.Message}");
 
         // Verify the farmhand is gone
         var farmhands = await ServerApi.GetFarmhands();
         Assert.NotNull(farmhands);
-        var deleted = farmhands.Farmhands.FirstOrDefault(f =>
+        var stillExists = farmhands.Farmhands.FirstOrDefault(f =>
             f.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
-        Assert.Null(deleted);
+        Assert.Null(stillExists);
         Log($"Verified: farmhand '{farmerName}' no longer in list");
 
         // Remove from cleanup list since we already deleted it
@@ -128,7 +131,6 @@ public class FarmhandManagementTests : IntegrationTestBase
         var joinResult1 = await JoinWorldWithRetryAsync(farmerName1);
         AssertJoinSuccess(joinResult1);
         await DisconnectAsync();
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
         // Verify farmer1 exists
         var afterJoin = await ServerApi.GetFarmhands();
@@ -138,11 +140,15 @@ public class FarmhandManagementTests : IntegrationTestBase
         Assert.True(farmer1Exists, $"Farmer '{farmerName1}' should exist after joining");
         Log($"After first join: farmer '{farmerName1}' exists");
 
-        // Delete farmer1
+        // Delete farmer1 (poll until server processes disconnect)
         Log($"Deleting farmhand '{farmerName1}'...");
-        var deleteResult = await ServerApi.DeleteFarmhand(farmerName1);
-        Assert.NotNull(deleteResult);
-        Assert.True(deleteResult.Success, $"Delete should succeed: {deleteResult.Error}");
+        FarmhandOperationResponse? deleteResult = null;
+        var deleted = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            deleteResult = await ServerApi.DeleteFarmhand(farmerName1);
+            return deleteResult?.Success == true;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(deleted, $"Delete should succeed: {deleteResult?.Error ?? "timeout"}");
         CreatedFarmers.Remove(farmerName1);
 
         // Verify slot is available (uncustomized)

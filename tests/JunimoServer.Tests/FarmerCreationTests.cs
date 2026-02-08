@@ -35,19 +35,9 @@ public class FarmerCreationTests : IntegrationTestBase
         var favoriteThing = "Testing";
         TrackFarmer(farmerName);
 
-        Log($"Creating farmer with name: {farmerName}");
-
-        // Verify server is online
-        Assert.NotNull(ServerStatus);
-        Assert.True(ServerStatus.IsOnline, "Server should be online");
-        Assert.False(string.IsNullOrEmpty(InviteCode), "Server should have an invite code");
-        Log($"Server online with invite code: {InviteCode}");
-
         // Step 1: Connect to server with retry (handles "stuck connecting" issue)
-        LogSection("Connecting to server");
         var connectResult = await ConnectWithRetryAsync();
         AssertConnectionSuccess(connectResult);
-        Log($"Connected after {connectResult.AttemptsUsed} attempt(s)");
 
         await AssertNoExceptionsAsync("after connecting");
 
@@ -55,10 +45,8 @@ public class FarmerCreationTests : IntegrationTestBase
         var farmhands = connectResult.Farmhands!;
         var newSlot = farmhands.Slots.FirstOrDefault(s => !s.IsCustomized);
         Assert.NotNull(newSlot);
-        Log($"Found uncustomized slot at index {newSlot.Index}");
 
         // Step 3: Select the uncustomized farmhand slot
-        LogSection("Creating character");
         var selectResult = await GameClient.Farmhands.Select(newSlot.Index);
         Assert.NotNull(selectResult);
         Assert.True(selectResult.Success, $"Select farmhand failed: {selectResult.Error}");
@@ -67,7 +55,6 @@ public class FarmerCreationTests : IntegrationTestBase
         var charWait = await GameClient.Wait.ForCharacter(TestTimings.CharacterMenuTimeout);
         Assert.NotNull(charWait);
         Assert.True(charWait.Success, $"Wait for character menu failed: {charWait.Error}");
-        Log($"Character customization menu appeared after {charWait.WaitedMs}ms");
 
         await AssertNoExceptionsAsync("after opening character menu");
 
@@ -75,7 +62,6 @@ public class FarmerCreationTests : IntegrationTestBase
         var customizeResult = await GameClient.Character.Customize(farmerName, favoriteThing);
         Assert.NotNull(customizeResult);
         Assert.True(customizeResult.Success, $"Customize failed: {customizeResult.Error}");
-        Log($"Set character data - Name: {farmerName}, FavoriteThing: {favoriteThing}");
 
         // Wait for game to sync textbox values
         await Task.Delay(TestTimings.CharacterCreationSyncDelay);
@@ -84,23 +70,23 @@ public class FarmerCreationTests : IntegrationTestBase
         var confirmResult = await GameClient.Character.Confirm();
         Assert.NotNull(confirmResult);
         Assert.True(confirmResult.Success, $"Confirm failed: {confirmResult.Error}");
-        Log("Character confirmed");
 
         // Step 7: Wait for world to be ready
-        LogSection("Entering world");
         var worldWait = await GameClient.Wait.ForWorldReady(TestTimings.WorldReadyTimeout);
         Assert.NotNull(worldWait);
         Assert.True(worldWait.Success, $"Wait for world ready failed: {worldWait.Error}");
-        Log($"World ready after {worldWait.WaitedMs}ms");
 
-        // Wait for network sync
-        await Task.Delay(TestTimings.NetworkSyncDelay);
-        Log("Waited for network sync");
+        // Poll until game state confirms we're connected and in-game
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            var state = await GameClient.GetState();
+            return state?.IsConnected == true && state.IsInGame;
+        }, TestTimings.NetworkSyncTimeout);
 
+        Log($"Created farmer '{farmerName}'");
         await AssertNoExceptionsAsync("after entering world");
 
         // Step 8: Exit to title
-        LogSection("Disconnecting");
         var exitResult = await GameClient.Exit();
         Assert.NotNull(exitResult);
         Assert.True(exitResult.Success, $"Exit failed: {exitResult.Error}");
@@ -108,33 +94,27 @@ public class FarmerCreationTests : IntegrationTestBase
         var titleWait = await GameClient.Wait.ForTitle(TestTimings.TitleScreenTimeout);
         Assert.NotNull(titleWait);
         Assert.True(titleWait.Success, $"Wait for title failed: {titleWait.Error}");
-        Log($"Returned to title after {titleWait.WaitedMs}ms");
 
         // Wait for full disconnection
         await EnsureDisconnectedAsync();
-        Log("Fully disconnected, ready to reconnect");
-
         await AssertNoExceptionsAsync("after disconnecting");
 
         // Step 9: Reconnect with retry
-        LogSection("Reconnecting");
         var reconnectResult = await ConnectWithRetryAsync();
         AssertConnectionSuccess(reconnectResult);
-        Log($"Reconnected after {reconnectResult.AttemptsUsed} attempt(s)");
 
         // Step 10: Verify the farmer we created exists
-        LogSection("Verifying farmer");
         var reconnectFarmhands = reconnectResult.Farmhands!;
-        Log($"Found {reconnectFarmhands.Slots.Count} farmhand slots on reconnect:");
-        foreach (var slot in reconnectFarmhands.Slots)
+        if (VerboseLogging)
         {
-            Log($"  Slot {slot.Index}: Name='{slot.Name}', IsCustomized={slot.IsCustomized}, IsEmpty={slot.IsEmpty}");
+            LogDetail($"Farmhand slots ({reconnectFarmhands.Slots.Count}):");
+            foreach (var slot in reconnectFarmhands.Slots)
+                LogDetail($"  Slot {slot.Index}: '{slot.Name}' (customized: {slot.IsCustomized})");
         }
 
         var ourFarmer = reconnectFarmhands.Slots.FirstOrDefault(s => s.Name == farmerName && s.IsCustomized);
-
         Assert.NotNull(ourFarmer);
-        Log($"SUCCESS: Found our farmer '{farmerName}' at slot index {ourFarmer.Index}");
+        LogSuccess($"Farmer '{farmerName}' persisted at slot {ourFarmer.Index}");
 
         await AssertNoExceptionsAsync("at end of test");
     }
@@ -149,10 +129,6 @@ public class FarmerCreationTests : IntegrationTestBase
         // Ensure disconnected
         await EnsureDisconnectedAsync();
 
-        // Verify server is online
-        Assert.NotNull(ServerStatus);
-        Assert.True(ServerStatus.IsOnline, "Server should be online");
-
         // Connect with retry
         var connectResult = await ConnectWithRetryAsync();
         AssertConnectionSuccess(connectResult);
@@ -161,10 +137,11 @@ public class FarmerCreationTests : IntegrationTestBase
         Assert.NotNull(connectResult.Farmhands);
         Assert.NotEmpty(connectResult.Farmhands.Slots);
 
-        Log($"Found {connectResult.Farmhands.Slots.Count} farmhand slots (connected after {connectResult.AttemptsUsed} attempt(s))");
-        foreach (var slot in connectResult.Farmhands.Slots)
+        if (VerboseLogging)
         {
-            Log($"  Slot {slot.Index}: {slot.Name} (customized: {slot.IsCustomized}, empty: {slot.IsEmpty})");
+            LogDetail($"Farmhand slots ({connectResult.Farmhands.Slots.Count}):");
+            foreach (var slot in connectResult.Farmhands.Slots)
+                LogDetail($"  Slot {slot.Index}: '{slot.Name}' (customized: {slot.IsCustomized})");
         }
 
         await AssertNoExceptionsAsync("at end of test");
@@ -181,54 +158,15 @@ public class FarmerCreationTests : IntegrationTestBase
         var farmerName = GenerateFarmerName("Retry");
         TrackFarmer(farmerName);
 
-        Log($"Joining world with farmer: {farmerName}");
-
-        // This single call handles:
-        // - Connecting to server (with retry)
-        // - Selecting farmhand slot
-        // - Character creation (if needed)
-        // - Waiting for world ready
+        // This single call handles connecting, selecting slot, character creation, and world ready
         var joinResult = await JoinWorldWithRetryAsync(
             farmerName,
             favoriteThing: "RetryTesting",
             preferExistingFarmer: false);
 
         AssertJoinSuccess(joinResult);
-        Log($"Successfully joined world at slot {joinResult.SlotIndex} after {joinResult.AttemptsUsed} attempt(s)");
-
-        // Verify we're in the game
-        var status = await GameClient.GetMenu();
-        Log($"Current menu after join: {status?.Type ?? "none"}");
 
         await AssertNoExceptionsAsync("after joining world");
     }
 
-    /// <summary>
-    /// Test demonstrating how to temporarily suppress exception abort
-    /// for scenarios where exceptions are expected.
-    /// </summary>
-    [Fact]
-    public async Task ExceptionSuppression_CanBeTemporarilyDisabled()
-    {
-        await EnsureDisconnectedAsync();
-
-        // Connect normally
-        var connectResult = await ConnectWithRetryAsync();
-        AssertConnectionSuccess(connectResult);
-
-        // Temporarily suppress exception abort for a section where
-        // we might see expected errors (e.g., testing error handling)
-        using (SuppressExceptionAbort())
-        {
-            Log("Exception abort suppressed for this section");
-
-            // Even if exceptions occur here, they won't fail the test immediately
-            // (In a real scenario, you might trigger expected errors here)
-        }
-
-        Log("Exception abort re-enabled");
-
-        // Check for exceptions at the end (this will fail if there were any)
-        await AssertNoExceptionsAsync("at end of test");
-    }
 }

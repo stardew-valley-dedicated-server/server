@@ -1,5 +1,7 @@
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -12,13 +14,33 @@ namespace JunimoServer.Tests;
 ///
 /// Tests run with DISABLE_RENDERING=true (set in IntegrationTestFixture),
 /// so initial rendering state is OFF.
+///
+/// Uses ApiTestBase since these tests only need HTTP API access (no game client connection).
 /// </summary>
 [Collection("Integration")]
-public class RenderingTests : IntegrationTestBase
+public class RenderingTests : ApiTestBase
 {
     public RenderingTests(IntegrationTestFixture fixture, ITestOutputHelper output)
         : base(fixture, output)
     {
+    }
+
+    public override async Task InitializeAsync()
+    {
+        await base.InitializeAsync();
+
+        // Reset rendering to disabled state before each test.
+        // This ensures tests start with a known state, even if a previous test
+        // enabled rendering and then failed before cleanup could run.
+        try
+        {
+            await ServerApi.SetRendering(false);
+            await Task.Delay(TestTimings.RenderingToggleDelay);
+        }
+        catch (Exception ex)
+        {
+            LogWarning($"Failed to reset rendering state: {ex.Message}");
+        }
     }
 
     [Fact]
@@ -76,13 +98,6 @@ public class RenderingTests : IntegrationTestBase
     [Fact]
     public async Task ServerApi_SetRendering_Enable_ScreenShouldHaveContent()
     {
-        // Skip if no container available (local dev mode)
-        if (Fixture.ServerContainer == null)
-        {
-            Assert.Fail("Screenshot tests require a server container (not available in local dev mode)");
-            return;
-        }
-
         // Step 1: Ensure rendering is OFF, capture a "disabled" screenshot
         await ServerApi.SetRendering(false);
         await Task.Delay(TestTimings.RenderingToggleDelay); // Wait for frames to stop

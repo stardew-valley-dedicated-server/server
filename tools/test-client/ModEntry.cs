@@ -29,6 +29,7 @@ public class ModEntry : Mod
     // Tweaks
     private ConvenienceTweaks? _tweaks;
     private SkipIntro? _skipIntro;
+    private GodTool? _godTool;
 
     // Diagnostics
     private HealthWatchdog? _healthWatchdog;
@@ -55,6 +56,9 @@ public class ModEntry : Mod
         _skipIntro = new SkipIntro(Monitor);
         _skipIntro.Apply();
 
+        _godTool = new GodTool(helper, Monitor);
+        _godTool.Apply();
+
         // Apply Steam diagnostics patches
         ApplySteamDiagnostics(helper);
 
@@ -76,6 +80,10 @@ public class ModEntry : Mod
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.Specialized.UnvalidatedUpdateTicked += OnUpdateTicked;
         helper.Events.Display.Rendered += OnRendered;
+        helper.Events.Player.Warped += OnPlayerWarped;
+
+        // Extended spawn logging
+        helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
     }
 
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
@@ -496,12 +504,6 @@ public class ModEntry : Mod
                 "disconnected"
             );
 
-            // If successful, add stability delay for Galaxy SDK to fully clean up
-            if (result.Success)
-            {
-                Thread.Sleep(2000);
-            }
-
             return result;
         });
     }
@@ -819,6 +821,57 @@ public class ModEntry : Mod
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
         Monitor.Log($"Save loaded - Farmer: {StardewValley.Game1.player?.Name}", LogLevel.Trace);
+        LogSpawnInfo("SaveLoaded");
+
+        // Increase chat buffer size for testing (default is 10, which truncates long command outputs)
+        // TODO: Add pagination to server command output so commands with many lines don't overflow the chat buffer
+        if (Game1.chatBox != null)
+        {
+            Game1.chatBox.maxMessages = 20;
+            Monitor.Log("Increased chat buffer to 20 messages for testing", LogLevel.Trace);
+        }
+    }
+
+    private void OnPlayerWarped(object? sender, StardewModdingAPI.Events.WarpedEventArgs e)
+    {
+        if (e.IsLocalPlayer)
+        {
+            Monitor.Log($"[Spawn] Player warped: {e.OldLocation?.Name ?? "null"} -> {e.NewLocation?.Name ?? "null"}", LogLevel.Info);
+            LogSpawnInfo("AfterWarp");
+        }
+    }
+
+    private void OnPeerConnected(object? sender, StardewModdingAPI.Events.PeerConnectedEventArgs e)
+    {
+        Monitor.Log($"[Spawn] Peer connected: {e.Peer.PlayerID}", LogLevel.Info);
+        LogSpawnInfo("PeerConnected");
+    }
+
+    private void LogSpawnInfo(string context)
+    {
+        // Verbose spawn debugging - commented out to reduce log noise
+        // var player = Game1.player;
+        // if (player == null)
+        // {
+        //     Monitor.Log($"[Spawn:{context}] Player is null", LogLevel.Warn);
+        //     return;
+        // }
+        // Monitor.Log($"[Spawn:{context}] ========== SPAWN DEBUG INFO ==========", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] Player ID: {player.UniqueMultiplayerID}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] Player Name: {player.Name}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] isCustomized: {player.isCustomized.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] currentLocation: {player.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] Position: {player.Position}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] TileLocation: {player.Tile}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] homeLocation: {player.homeLocation.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] lastSleepLocation: {player.lastSleepLocation.Value ?? "null"}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] lastSleepPoint: {player.lastSleepPoint.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] sleptInTemporaryBed: {player.sleptInTemporaryBed.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] disconnectDay: {player.disconnectDay.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] disconnectLocation: {player.disconnectLocation.Value ?? "null"}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] disconnectPosition: {player.disconnectPosition.Value}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Alert);
+        // Monitor.Log($"[Spawn:{context}] ======================================", LogLevel.Alert);
     }
 
     #endregion
