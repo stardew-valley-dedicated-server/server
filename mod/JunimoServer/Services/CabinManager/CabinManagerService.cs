@@ -1,4 +1,5 @@
 using HarmonyLib;
+using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
@@ -61,6 +62,9 @@ namespace JunimoServer.Services.CabinManager
 
         public CabinManagerService(IModHelper helper, IMonitor monitor, Harmony harmony, RoleService roleService, MessageInterceptorsService messageInterceptorsService, PersistentOptions options) : base(helper, monitor)
         {
+            if (_instance != null)
+                throw new InvalidOperationException("CabinManagerService already initialized - only one instance allowed");
+
             _instance = this;
 
             this.roleService = roleService;
@@ -85,7 +89,7 @@ namespace JunimoServer.Services.CabinManager
                     .Add(Multiplayer.locationIntroduction, OnLocationIntroductionMessage)
                     .Add(Multiplayer.locationDelta, OnLocationDeltaMessage);
 
-                // Monitor farmhouse access — only owner can enter
+                // Monitor farmhouse access — only the server host can enter (no human players)
                 Helper.Events.GameLoop.UpdateTicked += OnTicked;
             }
 
@@ -329,7 +333,8 @@ namespace JunimoServer.Services.CabinManager
                 {
                     farmersInFarmhouse.Add(farmer.UniqueMultiplayerID);
 
-                    if (!roleService.IsPlayerOwner(farmer))
+                    // Block all human players from the farmhouse - it's reserved for the server host
+                    if (!roleService.IsServerHost(farmer))
                     {
                         Game1.Multiplayer.sendChatMessage(
                             LocalizedContentManager.CurrentLanguageCode,
@@ -355,10 +360,7 @@ namespace JunimoServer.Services.CabinManager
             var availableCount = GetAvailableCabinCount(farm);
             var cabinsMissingCount = minEmptyCabins - availableCount;
 
-            Monitor.Log($"Cabin check:", LogLevel.Debug);
-            Monitor.Log($"\tRequired: {minEmptyCabins}", LogLevel.Debug);
-            Monitor.Log($"\tAvailable: {availableCount}", LogLevel.Debug);
-            Monitor.Log($"\tMissing: {cabinsMissingCount}", LogLevel.Debug);
+            Monitor.Log($"Cabin check: {availableCount}/{minEmptyCabins} available, building {Math.Max(0, cabinsMissingCount)}", LogLevel.Debug);
 
             for (var i = 0; i < cabinsMissingCount; i++)
             {
@@ -379,11 +381,12 @@ namespace JunimoServer.Services.CabinManager
         /// Count available (unassigned) cabins, strategy-aware.
         /// A cabin is available if its owner has NOT been customized (isCustomized = false)
         /// and has no userID assigned. This matches how SyncExistingCabins determines claimed cabins.
+        /// Excludes lobby cabins which are managed separately by the password protection system.
         /// </summary>
         private int GetAvailableCabinCount(GameLocation farm)
         {
             return farm.buildings
-                .Where(b => b.isCabin)
+                .Where(b => b.isCabin && !LobbyService.IsLobbyCabin(b))
                 .Count(b => IsCabinAvailable(b));
         }
 
@@ -470,6 +473,16 @@ namespace JunimoServer.Services.CabinManager
             if (location.buildStructure(cabin, cabinTilePosition, Game1.player, true))
             {
                 cabin.ClearTerrainBelow();
+
+                // Create the farmhand entry in farmhandData - this is normally done by
+                // performActionOnConstruction but we're bypassing that for hidden cabins
+                var indoors = cabin.GetIndoors<Cabin>();
+                if (indoors != null && !indoors.HasOwner)
+                {
+                    indoors.CreateFarmhand();
+                    Monitor.Log($"Created farmhand for new cabin", LogLevel.Debug);
+                }
+
                 return true;
             }
 
@@ -500,6 +513,16 @@ namespace JunimoServer.Services.CabinManager
             if (location.buildStructure(cabin, position.Value, Game1.player, true))
             {
                 cabin.ClearTerrainBelow();
+
+                // Create the farmhand entry in farmhandData - this is normally done by
+                // performActionOnConstruction but we're bypassing that for programmatic builds
+                var indoors = cabin.GetIndoors<Cabin>();
+                if (indoors != null && !indoors.HasOwner)
+                {
+                    indoors.CreateFarmhand();
+                    Monitor.Log($"Created farmhand for new cabin", LogLevel.Debug);
+                }
+
                 Monitor.Log($"Built visible cabin at ({position.Value.X}, {position.Value.Y})", LogLevel.Info);
                 return true;
             }

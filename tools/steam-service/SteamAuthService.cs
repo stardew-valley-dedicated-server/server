@@ -606,8 +606,19 @@ public class SteamAuthService
 
     public async Task DownloadGameAsync(uint appId, string? targetDir = null)
     {
+        // Try to reconnect if we got disconnected (can happen during long downloads)
         if (!IsLoggedIn)
-            throw new Exception("Not logged in");
+        {
+            if (HasSavedSession())
+            {
+                Logger.Log("[Steam] Session lost, attempting to reconnect...");
+                await LoginWithSavedSessionAsync();
+            }
+            else
+            {
+                throw new Exception("Not logged in");
+            }
+        }
 
         const string targetOs = "linux";
         var downloadDir = targetDir ?? _gameDir;

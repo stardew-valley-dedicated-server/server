@@ -1,5 +1,8 @@
 using JunimoServer.Services.CabinManager;
+using JunimoServer.Services.Lobby;
+using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Services.PersistentOption;
+using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Services.Settings;
 using JunimoServer.Util;
@@ -13,6 +16,7 @@ using StardewValley.Buildings;
 using StardewValley.Locations;
 using StardewValley.SDKs.GogGalaxy;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -203,6 +207,27 @@ namespace JunimoServer.Services.Api
     }
 
     /// <summary>
+    /// Response from role grant operation.
+    /// </summary>
+    public class RoleGrantResponse
+    {
+        /// <summary>Whether the operation succeeded.</summary>
+        public bool Success { get; set; }
+
+        /// <summary>The player's unique multiplayer ID.</summary>
+        public long PlayerId { get; set; }
+
+        /// <summary>The player's display name.</summary>
+        public string? PlayerName { get; set; }
+
+        /// <summary>Message describing the result.</summary>
+        public string? Message { get; set; }
+
+        /// <summary>Error message if operation failed.</summary>
+        public string? Error { get; set; }
+    }
+
+    /// <summary>
     /// Current server settings (from server-settings.json).
     /// </summary>
     public class SettingsResponse
@@ -285,8 +310,14 @@ namespace JunimoServer.Services.Api
         /// <summary>Tile Y position on the farm.</summary>
         public int TileY { get; set; }
 
-        /// <summary>Whether the cabin is at the hidden out-of-bounds location.</summary>
+        /// <summary>Whether the cabin is at a hidden off-map location.</summary>
         public bool IsHidden { get; set; }
+
+        /// <summary>
+        /// The cabin type indicating its purpose/management mode.
+        /// Values: "Normal", "CabinStack", "FarmhouseStack", "Lobby"
+        /// </summary>
+        public string Type { get; set; } = "Normal";
 
         /// <summary>Owner's multiplayer ID (0 if unassigned).</summary>
         public long OwnerId { get; set; }
@@ -296,6 +327,27 @@ namespace JunimoServer.Services.Api
 
         /// <summary>Whether the cabin has an assigned owner.</summary>
         public bool IsAssigned { get; set; }
+    }
+
+    /// <summary>
+    /// Authentication/password protection status.
+    /// </summary>
+    public class AuthStatusResponse
+    {
+        /// <summary>Whether password protection is enabled on the server.</summary>
+        public bool Enabled { get; set; }
+
+        /// <summary>Number of players currently authenticated.</summary>
+        public int AuthenticatedCount { get; set; }
+
+        /// <summary>Number of players waiting to authenticate (in lobby).</summary>
+        public int PendingCount { get; set; }
+
+        /// <summary>Authentication timeout in seconds (0 = disabled).</summary>
+        public int TimeoutSeconds { get; set; }
+
+        /// <summary>Maximum failed login attempts before kick.</summary>
+        public int MaxAttempts { get; set; }
     }
 
     #endregion
@@ -314,11 +366,21 @@ namespace JunimoServer.Services.Api
         private readonly ServerSettingsLoader _settings;
         private readonly PersistentOptions _persistentOptions;
         private readonly CabinManagerService _cabinManager;
+        private readonly RoleService _roleService;
+        private readonly PasswordProtectionService? _passwordProtectionService;
 
         // WebSocket client management
         private readonly List<WebSocket> _wsClients = new();
         private readonly object _wsLock = new();
         private Timer? _wsCleanupTimer;
+
+        /// <summary>
+        /// Queue of actions to execute on the main game thread.
+        /// Used for game state modifications that would cause collection modification errors
+        /// if executed from the async HTTP thread (e.g., removing buildings during draw).
+        /// Each action includes a TaskCompletionSource to signal completion back to the caller.
+        /// </summary>
+        private readonly ConcurrentQueue<(Action Action, TaskCompletionSource<bool> Completion)> _pendingGameActions = new();
 
         /// <summary>
         /// Event fired when a chat message is received from a WebSocket client (e.g., Discord bot).
@@ -332,11 +394,13 @@ namespace JunimoServer.Services.Api
             NullValueHandling = NullValueHandling.Ignore
         };
 
-        public ApiService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, PersistentOptions persistentOptions, CabinManagerService cabinManager) : base(helper, monitor)
+        public ApiService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, PersistentOptions persistentOptions, CabinManagerService cabinManager, RoleService roleService, PasswordProtectionService? passwordProtectionService = null) : base(helper, monitor)
         {
             _settings = settings;
             _persistentOptions = persistentOptions;
             _cabinManager = cabinManager;
+            _roleService = roleService;
+            _passwordProtectionService = passwordProtectionService;
         }
 
         public override void Entry()
@@ -348,6 +412,40 @@ namespace JunimoServer.Services.Api
             }
 
             Helper.Events.GameLoop.GameLaunched += OnGameLaunched;
+            Helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        }
+
+        private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
+        {
+            // Process pending game actions on the main thread
+            while (_pendingGameActions.TryDequeue(out var item))
+            {
+                try
+                {
+                    item.Action();
+                    item.Completion.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    Monitor.Log($"Error executing pending game action: {ex}", LogLevel.Error);
+                    item.Completion.TrySetException(ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Queues an action to run on the main game thread and waits for it to complete.
+        /// Use this for game state modifications from async HTTP handlers.
+        /// </summary>
+        private async Task RunOnGameThreadAsync(Action action, int timeoutMs = 5000)
+        {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingGameActions.Enqueue((action, tcs));
+
+            using var cts = new CancellationTokenSource(timeoutMs);
+            using var registration = cts.Token.Register(() => tcs.TrySetCanceled());
+
+            await tcs.Task.ConfigureAwait(false);
         }
 
         private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
@@ -463,6 +561,9 @@ namespace JunimoServer.Services.Api
                         case "/rendering":
                             await WriteJsonAsync(response, HandleGetRendering());
                             break;
+                        case "/auth":
+                            await WriteJsonAsync(response, HandleGetAuthStatus());
+                            break;
                         case "/swagger/v1/swagger.json":
                             await WriteJsonRawAsync(response, _openApiSpec ?? "{}");
                             break;
@@ -487,6 +588,10 @@ namespace JunimoServer.Services.Api
                             var timeParam = request.QueryString["value"];
                             await WriteJsonAsync(response, HandlePostTime(timeParam));
                             break;
+                        case "/roles/admin":
+                            var adminNameParam = request.QueryString["name"];
+                            await WriteJsonAsync(response, HandlePostGrantAdmin(adminNameParam));
+                            break;
                         default:
                             response.StatusCode = 404;
                             await WriteJsonAsync(response, new { error = "Not found" });
@@ -499,7 +604,7 @@ namespace JunimoServer.Services.Api
                     {
                         case "/farmhands":
                             var nameParam = request.QueryString["name"];
-                            await WriteJsonAsync(response, HandleDeleteFarmhand(nameParam));
+                            await WriteJsonAsync(response, await HandleDeleteFarmhandAsync(nameParam));
                             break;
                         default:
                             response.StatusCode = 404;
@@ -653,7 +758,11 @@ namespace JunimoServer.Services.Api
                                 !string.IsNullOrWhiteSpace(chatPayload.Author) &&
                                 !string.IsNullOrWhiteSpace(chatPayload.Message))
                             {
-                                OnExternalChatMessage?.Invoke(chatPayload.Author, chatPayload.Message);
+                                // Queue on game thread - SendPublicMessage iterates Game1.otherFarmers
+                                // which could throw if a player connects/disconnects during iteration
+                                var author = chatPayload.Author;
+                                var message = chatPayload.Message;
+                                await RunOnGameThreadAsync(() => OnExternalChatMessage?.Invoke(author, message));
                             }
                         }
                         break;
@@ -956,6 +1065,8 @@ namespace JunimoServer.Services.Api
                 var farm = Game1.getFarm();
                 var cabinBuildings = farm.buildings.Where(b => b.isCabin).ToList();
 
+                var strategy = _persistentOptions.Data.CabinStrategy;
+
                 foreach (var building in cabinBuildings)
                 {
                     var cabin = building.GetIndoors<Cabin>();
@@ -963,11 +1074,36 @@ namespace JunimoServer.Services.Api
                     var ownerName = cabin?.owner?.Name ?? "";
                     var isAssigned = ownerId != 0 && cabin?.owner?.isCustomized.Value == true;
 
+                    // IsHidden: true if at any hidden off-map location (cabin stack or lobby)
+                    var isInCabinStack = building.IsInHiddenStack();
+                    var isLobby = LobbyService.IsLobbyCabin(building);
+                    var isHidden = isInCabinStack || isLobby;
+
+                    // Type: determined by location and strategy
+                    string cabinType;
+                    if (isLobby)
+                    {
+                        cabinType = "Lobby";
+                    }
+                    else if (strategy == CabinStrategy.FarmhouseStack)
+                    {
+                        cabinType = "FarmhouseStack";
+                    }
+                    else if (strategy == CabinStrategy.CabinStack)
+                    {
+                        cabinType = "CabinStack";
+                    }
+                    else
+                    {
+                        cabinType = "Normal";
+                    }
+
                     result.Cabins.Add(new CabinInfo
                     {
                         TileX = building.tileX.Value,
                         TileY = building.tileY.Value,
-                        IsHidden = building.IsInHiddenStack(),
+                        IsHidden = isHidden,
+                        Type = cabinType,
                         OwnerId = ownerId,
                         OwnerName = ownerName,
                         IsAssigned = isAssigned
@@ -993,6 +1129,51 @@ namespace JunimoServer.Services.Api
             return new RenderingStatus
             {
                 Enabled = ServerOptimizerOverrides.IsRenderingEnabled()
+            };
+        }
+
+        [ApiEndpoint("GET", "/auth", Summary = "Get authentication/password protection status", Tag = "Auth")]
+        [ApiResponse(typeof(AuthStatusResponse), 200, Description = "Authentication status")]
+        private AuthStatusResponse HandleGetAuthStatus()
+        {
+            if (_passwordProtectionService == null || !_passwordProtectionService.IsEnabled)
+            {
+                return new AuthStatusResponse
+                {
+                    Enabled = false,
+                    AuthenticatedCount = 0,
+                    PendingCount = 0,
+                    TimeoutSeconds = 0,
+                    MaxAttempts = 0
+                };
+            }
+
+            // Count authenticated and pending players
+            int authenticatedCount = 0;
+            int pendingCount = 0;
+
+            if (Game1.gameMode == 3 && Game1.IsServer)
+            {
+                foreach (var farmer in Game1.getOnlineFarmers())
+                {
+                    // Skip the host
+                    if (farmer.UniqueMultiplayerID == Game1.player?.UniqueMultiplayerID)
+                        continue;
+
+                    if (_passwordProtectionService.IsPlayerAuthenticated(farmer.UniqueMultiplayerID))
+                        authenticatedCount++;
+                    else
+                        pendingCount++;
+                }
+            }
+
+            return new AuthStatusResponse
+            {
+                Enabled = true,
+                AuthenticatedCount = authenticatedCount,
+                PendingCount = pendingCount,
+                TimeoutSeconds = _passwordProtectionService.AuthTimeoutSeconds,
+                MaxAttempts = _passwordProtectionService.MaxFailedAttempts
             };
         }
 
@@ -1075,9 +1256,52 @@ namespace JunimoServer.Services.Api
             };
         }
 
+        [ApiEndpoint("POST", "/roles/admin", Summary = "Grant admin role to a player", Tag = "Roles")]
+        [ApiResponse(typeof(RoleGrantResponse), 200, Description = "Admin granted")]
+        private RoleGrantResponse HandlePostGrantAdmin(string? name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return new RoleGrantResponse
+                {
+                    Success = false,
+                    Error = "Missing 'name' query parameter"
+                };
+            }
+
+            if (Game1.gameMode != 3 || !Game1.IsServer)
+            {
+                return new RoleGrantResponse { Success = false, Error = "Server not ready" };
+            }
+
+            // Find the farmer by name
+            var farmer = Game1.getAllFarmers().FirstOrDefault(f =>
+                string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            if (farmer == null)
+            {
+                return new RoleGrantResponse
+                {
+                    Success = false,
+                    Error = $"Player '{name}' not found"
+                };
+            }
+
+            _roleService.AssignAdmin(farmer.UniqueMultiplayerID);
+            Monitor.Log($"Admin role granted to '{farmer.Name}' (ID: {farmer.UniqueMultiplayerID}) via API", LogLevel.Info);
+
+            return new RoleGrantResponse
+            {
+                Success = true,
+                PlayerId = farmer.UniqueMultiplayerID,
+                PlayerName = farmer.Name,
+                Message = $"Admin role granted to '{farmer.Name}'"
+            };
+        }
+
         [ApiEndpoint("DELETE", "/farmhands", Summary = "Delete a farmhand by name", Tag = "Farmhands")]
         [ApiResponse(typeof(FarmhandResponse), 200, Description = "Farmhand deleted")]
-        private FarmhandResponse HandleDeleteFarmhand(string? name)
+        private async Task<FarmhandResponse> HandleDeleteFarmhandAsync(string? name)
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -1089,9 +1313,14 @@ namespace JunimoServer.Services.Api
                 return new FarmhandResponse { Success = false, Error = "Server not ready" };
             }
 
+            if (Game1.game1.IsSaving)
+            {
+                return new FarmhandResponse { Success = false, Error = "Cannot delete farmhand while save is in progress" };
+            }
+
             try
             {
-                // Find the farmhand by name
+                // Find the farmhand by name (must do this while farmhand still exists in farmhandData)
                 Farmer? targetFarmhand = null;
                 foreach (var farmer in Game1.getAllFarmhands())
                 {
@@ -1114,42 +1343,12 @@ namespace JunimoServer.Services.Api
                 }
 
                 var farmhandId = targetFarmhand.UniqueMultiplayerID;
+                var farmhandName = name; // Capture for closure
 
-                // Find and remove the cabin owned by this farmhand
-                var farm = Game1.getFarm();
-                Building? cabinToRemove = null;
-                foreach (var building in farm.buildings)
-                {
-                    if (!building.isCabin) continue;
-
-                    var cabin = building.GetIndoors<Cabin>();
-                    if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
-                    {
-                        cabinToRemove = building;
-                        break;
-                    }
-                }
-
-                // Remove the cabin building entirely
-                if (cabinToRemove != null)
-                {
-                    farm.buildings.Remove(cabinToRemove);
-                    Monitor.Log($"Removed cabin building for farmhand '{name}'", LogLevel.Debug);
-                }
-
-                // Remove from farmhandData so the slot no longer appears to clients
-                if (Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(farmhandId))
-                {
-                    Game1.netWorldState.Value.farmhandData.FieldDict.Remove(farmhandId);
-                    Monitor.Log($"Removed farmhand from farmhandData", LogLevel.Debug);
-                }
-
-                // Remove from cabin manager tracking
-                if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
-                {
-                    _cabinManager.Data.Write();
-                    Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
-                }
+                // Execute the deletion on the main game thread and wait for it to complete.
+                // This prevents "Collection was modified" errors when the game's draw loop
+                // is iterating over farm.buildings while we try to remove a cabin.
+                await RunOnGameThreadAsync(() => ExecuteFarmhandDeletion(farmhandId, farmhandName));
 
                 Monitor.Log($"Deleted farmhand '{name}' (ID: {farmhandId})", LogLevel.Info);
 
@@ -1159,11 +1358,77 @@ namespace JunimoServer.Services.Api
                     Message = $"Farmhand '{name}' deleted successfully"
                 };
             }
+            catch (TaskCanceledException)
+            {
+                Monitor.Log($"Farmhand deletion timed out for '{name}'", LogLevel.Error);
+                return new FarmhandResponse { Success = false, Error = "Deletion timed out" };
+            }
             catch (Exception ex)
             {
                 Monitor.Log($"Error deleting farmhand: {ex}", LogLevel.Error);
                 return new FarmhandResponse { Success = false, Error = ex.Message };
             }
+        }
+
+        /// <summary>
+        /// Executes the actual farmhand deletion on the main game thread.
+        /// Called via RunOnGameThreadAsync from HandleDeleteFarmhandAsync.
+        /// Exceptions are propagated back to the caller via the TaskCompletionSource.
+        /// </summary>
+        private void ExecuteFarmhandDeletion(long farmhandId, string farmhandName)
+        {
+            var farm = Game1.getFarm();
+
+            // Find the cabin (farmhand may already be gone from farmhandData if deletion was queued multiple times)
+            Cabin? targetCabin = null;
+            Building? cabinBuilding = null;
+            foreach (var building in farm.buildings)
+            {
+                if (!building.isCabin) continue;
+
+                var cabin = building.GetIndoors<Cabin>();
+                if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
+                {
+                    targetCabin = cabin;
+                    cabinBuilding = building;
+                    break;
+                }
+            }
+
+            // Use the game's proper deletion API - this handles farmhandData cleanup correctly
+            if (targetCabin != null)
+            {
+                targetCabin.DeleteFarmhand();  // Removes from farmhandData + clears farmhandReference
+                Monitor.Log($"Deleted farmhand via Cabin.DeleteFarmhand()", LogLevel.Debug);
+
+                // Remove the cabin building (safe now - we're on the main thread)
+                farm.buildings.Remove(cabinBuilding);
+                Monitor.Log($"Removed cabin building for farmhand '{farmhandName}'", LogLevel.Debug);
+            }
+            else
+            {
+                // Fallback: farmhand exists but no cabin found - just remove from farmhandData
+                if (Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(farmhandId))
+                {
+                    Monitor.Log($"No cabin found for farmhand '{farmhandName}', removing from farmhandData directly", LogLevel.Warn);
+                    Game1.netWorldState.Value.farmhandData.FieldDict.Remove(farmhandId);
+                }
+                else
+                {
+                    Monitor.Log($"Farmhand '{farmhandName}' already deleted (no cabin or farmhandData found)", LogLevel.Debug);
+                    return;
+                }
+            }
+
+            // Remove from cabin manager tracking
+            if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
+            {
+                _cabinManager.Data.Write();
+                Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
+            }
+
+            // Let cabin management create a fresh cabin with a new farmhand
+            _cabinManager.EnsureAtLeastXCabins();
         }
 
         #endregion

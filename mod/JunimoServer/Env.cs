@@ -21,9 +21,6 @@ namespace JunimoServer
         public static readonly bool ForceNewDebugGame =
             bool.Parse(Environment.GetEnvironmentVariable("FORCE_NEW_DEBUG_GAME") ?? "false");
 
-        public static readonly bool HasServerBypassCommandLineArg =
-            Environment.GetCommandLineArgs().Any("--client".Contains);
-
         /// <summary>
         /// Enable the HTTP API server for external tools and automated testing.
         /// Default: true
@@ -44,6 +41,32 @@ namespace JunimoServer
         /// Set to "true" or "false" to override.
         /// </summary>
         public static readonly bool? VerboseLogging = ParseNullableBool("VERBOSE_LOGGING");
+
+        #region Password Protection
+
+        /// <summary>
+        /// Server password for player authentication.
+        /// Leave empty to disable password protection.
+        /// </summary>
+        public static readonly string ServerPassword =
+            Environment.GetEnvironmentVariable("SERVER_PASSWORD") ?? "";
+
+        /// <summary>
+        /// Maximum failed login attempts before kicking the player.
+        /// Default: 3
+        /// </summary>
+        public static readonly int MaxLoginAttempts =
+            Int32.Parse(Environment.GetEnvironmentVariable("MAX_LOGIN_ATTEMPTS") ?? "3");
+
+        /// <summary>
+        /// Seconds before unauthenticated players are kicked.
+        /// Set to 0 to disable timeout.
+        /// Default: 120
+        /// </summary>
+        public static readonly int AuthTimeoutSeconds =
+            Int32.Parse(Environment.GetEnvironmentVariable("AUTH_TIMEOUT_SECONDS") ?? "120");
+
+        #endregion
 
         private static bool? ParseNullableBool(string envVar)
         {

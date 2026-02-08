@@ -166,15 +166,15 @@ namespace JunimoServer.Services.ServerOptim
                 ServerOptimizerOverrides.EnableDrawing();
             }
 
+            _monitor.Log($"[ServerOptimizer] Running garbage collection...", LogLevel.Debug);
             var before = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
-            _monitor.Log($"Running GC", LogLevel.Info);
             GC.Collect(generation: 0, GCCollectionMode.Forced, blocking: true);
             GC.Collect(generation: 1, GCCollectionMode.Forced, blocking: true);
             GC.Collect(generation: 2, GCCollectionMode.Forced, blocking: true);
             var after = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
             var beforeFormatted = Strings.Format(before / 1024.0, "0.00") + " GB";
             var afterFormatted = Strings.Format(after / 1024.0, "0.00") + " GB";
-            _monitor.Log($"Ran GC {beforeFormatted} -> {afterFormatted}", LogLevel.Info);
+            _monitor.Log($"[ServerOptimizer] Garbage collection complete. Before: {beforeFormatted} After: {afterFormatted}", LogLevel.Debug);
         }
 
         private void OnDayStarted(object sender, DayStartedEventArgs e)

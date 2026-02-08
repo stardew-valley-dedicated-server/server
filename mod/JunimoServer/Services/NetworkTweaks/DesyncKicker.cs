@@ -85,7 +85,9 @@ namespace JunimoServer.Services.NetworkTweaks
                 _monitor.Log("still stuck in barrier, going to try kicking");
 
                 var readyPlayers = _helper.Reflection.GetMethod(Game1.newDaySync, "barrierPlayers").Invoke<HashSet<long>>("sleep");
-                foreach (var key in (IEnumerable<long>)Game1.otherFarmers.Keys)
+                // Use ToArray() to create snapshot - avoids collection modified exception
+                // if a player disconnects during iteration
+                foreach (var key in Game1.otherFarmers.Keys.ToArray())
                 {
                     if (!readyPlayers.Contains(key))
                     {

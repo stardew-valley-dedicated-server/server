@@ -5,7 +5,7 @@
 		<Version>1.4.1</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
-		<EnableModDeploy>true</EnableModDeploy>
+		<EnableModDeploy>false</EnableModDeploy>
 		<EnableModZip>false</EnableModZip>
 		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
         <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
