@@ -32,9 +32,9 @@ namespace JunimoServer.Services.Commands
                     return;
                 }
 
-                if (targetFarmer.UniqueMultiplayerID == helper.GetOwnerPlayerId())
+                if (targetFarmer.UniqueMultiplayerID == helper.GetServerHostId())
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't kick the owner of the server.");
+                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't kick the server host.");
                     return;
                 }
 

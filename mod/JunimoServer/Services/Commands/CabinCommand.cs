@@ -1,7 +1,6 @@
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.PersistentOption;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -23,7 +22,7 @@ namespace JunimoServer.Services.Commands
             "Beach Cabin"
         };
 
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleSerivce, CabinManagerService cabinService, PersistentOptions options)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, CabinManagerService cabinService, PersistentOptions options)
         {
             chatCommandsService.RegisterCommand("cabin",
                 "Manage your cabin. Usage:\n  !cabin here - Move cabin to your location\n  !cabin hide - Move cabin back to hidden stack\n  !cabin style [0-6] - Change cabin style (0=Stone, 1=Log, 2=Plank, 3=Rustic, 4=Trailer, 5=Neighbor, 6=Beach)",
@@ -36,12 +35,6 @@ namespace JunimoServer.Services.Commands
                     }
 
                     var farmer = Game1.GetPlayer(msg.SourceFarmer);
-
-                    if (roleSerivce.IsPlayerOwner(farmer))
-                    {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Can't modify cabin as primary admin. (Your cabin is the farmhouse)");
-                        return;
-                    }
 
                     var cabin = Game1.getFarm().GetCabin(msg.SourceFarmer);
 
