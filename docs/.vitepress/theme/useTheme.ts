@@ -61,7 +61,17 @@ export function useTheme() {
 
     function initTheme() {
         const themeId = loadTheme();
-        setTheme(themeId);
+        // Update the reactive ref to match what the inline script already applied
+        currentThemeId.value = themeId;
+        // Only re-apply if necessary (the inline script in head already applied it)
+        // This just ensures the Vue state is in sync
+        const theme = themes.find((t) => t.id === themeId);
+        if (theme) {
+            // Dispatch event for any listeners, but CSS vars are already set
+            window.dispatchEvent(new CustomEvent("theme-changed", {
+                detail: { theme }
+            }));
+        }
     }
 
     return {

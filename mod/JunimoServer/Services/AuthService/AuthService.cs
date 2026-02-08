@@ -157,6 +157,9 @@ namespace JunimoServer.Services.Auth
             Harmony harmony,
             SteamGameServerService steamGameServerService)  // Dependency ensures correct init order
         {
+            if (_instance != null)
+                throw new InvalidOperationException("AuthService already initialized - only one instance allowed");
+
             // Set instance variables for use in static harmony patches
             _instance = this;
             _monitor = monitor;

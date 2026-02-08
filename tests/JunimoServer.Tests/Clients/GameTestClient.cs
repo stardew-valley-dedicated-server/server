@@ -183,6 +183,127 @@ public class SleepResult
     public string? Error { get; set; }
 }
 
+public class ChatResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+public class ChatMessage
+{
+    /// <summary>
+    /// The text content of the message.
+    /// Note: Named "text" in JSON to match test-client's ChatMessageInfo.Text property.
+    /// </summary>
+    [JsonPropertyName("text")]
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The color of the message as a hex string (e.g., "#FFFFFF").
+    /// </summary>
+    [JsonPropertyName("colorHex")]
+    public string ColorHex { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The alpha/opacity of the message.
+    /// </summary>
+    [JsonPropertyName("alpha")]
+    public float Alpha { get; set; }
+}
+
+public class ChatHistoryResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("messages")]
+    public List<ChatMessage> Messages { get; set; } = new();
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+public class GameStateResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("location")]
+    public string Location { get; set; } = string.Empty;
+
+    [JsonPropertyName("isConnected")]
+    public bool IsConnected { get; set; }
+
+    [JsonPropertyName("isInGame")]
+    public bool IsInGame { get; set; }
+
+    [JsonPropertyName("playerName")]
+    public string? PlayerName { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Response from /status endpoint containing menu, connection, and farmer info.
+/// </summary>
+public class StatusResponse
+{
+    [JsonPropertyName("menu")]
+    public MenuInfo? Menu { get; set; }
+
+    [JsonPropertyName("connection")]
+    public ConnectionStatusInfo? Connection { get; set; }
+
+    [JsonPropertyName("farmer")]
+    public FarmerInfoResponse? Farmer { get; set; }
+
+    [JsonPropertyName("timestamp")]
+    public long Timestamp { get; set; }
+}
+
+public class ConnectionStatusInfo
+{
+    [JsonPropertyName("isMultiplayer")]
+    public bool IsMultiplayer { get; set; }
+
+    [JsonPropertyName("isClient")]
+    public bool IsClient { get; set; }
+
+    [JsonPropertyName("isServer")]
+    public bool IsServer { get; set; }
+
+    [JsonPropertyName("isConnected")]
+    public bool IsConnected { get; set; }
+
+    [JsonPropertyName("worldReady")]
+    public bool WorldReady { get; set; }
+
+    [JsonPropertyName("hasLoadedGame")]
+    public bool HasLoadedGame { get; set; }
+}
+
+public class FarmerInfoResponse
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("farmName")]
+    public string FarmName { get; set; } = string.Empty;
+
+    [JsonPropertyName("currentLocation")]
+    public string? CurrentLocation { get; set; }
+
+    [JsonPropertyName("uniqueId")]
+    public string UniqueId { get; set; } = string.Empty;
+}
+
 #endregion
 
 #region Sub-Clients
@@ -319,6 +440,72 @@ public class ActionsClient
     }
 }
 
+public class ChatClient
+{
+    private readonly GameTestClient _client;
+
+    public ChatClient(GameTestClient client)
+    {
+        _client = client;
+    }
+
+    /// <summary>
+    /// Send a chat message to all players.
+    /// POST /chat/send
+    /// </summary>
+    public Task<ChatResult?> Send(string message)
+    {
+        return _client.PostAsync<ChatResult>("/chat/send", new { message });
+    }
+
+    /// <summary>
+    /// Get recent chat messages.
+    /// GET /chat/history
+    /// </summary>
+    public Task<ChatHistoryResult?> GetHistory(int count = 10)
+    {
+        return _client.GetAsync<ChatHistoryResult>($"/chat/history?count={count}");
+    }
+
+    /// <summary>
+    /// Wait for a chat message containing any of the specified keywords (case-insensitive).
+    /// Polls until a matching message is found or timeout expires.
+    /// </summary>
+    /// <param name="keywords">Keywords to search for (any match succeeds)</param>
+    /// <param name="timeout">Maximum time to wait</param>
+    /// <param name="historySize">Number of recent messages to check</param>
+    /// <returns>The chat history containing the matching message, or null if timed out</returns>
+    public async Task<ChatHistoryResult?> WaitForMessageContainingAsync(
+        string[] keywords,
+        TimeSpan? timeout = null,
+        int historySize = 10)
+    {
+        var effectiveTimeout = timeout ?? Helpers.TestTimings.ChatCommandTimeout;
+        ChatHistoryResult? result = null;
+
+        var found = await Helpers.PollingHelper.WaitUntilAsync(async () =>
+        {
+            result = await GetHistory(historySize);
+            return result?.Messages?.Any(m =>
+                keywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))) == true;
+        }, effectiveTimeout);
+
+        return found ? result : null;
+    }
+
+    /// <summary>
+    /// Wait for a chat message containing the specified keyword (case-insensitive).
+    /// Polls until a matching message is found or timeout expires.
+    /// </summary>
+    public Task<ChatHistoryResult?> WaitForMessageContainingAsync(
+        string keyword,
+        TimeSpan? timeout = null,
+        int historySize = 10)
+    {
+        return WaitForMessageContainingAsync(new[] { keyword }, timeout, historySize);
+    }
+}
+
 public class WaitClient
 {
     private readonly GameTestClient _client;
@@ -422,6 +609,7 @@ public class GameTestClient : IDisposable
     public CharacterClient Character { get; }
     public ActionsClient Actions { get; }
     public WaitClient Wait { get; }
+    public ChatClient Chat { get; }
 
     /// <summary>
     /// Sets the cancellation token that will abort HTTP calls when a server error is detected.
@@ -444,6 +632,7 @@ public class GameTestClient : IDisposable
         Character = new CharacterClient(this);
         Actions = new ActionsClient(this);
         Wait = new WaitClient(this, defaultWaitTimeout);
+        Chat = new ChatClient(this);
     }
 
     /// <summary>
@@ -487,6 +676,43 @@ public class GameTestClient : IDisposable
 
         var path = query.Count > 0 ? $"/errors?{string.Join("&", query)}" : "/errors";
         return GetAsync<ErrorsResponse>(path);
+    }
+
+    /// <summary>
+    /// Send a chat message to all players.
+    /// POST /chat/send
+    /// </summary>
+    public Task<ChatResult?> SendChat(string message)
+    {
+        return PostAsync<ChatResult>("/chat/send", new { message });
+    }
+
+    /// <summary>
+    /// Get recent chat messages.
+    /// GET /chat/history
+    /// </summary>
+    public Task<ChatHistoryResult?> GetChatHistory(int count = 10)
+    {
+        return GetAsync<ChatHistoryResult>($"/chat/history?count={count}");
+    }
+
+    /// <summary>
+    /// Get current game state (location, connection status, etc.).
+    /// Uses GET /status and transforms the response.
+    /// </summary>
+    public async Task<GameStateResult?> GetState()
+    {
+        var status = await GetAsync<StatusResponse>("/status");
+        if (status == null) return null;
+
+        return new GameStateResult
+        {
+            Success = true,
+            Location = status.Farmer?.CurrentLocation ?? string.Empty,
+            IsConnected = status.Connection?.IsConnected ?? false,
+            IsInGame = status.Connection?.WorldReady ?? false,
+            PlayerName = status.Farmer?.Name
+        };
     }
 
     /// <summary>

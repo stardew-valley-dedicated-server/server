@@ -32,9 +32,9 @@ namespace JunimoServer.Services.Commands
                     return;
                 }
 
-                if (roleService.IsPlayerOwner(targetFarmer.UniqueMultiplayerID))
+                if (roleService.IsServerHost(targetFarmer.UniqueMultiplayerID))
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't ban the owner of the server.");
+                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't ban the server host.");
                     return;
                 }
 

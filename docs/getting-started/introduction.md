@@ -18,12 +18,13 @@ The server works on Linux, macOS, and Windows. Most people run it on a Linux VPS
 
 ## Features
 
-- **Always-on hosting** - The farm runs continuously without needing anyone to keep the game open
-- **Web-based management** - Control the server through a VNC interface in your browser
-- **Automatic backups** - SMAPI's backup system keeps your save files safe
-- **Docker volumes** - Farm data persists across container restarts and updates
-- **Mod support** - Install SMAPI mods just like you would in single-player
-- **Configurable** - Adjust game settings, player limits, and server behavior
+- **Always-on hosting** — The farm runs continuously without needing anyone to keep the game open
+- **Web-based management** — Control the server through a VNC interface in your browser
+- **Password protection** — Secure your farm with customizable lobby cabins where players authenticate before entering
+- **Automatic backups** — SMAPI's backup system keeps your save files safe
+- **Docker volumes** — Farm data persists across container restarts and updates
+- **Mod support** — Install SMAPI mods just like you would in single-player
+- **Configurable** — Adjust game settings, player limits, and server behavior
 
 ## Next steps
 

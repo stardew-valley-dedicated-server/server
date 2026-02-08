@@ -4,6 +4,8 @@ using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameLoader;
+using JunimoServer.Services.Lobby;
+using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.Settings;
@@ -39,18 +41,8 @@ namespace JunimoServer
                 AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             }
 
-            // TODO:
-            // a) Create "SDVD Debug Client" mod (features: disable pause when out of focus)
-            // b) Create "SDVD Client" mod: POC for enhanced server <-> client functions with custom network message/behavior
-            // Disables pause when out of focus, currently useful for testing since clients start up faster this way
             Helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
-
-            if (Env.HasServerBypassCommandLineArg)
-            {
-                Monitor.Log($"Found '--client' command line argument, skipping {ModManifest.Name}", LogLevel.Debug);
-                return;
-            }
 
             // Clear invite code file on startup
             JunimoServer.Util.InviteCodeFile.Clear(Monitor);
@@ -191,8 +183,10 @@ namespace JunimoServer
             var roleService = _services.GetRequiredService<RoleService>();
             var alwaysOnConfig = _services.GetRequiredService<AlwaysOnConfig>();
             var persistentOptions = _services.GetRequiredService<PersistentOptions>();
+            var passwordProtectionService = _services.GetRequiredService<PasswordProtectionService>();
+            var lobbyService = _services.GetRequiredService<LobbyService>();
 
-            CabinCommand.Register(Helper, chatCommandsService, roleService, cabinService, persistentOptions);
+            CabinCommand.Register(Helper, chatCommandsService, cabinService, persistentOptions);
             RoleCommands.Register(Helper, chatCommandsService, roleService);
             BanCommand.Register(Helper, chatCommandsService, roleService);
             KickCommand.Register(Helper, chatCommandsService, roleService);
@@ -204,6 +198,11 @@ namespace JunimoServer
             ConsoleCommand.Register(Helper, chatCommandsService, roleService);
             InviteCodeCommand.Register(Helper, Monitor, chatCommandsService);
             ServerCommand.Register(Helper, Monitor, chatCommandsService);
+
+            // Password protection commands
+            LoginCommand.Register(Helper, Monitor, chatCommandsService, passwordProtectionService);
+            AuthStatusCommand.Register(Helper, Monitor, chatCommandsService, roleService, passwordProtectionService);
+            LobbyCommands.Register(Helper, Monitor, chatCommandsService, roleService, lobbyService);
         }
 
     }

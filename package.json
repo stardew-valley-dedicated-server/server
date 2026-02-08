@@ -10,5 +10,8 @@
     "@commitlint/cli": "^20.4.0",
     "@commitlint/config-conventional": "^20.4.0",
     "lefthook": "^2.0.16"
+  },
+  "dependencies": {
+    "pako": "^2.1.0"
   }
 }

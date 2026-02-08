@@ -10,7 +10,9 @@ using Netcode;
 using System.Xml.Serialization;
 using StardewValley.SaveSerialization;
 using HarmonyLib;
+using JunimoServer.Services.Lobby;
 using JunimoServer.Util;
+using Microsoft.Xna.Framework;
 
 namespace JunimoServer.Services.Auth
 {
@@ -30,22 +32,25 @@ namespace JunimoServer.Services.Auth
 
         private static IMonitor _monitor;
         private static IModHelper _helper;
+        private static LobbyService _lobbyService;
 
         // Cache the serializer globally
         private static readonly object SerializerLock = new object();
         private static XmlSerializer FarmerSerializer;
 
-        // Optional parallel filtering toggle
-        private const bool UseParallelFiltering = true;
-
         private static List<string> pendingAvailableFarmhands = new();
 
-        public FarmhandSenderService(IMonitor monitor, IModHelper helper, Harmony harmony)
+        public FarmhandSenderService(IMonitor monitor, IModHelper helper, Harmony harmony, LobbyService lobbyService)
         {
-            // Set instance variables for use in static harmony patches
+            if (_instance != null)
+                throw new InvalidOperationException("FarmhandSenderService already initialized - only one instance allowed");
+
+            // Assign instance first to avoid race conditions with Harmony patches
+            // that may fire before constructor completes
             _instance = this;
             _monitor = monitor;
             _helper = helper;
+            _lobbyService = lobbyService;
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendAvailableFarmhands)),
@@ -132,7 +137,6 @@ namespace JunimoServer.Services.Auth
 
             // Filter farmhands efficiently
             IEnumerable<NetRef<Farmer>> farmhandRefsAll = Game1.netWorldState.Value.farmhandData.FieldDict.Values;
-            _monitor.Log($"Filtering {farmhandRefsAll.Count()} available farmhands\n{connectionInfoDump}", LogLevel.Debug);
 
             List<NetRef<Farmer>> availableFarmers = new List<NetRef<Farmer>>();
             foreach (var farmhandRef in farmhandRefsAll)
@@ -142,26 +146,16 @@ namespace JunimoServer.Services.Auth
                 var isOffline = !farmhand.isActive() || Game1.Multiplayer.isDisconnecting(farmhand.UniqueMultiplayerID);
                 var isWithCabinAndInventoryUnlocked = IsFarmhandAvailable(farmhand);
                 var isSelectable = IsFarmhandSelectableByUserId(farmhand, userId);
-                var isValid = isOffline && isWithCabinAndInventoryUnlocked && isSelectable;
-
-                var logData = _monitor.Dump(new
-                {
-                    isValid,
-                    isNewFarmhandSlot = string.IsNullOrEmpty(farmhand.Name),
-                    farmhand.Name,
-                    farmhand.userID,
-                    farmhand.UniqueMultiplayerID
-                });
-                _monitor.Log($"Processing farmhand\n{logData}", LogLevel.Trace);
+                var isLobbyCabin = IsLobbyCabinFarmhand(farmhand);
+                var isValid = isOffline && isWithCabinAndInventoryUnlocked && isSelectable && !isLobbyCabin;
 
                 if (isValid)
                 {
                     availableFarmers.Add(farmhandRef);
                 }
-
             }
 
-            _monitor.Log($"Sending {availableFarmers.Count} available farmhands to {transport} connection", LogLevel.Debug);
+            _monitor.Log($"Sending {availableFarmers.Count}/{farmhandRefsAll.Count()} farmhands to {transport}", LogLevel.Debug);
 
             // Prepare outgoing message
             using var memoryStream = new MemoryStream();
@@ -172,16 +166,35 @@ namespace JunimoServer.Services.Auth
             writer.Write((byte)availableFarmers.Count);
 
             // Serialize farmhands data
+            // If lobby redirect is enabled, temporarily modify spawn data and restore after serialization
+            var shouldApplyLobbyRedirect = _lobbyService != null && _lobbyService.IsEnabled;
+
             foreach (var item in availableFarmers)
             {
+                var farmhand = item.Value;
+                FarmhandSpawnData originalData = null;
+
                 try
                 {
+                    // Save original spawn data and apply lobby redirect if enabled
+                    if (shouldApplyLobbyRedirect)
+                    {
+                        originalData = SaveFarmhandSpawnData(farmhand);
+                        ApplyLobbyRedirectToFarmhand(farmhand);
+                    }
+
                     item.Serializer = FarmerSerializer;
                     item.WriteFull(writer);
                 }
                 finally
                 {
                     item.Serializer = null;
+
+                    // Restore original spawn data to prevent save corruption
+                    if (originalData != null)
+                    {
+                        RestoreFarmhandSpawnData(farmhand, originalData);
+                    }
                 }
             }
 
@@ -193,23 +206,123 @@ namespace JunimoServer.Services.Auth
             return false;
         }
 
+        /// <summary>
+        /// Holds original farmhand spawn data for restoration after serialization.
+        /// </summary>
+        private class FarmhandSpawnData
+        {
+            public Vector2 Position;
+            public GameLocation CurrentLocation;
+            public int DisconnectDay;
+            public string DisconnectLocation;
+            public Vector2 DisconnectPosition;
+            public string LastSleepLocation;
+            public Point LastSleepPoint;
+            public bool SleptInTemporaryBed;
+        }
+
+        /// <summary>
+        /// Saves farmhand spawn data before modification.
+        /// </summary>
+        private static FarmhandSpawnData SaveFarmhandSpawnData(Farmer farmhand)
+        {
+            return new FarmhandSpawnData
+            {
+                Position = farmhand.Position,
+                CurrentLocation = farmhand.currentLocation,
+                DisconnectDay = farmhand.disconnectDay.Value,
+                DisconnectLocation = farmhand.disconnectLocation.Value,
+                DisconnectPosition = farmhand.disconnectPosition.Value,
+                LastSleepLocation = farmhand.lastSleepLocation.Value,
+                LastSleepPoint = farmhand.lastSleepPoint.Value,
+                SleptInTemporaryBed = farmhand.sleptInTemporaryBed.Value
+            };
+        }
+
+        /// <summary>
+        /// Restores farmhand spawn data after serialization.
+        /// </summary>
+        private static void RestoreFarmhandSpawnData(Farmer farmhand, FarmhandSpawnData data)
+        {
+            farmhand.Position = data.Position;
+            farmhand.currentLocation = data.CurrentLocation;
+            farmhand.disconnectDay.Value = data.DisconnectDay;
+            farmhand.disconnectLocation.Value = data.DisconnectLocation;
+            farmhand.disconnectPosition.Value = data.DisconnectPosition;
+            farmhand.lastSleepLocation.Value = data.LastSleepLocation;
+            farmhand.lastSleepPoint.Value = data.LastSleepPoint;
+            farmhand.sleptInTemporaryBed.Value = data.SleptInTemporaryBed;
+        }
+
+        /// <summary>
+        /// Applies lobby redirect to a farmhand's spawn data before sending to client.
+        /// This makes the client spawn in the lobby cabin instead of their regular location.
+        /// </summary>
+        private static void ApplyLobbyRedirectToFarmhand(Farmer farmhand)
+        {
+            var farmerId = farmhand.UniqueMultiplayerID;
+            var lobbyLocation = _lobbyService.GetLobbyLocationName(farmerId);
+            var lobbyEntry = _lobbyService.GetLobbyEntryPoint(farmerId);
+
+            if (string.IsNullOrEmpty(lobbyLocation))
+            {
+                _monitor.Log($"[Auth] Cannot apply lobby redirect to {farmerId} - no lobby location", LogLevel.Warn);
+                return;
+            }
+
+            // Get the actual lobby GameLocation object
+            var lobbyGameLocation = Game1.getLocationFromName(lobbyLocation);
+            if (lobbyGameLocation == null)
+            {
+                _monitor.Log($"[Auth] Cannot find lobby GameLocation: {lobbyLocation}", LogLevel.Warn);
+                return;
+            }
+
+            _monitor.Log($"[Auth] Applying lobby redirect to farmhand {farmerId}: {lobbyLocation} @ ({lobbyEntry.X}, {lobbyEntry.Y})", LogLevel.Debug);
+
+            // Modify spawn position to lobby cabin
+            farmhand.Position = new Vector2(lobbyEntry.X * 64f, lobbyEntry.Y * 64f);
+
+            // Set currentLocation to the lobby
+            farmhand.currentLocation = lobbyGameLocation;
+
+            // Set disconnect day to current day so the game's spawn logic uses our lobby location.
+            // Setting to 0 would skip the disconnectLocation branch entirely, which is incorrect.
+            // The game checks: if (disconnectDay == currentDay) -> use disconnectLocation
+            farmhand.disconnectDay.Value = (int)Game1.MasterPlayer.stats.DaysPlayed;
+            farmhand.disconnectLocation.Value = lobbyLocation;
+            farmhand.disconnectPosition.Value = new Vector2(lobbyEntry.X * 64f, lobbyEntry.Y * 64f);
+
+            // Set sleep location to lobby (for ApplyWakeUpPosition fallback)
+            farmhand.lastSleepLocation.Value = lobbyLocation;
+            farmhand.lastSleepPoint.Value = lobbyEntry;
+
+            // Allow spawning in lobby without a bed
+            farmhand.sleptInTemporaryBed.Value = true;
+        }
+
         private static bool IsFarmhandSelectableByUserId(Farmer farmhand, string userId)
         {
             // UNCLAIMED: Allow if farmhand creation enabled
             if (string.IsNullOrEmpty(farmhand.userID.Value))
-            {
-                bool canCreate = Game1.options.enableFarmhandCreation;
-                _monitor.Log($"Farmhand '{farmhand.Name}' unclaimed. Creation enabled: {canCreate}", LogLevel.Debug);
-                return canCreate;
-            }
+                return Game1.options.enableFarmhandCreation;
 
             // OWNED: Show to all clients - authCheck() during join handles actual verification.
             // This matches vanilla behavior where SteamNetServer passes empty userId.
             // Note: Steam SDR connections provide Steam ID, but farmhand.userID may be a Galaxy ID
             // (set by GalaxyNetClient when player joined via invite code). These IDs are from
             // different ID spaces and cannot be compared directly.
-            _monitor.Log($"Farmhand '{farmhand.Name}' is owned (userID={farmhand.userID.Value}), showing to client", LogLevel.Debug);
             return true;
+        }
+
+        /// <summary>
+        /// Checks if a farmhand belongs to a lobby cabin (should be hidden from selection).
+        /// </summary>
+        private static bool IsLobbyCabinFarmhand(Farmer farmhand)
+        {
+            var cabin = Game1.getFarm()?.GetCabin(farmhand.UniqueMultiplayerID);
+            if (cabin == null) return false;
+            return LobbyService.IsLobbyCabin(cabin);
         }
     }
 }

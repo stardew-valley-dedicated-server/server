@@ -1,0 +1,24 @@
+{
+    "layouts": [
+        {
+            "id": "example-lobby",
+            "name": "Example Lobby",
+            "author": "Server Admin",
+            "description": "A simple starter layout with basic furniture",
+            "thumbnail": null,
+            "downloads": 42,
+            "createdAt": "2025-01-15",
+            "exportCode": null
+        },
+        {
+            "id": "junimo-paradise",
+            "name": "Junimo Paradise",
+            "author": "ConcernedApe Fan",
+            "description": "A cozy Junimo-themed cabin with star decorations and plushies",
+            "thumbnail": null,
+            "downloads": 128,
+            "createdAt": "2025-02-01",
+            "exportCode": "SDVL0H4sIAAAAAAAAA62V30+DMBDH/xXTJ00wGYMN4XHEuZlFzcA4Y3zo4MbqSou19UeW/e92kDhdqhHY29019+Hofe+6Rlc4BxSgFBZYUYksFOI5YdGKMB2d8Oyo9HX8tsgETmECr0BR0LHQUAlGpBI6/WGNxhLycapzjocntuP1dUZMKMxQ0K2sexTY2pxyiSXhrESMgKbX8ydI5DaVKUo31l8o53AotxXKc5wdqveFcmuTLhUjOY8Bx3hOYcf0WzCjHFNagUdK7ph2C6bt9TsmUq9+dc8KC6jKm6rMpBOv4TVGEgujWBryBvhbeWetu3xDMZMm2didhsSQq2RpEs2PG3T+AwyVoB+xADB1uXGBe7/stCFqCXZNqH5t0oXAHxEFKAjLqjpNe6F+m0MiEkWxMIi716Lccp61tpMVpOeUvBMRLYEuTH2vr3Tbt11jy5uQzPu1CalnnJOD7AWvBc8wJf4vmj7tNh4Tr9aYPFqoirzoh1g7d1otBS5AaH+NBpAKznP9NRdt9KNNOd8/cPztSVTgNzYr9Vma2y2y+QQv6NyhIAgAAA=="
+        }
+    ]
+}

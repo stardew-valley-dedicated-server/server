@@ -58,9 +58,9 @@ namespace JunimoServer.Services.Commands
                     return;
                 }
 
-                if (farmerToUnadmin.UniqueMultiplayerID == helper.GetOwnerPlayerId())
+                if (farmerToUnadmin.UniqueMultiplayerID == helper.GetServerHostId())
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't unadmin the owner of the server.");
+                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't unadmin the server host.");
                     return;
                 }
 

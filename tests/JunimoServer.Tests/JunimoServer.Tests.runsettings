@@ -6,6 +6,8 @@
       <!-- Set to "true" to use containerized game clients instead of local process -->
       <SDVD_CONTAINERIZED_CLIENTS>true</SDVD_CONTAINERIZED_CLIENTS>
       <SDVD_TEST_VERBOSE>true</SDVD_TEST_VERBOSE>
+      <!-- Set to "true" to enable JSONL logging to TestResults/Logs/tests.jsonl (for AI agents) -->
+      <SDVD_REPORTER_JSONL>true</SDVD_REPORTER_JSONL>
     </EnvironmentVariables>
   </RunConfiguration>
   <LoggerRunSettings>
