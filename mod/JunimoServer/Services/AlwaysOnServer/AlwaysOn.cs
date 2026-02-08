@@ -163,24 +163,34 @@ namespace JunimoServer.Services.AlwaysOn
             HandleMinigame();
             alwaysOnServerFestivals.HandleFestivalEvents();
             HandleLevelUpMenu();
+            HandleShippingMenu();
             HandlePetChoice();
             HandleCaveChoice();
             HandleCommunityCenterUnlock();
         }
 
+        private int _updateTickLog = 0;
+
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
+            _updateTickLog++;
+            if (_updateTickLog % 300 == 0) // Every 5 seconds
+            {
+                Monitor.Log($"[DEBUG] OnUpdateTicked: IsAutomating={IsAutomating}, whereIsTodaysFest={Game1.whereIsTodaysFest}, otherFarmers={Game1.otherFarmers.Count}", LogLevel.Info);
+            }
+
             // Automate choices
             if (!IsAutomating)
             {
-                Game1.paused = false;
+                Game1.netWorldState.Value.IsPaused = false;
                 return;
             }
 
             HandleAutoPause();
             HandleAutoSleep();
 
-            alwaysOnServerFestivals.HandleLeaveFestival();
+            alwaysOnServerFestivals.HandleFestivalStart();
+            alwaysOnServerFestivals.HandleFestivalLeave();
 
             HandleLockPlayersChests();
         }
@@ -224,14 +234,10 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            // Starts a timeout in OnUnvalidatedUpdateTick
+            // Starts a timeout counter in OnUnvalidatedUpdateTick.
+            // Note: The actual ShippingMenu clicking is handled by HandleShippingMenu()
+            // in OnOneSecondUpdateTicked, which properly waits for the intro animation.
             _isShippingMenuActive = true;
-
-            if (Game1.activeClickableMenu is ShippingMenu)
-            {
-                Monitor.Log("Clicking OK on ShippingMenu");
-                Helper.Reflection.GetMethod(Game1.activeClickableMenu, "okClicked").Invoke();
-            }
         }
 
         private void OnUnvalidatedUpdateTick(object sender, UnvalidatedUpdateTickedEventArgs e)
@@ -256,12 +262,6 @@ namespace JunimoServer.Services.AlwaysOn
 
                 // Set online again in case the game kept going after timing out prematurely
                 Game1.options.setServerMode("online");
-            }
-
-            // TODO: Why do we do this?
-            if (Game1.timeOfDay == 2600)
-            {
-                Game1.paused = false;
             }
         }
 
@@ -410,10 +410,17 @@ namespace JunimoServer.Services.AlwaysOn
         /// Skip all events to keep the server unblocked.
         /// On a dedicated server, no one is watching — skip everything,
         /// including non-skippable intro events that would block clients.
+        /// EXCEPTION: Festivals are handled separately and should NOT be skipped here.
         /// </summary>
         private void HandleSkippableEvent()
         {
             if (!IsAutomating || Game1.CurrentEvent == null)
+            {
+                return;
+            }
+
+            // Don't skip festivals - they're handled by AlwaysOnFestivals
+            if (Game1.CurrentEvent.isFestival)
             {
                 return;
             }
@@ -446,6 +453,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         /// <summary>
         /// Pause the game when there are no clients connected.
+        /// After 2500 (1:00 AM), always unpause to allow the end-of-day pass-out sequence.
         /// </summary>
         private void HandleAutoPause()
         {
@@ -454,18 +462,13 @@ namespace JunimoServer.Services.AlwaysOn
 
             if (numPlayers >= 1)
             {
-                if (clientPaused)
-                {
-                    Game1.netWorldState.Value.IsPaused = true;
-                }
-                else
-                {
-                    Game1.paused = false;
-                }
+                Game1.netWorldState.Value.IsPaused = clientPaused;
             }
-            else if (numPlayers == 0 && Game1.timeOfDay is >= 610 and <= 2500 && !isFestivalDay)
+            else if (numPlayers == 0 && !isFestivalDay)
             {
-                Game1.paused = true;
+                // Pause during normal hours (610-2500), but unpause after 2500 to allow
+                // the forced pass-out sequence at 2600 (2:00 AM) to proceed.
+                Game1.netWorldState.Value.IsPaused = Game1.timeOfDay is >= 610 and <= 2500;
             }
         }
 
@@ -488,6 +491,32 @@ namespace JunimoServer.Services.AlwaysOn
         }
 
         /// <summary>
+        /// Handle the ShippingMenu that appears when items were shipped.
+        /// The menu has a 3.5s intro animation before OK can be clicked.
+        /// This handler continuously checks and clicks OK once the intro is done.
+        /// </summary>
+        private void HandleShippingMenu()
+        {
+            if (!IsAutomating || Game1.activeClickableMenu is not ShippingMenu menu)
+            {
+                return;
+            }
+
+            // The ShippingMenu has an introTimer (starts at 3500ms) that must reach <= 0
+            // before the OK button becomes clickable. We also need to ensure we're on the
+            // main page (currentPage == -1) and not in the outro phase.
+            int introTimer = Helper.Reflection.GetField<int>(menu, "introTimer").GetValue();
+            int currentPage = Helper.Reflection.GetField<int>(menu, "currentPage").GetValue();
+            bool outro = Helper.Reflection.GetField<bool>(menu, "outro").GetValue();
+
+            if (introTimer <= 0 && currentPage == -1 && !outro)
+            {
+                Monitor.Log("[Automation] Clicking OK on ShippingMenu", LogLevel.Info);
+                Helper.Reflection.GetMethod(menu, "okClicked").Invoke();
+            }
+        }
+
+        /// <summary>
         /// Start sleep once the last online player went to bed.
         /// </summary>
         private void HandleAutoSleep()
@@ -503,8 +532,11 @@ namespace JunimoServer.Services.AlwaysOn
             var numReadySleep = Game1.netReady.GetNumberReady("sleep");
             var numberRequiredSleep = Game1.netReady.GetNumberRequired("sleep");
 
-            // Go to sleep once server is the last player awake
-            if (numberRequiredSleep - numReadySleep == 1)
+            // Go to sleep once server is the last player awake.
+            // IMPORTANT: At least one player must be ready for sleep (numReadySleep > 0).
+            // Without this check, when all players are unauthenticated (excluded from ready-check),
+            // the condition "1 - 0 == 1" would incorrectly trigger sleep with only the host required.
+            if (numReadySleep > 0 && numberRequiredSleep - numReadySleep == 1)
             {
                 Monitor.Log("Called StartSleep");
 
