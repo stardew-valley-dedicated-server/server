@@ -2,7 +2,6 @@ using JunimoServer.Services.ChatCommands;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
-using StardewValley.Menus;
 using SObject = StardewValley.Object;
 
 namespace JunimoServer.Services.AlwaysOn
@@ -40,7 +39,11 @@ namespace JunimoServer.Services.AlwaysOn
         // Variables for timeout reset
         private int festivalTicksForReset;
 
-        protected readonly AlwaysOnServer _alwaysOnServer;
+        // Track if we're currently warping to festival to avoid repeated warps
+        private bool _warpingToFestival;
+
+        // Track if we've started the festival end process
+        private bool _startedFestivalEnd;
 
         protected readonly IModHelper _helper;
         protected readonly IMonitor _monitor;
@@ -55,6 +58,9 @@ namespace JunimoServer.Services.AlwaysOn
             chatCommandService.RegisterCommand("event", "Tries to start the current festival's event.", StartEventCommand);
         }
 
+        /// <summary>
+        /// Called on time change. Handles festival reset when time passes the festival window.
+        /// </summary>
         public void UpdateFestivalStatus()
         {
             if (Game1.otherFarmers.Count == 0)
@@ -62,38 +68,167 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            if (SDateHelper.IsEggFestivalToday())
+            // Reset festival state when festival time window ends
+            var currentTime = Game1.timeOfDay;
+
+            if (SDateHelper.IsEggFestivalToday() && currentTime >= 1410)
             {
-                EggFestival();
+                ResetFestivalState();
+                eggHuntAvailable = false;
+                eggHuntCountDown = 0;
             }
-            else if (SDateHelper.IsFlowerDanceToday())
+            else if (SDateHelper.IsFlowerDanceToday() && currentTime >= 1410)
             {
-                FlowerDance();
+                ResetFestivalState();
+                flowerDanceAvailable = false;
+                flowerDanceCountDown = 0;
             }
-            else if (SDateHelper.IsLuauToday())
+            else if (SDateHelper.IsLuauToday() && currentTime >= 1410)
             {
-                Luau();
+                ResetFestivalState();
+                luauSoupAvailable = false;
+                luauSoupCountDown = 0;
             }
-            else if (SDateHelper.IsDanceOfJelliesToday())
+            else if (SDateHelper.IsDanceOfJelliesToday() && currentTime >= 2410)
             {
-                DanceOfTheMoonlightJellies();
+                ResetFestivalState();
+                jellyDanceAvailable = false;
+                jellyDanceCountDown = 0;
             }
-            else if (SDateHelper.IsStardewValleyFairToday())
+            else if (SDateHelper.IsStardewValleyFairToday() && currentTime >= 1510)
             {
-                StardewValleyFair();
+                ResetFestivalState();
+                Game1.displayHUD = true;
+                grangeDisplayAvailable = false;
+                grangeDisplayCountDown = 0;
             }
-            else if (SDateHelper.IsSpiritsEveToday())
+            else if (SDateHelper.IsSpiritsEveToday() && currentTime >= 2400)
             {
-                SpiritsEve();
+                ResetFestivalState();
+                Game1.displayHUD = true;
+                goldenPumpkinAvailable = false;
+                goldenPumpkinCountDown = 0;
             }
-            else if (SDateHelper.IsFestivalOfIceToday())
+            else if (SDateHelper.IsFestivalOfIceToday() && currentTime >= 1410)
             {
-                FestivalOfIce();
+                ResetFestivalState();
+                iceFishingAvailable = false;
+                iceFishingCountDown = 0;
             }
-            else if (SDateHelper.IsFeastOfWinterStarToday())
+            else if (SDateHelper.IsFeastOfWinterStarToday() && currentTime >= 1410)
             {
-                FeastOfWinterStar();
+                ResetFestivalState();
+                winterFeastAvailable = false;
+                winterFeastCountDown = 0;
             }
+        }
+
+        private void ResetFestivalState()
+        {
+            Game1.options.setServerMode("online");
+            festivalTicksForReset = 0;
+            _warpingToFestival = false;
+            _startedFestivalEnd = false;
+        }
+
+        /// <summary>
+        /// Called every tick. Handles warping the host to the festival when other players are ready.
+        /// Uses the same approach as the game's DedicatedServer - monitor ready state and warp directly.
+        /// </summary>
+        private int _logThrottle = 0;
+
+        public void HandleFestivalStart()
+        {
+            _logThrottle++;
+
+            // Debug: log every 60 ticks (once per second) on festival days
+            if (Game1.whereIsTodaysFest != null && _logThrottle % 60 == 0)
+            {
+                var numberReady = Game1.netReady.GetNumberReady("festivalStart");
+                var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
+                _monitor.Log($"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}", LogLevel.Info);
+            }
+
+            if (Game1.otherFarmers.Count == 0)
+            {
+                return;
+            }
+
+            // Already at festival or already warping
+            if (Game1.CurrentEvent?.isFestival == true || _warpingToFestival)
+            {
+                return;
+            }
+
+            // Check if there's a festival today and others are ready
+            if (Game1.whereIsTodaysFest != null && CheckOthersReady("festivalStart"))
+            {
+                _monitor.Log("Other players ready for festival, warping host to festival location", LogLevel.Info);
+                _warpingToFestival = true;
+
+                // Mark host as ready so players' ReadyCheckDialog completes
+                Game1.netReady.SetLocalReady("festivalStart", true);
+
+                var locationRequest = Game1.getLocationRequest(Game1.whereIsTodaysFest);
+                locationRequest.OnWarp += delegate
+                {
+                    _warpingToFestival = false;
+                    SetFestivalAvailableFlag();
+                };
+
+                int x = -1;
+                int y = -1;
+                Utility.getDefaultWarpLocation(Game1.whereIsTodaysFest, ref x, ref y);
+                Game1.warpFarmer(locationRequest, x, y, 2);
+            }
+        }
+
+        /// <summary>
+        /// Set the appropriate festival available flag based on today's festival.
+        /// </summary>
+        private void SetFestivalAvailableFlag()
+        {
+            if (SDateHelper.IsEggFestivalToday()) eggHuntAvailable = true;
+            else if (SDateHelper.IsFlowerDanceToday()) flowerDanceAvailable = true;
+            else if (SDateHelper.IsLuauToday()) luauSoupAvailable = true;
+            else if (SDateHelper.IsDanceOfJelliesToday()) jellyDanceAvailable = true;
+            else if (SDateHelper.IsStardewValleyFairToday()) grangeDisplayAvailable = true;
+            else if (SDateHelper.IsSpiritsEveToday()) goldenPumpkinAvailable = true;
+            else if (SDateHelper.IsFestivalOfIceToday()) iceFishingAvailable = true;
+            else if (SDateHelper.IsFeastOfWinterStarToday()) winterFeastAvailable = true;
+        }
+
+        /// <summary>
+        /// Get the festival host NPC for the current event.
+        /// </summary>
+        private NPC GetFestivalHost()
+        {
+            if (Game1.CurrentEvent == null)
+            {
+                return null;
+            }
+            return _helper.Reflection.GetField<NPC>(Game1.CurrentEvent, "festivalHost").GetValue();
+        }
+
+        /// <summary>
+        /// Check if other players (excluding host) are ready for a given ready check.
+        /// Same logic as DedicatedServer.CheckOthersReady.
+        /// </summary>
+        private bool CheckOthersReady(string readyCheck)
+        {
+            int numberReady = Game1.netReady.GetNumberReady(readyCheck);
+            if (numberReady <= 0)
+            {
+                return false;
+            }
+
+            // If not fully ready, check if everyone except host is ready
+            if (!Game1.netReady.IsReady(readyCheck))
+            {
+                return numberReady >= Game1.netReady.GetNumberRequired(readyCheck) - 1;
+            }
+
+            return false;
         }
 
         public void HandleFestivalEvents()
@@ -123,8 +258,11 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (eggHuntCountDown == Config.EggHuntCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
                 if (eggHuntCountDown >= Config.EggHuntCountDownConfig + 5)
@@ -164,8 +302,11 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (flowerDanceCountDown == Config.FlowerDanceCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
                 if (flowerDanceCountDown >= Config.FlowerDanceCountDownConfig + 5)
@@ -212,8 +353,11 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (luauSoupCountDown == Config.LuauSoupCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
                 if (luauSoupCountDown >= Config.LuauSoupCountDownConfig + 5)
@@ -253,8 +397,11 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (jellyDanceCountDown == Config.JellyDanceCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
                 if (jellyDanceCountDown >= Config.JellyDanceCountDownConfig + 5)
@@ -308,13 +455,18 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (grangeDisplayCountDown == Config.GrangeDisplayCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
-                if (grangeDisplayCountDown == Config.GrangeDisplayCountDownConfig + 5)
+                if (grangeDisplayCountDown == Config.GrangeDisplayCountDownConfig + 5 && !_startedFestivalEnd)
                 {
-                    LeaveFestival();
+                    _monitor.Log("Grange display finished, triggering festival end");
+                    Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+                    _startedFestivalEnd = true;
                 }
             }
 
@@ -337,9 +489,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 ///////////////////////////////////////////////
-                if (goldenPumpkinCountDown == 10)
+                if (goldenPumpkinCountDown == 10 && !_startedFestivalEnd)
                 {
-                    LeaveFestival();
+                    _monitor.Log("Spirit's Eve timeout, triggering festival end");
+                    Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+                    _startedFestivalEnd = true;
                 }
             }
 
@@ -363,8 +517,11 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (iceFishingCountDown == Config.IceFishingCountDownConfig + 1)
                 {
-                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "answerDialogueQuestion")
-                        .Invoke(Game1.getCharacterFromName("Lewis"), "yes");
+                    var festivalHost = GetFestivalHost();
+                    if (festivalHost != null)
+                    {
+                        Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                    }
                 }
 
                 if (iceFishingCountDown >= Config.IceFishingCountDownConfig + 5)
@@ -402,219 +559,45 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 ///////////////////////////////////////////////
-                if (winterFeastCountDown == 10)
+                if (winterFeastCountDown == 10 && !_startedFestivalEnd)
                 {
-                    LeaveFestival();
+                    _monitor.Log("Winter Feast timeout, triggering festival end");
+                    Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+                    _startedFestivalEnd = true;
                 }
             }
         }
 
-        public void HandleLeaveFestival()
+        /// <summary>
+        /// Called every tick. Handles leaving the festival when other players are ready.
+        /// Uses TryStartEndFestivalDialogue like the game's DedicatedServer does.
+        /// </summary>
+        public void HandleFestivalLeave()
         {
             if (Game1.otherFarmers.Count == 0)
             {
                 return;
             }
 
-            var numReady = Game1.netReady.GetNumberReady("festivalEnd");
-            var numReq = Game1.netReady.GetNumberRequired("festivalEnd");
-
-            if (numReq - numReady == 1)
+            // Only handle if we're at a festival and haven't started ending yet
+            if (Game1.CurrentEvent?.isFestival != true || _startedFestivalEnd)
             {
-                LeaveFestival();
+                return;
             }
-        }
 
-        private void EggFestival()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime is >= 900 and <= 1400)
+            // Debug: log festivalEnd ready state
+            var endReady = Game1.netReady.GetNumberReady("festivalEnd");
+            var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
+            if (_logThrottle % 60 == 0)
             {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Town", 1, 20, 1);
-                });
-
-                eggHuntAvailable = true;
+                _monitor.Log($"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}", LogLevel.Info);
             }
-            else if (currentTime >= 1410)
+
+            if (CheckOthersReady("festivalEnd"))
             {
-                eggHuntAvailable = false;
-                Game1.options.setServerMode("online");
-                eggHuntCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void FlowerDance()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime is >= 900 and <= 1400)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Forest", 1, 20, 1);
-                });
-
-                flowerDanceAvailable = true;
-            }
-            else if (currentTime >= 1410)
-            {
-                flowerDanceAvailable = false;
-                Game1.options.setServerMode("online");
-                flowerDanceCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void Luau()
-        {
-            var currentTime = Game1.timeOfDay;
-            if (currentTime is >= 900 and <= 1400)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Beach", 1, 20, 1);
-                });
-
-                luauSoupAvailable = true;
-            }
-            else if (currentTime >= 1410)
-            {
-                luauSoupAvailable = false;
-                Game1.options.setServerMode("online");
-                luauSoupCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void DanceOfTheMoonlightJellies()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime >= 2200 && currentTime <= 2400)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Beach", 1, 20, 1);
-                });
-
-                jellyDanceAvailable = true;
-            }
-            else if (currentTime >= 2410)
-            {
-                jellyDanceAvailable = false;
-                Game1.options.setServerMode("online");
-                jellyDanceCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void StardewValleyFair()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime >= 900 && currentTime <= 1500)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Town", 1, 20, 1);
-                });
-
-                grangeDisplayAvailable = true;
-            }
-            else if (currentTime >= 1510)
-            {
-                Game1.displayHUD = true;
-                grangeDisplayAvailable = false;
-                Game1.options.setServerMode("online");
-                grangeDisplayCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void SpiritsEve()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime is >= 2200 and <= 2350)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Town", 1, 20, 1);
-                });
-
-                goldenPumpkinAvailable = true;
-            }
-            else if (currentTime >= 2400)
-            {
-                Game1.displayHUD = true;
-                goldenPumpkinAvailable = false;
-                Game1.options.setServerMode("online");
-                goldenPumpkinCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void FestivalOfIce()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime >= 900 && currentTime <= 1400)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Forest", 1, 20, 1);
-                });
-
-                iceFishingAvailable = true;
-            }
-            else if (currentTime >= 1410)
-            {
-                iceFishingAvailable = false;
-                Game1.options.setServerMode("online");
-                iceFishingCountDown = 0;
-                festivalTicksForReset = 0;
-            }
-        }
-
-        private void FeastOfWinterStar()
-        {
-            var currentTime = Game1.timeOfDay;
-
-            if (currentTime >= 900 && currentTime <= 1400)
-            {
-                Game1.netReady.SetLocalReady("festivalStart", true);
-                Game1.activeClickableMenu = new ReadyCheckDialog("festivalStart", true, who =>
-                {
-                    Game1.exitActiveMenu();
-                    Game1.warpFarmer("Town", 1, 20, 1);
-                });
-
-                winterFeastAvailable = true;
-            }
-            else if (currentTime >= 1410)
-            {
-                winterFeastAvailable = false;
-                Game1.options.setServerMode("online");
-                winterFeastCountDown = 0;
-                festivalTicksForReset = 0;
+                _monitor.Log("Other players ready to leave festival, triggering end dialogue", LogLevel.Info);
+                Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+                _startedFestivalEnd = true;
             }
         }
 
@@ -673,21 +656,5 @@ namespace JunimoServer.Services.AlwaysOn
             }
         }
 
-        /// <summary>
-        /// Leave the current festival if there is any.
-        /// </summary>
-        private void LeaveFestival()
-        {
-            _monitor.Log("Leaving festival");
-
-            Game1.netReady.SetLocalReady("festivalEnd", true);
-            Game1.activeClickableMenu = new ReadyCheckDialog("festivalEnd", true, who =>
-            {
-                Game1.exitActiveMenu();
-                AlwaysOnUtil.WarpToHidingSpot();
-
-                Game1.timeOfDay = SDateHelper.IsSpiritsEveToday() ? 2400 : 2200;
-            });
-        }
     }
 }
