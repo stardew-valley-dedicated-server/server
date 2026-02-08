@@ -1,17 +1,15 @@
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.PersistentOption;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
-using System;
 
 namespace JunimoServer.Services.Commands
 {
     public static class CabinCommand
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleSerivce, CabinManagerService cabinService, PersistentOptions options)
+        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, CabinManagerService cabinService, PersistentOptions options)
         {
             chatCommandsService.RegisterCommand("cabin",
                 "Moves your cabin to the right of your player.\nThis will clear basic debris to make space.",
@@ -28,12 +26,6 @@ namespace JunimoServer.Services.Commands
                     if (farmer.currentLocation.Name != "Farm")
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, "Must be on Farm to move your cabin.");
-                        return;
-                    }
-
-                    if (roleSerivce.IsPlayerOwner(farmer))
-                    {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin as primary admin. (Your cabin is the farmhouse)");
                         return;
                     }
 

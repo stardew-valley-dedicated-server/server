@@ -54,6 +54,21 @@ namespace JunimoServer.Services.Settings
 
         public bool AllowIpConnections => _settings.Server.AllowIpConnections;
 
+        /// <summary>
+        /// Lobby mode for password protection: Shared or Individual.
+        /// </summary>
+        public LobbyMode LobbyMode => ParseLobbyMode(_settings.Server.LobbyMode);
+
+        /// <summary>
+        /// Name of the active lobby layout for new players.
+        /// </summary>
+        public string ActiveLobbyLayout => _settings.Server.ActiveLobbyLayout;
+
+        /// <summary>
+        /// Steam IDs that are automatically granted admin on join.
+        /// </summary>
+        public string[] AdminSteamIds => _settings.Server.AdminSteamIds ?? Array.Empty<string>();
+
         #endregion
 
         #region Runtime setters
@@ -171,6 +186,15 @@ namespace JunimoServer.Services.Settings
                 return result;
             }
             return CabinManager.ExistingCabinBehavior.KeepExisting;
+        }
+
+        private static LobbyMode ParseLobbyMode(string value)
+        {
+            if (Enum.TryParse<LobbyMode>(value, ignoreCase: true, out var result))
+            {
+                return result;
+            }
+            return Settings.LobbyMode.Shared;
         }
 
         #endregion

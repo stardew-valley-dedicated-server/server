@@ -1,5 +1,18 @@
+using System;
+
 namespace JunimoServer.Services.Settings
 {
+    /// <summary>
+    /// Lobby mode for password protection.
+    /// </summary>
+    public enum LobbyMode
+    {
+        /// <summary>All unauthenticated players wait in the same lobby cabin.</summary>
+        Shared,
+        /// <summary>Each player gets their own isolated lobby cabin.</summary>
+        Individual
+    }
+
     public class ServerSettings
     {
         public GameSettings Game { get; set; } = new();
@@ -23,5 +36,26 @@ namespace JunimoServer.Services.Settings
         public string ExistingCabinBehavior { get; set; } = "KeepExisting";
         public bool VerboseLogging { get; set; } = false;
         public bool AllowIpConnections { get; set; } = false;
+
+        /// <summary>
+        /// Lobby mode for password protection: "Shared" or "Individual".
+        /// Shared: All unauthenticated players wait in the same lobby cabin.
+        /// Individual: Each player gets their own isolated lobby cabin.
+        /// Default: "Shared"
+        /// </summary>
+        public string LobbyMode { get; set; } = "Shared";
+
+        /// <summary>
+        /// Name of the active lobby layout to use for new players.
+        /// Layouts can be created and customized with !lobby commands.
+        /// Default: "default"
+        /// </summary>
+        public string ActiveLobbyLayout { get; set; } = "default";
+
+        /// <summary>
+        /// List of Steam IDs that are automatically granted admin on join.
+        /// Example: ["76561198012345678", "76561198087654321"]
+        /// </summary>
+        public string[] AdminSteamIds { get; set; } = Array.Empty<string>();
     }
 }
