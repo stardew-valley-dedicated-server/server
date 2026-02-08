@@ -14,9 +14,9 @@ namespace JunimoServer.Services.Commands
                 "Type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" to enable joja and disable the standard community center forever.",
                 (args, msg) =>
                 {
-                    if (!roleService.IsPlayerOwner(msg.SourceFarmer))
+                    if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                     {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Only the owner of the server can enable Joja.");
+                        helper.SendPrivateMessage(msg.SourceFarmer, "Only admins can enable Joja.");
                         return;
                     }
 

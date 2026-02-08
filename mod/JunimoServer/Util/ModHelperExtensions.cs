@@ -64,20 +64,13 @@ namespace JunimoServer.Util
             return sdk != null && sdk.Networking != null;
         }
 
-        public static long GetOwnerPlayerId(this IModHelper helper)
+        /// <summary>
+        /// Gets the server host's player ID. In a dedicated server context, this is the
+        /// server itself (Game1.player), not any human player.
+        /// </summary>
+        public static long GetServerHostId(this IModHelper helper)
         {
-            var farm = Game1.getFarm();
-            var building = farm.buildings.FirstOrDefault(building => building.isCabin);
-
-            if (building == null)
-            {
-                return -1;
-            }
-
-            var indoors = building.GetIndoors() as Cabin;
-            var ownerId = indoors?.owner?.UniqueMultiplayerID ?? -1;
-
-            return ownerId;
+            return Game1.player.UniqueMultiplayerID;
         }
 
         public static void WriteServerJsonFile(this IDataHelper dataHelper, string path, object data)
