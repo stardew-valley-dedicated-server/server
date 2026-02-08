@@ -16,6 +16,8 @@ public class SteamAppIdTests : IDisposable
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
+    private readonly string? _testName;
+    private readonly DateTime _testStartTime;
 
     /// <summary>
     /// Stardew Valley's Steam App ID.
@@ -31,7 +33,23 @@ public class SteamAppIdTests : IDisposable
     {
         _fixture = fixture;
         _output = output;
-        _fixture.RegisterTest(nameof(SteamAppIdTests));
+        _testStartTime = DateTime.UtcNow;
+        _testName = ExtractTestName(output);
+        _fixture.RegisterTest(nameof(SteamAppIdTests), _testName);
+    }
+
+    private static string? ExtractTestName(ITestOutputHelper output)
+    {
+        try
+        {
+            var field = output.GetType().GetField("test", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(output) is Xunit.Abstractions.ITest test)
+            {
+                return test.DisplayName;
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>
@@ -137,6 +155,6 @@ public class SteamAppIdTests : IDisposable
 
     public void Dispose()
     {
-        // No resources to dispose
+        _fixture.CompleteTest(nameof(SteamAppIdTests), _testName, DateTime.UtcNow - _testStartTime);
     }
 }

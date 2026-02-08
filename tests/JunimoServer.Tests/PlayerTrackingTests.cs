@@ -1,3 +1,4 @@
+using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
@@ -48,10 +49,13 @@ public class PlayerTrackingTests : IntegrationTestBase
         // Ensure we're fully disconnected first
         await EnsureDisconnectedAsync();
 
-        // Verify no players are connected initially
-        var initialPlayers = await ServerApi.GetPlayers();
-        Assert.NotNull(initialPlayers);
-        Assert.Empty(initialPlayers.Players);
+        // Wait for server to report no players (previous test cleanup may still be processing)
+        var noPlayers = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            var players = await ServerApi.GetPlayers();
+            return players?.Players?.Count == 0;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(noPlayers, "Server should have no players connected initially");
 
         var initialStatus = await ServerApi.GetStatus();
         Assert.NotNull(initialStatus);
@@ -84,20 +88,23 @@ public class PlayerTrackingTests : IntegrationTestBase
         // Disconnect
         await DisconnectAsync();
 
-        // Wait for server to process the disconnection
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
-
-        // Verify the client is removed from /players
-        var afterDisconnectPlayers = await ServerApi.GetPlayers();
-        Assert.NotNull(afterDisconnectPlayers);
-        var stillThere = afterDisconnectPlayers.Players.FirstOrDefault(p => p.Name == farmerName);
-        Assert.Null(stillThere);
+        // Poll until the player is removed from /players
+        var playerRemoved = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            var players = await ServerApi.GetPlayers();
+            return players?.Players?.All(p => !p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)) == true;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(playerRemoved, "Player should be removed from /players after disconnect");
         Log("Verified: player removed from /players after disconnect");
 
-        // Verify /status reflects the disconnection
-        var afterDisconnectStatus = await ServerApi.GetStatus();
-        Assert.NotNull(afterDisconnectStatus);
-        Assert.Equal(0, afterDisconnectStatus.PlayerCount);
+        // Poll until /status reflects the disconnection
+        ServerStatus? afterDisconnectStatus = null;
+        var countZero = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            afterDisconnectStatus = await ServerApi.GetStatus();
+            return afterDisconnectStatus?.PlayerCount == 0;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(countZero, "PlayerCount should return to 0 after disconnect");
         Log("Verified: playerCount back to 0 after disconnect");
 
         await AssertNoExceptionsAsync("at end of test");

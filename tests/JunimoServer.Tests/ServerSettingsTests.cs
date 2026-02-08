@@ -18,15 +18,33 @@ public class ServerSettingsTests : IDisposable
     private readonly IntegrationTestFixture _fixture;
     private readonly ServerApiClient _serverApi;
     private readonly ITestOutputHelper _output;
+    private readonly string? _testName;
+    private readonly DateTime _testStartTime;
 
     public ServerSettingsTests(IntegrationTestFixture fixture, ITestOutputHelper output)
     {
         _fixture = fixture;
         _output = output;
+        _testStartTime = DateTime.UtcNow;
         _serverApi = new ServerApiClient(_fixture.ServerBaseUrl);
 
         // Register for test counting
-        _fixture.RegisterTest(nameof(ServerSettingsTests));
+        _testName = ExtractTestName(output);
+        _fixture.RegisterTest(nameof(ServerSettingsTests), _testName);
+    }
+
+    private static string? ExtractTestName(ITestOutputHelper output)
+    {
+        try
+        {
+            var field = output.GetType().GetField("test", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(output) is Xunit.Abstractions.ITest test)
+            {
+                return test.DisplayName;
+            }
+        }
+        catch { }
+        return null;
     }
 
     #region GET /settings — default values
@@ -140,6 +158,7 @@ public class ServerSettingsTests : IDisposable
 
     public void Dispose()
     {
+        _fixture.CompleteTest(nameof(ServerSettingsTests), _testName, DateTime.UtcNow - _testStartTime);
         _serverApi.Dispose();
     }
 }

@@ -3,6 +3,7 @@ using HarmonyLib;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.BellsAndWhistles;
 
 namespace JunimoTestClient.GameTweaks;
 
@@ -34,13 +35,16 @@ public class ConvenienceTweaks
         // Patch SetWindowSize to remove minimum size restriction
         PatchWindowSize();
 
+        // Skip screen fade animations (warps, sleep, day transitions)
+        PatchInstantFades();
+
         // Disable pause when unfocused
         DisablePauseOnUnfocus();
 
         // Mute all audio
         MuteAudio();
 
-        _monitor.Log("Test tweaks applied (no pause, muted)", LogLevel.Trace);
+        _monitor.Log("Test tweaks applied (no pause, muted, instant fades)", LogLevel.Trace);
     }
 
     private void PatchWindowSize()
@@ -83,6 +87,62 @@ public class ConvenienceTweaks
         }
 
         return codes;
+    }
+
+    private void PatchInstantFades()
+    {
+        try
+        {
+            // Patch UpdateFadeAlpha — screen-level fades (warps, transitions)
+            // Forces alpha to overshoot value so the next frame's threshold check
+            // in UpdateFade fires the completion callbacks immediately.
+            var updateFadeAlpha = AccessTools.Method(typeof(ScreenFade), "UpdateFadeAlpha");
+            var fadeAlphaPostfix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateFadeAlpha_Postfix));
+            _harmony.Patch(updateFadeAlpha, postfix: fadeAlphaPostfix);
+
+            // Patch UpdateGlobalFade — global fades (menus, sleep, day end)
+            // Forces alpha to the threshold value so the next frame fires the
+            // afterFade callback immediately.
+            var updateGlobalFade = AccessTools.Method(typeof(ScreenFade), "UpdateGlobalFade");
+            var globalFadePostfix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateGlobalFade_Postfix));
+            _harmony.Patch(updateGlobalFade, postfix: globalFadePostfix);
+
+            _monitor.Log("Patched ScreenFade for instant fades (skip animations)", LogLevel.Trace);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Failed to patch ScreenFade: {ex.Message}", LogLevel.Error);
+        }
+    }
+
+    /// <summary>
+    /// Postfix for ScreenFade.UpdateFadeAlpha — forces instant screen fades.
+    /// When fading in (to black): sets alpha to 1.2f so UpdateFade's >1.1f check
+    /// fires onFadeToBlackComplete on the next frame.
+    /// When fading out (to clear): sets alpha to -0.2f so UpdateFade's less-than -0.1f check
+    /// fires onFadedBackInComplete on the next frame.
+    /// </summary>
+    private static void UpdateFadeAlpha_Postfix(ScreenFade __instance)
+    {
+        if (__instance.fadeIn)
+            __instance.fadeToBlackAlpha = 1.2f;
+        else
+            __instance.fadeToBlackAlpha = -0.2f;
+    }
+
+    /// <summary>
+    /// Postfix for ScreenFade.UpdateGlobalFade — forces instant global fades.
+    /// When fadeIn (clearing to transparent): sets alpha to 0f so the next frame's
+    /// less-than-or-equal 0f check fires the afterFade callback.
+    /// When !fadeIn (darkening to black): sets alpha to 1f so the next frame's
+    /// greater-than-or-equal 1f check fires the afterFade callback.
+    /// </summary>
+    private static void UpdateGlobalFade_Postfix(ScreenFade __instance)
+    {
+        if (__instance.fadeIn)
+            __instance.fadeToBlackAlpha = 0f;
+        else
+            __instance.fadeToBlackAlpha = 1f;
     }
 
     private void DisablePauseOnUnfocus()

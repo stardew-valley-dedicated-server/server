@@ -1,3 +1,4 @@
+using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using Xunit;
@@ -41,9 +42,9 @@ public class HostAutomationTests : IntegrationTestBase
         var time1 = status1.TimeOfDay;
         Log($"Time reading 1: {time1}");
 
-        // Wait long enough for multiple time advances to occur if the game were unpaused.
+        // Wait long enough for at least one time advance if the game were unpaused.
         // Stardew advances time every 7 seconds (10 game-minutes per tick).
-        // 15 seconds = ~2 advances = +20 game-minutes if unpaused.
+        // 8 seconds > 1 tick, sufficient to detect if time is advancing.
         await Task.Delay(TestTimings.TimePausedVerification);
 
         // Read time again
@@ -78,20 +79,26 @@ public class HostAutomationTests : IntegrationTestBase
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
 
-        // Let the game process the time change and advance at least one tick
-        await Task.Delay(TestTimings.NetworkSyncDelay);
+        // Poll until game processes the time change (time >= 1200)
+        ServerStatus? status1 = null;
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            status1 = await ServerApi.GetStatus();
+            return status1?.TimeOfDay >= 1200;
+        }, TestTimings.NetworkSyncTimeout);
 
-        // Read current time
-        var status1 = await ServerApi.GetStatus();
         Assert.NotNull(status1);
         var time1 = status1.TimeOfDay;
         Log($"Time reading 1: {time1}");
 
-        // Wait for at least 2 time advances (~14 seconds)
-        await Task.Delay(TestTimings.TimeAdvanceWait);
+        // Poll until time advances (one tick takes ~7s)
+        ServerStatus? status2 = null;
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            status2 = await ServerApi.GetStatus();
+            return status2?.TimeOfDay > time1;
+        }, TestTimings.TimeAdvanceWait);
 
-        // Read time again
-        var status2 = await ServerApi.GetStatus();
         Assert.NotNull(status2);
         var time2 = status2.TimeOfDay;
         Log($"Time reading 2: {time2}");
@@ -224,7 +231,7 @@ public class HostAutomationTests : IntegrationTestBase
 
                 if (status.Day != day || status.Season != season || status.Year != year)
                 {
-                    Log($"Day changed after {attempt * 2}s: {season} {day} Y{year} → {status.Season} {status.Day} Y{status.Year}");
+                    Log($"Day changed after {attempt * TestTimings.DayChangePollInterval.TotalSeconds:F1}s: {season} {day} Y{year} → {status.Season} {status.Day} Y{status.Year}");
                     return true;
                 }
 

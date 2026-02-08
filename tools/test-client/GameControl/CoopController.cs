@@ -137,7 +137,8 @@ public class CoopController
             // Set the invite code text
             inputMenu.textBox.Text = inviteCode;
 
-            _monitor.Log($"Submitting invite code: {inviteCode}", LogLevel.Trace);
+            // Commented out for consistent logs, we
+            // _monitor.Log($"Submitting invite code: {inviteCode}", LogLevel.Trace);
 
             // Submit by calling textBoxEnter (same as pressing Enter or clicking OK)
             inputMenu.textBoxEnter(inputMenu.textBox);

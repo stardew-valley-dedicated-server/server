@@ -12,11 +12,14 @@ namespace JunimoServer.Tests;
 /// Verifies cabin auto-creation, replenishment after player joins,
 /// and the /cabins API endpoint accuracy. Tests run against the default
 /// server configuration (CabinStack strategy with hidden cabins).
+///
+/// These tests run WITHOUT password protection to test pure cabin behavior
+/// without lobby interference.
 /// </summary>
-[Collection("Integration")]
-public class CabinStrategyTests : IntegrationTestBase
+[Collection("Integration-NoPassword")]
+public class CabinStrategyTests : NoPasswordTestBase
 {
-    public CabinStrategyTests(IntegrationTestFixture fixture, ITestOutputHelper output)
+    public CabinStrategyTests(NoPasswordFixture fixture, ITestOutputHelper output)
         : base(fixture, output) { }
 
     #region GET /cabins — basic state
@@ -91,7 +94,8 @@ public class CabinStrategyTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// Verifies that with CabinStack strategy, all cabins are at the hidden location.
+    /// Verifies that with CabinStack strategy, all CabinStack cabins are at the hidden location.
+    /// Lobby cabins (if any) are excluded from this check as they have their own hidden location.
     /// </summary>
     [Fact]
     public async Task CabinStack_AllCabinsAreHidden()
@@ -102,13 +106,24 @@ public class CabinStrategyTests : IntegrationTestBase
         Assert.Equal("CabinStack", cabins.Strategy);
         Assert.NotEmpty(cabins.Cabins);
 
-        foreach (var cabin in cabins.Cabins)
+        // Filter to only CabinStack type cabins (exclude Lobby cabins)
+        var cabinStackCabins = cabins.Cabins.Where(c => c.Type == "CabinStack").ToList();
+        Assert.NotEmpty(cabinStackCabins);
+
+        foreach (var cabin in cabinStackCabins)
         {
             Assert.True(cabin.IsHidden,
                 $"Cabin at ({cabin.TileX}, {cabin.TileY}) should be hidden in CabinStack strategy");
         }
 
-        Log($"All {cabins.Cabins.Count} cabins are at hidden location");
+        Log($"All {cabinStackCabins.Count} CabinStack cabins are at hidden location");
+
+        // Log any lobby cabins for visibility
+        var lobbyCabins = cabins.Cabins.Where(c => c.Type == "Lobby").ToList();
+        if (lobbyCabins.Count > 0)
+        {
+            Log($"Found {lobbyCabins.Count} Lobby cabin(s) (excluded from CabinStack check)");
+        }
 
         await AssertNoExceptionsAsync("at end of test");
     }
@@ -147,17 +162,17 @@ public class CabinStrategyTests : IntegrationTestBase
         // Disconnect so the farmhand goes offline
         await DisconnectAsync();
 
-        // Wait for server to process disconnection and replenish cabins
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
+        // Poll until cabin state reflects the disconnect (at least 1 assigned, at least 1 available)
+        CabinsResponse? cabinsAfter = null;
+        var cabinsUpdated = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            cabinsAfter = await ServerApi.GetCabins();
+            return cabinsAfter?.AssignedCount >= 1 && cabinsAfter?.AvailableCount >= 1;
+        }, TestTimings.FarmerDeleteTimeout);
 
-        // Check cabin state after join+disconnect
-        var cabinsAfter = await ServerApi.GetCabins();
+        Assert.True(cabinsUpdated, "Cabin state should update after disconnect");
         Assert.NotNull(cabinsAfter);
         Log($"After join+disconnect: total={cabinsAfter.TotalCount}, assigned={cabinsAfter.AssignedCount}, available={cabinsAfter.AvailableCount}");
-
-        // The joined farmer should now be assigned
-        Assert.True(cabinsAfter.AssignedCount >= 1,
-            "At least one cabin should be assigned after a player joined");
 
         // Replenishment: there should still be at least one available cabin
         Assert.True(cabinsAfter.AvailableCount >= 1,
@@ -184,56 +199,31 @@ public class CabinStrategyTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
 
-        // Poll for cabin assignment - server needs time to sync farmhand data
-        var ownedCabin = await WaitForCabinAssignmentAsync(farmerName);
+        // Poll until cabin ownership appears in the API
+        CabinsResponse? cabins = null;
+        var ownerSynced = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            cabins = await ServerApi.GetCabins();
+            return cabins?.Cabins.Any(c =>
+                c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned) == true;
+        }, TestTimings.NetworkSyncTimeout);
+
+        Assert.NotNull(cabins);
+
+        Log($"Cabins after join ({cabins.Cabins.Count} total):");
+        foreach (var c in cabins.Cabins)
+        {
+            LogDetail($"({c.TileX},{c.TileY}) type={c.Type} hidden={c.IsHidden} assigned={c.IsAssigned} owner='{c.OwnerName}' id={c.OwnerId}");
+        }
+
+        var ownedCabin = cabins.Cabins.FirstOrDefault(c =>
+            c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned);
 
         Assert.NotNull(ownedCabin);
         Assert.True(ownedCabin.OwnerId != 0, "Owner ID should be set");
         LogSuccess($"Found cabin owned by '{farmerName}' at ({ownedCabin.TileX},{ownedCabin.TileY})");
 
         await AssertNoExceptionsAsync("at end of test");
-    }
-
-    /// <summary>
-    /// Polls GET /cabins until a cabin with the given owner name shows IsAssigned=true.
-    /// This accounts for the delay between joining the world and farmhand data syncing.
-    /// </summary>
-    private async Task<CabinInfoResponse?> WaitForCabinAssignmentAsync(string ownerName)
-    {
-        var deadline = DateTime.UtcNow + TestTimings.CabinAssignmentTimeout;
-        CabinsResponse? lastCabins = null;
-
-        while (DateTime.UtcNow < deadline)
-        {
-            lastCabins = await ServerApi.GetCabins();
-            if (lastCabins == null)
-            {
-                await Task.Delay(TestTimings.CabinAssignmentPollInterval);
-                continue;
-            }
-
-            var assignedCabin = lastCabins.Cabins.FirstOrDefault(c =>
-                c.OwnerName.Equals(ownerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned);
-
-            if (assignedCabin != null)
-            {
-                return assignedCabin;
-            }
-
-            await Task.Delay(TestTimings.CabinAssignmentPollInterval);
-        }
-
-        // Log final state for debugging
-        if (lastCabins != null)
-        {
-            Log($"Timeout waiting for cabin assignment. Final state ({lastCabins.Cabins.Count} cabins):");
-            foreach (var c in lastCabins.Cabins)
-            {
-                LogDetail($"({c.TileX},{c.TileY}) hidden={c.IsHidden} assigned={c.IsAssigned} owner='{c.OwnerName}' id={c.OwnerId}");
-            }
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -249,12 +239,17 @@ public class CabinStrategyTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
 
-        // Wait for cabin assignment to sync before checking counts
-        var ownedCabin = await WaitForCabinAssignmentAsync(farmerName);
-        Assert.NotNull(ownedCabin);
-
-        var cabins = await ServerApi.GetCabins();
-        var farmhands = await ServerApi.GetFarmhands();
+        // Poll until cabin assigned count matches customized farmhand count
+        CabinsResponse? cabins = null;
+        ServerFarmhandsResponse? farmhands = null;
+        var synced = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            cabins = await ServerApi.GetCabins();
+            farmhands = await ServerApi.GetFarmhands();
+            if (cabins == null || farmhands == null) return false;
+            var customized = farmhands.Farmhands.Count(f => f.IsCustomized);
+            return customized == cabins.AssignedCount && cabins.AssignedCount > 0;
+        }, TestTimings.NetworkSyncTimeout);
 
         Assert.NotNull(cabins);
         Assert.NotNull(farmhands);
@@ -282,17 +277,30 @@ public class CabinStrategyTests : IntegrationTestBase
         var joinResult = await JoinWorldWithRetryAsync(farmerName);
         AssertJoinSuccess(joinResult);
         await DisconnectAsync();
-        await Task.Delay(TestTimings.DisconnectProcessingDelay);
 
-        // Delete the farmhand and wait for deletion to complete
+        // Delete the farmhand (poll until server processes disconnect)
         Log($"Deleting farmhand '{farmerName}'...");
-        var deleted = await DeleteFarmhandAndWaitAsync(farmerName);
-        Assert.True(deleted, $"Farmhand '{farmerName}' should have been deleted");
+        FarmhandOperationResponse? deleteResult = null;
+        var deleted = await PollingHelper.WaitUntilAsync(async () =>
+        {
+            deleteResult = await ServerApi.DeleteFarmhand(farmerName);
+            return deleteResult?.Success == true;
+        }, TestTimings.FarmerDeleteTimeout);
+        Assert.True(deleted, $"Delete should succeed: {deleteResult?.Error ?? "timeout"}");
         CreatedFarmers.Remove(farmerName);
 
-        // Verify counts are consistent after deletion
-        var cabins = await ServerApi.GetCabins();
-        var farmhands = await ServerApi.GetFarmhands();
+        // Poll until deletion is reflected in cabin/farmhand counts
+        CabinsResponse? cabins = null;
+        ServerFarmhandsResponse? farmhands = null;
+        await PollingHelper.WaitUntilAsync(async () =>
+        {
+            cabins = await ServerApi.GetCabins();
+            farmhands = await ServerApi.GetFarmhands();
+            if (cabins == null || farmhands == null) return false;
+            // Deletion is reflected when counts are consistent
+            return cabins.TotalCount == cabins.AssignedCount + cabins.AvailableCount
+                && farmhands.Farmhands.Any(f => !f.IsCustomized);
+        }, TestTimings.NetworkSyncTimeout);
 
         Assert.NotNull(cabins);
         Assert.NotNull(farmhands);
