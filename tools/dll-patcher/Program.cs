@@ -1,5 +1,11 @@
+// Custom DLL patcher to modify the Stardew Valley game DLL before SMAPI and our mod loads.
+// Currently used in an attempt to fully disable sounds in headless environments, by removing
+// the `InitializeSounds` call from the `Game1.Initialize()` method.
+//
 // NOTE: This is a very early version created to check if this approach works/is feasible.
 // While it is functional, it definitely needs to be properly refactored and cleaned up.
+// It was already found out that we strip the DLL from debug symbols, causing some issues
+// with `Space Core` mod, which in turn is needed for e.g. SDVE.
 
 using Mono.Cecil;
 using Mono.Cecil.Cil;

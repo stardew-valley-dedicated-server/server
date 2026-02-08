@@ -193,7 +193,7 @@ init_xauthority
 init_stardew
 init_steam_sdk
 init_smapi
-init_patch_dll
+# init_patch_dll # This seems to strip debug symbols from SDV, so currently disabled to avoid issues in Space Core mod
 init_mods
 init_permissions
 
