@@ -2,7 +2,7 @@ name: Deploy Server
 
 on:
   workflow_run:
-    workflows: ["Preview Build"]
+    workflows: ["Build Preview"]
     types:
       - completed
     branches:

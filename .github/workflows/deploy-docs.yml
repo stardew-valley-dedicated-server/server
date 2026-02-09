@@ -1,13 +1,24 @@
 name: Deploy Documentation
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Which version was just built (latest or preview)'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Docker image tag to extract OpenAPI spec from'
+      rebuild_latest:
+        description: 'Rebuild latest docs from Docker image'
         required: false
-        default: 'latest'
-        type: string
+        default: false
+        type: boolean
+      rebuild_preview:
+        description: 'Rebuild preview docs from Docker image'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-docs
@@ -17,58 +28,130 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 jobs:
-  build:
-    name: Build Documentation
-    runs-on: ubuntu-latest
+  # Optionally rebuild docs if requested via manual trigger
+  build-latest:
+    name: Build Latest Docs
+    if: inputs.rebuild_latest == true
+    uses: ./.github/workflows/build-docs.yml
+    with:
+      version: latest
+      image_tag: latest
+    secrets: inherit
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract OpenAPI spec from Docker image
-        run: |
-          docker pull sdvd/server:${{ inputs.image_tag }}
-          CONTAINER_ID=$(docker create sdvd/server:${{ inputs.image_tag }})
-          mkdir -p docs/assets
-          docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
-          docker rm "$CONTAINER_ID"
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2.1.2
-
-      - name: Setup Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-
-      - name: Install dependencies
-        run: bun install
-        working-directory: docs
-
-      - name: Build documentation
-        run: bun run build
-        working-directory: docs
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
-        with:
-          path: docs/.vitepress/dist
+  build-preview:
+    name: Build Preview Docs
+    if: inputs.rebuild_preview == true
+    uses: ./.github/workflows/build-docs.yml
+    with:
+      version: preview
+      image_tag: preview
+    secrets: inherit
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: build
+    needs: [build-latest, build-preview]
+    if: always() && !failure() && !cancelled()
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+      # Try to download from current workflow run first
+      # This works when called from build-release.yml/build-preview.yml which run build-docs first
+      - name: Download latest docs (current run)
+        id: current-latest
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: docs-latest
+          path: dist
+        continue-on-error: true
+
+      - name: Download preview docs (current run)
+        id: current-preview
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: docs-preview
+          path: dist/preview
+        continue-on-error: true
+
+      # If not found in current run, fetch from previous workflow runs
+      # Try build-release.yml first (primary source for latest docs)
+      - name: Download latest docs (from release workflow)
+        id: release-latest
+        if: steps.current-latest.outcome != 'success'
+        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        with:
+          workflow: build-release.yml
+          name: docs-latest
+          path: dist
+          if_no_artifact_found: ignore
+          allow_forks: false
+        continue-on-error: true
+
+      # Fallback: check deploy-docs.yml for manually rebuilt latest docs
+      - name: Download latest docs (from manual rebuild)
+        if: steps.current-latest.outcome != 'success' && steps.release-latest.outcome != 'success'
+        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        with:
+          workflow: deploy-docs.yml
+          name: docs-latest
+          path: dist
+          if_no_artifact_found: warn
+          allow_forks: false
+
+      # Try build-preview.yml first (primary source for preview docs)
+      - name: Download preview docs (from build-preview workflow)
+        id: build-preview-artifact
+        if: steps.current-preview.outcome != 'success'
+        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        with:
+          workflow: build-preview.yml
+          name: docs-preview
+          path: dist/preview
+          if_no_artifact_found: ignore
+          allow_forks: false
+        continue-on-error: true
+
+      # Fallback: check deploy-docs.yml for manually rebuilt preview docs
+      - name: Download preview docs (from manual rebuild)
+        if: steps.current-preview.outcome != 'success' && steps.build-preview-artifact.outcome != 'success'
+        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        with:
+          workflow: deploy-docs.yml
+          name: docs-preview
+          path: dist/preview
+          if_no_artifact_found: warn
+          allow_forks: false
+
+      - name: Check artifacts exist
+        id: check
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist 2>/dev/null | grep -v preview)" ]; then
+            echo "::error::No docs-latest artifact found. Run with rebuild_latest=true or trigger a release."
+            exit 1
+          fi
+          echo "Latest docs: $(du -sh dist --exclude=dist/preview 2>/dev/null | cut -f1 || du -sh dist | cut -f1)"
+
+          if [ -d "dist/preview" ] && [ -n "$(ls -A dist/preview 2>/dev/null)" ]; then
+            echo "Preview docs: $(du -sh dist/preview | cut -f1)"
+            echo "has_preview=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::No preview docs artifact found. Preview docs will not be available."
+            echo "has_preview=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Upload merged artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: dist
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
@@ -78,20 +161,28 @@ jobs:
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Versions deployed:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.has_preview }}" == "true" ]; then
+            echo "- Preview: ${{ steps.deployment.outputs.page_url }}preview/" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Discord notification
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "Documentation Updated",
-                "color": 3447003,
-                "fields": [
-                  {"name": "View Docs", "value": "[stardew-valley-dedicated-server.github.io/server](${{ steps.deployment.outputs.page_url }})"}
-                ]
-              }]
-            }' \
-            "$DISCORD_WEBHOOK"
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            curl -H "Content-Type: application/json" \
+              -d '{
+                "embeds": [{
+                  "title": "Documentation Updated",
+                  "color": 3447003,
+                  "fields": [
+                    {"name": "View Docs", "value": "[stardew-valley-dedicated-server.github.io/server](${{ steps.deployment.outputs.page_url }})"}
+                  ]
+                }]
+              }' \
+              "$DISCORD_WEBHOOK"
+          fi

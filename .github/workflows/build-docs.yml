@@ -1,0 +1,61 @@
+name: Build Documentation
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Documentation version (latest or preview)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag to extract OpenAPI spec from'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build Documentation (${{ inputs.version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract OpenAPI spec from Docker image
+        run: |
+          docker pull sdvd/server:${{ inputs.image_tag }}
+          CONTAINER_ID=$(docker create sdvd/server:${{ inputs.image_tag }})
+          mkdir -p docs/assets
+          docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
+          docker rm "$CONTAINER_ID"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2.1.2
+
+      - name: Install dependencies
+        run: bun install
+        working-directory: docs
+
+      - name: Build documentation
+        run: bun run build
+        working-directory: docs
+        env:
+          DOCS_VERSION: ${{ inputs.version }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-${{ inputs.version }}
+          path: docs/.vitepress/dist
+          retention-days: 14
+          overwrite: true
