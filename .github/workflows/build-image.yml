@@ -1,0 +1,117 @@
+name: Build Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Docker image name (e.g., sdvd/server)'
+        required: true
+        type: string
+      context:
+        description: 'Docker build context path'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Path to Dockerfile'
+        required: true
+        type: string
+      version:
+        description: 'Version tag for the image'
+        required: true
+        type: string
+      additional_tag:
+        description: 'Additional tag (e.g., latest, preview)'
+        required: false
+        type: string
+        default: ''
+      cache_scope:
+        description: 'Cache scope for GHA cache (leave empty for default)'
+        required: false
+        type: string
+        default: ''
+      use_steam_secrets:
+        description: 'Whether to pass Steam secrets to the build'
+        required: false
+        type: boolean
+        default: false
+      push:
+        description: 'Whether to push the image'
+        required: false
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build ${{ inputs.image_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ inputs.image_name }}
+          tags: |
+            type=raw,value=${{ inputs.version }}
+            ${{ inputs.additional_tag != '' && format('type=raw,value={0}', inputs.additional_tag) || '' }}
+
+      - name: Build and push Docker image (with Steam secrets)
+        if: inputs.use_steam_secrets
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          secrets: |
+            steam_username=${{ secrets.STEAM_USERNAME }}
+            steam_password=${{ secrets.STEAM_PASSWORD }}
+            steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
+          cache-from: ${{ inputs.cache_scope != '' && format('type=gha,scope={0}', inputs.cache_scope) || 'type=gha' }}
+          cache-to: ${{ inputs.cache_scope != '' && format('type=gha,mode=max,scope={0}', inputs.cache_scope) || 'type=gha,mode=max' }}
+
+      - name: Build and push Docker image
+        if: ${{ !inputs.use_steam_secrets }}
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: ${{ inputs.cache_scope != '' && format('type=gha,scope={0}', inputs.cache_scope) || 'type=gha' }}
+          cache-to: ${{ inputs.cache_scope != '' && format('type=gha,mode=max,scope={0}', inputs.cache_scope) || 'type=gha,mode=max' }}
+
+      - name: Build summary
+        run: |
+          echo "### ${{ inputs.image_name }} Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_name }}:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.additional_tag }}" ]; then
+            echo "- \`${{ inputs.image_name }}:${{ inputs.additional_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          fi

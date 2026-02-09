@@ -1,0 +1,169 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+
+    steps:
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-publish:
+    name: Build and Publish Docker Image
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: sdvd/server
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.release-please.outputs.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          secrets: |
+            steam_username=${{ secrets.STEAM_USERNAME }}
+            steam_password=${{ secrets.STEAM_PASSWORD }}
+            steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: sdvd/server
+          readme-filepath: ./README.md
+
+      - name: Build summary
+        run: |
+          echo "### Production Release Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ needs.release-please.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/server:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`sdvd/server:${{ needs.release-please.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull sdvd/server:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            curl -H "Content-Type: application/json" \
+              -d '{
+                "embeds": [{
+                  "title": "New Release Published",
+                  "color": 5763719,
+                  "fields": [
+                    {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`"},
+                    {"name": "How to update", "value": "```docker compose pull```"},
+                    {"name": "Release Notes", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }})"}
+                  ]
+                }]
+              }' \
+              "$DISCORD_WEBHOOK"
+          fi
+
+  build-and-publish-steam-service:
+    name: Build Steam Service
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image_name: sdvd/steam-service
+      context: ./tools/steam-service
+      dockerfile: ./tools/steam-service/Dockerfile
+      version: ${{ needs.release-please.outputs.version }}
+      additional_tag: latest
+      cache_scope: steam-service
+    secrets: inherit
+
+  build-and-publish-discord-bot:
+    name: Build Discord Bot
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image_name: sdvd/discord-bot
+      context: ./tools/discord-bot
+      dockerfile: ./tools/discord-bot/Dockerfile
+      version: ${{ needs.release-please.outputs.version }}
+      additional_tag: latest
+      cache_scope: discord-bot
+    secrets: inherit
+
+  build-docs:
+    name: Build Latest Docs
+    needs: build-and-publish
+    uses: ./.github/workflows/build-docs.yml
+    with:
+      version: latest
+      image_tag: latest
+    secrets: inherit
+
+  deploy-docs:
+    name: Deploy Documentation
+    needs: build-docs
+    uses: ./.github/workflows/deploy-docs.yml
+    with:
+      version: latest
+    secrets: inherit

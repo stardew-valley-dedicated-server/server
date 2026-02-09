@@ -1,0 +1,42 @@
+name: Cleanup Caches
+
+on:
+  schedule:
+    - cron: "0 6 * * 0" # Weekly on Sunday at 6:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Cleanup Stale Caches
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      - name: Cleanup old caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Cleaning up stale caches..."
+
+          # Get caches older than 14 days
+          CUTOFF=$(date -d '14 days ago' -Iseconds)
+
+          STALE_CACHES=$(gh api repos/$REPO/actions/caches --paginate \
+            --jq ".actions_caches[] | select(.last_accessed_at < \"$CUTOFF\") | .id")
+
+          if [ -z "$STALE_CACHES" ]; then
+            echo "No stale caches found"
+            exit 0
+          fi
+
+          DELETED=0
+          for CACHE_ID in $STALE_CACHES; do
+            gh api -X DELETE repos/$REPO/actions/caches/$CACHE_ID && DELETED=$((DELETED + 1))
+          done
+
+          echo "### Cache Cleanup" >> $GITHUB_STEP_SUMMARY
+          echo "Deleted **$DELETED** stale cache(s) (older than 14 days)" >> $GITHUB_STEP_SUMMARY

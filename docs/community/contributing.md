@@ -120,9 +120,9 @@ The project uses automated workflows for building and releasing:
 
 | Workflow | Trigger | Output |
 |----------|---------|--------|
-| **PR Validation** | Pull requests → `master` | Build validation only |
-| **Preview Build** | Push to `master` | `sdvd/server:preview` + versioned preview tags |
-| **Production Release** | Merge Release PR | GitHub release + `sdvd/server:latest` + version tag |
+| **Validate PR** | Pull requests → `master` | Build validation only |
+| **Build Preview** | Push to `master` | `sdvd/server:preview` + versioned preview tags |
+| **Build Release** | Merge Release PR | GitHub release + `sdvd/server:latest` + version tag |
 
 ### Creating Releases
 
@@ -210,8 +210,9 @@ Go to **Settings → Secrets → Actions** and add:
 |--------|-------------|
 | `DOCKERHUB_USERNAME` | DockerHub username |
 | `DOCKERHUB_TOKEN` | [Create token](https://hub.docker.com/settings/security) |
-| `STEAM_USER` | Steam username (for game download during build) |
-| `STEAM_PASS` | Steam password |
+| `STEAM_USERNAME` | Steam username (for game download during build) |
+| `STEAM_PASSWORD` | Steam password |
+| `STEAM_REFRESH_TOKEN` | Steam OAuth refresh token (optional, preferred over password) |
 
 #### 2. Configure Branch Protection
 
@@ -233,7 +234,7 @@ Settings → Actions → General → Fork pull request workflows:
 ### Build Issues
 
 **Build fails with Steam auth error:**
-- Verify `STEAM_USER` and `STEAM_PASS` secrets are set
+- Verify `STEAM_USERNAME` and `STEAM_PASSWORD` (or `STEAM_REFRESH_TOKEN`) secrets are set
 - Ensure Steam account owns Stardew Valley
 
 **Docker push fails:**

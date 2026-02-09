@@ -105,7 +105,7 @@ cli:
 # View server logs (escape sequence to reset colors)
 logs:
 	@docker compose logs -f
-	@printf '\033[0m'
+	-@bun -e "process.stdout.write('\x1b[0m')"
 
 dumplogs:
 	@echo "Writing logs to logs_$(TIMESTAMP).txt"
@@ -114,26 +114,19 @@ dumplogs:
 # Start docs dev server (extracts OpenAPI spec from Docker image first)
 docs:
 	@echo Extracting OpenAPI spec from $(IMAGE_NAME):$(IMAGE_VERSION) image...
-ifeq ($(OS),Windows_NT)
-	@if not exist docs\assets mkdir docs\assets
-	-@docker rm openapi-extract >NUL 2>&1
-	@docker create --name openapi-extract $(IMAGE_NAME):$(IMAGE_VERSION) >NUL 2>&1
+	@bun -e "require('fs').mkdirSync('docs/assets', { recursive: true })"
+	-@bun -e "try{require('child_process').execSync('docker rm -f openapi-extract',{stdio:'ignore'})}catch(e){}"
+	@docker create --name openapi-extract $(IMAGE_NAME):$(IMAGE_VERSION)
 	@docker cp openapi-extract:/data/openapi.json docs/assets/openapi.json
-	-@docker rm openapi-extract >NUL 2>&1
-else
-	@mkdir -p docs/assets
-	@CONTAINER_ID=$$(docker create $(IMAGE_NAME):$(IMAGE_VERSION)) && \
-		docker cp "$$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json && \
-		docker rm "$$CONTAINER_ID" > /dev/null
-endif
+	@docker rm openapi-extract
 	@echo OpenAPI spec ready.
-	@npm --prefix ./docs run dev
+	@bun --cwd=./docs run dev
 
 # Clean up everything, including all volumes
 clean:
 	@echo Cleaning up...
 	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v
-	@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest 2>/dev/null || true
+	-@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest
 
 # Run tests. Use FILTER to run specific tests:
 #   make test FILTER=PasswordProtection
@@ -150,21 +143,21 @@ test:
 # Show help
 help:
 	@echo Stardew Valley Dedicated Server
-	@echo.
+	@echo ""
 	@echo Targets:
-	@echo   make install  - Install development dependencies (commitlint, git hooks)
-	@echo   make setup    - Run first-time Steam authentication and game download
-	@echo   make up       - Build and start server
-	@echo   make build    - Build docker image
-	@echo   make logs     - View server logs
-	@echo   make dumplogs - Dump server logs to file on host
-	@echo   make cli      - Attach to interactive server console (tmux-based)
-	@echo   make down     - Stop the server
-	@echo   make docs     - Start docs dev server (requires built image)
-	@echo   make clean    - Remove ALL containers, volumes and images
-	@echo   make test     - Run E2E tests (use FILTER=X to filter, e.g. FILTER=PasswordProtection)
-	@echo   make build-test-client - Build test client container image (for E2E tests)
-	@echo.
+	@echo "  make install  - Install development dependencies (commitlint, git hooks)"
+	@echo "  make setup    - Run first-time Steam authentication and game download"
+	@echo "  make up       - Build and start server"
+	@echo "  make build    - Build docker image"
+	@echo "  make logs     - View server logs"
+	@echo "  make dumplogs - Dump server logs to file on host"
+	@echo "  make cli      - Attach to interactive server console (tmux-based)"
+	@echo "  make down     - Stop the server"
+	@echo "  make docs     - Start docs dev server (requires built image)"
+	@echo "  make clean    - Remove ALL containers, volumes and images"
+	@echo "  make test     - Run E2E tests (use FILTER=X to filter, e.g. FILTER=PasswordProtection)"
+	@echo "  make build-test-client - Build test client container image (for E2E tests)"
+	@echo ""
 	@echo Note: Use GitHub Actions for building and pushing release images
 
 .DEFAULT_GOAL := help

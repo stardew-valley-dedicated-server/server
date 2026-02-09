@@ -3,6 +3,7 @@ import { ref, onMounted } from "vue";
 import { withBase } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import ThemeSelector from "./ThemeSelector.vue";
+import VersionSwitcher from "./VersionSwitcher.vue";
 
 const { Layout } = DefaultTheme;
 
@@ -38,7 +39,11 @@ function closeAnnouncement() {
         <template #layout-top>
             <div v-if="showAnnouncement" class="announcement-bar">
                 <span class="announcement-content">
-                    ⚠️ Latest release unstable — use <a :href="announcementLink" class="announcement-link">preview builds</a> instead
+                    ⚠️ The latest release is unstable — use
+                    <a :href="announcementLink" class="announcement-link"
+                        >preview builds</a
+                    >
+                    instead
                 </span>
                 <button
                     class="announcement-close"
@@ -51,9 +56,11 @@ function closeAnnouncement() {
         </template>
         <template #nav-bar-content-after>
             <ThemeSelector />
+            <VersionSwitcher />
         </template>
         <template #nav-screen-content-after>
             <ThemeSelector />
+            <VersionSwitcher />
         </template>
     </Layout>
 </template>
@@ -69,11 +76,7 @@ function closeAnnouncement() {
     left: 0;
     right: 0;
     height: var(--announcement-height);
-    background: linear-gradient(
-        90deg,
-        #d97706 0%,
-        #b45309 100%
-    );
+    background: linear-gradient(90deg, #d97706 0%, #b45309 100%);
     z-index: 100;
     display: flex;
     align-items: center;
