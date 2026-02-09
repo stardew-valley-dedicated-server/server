@@ -4,16 +4,19 @@ We use GitHub Actions for automated building, testing, and deployment. This guid
 
 ## Overview
 
-| Pipeline                                 | Trigger                                | Purpose                                             |
-| ---------------------------------------- | -------------------------------------- | --------------------------------------------------- |
-| [Release Build](#release-pipeline)       | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
-| [Preview Build](#preview-build-pipeline) | Merge feature to `master`              | Builds and publishes preview Docker images          |
-| [Deploy Server](#deploy-server-pipeline) | After preview build / manual           | Deploys server instances to VPS                     |
+| Pipeline                                      | Trigger                                | Purpose                                             |
+| --------------------------------------------- | -------------------------------------- | --------------------------------------------------- |
+| [Build Release](#build-release-pipeline)      | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
+| [Build Preview](#build-preview-pipeline)      | Push to `master`                       | Builds and publishes preview Docker images          |
+| [Validate PR](#validate-pr-pipeline)          | Pull requests to `master`              | Validates commits and builds                        |
+| [Deploy Server](#deploy-server-pipeline)      | After preview build / manual           | Deploys server instances to VPS                     |
+| [Deploy Docs](#deploy-docs-pipeline)          | After build / manual                   | Deploys documentation to GitHub Pages               |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual               | Deletes old preview tags from DockerHub             |
+| [Cleanup Caches](#cleanup-caches)             | Weekly schedule / manual               | Removes stale GitHub Actions caches                 |
 
-## Release Build Pipeline
+## Build Release Pipeline
 
-[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/release.yml)
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/build-release.yml)
 
 The release pipeline handles version bumping, changelog generation, and publishing stable Docker images to DockerHub once a [release-please](https://github.com/googleapis/release-please) release candidate PR has been merged to master.
 
@@ -42,15 +45,15 @@ docker pull sdvd/server:latest
 docker pull sdvd/server:1.5.0
 ```
 
-## Preview Build Pipeline
+## Build Preview Pipeline
 
-[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/preview-build.yml)
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/build-preview.yml)
 
 ::: warning
 Preview builds may contain experimental features or bugs. Use stable releases for production servers.
 :::
 
-The preview build pipeline runs on every push to `master` and creates pre-release Docker images for testing new features before they're officially released.
+The preview build pipeline runs on every push to `master` (except docs-only or test-only changes) and creates pre-release Docker images for testing new features before they're officially released.
 
 ### Versioning
 
@@ -98,11 +101,22 @@ The floating `preview`, `latest`, and release `X.Y.Z` tags are never touched.
 | `keep_count` | `10`    | Number of most recent preview tags to keep        |
 | `dry_run`    | `false` | List tags that would be deleted without deleting  |
 
+## Validate PR Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/validate-pr.yml)
+
+The validation pipeline runs on every pull request targeting `master`. It ensures code quality before merging.
+
+### What It Validates
+
+- **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
+- **Docker build** - Ensures the image builds successfully (without pushing)
+
 ## Deploy Docs Pipeline
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-docs.yml)
 
-Placeholder
+Deploys the documentation site to GitHub Pages. Runs automatically after builds or can be triggered manually to rebuild from existing Docker images.
 
 ## Deploy Server Pipeline
 
@@ -129,12 +143,12 @@ matrix:
     include:
         - environment: public-test
           image_tag: preview
-          on_preview_build: true
+          on_preview: true
           on_release: false
 
         - environment: production
           image_tag: latest
-          on_preview_build: false
+          on_preview: false
           on_release: true
 ```
 
@@ -231,6 +245,17 @@ The pipeline:
 ::: tip
 The pipeline uses the same `docker-compose.yml` from the repository, ensuring consistency between local development and deployed environments. The `IMAGE_VERSION` environment variable controls which image tag is used.
 :::
+
+## Cleanup Caches
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/cleanup-caches.yml)
+
+GitHub Actions caches can accumulate over time. This pipeline removes caches that haven't been accessed in 14 days.
+
+### When It Runs
+
+- **Weekly** on Sunday at 06:00 UTC
+- **Manually** via GitHub Actions "Run workflow" button
 
 ## Discord Notifications
 

@@ -4,6 +4,11 @@ import { useSidebar } from "vitepress-openapi";
 import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
 import spec from "../assets/openapi.json" with { type: "json" };
 
+// Docs version: "latest" or "preview" (set via DOCS_VERSION env var during build)
+const docsVersion = process.env.DOCS_VERSION || "latest";
+const isPreview = docsVersion === "preview";
+const base = isPreview ? "/server/preview/" : "/server/";
+
 const openApiSidebar = useSidebar({ spec, linkPrefix: "/api/" });
 
 export default withMermaid(defineConfig({
@@ -20,11 +25,11 @@ export default withMermaid(defineConfig({
             }),
         ],
     },
-    base: "/server/",
-    title: "JunimoServer",
+    base,
+    title: isPreview ? "JunimoServer (Preview)" : "JunimoServer",
     description: "Stardew Valley dedicated server documentation",
     head: [
-        ["link", { rel: "icon", href: "/server/logo.svg" }],
+        ["link", { rel: "icon", href: `${base}logo.svg` }],
         ["meta", { property: "og:type", content: "website" }],
         ["meta", { property: "og:title", content: "JunimoServer" }],
         ["meta", { property: "og:description", content: "Stardew Valley dedicated server documentation" }],

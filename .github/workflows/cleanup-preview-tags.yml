@@ -49,12 +49,18 @@ jobs:
           fi
           echo "::add-mask::$TOKEN"
 
-          # Fetch tags and filter versioned preview tags (X.Y.Z-preview.N), newest first
-          PREVIEW_TAGS=$(curl -s \
-            "https://hub.docker.com/v2/repositories/$NS/$REPO/tags?page_size=100&ordering=-last_updated" \
-            -H "Authorization: Bearer $TOKEN" \
-            | jq '[.results[] | select(.name | test("^[0-9]+\\.[0-9]+\\.[0-9]+-preview\\.[0-9]+$"))]
-                  | sort_by(.last_updated) | reverse | [.[].name]')
+          # Fetch all tags with pagination and filter versioned preview tags (X.Y.Z-preview.N)
+          ALL_TAGS="[]"
+          NEXT_URL="https://hub.docker.com/v2/repositories/$NS/$REPO/tags?page_size=100&ordering=-last_updated"
+
+          while [ -n "$NEXT_URL" ] && [ "$NEXT_URL" != "null" ]; do
+            RESPONSE=$(curl -s "$NEXT_URL" -H "Authorization: Bearer $TOKEN")
+            PAGE_TAGS=$(echo "$RESPONSE" | jq '[.results[] | select(.name | test("^[0-9]+\\.[0-9]+\\.[0-9]+-preview\\.[0-9]+$"))]')
+            ALL_TAGS=$(echo "$ALL_TAGS $PAGE_TAGS" | jq -s 'add')
+            NEXT_URL=$(echo "$RESPONSE" | jq -r '.next // empty')
+          done
+
+          PREVIEW_TAGS=$(echo "$ALL_TAGS" | jq 'sort_by(.last_updated) | reverse | [.[].name]')
 
           TOTAL=$(echo "$PREVIEW_TAGS" | jq 'length')
           echo "Found $TOTAL preview tags for $NS/$REPO"

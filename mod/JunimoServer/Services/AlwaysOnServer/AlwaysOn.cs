@@ -173,12 +173,6 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
-            _updateTickLog++;
-            if (_updateTickLog % 300 == 0) // Every 5 seconds
-            {
-                Monitor.Log($"[DEBUG] OnUpdateTicked: IsAutomating={IsAutomating}, whereIsTodaysFest={Game1.whereIsTodaysFest}, otherFarmers={Game1.otherFarmers.Count}", LogLevel.Info);
-            }
-
             // Automate choices
             if (!IsAutomating)
             {
@@ -419,7 +413,9 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            // Don't skip festivals - they're handled by AlwaysOnFestivals
+            // Festivals are technically skippable, but we want
+            // to let players participate in them, so we have
+            // special logic inside AlwaysOnFestivals
             if (Game1.CurrentEvent.isFestival)
             {
                 return;
