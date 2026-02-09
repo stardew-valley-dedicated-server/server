@@ -10,7 +10,7 @@ interface Version {
 }
 
 const versions: Version[] = [
-    { id: "latest", name: "Latest", path: "/server/", badge: "stable", badgeType: "tip" },
+    { id: "latest", name: "Latest", path: "/server/", badge: "unstable", badgeType: "warning" },
     { id: "preview", name: "Preview", path: "/server/preview/", badge: "unstable", badgeType: "warning" },
 ];
 

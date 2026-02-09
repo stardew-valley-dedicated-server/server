@@ -10,9 +10,9 @@ Don't stress about asking something that feels obvious — we've all been there!
 
 ::: tip Documentation First
 Before asking, try checking:
-- The [Getting Started](/getting-started/introduction) guide
-- [Using the Server](/guide/using-the-server) documentation
-- [FAQ](/getting-started/faq) for common questions
+- [Admin Quick Start](/admins/quick-start/installation) for setup help
+- [Server Operations](/admins/operations/) for usage guides
+- [Troubleshooting](/admins/troubleshooting) for common issues
 - [GitHub Issues](https://github.com/stardew-valley-dedicated-server/server/issues) for similar problems
 :::
 

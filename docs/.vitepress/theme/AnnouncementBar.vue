@@ -7,7 +7,7 @@ import VersionSwitcher from "./VersionSwitcher.vue";
 
 const { Layout } = DefaultTheme;
 
-const announcementLink = withBase("/guide/upgrading#preview");
+const announcementLink = withBase("/admins/operations/upgrading#preview-builds");
 
 // Check localStorage immediately if available (for SSR, default to true so CSS offset is applied)
 function getInitialState(): boolean {
