@@ -127,6 +127,9 @@ jobs:
     name: Build Steam Service
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/build-image.yml
     with:
       image_name: sdvd/steam-service
@@ -141,6 +144,9 @@ jobs:
     name: Build Discord Bot
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/build-image.yml
     with:
       image_name: sdvd/discord-bot
@@ -154,6 +160,8 @@ jobs:
   build-docs:
     name: Build Latest Docs
     needs: build-and-publish
+    permissions:
+      contents: read
     uses: ./.github/workflows/build-docs.yml
     with:
       version: latest
@@ -163,6 +171,11 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     needs: build-docs
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: read
     uses: ./.github/workflows/deploy-docs.yml
     with:
       version: latest
