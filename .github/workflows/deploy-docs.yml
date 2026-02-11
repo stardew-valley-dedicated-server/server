@@ -19,6 +19,11 @@ on:
         required: false
         default: false
         type: boolean
+      use_preview_for_latest:
+        description: 'Build latest docs from preview image (for bootstrapping before first release)'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-docs
@@ -34,16 +39,16 @@ jobs:
   # Optionally rebuild docs if requested via manual trigger
   build-latest:
     name: Build Latest Docs
-    if: inputs.rebuild_latest == true
+    if: inputs.rebuild_latest == true || inputs.use_preview_for_latest == true
     uses: ./.github/workflows/build-docs.yml
     with:
       version: latest
-      image_tag: latest
+      image_tag: ${{ inputs.use_preview_for_latest == true && 'preview' || 'latest' }}
     secrets: inherit
 
   build-preview:
     name: Build Preview Docs
-    if: inputs.rebuild_preview == true
+    if: inputs.rebuild_preview == true || inputs.use_preview_for_latest == true
     uses: ./.github/workflows/build-docs.yml
     with:
       version: preview
