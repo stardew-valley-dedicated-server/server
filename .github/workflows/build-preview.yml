@@ -66,8 +66,9 @@ jobs:
 
           echo "Next version: $NEXT_VERSION"
 
-          # Get current preview tag to determine counter
-          PREVIEW_TAG=$(git tag -l 'preview-*' | head -n 1)
+          # Get current preview tag to determine counter (sort by version, highest first)
+          # Use preview-[0-9]* to exclude preview-steam-service-* and similar
+          PREVIEW_TAG=$(git tag -l 'preview-[0-9]*' --sort=-version:refname | head -n 1)
           if [ -n "$PREVIEW_TAG" ]; then
             # Parse existing tag: preview-{version}.{counter}
             PREVIEW_TAG_VERSION=$(echo "$PREVIEW_TAG" | sed 's/preview-\(.*\)\.[0-9]*$/\1/')
