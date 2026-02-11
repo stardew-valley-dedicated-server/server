@@ -739,7 +739,7 @@ namespace JunimoServer.Services.Api
                     Monitor.Log("[API] WebSocket client authenticated (auth disabled)", LogLevel.Debug);
                 }
 
-                await ProcessWebSocketAsync(ws, ref isAuthenticated);
+                isAuthenticated = await ProcessWebSocketAsync(ws, isAuthenticated);
             }
             catch (Exception ex)
             {
@@ -759,7 +759,7 @@ namespace JunimoServer.Services.Api
             }
         }
 
-        private async Task ProcessWebSocketAsync(WebSocket ws, ref bool isAuthenticated)
+        private async Task<bool> ProcessWebSocketAsync(WebSocket ws, bool isAuthenticated)
         {
             var buffer = new byte[4096];
             var messageBuilder = new StringBuilder();
@@ -790,14 +790,14 @@ namespace JunimoServer.Services.Api
                             await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Invalid token" });
                             await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication failed", CancellationToken.None);
                             Monitor.Log("[API] WebSocket client authentication failed - invalid token", LogLevel.Warn);
-                            return;
+                            return false;
                         }
                     }
                     else
                     {
                         await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Expected auth message", CancellationToken.None);
                         Monitor.Log("[API] WebSocket client authentication failed - unexpected message type", LogLevel.Warn);
-                        return;
+                        return false;
                     }
                 }
                 catch (OperationCanceledException)
@@ -805,7 +805,7 @@ namespace JunimoServer.Services.Api
                     await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Authentication timeout" });
                     try { await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication timeout", CancellationToken.None); } catch { }
                     Monitor.Log("[API] WebSocket client authentication timeout", LogLevel.Warn);
-                    return;
+                    return false;
                 }
             }
 
@@ -848,6 +848,8 @@ namespace JunimoServer.Services.Api
                     break;
                 }
             }
+
+            return isAuthenticated;
         }
 
         private async Task HandleWebSocketMessageAsync(WebSocket ws, string json)
