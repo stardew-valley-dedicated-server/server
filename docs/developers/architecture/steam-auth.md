@@ -1,10 +1,6 @@
 # Steam Authentication Architecture
 
-This document covers the technical architecture of JunimoServer's Steam authentication system.
-
-## Overview
-
-The Steam authentication service is a separate container that isolates Steam credentials from the main game server. It handles:
+The steam-auth service runs in a separate container to isolate Steam credentials from the game server. It handles:
 
 - Steam authentication and session management
 - Game file downloads from Steam depots
@@ -145,8 +141,3 @@ STEAM_REFRESH_TOKEN=xxx STEAM_USERNAME=user docker compose run steam-auth downlo
 |----------|-------------|---------|
 | `STEAM_AUTH_URL` | URL of steam-auth service | http://steam-auth:3001 |
 
-## Related Documentation
-
-- [First Server Setup](/admins/quick-start/first-setup) — Initial authentication setup
-- [Troubleshooting](/admins/troubleshooting) — Common auth issues
-- [CI/CD Pipelines](/developers/contributing/ci-cd) — Automated deployment

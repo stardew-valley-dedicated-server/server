@@ -8,9 +8,9 @@ services:
     ports:
       - "${VNC_PORT:-5800}:5800"
       - "${API_PORT:-8080}:8080"
-      # Steam SDR ports (used by GameServer.Init for relay network)
-      - "${SDR_GAME_PORT:-24642}:24642/udp"
-      - "${SDR_QUERY_PORT:-27015}:27015/udp"
+      # Steam relay ports (used by GameServer.Init for relay network)
+      - "${GAME_PORT:-24642}:24642/udp"
+      - "${QUERY_PORT:-27015}:27015/udp"
     cap_add:
       # Required to sync time, ensures GOG GalaxyAuth works
       - SYS_TIME
@@ -29,6 +29,7 @@ services:
       # HTTP API for external tools and automation
       API_ENABLED: "${API_ENABLED:-true}"
       API_PORT: "${API_PORT:-8080}"
+      API_KEY: "${API_KEY:-}"
       # Password protection
       SERVER_PASSWORD: "${SERVER_PASSWORD:-}"
       MAX_LOGIN_ATTEMPTS: "${MAX_LOGIN_ATTEMPTS:-3}"
@@ -77,6 +78,8 @@ services:
       DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
       # Channel ID for two-way chat relay (optional)
       DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
+      # API key (must match server's API_KEY if set)
+      API_KEY: "${API_KEY:-}"
     depends_on:
       - server
     # on-failure: won't restart when disabled (exit 0), will restart on crashes

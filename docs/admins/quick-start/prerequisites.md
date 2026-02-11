@@ -34,4 +34,8 @@ Consider a dedicated Steam account to avoid conflicts when playing while the ser
 | RAM | 2 GB | 4 GB |
 | Disk | 1 GB | 2+ GB |
 
+::: info Ballpark Estimates
+These are approximate figures based on testing. Actual requirements vary depending on player count, mods, and farm complexity. Monitor resource usage and adjust as needed.
+:::
+
 The server runs continuously (24/7) and uses resources even when no players are connected. For cloud hosting, factor in always-on costs.

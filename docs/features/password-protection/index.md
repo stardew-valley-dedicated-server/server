@@ -1,6 +1,6 @@
 # Password Protection
 
-JunimoServer has a password protection system with customizable lobbies. Players authenticate before accessing your farm. While waiting, they're held in an isolated lobby cabin where they can't interact with the game world.
+Players authenticate before accessing your farm. While waiting, they're held in an isolated lobby cabin where they can't interact with the game world.
 
 ![Lobby screenshot](/lobby/lobby-1.png)
 
@@ -30,6 +30,10 @@ Unauthenticated players:
 - Can't interact with anything (all actions blocked)
 - Get kicked after a timeout (configurable)
 - Have limited login attempts before kick
+
+::: warning Don't drop items in the lobby
+Items dropped in the lobby are lost. Wait until you've authenticated before dropping anything.
+:::
 
 ## Quick Setup
 
@@ -81,8 +85,3 @@ To disable password protection entirely (for private servers with trusted friend
 
 Restart the server for changes to take effect. Players will connect directly without seeing a lobby.
 
-## Next Steps
-
-- [Lobby Layouts](./lobby-layouts): customize with furniture, wallpaper, and spawn points
-- [Commands Reference](./commands): all lobby management and sharing commands
-- [Security & Configuration](./security): how the security layers work, example configs, troubleshooting

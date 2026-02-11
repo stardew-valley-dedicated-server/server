@@ -1,6 +1,6 @@
 # Server Mechanics
 
-JunimoServer runs your farm 24/7 without needing a player to host. The server includes automatic behaviors that handle game progression and edge cases silently in the background.
+The server stays online 24/7 without needing a player to host. Several automatic behaviors handle game progression.
 
 ## Host Player
 
@@ -38,8 +38,6 @@ Crops track their owner (the player who planted them). When owners go offline:
 - Season-end death is delayed while the owner is offline
 - Normal rules apply once the owner returns
 
-This prevents crops dying because you couldn't log in.
-
 ## Desync Protection
 
 Network desyncs can freeze the game. The server automatically kicks stuck players:
@@ -65,7 +63,3 @@ To prevent griefing, the server locks player storage:
 - Players participate normally
 - If stuck, use the `!event` command to force-start
 
-## Related
-
-- [Backup & Recovery](/features/backup) — Protect your farm
-- [Troubleshooting](/admins/troubleshooting) — Common issues

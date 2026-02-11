@@ -10,7 +10,7 @@ namespace JunimoServer
     internal class Env
     {
         public static readonly bool EnableModIncompatibleOptimizations =
-            bool.Parse(Environment.GetEnvironmentVariable("ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS") ?? "true");
+            bool.Parse(Environment.GetEnvironmentVariable("ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS") ?? "false");
 
         public static readonly int HealthCheckSeconds =
             Int32.Parse(Environment.GetEnvironmentVariable("HEALTH_CHECK_SECONDS") ?? "300");
@@ -41,6 +41,20 @@ namespace JunimoServer
         /// Set to "true" or "false" to override.
         /// </summary>
         public static readonly bool? VerboseLogging = ParseNullableBool("VERBOSE_LOGGING");
+
+        #region API Authentication
+
+        /// <summary>
+        /// API key for authenticating requests to protected endpoints.
+        /// When set, write operations (POST, DELETE) require the X-API-Key header.
+        /// Leave empty to allow unauthenticated access (not recommended for production).
+        /// Recommended: At least 32 characters, alphanumeric with mixed case.
+        /// Generate securely: bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+        /// </summary>
+        public static readonly string ApiKey =
+            Environment.GetEnvironmentVariable("API_KEY") ?? "";
+
+        #endregion
 
         #region Password Protection
 

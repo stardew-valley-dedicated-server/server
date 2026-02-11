@@ -1,7 +1,5 @@
 # Networking Internals
 
-This document covers the technical implementation of JunimoServer's networking system.
-
 ## Architecture Overview
 
 ```
@@ -130,7 +128,3 @@ docker compose exec server netdebug speed  # Test bandwidth
 - [ISteamNetworkingSockets](https://partner.steamgames.com/doc/api/ISteamNetworkingSockets)
 - [Steamworks.NET](https://github.com/rlabrecque/Steamworks.NET)
 
-## Related Documentation
-
-- [Networking (Admin Guide)](/admins/operations/networking) — Connection troubleshooting
-- [Troubleshooting](/admins/troubleshooting) — Common issues

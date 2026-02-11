@@ -22,37 +22,37 @@ hero:
 features:
     - icon: <animated-icon name="SLA" />
       title: 24/7 Dedicated Hosting
-      details: Your farm runs continuously — no player or game client needs to stay open.
+      details: Server stays online and available. No player or game client needs to stay open.
 
     - icon: <animated-icon name="Staff" />
       title: Multi-Player Ready
-      details: Automatic cabin management and crop protection for multiple players.
+      details: Automatic cabin management and crop protection.
 
     - icon: <animated-icon name="Security" />
       title: Password Protection
-      details: Secure your farm with customizable lobby cabins. Players authenticate before entering.
+      details: Customizable lobby cabins. Players authenticate before entering.
 
     - icon: <animated-icon name="API" />
       title: Mod Support
-      details: Supports SMAPI mods for enhanced Stardew Valley gameplay.
+      details: SMAPI mods work on the server.
 
     - icon: <animated-icon name="Maintenance" />
       title: Easy Management
-      details: CLI, SMAPI console, in-game commands, and VNC — all Docker-powered.
+      details: CLI, SMAPI console, in-game commands, and VNC.
 
     - icon: <animated-icon name="cloud" />
       title: Backup Support
-      details: SMAPI automatic backups plus persistent Docker volumes keep your farm safe.
+      details: SMAPI automatic backups plus persistent Docker volumes.
 
     - icon: <animated-icon name="Server" />
       title: Cross-Platform
-      details: Host your server on Linux or Windows.
+      details: Runs on Linux or Windows.
 
     - icon: <animated-icon name="Solution" />
       title: Self-Hosted
-      details: Full control and privacy, requires only a valid Steam copy of Stardew Valley.
+      details: Full control and privacy. Requires a Steam copy of Stardew Valley.
 
     - icon: <animated-icon name="Setup" />
-      title: Open & Developer-Friendly
-      details: Open-source, developer-focused, and fully customizable.
+      title: Open Source
+      details: MIT licensed. Fully customizable.
 ---

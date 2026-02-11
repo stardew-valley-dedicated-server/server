@@ -187,7 +187,9 @@ All secrets use the `DEPLOY_` prefix.
 
 | Secret | Required | Description |
 |--------|----------|-------------|
+| `DEPLOY_API_KEY` | No | API key for authenticating API/WebSocket requests |
 | `DEPLOY_DISCORD_BOT_TOKEN` | No | Discord bot token for status display |
+| `DEPLOY_DISCORD_CHAT_CHANNEL_ID` | No | Discord channel ID for chat relay |
 | `DEPLOY_GAME_PORT` | Yes | UDP port for game connections |
 | `DEPLOY_SSH_HOST` | Yes | Server IP address or hostname |
 | `DEPLOY_SSH_KEY` | Yes | SSH private key (Ed25519 recommended) |
@@ -201,6 +203,10 @@ All secrets use the `DEPLOY_` prefix.
 | `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web interface |
 
 _¹ Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used)._
+
+::: tip API Key
+Generate a secure API key with: `bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
+:::
 
 ::: tip
 If multiple servers share the same VPS and credentials, **repository-level** secrets can be used as fallbacks. Environment-level secrets override repository-level secrets with the same name.

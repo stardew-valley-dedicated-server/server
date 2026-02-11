@@ -1,7 +1,5 @@
 # Resources
 
-Useful links for Stardew Valley modding, related projects, and tools.
-
 ## Stardew Valley Modding
 
 - [SMAPI](https://smapi.io/) — The modding framework that powers JunimoServer

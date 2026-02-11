@@ -12,8 +12,12 @@ How to connect to a JunimoServer-hosted farm.
 
 | Platform | Format | Example |
 |----------|--------|---------|
-| Steam | Numeric | `123456789` |
+| Steam | Starts with "S" | `S123456789` |
 | GOG Galaxy | Starts with "G" | `G1234567890ABCDEF` |
+
+::: tip
+When both Steam and GOG codes are available, Steam is recommended for better connection reliability (~99% vs ~50% success rate).
+:::
 
 ## How to Connect
 
@@ -27,10 +31,14 @@ How to connect to a JunimoServer-hosted farm.
 If the server requires a password, you'll spawn in a lobby. Type in chat:
 
 ```
-!login mypassword123
+!login serverpassword
 ```
 
 On success, you'll warp to your cabin.
+
+::: warning
+Don't drop items while in the lobby — they will be lost.
+:::
 
 ## First Time vs Returning
 

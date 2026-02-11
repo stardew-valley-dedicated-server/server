@@ -1,17 +1,10 @@
 # Decompiling Stardew Valley
 
-Advanced topic covering game decompilation for mod development.
+For most development, Visual Studio's **Peek Definition** provides on-the-fly access to decompiled game code. Full decompilation is only needed if you want to:
 
-## Why Decompile?
-
-In most cases, decompiling Stardew Valley isn't necessary for server operation. Visual Studio provides on-the-fly access to decompiled game code through its **Peek Definition** feature, which is sufficient for most development tasks.
-
-However, decompiling can be useful if you need to:
-
-- Explore game logic in detail for mod development
 - Work with game code in a separate project
 - Debug complex server-side interactions
-- Develop advanced server modifications
+- Develop modifications beyond SMAPI's capabilities
 
 ## Long-term Goals
 
@@ -123,16 +116,6 @@ public class HashUtility : IHashUtility
 
 If you encounter type conversion issues with `PropertyType`, try adding `.ToString()` to the affected conversions.
 
-## Development Best Practices
-
-When working on advanced JunimoServer customizations:
-
-- **Use version control** - Always commit your changes to git
-- **Test thoroughly** - Test changes in a development environment first
-- **Document your work** - Keep notes on modifications and fixes
-- **Share findings** - Contribute your discoveries back to the community
-- **Stay updated** - Game updates may break your customizations
-
 ## Contributing
 
-If you've successfully implemented advanced features or found solutions to recompilation issues, please consider [contributing](/developers/contributing/) your findings to help other developers.
+If you find solutions to recompilation issues, consider [contributing](/developers/contributing/) your findings.

@@ -206,11 +206,6 @@ docker compose exec server attach-cli
 # Then type: info
 
 # Or via one-liner (requires jq for parsing)
-curl -s http://localhost:8080/api/server | jq
+curl -s http://localhost:8080/status | jq
 ```
 
-## Next Steps
-
-- [VNC Interface](/admins/operations/vnc) — Graphical management
-- [Networking](/admins/operations/networking) — Connection methods
-- [Troubleshooting](/admins/troubleshooting) — Common issues

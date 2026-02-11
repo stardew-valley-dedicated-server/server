@@ -1,10 +1,6 @@
 # Commands Reference
 
-Chat commands for password protection and lobby management.
-
-::: info Permissions
-Lobby management commands (`!lobby`, `!authstatus`) require admin. Only `!login` and `!help` are available to regular players.
-:::
+Lobby management commands (`!lobby`, `!authstatus`) require admin. Only `!login` and `!help` are available to unauthenticated players.
 
 ## Player Commands
 
@@ -62,6 +58,4 @@ Example output:
 | `!lobby export <name>`          | Export layout as shareable string    |
 | `!lobby import <name> <string>` | Import layout from exported string   |
 
-::: tip Export String Location
-Export strings are printed to the SMAPI console/logs for easier copying. The in-game chat may truncate long strings.
-:::
+Export strings are also printed to the SMAPI console/logs for easier copying.

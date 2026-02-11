@@ -1,7 +1,5 @@
 # Contributing
 
-Thank you for contributing to JunimoServer! This guide covers everything you need to know.
-
 ## How To Contribute
 
 ### Creating an Issue
@@ -30,9 +28,6 @@ This installs:
 - **commitlint** - Validates commit message format
 - **git hooks** - Automatically validates commits before push
 
-::: tip First Time?
-Don't worry if this is your first open source contribution! We're here to help. The setup script and git hooks will guide you.
-:::
 
 #### Development Workflow
 
@@ -175,9 +170,6 @@ Settings → Actions → General → Fork pull request workflows:
 
 ## Getting Help
 
-If you're stuck or have questions:
 - Ask in [Discord](https://discord.gg/w23GVXdSF7)
 - Comment on the relevant issue or PR
 - Check existing PRs for examples
-
-We appreciate all contributions, big or small!

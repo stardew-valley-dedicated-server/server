@@ -52,8 +52,8 @@ To change host-side port mappings (for conflicts):
 # In .env
 VNC_PORT=5801
 API_PORT=8081
-SDR_GAME_PORT=24643
-SDR_QUERY_PORT=27016
+GAME_PORT=24643
+QUERY_PORT=27016
 ```
 
 ## Troubleshooting
@@ -142,13 +142,6 @@ SDR takes a few seconds to initialize — wait and retry.
 2. Run `netdebug nat` to check NAT type
 3. Try having player connect from different network
 
-### VNC Not Loading
-
-1. Check `VNC_PASSWORD` is set in `.env`
-2. Verify firewall allows TCP on VNC port (default 5800)
-3. Use `http://` not `https://`
-4. Try a different browser
-
 ## Firewall Configuration
 
 If you need to configure firewalls, allow:
@@ -170,7 +163,3 @@ If you need to configure firewalls, allow:
 
 - Inbound TCP 8080 — REST API
 
-## Next Steps
-
-- [Troubleshooting](/admins/troubleshooting) — More connection issues
-- [VNC Interface](/admins/operations/vnc) — Web interface access

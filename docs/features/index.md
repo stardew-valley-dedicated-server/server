@@ -1,40 +1,26 @@
 # Features
 
-JunimoServer provides powerful features for running a dedicated Stardew Valley server.
+## Security
 
-## Password Protection & Lobby System
+- [Password Protection](/features/password-protection/) — Lobby system where players authenticate before entering
+- [Chest Protection](/features/server-mechanics#chest-protection) — Players can only access their own cabin storage
 
-The flagship feature — secure your farm with a customizable lobby where players authenticate before entering.
+## Gameplay
 
-- [Password Protection Overview](/features/password-protection/) — How the lobby system works
-- [Lobby Layouts](/features/password-protection/lobby-layouts) — Customize your lobby appearance
-- [Commands](/features/password-protection/commands) — Lobby-specific commands
-- [Security Details](/features/password-protection/security) — Security model and configuration
+- [Cabin Strategies](/features/cabin-strategies) — Hide cabins off-map or use vanilla placement
+- [Crop Preservation](/features/server-mechanics#crop-preservation) — Crops don't die while owners are offline
+- [Server Mechanics](/features/server-mechanics) — Auto-pause, desync protection, automatic progression
 
-## Core Features
+## Multiplayer
 
-### Mod Support
+- [Cross-Platform](/features/cross-platform) — Steam and GOG players on the same server
+- [Mod Support](/features/mods) — SMAPI mods work on the server
 
-Install and manage SMAPI mods on your server, just like you would in single-player Stardew Valley.
+## Integration
 
-- [Mod Support Guide](/features/mods) — Installing and managing mods
+- [Discord Bot](/features/discord) — Server status and two-way chat relay
+- [REST API](/features/rest-api) — HTTP API for automation and external tools
 
-### Backup & Recovery
+## Administration
 
-Automatic save backups via SMAPI, plus persistent Docker volumes to keep your farm safe across restarts and updates.
-
-- [Backup & Recovery](/features/backup) — Backup systems and restore procedures
-
-### Server Mechanics
-
-Your farm runs 24/7 without needing a host player. Learn about the behind-the-scenes behaviors: auto-pause, crop preservation, desync protection, and chest locking.
-
-- [Server Mechanics](/features/server-mechanics) — How dedicated hosting works
-
-## Additional Capabilities
-
-- **Cross-Platform Multiplayer** — Both Steam and GOG players can connect to the same server
-- **Web-Based Management** — Control your server through a VNC interface in your browser
-- **Configurable Player Limits** — Support more than the default 4 players
-- **Automatic Cabin Management** — Cabins are created automatically as players join
-- **Discord Integration** — Server status display and two-way chat relay
+- [Backup & Recovery](/features/backup) — SMAPI auto-backups and Docker volume persistence
