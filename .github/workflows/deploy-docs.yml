@@ -130,46 +130,83 @@ jobs:
       - name: Check artifacts exist
         id: check
         run: |
-          if [ ! -d "dist" ] || [ -z "$(ls -A dist 2>/dev/null | grep -v preview)" ]; then
-            echo "::error::No docs-latest artifact found. Run with rebuild_latest=true or trigger a release."
-            exit 1
-          fi
-          echo "Latest docs: $(du -sh dist --exclude=dist/preview 2>/dev/null | cut -f1 || du -sh dist | cut -f1)"
+          VERSION="${{ inputs.version }}"
+          HAS_LATEST=false
+          HAS_PREVIEW=false
 
+          # Check for latest docs
+          if [ -d "dist" ] && [ -n "$(ls -A dist 2>/dev/null | grep -v preview)" ]; then
+            echo "Latest docs: $(du -sh dist --exclude=dist/preview 2>/dev/null | cut -f1 || du -sh dist | cut -f1)"
+            HAS_LATEST=true
+          fi
+
+          # Check for preview docs
           if [ -d "dist/preview" ] && [ -n "$(ls -A dist/preview 2>/dev/null)" ]; then
             echo "Preview docs: $(du -sh dist/preview | cut -f1)"
-            echo "has_preview=true" >> $GITHUB_OUTPUT
-          else
-            echo "::warning::No preview docs artifact found. Preview docs will not be available."
-            echo "has_preview=false" >> $GITHUB_OUTPUT
+            HAS_PREVIEW=true
           fi
 
+          echo "has_latest=$HAS_LATEST" >> $GITHUB_OUTPUT
+          echo "has_preview=$HAS_PREVIEW" >> $GITHUB_OUTPUT
+
+          # Latest docs are required for deployment (main site content)
+          if [ "$HAS_LATEST" != "true" ]; then
+            echo "::warning::No docs-latest artifact found. The artifact may have expired (14 day retention)."
+            echo "::warning::Skipping deployment. To fix: Run deploy-docs workflow manually with rebuild_latest=true, or trigger a release."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Preview docs are optional but warn if missing
+          if [ "$HAS_PREVIEW" != "true" ]; then
+            echo "::warning::No preview docs artifact found. Preview docs will not be available."
+          fi
+
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+
       - name: Setup Pages
+        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
       - name: Upload merged artifact
+        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
           path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment
+        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
       - name: Build summary
+        if: steps.check.outputs.should_deploy == 'true'
         run: |
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Versions deployed:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Latest: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.has_latest }}" == "true" ]; then
+            echo "- Latest: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          fi
           if [ "${{ steps.check.outputs.has_preview }}" == "true" ]; then
             echo "- Preview: ${{ steps.deployment.outputs.page_url }}preview/" >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Skipped summary
+        if: steps.check.outputs.should_deploy != 'true'
+        run: |
+          echo "### Documentation Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No docs-latest artifact was found. This can happen when:" >> $GITHUB_STEP_SUMMARY
+          echo "- The artifact expired (14 day retention)" >> $GITHUB_STEP_SUMMARY
+          echo "- No release has been published yet" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**To fix:** Run the deploy-docs workflow manually with \`rebuild_latest=true\`, or trigger a release." >> $GITHUB_STEP_SUMMARY
+
       - name: Discord notification
-        if: success()
+        if: success() && steps.check.outputs.should_deploy == 'true'
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
