@@ -3,6 +3,45 @@
 set -euo pipefail
 
 MODS_DEST_DIR="/data/Mods"
+
+# Validate required environment variables
+validate_environment() {
+    local has_errors=false
+
+    if [ -z "${VNC_PASSWORD:-}" ]; then
+        echo ""
+        echo -e "\e[31m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+        echo -e "\e[31m║  ERROR: VNC_PASSWORD is not set!                                      ║\e[0m"
+        echo -e "\e[31m║                                                                       ║\e[0m"
+        echo -e "\e[31m║  The VNC web interface would be accessible without a password.        ║\e[0m"
+        echo -e "\e[31m║  Set VNC_PASSWORD in your .env file before starting the server.       ║\e[0m"
+        echo -e "\e[31m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+        echo ""
+        has_errors=true
+    fi
+
+    if [ "$has_errors" = true ]; then
+        echo "Exiting due to configuration errors."
+        exit 1
+    fi
+
+    # Warnings (non-fatal)
+    if [ "${API_ENABLED:-true}" = "true" ] && [ -z "${API_KEY:-}" ]; then
+        echo ""
+        echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+        echo -e "\e[33m║  WARNING: API_KEY is not set!                                         ║\e[0m"
+        echo -e "\e[33m║                                                                       ║\e[0m"
+        echo -e "\e[33m║  The REST API is enabled but has no authentication.                   ║\e[0m"
+        echo -e "\e[33m║  Anyone with network access to port 8080 can control your server.     ║\e[0m"
+        echo -e "\e[33m║                                                                       ║\e[0m"
+        echo -e "\e[33m║  Set API_KEY in .env or disable the API with API_ENABLED=false.       ║\e[0m"
+        echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+        echo ""
+    fi
+}
+
+# Run validation before anything else
+validate_environment
 GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
