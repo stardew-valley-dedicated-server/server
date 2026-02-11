@@ -9,7 +9,7 @@ const docsVersion = process.env.DOCS_VERSION || "latest";
 const isPreview = docsVersion === "preview";
 const base = isPreview ? "/server/preview/" : "/server/";
 
-const openApiSidebar = useSidebar({ spec, linkPrefix: "/api/" });
+const openApiSidebar = useSidebar({ spec, linkPrefix: "/developers/api/" });
 
 export default withMermaid(defineConfig({
     vite: {
@@ -79,8 +79,11 @@ export default withMermaid(defineConfig({
 
         nav: [
             { text: "Home", link: "/" },
-            { text: "Guide", link: "/getting-started/introduction" },
-            { text: "Community", link: "/community/getting-help" },
+            { text: "Players", link: "/players/" },
+            { text: "Admins", link: "/admins/" },
+            { text: "Features", link: "/features/" },
+            { text: "Developers", link: "/developers/" },
+            { text: "Community", link: "/community/" },
         ],
 
         notFound: {
@@ -89,63 +92,133 @@ export default withMermaid(defineConfig({
             linkText: "Return to farm",
         },
 
-        sidebar: [
-            {
-                text: "Getting Started",
-                items: [
-                    { text: "Introduction", link: "/getting-started/introduction" },
-                    { text: "Prerequisites", link: "/getting-started/prerequisites" },
-                    { text: "Installation", link: "/getting-started/installation" },
-                    { text: "Configuration", link: "/getting-started/configuration" },
-                    { text: "Authentication", link: "/getting-started/auth" },
-                    { text: "FAQ", link: "/getting-started/faq" },
-                ],
-            },
-            {
-                text: "Guide",
-                items: [
-                    { text: "Using the Server", link: "/guide/using-the-server" },
-                    {
-                        text: "Password Protection",
-                        collapsed: false,
-                        items: [
-                            { text: "Overview", link: "/guide/password-protection/" },
-                            { text: "Lobby Layouts", link: "/guide/password-protection/lobby-layouts" },
-                            { text: "Commands", link: "/guide/password-protection/commands" },
-                            { text: "Security & Config", link: "/guide/password-protection/security" },
-                        ],
-                    },
-                    { text: "Networking", link: "/guide/networking" },
-                    { text: "Managing Mods", link: "/guide/managing-mods" },
-                    { text: "Upgrading", link: "/guide/upgrading" },
-                    { text: "CI/CD Pipelines", link: "/guide/ci-cd" },
-                    {
-                        text: "REST API",
-                        collapsed: false,
-                        items: [
-                            { text: "Introduction", link: "/api/introduction" },
-                            ...openApiSidebar.generateSidebarGroups().map(group => ({
-                                ...group,
-                                collapsed: true,
-                            })),
-                        ],
-                    },
-                    { text: "Advanced Topics", link: "/guide/advanced-topics" },
-                ],
-            },
-            {
-                text: "Community",
-                items: [
-                    { text: "Getting Help", link: "/community/getting-help" },
-                    { text: "Reporting Bugs", link: "/community/reporting-bugs" },
-                    { text: "Contributing", link: "/community/contributing" },
-                    { text: "Resources", link: "/community/resources" },
-                    { text: "Roadmap", link: "/community/roadmap" },
-                    { text: "Changelog", link: "/community/changelog" },
-                    { text: "Contributors", link: "/community/contributors" },
-                ],
-            },
-        ],
+        sidebar: {
+            "/players/": [
+                {
+                    text: "Players",
+                    items: [
+                        { text: "Overview", link: "/players/" },
+                        { text: "Joining a Server", link: "/players/joining" },
+                        { text: "Playing on a Dedicated Server", link: "/players/playing" },
+                        { text: "Chat Commands", link: "/players/commands" },
+                        { text: "Troubleshooting", link: "/players/troubleshooting" },
+                    ],
+                },
+            ],
+            "/admins/": [
+                {
+                    text: "Quick Start",
+                    items: [
+                        { text: "Overview", link: "/admins/" },
+                        { text: "Prerequisites", link: "/admins/quick-start/prerequisites" },
+                        { text: "Installation", link: "/admins/quick-start/installation" },
+                        { text: "First Setup", link: "/admins/quick-start/first-setup" },
+                    ],
+                },
+                {
+                    text: "Configuration",
+                    items: [
+                        { text: "Overview", link: "/admins/configuration/" },
+                        { text: "Server Settings", link: "/admins/configuration/server-settings" },
+                        { text: "Environment Variables", link: "/admins/configuration/environment" },
+                        { text: "Discord Bot", link: "/admins/configuration/discord" },
+                    ],
+                },
+                {
+                    text: "Operations",
+                    items: [
+                        { text: "Overview", link: "/admins/operations/" },
+                        { text: "VNC Interface", link: "/admins/operations/vnc" },
+                        { text: "Commands", link: "/admins/operations/commands" },
+                        { text: "Networking", link: "/admins/operations/networking" },
+                        { text: "Upgrading", link: "/admins/operations/upgrading" },
+                    ],
+                },
+                {
+                    text: "Troubleshooting",
+                    items: [
+                        { text: "Common Issues", link: "/admins/troubleshooting" },
+                    ],
+                },
+            ],
+            "/features/": [
+                {
+                    text: "Features",
+                    items: [
+                        { text: "Overview", link: "/features/" },
+                        {
+                            text: "Password Protection",
+                            collapsed: false,
+                            items: [
+                                { text: "Overview", link: "/features/password-protection/" },
+                                { text: "Lobby Layouts", link: "/features/password-protection/lobby-layouts" },
+                                { text: "Commands", link: "/features/password-protection/commands" },
+                                { text: "Security", link: "/features/password-protection/security" },
+                            ],
+                        },
+                        { text: "Mod Support", link: "/features/mods" },
+                        { text: "Backup & Recovery", link: "/features/backup" },
+                        { text: "Server Mechanics", link: "/features/server-mechanics" },
+                    ],
+                },
+            ],
+            "/developers/": [
+                {
+                    text: "Developers",
+                    items: [
+                        { text: "Overview", link: "/developers/" },
+                    ],
+                },
+                {
+                    text: "REST API",
+                    collapsed: false,
+                    items: [
+                        { text: "Introduction", link: "/developers/api/introduction" },
+                        ...openApiSidebar.generateSidebarGroups().map(group => ({
+                            ...group,
+                            collapsed: true,
+                        })),
+                    ],
+                },
+                {
+                    text: "Architecture",
+                    items: [
+                        { text: "Steam Auth", link: "/developers/architecture/steam-auth" },
+                        { text: "Networking Internals", link: "/developers/architecture/networking" },
+                    ],
+                },
+                {
+                    text: "Contributing",
+                    items: [
+                        { text: "Development Setup", link: "/developers/contributing/" },
+                        { text: "CI/CD Pipelines", link: "/developers/contributing/ci-cd" },
+                    ],
+                },
+                {
+                    text: "Advanced",
+                    items: [
+                        { text: "Building from Source", link: "/developers/advanced/building-from-source" },
+                        { text: "Decompiling", link: "/developers/advanced/decompiling" },
+                    ],
+                },
+            ],
+            "/community/": [
+                {
+                    text: "Community",
+                    items: [
+                        { text: "Overview", link: "/community/" },
+                        { text: "FAQ", link: "/community/faq" },
+                        { text: "Getting Help", link: "/community/getting-help" },
+                        { text: "Reporting Bugs", link: "/community/reporting-bugs" },
+                        { text: "Contributing", link: "/community/contributing" },
+                        { text: "Resources", link: "/community/resources" },
+                        { text: "Roadmap", link: "/community/roadmap" },
+                        { text: "Changelog", link: "/community/changelog" },
+                        { text: "Contributors", link: "/community/contributors" },
+                    ],
+                },
+            ],
+        },
 
         socialLinks: [
             { icon: "github", link: "https://github.com/stardew-valley-dedicated-server/server" },

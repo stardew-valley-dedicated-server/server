@@ -6,20 +6,23 @@ hero:
     text: Stardew Valley Dedicated Server
     tagline: Host your farm anytime, anywhere
     image:
-        src: /sdvd-cli.webp
+        src: /lobby/lobby-2.png
         alt: JunimoServer
     actions:
         - theme: brand
-          text: Get Started
-          link: /getting-started/introduction
+          text: Set Up a Server
+          link: /admins/
+        - theme: alt
+          text: Join a Server
+          link: /players/
         - theme: alt
           text: View on GitHub
           link: https://github.com/stardew-valley-dedicated-server/server
 
 features:
     - icon: <animated-icon name="SLA" />
-      title: Always-On Hosting
-      details: Your farm runs 24/7 — no player or game client needs to stay open.
+      title: 24/7 Dedicated Hosting
+      details: Your farm runs continuously — no player or game client needs to stay open.
 
     - icon: <animated-icon name="Staff" />
       title: Multi-Player Ready

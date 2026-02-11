@@ -1,8 +1,9 @@
-import { Client, Events, GatewayIntentBits, ActivityType, TextChannel } from "discord.js";
+import { Client, Events, GatewayIntentBits, ActivityType, TextChannel, Message, PermissionFlagsBits } from "discord.js";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const API_URL = process.env.API_URL || "http://server:8080";
+const API_KEY = process.env.API_KEY || "";
 const WS_URL = process.env.WS_URL || API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws";
 const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
@@ -18,6 +19,17 @@ const UPDATE_INTERVAL_MS = Math.max(
 if (!DISCORD_BOT_TOKEN) {
   console.log("[Discord Bot] DISCORD_BOT_TOKEN not set - bot disabled");
   process.exit(0);
+}
+
+/**
+ * Returns headers for API requests, including Authorization if API_KEY is set.
+ */
+function getApiHeaders(): HeadersInit {
+  const headers: HeadersInit = {};
+  if (API_KEY) {
+    headers["Authorization"] = `Bearer ${API_KEY}`;
+  }
+  return headers;
 }
 
 interface ServerStatus {
@@ -54,11 +66,24 @@ let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
+ * Starts the WebSocket heartbeat timer.
+ */
+function startHeartbeat(): void {
+  if (wsHeartbeatTimer) clearInterval(wsHeartbeatTimer);
+  wsHeartbeatTimer = setInterval(() => {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }, 30000);
+}
+
+/**
  * Fetches the server status from the HTTP API.
  */
 async function fetchServerStatus(): Promise<ServerStatus | null> {
   try {
     const response = await fetch(`${API_URL}/status`, {
+      headers: getApiHeaders(),
       signal: AbortSignal.timeout(5000),
     });
 
@@ -99,8 +124,9 @@ async function updatePresence(): Promise<void> {
   client.user?.setPresence({
     activities: [
       {
-        name: activityName,
-        type: ActivityType.Watching,
+        name: "Custom Status",
+        type: ActivityType.Custom,
+        state: activityName,
       },
     ],
     status: status?.isOnline ? "online" : "idle",
@@ -141,6 +167,9 @@ async function updateBotNickname(): Promise<void> {
   }
 }
 
+// Track WebSocket authentication state
+let wsAuthenticated = false;
+
 /**
  * Connects to the game server's WebSocket for real-time chat relay.
  */
@@ -159,26 +188,44 @@ function connectWebSocket(): void {
     ws = null;
   }
 
+  wsAuthenticated = false;
   console.log(`[Discord Bot] Connecting to WebSocket: ${WS_URL}`);
 
   try {
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-      console.log("[Discord Bot] WebSocket connected");
-
-      // Start heartbeat
-      if (wsHeartbeatTimer) clearInterval(wsHeartbeatTimer);
-      wsHeartbeatTimer = setInterval(() => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "ping" }));
-        }
-      }, 30000);
+      // Send auth message if API_KEY is set
+      if (API_KEY) {
+        console.log("[Discord Bot] WebSocket connected, authenticating...");
+        ws?.send(JSON.stringify({ type: "auth", payload: { token: API_KEY } }));
+      } else {
+        // No auth required, start heartbeat immediately
+        console.log("[Discord Bot] WebSocket connected");
+        wsAuthenticated = true;
+        startHeartbeat();
+      }
     };
 
     ws.onmessage = async (event) => {
       try {
         const msg: WebSocketMessage = JSON.parse(event.data.toString());
+
+        // Handle auth response
+        if (msg.type === "auth_success") {
+          console.log("[Discord Bot] WebSocket authenticated");
+          wsAuthenticated = true;
+          startHeartbeat();
+          return;
+        }
+
+        if (msg.type === "auth_failed") {
+          console.error(`[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`);
+          return;
+        }
+
+        // Ignore messages if not authenticated
+        if (!wsAuthenticated) return;
 
         if (msg.type === "chat" && msg.payload) {
           // Game -> Discord
@@ -207,8 +254,10 @@ function connectWebSocket(): void {
       wsReconnectTimer = setTimeout(connectWebSocket, 5000);
     };
 
-    ws.onerror = (error) => {
-      console.error(`[Discord Bot] WebSocket error:`, error);
+    ws.onerror = (event) => {
+      // WebSocket error events don't contain useful error details in the browser API
+      // The actual error will trigger onclose, so we just log that an error occurred
+      console.error(`[Discord Bot] WebSocket connection error - will attempt reconnection`);
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -220,21 +269,30 @@ function connectWebSocket(): void {
 
 /**
  * Sends a chat message from Discord to the game server via WebSocket.
+ * Returns true if the message was sent, false otherwise.
  */
-function sendChatToGame(author: string, message: string): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.log("[Discord Bot] WebSocket not connected, cannot send chat");
-    return;
+function sendChatToGame(author: string, message: string): boolean {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !wsAuthenticated) {
+    console.log("[Discord Bot] WebSocket not ready, cannot send chat");
+    return false;
   }
 
-  ws.send(JSON.stringify({
-    type: "chat_send",
-    payload: { author, message }
-  }));
+  try {
+    ws.send(JSON.stringify({
+      type: "chat_send",
+      payload: { author, message }
+    }));
+    return true;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`[Discord Bot] Failed to send chat to game: ${error.message}`);
+    }
+    return false;
+  }
 }
 
 // Handle Discord messages for chat relay
-client.on(Events.MessageCreate, async (message) => {
+client.on(Events.MessageCreate, async (message: Message) => {
   // Ignore bot messages
   if (message.author.bot) return;
 
@@ -244,17 +302,133 @@ client.on(Events.MessageCreate, async (message) => {
   // Get display name (server nickname if set, otherwise global display name)
   const displayName = message.member?.displayName || message.author.displayName;
 
-  sendChatToGame(displayName, message.content);
+  const success = sendChatToGame(displayName, message.content);
+
+  // Add reaction to indicate failure
+  if (!success) {
+    try {
+      await message.react("❌");
+    } catch (error) {
+      // May lack reaction permissions
+      if (error instanceof Error) {
+        console.error(`[Discord Bot] Failed to add reaction: ${error.message}`);
+      }
+    }
+  }
 });
 
-client.once(Events.ClientReady, () => {
+/**
+ * Performs extensive permission and sanity checks on startup.
+ * Logs warnings for any missing permissions or configuration issues.
+ */
+async function performStartupChecks(): Promise<void> {
+  console.log("[Discord Bot] Performing startup checks...");
+
+  const warnings: string[] = [];
+  const errors: string[] = [];
+
+  // Check guilds
+  const guildCount = client.guilds.cache.size;
+  console.log(`[Discord Bot] Connected to ${guildCount} guild(s)`);
+
+  if (guildCount === 0) {
+    warnings.push("Bot is not in any guilds - invite it to a server first");
+  }
+
+  // Check chat channel if configured
+  if (DISCORD_CHAT_CHANNEL_ID) {
+    const chatChannel = client.channels.cache.get(DISCORD_CHAT_CHANNEL_ID);
+
+    if (!chatChannel) {
+      errors.push(`Chat channel ${DISCORD_CHAT_CHANNEL_ID} not found - check DISCORD_CHAT_CHANNEL_ID`);
+    } else if (!chatChannel.isTextBased()) {
+      errors.push(`Channel ${DISCORD_CHAT_CHANNEL_ID} is not a text channel`);
+    } else {
+      // Check permissions in the chat channel
+      const channel = chatChannel as TextChannel;
+      const botMember = channel.guild.members.me;
+
+      if (botMember) {
+        const permissions = channel.permissionsFor(botMember);
+
+        if (!permissions?.has(PermissionFlagsBits.ViewChannel)) {
+          errors.push(`Missing VIEW_CHANNEL permission in chat channel "${channel.name}"`);
+        }
+        if (!permissions?.has(PermissionFlagsBits.SendMessages)) {
+          errors.push(`Missing SEND_MESSAGES permission in chat channel "${channel.name}"`);
+        }
+        if (!permissions?.has(PermissionFlagsBits.ReadMessageHistory)) {
+          warnings.push(`Missing READ_MESSAGE_HISTORY permission in chat channel "${channel.name}" - may miss some messages`);
+        }
+        if (!permissions?.has(PermissionFlagsBits.AddReactions)) {
+          warnings.push(`Missing ADD_REACTIONS permission in chat channel "${channel.name}" - cannot show failure indicators`);
+        }
+
+        console.log(`[Discord Bot] Chat channel: #${channel.name} in ${channel.guild.name}`);
+      }
+    }
+  }
+
+  // Check permissions in each guild
+  for (const guild of client.guilds.cache.values()) {
+    const botMember = guild.members.me;
+    if (!botMember) continue;
+
+    // Check nickname permission
+    if (!botMember.permissions.has(PermissionFlagsBits.ChangeNickname)) {
+      warnings.push(`Missing CHANGE_NICKNAME permission in "${guild.name}" - cannot update bot nickname`);
+    }
+  }
+
+  // Check API connectivity
+  try {
+    const status = await fetchServerStatus();
+    if (status) {
+      console.log(`[Discord Bot] API connectivity: OK (server ${status.isOnline ? "online" : "offline"})`);
+    } else {
+      warnings.push("Could not fetch server status - API may be unavailable");
+    }
+  } catch {
+    warnings.push("API connectivity check failed");
+  }
+
+  // Print warnings
+  if (warnings.length > 0) {
+    console.log("");
+    console.log("[Discord Bot] ⚠️  Warnings:");
+    for (const warning of warnings) {
+      console.log(`  - ${warning}`);
+    }
+  }
+
+  // Print errors
+  if (errors.length > 0) {
+    console.log("");
+    console.log("[Discord Bot] ❌ Errors:");
+    for (const error of errors) {
+      console.log(`  - ${error}`);
+    }
+  }
+
+  if (warnings.length === 0 && errors.length === 0) {
+    console.log("[Discord Bot] All checks passed ✓");
+  }
+
+  console.log("");
+}
+
+client.once(Events.ClientReady, async () => {
   console.log(`[Discord Bot] Logged in as ${client.user?.tag}`);
   console.log(`[Discord Bot] API URL: ${API_URL}`);
+  console.log(`[Discord Bot] API authentication: ${API_KEY ? "enabled" : "disabled"}`);
   console.log(`[Discord Bot] Update interval: ${UPDATE_INTERVAL_MS}ms`);
 
   if (DISCORD_CHAT_CHANNEL_ID) {
     console.log(`[Discord Bot] Chat relay channel: ${DISCORD_CHAT_CHANNEL_ID}`);
   }
+
+  // Perform startup checks
+  await performStartupChecks();
 
   // Initial updates
   updatePresence();
@@ -263,9 +437,18 @@ client.once(Events.ClientReady, () => {
   // Connect WebSocket for chat relay
   connectWebSocket();
 
-  // Periodic updates
-  setInterval(updatePresence, UPDATE_INTERVAL_MS);
-  setInterval(updateBotNickname, UPDATE_INTERVAL_MS);
+  // Periodic updates with error handling
+  setInterval(() => {
+    updatePresence().catch((error) => {
+      console.error(`[Discord Bot] Presence update failed: ${error instanceof Error ? error.message : error}`);
+    });
+  }, UPDATE_INTERVAL_MS);
+
+  setInterval(() => {
+    updateBotNickname().catch((error) => {
+      console.error(`[Discord Bot] Nickname update failed: ${error instanceof Error ? error.message : error}`);
+    });
+  }, UPDATE_INTERVAL_MS);
 });
 
 client.on(Events.Error, (error) => {
