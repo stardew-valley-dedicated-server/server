@@ -1,7 +1,5 @@
 # Troubleshooting
 
-Common issues and solutions for JunimoServer administrators.
-
 ## Server Won't Start
 
 ### Basic Checks
@@ -72,9 +70,6 @@ docker compose run --rm -it steam-auth setup
 ```sh
 # Test from inside server container
 docker compose exec server wget -qO- http://steam-auth:3001/health
-
-# Check steam-auth health directly
-curl http://localhost:3001/health
 ```
 
 ## Player Connection Issues
@@ -123,6 +118,25 @@ Check for these log messages:
 
 ## VNC Issues
 
+::: tip You Probably Don't Need VNC
+VNC is for advanced debugging only. To play and test your server, just connect with your game client like any multiplayer game. Use the CLI (`docker compose exec server attach-cli`) for server management.
+:::
+
+### VNC shows black screen
+
+This is **expected behavior** — your server is working correctly.
+
+**Why it's black:** The server has `DISABLE_RENDERING=true` by default. This means the server doesn't draw graphics to its own display, which saves CPU. The server is still running normally and accepting player connections.
+
+**Players are not affected:** When you connect with your game client, you see the game on *your* screen rendered by *your* computer. The black VNC screen only means the *server's display* is blank — that's fine.
+
+**Do you need to fix it?** Probably not. If you just want to play or test, connect with your game client instead. VNC is only useful for debugging rare visual issues.
+
+If you specifically need VNC for debugging:
+1. Set `DISABLE_RENDERING=false` in `.env`
+2. Restart: `docker compose restart`
+3. VNC will now show the game display
+
 ### VNC won't load
 
 1. Check `VNC_PASSWORD` is set in `.env`
@@ -130,12 +144,6 @@ Check for these log messages:
 3. Use `http://` not `https://`
 4. Try a different browser
 5. Check firewall allows TCP on VNC port
-
-### VNC shows black screen
-
-- Check `DISABLE_RENDERING` in `.env`
-- If `true`, VNC won't show game graphics (this is normal)
-- Set to `false` if you need to see the display
 
 ### VNC is laggy
 
@@ -178,7 +186,7 @@ docker compose exec server unzip /data/Stardew/save-backups/BACKUP_FILENAME.zip 
 
 ### Mods not loading
 
-1. Check SMAPI console for errors (via VNC or logs)
+1. Check logs for errors: `docker compose logs server`
 2. Verify mods are in correct location
 3. Check mod compatibility with current game version
 4. Try removing mods one by one to find problem
@@ -254,6 +262,7 @@ JunimoServer uses fixed container names:
 |-----------|------|
 | Game Server | `sdvd-server` |
 | Steam Auth | `sdvd-steam-auth` |
+| Discord Bot | `sdvd-discord-bot` |
 
 ```sh
 # Use names directly
@@ -280,7 +289,3 @@ If none of these solutions work:
 3. **Join Discord:** [discord.gg/w23GVXdSF7](https://discord.gg/w23GVXdSF7)
 4. **Create an issue:** Include logs, configuration (without passwords), and steps to reproduce
 
-## Next Steps
-
-- [Getting Help](/community/getting-help) — Community support channels
-- [Reporting Bugs](/community/reporting-bugs) — How to report issues

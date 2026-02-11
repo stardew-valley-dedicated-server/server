@@ -1,7 +1,5 @@
 # Upgrading
 
-Keep your JunimoServer up to date to get the latest features, bug fixes, and game updates.
-
 ## Quick Upgrade
 
 For most users with Docker images:
@@ -154,7 +152,3 @@ make up
 
 See [Building from Source](/developers/advanced/building-from-source) for details.
 
-## Next Steps
-
-- [Troubleshooting](/admins/troubleshooting) — Common issues and solutions
-- [Changelog](/community/changelog) — Release history

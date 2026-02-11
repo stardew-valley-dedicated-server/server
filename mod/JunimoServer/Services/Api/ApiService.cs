@@ -394,6 +394,11 @@ namespace JunimoServer.Services.Api
             NullValueHandling = NullValueHandling.Ignore
         };
 
+        /// <summary>
+        /// Whether API key authentication is enabled.
+        /// </summary>
+        private static readonly bool _authEnabled = !string.IsNullOrEmpty(Env.ApiKey);
+
         public ApiService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, PersistentOptions persistentOptions, CabinManagerService cabinManager, RoleService roleService, PasswordProtectionService? passwordProtectionService = null) : base(helper, monitor)
         {
             _settings = settings;
@@ -453,6 +458,35 @@ namespace JunimoServer.Services.Api
             StartServer();
         }
 
+        /// <summary>
+        /// Validates the API key from the Authorization header.
+        /// Expects format: "Bearer &lt;api-key&gt;"
+        /// Returns true if authentication passes (no key required or valid key provided).
+        /// </summary>
+        private bool ValidateApiKey(HttpListenerRequest request)
+        {
+            if (!_authEnabled) return true;
+
+            var authHeader = request.Headers["Authorization"];
+            if (string.IsNullOrEmpty(authHeader)) return false;
+
+            // Expect "Bearer <token>" format
+            if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return false;
+
+            var providedKey = authHeader.Substring(7).Trim();
+            return !string.IsNullOrEmpty(providedKey) && providedKey == Env.ApiKey;
+        }
+
+        /// <summary>
+        /// Writes a 401 Unauthorized response.
+        /// </summary>
+        private static async Task WriteUnauthorizedAsync(HttpListenerResponse response)
+        {
+            response.StatusCode = 401;
+            response.Headers.Add("WWW-Authenticate", "Bearer");
+            await WriteJsonAsync(response, new { error = "Unauthorized. Provide a valid Authorization header: Bearer <api-key>" });
+        }
+
         private void StartServer()
         {
             if (_isRunning) return;
@@ -483,6 +517,20 @@ namespace JunimoServer.Services.Api
                 _isRunning = true;
 
                 Monitor.Log($"API server listening on port {Env.ApiPort} (docs: http://localhost:{Env.ApiPort}/docs)", LogLevel.Info);
+                if (_authEnabled)
+                {
+                    Monitor.Log("API authentication enabled - all endpoints require Authorization header", LogLevel.Info);
+                }
+                else
+                {
+                    Monitor.Log("***********************************************************************", LogLevel.Warn);
+                    Monitor.Log("*                                                                     *", LogLevel.Warn);
+                    Monitor.Log("*    WARNING: API authentication is disabled!                         *", LogLevel.Warn);
+                    Monitor.Log("*    All endpoints are publicly accessible.                           *", LogLevel.Warn);
+                    Monitor.Log("*    Set the API_KEY environment variable for production use.         *", LogLevel.Warn);
+                    Monitor.Log("*                                                                     *", LogLevel.Warn);
+                    Monitor.Log("***********************************************************************", LogLevel.Warn);
+                }
             }
             catch (Exception ex)
             {
@@ -529,6 +577,16 @@ namespace JunimoServer.Services.Api
                 if (path == "/ws" && request.IsWebSocketRequest)
                 {
                     await HandleWebSocketAsync(context);
+                    return;
+                }
+
+                // Public endpoints (no auth required)
+                var isPublicEndpoint = path == "/health" || path == "/docs" || path == "/swagger/v1/swagger.json";
+
+                // Validate API key for protected endpoints
+                if (!isPublicEndpoint && !ValidateApiKey(request))
+                {
+                    await WriteUnauthorizedAsync(response);
                     return;
                 }
 
@@ -665,15 +723,23 @@ namespace JunimoServer.Services.Api
         private async Task HandleWebSocketAsync(HttpListenerContext context)
         {
             WebSocket? ws = null;
+            var isAuthenticated = false;
             try
             {
                 var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
                 ws = wsContext.WebSocket;
 
-                lock (_wsLock) { _wsClients.Add(ws); }
-                Monitor.Log("[API] WebSocket client connected", LogLevel.Debug);
+                Monitor.Log("[API] WebSocket client connected, awaiting authentication", LogLevel.Debug);
 
-                await ProcessWebSocketAsync(ws);
+                // If auth is disabled, auto-authenticate and add to clients
+                if (!_authEnabled)
+                {
+                    isAuthenticated = true;
+                    lock (_wsLock) { _wsClients.Add(ws); }
+                    Monitor.Log("[API] WebSocket client authenticated (auth disabled)", LogLevel.Debug);
+                }
+
+                await ProcessWebSocketAsync(ws, ref isAuthenticated);
             }
             catch (Exception ex)
             {
@@ -683,18 +749,65 @@ namespace JunimoServer.Services.Api
             {
                 if (ws != null)
                 {
-                    lock (_wsLock) { _wsClients.Remove(ws); }
+                    if (isAuthenticated)
+                    {
+                        lock (_wsLock) { _wsClients.Remove(ws); }
+                    }
                     try { ws.Dispose(); } catch { }
                     Monitor.Log("[API] WebSocket client disconnected", LogLevel.Debug);
                 }
             }
         }
 
-        private async Task ProcessWebSocketAsync(WebSocket ws)
+        private async Task ProcessWebSocketAsync(WebSocket ws, ref bool isAuthenticated)
         {
             var buffer = new byte[4096];
             var messageBuilder = new StringBuilder();
             const int maxMessageSize = 16384; // 16KB max message size
+            const int authTimeoutMs = 10000; // 10 seconds to authenticate
+
+            // If auth is required, wait for auth message with timeout
+            if (_authEnabled && !isAuthenticated)
+            {
+                using var authCts = new CancellationTokenSource(authTimeoutMs);
+                try
+                {
+                    var authResult = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), authCts.Token);
+                    if (authResult.MessageType == WebSocketMessageType.Text && authResult.EndOfMessage)
+                    {
+                        var authJson = Encoding.UTF8.GetString(buffer, 0, authResult.Count);
+                        var authMsg = JsonConvert.DeserializeObject<WebSocketMessage>(authJson);
+
+                        if (authMsg?.Type == "auth" && authMsg.Payload?["token"]?.ToString() == Env.ApiKey)
+                        {
+                            isAuthenticated = true;
+                            lock (_wsLock) { _wsClients.Add(ws); }
+                            await SendWebSocketMessageAsync(ws, new { type = "auth_success" });
+                            Monitor.Log("[API] WebSocket client authenticated", LogLevel.Debug);
+                        }
+                        else
+                        {
+                            await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Invalid token" });
+                            await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication failed", CancellationToken.None);
+                            Monitor.Log("[API] WebSocket client authentication failed - invalid token", LogLevel.Warn);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Expected auth message", CancellationToken.None);
+                        Monitor.Log("[API] WebSocket client authentication failed - unexpected message type", LogLevel.Warn);
+                        return;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Authentication timeout" });
+                    try { await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication timeout", CancellationToken.None); } catch { }
+                    Monitor.Log("[API] WebSocket client authentication timeout", LogLevel.Warn);
+                    return;
+                }
+            }
 
             while (ws.State == WebSocketState.Open)
             {

@@ -1,6 +1,18 @@
 # Web Interface (VNC)
 
-JunimoServer provides a web-based VNC interface for graphical server management.
+::: warning Advanced Tool
+VNC is for debugging and advanced troubleshooting only. For normal operation, use the [CLI](/admins/operations/commands) and connect to your server with your game client like any multiplayer game.
+
+By default, rendering is disabled (`DISABLE_RENDERING=true`) for performance — VNC will show a black screen. This is intentional.
+:::
+
+## When to Use VNC
+
+- Debugging visual issues that can't be diagnosed via logs
+- Troubleshooting mod loading problems
+- Rare edge cases where CLI isn't enough
+
+For everything else, use the CLI (`docker compose exec server attach-cli`) or in-game commands.
 
 ## Connecting
 
@@ -45,114 +57,48 @@ Copy and paste works through the VNC interface, but requires a special method:
 Direct copy/paste with Ctrl+C/Ctrl+V won't work. You must use the settings panel clipboard area.
 :::
 
-## Managing Save Files
+## Save Files
 
-### Save Location
+Save files are stored in the `saves` Docker volume at `/config/xdg/config/StardewValley/Saves`.
 
-Save files are stored in the `saves` Docker volume, mounted at `/config/xdg/config/StardewValley/Saves` inside the container.
+For backup, restore, and import procedures, see [Backup & Recovery](/features/backup).
 
-This volume persists separately from the container, so saves remain safe across restarts and updates.
+## Why is VNC showing a black screen?
 
-### SMAPI Automatic Backups
+This is **expected behavior**. By default, `DISABLE_RENDERING=true` which means the server doesn't draw graphics to its own display.
 
-SMAPI creates automatic backups at `/data/Stardew/save-backups`.
-
-Check existing backups:
-
-```sh
-docker compose exec server ls -al /data/Stardew/save-backups
-```
-
-### Restoring from Backup
-
-If you need to restore a save:
-
-**1. Move current save aside:**
-
-```sh
-docker compose exec server bash -c "cd /config/xdg/config/StardewValley && mv Saves Saves_old && mkdir Saves"
-```
-
-**2. List available backups:**
-
-```sh
-docker compose exec server ls -al /data/Stardew/save-backups
-```
-
-**3. Restore a backup (replace `BACKUP_FILENAME`):**
-
-```sh
-docker compose exec server unzip /data/Stardew/save-backups/BACKUP_FILENAME.zip -d /config/xdg/config/StardewValley/Saves/
-```
-
-**4. Verify the restore:**
-
-```sh
-docker compose exec server ls -al /config/xdg/config/StardewValley/Saves
-```
-
-### Manual Backups
-
-For additional safety, create manual backups of the saves volume:
-
-**Linux/macOS:**
-
-```sh
-docker run --rm -v server_saves:/saves -v $(pwd):/backup ubuntu tar czf /backup/saves-backup-$(date +%Y%m%d).tar.gz /saves
-```
-
-**Windows PowerShell:**
-
-```powershell
-docker run --rm -v server_saves:/saves -v ${PWD}:/backup ubuntu tar czf /backup/saves-backup-$(Get-Date -Format "yyyyMMdd").tar.gz /saves
-```
-
-### Accessing Save Files Directly
-
-To copy saves out for manual editing:
-
-```sh
-# Find volume location
-docker volume inspect server_saves
-
-# Copy files from volume
-docker run --rm -v server_saves:/saves -v $(pwd):/backup ubuntu cp -r /saves /backup/
-```
-
-## Importing Existing Saves
-
-To use an existing Stardew Valley save:
-
-1. Stop the server: `docker compose down`
-2. Copy your save folder into the volume:
-
-```sh
-docker run --rm -v server_saves:/saves -v $(pwd):/backup ubuntu cp -r /backup/YourSaveFolder /saves/
-```
-
-3. Start the server: `docker compose up -d`
-
-::: warning Backup First
-Always backup your original save before importing. The server may modify save files.
+::: info This doesn't affect players
+Players always see the game normally on their own screens. The `DISABLE_RENDERING` setting only affects the server's display (what you see via VNC). Your server is running correctly — connect with your game client to verify.
 :::
 
-## Rendering Mode
+### Enabling VNC display (for debugging only)
 
-By default, `DISABLE_RENDERING=true` optimizes performance by skipping visual rendering.
+If you specifically need to see the server's display for debugging:
 
-If you need to see the full game display (for debugging):
+**Option 1: Environment variable (persistent)**
 
 1. Set `DISABLE_RENDERING=false` in `.env`
 2. Restart: `docker compose restart`
 
-Or toggle via console:
+**Option 2: Console command (temporary)**
 
 ```sh
 docker compose exec server attach-cli
-# Then type: rendering on
+# Then type one of:
+#   rendering on       - Enable rendering
+#   rendering off      - Disable rendering
+#   rendering toggle   - Toggle current state
+#   rendering status   - Show current state
 ```
 
-## Next Steps
+The console command only lasts until the server restarts.
 
-- [Console & Chat Commands](/admins/operations/commands) — CLI and in-game management
-- [Networking](/admins/operations/networking) — Connection troubleshooting
+## Troubleshooting
+
+If VNC won't load:
+
+1. Check `VNC_PASSWORD` is set in `.env`
+2. Verify firewall allows TCP on VNC port (default 5800)
+3. Use `http://` not `https://`
+4. Try a different browser
+

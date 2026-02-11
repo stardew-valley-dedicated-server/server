@@ -109,6 +109,10 @@
         .image-bg {
             transition: background-image 0.3s ease !important;
         }
+
+        .image-src {
+            image-rendering: pixelated;
+        }
     }
 }
 

@@ -1,7 +1,5 @@
 # Backup & Recovery
 
-JunimoServer provides multiple backup mechanisms to keep your farm safe.
-
 ## Backup Overview
 
 | Backup Type | Frequency | Location | Managed By |
@@ -208,8 +206,3 @@ Connect via VNC and check that your save appears.
 2. Rollback server version if needed
 3. Restore saves from pre-upgrade backup
 
-## Next Steps
-
-- [VNC Interface](/admins/operations/vnc) — Access save management
-- [Upgrading](/admins/operations/upgrading) — Safe upgrade procedures
-- [Troubleshooting](/admins/troubleshooting) — Recovery help

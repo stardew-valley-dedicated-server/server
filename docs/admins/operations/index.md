@@ -1,17 +1,14 @@
 # Server Operations
 
-Day-to-day management of your JunimoServer.
-
 ## Management Interfaces
-
-JunimoServer provides multiple ways to manage your server:
 
 | Interface | Access | Best For |
 |-----------|--------|----------|
-| [VNC Web Interface](/admins/operations/vnc) | Browser at `http://server:5800` | Visual management, save files |
-| [CLI Console](/admins/operations/commands) | `docker compose exec server attach-cli` | Server commands, logs |
+| **Your Game Client** | Co-op → Enter Invite Code | Playing and testing — just connect like any multiplayer game |
+| [CLI Console](/admins/operations/commands) | `docker compose exec server attach-cli` | Server commands, logs, invite codes |
 | [Chat Commands](/admins/operations/commands#chat-commands) | In-game chat | Player management, admin tasks |
 | [REST API](/developers/api/introduction) | HTTP requests | Automation, external tools |
+| [VNC Web Interface](/admins/operations/vnc) | Browser at `http://server:5800` | Advanced debugging only (disabled by default) |
 
 ## Common Tasks
 
@@ -48,16 +45,11 @@ docker compose exec server attach-cli
 
 ### Save Management
 
-Save files are stored in the `saves` Docker volume. See [VNC Interface](/admins/operations/vnc) for backup and restore procedures.
+Save files are stored in the `saves` Docker volume. See [Backup & Recovery](/features/backup) for backup and restore procedures.
 
 ## Guides
 
-- [Web Interface (VNC)](/admins/operations/vnc) — Graphical access and save management
-- [Console & Chat Commands](/admins/operations/commands) — CLI and in-game commands
-- [Networking](/admins/operations/networking) — Ports, connection methods, troubleshooting
-- [Upgrading](/admins/operations/upgrading) — Update to new versions
-
-## Need Help?
-
-- [Troubleshooting](/admins/troubleshooting) — Common issues and solutions
-- [Getting Help](/community/getting-help) — Community support channels
+- [Console & Chat Commands](/admins/operations/commands)
+- [Networking](/admins/operations/networking)
+- [Upgrading](/admins/operations/upgrading)
+- [Web Interface (VNC)](/admins/operations/vnc) — advanced debugging only

@@ -44,7 +44,8 @@ docker compose restart
     "VerboseLogging": false,
     "AllowIpConnections": false,
     "LobbyMode": "Shared",
-    "ActiveLobbyLayout": "default"
+    "ActiveLobbyLayout": "default",
+    "AdminSteamIds": []
   }
 }
 ```
@@ -103,6 +104,7 @@ These settings apply on every startup and can be changed between runs.
 | `AllowIpConnections` | Allow direct IP connections | `false` |
 | `LobbyMode` | Lobby mode for password protection | `"Shared"` |
 | `ActiveLobbyLayout` | Active lobby layout name | `"default"` |
+| `AdminSteamIds` | Steam IDs auto-granted admin on join | `[]` |
 
 ### Cabin Strategies
 
@@ -147,8 +149,3 @@ For lobby mode and layout settings, see [Password Protection](/features/password
 | `LobbyMode` | `"Shared"` (all in one lobby) or `"Individual"` (separate lobbies) |
 | `ActiveLobbyLayout` | Name of the lobby layout for new players |
 
-## Next Steps
-
-- [Environment Variables](/admins/configuration/environment) — Docker and infrastructure settings
-- [Discord Integration](/admins/configuration/discord) — Set up Discord bot
-- [Password Protection](/features/password-protection/) — Secure your server

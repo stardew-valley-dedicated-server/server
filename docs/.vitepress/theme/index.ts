@@ -1,6 +1,7 @@
 import type { Theme } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import AnnouncementBar from "./AnnouncementBar.vue";
+import ServerStatusWidget from "./ServerStatusWidget.vue";
 import { initRandomIconAnimation } from "./randomIconAnimation";
 import { theme as openapiTheme, useTheme as useOpenapiTheme, useOpenapi } from "vitepress-openapi/client";
 import "vitepress-openapi/dist/style.css";
@@ -12,6 +13,7 @@ export default {
     extends: DefaultTheme,
     Layout: AnnouncementBar,
     async enhanceApp({ app }) {
+        app.component("ServerStatusWidget", ServerStatusWidget);
         // TODO: Show for local builds, but hide for public deployments
         const hideTryItOutButton = true;
 

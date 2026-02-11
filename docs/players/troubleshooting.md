@@ -1,6 +1,4 @@
-# Player Troubleshooting
-
-Common connection problems and solutions.
+# Troubleshooting
 
 ## Can't Connect
 

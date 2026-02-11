@@ -1,24 +1,17 @@
-# Playing on the Server
+# Gameplay Differences
 
-What to expect when playing on a JunimoServer-hosted farm.
+## Differences from Regular Multiplayer
 
-## Key Differences from Regular Multiplayer
-
-- **Runs 24/7** — The farm keeps going even when no players are online
-- **No host needed** — Join anytime without waiting for someone to host
+- **Always available** — The server is online 24/7, no need to wait for a host
 - **Drop-in gameplay** — Join and leave whenever you want
-
-::: tip Time doesn't pause
-Unlike single-player, time keeps running when you open menus.
-:::
+- **Time pauses when empty** — Game pauses when no players are connected, resumes when someone joins
 
 ## Your Cabin
 
-A cabin is automatically created when you first join. Use `!cabin` to move it to your current position.
+A cabin is automatically created when you first join. Use `!cabin` on the farm to relocate your cabin to your right.
 
-## Time and Saving
+## Saving
 
-- Time pauses when no players are online
 - Saves happen at the end of each in-game day
 - Your inventory, skills, and relationships are preserved
 
@@ -34,8 +27,3 @@ Servers can use shared (one pool for all) or separate wallets. Ask your admin wh
 
 Content mods (new items, NPCs, maps) require you to have matching mods installed. Ask your admin for the mod list.
 
-## Being a Good Farm Guest
-
-- Communicate via in-game chat
-- Respect others' cabins and resources
-- Report bugs to the admin

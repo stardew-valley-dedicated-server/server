@@ -1,6 +1,6 @@
 # Mod Support
 
-JunimoServer fully supports SMAPI mods, allowing you to customize your multiplayer experience with the same mods you use in single-player.
+JunimoServer supports SMAPI mods.
 
 ## Installing Mods
 
@@ -53,18 +53,8 @@ Connect to VNC and check the SMAPI console. SMAPI lists all loaded mods at start
 | **Client-only** | Client only | UI improvements, client utilities |
 
 ::: warning Content Mods
-Content mods that add items, NPCs, or maps must be installed on both the server and all connecting clients. Mismatched mods cause synchronization issues.
+Content mods that add items, NPCs, or maps must be installed on both the server and all connecting clients. Mismatched mods cause sync issues. Share your mod list with players.
 :::
-
-## Client-Server Synchronization
-
-For mods to work properly in multiplayer:
-
-1. **Server-side mods** — Install on server using the method above
-2. **Content mods** — Install on **both** server and all clients
-3. **Client-side mods** — Players install on their own games
-
-Share your mod list with players so they can install matching mods.
 
 ## Finding Compatible Mods
 
@@ -107,11 +97,11 @@ If performance degrades after adding mods:
 
 ## Best Practices
 
-- **Keep mods updated** — Check for updates regularly
-- **Read mod descriptions** — Understand requirements and compatibility
-- **Backup before changes** — Always backup saves before adding mods
-- **Test first** — Verify mods work before sharing with all players
-- **Document your setup** — Keep a list of installed mods and versions
+- Keep mods updated
+- Read mod descriptions for requirements and compatibility
+- Backup saves before adding mods
+- Test new mods before rolling out to all players
+- Keep a list of installed mods and versions
 
 ## Directory Structure
 
@@ -130,8 +120,3 @@ your-server/
 
 The server mounts these at `/data/Mods/extra` and SMAPI loads them automatically.
 
-## Next Steps
-
-- [Upgrading](/admins/operations/upgrading) — Update server and game versions
-- [VNC Interface](/admins/operations/vnc) — View SMAPI console output
-- [Troubleshooting](/admins/troubleshooting) — More common issues

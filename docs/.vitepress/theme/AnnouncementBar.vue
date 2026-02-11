@@ -59,8 +59,8 @@ function closeAnnouncement() {
             <VersionSwitcher />
         </template>
         <template #nav-screen-content-after>
-            <ThemeSelector />
-            <VersionSwitcher />
+            <ThemeSelector :inline="true" />
+            <VersionSwitcher :inline="true" />
         </template>
     </Layout>
 </template>
@@ -68,6 +68,40 @@ function closeAnnouncement() {
 <style>
 :root {
     --announcement-height: 42px;
+}
+
+/* Hide version switcher and theme selector in navbar on mobile - they appear in nav-screen instead */
+@media (max-width: 767px) {
+    .VPNavBar .VPVersionSwitcher,
+    .VPNavBar .VPThemeSelector {
+        display: none !important;
+    }
+}
+
+/* Position custom accordions between Appearance and social links in mobile nav */
+.VPNavScreen > .container {
+    display: flex;
+    flex-direction: column;
+}
+
+.VPNavScreen > .container > .VPNavScreenMenu {
+    order: 1;
+}
+
+.VPNavScreen > .container > .VPNavScreenAppearance {
+    order: 2;
+}
+
+.VPNavScreen > .container > .VPThemeSelectorInline {
+    order: 3;
+}
+
+.VPNavScreen > .container > .VPVersionSwitcherInline {
+    order: 4;
+}
+
+.VPNavScreen > .container > .VPNavScreenSocialLinks {
+    order: 5;
 }
 
 .announcement-bar {

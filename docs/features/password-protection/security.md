@@ -1,22 +1,10 @@
 # Security & Configuration
 
-Password protection uses multiple layers to keep your server safe.
-
 ## Why a Lobby?
 
-A simple black screen or pause might seem simpler, but has problems:
+A black screen could be modded away client-side. Stardew's pause is server-wide, so pausing for unauthenticated players would freeze everyone.
 
-- **Pause is server-wide**: Stardew Valley's pause affects _all_ players. Pausing for unauthenticated players would freeze the entire server.
-- **Client-side bypass**: a black screen could be modded away on the client, leaving players free to roam.
-
-The lobby system implements **per-player state isolation** at the server level, something the game doesn't natively support. Unauthenticated players receive a filtered world state while authenticated players continue normally.
-
-Benefits:
-
-- **Visual feedback**: players know authentication is required (not a bug)
-- **Instructions**: in-game signs explain how to log in
-- **Defense in depth**: multiple blocking layers (network, physical exit, timeout)
-- **First impressions**: a decorated space sets the tone for your server
+The lobby implements per-player state isolation at the server level. Unauthenticated players receive a filtered world state while authenticated players continue normally.
 
 ## Security Features
 
@@ -121,9 +109,3 @@ AUTH_TIMEOUT_SECONDS=180
 
 Use `!lobby edit <name>`, move to a clear spot, run `!lobby spawn`, then `!lobby save`.
 
-## Related Pages
-
-- [Overview](/features/password-protection/): quick setup and concepts
-- [Lobby Layouts](/features/password-protection/lobby-layouts): customize your lobby
-- [Commands Reference](/features/password-protection/commands): all lobby commands
-- [Environment Variables](/admins/configuration/environment): all settings reference

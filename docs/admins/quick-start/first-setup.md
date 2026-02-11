@@ -1,7 +1,5 @@
 # First Server Setup
 
-Verify Steam authentication and get your server running.
-
 ## Steam Guard Methods
 
 | Method | How It Works |
@@ -32,7 +30,16 @@ docker compose exec server attach-cli
 # Type: info
 ```
 
-Or view in VNC at `http://localhost:5800` in the SMAPI console.
+## Connect with Your Game
+
+Once you have the invite code, connect like any other multiplayer game:
+
+1. Launch Stardew Valley
+2. Click **Co-op** → **Enter Invite Code**
+3. Paste the invite code
+4. You're in!
+
+No special tools needed — just your normal game client.
 
 ## Troubleshooting
 
@@ -40,9 +47,5 @@ Or view in VNC at `http://localhost:5800` in the SMAPI console.
 |-------|----------|
 | Steam auth not starting | `docker compose logs steam-auth`, re-run setup |
 | Token expired | `docker compose run --rm -it steam-auth setup` |
-| Server can't reach steam-auth | `curl http://localhost:3001/health` |
+| Server can't reach steam-auth | `docker compose exec server wget -qO- http://steam-auth:3001/health` |
 
-## Next Steps
-
-- [Server Settings](/admins/configuration/server-settings) — Customize your server
-- [Password Protection](/features/password-protection/) — Secure your farm

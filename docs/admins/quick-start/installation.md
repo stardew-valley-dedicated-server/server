@@ -1,10 +1,6 @@
 # Installation
 
-Install JunimoServer using pre-built Docker images.
-
-::: tip Building from Source?
-See [Building from Source](/developers/advanced/building-from-source) for development.
-:::
+For development, see [Building from Source](/developers/advanced/building-from-source).
 
 ## 1. Download Configuration
 
@@ -41,9 +37,25 @@ Follow the prompts for Steam Guard (email code, mobile app, or QR code).
 docker compose up -d
 ```
 
-## 5. Access VNC
+## 5. Get Invite Code & Connect
 
-Open `http://localhost:5800` and enter your VNC password.
+Get your invite code:
+
+```sh
+docker compose exec server attach-cli
+# Type: info
+```
+
+Then connect with your game — just like joining any multiplayer server:
+
+1. Launch Stardew Valley
+2. Click **Co-op** → **Enter Invite Code**
+3. Paste the invite code
+4. Play!
+
+::: tip No VNC Needed
+You don't need VNC to play or manage the server. The CLI and in-game commands handle everything. VNC is only for advanced debugging.
+:::
 
 ## Basic Commands
 
@@ -55,8 +67,3 @@ docker compose restart     # Restart
 docker compose ps          # Status
 ```
 
-## Next Steps
-
-- [First Setup](/admins/quick-start/first-setup) — Verify Steam authentication
-- [Server Settings](/admins/configuration/server-settings) — Customize your server
-- [Password Protection](/features/password-protection/) — Secure your farm

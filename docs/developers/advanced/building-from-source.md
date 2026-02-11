@@ -1,7 +1,5 @@
 # Building from Source
 
-For developers who want to build JunimoServer from source and customize the server.
-
 ## Requirements
 
 - Docker `>=20`
@@ -100,7 +98,3 @@ server/
 └── tools/                  # Utility scripts
 ```
 
-## Next Steps
-
-- [Contributing](/developers/contributing/) — Development workflow and conventions
-- [Decompiling](/developers/advanced/decompiling) — Advanced game modification

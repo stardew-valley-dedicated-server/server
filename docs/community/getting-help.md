@@ -1,72 +1,34 @@
 # Getting Help
 
-If you encounter an issue and need assistance, don't hesitate to reach out! We're a welcoming and growing community, and we're here to help.
+Stuck on something? We've all been there.
 
-## "I can't figure out how to..."
+## Check the Docs First
 
-You've gone through the docs and checked existing issues for solutions, but something just doesn't want to work? The best thing to do is jump into our [Discord](https://discord.gg/w23GVXdSF7) and ask for help.
+A quick look might save you time:
 
-Don't stress about asking something that feels obvious — we've all been there!
-
-::: tip Documentation First
-Before asking, try checking:
-- [Admin Quick Start](/admins/quick-start/installation) for setup help
-- [Server Operations](/admins/operations/) for usage guides
+- [Admin Quick Start](/admins/quick-start/installation) for setup
 - [Troubleshooting](/admins/troubleshooting) for common issues
 - [GitHub Issues](https://github.com/stardew-valley-dedicated-server/server/issues) for similar problems
-:::
 
-## "Help, is this a bug?"
+Still stuck? Jump into [Discord](https://discord.gg/w23GVXdSF7) and ask.
 
-We recommend taking a look at [how to report bugs](/community/reporting-bugs). We're still in early development, so every issue report helps improve this project.
+## Reporting Bugs
 
-## Where to Get Help
+See [Reporting Bugs](/community/reporting-bugs).
 
-### Discord Community
+## Where to Ask
 
-Our [Discord server](https://discord.gg/w23GVXdSF7) is the best place for:
-- Quick questions and troubleshooting
-- General discussion about JunimoServer
-- Sharing your server setup and experiences
-- Getting real-time help from the community
+| Channel | Use For |
+|---------|---------|
+| [Discord](https://discord.gg/w23GVXdSF7) | Quick questions, troubleshooting, discussion |
+| [GitHub Discussions](https://github.com/stardew-valley-dedicated-server/server/discussions) | Feature requests, architecture decisions |
+| [GitHub Issues](https://github.com/stardew-valley-dedicated-server/server/issues) | Confirmed bugs |
 
-### GitHub Discussions
+## When Asking for Help
 
-For more detailed discussions about:
-- Feature requests
-- Architecture decisions
-- Long-form questions
+The more context you give, the faster we can help:
 
-Visit our [GitHub Discussions](https://github.com/stardew-valley-dedicated-server/server/discussions).
-
-### GitHub Issues
-
-For confirmed bugs and technical issues, see [Reporting Bugs](/community/reporting-bugs).
-
-## Before Asking for Help
-
-To get the fastest and most helpful response:
-
-1. **Describe your setup**
-   - Operating system
-   - Docker version
-   - JunimoServer version
-   - Any mods you're using
-
-2. **Share relevant logs**
-   - Run `docker compose logs -f` to get server logs
-   - Include any error messages you're seeing
-
-3. **Explain what you've tried**
-   - What steps did you take?
-   - What did you expect to happen?
-   - What actually happened?
-
-## Community Guidelines
-
-- Be respectful and patient
-- Help others when you can
-- Share your solutions if you figure something out
-- Keep discussions on-topic
-
-We're all here to enjoy Stardew Valley multiplayer together!
+- OS, Docker version, JunimoServer version
+- Mods installed (if any)
+- Logs: `docker compose logs -f`
+- What you tried and what happened

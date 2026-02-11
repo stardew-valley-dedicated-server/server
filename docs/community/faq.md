@@ -1,7 +1,5 @@
 # FAQ
 
-Common questions about JunimoServer.
-
 ## General
 
 ### Is JunimoServer free?
@@ -24,7 +22,7 @@ Yes, but with limitations. GOG connections have ~50% success rate compared to St
 
 ### What happens to my crops if I can't log in?
 
-JunimoServer includes **Crop Preservation** — crops track their owner and won't die from lack of watering while you're offline. Season-end death is also delayed. Your crops are safe until you return.
+Crops track their owner and won't die from lack of watering while you're offline. Season-end death is also delayed.
 
 ### Does time pass when I'm offline?
 
@@ -51,6 +49,8 @@ Yes, but use a **separate Steam account** for the server. Steam doesn't allow th
 - Dual-core CPU minimum
 - 1-2 GB disk space
 
+These are ballpark estimates — actual requirements vary based on mods and player count.
+
 ### Can I run the server on Windows?
 
 Yes. JunimoServer runs on both Linux and Windows via Docker.
@@ -74,6 +74,14 @@ Depends on the mod type:
 
 ## Troubleshooting
 
+### VNC shows a black screen — is the server broken?
+
+No. The server is working correctly. By default, `DISABLE_RENDERING=true` which means the server doesn't draw graphics to its own display (saving CPU). Players always see the game normally on their own screens — connect with your game client to verify.
+
+You don't need VNC to play or manage the server. Use the CLI (`docker compose exec server attach-cli`) for server commands.
+
+See [VNC](/admins/operations/vnc#why-is-vnc-showing-a-black-screen) if you specifically need to enable the display for debugging.
+
 ### Players can't connect
 
 1. Verify server is running: `docker compose ps`
@@ -91,7 +99,3 @@ Common causes:
 
 See [Troubleshooting](/admins/troubleshooting) for detailed solutions.
 
-## Still Have Questions?
-
-- [Discord](https://discord.gg/w23GVXdSF7) — Community chat
-- [GitHub Issues](https://github.com/stardew-valley-dedicated-server/server/issues) — Bug reports and feature requests

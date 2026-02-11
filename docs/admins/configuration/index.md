@@ -13,7 +13,7 @@ JunimoServer uses two configuration mechanisms:
 
 - Change farm name, player limit, or cabin behavior → [Server Settings](/admins/configuration/server-settings)
 - Set Steam credentials, VNC password, or ports → [Environment Variables](/admins/configuration/environment)
-- Enable Discord bot and chat relay → [Discord Integration](/admins/configuration/discord)
+- Set up Discord bot → [Discord Setup](/admins/configuration/discord) (see [Discord feature](/features/discord) for overview)
 - Require password to join → [Password Protection](/features/password-protection/)
 
 ## Configuration Files
@@ -50,8 +50,3 @@ VNC_PASSWORD=your_secure_password
 
 See [Environment Variables](/admins/configuration/environment) for full reference.
 
-## Next Steps
-
-- [Server Settings](/admins/configuration/server-settings) — Game and server behavior
-- [Environment Variables](/admins/configuration/environment) — Docker infrastructure
-- [Discord Integration](/admins/configuration/discord) — Bot setup and chat relay
