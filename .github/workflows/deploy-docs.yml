@@ -88,7 +88,7 @@ jobs:
       - name: Download latest docs (from release workflow)
         id: release-latest
         if: steps.current-latest.outcome != 'success'
-        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        uses: dawidd6/action-download-artifact@5c98f0b039f36ef966fdb7dfa9779262785ecb05 # v14
         with:
           workflow: build-release.yml
           name: docs-latest
@@ -100,7 +100,7 @@ jobs:
       # Fallback: check deploy-docs.yml for manually rebuilt latest docs
       - name: Download latest docs (from manual rebuild)
         if: steps.current-latest.outcome != 'success' && steps.release-latest.outcome != 'success'
-        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        uses: dawidd6/action-download-artifact@5c98f0b039f36ef966fdb7dfa9779262785ecb05 # v14
         with:
           workflow: deploy-docs.yml
           name: docs-latest
@@ -112,7 +112,7 @@ jobs:
       - name: Download preview docs (from build-preview workflow)
         id: build-preview-artifact
         if: steps.current-preview.outcome != 'success'
-        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        uses: dawidd6/action-download-artifact@5c98f0b039f36ef966fdb7dfa9779262785ecb05 # v14
         with:
           workflow: build-preview.yml
           name: docs-preview
@@ -124,7 +124,7 @@ jobs:
       # Fallback: check deploy-docs.yml for manually rebuilt preview docs
       - name: Download preview docs (from manual rebuild)
         if: steps.current-preview.outcome != 'success' && steps.build-preview-artifact.outcome != 'success'
-        uses: dawidd6/action-download-artifact@20319c5641d495c8a52e688b7dc5fada6c3a9fbc # v8
+        uses: dawidd6/action-download-artifact@5c98f0b039f36ef966fdb7dfa9779262785ecb05 # v14
         with:
           workflow: deploy-docs.yml
           name: docs-preview
