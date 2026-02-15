@@ -110,7 +110,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # ============================================================================
 # Stage 4: Final runtime image (no game files, downloads on first run)
 # ============================================================================
-FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.10.7 AS server
+FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.11.0 AS server
 
 ARG SMAPI_VERSION
 
