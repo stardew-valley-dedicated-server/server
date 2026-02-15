@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # ============================================================================
 # Stage 4: Final runtime image
 # ============================================================================
-FROM jlesage/baseimage-gui:debian-11-v4.10.7 AS client
+FROM jlesage/baseimage-gui:debian-11-v4.11.0 AS client
 
 ARG SMAPI_VERSION
 
