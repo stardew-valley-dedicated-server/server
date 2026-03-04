@@ -676,6 +676,12 @@ namespace JunimoServer.Services.Api
                     await WriteJsonAsync(response, new { error = "Method not allowed" });
                 }
             }
+            catch (Exception ex) when (request.IsWebSocketRequest)
+            {
+                // WebSocket upgrade failed or WebSocket session errored — response is already
+                // disposed by the upgrade handshake, so we must not attempt to write to it.
+                Monitor.Log($"WebSocket handling error: {ex}", LogLevel.Warn);
+            }
             catch (Exception ex)
             {
                 Monitor.Log($"Error handling request: {ex}", LogLevel.Warn);
@@ -691,10 +697,15 @@ namespace JunimoServer.Services.Api
             }
             finally
             {
-                try { response.Close(); }
-                catch (Exception closeEx)
+                // Don't close the response for WebSocket requests — it's already been
+                // consumed/disposed by the WebSocket upgrade handshake.
+                if (!request.IsWebSocketRequest)
                 {
-                    Monitor.Log($"Failed to close response: {closeEx}", LogLevel.Debug);
+                    try { response.Close(); }
+                    catch (Exception closeEx)
+                    {
+                        Monitor.Log($"Failed to close response: {closeEx}", LogLevel.Debug);
+                    }
                 }
             }
         }
