@@ -80,6 +80,21 @@ docker compose exec server wget -qO- http://steam-auth:3001/health
 2. Get invite code via CLI: `docker compose exec server attach-cli` then `info`
 3. Share the correct invite code with players
 
+### "Connection Failed" after first successful connect
+
+::: warning Same Steam Account Conflict
+If you are using the **same Steam account** for both the server and your game client, Steam will log the server out when your client signs in. This breaks the session, causing "Connection Failed" on any subsequent reconnect attempt — even with a valid invite code.
+
+**Solution:** Use a **separate Steam account** for the server. The server account must own a copy of Stardew Valley.
+
+If a dedicated account isn't available, connect as the host via direct IP instead of invite code, and have other players use the invite code.
+:::
+
+This is the most common cause when:
+- First connect works but reconnecting fails
+- The same Steam credentials are used to launch both server and client
+- No invite code changes were made between attempts
+
 ### Same-network players can't connect
 
 This is usually a "hairpinning" issue — traffic can't loop back to the same network.

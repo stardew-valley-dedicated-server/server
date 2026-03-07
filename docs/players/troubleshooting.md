@@ -5,8 +5,15 @@
 | Symptom | Likely Cause | Solution |
 |---------|--------------|----------|
 | "Connection failed" | Wrong invite code | Verify code with admin |
+| "Connection failed" on reconnect (first connect worked) | Server and client share the same Steam account | Admin must use a separate Steam account for the server |
 | Immediate disconnect | Mod mismatch | Check you have all required mods |
 | Can't connect from same network | Router doesn't support hairpinning | Use mobile hotspot or VPN |
+
+::: warning Same Steam Account Issue
+If the server admin is using the **same Steam account** to run the server and play the game, your invite code will stop working after the admin (or any client using that account) signs into Steam. The server gets logged out, breaking all new connections.
+
+Ask your admin to verify they are using a dedicated Steam account for the server.
+:::
 
 ## Password/Login Issues
 
