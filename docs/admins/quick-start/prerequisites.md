@@ -22,8 +22,10 @@ Use `docker compose` (V2), not `docker-compose` (V1). [Install Docker](https://d
 
 A Steam account that owns Stardew Valley. Credentials are only used locally to download game files.
 
-::: tip
-Consider a dedicated Steam account to avoid conflicts when playing while the server runs.
+::: warning Use a Dedicated Steam Account
+**Do not use the same Steam account for both the server and your game client.** Steam only allows one active session per account. If the same account is used for the server and a player's client, Steam will log the server out, causing "Connection Failed" for all subsequent reconnect attempts — even with a valid, unchanged invite code.
+
+Use a separate Steam account (with its own copy of Stardew Valley) for the server.
 :::
 
 ## Hardware
