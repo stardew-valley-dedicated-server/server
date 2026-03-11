@@ -935,6 +935,13 @@ namespace JunimoServer.Services.Auth
 
         private bool ShowLoginPrompt()
         {
+            // Auto-skip when running non-interactively (e.g. Docker without TTY)
+            if (Console.IsInputRedirected || Environment.GetEnvironmentVariable("STEAM_AUTH_SKIP") == "1")
+            {
+                _monitor.Log("Non-interactive mode detected, auto-skipping Steam authentication", LogLevel.Info);
+                return false;
+            }
+
             _monitor.Log("***********************************************************************", LogLevel.Info);
             _monitor.Log("*                                                                     *", LogLevel.Info);
             _monitor.Log("*    Choose Steam authentication method:                              *", LogLevel.Info);
