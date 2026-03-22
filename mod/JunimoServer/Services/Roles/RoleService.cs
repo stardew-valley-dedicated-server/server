@@ -1,4 +1,5 @@
 using JunimoServer.Services.Settings;
+using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -38,6 +39,7 @@ namespace JunimoServer.Services.Roles
             _settings = settings;
             helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
             helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
+            SteamGameServerNetServer.FarmhandAccepted += OnSteamFarmhandAccepted;
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
@@ -103,7 +105,8 @@ namespace JunimoServer.Services.Roles
         }
 
         /// <summary>
-        /// Called when a player connects. Checks if their Steam ID is in the admin list.
+        /// Called when a player connects via SMAPI (Galaxy/invite code connections).
+        /// Note: This does NOT fire for Steam SDR connections — see OnSteamFarmhandAccepted.
         /// </summary>
         private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
         {
@@ -111,9 +114,20 @@ namespace JunimoServer.Services.Roles
         }
 
         /// <summary>
-        /// Checks if a player's Steam ID is in the configured admin list and promotes them if so.
+        /// Called when a farmhand is accepted via Steam SDR (SteamGameServerNetServer).
+        /// SMAPI's PeerConnected does not fire for custom server implementations,
+        /// so we handle admin promotion directly here with the known Steam ID.
         /// </summary>
-        public void TryAutoPromoteAdmin(long playerId)
+        private void OnSteamFarmhandAccepted(long playerId, string steamId)
+        {
+            TryAutoPromoteAdmin(playerId, steamId);
+        }
+
+        /// <summary>
+        /// Checks if a player's Steam ID is in the configured admin list and promotes them if so.
+        /// When steamId is provided (SDR path), uses it directly. Otherwise resolves via reflection.
+        /// </summary>
+        public void TryAutoPromoteAdmin(long playerId, string steamId = null)
         {
             var adminSteamIds = _settings.AdminSteamIds;
             if (adminSteamIds == null || adminSteamIds.Length == 0)
@@ -123,8 +137,8 @@ namespace JunimoServer.Services.Roles
             if (IsPlayerAdmin(playerId))
                 return;
 
-            // Get the player's Steam ID via the game server
-            var steamId = GetPlayerSteamId(playerId);
+            // Use provided Steam ID (SDR path) or resolve via reflection (Galaxy path)
+            steamId ??= GetPlayerSteamId(playerId);
             if (string.IsNullOrEmpty(steamId))
             {
                 _monitor.Log($"[Roles] Cannot get Steam ID for player {playerId}", LogLevel.Trace);
