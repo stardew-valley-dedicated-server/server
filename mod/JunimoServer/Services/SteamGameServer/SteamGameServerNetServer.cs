@@ -48,6 +48,14 @@ namespace JunimoServer.Services.SteamGameServer
         /// <summary>Connection data by Steam ID (for O(1) lookup).</summary>
         private Dictionary<ulong, ConnectionData> _steamIdConnectionMap;
 
+        /// <summary>
+        /// Raised when a farmhand is accepted via Steam SDR.
+        /// Parameters: (farmerId, steamId).
+        /// Used by RoleService for admin auto-promotion since SMAPI's PeerConnected
+        /// does not fire for custom server implementations.
+        /// </summary>
+        internal static event Action<long, string> FarmhandAccepted;
+
         /// <summary>Connections that recently joined (for poll group transitions).</summary>
         private HashSet<HSteamNetConnection> _recentlyJoined;
 
@@ -276,6 +284,7 @@ namespace JunimoServer.Services.SteamGameServer
                     connectionData.FarmerId = farmerId;
                     connectionData.Online = true;
                     _farmerConnectionMap[farmerId] = connectionData;
+                    FarmhandAccepted?.Invoke(farmerId, connectionData.SteamId.m_SteamID.ToString());
                 });
         }
 
