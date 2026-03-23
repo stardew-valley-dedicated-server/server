@@ -1,5 +1,5 @@
 # Global build arguments
-ARG SMAPI_VERSION=4.5.1
+ARG SMAPI_VERSION=4.5.2
 
 # ============================================================================
 # Stage 1: Build steam-service downloader
