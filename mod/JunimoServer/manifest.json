@@ -1,7 +1,7 @@
 {
     "Name": "JunimoServer",
     "Author": "JunimoHost",
-    "Version": "1.4.1",
+    "Version": "1.5.0",
     "Description": "JunimoHost's remote game manager",
     "UniqueID": "JunimoHost.Server",
     "EntryDll": "JunimoServer.dll",
