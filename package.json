@@ -7,9 +7,9 @@
     "postinstall": "lefthook install"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.4.4",
-    "@commitlint/config-conventional": "^20.4.4",
-    "lefthook": "^2.1.4"
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "lefthook": "^2.1.5"
   },
   "dependencies": {
     "pako": "^2.1.0"
