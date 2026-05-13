@@ -78,6 +78,8 @@ services:
       DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
       # Channel ID for two-way chat relay (optional)
       DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
+      # Channel ID to post invite code updates (optional)
+      DISCORD_INVITE_CODE_CHANNEL_ID: "${DISCORD_INVITE_CODE_CHANNEL_ID:-}"
       # API key (must match server's API_KEY if set)
       API_KEY: "${API_KEY:-}"
     depends_on:

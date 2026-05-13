@@ -6,6 +6,7 @@ const API_URL = process.env.API_URL || "http://server:8080";
 const API_KEY = process.env.API_KEY || "";
 const WS_URL = process.env.WS_URL || API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws";
 const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
+const DISCORD_INVITE_CODE_CHANNEL_ID = process.env.DISCORD_INVITE_CODE_CHANNEL_ID;
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
 
 // Discord rate limit for presence updates is ~5 per 20 seconds.
@@ -121,6 +122,13 @@ async function updatePresence(): Promise<void> {
     activityName = `${playerInfo} | ${inviteCode}`;
   }
 
+  // Detect invite code change and post to channel
+  const currentCode = status?.steamInviteCode || status?.gogInviteCode || null;
+  if (lastInviteCode !== undefined && currentCode !== null && currentCode !== lastInviteCode) {
+    notifyInviteCodeChanged(currentCode);
+  }
+  lastInviteCode = currentCode;
+
   client.user?.setPresence({
     activities: [
       {
@@ -163,6 +171,26 @@ async function updateBotNickname(): Promise<void> {
       if (error instanceof Error) {
         console.error(`[Discord Bot] Failed to set nickname in ${guild.name}: ${error.message}`);
       }
+    }
+  }
+}
+
+// Track last known invite code to detect changes
+let lastInviteCode: string | null = undefined;
+
+/**
+ * Posts a message to the invite code channel when the code changes.
+ */
+async function notifyInviteCodeChanged(newCode: string): Promise<void> {
+  if (!DISCORD_INVITE_CODE_CHANNEL_ID) return;
+  const channel = client.channels.cache.get(DISCORD_INVITE_CODE_CHANNEL_ID);
+  if (!channel?.isTextBased()) return;
+  try {
+    await (channel as TextChannel).send(`🎮 New invite code: **${newCode}**`);
+    console.log(`[Discord Bot] Posted invite code to channel: ${newCode}`);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`[Discord Bot] Failed to post invite code: ${error.message}`);
     }
   }
 }
@@ -369,6 +397,33 @@ async function performStartupChecks(): Promise<void> {
     }
   }
 
+  // Check invite code channel if configured
+  if (DISCORD_INVITE_CODE_CHANNEL_ID) {
+    const inviteChannel = client.channels.cache.get(DISCORD_INVITE_CODE_CHANNEL_ID);
+
+    if (!inviteChannel) {
+      errors.push(`Invite code channel ${DISCORD_INVITE_CODE_CHANNEL_ID} not found - check DISCORD_INVITE_CODE_CHANNEL_ID`);
+    } else if (!inviteChannel.isTextBased()) {
+      errors.push(`Channel ${DISCORD_INVITE_CODE_CHANNEL_ID} is not a text channel`);
+    } else {
+      const channel = inviteChannel as TextChannel;
+      const botMember = channel.guild.members.me;
+
+      if (botMember) {
+        const permissions = channel.permissionsFor(botMember);
+
+        if (!permissions?.has(PermissionFlagsBits.ViewChannel)) {
+          errors.push(`Missing VIEW_CHANNEL permission in invite code channel "${channel.name}"`);
+        }
+        if (!permissions?.has(PermissionFlagsBits.SendMessages)) {
+          errors.push(`Missing SEND_MESSAGES permission in invite code channel "${channel.name}"`);
+        }
+
+        console.log(`[Discord Bot] Invite code channel: #${channel.name} in ${channel.guild.name}`);
+      }
+    }
+  }
+
   // Check permissions in each guild
   for (const guild of client.guilds.cache.values()) {
     const botMember = guild.members.me;
@@ -425,6 +480,10 @@ client.once(Events.ClientReady, async () => {
 
   if (DISCORD_CHAT_CHANNEL_ID) {
     console.log(`[Discord Bot] Chat relay channel: ${DISCORD_CHAT_CHANNEL_ID}`);
+  }
+
+  if (DISCORD_INVITE_CODE_CHANNEL_ID) {
+    console.log(`[Discord Bot] Invite code channel: ${DISCORD_INVITE_CODE_CHANNEL_ID}`);
   }
 
   // Perform startup checks

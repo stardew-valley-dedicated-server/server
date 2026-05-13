@@ -130,6 +130,17 @@ namespace JunimoServer.Services.Auth
         #endregion
 
         /// <summary>
+        /// Called when the GameServer loses its connection to Steam.
+        /// Resets lobby state so the lobby is recreated when the connection is restored.
+        /// </summary>
+        private static void OnSteamDisconnected()
+        {
+            _monitor.Log("Steam disconnected - resetting lobby state for recreation on reconnect", LogLevel.Warn);
+            _lobbyCreationAttempted = false;
+            _steamLobbyId = 0;
+        }
+
+        /// <summary>
         /// Called when SteamGameServerService receives a valid Steam ID from Valve.
         /// This completes any deferred Galaxy initialization and creates the Steam lobby.
         /// </summary>
@@ -169,6 +180,9 @@ namespace JunimoServer.Services.Auth
 
             // Subscribe to Steam ID assignment event to create lobby at the right time
             SteamGameServerService.OnServerSteamIdReceived += OnServerSteamIdReceived;
+
+            // Reset lobby state on disconnect so the lobby is recreated on reconnect
+            SteamGameServerService.OnServerSteamDisconnected += OnSteamDisconnected;
 
             // Handle race condition: If Steam ID was already received before we subscribed,
             // manually trigger the handler. This ensures Galaxy init happens even if the
