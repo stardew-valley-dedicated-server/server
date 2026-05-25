@@ -168,10 +168,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install tmux (binary download, separate layer for cacheability)
-RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v3.6a/tmux-3.6a-linux-x86_64.tar.gz && \
-    tar -xzf tmux-3.6a-linux-x86_64.tar.gz && \
+RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v3.6b/tmux-3.6b-linux-x86_64.tar.gz && \
+    tar -xzf tmux-3.6b-linux-x86_64.tar.gz && \
     install -m 0755 ./tmux /usr/local/bin/tmux && \
-    rm -r ./tmux tmux-3.6a-linux-x86_64.tar.gz
+    rm -r ./tmux tmux-3.6b-linux-x86_64.tar.gz
 
 # Install vsdbg for remote debugging
 # TODO: Make installation optional for local/debug builds, commented for now
