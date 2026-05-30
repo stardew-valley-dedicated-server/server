@@ -1,6 +1,6 @@
-using JunimoServer.Tests.Fixtures;
+using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Infrastructure;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace JunimoServer.Tests;
 
@@ -10,15 +10,12 @@ namespace JunimoServer.Tests;
 /// The Steamworks SDK defaults to AppID 480 (Spacewar) if steam_appid.txt is missing
 /// or contains the wrong value. This causes SDR connection failures because the client
 /// (Stardew Valley, 413150) and server have mismatched AppIDs.
+///
+/// API-only. Never calls GetClientAsync().
 /// </summary>
-[Collection("Integration")]
-public class SteamAppIdTests : IDisposable
+[TestServer(Isolation = IsolationMode.SharedAssembly, Clients = 0, Artifacts = false)]
+public class SteamAppIdTests : TestBase
 {
-    private readonly IntegrationTestFixture _fixture;
-    private readonly ITestOutputHelper _output;
-    private readonly string? _testName;
-    private readonly DateTime _testStartTime;
-
     /// <summary>
     /// Stardew Valley's Steam App ID.
     /// </summary>
@@ -29,28 +26,7 @@ public class SteamAppIdTests : IDisposable
     /// </summary>
     private const string SpacewarAppId = "480";
 
-    public SteamAppIdTests(IntegrationTestFixture fixture, ITestOutputHelper output)
-    {
-        _fixture = fixture;
-        _output = output;
-        _testStartTime = DateTime.UtcNow;
-        _testName = ExtractTestName(output);
-        _fixture.RegisterTest(nameof(SteamAppIdTests), _testName);
-    }
-
-    private static string? ExtractTestName(ITestOutputHelper output)
-    {
-        try
-        {
-            var field = output.GetType().GetField("test", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(output) is Xunit.Abstractions.ITest test)
-            {
-                return test.DisplayName;
-            }
-        }
-        catch { }
-        return null;
-    }
+    public SteamAppIdTests() { }
 
     /// <summary>
     /// Verifies that the server container has the correct Steam AppID configured.
@@ -64,12 +40,13 @@ public class SteamAppIdTests : IDisposable
     [Fact]
     public async Task Server_HasCorrectSteamAppId()
     {
-        // Get container logs
-        Assert.NotNull(_fixture.ServerContainer);
-        var logs = await _fixture.ServerContainer.GetLogsAsync();
+        // Get container logs. Use a timeout since GetLogsAsync can hang on disposed containers.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
         var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
 
-        _output.WriteLine("Searching for Steam AppID in server logs...");
+        Log("Searching for Steam AppID in server logs...");
 
         // Look for the breakpad minidump line which shows the AppID
         // Format: "Setting breakpad minidump AppID = 413150"
@@ -82,79 +59,93 @@ public class SteamAppIdTests : IDisposable
             if (line.Contains("Setting breakpad minidump AppID"))
             {
                 appIdLine = line.Trim();
-                _output.WriteLine($"Found: {appIdLine}");
 
                 // Extract the AppID number
                 var parts = line.Split('=');
                 if (parts.Length >= 2)
-                {
                     detectedAppId = parts[^1].Trim();
-                }
                 break;
             }
         }
 
         // Verify we found the log line
         Assert.NotNull(appIdLine);
+        Log("Found breakpad AppID log line:");
+        LogDetail($"  {appIdLine}");
 
         // Verify the AppID is correct
         Assert.NotNull(detectedAppId);
         Assert.NotEqual(SpacewarAppId, detectedAppId);
         Assert.Equal(ExpectedAppId, detectedAppId);
 
-        _output.WriteLine($"Steam AppID correctly configured: {detectedAppId}");
+        LogSuccess($"Steam AppID: {detectedAppId} (expected {ExpectedAppId})");
     }
 
     /// <summary>
     /// Verifies that SDR relay initialization was attempted.
     ///
-    /// After Steam GameServer initialization, the server should report an SDR relay status.
-    /// Valid states are:
+    /// After Steam GameServer initialization, the server logs an SDR relay status ONCE.
+    /// The mod does not re-log transitions, so we check whatever status was logged.
+    ///
+    /// Valid states (prove Steam SDK initialized correctly):
     /// - k_ESteamNetworkingAvailability_Current: Ready for connections
     /// - k_ESteamNetworkingAvailability_Attempting: Connecting to relay network
+    /// - k_ESteamNetworkingAvailability_Waiting: SDK initialized, relay pending
+    ///   (common in Docker containers without internet to Valve relay servers)
     ///
-    /// Failed states (which would indicate a problem):
+    /// Failed states (indicate a real problem):
     /// - k_ESteamNetworkingAvailability_Failed
     /// - k_ESteamNetworkingAvailability_Unknown
     /// </summary>
     [Fact]
     public async Task Server_HasSdrRelayInitialized()
     {
-        Assert.NotNull(_fixture.ServerContainer);
-        var logs = await _fixture.ServerContainer.GetLogsAsync();
-        var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
+        Log("Searching for SDR relay status in server logs...");
 
-        _output.WriteLine("Searching for SDR relay status in server logs...");
-
-        var lines = combinedLogs.Split('\n');
+        // The mod logs SDR status once during SteamServersConnected callback.
+        // Poll until the log line appears (server may still be booting).
         string? sdrStatusLine = null;
-
-        foreach (var line in lines)
-        {
-            if (line.Contains("SDR relay status:"))
+        var found = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_SteamAppId_SdrStatusLine,
+            async () =>
             {
-                sdrStatusLine = line.Trim();
-                _output.WriteLine($"Found: {sdrStatusLine}");
-                break;
-            }
-        }
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(10));
+                var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
+                var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
 
-        // Verify SDR status was logged
-        Assert.NotNull(sdrStatusLine);
+                foreach (var line in combinedLogs.Split('\n'))
+                {
+                    if (line.Contains("SDR relay status:"))
+                    {
+                        sdrStatusLine = line.Trim();
+                        return true;
+                    }
+                }
+                return false;
+            }, TimeSpan.FromSeconds(30), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(found, "SDR relay status line should appear in server logs");
+        Log("Found SDR relay log line:");
+        LogDetail($"  {sdrStatusLine}");
 
         // Verify SDR is not in a failed state
         Assert.DoesNotContain("Failed", sdrStatusLine);
         Assert.DoesNotContain("Unknown", sdrStatusLine);
 
-        // Verify SDR is either ready or attempting to connect
-        var isValid = sdrStatusLine.Contains("Current") || sdrStatusLine.Contains("Attempting");
-        Assert.True(isValid, $"SDR status should be Current or Attempting, got: {sdrStatusLine}");
+        // Extract the status value from "SDR relay status: <value>"
+        var statusValue = sdrStatusLine!.Split("SDR relay status:") is [_, var tail]
+            ? tail.Trim()
+            : sdrStatusLine;
 
-        _output.WriteLine("SDR relay initialization confirmed");
-    }
+        // Accept Waiting, Attempting, or Current; all prove the SDK initialized.
+        // In Docker test containers, "Waiting" is expected because there's no
+        // internet route to Valve's relay servers.
+        var isValid = sdrStatusLine.Contains("Current")
+            || sdrStatusLine.Contains("Attempting")
+            || sdrStatusLine.Contains("Waiting");
+        Assert.True(isValid, $"SDR status should be Current, Attempting, or Waiting, got: {sdrStatusLine}");
 
-    public void Dispose()
-    {
-        _fixture.CompleteTest(nameof(SteamAppIdTests), _testName, DateTime.UtcNow - _testStartTime);
+        LogSuccess($"SDR relay status: {statusValue}");
     }
 }

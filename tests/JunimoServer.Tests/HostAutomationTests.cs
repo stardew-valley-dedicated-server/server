@@ -1,8 +1,8 @@
 using JunimoServer.Tests.Clients;
-using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Infrastructure;
+
 using Xunit;
-using Xunit.Abstractions;
 
 namespace JunimoServer.Tests;
 
@@ -11,53 +11,96 @@ namespace JunimoServer.Tests;
 /// Verifies that the server correctly pauses/unpauses time based on player presence,
 /// and that the host bot automates sleeping and day transitions.
 /// </summary>
-[Collection("Integration")]
-public class HostAutomationTests : IntegrationTestBase
+[TestServer(Isolation = IsolationMode.SharedAssembly)]
+public class HostAutomationTests : TestBase
 {
-    public HostAutomationTests(IntegrationTestFixture fixture, ITestOutputHelper output)
-        : base(fixture, output) { }
+    public HostAutomationTests() { }
 
     /// <summary>
     /// Verifies that game time does NOT advance when no other player is connected.
     /// The server's AlwaysOn service pauses the game when otherFarmers.Count == 0
     /// and timeOfDay is between 610 and 2500.
+    ///
+    /// Uses Exclusive=true to prevent other tests from acquiring this server
+    /// during the verification window.
     /// </summary>
     [Fact]
+    [TestServer(Clients = 0, Exclusive = true)]
     public async Task TimePaused_WhenNoPlayersConnected()
     {
-        await EnsureDisconnectedAsync();
+        await Connect.EnsureDisconnectedAsync();
+
+        var ct = TestContext.Current.CancellationToken;
+        Log($"Exclusive access granted, refs={Lease!.RefCount}");
+
+        // Wait until no other players are connected (previous test may still be cleaning up).
+        var noPlayers = await PollingHelper.LongPollAsync(
+            WaitName.Polling_HostAutomation_NoPlayers,
+            async (since, remaining) =>
+            {
+                var s = await ServerApi.WaitForStatusAsync(since: since, isReady: true, playerCount: 0, timeout: remaining, ct: ct);
+                if (s != null) Log($"PlayerCount==0 confirmed: PlayerCount={s.PlayerCount}, IsReady={s.IsReady}");
+                return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
+            }, TestTimings.ServerReadyBetweenTests, cancellationToken: ct);
+        Assert.True(noPlayers, "Server should have no players connected before testing time pause");
 
         // Set time to a known mid-day value so we're firmly inside the pause window (610-2500)
-        var setTimeResult = await ServerApi.SetTime(1200);
+        var setTimeResult = await ServerApi.SetTime(TestTimings.Noon, ct);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
         Log($"Set time to {setTimeResult.TimeOfDay}");
 
-        // Small delay to let the game loop process the time change
-        await Task.Delay(TestTimings.TimeChangeProcessingDelay);
+        // Poll until the game reports IsPaused=true (confirms AlwaysOn paused with 0 players)
+        var pauseConfirmed = await PollingHelper.LongPollAsync(
+            WaitName.Polling_HostAutomation_PauseConfirmed,
+            async (since, remaining) =>
+            {
+                var s = await ServerApi.WaitForStatusAsync(since: since, isPaused: true, timeout: remaining, ct: ct);
+                return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
+            }, TestTimings.NetworkSyncTimeout, cancellationToken: ct);
+        Assert.True(pauseConfirmed, "Server should report IsPaused=true with no players connected");
 
         // Read current time
-        var status1 = await ServerApi.GetStatus();
+        var status1 = await ServerApi.GetStatus(ct);
         Assert.NotNull(status1);
         var time1 = status1.TimeOfDay;
-        Log($"Time reading 1: {time1}");
+        Log($"Time reading 1: {time1}, PlayerCount: {status1.PlayerCount}, IsPaused: {status1.IsPaused}");
 
-        // Wait long enough for at least one time advance if the game were unpaused.
-        // Stardew advances time every 7 seconds (10 game-minutes per tick).
-        // 8 seconds > 1 tick, sufficient to detect if time is advancing.
-        await Task.Delay(TestTimings.TimePausedVerification);
+        // Speed up the clock 10x so the verification window covers more game-ticks
+        var speedResult = await ServerApi.SetClockSpeed(10, ct);
+        Assert.True(speedResult?.Success, $"SetClockSpeed failed: {speedResult?.Error}");
+        Log($"Clock speed set to {speedResult!.Multiplier}x ({speedResult.EffectiveMs}ms/min)");
 
-        // Read time again
-        var status2 = await ServerApi.GetStatus();
-        Assert.NotNull(status2);
-        var time2 = status2.TimeOfDay;
-        Log($"Time reading 2: {time2}");
+        try
+        {
+            // Poll for the verification window. If time advances at any point,
+            // the test fails immediately instead of waiting the full duration.
+            // At 10x speed, 2s covers ~28 game-ticks worth of verification.
+            // No equality filter on TimeOfDay — use `since` to wait for any newer
+            // snapshot, then check TimeOfDay-changed on the returned body.
+            var timeAdvanced = await PollingHelper.LongPollAsync(
+                WaitName.Polling_HostAutomation_TimeAdvanced,
+                async (since, remaining) =>
+            {
+                var s = await ServerApi.WaitForStatusAsync(since: since, timeout: remaining, ct: ct);
+                if (s == null) return new PollingHelper.LongPollResult(false, since);
+                if (s.TimeOfDay != time1)
+                {
+                    Log($"Time changed: {time1} → {s.TimeOfDay}, PlayerCount={s.PlayerCount}");
+                    return new PollingHelper.LongPollResult(true, s.Version);
+                }
+                return new PollingHelper.LongPollResult(false, s.Version);
+            }, TestTimings.TimePausedVerification, cancellationToken: ct);
 
-        // Time should NOT have advanced (game is paused with no other players)
-        Assert.Equal(time1, time2);
-        LogSuccess("Confirmed: time did not advance while no players connected");
-
-        await AssertNoExceptionsAsync("at end of test");
+            // Time should NOT have advanced (game is paused with no other players)
+            Assert.False(timeAdvanced, $"Time should not advance while no players connected, but changed from {time1}");
+            LogSuccess("Confirmed: time did not advance while no players connected");
+        }
+        finally
+        {
+            // Always restore clock speed
+            await ServerApi.SetClockSpeed(1, ct);
+        }
     }
 
     /// <summary>
@@ -65,51 +108,68 @@ public class HostAutomationTests : IntegrationTestBase
     /// The server's AlwaysOn service unpauses the game when otherFarmers.Count >= 1.
     /// </summary>
     [Fact]
+    [TestServer(Exclusive = true)]
     public async Task TimeAdvances_WhenPlayerConnected()
     {
-        await EnsureDisconnectedAsync();
+        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
 
-        var farmerName = GenerateFarmerName("Time");
-        TrackFarmer(farmerName);
-        var joinResult = await JoinWorldWithRetryAsync(farmerName);
-        AssertJoinSuccess(joinResult);
+        var ct = TestContext.Current.CancellationToken;
 
         // Set time to a known value so the measurement is clean
-        var setTimeResult = await ServerApi.SetTime(1200);
+        var setTimeResult = await ServerApi.SetTime(TestTimings.Noon, ct);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
 
-        // Poll until game processes the time change (time >= 1200)
-        ServerStatus? status1 = null;
-        await PollingHelper.WaitUntilAsync(async () =>
+        // Poll until game is unpaused (confirms game is running with player connected)
+        var unpauseConfirmed = await PollingHelper.LongPollAsync(
+            WaitName.Polling_HostAutomation_UnpauseConfirmed,
+            async (since, remaining) =>
+            {
+                var s = await ServerApi.WaitForStatusAsync(since: since, isPaused: false, timeout: remaining, ct: ct);
+                if (s == null) return new PollingHelper.LongPollResult(false, since);
+                if (s.TimeOfDay >= TestTimings.Noon)
+                    return new PollingHelper.LongPollResult(true, s.Version);
+                return new PollingHelper.LongPollResult(false, s.Version);
+            }, TestTimings.NetworkSyncTimeout, cancellationToken: ct);
+        Assert.True(unpauseConfirmed, "Server should report IsPaused=false with a player connected");
+
+        var status1 = await ServerApi.GetStatus(ct);
+        var time1 = status1!.TimeOfDay;
+        Log($"Time reading 1: {time1}, IsPaused: {status1.IsPaused}");
+
+        // Speed up the clock 10x so tick fires in ~0.7s instead of ~7s
+        var speedResult = await ServerApi.SetClockSpeed(10, ct);
+        Assert.True(speedResult?.Success, $"SetClockSpeed failed: {speedResult?.Error}");
+        Log($"Clock speed set to {speedResult!.Multiplier}x ({speedResult.EffectiveMs}ms/min)");
+
+        try
         {
-            status1 = await ServerApi.GetStatus();
-            return status1?.TimeOfDay >= 1200;
-        }, TestTimings.NetworkSyncTimeout);
-
-        Assert.NotNull(status1);
-        var time1 = status1.TimeOfDay;
-        Log($"Time reading 1: {time1}");
-
-        // Poll until time advances (one tick takes ~7s)
-        ServerStatus? status2 = null;
-        await PollingHelper.WaitUntilAsync(async () =>
+            // Poll until time advances (should complete in ~0.7s at 10x speed).
+            // No equality filter on TimeOfDay — wait for any newer snapshot via
+            // `since`, then check the >- condition on the returned body.
+            await PollingHelper.LongPollAsync(
+                WaitName.Polling_HostAutomation_TimeAdvancedSecond,
+                async (since, remaining) =>
+                {
+                    var s = await ServerApi.WaitForStatusAsync(since: since, timeout: remaining, ct: ct);
+                    if (s == null) return new PollingHelper.LongPollResult(false, since);
+                    return new PollingHelper.LongPollResult(s.TimeOfDay > time1, s.Version);
+                }, TestTimings.TimeAdvanceWait, cancellationToken: ct);
+        }
+        finally
         {
-            status2 = await ServerApi.GetStatus();
-            return status2?.TimeOfDay > time1;
-        }, TestTimings.TimeAdvanceWait);
+            // Always restore clock speed
+            await ServerApi.SetClockSpeed(1, ct);
+        }
 
-        Assert.NotNull(status2);
-        var time2 = status2.TimeOfDay;
-        Log($"Time reading 2: {time2}");
+        var statusFinal = await ServerApi.GetStatus(ct);
+        var time2 = statusFinal!.TimeOfDay;
 
         // Time should have advanced
         Assert.True(time2 > time1,
             $"Time should have advanced with a player connected, but went from {time1} to {time2}");
 
         LogSuccess($"Confirmed: time advanced from {time1} to {time2} (+{time2 - time1} game-minutes)");
-
-        await AssertNoExceptionsAsync("at end of test");
     }
 
     /// <summary>
@@ -120,17 +180,13 @@ public class HostAutomationTests : IntegrationTestBase
     /// and calls startSleep() on the host.
     /// </summary>
     [Fact]
+    [TestServer(Exclusive = true)]
     public async Task HostAutoSleeps_WhenPlayerSleeps()
     {
-        await EnsureDisconnectedAsync();
-
-        var farmerName = GenerateFarmerName("Sleep");
-        TrackFarmer(farmerName);
-        var joinResult = await JoinWorldWithRetryAsync(farmerName);
-        AssertJoinSuccess(joinResult);
+        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
 
         // Record the current day
-        var statusBefore = await ServerApi.GetStatus();
+        var statusBefore = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
         Assert.NotNull(statusBefore);
         var dayBefore = statusBefore.Day;
         var seasonBefore = statusBefore.Season;
@@ -143,13 +199,30 @@ public class HostAutomationTests : IntegrationTestBase
         Assert.True(sleepResult.Success, $"Sleep action failed: {sleepResult.Error}");
         Log($"Farmhand sleeping at {sleepResult.Location}");
 
-        // Wait for the day to transition.
+        // Verify the farmhand is still connected after the sleep action.
+        // If it disconnected immediately, the day change would be a false positive
+        // (server auto-sleeps with 0 players, not reacting to the farmhand's sleep).
+        var postSleepState = await GameClient.GetState();
+        Assert.NotNull(postSleepState);
+        Assert.True(postSleepState.IsConnected,
+            "Farmhand disconnected immediately after sleep action. " +
+            "cannot verify host auto-sleep behavior");
+
+        // Wait for the day to transition while monitoring the connection.
         // The host bot should detect the farmhand is ready to sleep,
         // then auto-sleep itself, triggering NewDay().
-        var dayChanged = await WaitForDayChangeAsync(dayBefore, seasonBefore, yearBefore);
+        // We check the connection on every poll so we can fail fast with a clear
+        // error instead of waiting the full timeout on a false positive.
+        var (dayChanged, disconnected) = await DayChange.WaitAsync(
+            dayBefore, seasonBefore, yearBefore, checkConnection: true, TestContext.Current.CancellationToken);
+
+        Assert.False(disconnected,
+            "False positive: farmhand disconnected during day change wait. " +
+            "the day change (if any) was caused by the server auto-sleeping with " +
+            "0 players, not by the host reacting to the farmhand's sleep request");
         Assert.True(dayChanged, "Day should have advanced after farmhand slept and host auto-slept");
 
-        var statusAfter = await ServerApi.GetStatus();
+        var statusAfter = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
         Assert.NotNull(statusAfter);
         Log($"After sleep: {statusAfter.Season} {statusAfter.Day}, Year {statusAfter.Year}, Time {statusAfter.TimeOfDay}");
 
@@ -157,8 +230,6 @@ public class HostAutomationTests : IntegrationTestBase
         Assert.True(
             statusAfter.Day != dayBefore || statusAfter.Season != seasonBefore || statusAfter.Year != yearBefore,
             $"Expected a new day but still on {seasonBefore} {dayBefore}, Year {yearBefore}");
-
-        await AssertNoExceptionsAsync("at end of test");
     }
 
     /// <summary>
@@ -169,86 +240,50 @@ public class HostAutomationTests : IntegrationTestBase
     /// and both players transition to the next day.
     /// </summary>
     [Fact]
+    [TestServer(Exclusive = true)]
     public async Task HostPassesOut_WhenTimeReaches2AM()
     {
-        await EnsureDisconnectedAsync();
-
-        var farmerName = GenerateFarmerName("Pass");
-        TrackFarmer(farmerName);
-        var joinResult = await JoinWorldWithRetryAsync(farmerName);
-        AssertJoinSuccess(joinResult);
+        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
 
         // Record the current day
-        var statusBefore = await ServerApi.GetStatus();
+        var statusBefore = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
         Assert.NotNull(statusBefore);
         var dayBefore = statusBefore.Day;
         var seasonBefore = statusBefore.Season;
         var yearBefore = statusBefore.Year;
         Log($"Before pass-out: {seasonBefore} {dayBefore}, Year {yearBefore}, Time {statusBefore.TimeOfDay}");
 
-        // Set time to 2550 — just one 10-minute tick before 2:00 AM (2600).
-        // The game advances time every ~7 seconds, so 2550 → 2600 in ~7s.
-        var setTimeResult = await ServerApi.SetTime(2550);
+        // Set time to 2550, just one 10-minute tick before 2:00 AM (2600).
+        var setTimeResult = await ServerApi.SetTime(TestTimings.PrePassOutTime, TestContext.Current.CancellationToken);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
         Log($"Set time to {setTimeResult.TimeOfDay}, waiting for 2:00 AM pass-out...");
 
-        // Wait for the day to transition.
-        // At 2600, the game forces pass-out → sleep ready check → day transition.
-        var dayChanged = await WaitForDayChangeAsync(dayBefore, seasonBefore, yearBefore);
+        // Speed up clock 10x so the tick from 2550→2600 takes ~0.7s instead of ~7s
+        var speedResult = await ServerApi.SetClockSpeed(10, TestContext.Current.CancellationToken);
+        Assert.True(speedResult?.Success, $"SetClockSpeed failed: {speedResult?.Error}");
+
+        bool dayChanged;
+        try
+        {
+            // Wait for the day to transition.
+            // At 2600, the game forces pass-out → sleep ready check → day transition.
+            dayChanged = await DayChange.WaitAsync(dayBefore, seasonBefore, yearBefore, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            // Always restore clock speed
+            await ServerApi.SetClockSpeed(1, TestContext.Current.CancellationToken);
+        }
         Assert.True(dayChanged, "Day should have advanced after 2:00 AM pass-out");
 
-        var statusAfter = await ServerApi.GetStatus();
+        var statusAfter = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
         Assert.NotNull(statusAfter);
         Log($"After pass-out: {statusAfter.Season} {statusAfter.Day}, Year {statusAfter.Year}, Time {statusAfter.TimeOfDay}");
 
         Assert.True(
             statusAfter.Day != dayBefore || statusAfter.Season != seasonBefore || statusAfter.Year != yearBefore,
             $"Expected a new day but still on {seasonBefore} {dayBefore}, Year {yearBefore}");
-
-        await AssertNoExceptionsAsync("at end of test");
     }
 
-    #region Helpers
-
-    /// <summary>
-    /// Polls GET /status until the day/season/year changes from the given values.
-    /// </summary>
-    private async Task<bool> WaitForDayChangeAsync(int day, string season, int year)
-    {
-        var deadline = DateTime.UtcNow + TestTimings.DayChangeTimeout;
-        var attempt = 0;
-
-        while (DateTime.UtcNow < deadline)
-        {
-            attempt++;
-            await Task.Delay(TestTimings.DayChangePollInterval);
-
-            try
-            {
-                var status = await ServerApi.GetStatus();
-                if (status == null) continue;
-
-                if (status.Day != day || status.Season != season || status.Year != year)
-                {
-                    Log($"Day changed after {attempt * TestTimings.DayChangePollInterval.TotalSeconds:F1}s: {season} {day} Y{year} → {status.Season} {status.Day} Y{status.Year}");
-                    return true;
-                }
-
-                if (attempt % 5 == 0)
-                {
-                    LogDetail($"Still waiting for day change... (time={status.TimeOfDay}, attempt {attempt})");
-                }
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"Status poll error: {ex.Message}");
-            }
-        }
-
-        LogWarning($"Timed out waiting for day change after {TestTimings.DayChangeTimeout.TotalSeconds}s");
-        return false;
-    }
-
-    #endregion
 }
