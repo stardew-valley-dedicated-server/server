@@ -119,7 +119,7 @@ jobs:
           GAME_PORT=$DEPLOY_GAME_PORT
           VNC_PORT=$DEPLOY_VNC_PORT
           STEAM_AUTH_PORT=$DEPLOY_STEAM_AUTH_PORT
-          DISABLE_RENDERING=true
+          SERVER_FPS=0
           # API authentication
           API_KEY=${{ secrets.DEPLOY_API_KEY }}
           # Discord bot (optional)

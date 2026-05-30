@@ -20,10 +20,12 @@ services:
       - ./.local-container/settings:/data/settings
     environment:
       # Steam auth service URL (for runtime ticket requests)
-      STEAM_AUTH_URL: "http://steam-auth:3001"
+      STEAM_AUTH_URL: "http://steam-auth:${STEAM_AUTH_PORT:-3001}"
       # Server configuration
       VNC_PASSWORD: "${VNC_PASSWORD:-}"
-      DISABLE_RENDERING: "${DISABLE_RENDERING:-true}"
+      ALLOW_INSECURE_SETUP: "${ALLOW_INSECURE_SETUP:-false}"
+      SERVER_TPS: "${SERVER_TPS:-60}"
+      SERVER_FPS: "${SERVER_FPS:-0}"
       # Game settings file path (auto-created with defaults if missing)
       SETTINGS_PATH: "/data/settings/server-settings.json"
       # HTTP API for external tools and automation
@@ -48,12 +50,12 @@ services:
     stdin_open: true
     tty: true
     expose:
-      - "3001"
+      - "${STEAM_AUTH_PORT:-3001}"
     volumes:
       - steam-session:/data/steam-session
       - game-data:/data/game
     environment:
-      PORT: "3001"
+      PORT: "${STEAM_AUTH_PORT:-3001}"
       GAME_DIR: "/data/game"
       SESSION_DIR: "/data/steam-session"
       STEAM_USERNAME: "${STEAM_USERNAME:-}"
