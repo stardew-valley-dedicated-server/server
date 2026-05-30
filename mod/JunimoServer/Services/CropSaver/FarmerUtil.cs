@@ -5,13 +5,13 @@ namespace JunimoServer.Services.CropSaver
 {
     public static class FarmerUtil
     {
-        public static Farmer GetClosestFarmer(GameLocation location, Vector2 tileLocation)
+        public static Farmer GetClosestFarmer(GameLocation location, Vector2 tileLocation, long serverHostId)
         {
-            var farmers = Game1.getOnlineFarmers();
-            var closestFarmer = Game1.player; // assign ownership of crop to host as fallback (should only be the case if crop planting was automated)
+            Farmer closestFarmer = null;
             var closestDistance = float.MaxValue;
-            foreach (var farmer in farmers)
+            foreach (var farmer in Game1.getOnlineFarmers())
             {
+                if (farmer.UniqueMultiplayerID == serverHostId) continue;
                 if (!farmer.currentLocation.Equals(location)) continue;
                 var farmerDistance = Vector2.Distance(farmer.Tile, tileLocation);
                 if (farmerDistance < closestDistance)

@@ -3,7 +3,7 @@ using xTile.Dimensions;
 using xTile.Display;
 using xTile.Tiles;
 
-namespace JunimoServer.Services.ServerOptim
+namespace JunimoServer.Shared
 {
     public class NullDisplayDevice : IDisplayDevice
     {

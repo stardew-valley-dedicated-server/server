@@ -1,6 +1,7 @@
 using HarmonyLib;
 using JunimoServer.Services.Api;
 using JunimoServer.Services.Roles;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -112,7 +113,7 @@ namespace JunimoServer.Services.ChatCommands
             if (args.Length > 0)
             {
                 // Show help for specific commands passed as args
-                foreach (var command in _registeredCommands.Where(command => args.Contains(command.Name)))
+                foreach (var command in _registeredCommands.Where(command => args.Contains(command.Name, StringComparer.OrdinalIgnoreCase)))
                 {
                     _helper.SendPrivateMessage(msg.SourceFarmer, command.CommandUsage);
                 }
@@ -129,7 +130,7 @@ namespace JunimoServer.Services.ChatCommands
 
         private void OnChatMessage(ReceivedMessage receivedMessage)
         {
-            _monitor.Log($"[ChatCommands] OnChatMessage: {receivedMessage.Message}", LogLevel.Trace);
+            _monitor.Log($"[ChatCommands] OnChatMessage: {ChatRedaction.MaskSecrets(receivedMessage.Message)}", LogLevel.Trace);
 
             if (!receivedMessage.IsCommand)
             {
@@ -142,7 +143,7 @@ namespace JunimoServer.Services.ChatCommands
                 return;
             }
 
-            foreach (var command in _registeredCommands.Where(command => command.Name.Equals(receivedMessage.Command.Name)))
+            foreach (var command in _registeredCommands.Where(command => command.Name.Equals(receivedMessage.Command.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 _monitor.Log($"[ChatCommands] Found command: {command.Name}", LogLevel.Trace);
                 command.Action(receivedMessage.Command.Args, receivedMessage);

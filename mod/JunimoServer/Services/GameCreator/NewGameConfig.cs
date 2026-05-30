@@ -1,5 +1,6 @@
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Settings;
+using System;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -34,6 +35,33 @@ namespace JunimoServer.Services.GameCreator
                 SpawnMonstersAtNight = settings.SpawnMonstersAtNight,
                 ProfitMargin = settings.ProfitMargin,
                 StartingCabins = settings.StartingCabins,
+            };
+        }
+
+        /// <summary>
+        /// Creates a NewGameConfig from API request parameters with sensible defaults.
+        /// </summary>
+        public static NewGameConfig FromRequest(
+            int farmType = 0, string farmName = "Junimo", int startingCabins = 1,
+            string cabinStrategy = "CabinStack", int maxPlayers = 10,
+            float profitMargin = 1.0f, bool? spawnMonstersAtNight = null,
+            bool separateWallets = false)
+        {
+            if (!Enum.TryParse<CabinStrategy>(cabinStrategy, ignoreCase: true, out var strategy))
+            {
+                strategy = CabinManager.CabinStrategy.CabinStack;
+            }
+
+            return new NewGameConfig
+            {
+                WhichFarm = farmType,
+                FarmName = farmName,
+                StartingCabins = startingCabins,
+                CabinStrategy = strategy,
+                MaxPlayers = maxPlayers,
+                ProfitMargin = profitMargin,
+                SpawnMonstersAtNight = spawnMonstersAtNight,
+                UseSeparateWallets = separateWallets,
             };
         }
 

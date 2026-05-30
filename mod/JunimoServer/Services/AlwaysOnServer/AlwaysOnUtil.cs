@@ -7,24 +7,34 @@ namespace JunimoServer.Services.AlwaysOn
 {
     public static class AlwaysOnUtil
     {
-        public static void WarpToHouse()
+        /// <summary>
+        /// True while a <see cref="ReadyCheckDialog"/> (sleep, festival start/end,
+        /// ready-for-save, wakeup) is the active menu. Any host-side automation
+        /// that would replace <see cref="Game1.activeClickableMenu"/> — directly,
+        /// or via engine calls like <see cref="Game1.drawObjectDialogue(string)"/>,
+        /// <see cref="GameLocation.mailbox"/>, <see cref="Utility.TryOpenShopMenu(string, string, bool)"/>,
+        /// <c>Event.namePet</c> — MUST bail out when this returns true.
+        ///
+        /// Why: <c>ReadyCheckDialog.update()</c> is the only code that polls
+        /// <c>netReady</c> and calls <c>doSleep()</c>/<c>NewDay()</c>. Its
+        /// <c>emergencyShutDown()</c> is the base no-op and does not release the
+        /// local-ready flag, so if the dialog is replaced the server-side
+        /// handshake finishes but nothing ever invokes <c>NewDay</c> and the day
+        /// stalls. We protect all ready-check variants uniformly — the invariant
+        /// is "don't clobber a handshake menu", not "don't clobber sleep
+        /// specifically".
+        /// </summary>
+        public static bool IsReadyCheckActive()
+            => Game1.activeClickableMenu is ReadyCheckDialog;
+
+        /// <summary>
+        /// Warps the host to the Farm map's default entry tile. Used to park the
+        /// automated host off to the side so clients don't see it occupying doors.
+        /// </summary>
+        public static void WarpToFarmDefaultSpawn()
         {
-            // Default farmhouse door position - inside
-            int x = 64;
-            int y = 15;
-
-            Game1.warpFarmer("FarmHouse", x, y, false);
-        }
-
-        public static void WarpToHidingSpot()
-        {
-            // Default farmhouse door position - outside
-            int x = 64;
-            int y = 15;
-
-            // Ensure we use the real door position
+            int x = 0, y = 0;
             Utility.getDefaultWarpLocation("Farm", ref x, ref y);
-
             Game1.warpFarmer("Farm", x, y, false);
         }
 

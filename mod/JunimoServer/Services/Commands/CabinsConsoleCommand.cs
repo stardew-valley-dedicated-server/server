@@ -61,10 +61,15 @@ namespace JunimoServer.Services.Commands
             foreach (var building in cabins)
             {
                 var cabin = building.GetIndoors<Cabin>();
-                var isHidden = building.IsInHiddenStack();
-                var posLabel = isHidden
-                    ? $"Hidden ({CabinManagerService.HiddenCabinLocation.X},{CabinManagerService.HiddenCabinLocation.Y})"
-                    : $"Visible ({building.tileX.Value},{building.tileY.Value})";
+                var role = building.GetCabinRole();
+                var posLabel = role switch
+                {
+                    CabinRole.SharedLobby => "SharedLobby",
+                    CabinRole.IndividualLobby => $"IndividualLobby ({building.tileX.Value},{building.tileY.Value})",
+                    CabinRole.Editing => "Editing (temp)",
+                    _ when building.IsInHiddenStack() => "Hidden (player stack)",
+                    _ => $"Visible ({building.tileX.Value},{building.tileY.Value})"
+                };
 
                 var ownerId = cabin?.owner?.UniqueMultiplayerID ?? 0;
                 string ownerLabel;

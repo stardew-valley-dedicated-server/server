@@ -25,7 +25,7 @@ namespace JunimoServer.Services.Settings
 
         public ServerSettings Raw => _settings;
 
-        #region Typed accessors — game creation settings (immutable after game created)
+        #region Typed accessors: game creation settings (immutable after game created)
 
         public string FarmName => _settings.Game.FarmName;
         public int FarmType => _settings.Game.FarmType;
@@ -39,7 +39,7 @@ namespace JunimoServer.Services.Settings
 
         #endregion
 
-        #region Typed accessors — runtime settings (applied on every startup)
+        #region Typed accessors: runtime settings (applied on every startup)
 
         public int MaxPlayers => _settings.Server.MaxPlayers;
 
@@ -68,6 +68,12 @@ namespace JunimoServer.Services.Settings
         /// Steam IDs that are automatically granted admin on join.
         /// </summary>
         public string[] AdminSteamIds => _settings.Server.AdminSteamIds ?? Array.Empty<string>();
+
+        /// <summary>
+        /// Broadcast period (in ticks) for farmer/location/world-state deltas.
+        /// Out-of-range values clamp into [1, 60] with a warning.
+        /// </summary>
+        public int NetworkBroadcastPeriod => ClampBroadcastPeriod(_settings.Server.NetworkBroadcastPeriod);
 
         #endregion
 
@@ -195,6 +201,21 @@ namespace JunimoServer.Services.Settings
                 return result;
             }
             return Settings.LobbyMode.Shared;
+        }
+
+        private int ClampBroadcastPeriod(int value)
+        {
+            const int min = 1;
+            const int max = 60;
+            if (value < min || value > max)
+            {
+                var clamped = Math.Clamp(value, min, max);
+                _monitor.Log(
+                    $"NetworkBroadcastPeriod={value} out of range [{min},{max}]; clamped to {clamped}.",
+                    LogLevel.Warn);
+                return clamped;
+            }
+            return value;
         }
 
         #endregion

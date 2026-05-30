@@ -29,6 +29,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\JunimoServer.Shared\JunimoServer.Shared.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="Google.Protobuf" Version="3.21.5"/>
         <PackageReference Include="Grpc.Net.Client" Version="2.48.0"/>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
@@ -71,6 +75,7 @@
         <!-- Copy required mod files to destination -->
         <ItemGroup>
             <ModFiles Include="$(OutputPath)\JunimoServer.dll"/>
+            <ModFiles Include="$(OutputPath)\JunimoServer.Shared.dll"/>
             <!-- <ModFiles Include="$(OutputPath)\JunimoServer.pdb" /> -->
             <ModFiles Include="$(OutputPath)\Google.Protobuf.dll"/>
             <ModFiles Include="$(OutputPath)\Grpc.Core.Api.dll"/>

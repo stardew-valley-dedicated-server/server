@@ -6,7 +6,7 @@ namespace JunimoServer.Services.CabinManager
 {
     /// <summary>
     /// Determines the visible position where stacked cabins appear client-side.
-    /// This is the position the owning player sees their cabin at — NOT the hidden
+    /// This is the position the owning player sees their cabin at, NOT the hidden
     /// out-of-bounds location where cabins are stored server-side.
     ///
     /// Resolution order:

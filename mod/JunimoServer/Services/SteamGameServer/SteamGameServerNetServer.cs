@@ -389,10 +389,19 @@ namespace JunimoServer.Services.SteamGameServer
         private void OnConnecting(SteamNetConnectionStatusChangedCallback_t callback, CSteamID steamId)
         {
             _monitor.Log($"{steamId.m_SteamID} connecting via SDR", LogLevel.Debug);
+            Diagnostics.ModEventLog.Emit("steam_p2p_connect_started", new
+            {
+                clientSteamId = steamId.m_SteamID.ToString()
+            });
 
             if (_gameServer.isUserBanned(steamId.m_SteamID.ToString()))
             {
                 _monitor.Log($"{steamId.m_SteamID} is banned", LogLevel.Info);
+                Diagnostics.ModEventLog.Emit("steam_p2p_connect_failed", new
+                {
+                    clientSteamId = steamId.m_SteamID.ToString(),
+                    reason = "banned"
+                });
                 ShutdownConnection(callback.m_hConn);
                 return;
             }
@@ -405,6 +414,11 @@ namespace JunimoServer.Services.SteamGameServer
         private void OnConnected(SteamNetConnectionStatusChangedCallback_t callback, CSteamID steamId)
         {
             _monitor.Log($"{steamId.m_SteamID} connected via SDR", LogLevel.Info);
+            Diagnostics.ModEventLog.Emit("steam_p2p_connected", new
+            {
+                clientSteamId = steamId.m_SteamID.ToString(),
+                relayedVia = "sdr"
+            });
 
             var connectionData = new ConnectionData(callback.m_hConn, steamId, "");
             _connectionDataMap[callback.m_hConn] = connectionData;
@@ -430,8 +444,27 @@ namespace JunimoServer.Services.SteamGameServer
 
             if (!_connectionDataMap.TryGetValue(callback.m_hConn, out var value))
             {
+                // Either the connection was rejected pre-accept (e.g. banned; OnConnecting
+                // already emitted steam_p2p_connect_failed for this case), or it's a
+                // spurious close callback. Skip the emit either way to avoid double-counting.
                 CloseConnection(callback.m_hConn);
                 return;
+            }
+
+            // ProblemDetectedLocally means the SDR session failed mid-setup or lost liveness.
+            // ClosedByPeer is a normal client-side disconnect. Emit only for the failure
+            // state, and only for known connections — the banned pre-accept rejection above
+            // is already accounted for at OnConnecting.
+            var state = callback.m_info.m_eState;
+            if (state == ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
+            {
+                Diagnostics.ModEventLog.Emit("steam_p2p_connect_failed", new
+                {
+                    clientSteamId = steamId.m_SteamID.ToString(),
+                    reason = "problem_detected_locally",
+                    endReason = callback.m_info.m_eEndReason,
+                    debug = callback.m_info.m_szEndDebug
+                });
             }
 
             onDisconnect(ConnectionDataToId(value));

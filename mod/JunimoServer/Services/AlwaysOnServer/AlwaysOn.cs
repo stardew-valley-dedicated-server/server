@@ -1,4 +1,6 @@
+using HarmonyLib;
 using JunimoServer.Services.ChatCommands;
+using JunimoServer.Services.GameManager;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Util;
 using StardewModdingAPI;
@@ -7,8 +9,9 @@ using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
 using StardewValley.Minigames;
-using StardewValley.Network;
 using StardewValley.Objects;
+using System;
+using System.Diagnostics;
 using System.Linq;
 
 namespace JunimoServer.Services.AlwaysOn
@@ -30,8 +33,7 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private bool _isShippingMenuActive;
 
-        private bool doWarpRoutineToGetToNextDay = false;
-        private int _warpTickCounter = 0;
+        private bool _warpingSleep;
 
         // Shipping menu timeout reset, causes menu to be closed when bigger than `Config.EndOfDayTimeOut`
         private int shippingMenuTimeoutTicks;
@@ -40,7 +42,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         private readonly AlwaysOnConfig Config;
 
-        public AlwaysOnServer(ChatCommandsService chatCommandService, AlwaysOnConfig config, IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public AlwaysOnServer(ChatCommandsService chatCommandService, AlwaysOnConfig config, IModHelper helper, IMonitor monitor, Harmony harmony) : base(helper, monitor)
         {
             Config = config;
 
@@ -50,6 +52,15 @@ namespace JunimoServer.Services.AlwaysOn
 
             // Extracted festival logic
             alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandService, config);
+
+            // Re-claim Cabin.inventoryMutex inside vanilla's update method so it can
+            // never be observed unlocked by peers — replaces the 60Hz polling that
+            // used to live in HandleLockPlayersChests for the inventory case.
+            CabinOverrides.Initialize(config);
+            harmony.Patch(
+                original: AccessTools.Method(typeof(Cabin), nameof(Cabin.updateEvenIfFarmerIsntHere)),
+                postfix: new HarmonyMethod(typeof(CabinOverrides), nameof(CabinOverrides.UpdateEvenIfFarmerIsntHere_Postfix))
+            );
         }
 
         // TODO: Rename to OnStart, OnLoad or whatever fits best.. need to double-check
@@ -65,21 +76,36 @@ namespace JunimoServer.Services.AlwaysOn
             Helper.Events.Specialized.UnvalidatedUpdateTicked += OnUnvalidatedUpdateTick;
             Helper.Events.GameLoop.DayEnding += OnDayEnd;
             Helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
+            Helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
+            Helper.Events.Multiplayer.PeerDisconnected += OnPeerDisconnected;
+            Helper.Events.World.ObjectListChanged += OnObjectListChanged;
         }
 
         private void OnReturnedToTitle(object sender, ReturnedToTitleEventArgs e)
         {
-            // This should not happen during regular operations - log error for operators
-            Monitor.Log("CRITICAL: Server unexpectedly returned to title screen. Automation disabled.", LogLevel.Error);
-            Monitor.Log("Container may need restart. Check game logs for crash details.", LogLevel.Error);
+            if (GameManagerService.IsNewGamePending)
+            {
+                Monitor.Log("Returning to title for new game creation.", LogLevel.Info);
+            }
+            else
+            {
+                Monitor.Log("CRITICAL: Server unexpectedly returned to title screen. Automation disabled.", LogLevel.Error);
+                Monitor.Log("Container may need restart. Check game logs for crash details.", LogLevel.Error);
+            }
+
+            // Reset all automation state regardless (OnSaveLoaded re-enables automation)
             IsAutomating = false;
+            clientPaused = false;
+            _isShippingMenuActive = false;
+            _warpingSleep = false;
+            shippingMenuTimeoutTicks = 0;
+            _petChoiceHandled = false;
             ServerOptimizerOverrides.SetAutomationInputSuppression(false);
         }
 
         private void OnDayEnd(object sender, DayEndingEventArgs e)
         {
-            doWarpRoutineToGetToNextDay = false;
-            _warpTickCounter = 0;
+            _warpingSleep = false;
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
@@ -87,22 +113,34 @@ namespace JunimoServer.Services.AlwaysOn
             if (Game1.IsServer)
             {
                 // NOTE: The game has a built-in dedicated host mode (hasDedicatedHost)
-                // that we deliberately do NOT use — our mod handles automation independently.
+                // that we deliberately do NOT use. Our mod handles automation independently.
                 // Game1.player.team.hasDedicatedHost.Value = true;
 
-                ToggleAutoMode();
+                EnableAutoMode();
 
                 if (Game1.player != null)
                 {
                     Game1.player.Equip(ItemRegistry.Create<Hat>($"{ItemRegistry.type_hat}JunimoHat"), Game1.player.hat);
                     Game1.player.ignoreCollisions = true;
+
+                    PreSeedEarlyGameEvents();
                 }
 
+                // Seed locks for cabins whose farmhands are already offline at load time.
+                // The Cabin.updateEvenIfFarmerIsntHere postfix handles per-frame
+                // inventoryMutex; this seeds fridge + chest mutexes once.
+                LockOfflineFarmhandStorage();
+
                 // Print startup banner after a delay (fallback if auth is skipped)
-                Helper.Events.GameLoop.UpdateTicked += PrintBannerAfterDelay;
+                if (!_bannerSubscribed)
+                {
+                    _bannerSubscribed = true;
+                    Helper.Events.GameLoop.UpdateTicked += PrintBannerAfterDelay;
+                }
             }
         }
 
+        private bool _bannerSubscribed;
         private int _bannerDelayTicks = 0;
         private const int BannerDelaySeconds = 5;
 
@@ -110,8 +148,8 @@ namespace JunimoServer.Services.AlwaysOn
         {
             _bannerDelayTicks++;
 
-            // Wait ~5 seconds (60 ticks per second)
-            if (_bannerDelayTicks >= BannerDelaySeconds * 60)
+            // Wait ~5 seconds (Env.ServerTps ticks per second)
+            if (_bannerDelayTicks >= BannerDelaySeconds * Env.ServerTps)
             {
                 Helper.Events.GameLoop.UpdateTicked -= PrintBannerAfterDelay;
                 ServerBanner.Print(Monitor, Helper);
@@ -157,7 +195,6 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            HandleNextDayWarp();
             HandleDialogueBox();
             HandleSkippableEvent();
             HandleMinigame();
@@ -168,8 +205,6 @@ namespace JunimoServer.Services.AlwaysOn
             HandleCaveChoice();
             HandleCommunityCenterUnlock();
         }
-
-        private int _updateTickLog = 0;
 
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
@@ -185,8 +220,6 @@ namespace JunimoServer.Services.AlwaysOn
 
             alwaysOnServerFestivals.HandleFestivalStart();
             alwaysOnServerFestivals.HandleFestivalLeave();
-
-            HandleLockPlayersChests();
         }
 
         private void OnTimeChanged(object sender, TimeChangedEventArgs e)
@@ -215,10 +248,6 @@ namespace JunimoServer.Services.AlwaysOn
                 HandleCommunityCenter();
                 HandleJojaMarket();
             }
-            else if (Game1.timeOfDay == 900)
-            {
-                HandleFishingRod();
-            }
         }
 
         private void OnSaving(object sender, SavingEventArgs e)
@@ -241,7 +270,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 shippingMenuTimeoutTicks += 1;
 
-                if (shippingMenuTimeoutTicks >= Config.EndOfDayTimeOut * 60)
+                if (shippingMenuTimeoutTicks >= Config.EndOfDayTimeOut * Env.ServerTps)
                 {
                     // Prevent others from joining after timeout
                     Game1.options.setServerMode("offline");
@@ -266,7 +295,7 @@ namespace JunimoServer.Services.AlwaysOn
         /// <param name="args"></param>
         private void ToggleAutoModeCommand(string command, string[] args)
         {
-            ToggleAutoMode();
+            InvokeConsoleCommand(command, args, ToggleAutoMode);
         }
 
         /// <summary>
@@ -276,7 +305,59 @@ namespace JunimoServer.Services.AlwaysOn
         /// <param name="args"></param>
         private void ToggleVisibilityCommand(string command, string[] args)
         {
-            ToggleVisibility();
+            InvokeConsoleCommand(command, args, ToggleVisibility);
+        }
+
+        private static void InvokeConsoleCommand(string command, string[] args, Action handler)
+        {
+            var sw = Stopwatch.StartNew();
+            string result = "ok";
+            string? error = null;
+            try
+            {
+                handler();
+            }
+            catch (Exception ex)
+            {
+                result = "error";
+                error = $"{ex.GetType().Name}: {ex.Message}";
+                throw;
+            }
+            finally
+            {
+                sw.Stop();
+                Diagnostics.ModEventLog.Emit("console_command_invoked", new
+                {
+                    command,
+                    args,
+                    result,
+                    error,
+                    durationMs = sw.ElapsedMilliseconds
+                });
+            }
+        }
+
+        /// <summary>
+        /// Unconditionally enables host automation. Called on save load to ensure
+        /// automation is always active regardless of prior state (e.g., rapid /newgame
+        /// calls that can cause double OnSaveLoaded without intervening OnReturnedToTitle).
+        /// </summary>
+        private void EnableAutoMode()
+        {
+            if (Game1.gameMode != 3)
+            {
+                return;
+            }
+
+            IsAutomating = true;
+            Game1.displayHUD = true;
+
+            Game1.chatBox.addInfoMessage("Host automation: Enabled");
+            Game1.addHUDMessage(new HUDMessage("Host automation: Enabled"));
+            Monitor.Log("Host automation: Enabled", LogLevel.Info);
+
+            ServerOptimizerOverrides.SetAutomationInputSuppression(true);
+            Game1.player.Halt();
         }
 
         private void ToggleAutoMode()
@@ -323,27 +404,42 @@ namespace JunimoServer.Services.AlwaysOn
             PlayerIsHidden = !PlayerIsHidden;
         }
 
+        private bool _petChoiceHandled;
+
         private void HandlePetChoice()
         {
-            if (!IsAutomating)
+            if (!IsAutomating || _petChoiceHandled)
             {
                 return;
             }
 
-            // Initial pet choice
-            if (!Game1.player.hasPet())
-            {
-                Helper.Reflection.GetMethod(new Event(), "namePet").Invoke(this.Config.PetName.Substring(0));
-            }
-
-            // Update pet name
             if (Game1.player.hasPet())
             {
+                // Pet already exists (loaded from save). Just rename and mark done.
                 var pet = Game1.player.getPet();
-                pet.Name = this.Config.PetName.Substring(0);
-                pet.displayName = this.Config.PetName.Substring(0);
+                pet.Name = Config.PetName;
+                pet.displayName = Config.PetName;
+                _petChoiceHandled = true;
+                return;
             }
 
+            // Call hostActionNamePet directly via reflection, avoiding the throwaway
+            // Event() + namePet() pattern which calls Game1.exitActiveMenu() and
+            // would destroy any active menu (e.g. ReadyCheckDialog from sleep).
+            Monitor.Log($"[Automation] Creating pet '{Config.PetName}'", LogLevel.Info);
+            Helper.Reflection.GetMethod(typeof(Event), "hostActionNamePet")
+                .Invoke(Game1.player, CreateBinaryReader(Config.PetName));
+            _petChoiceHandled = true;
+        }
+
+        private static System.IO.BinaryReader CreateBinaryReader(string value)
+        {
+            var stream = new System.IO.MemoryStream();
+            var writer = new System.IO.BinaryWriter(stream);
+            writer.Write(value);
+            writer.Flush();
+            stream.Position = 0;
+            return new System.IO.BinaryReader(stream);
         }
 
         private void HandleCaveChoice()
@@ -402,7 +498,7 @@ namespace JunimoServer.Services.AlwaysOn
 
         /// <summary>
         /// Skip all events to keep the server unblocked.
-        /// On a dedicated server, no one is watching — skip everything,
+        /// On a dedicated server, no one is watching. Skip everything,
         /// including non-skippable intro events that would block clients.
         /// EXCEPTION: Festivals are handled separately and should NOT be skipped here.
         /// </summary>
@@ -502,10 +598,18 @@ namespace JunimoServer.Services.AlwaysOn
             // before the OK button becomes clickable. We also need to ensure we're on the
             // main page (currentPage == -1) and not in the outro phase.
             int introTimer = Helper.Reflection.GetField<int>(menu, "introTimer").GetValue();
+
+            // Force-skip the 3.5s intro animation, irrelevant for automated server
+            if (introTimer > 0)
+            {
+                Helper.Reflection.GetField<int>(menu, "introTimer").SetValue(0);
+                return; // Let the next tick handle the OK click
+            }
+
             int currentPage = Helper.Reflection.GetField<int>(menu, "currentPage").GetValue();
             bool outro = Helper.Reflection.GetField<bool>(menu, "outro").GetValue();
 
-            if (introTimer <= 0 && currentPage == -1 && !outro)
+            if (currentPage == -1 && !outro)
             {
                 Monitor.Log("[Automation] Clicking OK on ShippingMenu", LogLevel.Info);
                 Helper.Reflection.GetMethod(menu, "okClicked").Invoke();
@@ -513,65 +617,87 @@ namespace JunimoServer.Services.AlwaysOn
         }
 
         /// <summary>
-        /// Start sleep once the last online player went to bed.
+        /// When every other connected player is ready to sleep, warp the host to
+        /// their home (if not already there) and trigger Sleep_Yes. Ported from
+        /// the game's own DedicatedServer.Tick() sleep branch
+        /// (decompiled Network/Dedicated/DedicatedServer.cs:401-467). One-shot;
+        /// <see cref="_warpingSleep"/> latches the warp phase to prevent re-entry.
         /// </summary>
         private void HandleAutoSleep()
         {
-            var numPlayers = Game1.otherFarmers.Count;
+            if (Game1.otherFarmers.Count == 0) return;
+            if (_warpingSleep) return;
+            if (!OthersReadyForSleep()) return;
 
-            // Skip sleeping without other players
-            if (numPlayers == 0)
+            var home = Game1.player.homeLocation.Value;
+
+            if (Game1.currentLocation is FarmHouse here
+                && string.Equals(here.NameOrUniqueName, home, StringComparison.OrdinalIgnoreCase))
             {
+                Monitor.Log($"Host is home, sleeping in place ({here.NameOrUniqueName})", LogLevel.Info);
+                HostSleepInBed(here);
                 return;
             }
 
-            var numReadySleep = Game1.netReady.GetNumberReady("sleep");
-            var numberRequiredSleep = Game1.netReady.GetNumberRequired("sleep");
-
-            // Go to sleep once server is the last player awake.
-            // IMPORTANT: At least one player must be ready for sleep (numReadySleep > 0).
-            // Without this check, when all players are unauthenticated (excluded from ready-check),
-            // the condition "1 - 0 == 1" would incorrectly trigger sleep with only the host required.
-            if (numReadySleep > 0 && numberRequiredSleep - numReadySleep == 1)
+            Monitor.Log($"Warping host to {home} for sleep", LogLevel.Info);
+            _warpingSleep = true;
+            var req = Game1.getLocationRequest(home);
+            req.OnWarp += () =>
             {
-                Monitor.Log("Called StartSleep");
+                if (Game1.currentLocation is FarmHouse fh)
+                {
+                    HostSleepInBed(fh);
+                }
+                else
+                {
+                    _warpingSleep = false;
+                    Monitor.Log($"Sleep warp landed in unexpected location: {Game1.currentLocation?.NameOrUniqueName}", LogLevel.Warn);
+                }
+            };
+            // Coords are any valid tile inside the target FarmHouse; HostSleepInBed
+            // then snaps position to the actual bed spot. Matches DedicatedServer.cs:415.
+            Game1.warpFarmer(req, 5, 9, Game1.player.FacingDirection);
+        }
 
-                FarmHouse farmHouse = Game1.getLocationFromName("Farmhouse") as FarmHouse;
-                Game1.player.lastSleepLocation.Value = farmHouse.NameOrUniqueName;
-                Game1.player.lastSleepPoint.Value = farmHouse.GetPlayerBedSpot();
-                Helper.Reflection.GetMethod(farmHouse, "startSleep").Invoke();
-
-                doWarpRoutineToGetToNextDay = true;
-            }
+        private void HostSleepInBed(FarmHouse fh)
+        {
+            Game1.player.position.Set(Utility.PointToVector2(fh.GetPlayerBedSpot()) * 64f);
+            fh.answerDialogueAction("Sleep_Yes", null);
+            _warpingSleep = false;
         }
 
         /// <summary>
-        /// Warp in an attempt to skip the day faster due to bypassing certain animations.
+        /// Mirrors DedicatedServer.CheckOthersReady("sleep"): true once every other
+        /// connected player has readied (ready = required - 1, host is the missing
+        /// one), and only while the ready-check itself hasn't fired yet.
+        /// LobbyService.UpdateSleepReadyCheckExclusion keeps excluded (lobby /
+        /// unauthenticated) players out of GetNumberRequired, so this formula
+        /// stays correct across Steam, LAN, and password-protected flows.
         /// </summary>
-        private void HandleNextDayWarp()
+        private static bool OthersReadyForSleep()
         {
-            if (!doWarpRoutineToGetToNextDay)
-            {
-                return;
-            }
-
-            Monitor.Log("Attempting to warp to next day");
-
-
-            if (_warpTickCounter % 10 == 1)
-            {
-                AlwaysOnUtil.WarpToHouse();
-            }
-            else if (_warpTickCounter % 10 == 5)
-            {
-                AlwaysOnUtil.WarpToHidingSpot();
-            }
-
-            _warpTickCounter++;
+            int ready = Game1.netReady.GetNumberReady("sleep");
+            if (ready <= 0) return false;
+            if (Game1.netReady.IsReady("sleep")) return false;
+            return ready >= Game1.netReady.GetNumberRequired("sleep") - 1;
         }
 
         private void HandleMailbox()
         {
+            // GameLocation.mailbox() calls Game1.drawObjectDialogue even on an empty
+            // mailbox, which replaces activeClickableMenu. If a ReadyCheckDialog is
+            // live (e.g. HandleAutoSleep just fired), replacing it wedges the day
+            // transition — see AlwaysOnUtil.IsReadyCheckActive for the full rationale.
+            // Skipping is safe: mail persists across days, no downstream logic gates
+            // on "mail was collected this day", and OnTimeChanged(620) tomorrow is
+            // the retry. If that day is also blocked, we defer again.
+            if (AlwaysOnUtil.IsReadyCheckActive()) return;
+
+            // Nothing to collect — don't open the "mailbox is empty" dialog. It
+            // briefly steals activeClickableMenu for no benefit and widens the race
+            // window if a ReadyCheckDialog shows up a tick later.
+            if (Game1.mailbox.Count == 0) return;
+
             // Checking mails once more closes the last one
             int mailboxCount = Game1.mailbox.Count + 1;
 
@@ -684,45 +810,140 @@ namespace JunimoServer.Services.AlwaysOn
             }
         }
 
-        private void HandleFishingRod()
+        /// <summary>
+        /// Pre-seed early-game events to prevent cutscenes and warps on the host.
+        /// </summary>
+        private void PreSeedEarlyGameEvents()
         {
-            if (Game1.player.eventsSeen.Contains("739330"))
-            {
-                return;
-            }
-
-            Game1.player.increaseBackpackSize(1);
-            Game1.warpFarmer("Beach", 44, 35, 1);
+            PreSeedFishingRodEvent();
+            PreSeedTrainingRodEvent();
         }
 
         /// <summary>
-        /// Lock players chests.
+        /// Event 739330: Willy's fishing rod intro (Beach, Spring Day 2).
+        /// Grants the backpack slot without warping to the beach.
         /// </summary>
-        /// <see cref="https://github.com/funny-snek/Always-On-Server-for-Multiplayer/blob/master/Always%20On%20Server/ModEntry.cs#L987">Original code seems to come from here</see>
-        private void HandleLockPlayersChests()
+        private void PreSeedFishingRodEvent()
         {
-            if (!Config.LockPlayerChests)
+            if (!Game1.player.eventsSeen.Contains("739330"))
             {
+                Game1.player.eventsSeen.Add("739330");
+                Game1.player.increaseBackpackSize(1);
+            }
+        }
+
+        /// <summary>
+        /// Event 980559: Training Rod follow-up (Farm, requires 739330 seen).
+        /// </summary>
+        private void PreSeedTrainingRodEvent()
+        {
+            if (!Game1.player.eventsSeen.Contains("980559"))
+            {
+                Game1.player.eventsSeen.Add("980559");
+            }
+        }
+
+        /// <summary>
+        /// Lock fridge + chests in every farmhand cabin whose owner is offline.
+        /// Inventory mutex is handled separately by CabinOverrides postfix because
+        /// vanilla auto-releases it every frame the host holds it. Fridge and chest
+        /// mutexes don't auto-release (their Update only runs while the cabin is
+        /// inhabited), so a one-shot acquire on lifecycle transitions is enough.
+        /// </summary>
+        private void LockOfflineFarmhandStorage()
+        {
+            if (!Config.LockPlayerChests) return;
+            if (!Game1.IsMasterGame) return;
+
+            var farm = Game1.getFarm();
+            if (farm == null) return;
+
+            var onlineFarmers = Game1.getOnlineFarmers();
+
+            foreach (var building in farm.buildings)
+            {
+                if (!building.isCabin) continue;
+                if (building.GetIndoors() is not Cabin cabin) continue;
+
+                var owner = cabin.owner;
+                if (owner != null && !owner.isUnclaimedFarmhand && onlineFarmers.Contains(owner)) continue;
+
+                if (cabin.fridge.Value is { } fridge && !fridge.mutex.IsLocked())
+                {
+                    fridge.mutex.RequestLock();
+                }
+                foreach (var chest in cabin.objects.Values.OfType<Chest>())
+                {
+                    if (!chest.mutex.IsLocked()) chest.mutex.RequestLock();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Release host-held locks on the cabin owned by the farmhand who just
+        /// came online, so they can open their own inventory / fridge / chests.
+        /// inventoryMutex is included even though CabinOverrides will stop
+        /// re-acquiring it next frame — releasing now avoids a one-frame stutter
+        /// where the owner sees their inventory as locked.
+        /// </summary>
+        private void ReleaseOnlineFarmhandStorage(Farmer owner)
+        {
+            if (!Config.LockPlayerChests) return;
+            if (!Game1.IsMasterGame) return;
+            if (owner == null) return;
+
+            var farm = Game1.getFarm();
+            if (farm == null) return;
+
+            foreach (var building in farm.buildings)
+            {
+                if (!building.isCabin) continue;
+                if (building.GetIndoors() is not Cabin cabin) continue;
+                if (cabin.owner != owner) continue;
+
+                if (cabin.inventoryMutex.IsLockHeld()) cabin.inventoryMutex.ReleaseLock();
+                if (cabin.fridge.Value is { } fridge && fridge.mutex.IsLockHeld()) fridge.mutex.ReleaseLock();
+                foreach (var chest in cabin.objects.Values.OfType<Chest>())
+                {
+                    if (chest.mutex.IsLockHeld()) chest.mutex.ReleaseLock();
+                }
                 return;
             }
+        }
 
-            foreach (var farmer in Game1.otherFarmers.Values)
+        private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
+        {
+            if (!Config.LockPlayerChests) return;
+            if (!Game1.IsMasterGame) return;
+
+            var farmer = Game1.GetPlayer(e.Peer.PlayerID, onlyOnline: true);
+            if (farmer != null) ReleaseOnlineFarmhandStorage(farmer);
+        }
+
+        private void OnPeerDisconnected(object sender, PeerDisconnectedEventArgs e)
+        {
+            // Re-seed across all cabins; a disconnect can leave any subset offline,
+            // and the iteration is cheap (one pass over farm.buildings).
+            LockOfflineFarmhandStorage();
+        }
+
+        private void OnObjectListChanged(object sender, ObjectListChangedEventArgs e)
+        {
+            if (!Config.LockPlayerChests) return;
+            if (!Game1.IsMasterGame) return;
+            if (e.Location is not Cabin cabin) return;
+
+            var owner = cabin.owner;
+            var ownerOffline = owner == null
+                               || owner.isUnclaimedFarmhand
+                               || !Game1.getOnlineFarmers().Contains(owner);
+            if (!ownerOffline) return;
+
+            foreach (var added in e.Added)
             {
-                if (farmer.currentLocation is FarmHouse house && farmer != house.owner)
+                if (added.Value is Chest chest && !chest.mutex.IsLocked())
                 {
-                    // Lock offline player inventory
-                    if (house is Cabin cabin)
-                    {
-                        NetMutex inventoryMutex = Helper.Reflection.GetField<NetMutex>(cabin, "inventoryMutex").GetValue();
-                        inventoryMutex.RequestLock();
-                    }
-
-                    // Lock fridge & chests
-                    house.fridge.Value.mutex.RequestLock();
-                    foreach (var chest in house.objects.Values.OfType<Chest>())
-                    {
-                        chest.mutex.RequestLock();
-                    }
+                    chest.mutex.RequestLock();
                 }
             }
         }

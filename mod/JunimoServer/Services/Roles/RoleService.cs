@@ -60,8 +60,17 @@ namespace JunimoServer.Services.Roles
 
         public void AssignAdmin(long playerId)
         {
+            var wasAdmin = IsPlayerAdmin(playerId);
             _data.Roles[playerId] = Role.Admin;
             SaveData();
+            if (!wasAdmin)
+            {
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit("role_assigned", new
+                {
+                    playerId,
+                    role = "Admin"
+                });
+            }
         }
 
         public void UnassignAdmin(long playerId)
@@ -72,8 +81,17 @@ namespace JunimoServer.Services.Roles
                 return;
             }
 
+            var wasAdmin = IsPlayerAdmin(playerId);
             _data.Roles[playerId] = Role.Unassigned;
             SaveData();
+            if (wasAdmin)
+            {
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit("role_unassigned", new
+                {
+                    playerId,
+                    role = "Admin"
+                });
+            }
         }
 
         public bool IsPlayerAdmin(long playerId)

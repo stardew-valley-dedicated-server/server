@@ -6,6 +6,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.GameData.WorldMaps;
 using StardewValley.WorldMaps;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -43,6 +44,7 @@ namespace JunimoServer.Services.Map
         private readonly string[] _seasons = { "summer", "fall", "winter" };
 
         private MapSyncData _syncData = new MapSyncData();
+        private DateTime _lastPositionSync = DateTime.UtcNow;
 
         private readonly IModHelper _helper;
         private readonly IMonitor _monitor;
@@ -67,9 +69,10 @@ namespace JunimoServer.Services.Map
 
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
-            // Send every 7 ticks
-            if (e.Ticks % 7 == 0)
+            // Send roughly every 116ms (~8.5x/sec, equivalent to every 7 ticks at 60 TPS)
+            if ((DateTime.UtcNow - _lastPositionSync).TotalMilliseconds >= 116)
             {
+                _lastPositionSync = DateTime.UtcNow;
                 _syncData.players = new List<MapSyncPlayerData>();
                 SyncFarmerPositions();
 

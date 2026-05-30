@@ -7,7 +7,6 @@ using StardewModdingAPI;
 using StardewValley;
 using System;
 using System.Linq;
-using System.Threading;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -15,7 +14,6 @@ namespace JunimoServer.Services.GameCreator
     {
         private readonly CabinManagerService _cabinManagerService;
         private readonly GameLoaderService _gameLoader;
-        private static readonly Mutex CreateGameMutex = new Mutex();
         private readonly PersistentOptions _options;
         private readonly ServerSettingsLoader _settings;
         private readonly IMonitor _monitor;
@@ -57,7 +55,6 @@ namespace JunimoServer.Services.GameCreator
         /// </summary>
         public void CreateNewGame(NewGameConfig config)
         {
-            CreateGameMutex.WaitOne();
             GameIsCreating = true;
 
             _options.SetPersistentOptions(new PersistentOptionsSaveData
@@ -70,7 +67,7 @@ namespace JunimoServer.Services.GameCreator
             Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
 
             // For CabinStack/FarmhouseStack: BuildStartingCabins is patched out, so this value
-            // is unused — we create cabins ourselves at the hidden location.
+            // is unused; we create cabins ourselves at the hidden location.
             // For None strategy: this controls how many vanilla cabins are placed at
             // map-designated positions by the unpatched BuildStartingCabins.
             Game1.startingCabins = config.StartingCabins;
@@ -133,14 +130,16 @@ namespace JunimoServer.Services.GameCreator
 
             // NOTE: The game has a built-in dedicated host mode (hasDedicatedHost)
             // that activates instant fades, skips end-of-night UI, etc.
-            // We deliberately do NOT use it — our mod handles automation independently.
+            // We deliberately do NOT use it. Our mod handles automation independently.
 
             Game1.saveOnNewDay = true;
             Game1.player.eventsSeen.Add("60367");
             Game1.player.currentLocation = Utility.getHomeOfFarmer(Game1.player);
             Game1.player.Position = new Vector2(9f, 9f) * 64f;
             Game1.player.isInBed.Value = true;
+            _monitor.Log($"[GameCreator] Before NewDay(0f): otherFarmers={Game1.otherFarmers.Count}, gameMode={Game1.gameMode}, newDay={Game1.newDay}", LogLevel.Debug);
             Game1.NewDay(0f);
+            _monitor.Log($"[GameCreator] After NewDay(0f): newDay={Game1.newDay}, fadeToBlack={Game1.fadeToBlack}, showingEndOfNightStuff={Game1.showingEndOfNightStuff}", LogLevel.Debug);
             Game1.exitActiveMenu();
             Game1.setGameMode(3);
 
@@ -149,7 +148,6 @@ namespace JunimoServer.Services.GameCreator
             _cabinManagerService.EnsureAtLeastXCabins();
 
             GameIsCreating = false;
-            CreateGameMutex.ReleaseMutex();
         }
     }
 }

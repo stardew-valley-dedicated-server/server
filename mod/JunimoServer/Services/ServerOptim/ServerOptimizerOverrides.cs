@@ -1,5 +1,7 @@
+using System.Threading.Tasks;
+using JunimoServer.Shared;
+using Galaxy.Api;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 using xTile.Display;
@@ -9,72 +11,39 @@ namespace JunimoServer.Services.ServerOptim
     public class ServerOptimizerOverrides
     {
         private static IMonitor _monitor;
-        private static bool _shouldDrawFrame = true;
 
-        private static IDisplayDevice _originalDisplayDevice;
-        private static IDisplayDevice _nullDisplayDevice;
-        private static bool _renderingEnabled = true;
+        // Single source of truth for render-rate control, shared with the test client.
+        // Owns the fps state, the draw-gate decision, the disabled-notice paint, and
+        // the NullDisplayDevice swap. Constructed in Initialize.
+        private static RenderingController _rendering;
+
         private static bool _automationSuppressesInput;
-
-        // When true, the next frame clears the screen and draws a "Rendering Disabled" notice,
-        // then suppresses all subsequent frames — leaving the notice visible on the VNC display.
-        private static bool _renderDisabledNoticeNeeded;
 
         public static void Initialize(IMonitor monitor)
         {
             _monitor = monitor;
+            _rendering = new RenderingController(monitor, "Server");
         }
 
         /// <summary>
-        /// Saves the original display device so it can be restored when toggling rendering on.
+        /// Saves the original display device so it can be restored when re-enabling rendering.
         /// Must be called after the game has fully initialized its display device.
         /// </summary>
         public static void SaveOriginalDisplayDevice(IDisplayDevice device)
-        {
-            _originalDisplayDevice = device;
-            _nullDisplayDevice = new NullDisplayDevice();
-        }
+            => _rendering.SaveOriginalDisplayDevice(device);
 
         /// <summary>
-        /// Toggles rendering on or off at runtime.
-        /// When disabling: assigns NullDisplayDevice, queues a "disabled" notice frame, then suppresses drawing.
-        /// When enabling: restores the original display device and resumes frame drawing.
+        /// Sets the server render rate. 0 disables rendering (NullDisplayDevice installed,
+        /// draws suppressed, "Rendering Disabled" notice queued); N &gt; 0 restores the real
+        /// display device and caps draws at N fps. The monitor is already held by the
+        /// controller, so the parameter is accepted for call-site symmetry and ignored.
         /// </summary>
-        public static void ToggleRendering(bool enable, IMonitor monitor)
-        {
-            if (enable)
-            {
-                if (_originalDisplayDevice != null)
-                {
-                    Game1.mapDisplayDevice = _originalDisplayDevice;
-                }
-                _renderDisabledNoticeNeeded = false;
-                EnableDrawing();
-                _renderingEnabled = true;
-                monitor.Log("Rendering enabled", LogLevel.Info);
-            }
-            else
-            {
-                if (_nullDisplayDevice == null)
-                {
-                    _nullDisplayDevice = new NullDisplayDevice();
-                }
-                Game1.mapDisplayDevice = _nullDisplayDevice;
-                // Queue one notice frame before suppressing draws
-                _renderDisabledNoticeNeeded = true;
-                _shouldDrawFrame = false;
-                _renderingEnabled = false;
-                monitor.Log("Rendering disabled", LogLevel.Info);
-            }
-        }
+        public static void SetServerFps(int fps, IMonitor _) => _rendering.SetFps(fps);
 
         /// <summary>
-        /// Returns whether rendering is currently enabled.
+        /// Returns the current server render rate: 0 = disabled, N &gt; 0 = enabled at N fps.
         /// </summary>
-        public static bool IsRenderingEnabled()
-        {
-            return _renderingEnabled;
-        }
+        public static int GetCurrentServerFps() => _rendering.CurrentFps;
 
         /// <summary>
         /// Sets whether host automation should suppress player input.
@@ -86,33 +55,50 @@ namespace JunimoServer.Services.ServerOptim
         }
 
         /// <summary>
-        /// Harmony prefix for Game1.UpdateControlInput.
-        /// Blocks input processing when rendering is disabled or automation is active.
+        /// Shared Harmony prefix for Game1.UpdateControlInput and the raw Keyboard/Mouse
+        /// PlatformGetState reads. Returning false skips the original, blocking input both
+        /// where the game processes it and at the device source. Suppresses input while
+        /// rendering is off (the server isn't drawing, so a watching operator can't
+        /// meaningfully drive the game) or host automation is driving the host. Both inputs
+        /// are live, so a runtime fps switch (the VNC button, `rendering &lt;fps&gt;`,
+        /// POST /rendering?fps=N) restores input without a restart.
         /// </summary>
-        public static bool UpdateControlInput_Prefix()
-        {
-            if (!_renderingEnabled || _automationSuppressesInput)
-                return false;
-            return true;
-        }
+        public static bool SuppressInput_Prefix()
+            => _rendering.CurrentFps != 0 && !_automationSuppressesInput;
 
-        public static bool AssignNullDisplay_Prefix()
-        {
-            Game1.mapDisplayDevice = new NullDisplayDevice();
-            return false;
-        }
-
-        public static bool ReturnNullDisplay_Prefix(IDisplayDevice __result)
-        {
-            __result = new NullDisplayDevice();
-            return false;
-        }
+        private static int _galaxyLobbyFailureCount;
+        private const int MaxGalaxyLobbyRetries = 3;
 
         public static void CreateLobby_Prefix(ref ServerPrivacy privacy, ref uint memberLimit)
         {
             // Used by GoG
             privacy = ServerPrivacy.Public;
             memberLimit = 150;
+            _galaxyLobbyFailureCount = 0;
+        }
+
+        /// <summary>
+        /// Harmony prefix for GalaxySocket.onGalaxyLobbyCreated.
+        /// Limits the infinite retry loop when Galaxy matchmaking is unavailable.
+        /// First 3 failures: original behavior (Error log + 20s retry).
+        /// After that: log at Warn, skip OnLobbyCreateFailed (no more retries).
+        /// Recovery handled by TryLateAddGalaxyServer on Galaxy reconnect.
+        /// </summary>
+        public static bool OnGalaxyLobbyCreated_Prefix(GalaxyID lobbyID, LobbyCreateResult result)
+        {
+            if (result != LobbyCreateResult.LOBBY_CREATE_RESULT_ERROR)
+                return true; // Success path: let original handle it
+
+            _galaxyLobbyFailureCount++;
+
+            if (_galaxyLobbyFailureCount <= MaxGalaxyLobbyRetries)
+                return true; // Let original run (Error log + retry timer)
+
+            // Max retries exceeded. Stop the retry loop.
+            _monitor?.Log(
+                $"Galaxy lobby creation failed {_galaxyLobbyFailureCount} times. Stopping retries. " +
+                "Recovery via TryLateAddGalaxyServer if Galaxy reconnects.", LogLevel.Warn);
+            return false; // Skip original: don't set recreateTimer
         }
 
         public static bool Disable_Prefix()
@@ -121,82 +107,54 @@ namespace JunimoServer.Services.ServerOptim
         }
 
         /// <summary>
-        /// Harmony prefix on Game.BeginDraw().
-        /// When drawing is suppressed but a disabled-notice frame is needed,
-        /// allows one frame through so GameDraw_Prefix can render the notice.
+        /// Harmony prefix for SMAPI's SModHooks.StartTask.
+        /// On musl/.NET 6 (Alpine), SMAPI's RunSynchronously() queues the task to ThreadPool
+        /// instead of running inline, causing a deadlock when the task calls BlockOnUIThread()
+        /// (e.g., texture loading during _newDayAfterFade).
+        /// Only overrides tasks that are known to trigger BlockOnUIThread calls (NewDay, Save,
+        /// Load_*). All other tasks use SMAPI's original RunSynchronously, preserving mod
+        /// compatibility for event handlers that assume game-thread context.
         /// </summary>
-        // ReSharper disable once InconsistentNaming
-        public static bool Draw_Prefix(GameRunner __instance)
+        public static bool StartTask_Prefix(Task task, string id, ref Task __result)
         {
-            if (!_shouldDrawFrame)
+            // Only override tasks that load content / textures and would deadlock
+            if (id == "NewDay" || id == "Save" || id.StartsWith("Load_"))
             {
-                if (_renderDisabledNoticeNeeded)
-                {
-                    // Let this frame through — GameDraw_Prefix will handle it
-                    return true;
-                }
-
-                __instance.SuppressDraw();
+                _monitor?.Log($"[MuslFix] StartTask: using task.Start() for '{id}' (BlockOnUIThread deadlock prevention)", LogLevel.Debug);
+                task.Start();
+                __result = task;
                 return false;
             }
 
+            // All other tasks: let SMAPI's RunSynchronously handle them (mod compatibility)
             return true;
         }
 
         /// <summary>
-        /// Harmony prefix on Game.Draw(GameTime).
-        /// When a disabled-notice is needed, clears the screen to black and draws
-        /// "Rendering Disabled" centered text, then skips the game's normal Draw.
-        /// EndDraw still runs and calls Present(), so the notice appears on the VNC display.
+        /// Harmony prefix on Game.BeginDraw(). Forwards to the shared controller,
+        /// which decides whether to draw, paint the disabled-notice frame, or allow
+        /// the day-end save window through. Suppresses the frame when it returns false.
         /// </summary>
         // ReSharper disable once InconsistentNaming
-        public static bool GameDraw_Prefix(Game __instance, GameTime gameTime)
+        public static bool Draw_Prefix(GameRunner __instance)
         {
-            if (!_renderDisabledNoticeNeeded)
+            if (_rendering.ShouldBeginDraw())
                 return true;
-
-            _renderDisabledNoticeNeeded = false;
-
-            try
-            {
-                var gd = __instance.GraphicsDevice;
-                gd.Clear(Color.Black);
-
-                var spriteBatch = Game1.spriteBatch;
-                var font = Game1.smallFont;
-
-                if (spriteBatch != null && font != null)
-                {
-                    spriteBatch.Begin();
-
-                    var text = "Rendering Disabled";
-                    var textSize = font.MeasureString(text);
-                    var position = new Vector2(
-                        (gd.Viewport.Width - textSize.X) / 2f,
-                        (gd.Viewport.Height - textSize.Y) / 2f
-                    );
-
-                    spriteBatch.DrawString(font, text, position, Color.Gray);
-                    spriteBatch.End();
-                }
-            }
-            catch
-            {
-                // If anything fails during the notice draw, just skip it silently
-            }
-
-            // Skip the game's normal Draw — EndDraw will present our frame
+            __instance.SuppressDraw();
             return false;
         }
 
-        public static void DisableDrawing()
-        {
-            _shouldDrawFrame = false;
-        }
+        /// <summary>
+        /// Harmony prefix on Game.Draw(GameTime). Forwards to the shared controller,
+        /// which paints the "Rendering Disabled" notice once when queued (skipping the
+        /// game's normal Draw for that frame) and lets normal draws through otherwise.
+        /// </summary>
+        // ReSharper disable once InconsistentNaming
+        public static bool GameDraw_Prefix(Game __instance, GameTime gameTime)
+            => _rendering.ShouldGameDraw(__instance);
 
-        public static void EnableDrawing()
-        {
-            _shouldDrawFrame = true;
-        }
+        public static void DisableDrawing() => _rendering.DisableDrawing();
+
+        public static void EnableDrawing() => _rendering.EnableDrawing();
     }
 }

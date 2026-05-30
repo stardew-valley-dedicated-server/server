@@ -8,6 +8,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
+using StardewValley.Network;
 using StardewValley.Objects;
 using System;
 using System.Collections.Concurrent;
@@ -59,9 +60,9 @@ namespace JunimoServer.Services.Lobby
         private const char LayoutExportVersion = '0';
 
         /// <summary>
-        /// Hidden position for lobby cabins (offset from cabin stack at -20,-20).
+        /// Hidden position for the shared lobby cabin.
         /// </summary>
-        public static readonly Point HiddenLobbyLocation = new Point(-21, -21);
+        public static readonly Point HiddenLobbyLocation = CabinPositions.SharedLobby;
 
         /// <summary>
         /// Door blocker tile position for upgrade level 0 cabin.
@@ -70,13 +71,13 @@ namespace JunimoServer.Services.Lobby
         private static readonly Vector2 DoorBlockerTileLevel0 = new Vector2(3, 11);
 
         /// <summary>
-        /// Checks if a cabin building is a lobby cabin (at the hidden lobby location).
-        /// Used to filter lobby cabins from the farmhand selection screen.
+        /// Checks if a cabin building is a lobby or editing cabin (shared lobby, individual lobby, or editing position).
+        /// Used to filter lobby cabins from the farmhand selection screen and cabin counts.
         /// </summary>
         public static bool IsLobbyCabin(Building building)
         {
             if (building == null || !building.isCabin) return false;
-            return building.tileX.Value == HiddenLobbyLocation.X && building.tileY.Value == HiddenLobbyLocation.Y;
+            return CabinPositions.IsLobbyOrEditing(building);
         }
 
         /// <summary>
@@ -179,10 +180,12 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private readonly ConcurrentDictionary<long, bool> _unauthenticatedPlayers = new();
 
+        private readonly CabinManager.CabinManagerService _cabinManager;
+
         public LobbyMode Mode => _settings.LobbyMode;
         public bool IsEnabled => !string.IsNullOrEmpty(Env.ServerPassword);
 
-        public LobbyService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, Harmony harmony) : base(helper, monitor)
+        public LobbyService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, Harmony harmony, CabinManager.CabinManagerService cabinManager) : base(helper, monitor)
         {
             if (_instance != null)
                 throw new InvalidOperationException("LobbyService already initialized - only one instance allowed");
@@ -191,6 +194,55 @@ namespace JunimoServer.Services.Lobby
             _helper = helper;
             _monitor = monitor;
             _settings = settings;
+            _cabinManager = cabinManager;
+
+            // Patch NetSynchronizer.barrierReady to skip excluded players (editors + unauthenticated).
+            // Without this, day transition barriers wait for ALL otherFarmers, including lobby players
+            // who never receive newDaySync messages and therefore never reach the barriers.
+            var barrierMethod = AccessTools.Method(typeof(NetSynchronizer), "barrierReady");
+            if (barrierMethod == null)
+            {
+                _monitor.Log("[Lobby] CRITICAL: Could not find NetSynchronizer.barrierReady method for patching. " +
+                    "Day transitions will hang when unauthenticated players are connected.", LogLevel.Error);
+            }
+            else
+            {
+                harmony.Patch(
+                    original: barrierMethod,
+                    postfix: new HarmonyMethod(typeof(LobbyService), nameof(BarrierReady_Postfix))
+                );
+                _monitor.Log("[Lobby] Successfully patched NetSynchronizer.barrierReady for lobby exclusion", LogLevel.Debug);
+            }
+
+            // Patch ServerReadyCheck.IsFarmerRequired to exclude lobby players from ready checks.
+            // This is the definitive fix for the race condition where netReady.Reset() on the
+            // background _newDayAfterFade thread clears ReadyChecks, GetOrCreate() recreates
+            // ServerReadyCheck with IncludesAll=true, and readyForSave() polls before
+            // UpdateSleepReadyCheckExclusion() can re-apply the exclusion.
+            var serverReadyCheckType = AccessTools.TypeByName(
+                "StardewValley.Network.NetReady.Internal.ServerReadyCheck");
+            if (serverReadyCheckType == null)
+            {
+                _monitor.Log("[Lobby] CRITICAL: Could not find ServerReadyCheck type for patching. " +
+                    "Day transitions may hang when unauthenticated players are connected.", LogLevel.Error);
+            }
+            else
+            {
+                var isFarmerRequiredMethod = AccessTools.Method(serverReadyCheckType, "IsFarmerRequired");
+                if (isFarmerRequiredMethod == null)
+                {
+                    _monitor.Log("[Lobby] CRITICAL: Could not find ServerReadyCheck.IsFarmerRequired method. " +
+                        "Day transitions may hang when unauthenticated players are connected.", LogLevel.Error);
+                }
+                else
+                {
+                    harmony.Patch(
+                        original: isFarmerRequiredMethod,
+                        postfix: new HarmonyMethod(typeof(LobbyService), nameof(IsFarmerRequired_Postfix))
+                    );
+                    _monitor.Log("[Lobby] Patched ServerReadyCheck.IsFarmerRequired for lobby exclusion", LogLevel.Debug);
+                }
+            }
 
             // Patch broadcastWorldStateDeltas to send frozen time to editing clients.
             // This prevents the editing client from seeing timeOfDay >= 2600 and triggering passout.
@@ -216,6 +268,36 @@ namespace JunimoServer.Services.Lobby
                 {
                     _monitor.Log("[Lobby] Successfully patched Multiplayer.broadcastWorldStateDeltas for time isolation", LogLevel.Debug);
                 }
+            }
+
+            // Prevent lobby players from having their cabin assignment corrupted during saveFarmhands().
+            // See ResetFarmhandState_Prefix for full explanation of the flushLocationLookup() cache bug.
+            var resetFarmhandStateMethod = AccessTools.Method(typeof(NetWorldState), nameof(NetWorldState.ResetFarmhandState));
+            if (resetFarmhandStateMethod == null)
+            {
+                _monitor.Log("[Lobby] WARNING: Could not find NetWorldState.ResetFarmhandState for patching. " +
+                    "Lobby players may get reassigned to lobby cabin during day transitions.", LogLevel.Warn);
+            }
+            else
+            {
+                harmony.Patch(
+                    original: resetFarmhandStateMethod,
+                    prefix: new HarmonyMethod(typeof(LobbyService), nameof(ResetFarmhandState_Prefix))
+                );
+                _monitor.Log("[Lobby] Patched NetWorldState.ResetFarmhandState for lobby player protection", LogLevel.Debug);
+            }
+
+            // Prevent lobby cabins from ever being assigned to players via TryAssignFarmhandHome
+            // or any other code path that queries cabin assignability.
+            // See CanAssignTo_Postfix for full explanation.
+            var canAssignMethod = AccessTools.Method(typeof(Cabin), "CanAssignTo");
+            if (canAssignMethod != null)
+            {
+                harmony.Patch(
+                    original: canAssignMethod,
+                    postfix: new HarmonyMethod(typeof(LobbyService), nameof(CanAssignTo_Postfix))
+                );
+                _monitor.Log("[Lobby] Patched Cabin.CanAssignTo to protect lobby cabins", LogLevel.Debug);
             }
 
             _helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -251,13 +333,10 @@ namespace JunimoServer.Services.Lobby
 
             if (_instance != null)
             {
-                // Add layout editors
-                if (_instance._isEditingModeActive)
+                // Add layout editors (iterating empty dict is a no-op)
+                foreach (var playerId in _instance._layoutEditingSessions.Keys)
                 {
-                    foreach (var playerId in _instance._layoutEditingSessions.Keys)
-                    {
-                        frozenTimePlayers.Add(playerId);
-                    }
+                    frozenTimePlayers.Add(playerId);
                 }
 
                 // Add unauthenticated players in lobby
@@ -321,6 +400,150 @@ namespace JunimoServer.Services.Lobby
             }
 
             return false; // Skip the original method
+        }
+
+        #endregion
+
+        #region Day Transition Barrier Exclusion
+
+        /// <summary>
+        /// Harmony postfix for NetSynchronizer.barrierReady(string name).
+        /// The original method checks if ALL otherFarmers have reached the barrier,
+        /// but unauthenticated lobby players never receive newDaySync messages and
+        /// therefore never reach barriers. Without this patch, day transitions hang
+        /// indefinitely when unauthenticated players are connected.
+        ///
+        /// This postfix overrides the result to skip excluded players (editors + unauthenticated)
+        /// when checking barrier readiness, matching the ready-check exclusion behavior.
+        /// </summary>
+        private static void BarrierReady_Postfix(string name, ref bool __result, Dictionary<string, HashSet<long>> ___barriers)
+        {
+            // Only act when the original returned false (some player hasn't reached the barrier)
+            if (__result)
+                return;
+
+            // Only act when we have players to exclude
+            if (_instance == null)
+                return;
+            if (!_instance.HasPlayersToExclude())
+                return;
+
+            // Build set of excluded player IDs
+            var excludedPlayerIds = new HashSet<long>();
+            foreach (var playerId in _instance._layoutEditingSessions.Keys)
+                excludedPlayerIds.Add(playerId);
+            foreach (var playerId in _instance._unauthenticatedPlayers.Keys)
+                excludedPlayerIds.Add(playerId);
+
+            if (excludedPlayerIds.Count == 0)
+                return;
+
+            // Re-check barrier readiness, skipping excluded players
+            HashSet<long> barrierPlayers;
+            if (!___barriers.TryGetValue(name, out barrierPlayers))
+                barrierPlayers = new HashSet<long>();
+
+            foreach (long key in Game1.otherFarmers.Keys)
+            {
+                if (excludedPlayerIds.Contains(key))
+                    continue; // Skip excluded players
+                if (!barrierPlayers.Contains(key))
+                    return; // Non-excluded player hasn't reached barrier yet
+            }
+
+            // All non-excluded players have reached the barrier
+            __result = true;
+        }
+
+        /// <summary>
+        /// Harmony postfix for ServerReadyCheck.IsFarmerRequired(long uid).
+        /// Overrides result to false for excluded players (unauthenticated + layout editors).
+        ///
+        /// This fixes the race condition where:
+        ///   1. netReady.Reset() clears ReadyChecks on the background _newDayAfterFade thread
+        ///   2. GetOrCreate() recreates ServerReadyCheck with IncludesAll=true
+        ///   3. readyForSave() polls before UpdateSleepReadyCheckExclusion() re-applies exclusion
+        ///
+        /// Unlike SetLocalRequiredFarmers (timing-dependent), this operates at the decision
+        /// point and cannot be defeated by Reset() clearing state.
+        /// </summary>
+        private static void IsFarmerRequired_Postfix(long uid, ref bool __result)
+        {
+            if (!__result) return;
+            if (_instance == null) return;
+
+            if (_instance._unauthenticatedPlayers.ContainsKey(uid) ||
+                _instance._layoutEditingSessions.ContainsKey(uid))
+            {
+                __result = false;
+            }
+        }
+
+        /// <summary>
+        /// Harmony prefix for NetWorldState.ResetFarmhandState(Farmer farmhand).
+        ///
+        /// Why this patch exists:
+        /// During _newDayAfterFade, flushLocationLookup() (Game1.cs:7829) clears the
+        /// location cache. Later, saveFarmhands() (Game1.cs:8238) calls ResetFarmhandState
+        /// for ALL connected farmers, including unauthenticated lobby players.
+        /// ResetFarmhandState calls TryAssignFarmhandHome, which uses
+        /// getLocationFromName(homeLocation) with isStructure=false. After the cache flush,
+        /// this fails to find cabin interiors (they're structures, not top-level locations).
+        /// When Condition 1 fails, Condition 2 checks currentLocation (which IS the lobby
+        /// cabin for unauthenticated players) and reassigns them there via AssignFarmhand,
+        /// corrupting their real cabin assignment.
+        ///
+        /// What we do:
+        /// Skip the entire method for unauthenticated lobby players, but still call
+        /// resetState() to clear transient state (buffs, mount, swimming, events).
+        /// Lobby players are meant to be invisible to the day transition system;
+        /// they don't participate in barriers, don't receive sync messages, and should
+        /// not have their home assignment modified.
+        /// </summary>
+        private static bool ResetFarmhandState_Prefix(Farmer farmhand)
+        {
+            if (_instance == null) return true; // Not initialized; run original (safe default)
+            if (!_instance._unauthenticatedPlayers.ContainsKey(farmhand.UniqueMultiplayerID))
+                return true; // Not a lobby player, run original
+
+            // Still clear transient state (buffs, mount, events), same as line 775 of original
+            farmhand.resetState();
+            _instance._monitor.Log($"[Lobby] Skipped ResetFarmhandState for lobby player {farmhand.UniqueMultiplayerID}", LogLevel.Debug);
+            return false; // Skip original: prevents TryAssignFarmhandHome from corrupting cabin assignment
+        }
+
+        /// <summary>
+        /// Harmony postfix for Cabin.CanAssignTo(Farmer farmhand).
+        ///
+        /// Why this patch exists:
+        /// Lobby cabins (shared, individual, editing) are ownerless by design and
+        /// must never be assigned to players via any code path. The vanilla
+        /// TryAssignFarmhandHome iterates ALL buildings looking for assignable
+        /// cabins (Condition 2: currentLocation, Condition 3: ForEachBuilding loop);
+        /// without this guard, ownerless lobby cabins at hidden coordinates appear
+        /// as valid assignment targets.
+        ///
+        /// This is defense-in-depth. ResetFarmhandState_Prefix prevents lobby players
+        /// from reaching this code during day transitions, but this patch protects
+        /// against ANY code path that queries cabin assignability — including our own
+        /// recovery paths (PasswordProtectionService.EnsureRealCabinAssignment and
+        /// FindPlayerCabin), which routinely call TryAssignFarmhandHome.
+        ///
+        /// Logged at Trace because this is expected during normal recovery flows.
+        /// </summary>
+        private static void CanAssignTo_Postfix(Cabin __instance, Farmer farmhand, ref bool __result)
+        {
+            if (!__result) return; // Already rejected, nothing to do
+
+            var building = __instance.ParentBuilding;
+            if (building != null && IsLobbyCabin(building))
+            {
+                __result = false;
+                _instance?._monitor.Log(
+                    $"[Lobby] Blocked CanAssignTo for lobby cabin {__instance.NameOrUniqueName} " +
+                    $"(player {farmhand?.UniqueMultiplayerID})",
+                    LogLevel.Trace);
+            }
         }
 
         #endregion
@@ -466,14 +689,11 @@ namespace JunimoServer.Services.Lobby
 
             foreach (var cabin in orphanedLobbies)
             {
-                // Delete any farmhand that might have been assigned
-                var indoors = cabin.GetIndoors<Cabin>();
-                if (indoors?.HasOwner == true)
-                {
-                    indoors.DeleteFarmhand();
-                }
-
-                farm.buildings.Remove(cabin);
+                // Route through CabinManagerService.DestroyCabin so the single canonical
+                // removal path applies: drops the owner farmhand AND scrubs surviving
+                // farmhandData entries whose homeLocation/currentLocation/lastSleepLocation
+                // still references this cabin.
+                _cabinManager.DestroyCabin(cabin);
             }
 
             _monitor.Log($"[Lobby] Cleaned up {orphanedLobbies.Count} orphaned individual lobby cabin(s) from previous session", LogLevel.Info);
@@ -518,14 +738,16 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
-            if (!_isEditingModeActive || _layoutEditingSessions.IsEmpty)
-                return;
-
-            // Update ready-check exclusion periodically (every 60 ticks = 1 second)
-            if (e.IsMultipleOf(60))
+            // Update ready-check exclusion periodically (~250ms).
+            // The IsFarmerRequired_Postfix patch is the primary fix, but this keeps
+            // NumberRequired/NumberReady counts accurate for client UIs after netReady.Reset().
+            if (e.IsMultipleOf(15u) && HasPlayersToExclude())
             {
                 UpdateSleepReadyCheckExclusion();
             }
+
+            if (!_isEditingModeActive || _layoutEditingSessions.IsEmpty)
+                return;
 
             // Take a snapshot of current editing sessions for safe iteration
             // ConcurrentDictionary's enumerator is safe but we want consistent state
@@ -572,6 +794,11 @@ namespace JunimoServer.Services.Lobby
             return null;
         }
 
+        private bool HasPlayersToExclude()
+        {
+            return !_unauthenticatedPlayers.IsEmpty || !_layoutEditingSessions.IsEmpty;
+        }
+
         /// <summary>
         /// Updates the ready-checks to exclude lobby players from day transition.
         /// Players to exclude:
@@ -603,14 +830,14 @@ namespace JunimoServer.Services.Lobby
                     excludedPlayerIds.Add(playerId);
                 }
 
-                // Get all REMOTE online farmers (exclude the server host entirely — it's automated
+                // Get all REMOTE online farmers (exclude the server host entirely; it's automated
                 // by AlwaysOn and should never be counted for ready-check exclusion logic).
                 var remoteFarmers = Game1.otherFarmers.Values.ToList();
                 var requiredFarmers = remoteFarmers
                     .Where(f => !excludedPlayerIds.Contains(f.UniqueMultiplayerID))
                     .ToList();
 
-                // Add the server host to required farmers — it must always be included
+                // Add the server host to required farmers. It must always be included
                 // for HandleAutoSleep's "required - ready == 1" logic to work correctly.
                 requiredFarmers.Add(Game1.player);
 
@@ -671,23 +898,25 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private void OnDayStarted(object sender, DayStartedEventArgs e)
         {
-            if (!_isEditingModeActive || _layoutEditingSessions.Count == 0)
-                return;
-
-            _monitor.Log("[Lobby] New day started - editors still active, re-applying protections", LogLevel.Info);
-
-            // Re-apply daylight to all editing cabins (lighting may reset on day change)
-            foreach (var kvp in _layoutEditingSessions)
+            // Re-apply daylight to editing cabins (editor-specific)
+            if (_isEditingModeActive && !_layoutEditingSessions.IsEmpty)
             {
-                var cabinIndoors = kvp.Value.Cabin?.GetIndoors<Cabin>();
-                if (cabinIndoors != null)
+                _monitor.Log("[Lobby] New day started - editors still active, re-applying protections", LogLevel.Info);
+                foreach (var kvp in _layoutEditingSessions)
                 {
-                    SetCabinDaylightMode(cabinIndoors, true);
+                    var cabinIndoors = kvp.Value.Cabin?.GetIndoors<Cabin>();
+                    if (cabinIndoors != null)
+                        SetCabinDaylightMode(cabinIndoors, true);
                 }
             }
 
-            // Re-apply ready-check exclusion for the new day
-            UpdateSleepReadyCheckExclusion();
+            // Re-apply ready-check exclusion for the new day.
+            // netReady.Reset() runs during _newDayAfterFade (FarmerTeam.NewDay)
+            // BEFORE DayStarted fires, clearing RequiredFarmers.
+            if (HasPlayersToExclude())
+            {
+                UpdateSleepReadyCheckExclusion();
+            }
         }
 
         /// <summary>
@@ -698,6 +927,17 @@ namespace JunimoServer.Services.Lobby
         private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
         {
             long connectedPlayerId = e.Peer.PlayerID;
+
+            // Structured event for test failure analysis. Runs from SMAPI's
+            // PeerConnected event — fires once addPlayer has populated
+            // otherFarmers.Roots — so a "player never appeared in /players"
+            // failure can be distinguished from "peer never connected at all"
+            // by whether this event fired.
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit("peer_connected", new
+            {
+                id = connectedPlayerId,
+                source = "smapi"
+            });
 
             // Check if this player has a pending inventory backup from an interrupted editing session
             if (_data.EditingSessionBackups.TryGetValue(connectedPlayerId, out var backup))
@@ -721,8 +961,8 @@ namespace JunimoServer.Services.Lobby
                 }
             }
 
-            // Update ready-check exclusion if editors are active
-            if (_isEditingModeActive && _layoutEditingSessions.Count > 0)
+            // Update ready-check exclusion if any players need excluding
+            if (HasPlayersToExclude())
             {
                 UpdateSleepReadyCheckExclusion();
             }
@@ -736,6 +976,11 @@ namespace JunimoServer.Services.Lobby
         private void OnPeerDisconnected(object sender, PeerDisconnectedEventArgs e)
         {
             long disconnectedPlayerId = e.Peer.PlayerID;
+
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit("peer_disconnected", new
+            {
+                id = disconnectedPlayerId
+            });
 
             // Use lock for atomic cleanup across multiple dictionaries
             lock (_stateLock)
@@ -800,8 +1045,15 @@ namespace JunimoServer.Services.Lobby
 
             _isEditingModeActive = false;
 
-            // Clear ready-check exclusion (all players required again)
-            ClearSleepReadyCheckExclusion();
+            // If unauthenticated players remain, update exclusion (don't clear it entirely)
+            if (!_unauthenticatedPlayers.IsEmpty)
+            {
+                UpdateSleepReadyCheckExclusion();
+            }
+            else
+            {
+                ClearSleepReadyCheckExclusion();
+            }
 
             _monitor.Log("[Lobby] Editing mode disabled", LogLevel.Info);
         }
@@ -969,7 +1221,24 @@ namespace JunimoServer.Services.Lobby
                 prevLoc.Location, prevLoc.X, prevLoc.Y, false
             });
 
+            UpdateFarmerLocation(playerId, prevLoc.Location, prevLoc.X, prevLoc.Y);
+
             _monitor.Log($"[Lobby] Teleported player {playerId} back to {prevLoc.Location} ({prevLoc.X}, {prevLoc.Y})", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Updates the server-side farmer location after a passout warp so that
+        /// handleDisconnect() stores the correct location for reconnect scenarios.
+        /// </summary>
+        public void UpdateFarmerLocation(long playerId, string locationName, int tileX, int tileY)
+        {
+            var location = Game1.getLocationFromName(locationName)
+                ?? Game1.getLocationFromName(locationName, isStructure: true);
+            if (location != null && Game1.otherFarmers.TryGetValue(playerId, out var farmer))
+            {
+                farmer.currentLocation = location;
+                farmer.Position = new Vector2(tileX * 64f, tileY * 64f);
+            }
         }
 
         private void LoadData()
@@ -1029,6 +1298,10 @@ namespace JunimoServer.Services.Lobby
 
                 // Ensure existing lobby cabin is properly configured
                 var cabinIndoors = existing.GetIndoors<Cabin>();
+                if (cabinIndoors == null)
+                {
+                    _monitor.Log("[Lobby] Existing lobby cabin has no interior; lobby may not function correctly", LogLevel.Error);
+                }
                 CleanupLobbyCabinInterior(cabinIndoors);
 
                 // Apply layout (includes door blocking furniture) - needed on server restart
@@ -1046,9 +1319,15 @@ namespace JunimoServer.Services.Lobby
         {
             var cabin = new Building("Cabin", position.ToVector2());
             cabin.skinId.Value = "Log Cabin";
-            cabin.magical.Value = true;
             cabin.daysOfConstructionLeft.Value = 0;
             cabin.load();
+
+            // Defensive: verify interior was created (see CabinManagerService.CreateCabinBuilding)
+            if (cabin.GetIndoors() == null)
+            {
+                _monitor.Log("[Lobby] Cabin interior was not created by load(), retrying via ReloadBuildingData", LogLevel.Warn);
+                cabin.ReloadBuildingData();
+            }
 
             if (location.buildStructure(cabin, position.ToVector2(), Game1.player, true))
             {
@@ -1077,12 +1356,14 @@ namespace JunimoServer.Services.Lobby
 
             if (cabin == null) return;
 
-            // Delete any farmhand that might have been auto-created
-            // This prevents the welcome package (starter tools) from being assigned
+            // Master runs performActionOnConstruction for every buildStructure call,
+            // which calls CreateFarmhand on ownerless cabins. Lobby cabins must remain
+            // ownerless, so remove the master-created farmhand here. (Also serves as
+            // migration for legacy saves with stale lobby owners.)
             if (cabin.HasOwner)
             {
                 cabin.DeleteFarmhand();
-                _monitor.Log($"[Lobby] Deleted auto-created farmhand from lobby cabin", LogLevel.Debug);
+                _monitor.Log($"[Lobby] Deleted master-created farmhand from lobby cabin", LogLevel.Debug);
             }
 
             // Remove warps to Farm - players shouldn't be able to leave without authenticating
@@ -1227,6 +1508,11 @@ namespace JunimoServer.Services.Lobby
         {
             _unauthenticatedPlayers[playerId] = true;
             _monitor.Log($"[Lobby] Registered unauthenticated player {playerId}", LogLevel.Debug);
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_unauthenticated_registered", new
+            {
+                playerId,
+                totalUnauthenticated = _unauthenticatedPlayers.Count
+            });
 
             // Update ready-check exclusion immediately
             UpdateSleepReadyCheckExclusion();
@@ -1241,6 +1527,11 @@ namespace JunimoServer.Services.Lobby
             if (_unauthenticatedPlayers.TryRemove(playerId, out _))
             {
                 _monitor.Log($"[Lobby] Unregistered unauthenticated player {playerId}", LogLevel.Debug);
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_unauthenticated_unregistered", new
+                {
+                    playerId,
+                    remainingUnauthenticated = _unauthenticatedPlayers.Count
+                });
 
                 // Update ready-check exclusion immediately
                 if (_unauthenticatedPlayers.IsEmpty && _layoutEditingSessions.IsEmpty)
@@ -1268,6 +1559,18 @@ namespace JunimoServer.Services.Lobby
         public bool IsPlayerUnauthenticated(long playerId)
         {
             return _unauthenticatedPlayers.ContainsKey(playerId);
+        }
+
+        /// <summary>
+        /// Returns player IDs excluded from day-transition checks (unauthenticated + editors).
+        /// Thread-safe: reads from ConcurrentDictionaries.
+        /// </summary>
+        public HashSet<long> GetExcludedPlayerIds()
+        {
+            var excluded = new HashSet<long>(_unauthenticatedPlayers.Keys);
+            foreach (var playerId in _layoutEditingSessions.Keys)
+                excluded.Add(playerId);
+            return excluded;
         }
 
         #endregion
@@ -1323,10 +1626,27 @@ namespace JunimoServer.Services.Lobby
 
         /// <summary>
         /// Gets the interior location name for a player's lobby.
+        /// Creates the lobby if it doesn't exist yet.
         /// </summary>
         public string GetLobbyLocationName(long playerId)
         {
             var cabin = GetOrCreateLobbyForPlayer(playerId);
+            return cabin?.GetIndoors<Cabin>()?.NameOrUniqueName;
+        }
+
+        /// <summary>
+        /// Gets the interior location name for a player's existing lobby, or null if no lobby exists.
+        /// Does NOT create a lobby -- safe for diagnostic/logging use.
+        /// Only called from the game thread (Harmony postfix on checkFarmhandRequest).
+        /// </summary>
+        public string GetExistingLobbyLocationName(long playerId)
+        {
+            Building cabin = null;
+            if (Mode == LobbyMode.Shared)
+                cabin = _sharedLobbyCabin;
+            else
+                _individualLobbies.TryGetValue(playerId, out cabin);
+
             return cabin?.GetIndoors<Cabin>()?.NameOrUniqueName;
         }
 
@@ -1369,19 +1689,36 @@ namespace JunimoServer.Services.Lobby
             {
                 locationName, entry.X, entry.Y, false
             });
+
+            UpdateFarmerLocation(playerId, locationName, entry.X, entry.Y);
         }
 
         /// <summary>
         /// Warps a player from the lobby to their destination.
+        ///
+        /// Sends a passout message which creates a LocationRequest on the client.
+        /// If the client can't resolve the cabin interior locally, it calls
+        /// requestLocationInfoFromServer() which triggers GameServer.warpFarmer().
+        /// The WarpFarmer_Prefix in NetworkTweaker retries with isStructure=true
+        /// and sends the Farm location so findStructure can resolve the cabin.
         /// </summary>
         public void WarpFromLobby(long playerId, string targetLocation, int tileX, int tileY)
         {
             _monitor.Log($"[Lobby] Warping player {playerId} from lobby to {targetLocation} at ({tileX}, {tileY})", LogLevel.Info);
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_warp_sent", new
+            {
+                playerId,
+                targetLocation,
+                tileX,
+                tileY
+            });
 
             Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
             {
                 targetLocation, tileX, tileY, false
             });
+
+            UpdateFarmerLocation(playerId, targetLocation, tileX, tileY);
 
             // Clean up individual lobby if applicable
             CleanupIndividualLobby(playerId);
@@ -1447,9 +1784,9 @@ namespace JunimoServer.Services.Lobby
 
                 if (_individualLobbies.TryRemove(playerId, out var cabin))
                 {
-                    // Remove the cabin from the farm
-                    var farm = Game1.getFarm();
-                    farm.buildings.Remove(cabin);
+                    // Centralized destruction: clears any farmhand + fans out
+                    // stale homeLocation references in surviving farmhandData entries.
+                    _cabinManager.DestroyCabin(cabin);
 
                     _monitor.Log($"[Lobby] Cleaned up individual lobby for player {playerId}", LogLevel.Debug);
                 }
@@ -1467,7 +1804,7 @@ namespace JunimoServer.Services.Lobby
             var farm = Game1.getFarm();
             if (farm.buildings.Contains(cabin))
             {
-                farm.buildings.Remove(cabin);
+                _cabinManager.DestroyCabin(cabin);
                 _monitor.Log($"[Lobby] Removed temporary editing cabin", LogLevel.Debug);
             }
         }
@@ -1675,25 +2012,13 @@ namespace JunimoServer.Services.Lobby
                 return false;
             }
 
-            // Find the admin's current location (should be in the editing cabin)
-            if (!Game1.otherFarmers.TryGetValue(adminPlayerId, out var admin))
+            // Use the cabin from the editing session rather than the admin's current location.
+            // The warp to the editing cabin is async (server→client round-trip), so the admin
+            // may not have arrived yet when save is called immediately after create/edit.
+            var cabin = session.Cabin?.GetIndoors<Cabin>();
+            if (cabin == null)
             {
-                // Check if it's the host
-                if (Game1.player.UniqueMultiplayerID == adminPlayerId)
-                {
-                    admin = Game1.player;
-                }
-                else
-                {
-                    _monitor.Log($"[Lobby] Cannot find admin {adminPlayerId}", LogLevel.Error);
-                    return false;
-                }
-            }
-
-            var currentLocation = admin.currentLocation;
-            if (currentLocation is not Cabin cabin)
-            {
-                _monitor.Log($"[Lobby] Admin {adminPlayerId} is not in a cabin", LogLevel.Warn);
+                _monitor.Log($"[Lobby] Editing session for admin {adminPlayerId} has no valid cabin", LogLevel.Error);
                 return false;
             }
 

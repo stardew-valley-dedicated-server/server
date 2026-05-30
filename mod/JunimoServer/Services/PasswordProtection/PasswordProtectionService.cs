@@ -1,5 +1,6 @@
 using HarmonyLib;
 using JunimoServer.Services.Lobby;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using Netcode;
 using StardewModdingAPI;
@@ -11,6 +12,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -24,16 +26,23 @@ namespace JunimoServer.Services.PasswordProtection
         private readonly IModHelper _helper;
         private readonly IMonitor _monitor;
         private readonly LobbyService _lobbyService;
+        private static MethodInfo _sendLocationMethod;
 
         /// <summary>
         /// Thread-safe dictionary tracking authentication state per player.
         /// </summary>
         private readonly ConcurrentDictionary<long, PlayerAuthData> _playerAuthData = new();
 
+        /// <summary>
+        /// Players whose barrier-exclusion removal was deferred because they authenticated
+        /// during an active day transition. Unregistered on DayStarted.
+        /// </summary>
+        private readonly ConcurrentDictionary<long, bool> _pendingPostTransitionAuth = new();
+
         public string ServerPassword { get; }
         public bool IsEnabled => !string.IsNullOrEmpty(ServerPassword);
         public int MaxFailedAttempts { get; }
-        public int AuthTimeoutSeconds { get; }
+        public int AuthTimeoutSeconds { get; set; }
 
         /// <summary>
         /// Seconds after join before sending the welcome message.
@@ -71,9 +80,25 @@ namespace JunimoServer.Services.PasswordProtection
             _monitor.Log($"[Auth] Password protection ENABLED (maxAttempts={MaxFailedAttempts}, timeout={AuthTimeoutSeconds}s)", LogLevel.Info);
 
             // KEY PATCH: Intercept farmhand request to capture original spawn info
+            // and log client-sent spawn fields for lobby redirect diagnostics.
             harmony.Patch(
                 original: AccessTools.Method(typeof(GameServer), nameof(GameServer.checkFarmhandRequest)),
-                prefix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(CheckFarmhandRequest_Prefix))
+                prefix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(CheckFarmhandRequest_Prefix)),
+                postfix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(CheckFarmhandRequest_Postfix))
+            );
+
+            // Explicitly send the lobby cabin location before sendServerIntroduction.
+            // Vanilla checkFarmhandRequest skips sendLocation for the lobby cabin because
+            // isAlwaysActiveLocation() returns true for building interiors nested in the
+            // always-active Farm. Without this, ApplyWakeUpPosition crashes on the client.
+            _sendLocationMethod = AccessTools.Method(typeof(GameServer), "sendLocation",
+                new[] { typeof(long), typeof(GameLocation), typeof(bool) });
+
+            harmony.Patch(
+                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
+                prefix: new HarmonyMethod(typeof(PasswordProtectionService),
+                    nameof(SendServerIntroduction_SendLobbyLocation_Prefix))
+                    { priority = Priority.First }
             );
 
             // Filter messages from unauthenticated players
@@ -95,6 +120,7 @@ namespace JunimoServer.Services.PasswordProtection
             );
 
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+            helper.Events.GameLoop.DayStarted += OnDayStarted;
             _monitor.Log("[Auth] Password protection patches applied", LogLevel.Debug);
         }
 
@@ -107,6 +133,134 @@ namespace JunimoServer.Services.PasswordProtection
         private static void CheckFarmhandRequest_Prefix(string userId, string connectionId, NetFarmerRoot farmer)
         {
             _instance?.OnFarmhandRequest(farmer);
+        }
+
+        /// <summary>
+        /// POSTFIX on checkFarmhandRequest. Runs on the SERVER after vanilla approval logic.
+        /// Logs diagnostic spawn fields, then ensures the player is assigned to their real
+        /// cabin (not the lobby cabin that the lobby redirect placed in homeLocation).
+        /// </summary>
+        private static void CheckFarmhandRequest_Postfix(NetFarmerRoot farmer)
+        {
+            if (_instance == null || !_instance.IsEnabled || farmer?.Value == null) return;
+
+            var f = farmer.Value;
+            var farmerId = f.UniqueMultiplayerID;
+            var approved = Game1.otherFarmers.ContainsKey(farmerId);
+
+            if (!approved) return;
+
+            var daysPlayed = (int)Game1.MasterPlayer.stats.DaysPlayed;
+            var disconnectMatch = f.disconnectDay.Value == daysPlayed;
+            var lobbyName = _instance._lobbyService.GetExistingLobbyLocationName(farmerId);
+            var disconnectIsLobby = f.disconnectLocation.Value == lobbyName;
+
+            _instance._monitor.Log(
+                $"[Auth] checkFarmhandRequest postfix for {farmerId}:\n" +
+                $"  client-sent disconnectDay={f.disconnectDay.Value} (server DaysPlayed={daysPlayed}, match={disconnectMatch})\n" +
+                $"  client-sent disconnectLocation={f.disconnectLocation.Value ?? "(null)"} (isLobby={disconnectIsLobby})\n" +
+                $"  client-sent homeLocation={f.homeLocation.Value ?? "(null)"}\n" +
+                $"  client-sent lastSleepLocation={f.lastSleepLocation.Value ?? "(null)"}\n" +
+                $"  lobby={lobbyName ?? "(null)"}",
+                LogLevel.Info);
+
+            EnsureRealCabinAssignment(f);
+        }
+
+        /// <summary>
+        /// PREFIX on sendServerIntroduction (Priority.First, before SecurityService).
+        /// Sends the lobby cabin location to the client before the server intro triggers
+        /// setUpGame() -> ApplyWakeUpPosition(). Vanilla skips this because
+        /// isAlwaysActiveLocation() returns true for Farm-nested building interiors.
+        /// Returns true so SecurityService's prefix still runs.
+        /// </summary>
+        private static bool SendServerIntroduction_SendLobbyLocation_Prefix(GameServer __instance, long peer)
+        {
+            if (_instance == null || !_instance.IsEnabled || _sendLocationMethod == null)
+                return true;
+
+            if (!Game1.otherFarmers.TryGetValue(peer, out var farmer))
+                return true;
+
+            var disconnectLocation = farmer.disconnectLocation.Value;
+            if (string.IsNullOrEmpty(disconnectLocation))
+                return true;
+
+            var lobbyName = _instance._lobbyService.GetExistingLobbyLocationName(peer);
+            if (lobbyName == null || disconnectLocation != lobbyName)
+                return true;
+
+            var lobbyGameLocation = Game1.getLocationFromName(disconnectLocation);
+            if (lobbyGameLocation == null)
+            {
+                _instance._monitor.Log(
+                    $"[Auth] Lobby location '{disconnectLocation}' not found for peer {peer}",
+                    LogLevel.Warn);
+                return true;
+            }
+
+            _instance._monitor.Log(
+                $"[Auth] Sending lobby location '{disconnectLocation}' to peer {peer}",
+                LogLevel.Debug);
+
+            _sendLocationMethod.Invoke(__instance, new object[] { peer, lobbyGameLocation, true });
+            return true;
+        }
+
+        /// <summary>
+        /// Ensures the player has a valid, real (non-lobby) cabin assignment after
+        /// vanilla's checkFarmhandRequest approves them. We treat homeLocation as
+        /// vanilla's source of truth: if it resolves to a real non-lobby Cabin, accept
+        /// it and return. Otherwise (empty / stale / lobby cabin), clear it and let
+        /// TryAssignFarmhandHome pick a fresh cabin via AssignFarmhand (which sets
+        /// both farmhandReference and homeLocation).
+        ///
+        /// We deliberately do NOT trigger reassignment based on farmhandReference.uid
+        /// mismatches — that field can be transiently out of sync with farmhandData
+        /// due to vanilla netcode timing. FindPlayerCabin handles ref desync at login.
+        /// </summary>
+        private static void EnsureRealCabinAssignment(Farmer farmer)
+        {
+            var home = farmer.homeLocation.Value;
+            string reason;
+            if (string.IsNullOrEmpty(home))
+            {
+                reason = "empty";
+            }
+            else
+            {
+                var currentHome = Game1.getLocationFromName(home);
+                if (currentHome is not Cabin homeCabin)
+                {
+                    reason = "stale/missing cabin";
+                }
+                else if (homeCabin.ParentBuilding != null && LobbyService.IsLobbyCabin(homeCabin.ParentBuilding))
+                {
+                    reason = "lobby cabin";
+                }
+                else
+                {
+                    return; // happy path: homeLocation resolves to a real non-lobby cabin
+                }
+            }
+
+            _instance._monitor.Log(
+                $"[Auth] Clearing homeLocation '{home}' ({reason}) for '{farmer.Name}' (id={farmer.UniqueMultiplayerID})",
+                LogLevel.Info);
+            farmer.homeLocation.Value = "";
+
+            if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
+            {
+                _instance._monitor.Log(
+                    $"[Auth] Reassigned '{farmer.Name}' (id={farmer.UniqueMultiplayerID}) to real cabin: homeLocation='{farmer.homeLocation.Value}'",
+                    LogLevel.Info);
+            }
+            else
+            {
+                _instance._monitor.Log(
+                    $"[Auth] TryAssignFarmhandHome failed for '{farmer.Name}' (id={farmer.UniqueMultiplayerID}) - no available cabin",
+                    LogLevel.Warn);
+            }
         }
 
         private static bool ProcessIncomingMessage_Prefix(IncomingMessage message)
@@ -165,24 +319,6 @@ namespace JunimoServer.Services.PasswordProtection
             // Register with LobbyService to exclude from sleep ready-checks
             _lobbyService.RegisterUnauthenticatedPlayer(farmerId);
         }
-
-        // private void LogFarmerSpawnData(string context, Farmer farmer)
-        // {
-        //     _monitor.Log($"[Auth:{context}] ========== FARMER SPAWN DATA ==========", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] UniqueMultiplayerID: {farmer.UniqueMultiplayerID}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] Name: {farmer.Name}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] isCustomized: {farmer.isCustomized.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] Position: {farmer.Position}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] currentLocation: {farmer.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] homeLocation: {farmer.homeLocation.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] lastSleepLocation: {farmer.lastSleepLocation.Value ?? "null"}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] lastSleepPoint: {farmer.lastSleepPoint.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] sleptInTemporaryBed: {farmer.sleptInTemporaryBed.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] disconnectDay: {farmer.disconnectDay.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] disconnectLocation: {farmer.disconnectLocation.Value ?? "null"}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] disconnectPosition: {farmer.disconnectPosition.Value}", LogLevel.Trace);
-        //     _monitor.Log($"[Auth:{context}] ===========================================", LogLevel.Trace);
-        // }
 
         private bool ShouldProcessMessage(IncomingMessage message)
         {
@@ -244,8 +380,11 @@ namespace JunimoServer.Services.PasswordProtection
             // Check if this player is authenticated
             if (!_playerAuthData.TryGetValue(peerId, out var authData))
             {
-                _monitor.Log($"[Auth] BUG: No auth data for peer {peerId} in ShouldSendMessage - blocking", LogLevel.Error);
-                return false;
+                // Peer has no auth data. Either disconnected (cleanup already ran) or
+                // hasn't completed checkFarmhandRequest yet. Either way, allow the message
+                // through; blocking would cause hangs, and the message is harmless.
+                _monitor.Log($"[Auth] No auth data for peer {peerId} in ShouldSendMessage - allowing (likely disconnected)", LogLevel.Trace);
+                return true;
             }
 
             if (authData.State == AuthState.Authenticated)
@@ -315,7 +454,7 @@ namespace JunimoServer.Services.PasswordProtection
                     return true;
                 }
 
-                _monitor.Log($"[Auth] Blocking chat from {message.FarmerID}: '{chatText}'", LogLevel.Debug);
+                _monitor.Log($"[Auth] Blocking chat from {message.FarmerID}: '{ChatRedaction.MaskSecrets(chatText)}'", LogLevel.Debug);
                 return false;
             }
             catch (Exception ex)
@@ -333,11 +472,26 @@ namespace JunimoServer.Services.PasswordProtection
                 _monitor.Log($"[Auth] Cleaned up auth data for {peerId}", LogLevel.Debug);
             }
 
+            // Clean up deferred post-transition auth if player disconnected before DayStarted
+            _pendingPostTransitionAuth.TryRemove(peerId, out _);
+
             // Also unregister from lobby exclusions (player disconnected)
             _lobbyService.UnregisterUnauthenticatedPlayer(peerId);
 
             // Also clean up individual lobby if applicable
             _lobbyService.CleanupIndividualLobby(peerId);
+        }
+
+        private void OnDayStarted(object sender, DayStartedEventArgs e)
+        {
+            foreach (var playerId in _pendingPostTransitionAuth.Keys)
+            {
+                if (_pendingPostTransitionAuth.TryRemove(playerId, out _))
+                {
+                    _lobbyService.UnregisterUnauthenticatedPlayer(playerId);
+                    _monitor.Log($"[Auth] Completed deferred barrier unregister for {playerId} after day transition", LogLevel.Info);
+                }
+            }
         }
 
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
@@ -349,13 +503,17 @@ namespace JunimoServer.Services.PasswordProtection
                 var authData = kvp.Value;
                 if (authData.State != AuthState.Unauthenticated) continue;
 
+                // Don't process players who haven't fully connected yet.
+                // JoinTime is set during checkFarmhandRequest (before connection completes),
+                // so we must wait until the player appears in otherFarmers before sending
+                // any messages. Otherwise the client's chatbox won't exist yet.
+                if (!Game1.otherFarmers.TryGetValue(authData.PlayerId, out var farmer))
+                    continue;
+
                 // For new players, wait until they finish CharacterCustomization before sending login prompts.
                 // The player can't access chat while the customization menu is open anyway.
                 if (authData.IsNewPlayer && !authData.CustomizationCompleteTime.HasValue)
                 {
-                    if (!Game1.otherFarmers.TryGetValue(authData.PlayerId, out var farmer))
-                        continue;
-
                     if (!farmer.isCustomized.Value)
                     {
                         // Still customizing - don't send messages yet, don't count towards timeout
@@ -367,14 +525,19 @@ namespace JunimoServer.Services.PasswordProtection
                     _monitor.Log($"[Auth] Player {authData.PlayerId} finished character customization", LogLevel.Debug);
                 }
 
-                // Calculate elapsed time from the appropriate starting point:
+                // Start the reference clock from when the player is actually ready:
                 // - New players: from when they finished customization
-                // - Returning players: from when they joined
+                // - Returning players: from when they first appeared in otherFarmers
+                if (!authData.IsNewPlayer && !authData.CustomizationCompleteTime.HasValue)
+                {
+                    // First tick where returning player is in otherFarmers. Start the clock now.
+                    authData.CustomizationCompleteTime = DateTime.UtcNow;
+                }
                 var referenceTime = authData.CustomizationCompleteTime ?? authData.JoinTime;
                 var elapsed = (DateTime.UtcNow - referenceTime).TotalSeconds;
 
                 // Send welcome message once (after a brief delay for client to be ready)
-                // Player already spawns in lobby due to RedirectToLobby in OnFarmhandRequest
+                // Player spawns in lobby via FarmhandSenderService.ApplyLobbyRedirectToFarmhand
                 if (!authData.WelcomeMessageSent && elapsed > WelcomeMessageDelaySeconds)
                 {
                     SendWelcomeMessage(authData);
@@ -418,23 +581,42 @@ namespace JunimoServer.Services.PasswordProtection
                 return new AuthenticationResult(true, "Password protection disabled.");
 
             if (!_playerAuthData.TryGetValue(playerId, out var authData))
+            {
+                Diagnostics.ModEventLog.Emit("auth_login_attempted", new
+                {
+                    playerId,
+                    result = "no_auth_data",
+                    failedAttempts = 0
+                });
                 return new AuthenticationResult(true, "Already authenticated.");
+            }
 
             // Use lock to prevent race conditions during auth state transitions
             lock (authData.StateLock)
             {
                 if (authData.State == AuthState.Authenticated)
+                {
+                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
+                    {
+                        playerId,
+                        result = "already_authenticated",
+                        failedAttempts = authData.FailedAttempts
+                    });
                     return new AuthenticationResult(true, "Already authenticated.");
+                }
 
                 if (SecureComparePasswords(password, ServerPassword))
                 {
                     authData.State = AuthState.Authenticated;
                     _monitor.Log($"[Auth] {playerId} authenticated!", LogLevel.Info);
+                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
+                    {
+                        playerId,
+                        result = "success",
+                        failedAttempts = authData.FailedAttempts
+                    });
 
-                    // Unregister from lobby exclusions (player is now authenticated)
-                    _lobbyService.UnregisterUnauthenticatedPlayer(playerId);
-
-                    // Warp from lobby to destination
+                    // Warp from lobby to destination (also handles barrier exclusion removal)
                     WarpToDestination(authData);
 
                     return new AuthenticationResult(true, "Welcome! You may now play.");
@@ -447,10 +629,22 @@ namespace JunimoServer.Services.PasswordProtection
                 if (failedAttempts >= MaxFailedAttempts)
                 {
                     _monitor.Log($"[Auth] Player {playerId} exceeded max attempts - kicking", LogLevel.Warn);
+                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
+                    {
+                        playerId,
+                        result = "kicked_max_attempts",
+                        failedAttempts
+                    });
                     Game1.server.kick(playerId);
                     return new AuthenticationResult(false, "Too many attempts. Disconnected.", true);
                 }
 
+                Diagnostics.ModEventLog.Emit("auth_login_attempted", new
+                {
+                    playerId,
+                    result = "wrong_password",
+                    failedAttempts
+                });
                 return new AuthenticationResult(false, $"Wrong password. {MaxFailedAttempts - failedAttempts} tries left.");
             }
         }
@@ -473,17 +667,33 @@ namespace JunimoServer.Services.PasswordProtection
         {
             // If a day transition is in progress, send a passout message instead of normal warp.
             // This makes the client go through the sleep flow and join the day transition naturally.
+            // IMPORTANT: Keep the player excluded from barriers until DayStarted fires.
+            // Removing the exclusion now would make the barrier wait for a player who can't
+            // participate (game thread is blocked by save), causing an infinite hang.
             if (Game1.newDaySync != null && Game1.newDaySync.hasInstance() && !Game1.newDaySync.hasFinished())
             {
+                _pendingPostTransitionAuth[authData.PlayerId] = true;
+                Diagnostics.ModEventLog.Emit("auth_warp_deferred", new
+                {
+                    playerId = authData.PlayerId,
+                    reason = "newDaySync_active"
+                });
                 SendPassoutToPlayer(authData);
                 return;
             }
 
+            // Safe to unregister immediately; no barriers active
+            _lobbyService.UnregisterUnauthenticatedPlayer(authData.PlayerId);
+
             // Always warp to cabin entry - matches vanilla game behavior on connect
-            var cabin = Game1.getFarm()?.GetCabin(authData.PlayerId);
-            var cabinIndoors = cabin?.GetIndoors<Cabin>();
+            var cabinIndoors = FindPlayerCabin(authData.PlayerId);
             if (cabinIndoors == null)
             {
+                Diagnostics.ModEventLog.Emit("auth_warp_failed", new
+                {
+                    playerId = authData.PlayerId,
+                    reason = "no_cabin_found"
+                });
                 KickPlayerMissingCabin(authData.PlayerId, "warp destination");
                 return;
             }
@@ -493,6 +703,13 @@ namespace JunimoServer.Services.PasswordProtection
             var tileY = entry.Y;
 
             _monitor.Log($"[Auth] Warping {authData.PlayerId} to {location} @ ({tileX},{tileY})", LogLevel.Info);
+            Diagnostics.ModEventLog.Emit("auth_warped", new
+            {
+                playerId = authData.PlayerId,
+                location,
+                tileX,
+                tileY
+            });
 
             _lobbyService.WarpFromLobby(authData.PlayerId, location, tileX, tileY);
         }
@@ -504,8 +721,7 @@ namespace JunimoServer.Services.PasswordProtection
         /// </summary>
         private void SendPassoutToPlayer(PlayerAuthData authData)
         {
-            var cabin = Game1.getFarm()?.GetCabin(authData.PlayerId);
-            var cabinIndoors = cabin?.GetIndoors<Cabin>();
+            var cabinIndoors = FindPlayerCabin(authData.PlayerId);
             if (cabinIndoors == null)
             {
                 KickPlayerMissingCabin(authData.PlayerId, "passout during day transition");
@@ -523,6 +739,120 @@ namespace JunimoServer.Services.PasswordProtection
             // This triggers Farmer.performPassoutWarp on the client, which handles the sleep animation
             object[] passoutData = new object[] { locationName, bedSpot.X, bedSpot.Y, hasBed };
             Game1.server.sendMessage(authData.PlayerId, Multiplayer.passout, Game1.player, passoutData);
+
+            if (Game1.otherFarmers.TryGetValue(authData.PlayerId, out var farmer))
+            {
+                farmer.currentLocation = cabinIndoors;
+                farmer.Position = new Microsoft.Xna.Framework.Vector2(bedSpot.X * 64f, bedSpot.Y * 64f);
+            }
+        }
+
+        /// <summary>
+        /// Finds the player's real (non-lobby) cabin. Uses farmhandReference for lookup,
+        /// which is set correctly during connection by <see cref="EnsureRealCabinAssignment"/>.
+        /// Checks both the resolved owner (for online players) and the stored uid
+        /// (for players in disconnect windows where getFarmer() can't resolve).
+        /// </summary>
+        private Cabin FindPlayerCabin(long playerId)
+        {
+            var farm = Game1.getFarm();
+            if (farm == null) return null;
+
+            // Primary lookup: match by farmhandReference (owner ID or uid)
+            foreach (var building in farm.buildings)
+            {
+                if (!building.isCabin) continue;
+                if (LobbyService.IsLobbyCabin(building)) continue;
+
+                var cabin = building.GetIndoors<Cabin>();
+                if (cabin == null) continue;
+
+                if (cabin.owner?.UniqueMultiplayerID == playerId)
+                    return cabin;
+
+                if (cabin.farmhandReference.defined.Value
+                    && cabin.farmhandReference.uid.Value == playerId)
+                    return cabin;
+            }
+
+            // Fallback: match by homeLocation. farmhandReference.uid can become stale
+            // when TryAssignFarmhandHome short-circuits or Netcode resyncs the cabin's
+            // NetFarmerRef from save data. homeLocation is always set correctly by
+            // AssignFarmhand and is the canonical "where does this player live" field.
+            // Uses building iteration (not getLocationFromName) to avoid dependence on
+            // the location lookup cache which is flushed during day transitions.
+            if (Game1.otherFarmers.TryGetValue(playerId, out var player))
+            {
+                var homeLocation = player.homeLocation?.Value;
+                if (!string.IsNullOrEmpty(homeLocation))
+                {
+                    foreach (var building in farm.buildings)
+                    {
+                        if (!building.isCabin) continue;
+                        if (LobbyService.IsLobbyCabin(building)) continue;
+                        var cabin = building.GetIndoors<Cabin>();
+                        if (cabin != null && cabin.NameOrUniqueName == homeLocation)
+                        {
+                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{player.Name}' (id={playerId}), " +
+                                $"found via homeLocation fallback: {homeLocation}", LogLevel.Warn);
+                            return cabin;
+                        }
+                    }
+                }
+            }
+
+            // Recovery: both lookups failed. Ask vanilla to assign a cabin (it iterates
+            // farm.buildings and picks the first where Cabin.CanAssignTo is true; LobbyService's
+            // CanAssignTo postfix already excludes lobby cabins). On success, re-run the primary
+            // lookup so we return the freshly-assigned cabin.
+            if (player != null && Game1.netWorldState.Value.TryAssignFarmhandHome(player))
+            {
+                _monitor.Log($"[Auth] FindPlayerCabin: recovered via TryAssignFarmhandHome " +
+                    $"for '{player.Name}' (id={playerId}), homeLocation now '{player.homeLocation.Value}'", LogLevel.Warn);
+
+                foreach (var building in farm.buildings)
+                {
+                    if (!building.isCabin) continue;
+                    if (LobbyService.IsLobbyCabin(building)) continue;
+                    var cabin = building.GetIndoors<Cabin>();
+                    if (cabin == null) continue;
+
+                    if (cabin.owner?.UniqueMultiplayerID == playerId)
+                        return cabin;
+                    if (cabin.farmhandReference.defined.Value
+                        && cabin.farmhandReference.uid.Value == playerId)
+                        return cabin;
+                    if (cabin.NameOrUniqueName == player.homeLocation.Value)
+                        return cabin;
+                }
+            }
+
+            LogCabinLookupFailure(playerId);
+            return null;
+        }
+
+        private void LogCabinLookupFailure(long playerId)
+        {
+            var farm = Game1.getFarm();
+            var cabins = farm?.buildings.Where(b => b.isCabin).ToList() ?? new();
+            _monitor.Log($"[Auth] Cabin lookup failed for {playerId}. Farm has {cabins.Count} cabin(s):", LogLevel.Error);
+            foreach (var c in cabins)
+            {
+                var ind = c.GetIndoors<Cabin>();
+                var refDefined = ind?.farmhandReference?.defined?.Value;
+                var refUid = ind?.farmhandReference?.uid?.Value;
+                var ownerName = ind?.owner?.Name;
+                var ownerId = ind?.owner?.UniqueMultiplayerID;
+                var isLobby = LobbyService.IsLobbyCabin(c);
+                _monitor.Log($"[Auth]   Cabin '{ind?.NameOrUniqueName}': refDefined={refDefined}, refUid={refUid}, owner='{ownerName}' (id={ownerId}), isLobby={isLobby}", LogLevel.Error);
+            }
+            var inFarmhandData = Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(playerId);
+            var inOtherFarmers = Game1.otherFarmers.ContainsKey(playerId);
+            Farmer diagFarmer = inOtherFarmers ? Game1.otherFarmers[playerId] : null;
+            if (diagFarmer == null && Game1.netWorldState.Value.farmhandData.FieldDict.TryGetValue(playerId, out var diagRef))
+                diagFarmer = diagRef.Value;
+            _monitor.Log($"[Auth]   Player {playerId}: inFarmhandData={inFarmhandData}, inOtherFarmers={inOtherFarmers}, " +
+                $"homeLocation='{diagFarmer?.homeLocation.Value}', currentLocation='{diagFarmer?.currentLocation?.NameOrUniqueName}'", LogLevel.Error);
         }
 
         /// <summary>

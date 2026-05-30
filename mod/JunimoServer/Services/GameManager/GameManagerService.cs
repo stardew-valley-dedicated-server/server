@@ -6,6 +6,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
 using System;
+using System.Threading.Tasks;
 
 namespace JunimoServer.Services.GameManager
 {
@@ -20,11 +21,46 @@ namespace JunimoServer.Services.GameManager
         private int _healthCheckTimer = 0;
         private DateTime? _lastNullCodeTime = null;
 
+        // New game creation via API
+        private NewGameConfig? _pendingNewGameConfig;
+        private TaskCompletionSource<bool>? _newGameCompletion;
+
+        /// <summary>
+        /// Whether a new game creation has been requested via the API.
+        /// Checked by AlwaysOnServer to distinguish intentional returns to title.
+        /// </summary>
+        public static bool IsNewGamePending { get; private set; }
+
+        /// <summary>
+        /// Static instance for access from ApiService without changing visibility.
+        /// Set in the constructor.
+        /// </summary>
+        internal static GameManagerService? Instance { get; private set; }
+
         public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, ServerSettingsLoader settings, IModHelper helper, IMonitor monitor) : base(helper, monitor)
         {
             _gameCreatorService = gameCreator;
             _gameLoaderService = gameLoader;
             _settings = settings;
+            Instance = this;
+        }
+
+        /// <summary>
+        /// Requests a new game creation with the specified config.
+        /// MUST be called on the game thread (via RunOnGameThreadAsync).
+        /// Returns a Task that completes when the new game is ready.
+        /// </summary>
+        public Task RequestNewGame(NewGameConfig config)
+        {
+            IsNewGamePending = true;
+            _pendingNewGameConfig = config;
+            _newGameCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _gameStarted = false;
+            _titleLaunched = false;
+            _healthCheckTimer = 0;
+            _lastNullCodeTime = null;
+            Game1.ExitToTitle();
+            return _newGameCompletion.Task;
         }
 
         public override void Entry()
@@ -64,12 +100,41 @@ namespace JunimoServer.Services.GameManager
                 return;
             }
 
+            // Also check the menu directly. RenderedActiveMenu doesn't fire when
+            // rendering is disabled (SuppressDraw), so _titleLaunched stays false
+            // after ExitToTitle. Without this, /newgame always times out (504).
+            if (!_titleLaunched && Game1.activeClickableMenu is TitleMenu)
+            {
+                _titleLaunched = true;
+            }
+
             if (!_titleLaunched)
             {
                 return;
             }
 
             _gameStarted = true;
+
+            // If a new game was requested via the API, use the provided config
+            if (_pendingNewGameConfig != null)
+            {
+                var config = _pendingNewGameConfig;
+                _pendingNewGameConfig = null;
+                IsNewGamePending = false;
+                try
+                {
+                    Monitor.Log($"Creating new game from API request: {config}", LogLevel.Info);
+                    _gameCreatorService.CreateNewGame(config);
+                    _newGameCompletion?.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    Monitor.Log($"New game creation failed: {ex}", LogLevel.Error);
+                    _newGameCompletion?.TrySetException(ex);
+                }
+                _newGameCompletion = null;
+                return;
+            }
 
             if (Env.ForceNewDebugGame)
             {
@@ -78,34 +143,10 @@ namespace JunimoServer.Services.GameManager
                 return;
             }
 
-            var successfullyStarted = true;
             if (_gameLoaderService.HasLoadableSave())
-            {
-                successfullyStarted = _gameLoaderService.LoadSave();
-            }
+                _gameLoaderService.LoadSave();
             else
-            {
-                successfullyStarted = _gameCreatorService.CreateNewGameFromConfig();
-            }
-
-            try
-            {
-                // TODO: There is no backend to update anymore; add again once web UI is available
-                //if (successfullyStarted)
-                //{
-                //    var updateTask = _daemonService.UpdateConnectableStatus();
-                //    updateTask.Wait();
-                //}
-                //else
-                //{
-                //    var updateTask = _daemonService.UpdateNotConnectableStatus();
-                //    updateTask.Wait();
-                //}
-            }
-            catch (Exception e)
-            {
-                Monitor.Log(e.ToString(), LogLevel.Error);
-            }
+                _gameCreatorService.CreateNewGameFromConfig();
         }
 
         private bool HasDurationPassedSinceLastNullCode(TimeSpan duration)
@@ -128,6 +169,7 @@ namespace JunimoServer.Services.GameManager
                 if (Game1.server.canAcceptIPConnections())
                 {
                     Monitor.Log("Healthcheck ✓", LogLevel.Info);
+                    _lastNullCodeTime = null;
                 }
                 else
                 {
@@ -136,7 +178,11 @@ namespace JunimoServer.Services.GameManager
 
                     if (HasDurationPassedSinceLastNullCode(TimeSpan.FromMinutes(2)))
                     {
-                        Environment.Exit(0);
+                        Monitor.Log(
+                            "Network unreachable for 2+ minutes; exiting for container restart. " +
+                            "Mid-day state since last sleep will be lost; restart will reload last save.",
+                            LogLevel.Warn);
+                        Environment.Exit(1);
                     }
                 }
             }
@@ -146,28 +192,5 @@ namespace JunimoServer.Services.GameManager
             }
         }
 
-        private void SendHealthCheck(string inviteCode)
-        {
-            // TODO: There is no backend to update anymore; add again once web UI is available
-            //if (Env.JunimoBootServerAddress == "") return;
-
-            //try
-            //{
-            //    await _stardewGameServiceClient.GameHealthCheckAsync(new GameHealthCheckRequest
-            //    {
-            //        InviteCode = inviteCode,
-            //        IsConnectable = true,
-            //        ServerId = ServerId,
-            //    });
-            //}
-            //catch (Exception e)
-            //{
-            //    Monitor.Log("Failed to send health check: " + e.Message, LogLevel.Error);
-
-            //    // Manually retry connection
-            //    var junimoBootGenChannel = GrpcChannel.ForAddress($"http://{Env.JunimoBootServerAddress}");
-            //    _stardewGameServiceClient = new StardewGameService.StardewGameServiceClient(junimoBootGenChannel);
-            //}
-        }
     }
 }

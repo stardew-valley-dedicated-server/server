@@ -1,4 +1,5 @@
 using HarmonyLib;
+using JunimoServer.Util;
 using Netcode;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -11,6 +12,10 @@ namespace JunimoServer.Services.CropSaver
 {
     public class CropSaver : ModService
     {
+        public static CropSaver? Instance { get; private set; }
+
+        public CropSaverDataLoader DataLoader => _cropSaverDataLoader;
+
         private readonly CropWatcher _cropWatcher;
         private readonly CropSaverDataLoader _cropSaverDataLoader;
 
@@ -23,7 +28,8 @@ namespace JunimoServer.Services.CropSaver
             _helper = helper;
             _cropWatcher = new CropWatcher(helper, OnCropAdded, OnCropRemoved);
             _cropSaverDataLoader = new CropSaverDataLoader(helper);
-            CropSaverOverrides.Initialize(helper, _monitor, _cropSaverDataLoader);
+            CropSaverOverrides.Initialize(_monitor, _cropSaverDataLoader);
+            Instance = this;
             harmony.Patch(
                 original: AccessTools.Method(typeof(Crop), nameof(Crop.Kill)),
                 prefix: new HarmonyMethod(typeof(CropSaverOverrides), nameof(CropSaverOverrides.KillCrop_Prefix))
@@ -50,7 +56,7 @@ namespace JunimoServer.Services.CropSaver
                 var dirt = saverCrop.TryGetCoorespondingDirt();
                 if (dirt != null)
                 {
-                    if (!onlineIds.Contains(saverCrop.ownerId) && dirt.state.Value != HoeDirt.watered)
+                    if (saverCrop.ownerId != 0 && !onlineIds.Contains(saverCrop.ownerId) && dirt.state.Value != HoeDirt.watered)
                     {
                         saverCrop.IncrementExtraDays();
                     }
@@ -72,6 +78,18 @@ namespace JunimoServer.Services.CropSaver
                     continue;
                 }
 
+                // A tracked entry whose seed id no longer resolves in cropData
+                // (e.g. a mod was uninstalled between sessions, or a legacy entry
+                // from a watcher version that didn't filter on data availability)
+                // can't be processed by CalculateDateOfDeath. Drop it.
+                if (crop.GetData() == null)
+                {
+                    _monitor.Log(
+                        $"Crop at {saverCrop.cropLocationName} {saverCrop.cropLocationTile.X},{saverCrop.cropLocationTile.Y} " +
+                        $"has no resolvable CropData. Removing from managed crops...", LogLevel.Warn);
+                    _cropSaverDataLoader.RemoveCrop(saverCrop.cropLocationName, saverCrop.cropLocationTile);
+                    continue;
+                }
 
                 var nightOfDeath = CalculateDateOfDeath(crop, saverCrop);
                 var fullyGrown = CalculateFullyGrown(crop);
@@ -162,26 +180,28 @@ namespace JunimoServer.Services.CropSaver
         }
 
 
-        private void OnCropAdded(TerrainFeature feature)
+        private void OnCropAdded(CropLocation cropLoc)
         {
-            var closestFarmer = FarmerUtil.GetClosestFarmer(feature.Location, feature.Tile);
+            // Dedupe against existing entries — the watcher fires this on first
+            // observation of a crop-bearing HoeDirt, which races against
+            // OnSaveLoaded re-populating CropSaverData from disk.
+            if (_cropSaverDataLoader.GetSaverCrop(cropLoc.LocationName, cropLoc.Tile) != null)
+                return;
+
+            var closestFarmer = FarmerUtil.GetClosestFarmer(cropLoc.Location, cropLoc.Tile, _helper.GetServerHostId());
+            var ownerId = closestFarmer?.UniqueMultiplayerID ?? 0;
             _cropSaverDataLoader.AddCrop(new SaverCrop(
-                    feature.Location.Name,
-                    feature.Tile,
-                    closestFarmer.UniqueMultiplayerID,
+                    cropLoc.LocationName,
+                    cropLoc.Tile,
+                    ownerId,
                     SDate.Now()
                 )
             );
-
-            // _monitor.Log(
-            //     $"Added crop planted at: {feature.currentLocation} on: {feature.currentTileLocation} by: {closestFarmer.Name}");
         }
 
-        private void OnCropRemoved(TerrainFeature feature)
+        private void OnCropRemoved(CropLocation cropLoc)
         {
-            _cropSaverDataLoader.RemoveCrop(feature.Location.Name, feature.Tile);
-            // _monitor.Log(
-            //     $"Removed crop at: {feature.currentLocation} on: {feature.currentTileLocation}");
+            _cropSaverDataLoader.RemoveCrop(cropLoc.LocationName, cropLoc.Tile);
         }
     }
 }
