@@ -1,8 +1,8 @@
+using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.TerrainFeatures;
 using StardewValley.Tools;
@@ -12,7 +12,7 @@ namespace JunimoTestClient.GameTweaks;
 
 /// <summary>
 /// God Tool - Destroys trees, stones, and other obstacles in one hit.
-/// The tool glows with a distinct golden/rainbow aura to indicate its power.
+/// The scythe clears everything in a 10x10 area around the player.
 ///
 /// NOTE: This exploits the fact that Stardew Valley has minimal server-side validation.
 /// The server trusts client-reported tool actions. This can be used later to test
@@ -20,7 +20,6 @@ namespace JunimoTestClient.GameTweaks;
 /// </summary>
 public class GodTool
 {
-    private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
     private readonly Harmony _harmony;
 
@@ -35,11 +34,10 @@ public class GodTool
         set => _enabled = value;
     }
 
-    public GodTool(IModHelper helper, IMonitor monitor)
+    public GodTool(IModHelper helper, IMonitor monitor, Harmony harmony)
     {
-        _helper = helper;
         _monitor = monitor;
-        _harmony = new Harmony("JunimoHost.TestClient.GodTool");
+        _harmony = harmony;
     }
 
     public void Apply()
@@ -73,8 +71,10 @@ public class GodTool
             var objectPrefix = new HarmonyMethod(typeof(GodTool), nameof(Object_performToolAction_Prefix));
             _harmony.Patch(objectPerformToolAction, prefix: objectPrefix);
 
-            // Add visual effect for god tools
-            _helper.Events.Display.RenderedWorld += OnRenderedWorld;
+            // Patch MeleeWeapon.DoDamage to make scythe clear 10x10 area
+            var meleeWeaponDoDamage = AccessTools.Method(typeof(MeleeWeapon), nameof(MeleeWeapon.DoDamage));
+            var scythePrefix = new HarmonyMethod(typeof(GodTool), nameof(MeleeWeapon_DoDamage_Prefix));
+            _harmony.Patch(meleeWeaponDoDamage, prefix: scythePrefix);
 
             _monitor.Log("God Tool patches applied - one-hit destruction enabled!", LogLevel.Info);
         }
@@ -128,17 +128,47 @@ public class GodTool
         __instance.additionalPower.Value = __state;
     }
 
+    // Cached reflection method for Tree.performTreeFall
+    private static System.Reflection.MethodInfo? _performTreeFallMethod;
+
     /// <summary>
-    /// Prefix for Tree.performToolAction - sets health to minimum before tool action.
+    /// Prefix for Tree.performToolAction - destroys tree AND stump in one hit.
     /// Works with both Axe and Pickaxe for universal destruction.
     /// </summary>
-    private static void Tree_performToolAction_Prefix(Tree __instance, Tool t)
+    private static bool Tree_performToolAction_Prefix(Tree __instance, Tool t, int explosion, Vector2 tileLocation, ref bool __result)
     {
-        if (!_enabled) return;
-        if (t is not Axe && t is not Pickaxe) return;
+        if (!_enabled) return true; // Run original
+        if (t is not Axe && t is not Pickaxe) return true; // Run original for other tools
 
-        // Set health to 1 so the next hit destroys it
+        var location = __instance.Location;
+        if (location == null) return true;
+
+        var farmer = t.getLastFarmerToUse();
+
+        // Cache reflection method
+        _performTreeFallMethod ??= AccessTools.Method(typeof(Tree), "performTreeFall");
+
+        // If it's a stump, just remove it
+        if (__instance.stump.Value)
+        {
+            location.playSound("axchop", tileLocation);
+            _performTreeFallMethod?.Invoke(__instance, new object[] { t, explosion, tileLocation });
+            __result = true;
+            return false;
+        }
+
+        // For full trees: fell the tree, then immediately remove the stump
         __instance.health.Value = 1f;
+
+        // Make the tree fall
+        location.playSound("treecrack", tileLocation);
+        __instance.stump.Value = true;
+        __instance.health.Value = 0f;
+        __instance.shakeLeft.Value = farmer != null && farmer.Tile.X > tileLocation.X;
+        _performTreeFallMethod?.Invoke(__instance, new object[] { t, explosion, tileLocation });
+
+        __result = true;
+        return false; // Skip original
     }
 
     /// <summary>
@@ -204,129 +234,90 @@ public class GodTool
     }
 
     /// <summary>
-    /// Renders a elegant glowing aura around the player when holding a god-powered tool.
-    /// Uses the game's built-in light glow texture for a smooth, professional look.
+    /// Prefix for MeleeWeapon.DoDamage - makes scythe destroy everything in a 10x10 area.
+    /// Clears trees, stumps, stones, twigs, and other debris.
     /// </summary>
-    private void OnRenderedWorld(object? sender, RenderedWorldEventArgs e)
+    private static void MeleeWeapon_DoDamage_Prefix(MeleeWeapon __instance, GameLocation location, int x, int y, int facingDirection, int power, Farmer who)
     {
         if (!_enabled) return;
-        if (Game1.player?.CurrentTool == null) return;
+        if (!__instance.isScythe()) return;
 
-        var tool = Game1.player.CurrentTool;
-        if (tool is not Axe && tool is not Pickaxe) return;
+        var playerTile = who.Tile;
+        var radius = 5; // 10x10 area = 5 tiles in each direction
 
-        var time = Game1.currentGameTime.TotalGameTime.TotalMilliseconds;
+        // Collect items to remove (can't modify during iteration)
+        var objectsToRemove = new List<Vector2>();
+        var terrainToRemove = new List<Vector2>();
+        var resourceClumpsToRemove = new List<ResourceClump>();
 
-        // Smooth pulsing
-        var pulse = (float)(Math.Sin(time / 400.0) * 0.15 + 0.85);
-
-        // Slow, elegant golden hue shift (gold -> amber -> gold)
-        var hue = (float)(Math.Sin(time / 2000.0) * 15 + 45); // Oscillates 30-60 (gold/amber range)
-
-        // Get player feet position on screen
-        var playerPos = Game1.player.getLocalPosition(Game1.viewport);
-        var centerX = playerPos.X + 32;
-        var centerY = playerPos.Y + 60; // At feet level
-
-        // Use the game's light glow texture for smooth circular glow
-        var glowTexture = Game1.mouseCursors;
-        var glowSourceRect = new Rectangle(88, 1779, 30, 30); // Soft circular glow from cursors
-
-        // Main golden aura - large soft glow at feet
-        var mainColor = ColorFromHsv(hue, 0.7f, 1f) * 0.35f * pulse;
-        var mainSize = 140;
-        e.SpriteBatch.Draw(
-            glowTexture,
-            new Rectangle((int)(centerX - mainSize / 2), (int)(centerY - mainSize / 2), mainSize, mainSize),
-            glowSourceRect,
-            mainColor);
-
-        // Secondary inner glow - brighter core
-        var coreColor = ColorFromHsv(hue - 10, 0.5f, 1f) * 0.5f * pulse;
-        var coreSize = 80;
-        e.SpriteBatch.Draw(
-            glowTexture,
-            new Rectangle((int)(centerX - coreSize / 2), (int)(centerY - coreSize / 2), coreSize, coreSize),
-            glowSourceRect,
-            coreColor);
-
-        // Orbiting star particles using the game's star/sparkle sprite
-        var starSourceRect = new Rectangle(294, 1432, 16, 16); // Small star from cursors
-        var particleCount = 4;
-
-        for (int i = 0; i < particleCount; i++)
+        // Find all objects in range
+        foreach (var kvp in location.Objects.Pairs)
         {
-            // Each particle orbits at different speed and phase
-            var orbitSpeed = 1500.0 + i * 200;
-            var angle = (time / orbitSpeed + i * (Math.PI * 2 / particleCount)) % (Math.PI * 2);
-
-            // Elliptical orbit (wider than tall)
-            var radiusX = 45 + (float)Math.Sin(time / 800.0 + i) * 5;
-            var radiusY = 25 + (float)Math.Sin(time / 800.0 + i) * 3;
-
-            var particleX = centerX + (float)Math.Cos(angle) * radiusX;
-            var particleY = centerY + (float)Math.Sin(angle) * radiusY * 0.6f; // Flatten for perspective
-
-            // Particle fades based on position (dimmer when "behind")
-            var depthFade = (float)(Math.Sin(angle) * 0.3 + 0.7);
-
-            // Slight color variation per particle
-            var particleHue = (hue + i * 8) % 360;
-            var particleColor = ColorFromHsv(particleHue, 0.4f, 1f) * pulse * depthFade;
-
-            // Scale particles - smaller when "behind"
-            var particleScale = 1.5f + depthFade * 0.5f;
-            var particleSize = (int)(12 * particleScale);
-
-            e.SpriteBatch.Draw(
-                glowTexture,
-                new Rectangle((int)(particleX - particleSize / 2), (int)(particleY - particleSize / 2), particleSize, particleSize),
-                starSourceRect,
-                particleColor);
+            var tile = kvp.Key;
+            if (Math.Abs(tile.X - playerTile.X) <= radius && Math.Abs(tile.Y - playerTile.Y) <= radius)
+            {
+                var obj = kvp.Value;
+                if (obj.IsBreakableStone() || obj.IsTwig() || obj.Name.Contains("Weed") || obj.Name.Contains("Stone"))
+                {
+                    objectsToRemove.Add(tile);
+                }
+            }
         }
 
-        // Occasional rising sparkle effect
-        var sparklePhase = (time / 100.0) % 60;
-        if (sparklePhase < 40)
+        // Find all terrain features (trees, grass, etc.)
+        foreach (var kvp in location.terrainFeatures.Pairs)
         {
-            var sparkleY = centerY - (float)(sparklePhase * 1.5);
-            var sparkleAlpha = sparklePhase < 20 ? (float)(sparklePhase / 20.0) : (float)((40 - sparklePhase) / 20.0);
-            var sparkleX = centerX + (float)Math.Sin(sparklePhase * 0.3) * 15;
-
-            var sparkleColor = Color.White * sparkleAlpha * 0.8f * pulse;
-            e.SpriteBatch.Draw(
-                glowTexture,
-                new Rectangle((int)(sparkleX - 6), (int)(sparkleY - 6), 12, 12),
-                starSourceRect,
-                sparkleColor);
+            var tile = kvp.Key;
+            if (Math.Abs(tile.X - playerTile.X) <= radius && Math.Abs(tile.Y - playerTile.Y) <= radius)
+            {
+                var feature = kvp.Value;
+                if (feature is Tree || feature is Grass || feature is Bush)
+                {
+                    terrainToRemove.Add(tile);
+                }
+            }
         }
-    }
 
-    /// <summary>
-    /// Converts HSV color to XNA Color.
-    /// </summary>
-    private static Color ColorFromHsv(float hue, float saturation, float value)
-    {
-        var hi = (int)(hue / 60) % 6;
-        var f = hue / 60 - (int)(hue / 60);
-        var p = value * (1 - saturation);
-        var q = value * (1 - f * saturation);
-        var t = value * (1 - (1 - f) * saturation);
-
-        return hi switch
+        // Find resource clumps (stumps, logs, boulders)
+        foreach (var clump in location.resourceClumps)
         {
-            0 => new Color(value, t, p),
-            1 => new Color(q, value, p),
-            2 => new Color(p, value, t),
-            3 => new Color(p, q, value),
-            4 => new Color(t, p, value),
-            _ => new Color(value, p, q)
-        };
-    }
+            var clumpTile = clump.Tile;
+            // Resource clumps can be 2x2, check if any part is in range
+            for (int dx = 0; dx < clump.width.Value; dx++)
+            {
+                for (int dy = 0; dy < clump.height.Value; dy++)
+                {
+                    var checkTile = new Vector2(clumpTile.X + dx, clumpTile.Y + dy);
+                    if (Math.Abs(checkTile.X - playerTile.X) <= radius && Math.Abs(checkTile.Y - playerTile.Y) <= radius)
+                    {
+                        resourceClumpsToRemove.Add(clump);
+                        goto nextClump;
+                    }
+                }
+            }
+            nextClump:;
+        }
 
-    public void Dispose()
-    {
-        _helper.Events.Display.RenderedWorld -= OnRenderedWorld;
-        _harmony.UnpatchAll("JunimoHost.TestClient.GodTool");
+        // Remove objects
+        foreach (var tile in objectsToRemove)
+        {
+            if (location.Objects.TryGetValue(tile, out var obj))
+            {
+                obj.performRemoveAction();
+                location.Objects.Remove(tile);
+            }
+        }
+
+        // Remove terrain features
+        foreach (var tile in terrainToRemove)
+        {
+            location.terrainFeatures.Remove(tile);
+        }
+
+        // Remove resource clumps
+        foreach (var clump in resourceClumpsToRemove.Distinct())
+        {
+            location.resourceClumps.Remove(clump);
+        }
     }
 }

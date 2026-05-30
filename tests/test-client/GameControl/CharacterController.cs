@@ -104,7 +104,7 @@ public class CharacterController
                 return new CustomizeResult { Success = false, Error = "Text boxes not available (reflection failed)" };
             }
 
-            // Bypass the TextBox pixel-width truncation — it's a client-side UI constraint only.
+            // Bypass the TextBox pixel-width truncation; it's a client-side UI constraint only.
             // The server stores names as NetString with no length cap.
             // TODO: enforce a max name length server-side to prevent abuse
             nameBox.limitWidth = false;
@@ -114,6 +114,13 @@ public class CharacterController
             favThingBox.limitWidth = false;
             favThingBox.Text = favoriteThing;
             favThingBox.limitWidth = true;
+
+            // Also sync to Game1.player immediately. canLeaveMenu() checks
+            // Game1.player.Name/favoriteThing, which normally sync from the text
+            // boxes during the draw cycle. Without this, ConfirmCharacter() can
+            // fail if called before the next draw frame runs.
+            Game1.player.Name = name;
+            Game1.player.favoriteThing.Value = favoriteThing;
 
             _monitor.Log($"Set character data - Name: {name}, FavoriteThing: {favoriteThing}", LogLevel.Trace);
 

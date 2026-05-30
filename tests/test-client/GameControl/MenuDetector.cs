@@ -130,7 +130,7 @@ public static class MenuDetector
             IsClient = Game1.IsClient,
             IsServer = Game1.IsServer,
             IsLocalMultiplayer = Context.IsSplitScreen,
-            IsConnected = Game1.IsMultiplayer && Context.IsWorldReady,
+            IsConnected = Game1.IsMultiplayer && (Game1.IsClient || Game1.IsServer),
             WorldReady = Context.IsWorldReady,
             HasLoadedGame = Context.IsWorldReady,
             NumberOfPlayers = Game1.numberOfPlayers()
@@ -152,7 +152,7 @@ public static class MenuDetector
             Money = Game1.player.Money,
             IsMainPlayer = Game1.player.IsMainPlayer,
             UniqueId = Game1.player.UniqueMultiplayerID.ToString(),
-            CurrentLocation = Game1.player.currentLocation?.Name
+            CurrentLocation = Game1.player.currentLocation?.NameOrUniqueName
         };
     }
 

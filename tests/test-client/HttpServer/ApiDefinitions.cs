@@ -126,6 +126,21 @@ public class ApiDefinitions
     [ApiResponse(typeof(SleepResult), 200)]
     private void Sleep() { }
 
+    [ApiEndpoint("POST", "/actions/warp", Summary = "Warp the player", Description = "Queue an asynchronous warp to a location/tile. Caller must poll /status to confirm arrival.", Tag = "Actions")]
+    [ApiRequestBody(typeof(WarpParams))]
+    [ApiResponse(typeof(WarpResult), 200)]
+    private void Warp() { }
+
+    [ApiEndpoint("POST", "/actions/place_pot", Summary = "Place a Garden Pot", Description = "Place an IndoorPot at the given tile on the player's current location.", Tag = "Actions")]
+    [ApiRequestBody(typeof(PlacePotParams))]
+    [ApiResponse(typeof(PlacePotResult), 200)]
+    private void PlacePot() { }
+
+    [ApiEndpoint("POST", "/actions/plant_crop", Summary = "Plant a crop seed", Description = "Plant a seed in a HoeDirt or IndoorPot at the given tile.", Tag = "Actions")]
+    [ApiRequestBody(typeof(PlantCropParams))]
+    [ApiResponse(typeof(PlantCropResult), 200)]
+    private void PlantCrop() { }
+
     // ============================================================
     // Wait Endpoints
     // ============================================================

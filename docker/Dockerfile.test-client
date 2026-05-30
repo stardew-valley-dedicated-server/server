@@ -2,13 +2,13 @@
 # Used by E2E tests to run multiple game client instances
 #
 # Build: make build-test-client
-# Usage: Managed by Testcontainers in IntegrationTestFixture
+# Usage: started by the test broker via Testcontainers (see tests/JunimoServer.Tests/Containers/GameClientContainer.cs)
 #
 # NOTE: This Dockerfile reuses the game-downloader stage from the main Dockerfile
 # to get game DLLs needed for building the test-client mod.
 
 # Global build arguments
-ARG SMAPI_VERSION=4.4.0
+ARG SMAPI_VERSION=4.5.1
 
 # ============================================================================
 # Stage 1: Build steam-service downloader (same as main Dockerfile)
@@ -67,21 +67,24 @@ COPY --from=game-downloader /game /game
 
 # Copy project files first for better layer caching
 COPY ./Directory.Build.props /src/
-COPY ./tools/test-client/JunimoTestClient.csproj /src/tools/test-client/
+COPY ./tests/test-client/JunimoTestClient.csproj /src/tests/test-client/
+COPY ./mod/JunimoServer.Shared/JunimoServer.Shared.csproj /src/mod/JunimoServer.Shared/
 
 # Restore dependencies
 RUN --mount=type=cache,target=/root/.nuget/packages \
-    dotnet restore /src/tools/test-client/JunimoTestClient.csproj
+    dotnet restore /src/tests/test-client/JunimoTestClient.csproj
 
 # Copy source and build
-COPY ./tools/test-client /src/tools/test-client
+COPY ./tests/test-client /src/tests/test-client
+COPY ./mod/JunimoServer.Shared /src/mod/JunimoServer.Shared
 RUN --mount=type=cache,target=/root/.nuget/packages \
-    dotnet build /src/tools/test-client/JunimoTestClient.csproj \
+    dotnet build /src/tests/test-client/JunimoTestClient.csproj \
     --configuration ${BUILD_CONFIGURATION} \
     --no-restore \
     /p:GamePath=/game \
     /p:EnableModDeploy=false \
-    -o /output/JunimoTestClient
+    -o /output/JunimoTestClient \
+    && cp /src/tests/test-client/manifest.json /output/JunimoTestClient/manifest.json
 
 # ============================================================================
 # Stage 4: Final runtime image
@@ -105,6 +108,7 @@ ENV APP_NAME="Stardew Test Client" \
     DISPLAY=:0 \
     DISPLAY_HEIGHT=720 \
     DISPLAY_WIDTH=1280 \
+    CLIENT_FPS=0 \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
     SMAPI_VERSION=${SMAPI_VERSION} \
@@ -116,15 +120,29 @@ ENV APP_NAME="Stardew Test Client" \
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
+    libicu67 \
     locales \
     procps \
+    scrot \
     unzip \
     x11-utils \
+    xauth \
+    xz-utils \
+    mesa-utils \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install ffmpeg 8.1.1. Debian 11 ships 4.3.x with x11grab timing bugs that break the
+# test-recording pipeline; pinning to a date-stamped BtbN release avoids the "latest" tag drift.
+# Must match the server image's ffmpeg pin so both ends of the recording pipeline behave identically.
+RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-29-14-08/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1.tar.xz && \
+    tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffmpeg /usr/local/bin/ffmpeg && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffprobe /usr/local/bin/ffprobe && \
+    rm -rf /tmp/ffmpeg*
 
 # System cleanup
 RUN \

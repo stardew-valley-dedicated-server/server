@@ -1,4 +1,7 @@
 using HarmonyLib;
+using JunimoServer.Shared;
+using Microsoft.Xna.Framework;
+using JunimoTestClient.Auth;
 using JunimoTestClient.Diagnostics;
 using JunimoTestClient.GameControl;
 using JunimoTestClient.GameTweaks;
@@ -8,7 +11,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
 using Steamworks;
-using System.Runtime.ExceptionServices;
+using System;
 using System.Threading.Tasks;
 
 namespace JunimoTestClient;
@@ -37,30 +40,57 @@ public class ModEntry : Mod
     private ScreenshotCapture? _screenshot;
     private ErrorCapture? _errorCapture;
 
+    private Harmony _harmony = null!;
+
+    private int _targetTps;
+
+    // Boot fps parsed in Entry(), applied in OnGameLaunched once Game1.mapDisplayDevice exists.
+    private int _bootFps;
+
+    // Single source of truth for render-rate control, shared with the server mod
+    // (JunimoServer.Shared.RenderingController). 0 = disabled, N > 0 = throttled at N.
+    // Static so the BeginDraw/Draw Harmony prefixes can reach it.
+    private static RenderingController _rendering = null!;
+
     private const int DefaultPort = 5123;
     private const int DefaultWaitTimeout = 30000; // 30 seconds
+    private const int GameThreadFreezeThresholdMs = 10000; // consider game thread frozen if no tick for this long
 
     public override void Entry(IModHelper helper)
     {
+        _harmony = new Harmony(ModManifest.UniqueID);
+
+        // Fix .NET 6 HttpListener race condition (dotnet/runtime#28658)
+        HttpListenerFix.Apply(_harmony, Monitor);
+
         // Game control
         _navigator = new MenuNavigator(Monitor);
         _coopController = new CoopController(helper, Monitor);
-        _chatController = new ChatController(Monitor);
+        _chatController = new ChatController(Monitor, _harmony);
+        _chatController.InstallPatches();
         _characterController = new CharacterController(Monitor);
         _actionsController = new ActionsController(Monitor);
 
         // Tweaks
-        _tweaks = new ConvenienceTweaks(helper, Monitor);
+        _tweaks = new ConvenienceTweaks(helper, Monitor, _harmony);
         _tweaks.Apply();
 
-        _skipIntro = new SkipIntro(Monitor);
+        _skipIntro = new SkipIntro(Monitor, _harmony);
         _skipIntro.Apply();
 
-        _godTool = new GodTool(helper, Monitor);
+        _godTool = new GodTool(helper, Monitor, _harmony);
         _godTool.Apply();
+
+        // Apply Steam/Galaxy auth patches (must be before Steam diagnostics)
+        var authService = new ClientAuthService(helper, Monitor, _harmony);
+        authService.Apply();
 
         // Apply Steam diagnostics patches
         ApplySteamDiagnostics(helper);
+
+        // Test overlay for E2E test debugging
+        TestOverlay.Apply(_harmony);
+        ButtonTutorialSuppressor.Apply(_harmony);
 
         // Diagnostics
         _healthWatchdog = new HealthWatchdog(helper, Monitor);
@@ -84,10 +114,92 @@ public class ModEntry : Mod
 
         // Extended spawn logging
         helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
+
+        // Apply custom TPS if configured (reduces CPU usage for test clients)
+        var clientTps = Environment.GetEnvironmentVariable("CLIENT_TPS");
+        if (!string.IsNullOrEmpty(clientTps) && int.TryParse(clientTps, out var tps) && tps != 60)
+        {
+            _targetTps = Math.Max(1, tps);
+            helper.Events.GameLoop.UpdateTicked += OnFirstTickSetTps;
+        }
+
+        // CLIENT_FPS contract:
+        //   unset or 0 → rendering disabled (NullDisplayDevice installed, draws suppressed)
+        //   N > 0      → rendering capped at N fps via FpsThrottle
+        // The patches are installed unconditionally; the controller drives behavior. The
+        // controller is shared with the server mod, so the client gets the identical
+        // "Rendering Disabled" notice + device swap when watched over VNC during debugging.
+        var clientFpsRaw = Environment.GetEnvironmentVariable("CLIENT_FPS");
+        if (!int.TryParse(clientFpsRaw, out var fps) || fps < 0)
+            fps = 0;
+        _bootFps = fps;
+        _rendering = new RenderingController(Monitor, "Client");
+        _perfStats?.SetTargetFps(fps);
+        _harmony.Patch(
+            original: AccessTools.Method(typeof(Game), "BeginDraw"),
+            prefix: new HarmonyMethod(typeof(ModEntry), nameof(BeginDraw_Prefix))
+        );
+        _harmony.Patch(
+            original: AccessTools.Method(typeof(Game), "Draw", new[] { typeof(GameTime) }),
+            prefix: new HarmonyMethod(typeof(ModEntry), nameof(GameDraw_Prefix))
+        );
+        Monitor.Log(fps > 0
+            ? $"Client FPS cap set to {fps}"
+            : "Client rendering disabled (CLIENT_FPS=0)", LogLevel.Info);
     }
+
+    private void OnFirstTickSetTps(object? sender, UpdateTickedEventArgs e)
+    {
+        Helper.Events.GameLoop.UpdateTicked -= OnFirstTickSetTps;
+        Game1.game1.TargetElapsedTime = TimeSpan.FromMilliseconds(1000.0 / _targetTps);
+        Monitor.Log($"Client TPS set to {_targetTps} (tick interval: {Game1.game1.TargetElapsedTime.TotalMilliseconds:F1}ms)", LogLevel.Info);
+
+        // Cap MaxElapsedTime to one tick. MonoGame's default 500ms catch-up
+        // budget allows ~7 catch-up Updates at CLIENT_TPS=15. Catch-up runs
+        // Updates without Draws, so the framebuffer stays stale and then jumps
+        // forward — producing video frames whose content lags real wall-clock,
+        // which de-syncs the client's video against the server's for the same
+        // wall-clock event. Capping prevents the burst: dropped Updates stay
+        // dropped, but Draw stays paced with wall-clock. The test-client only
+        // runs under tests; no production gating needed.
+        // MaxElapsedTime lives on the MonoGame Game base — accessed through
+        // StardewValley.GameRunner.instance, since Game1 derives from
+        // InstanceGame which only proxies TargetElapsedTime / IsFixedTimeStep.
+        StardewValley.GameRunner.instance.MaxElapsedTime = Game1.game1.TargetElapsedTime;
+        Monitor.Log(
+            $"MaxElapsedTime capped to TargetElapsedTime " +
+            $"({StardewValley.GameRunner.instance.MaxElapsedTime.TotalMilliseconds:F1}ms) — no MonoGame catch-up bursts.",
+            LogLevel.Info);
+    }
+
+    // ReSharper disable once InconsistentNaming
+    public static bool BeginDraw_Prefix(GameRunner __instance)
+    {
+        if (_rendering.ShouldBeginDraw())
+            return true;
+        __instance.SuppressDraw();
+        return false;
+    }
+
+    // ReSharper disable once InconsistentNaming
+    public static bool GameDraw_Prefix(Game __instance, GameTime gameTime)
+        => _rendering.ShouldGameDraw(__instance);
+
+    /// <summary>Sets the client render rate at runtime. 0 disables, N &gt; 0 throttles at N.</summary>
+    public void SetClientFps(int fps) => _rendering.SetFps(fps);
+
+    /// <summary>Current client render rate: 0 = disabled, N &gt; 0 = at N fps.</summary>
+    public int GetClientFps() => _rendering.CurrentFps;
 
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
     {
+        // Capture the real display device now that the game has initialized it, then
+        // apply the boot fps. Must run after Game1.mapDisplayDevice is set (earlier
+        // installs read null and crash); the controller installs NullDisplayDevice when
+        // fps is 0 — same device-swap the server does, since both share the controller.
+        _rendering.SaveOriginalDisplayDevice(Game1.mapDisplayDevice);
+        _rendering.SetFps(_bootFps);
+
         StartServer();
     }
 
@@ -102,7 +214,10 @@ public class ModEntry : Mod
         RegisterEndpoints();
 
         _server.Start();
-        Monitor.Log($"Test API available at http://localhost:{port}/", LogLevel.Info);
+        if (_server.IsListening)
+            Monitor.Log($"Test API available at http://localhost:{port}/", LogLevel.Info);
+        else
+            Monitor.Log($"Test API failed to start on port {port}", LogLevel.Error);
     }
 
     private int GetPortFromEnv()
@@ -215,13 +330,22 @@ public class ModEntry : Mod
             return ExecuteOnGameThread(() => _coopController!.SubmitInviteCode(body.InviteCode));
         });
 
-        // POST /coop/join-lan - Join via LAN/IP address
+        // POST /coop/join-lan - Join via LAN/IP address (requires CoopMenu)
         _server.Post("coop/join-lan", req =>
         {
             var body = TestApiServer.ReadBody<JoinLanRequest>(req);
             var address = body?.Address ?? "localhost";
 
             return ExecuteOnGameThread(() => _coopController!.EnterLanAddress(address));
+        });
+
+        // POST /connect/lan - Direct LAN connect (no menu navigation required)
+        _server.Post("connect/lan", req =>
+        {
+            var body = TestApiServer.ReadBody<JoinLanRequest>(req);
+            var address = body?.Address ?? "localhost";
+
+            return ExecuteOnGameThread(() => _coopController!.ConnectLanDirect(address));
         });
 
         // GET /farmhands - Get available farmhand slots
@@ -345,6 +469,31 @@ public class ModEntry : Mod
         // POST /actions/sleep - Make the player go to sleep
         _server!.Post("actions/sleep", _ =>
             ExecuteOnGameThread(() => _actionsController!.GoToSleep()));
+
+        // POST /actions/warp - Queue a warp to the given location/tile (async; caller polls /status to confirm)
+        _server.Post("actions/warp", req =>
+        {
+            var body = TestApiServer.ReadBody<WarpParams>(req);
+            if (body == null) return new WarpResult { Success = false, Error = "Missing body" };
+            return ExecuteOnGameThread(() => _actionsController!.Warp(body.LocationName, body.TileX, body.TileY));
+        });
+
+        // POST /actions/place_pot - Place a Garden Pot at the given tile on the player's current location
+        _server.Post("actions/place_pot", req =>
+        {
+            var body = TestApiServer.ReadBody<PlacePotParams>(req);
+            if (body == null) return new PlacePotResult { Success = false, Error = "Missing body" };
+            return ExecuteOnGameThread(() => _actionsController!.PlacePot(body.LocationName, body.TileX, body.TileY, body.ClearObstacles));
+        });
+
+        // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
+        _server.Post("actions/plant_crop", req =>
+        {
+            var body = TestApiServer.ReadBody<PlantCropParams>(req);
+            if (body == null) return new PlantCropResult { Success = false, Error = "Missing body" };
+            return ExecuteOnGameThread(() =>
+                _actionsController!.PlantCrop(body.ItemId, body.LocationName, body.TileX, body.TileY));
+        });
     }
 
     private void RegisterWaitEndpoints()
@@ -432,7 +581,48 @@ public class ModEntry : Mod
                     return true;
                 },
                 timeout,
-                "farmhand-menu"
+                "farmhand-menu",
+                // Detect terminal failures so we don't wait the full timeout
+                () =>
+                {
+                    FarmhandMenu? farmhandMenu = null;
+                    if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is FarmhandMenu sub)
+                        farmhandMenu = sub;
+                    else if (Game1.activeClickableMenu is FarmhandMenu direct)
+                        farmhandMenu = direct;
+
+                    if (farmhandMenu == null)
+                        return null; // Menu not visible yet, keep waiting
+
+                    // No client at all
+                    if (farmhandMenu.client == null)
+                        return "Connection failed (no client)";
+
+                    // Connection timed out or peer disconnected
+                    if (farmhandMenu.client.timedOut)
+                        return "Connection failed (timed out)";
+
+                    // Server/lobby sent an error message. When connectionMessage is set with
+                    // no availableFarmhands, checkListPopulation sets approvingFarmhand=true.
+                    // If approvingFarmhand is true, the game is still actively waiting. The
+                    // server registered a whenGameAvailable callback that will re-send the
+                    // farmhand list once the event finishes (e.g., day transition). Only treat
+                    // it as terminal when approvingFarmhand is false (true connection failure).
+                    if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand
+                        && farmhandMenu.client.connectionMessage != null
+                        && farmhandMenu.client.availableFarmhands == null)
+                        return $"Connection failed: {farmhandMenu.client.connectionMessage}";
+
+                    // Finished loading but no slots (no cabins available)
+                    if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand)
+                    {
+                        var slots = menuSlotsField?.GetValue(farmhandMenu) as System.Collections.IList;
+                        if (slots != null && slots.Count == 0)
+                            return "No cabins available (server has no farmhand slots)";
+                    }
+
+                    return null; // No terminal failure detected, keep waiting
+                }
             );
         });
 
@@ -569,7 +759,7 @@ public class ModEntry : Mod
             var timeout = DateTime.UtcNow.AddSeconds(5);
             while (!task.IsCompleted && DateTime.UtcNow < timeout)
             {
-                Thread.Sleep(16);
+                Thread.Sleep(TickSleepMs);
             }
 
             return task.IsCompleted ? task.Result : new ScreenshotResult
@@ -602,29 +792,44 @@ public class ModEntry : Mod
             return new { success = true, message = "Join initiated - check logs for diagnostic output" };
         });
 
-        // GET /openapi.json - OpenAPI 3.0 specification
-        _server.GetRaw("openapi.json", _ => (
-            OpenApiGenerator.GenerateJson(
-                typeof(ApiDefinitions),
-                "JunimoTestClient API",
-                "0.1.0",
-                "HTTP API for automated testing of Stardew Valley client"),
-            "application/json"));
+        // The OpenAPI spec + Swagger/Scalar explorer UIs are a manual debugging aid,
+        // not part of automated test flow — no test or test-ui fetches them. Gated off
+        // by default; set SDVD_TEST_CLIENT_API_EXPLORER=1 to expose them when poking at
+        // the client's HTTP surface by hand.
+        if (IsApiExplorerEnabled())
+        {
+            // GET /openapi.json - OpenAPI 3.0 specification
+            _server.GetRaw("openapi.json", _ => (
+                OpenApiGenerator.GenerateJson(
+                    typeof(ApiDefinitions),
+                    "JunimoTestClient API",
+                    "0.1.0",
+                    "HTTP API for automated testing of Stardew Valley client"),
+                "application/json"));
 
-        // GET /openapi.yaml - OpenAPI 3.0 specification (YAML)
-        _server.GetRaw("openapi.yaml", _ => (
-            OpenApiGenerator.GenerateYaml(
-                typeof(ApiDefinitions),
-                "JunimoTestClient API",
-                "0.1.0",
-                "HTTP API for automated testing of Stardew Valley client"),
-            "application/x-yaml"));
+            // GET /openapi.yaml - OpenAPI 3.0 specification (YAML)
+            _server.GetRaw("openapi.yaml", _ => (
+                OpenApiGenerator.GenerateYaml(
+                    typeof(ApiDefinitions),
+                    "JunimoTestClient API",
+                    "0.1.0",
+                    "HTTP API for automated testing of Stardew Valley client"),
+                "application/x-yaml"));
 
-        // GET /docs - Scalar API documentation UI
-        _server.GetRaw("docs", _ => (GetScalarHtml(), "text/html"));
+            // GET /docs - Scalar API documentation UI
+            _server.GetRaw("docs", _ => (GetScalarHtml(), "text/html"));
 
-        // GET /swagger - Swagger UI
-        _server.GetRaw("swagger", _ => (GetSwaggerHtml(), "text/html"));
+            // GET /swagger - Swagger UI
+            _server.GetRaw("swagger", _ => (GetSwaggerHtml(), "text/html"));
+
+            Monitor.Log("API explorer enabled: /openapi.json, /openapi.yaml, /docs, /swagger", LogLevel.Info);
+        }
+    }
+
+    private static bool IsApiExplorerEnabled()
+    {
+        var raw = Environment.GetEnvironmentVariable("SDVD_TEST_CLIENT_API_EXPLORER");
+        return raw is "1" or "true" or "yes" || string.Equals(raw, "on", StringComparison.OrdinalIgnoreCase);
     }
 
     private string GetSwaggerHtml()
@@ -675,17 +880,40 @@ public class ModEntry : Mod
 
     #region Game Thread Execution
 
+    /// <summary>
+    /// Sleep duration for polling loops: one game tick, derived from the configured TPS.
+    /// </summary>
+    private static int TickSleepMs => Math.Max(1, (int)Game1.game1.TargetElapsedTime.TotalMilliseconds);
+
     private readonly Queue<Action> _gameActions = new();
     private readonly object _actionLock = new();
+    private long _lastGameTickTicks = DateTime.UtcNow.Ticks;
 
-    private T ExecuteOnGameThread<T>(Func<T> action, int timeoutMs = 5000)
+    private T ExecuteOnGameThread<T>(Func<T> action, int timeoutMs = GameThreadFreezeThresholdMs)
     {
         T result = default!;
         var completed = false;
         Exception? error = null;
+        // Atomic claim flag: 0=pending, 1=timed-out, 2=executing.
+        // Both sides use Interlocked.CompareExchange so exactly one wins.
+        // CancellationTokenSource.IsCancellationRequested is unreliable here
+        // because the compiler hoists the captured CTS into a non-volatile
+        // display class field, allowing the JIT to cache the read in Release
+        // builds (see dotnet/roslyn#2234). Interlocked.CompareExchange emits
+        // LOCK CMPXCHG which cannot be optimized away.
+        var state = 0;
+
+        // Capture the ambient correlation id on the HTTP handler thread so
+        // ClientEventLog emissions from the game-loop thread still carry it.
+        // The game loop pumps its queue on its own thread; AsyncLocal does
+        // not flow across that boundary, so we re-bind it inside the action.
+        var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
 
         QueueGameAction(() =>
         {
+            if (Interlocked.CompareExchange(ref state, 2, 0) != 0)
+                return; // Caller timed out (state was 1); skip to avoid corrupting game state
+            using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
             try
             {
                 result = action();
@@ -701,11 +929,32 @@ public class ModEntry : Mod
             }
         });
 
-        // Wait for completion
-        var timeout = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (!completed && DateTime.UtcNow < timeout)
+        // Wait for completion. Instead of a fixed wall-clock deadline, keep waiting
+        // as long as the game thread is still ticking. A single tick can take 6+ seconds
+        // during multiplayer connection setup (synchronous content loading). The action
+        // will execute when that tick finishes. Only timeout if the game thread has
+        // stopped ticking entirely (frozen/deadlocked).
+        while (!completed)
         {
-            Thread.Sleep(16); // ~60fps
+            Thread.Sleep(TickSleepMs);
+            var lastTick = new DateTime(Interlocked.Read(ref _lastGameTickTicks));
+            var msSinceLastTick = (DateTime.UtcNow - lastTick).TotalMilliseconds;
+            if (msSinceLastTick > timeoutMs)
+            {
+                if (Interlocked.CompareExchange(ref state, 1, 0) != 0)
+                {
+                    // state was 2: action already claimed by the game thread and
+                    // is executing. Let it finish rather than abandoning mid-execution
+                    // -- returning early while the action mutates game state is what
+                    // caused the original duplicate-join crash.
+                    continue;
+                }
+                int queueDepth;
+                lock (_actionLock) { queueDepth = _gameActions.Count; }
+                throw new TimeoutException(
+                    $"Game thread frozen: no tick for {msSinceLastTick:F0}ms " +
+                    $"(threshold: {timeoutMs}ms, queueDepth={queueDepth})");
+            }
         }
 
         if (error != null)
@@ -724,6 +973,9 @@ public class ModEntry : Mod
 
     private void OnUpdateTicked(object? sender, UnvalidatedUpdateTickedEventArgs e)
     {
+        // Record tick time so ExecuteOnGameThread can distinguish "long tick" from "frozen"
+        Interlocked.Exchange(ref _lastGameTickTicks, DateTime.UtcNow.Ticks);
+
         // Execute any queued actions on the game thread
         lock (_actionLock)
         {
@@ -753,22 +1005,33 @@ public class ModEntry : Mod
 
     #region Wait/Polling
 
-    private WaitResult WaitForCondition(Func<bool> condition, int timeoutMs, string conditionName)
+    private WaitResult WaitForCondition(Func<bool> condition, int timeoutMs, string conditionName,
+        Func<string?>? failureDetector = null)
     {
         var startTime = DateTime.UtcNow;
         var deadline = startTime.AddMilliseconds(timeoutMs);
 
+        // Capture ambient correlation id on the HTTP handler thread; re-bind
+        // inside the game-thread continuation so any event emitted from the
+        // condition/failureDetector callbacks carries it.
+        var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
+
         while (DateTime.UtcNow < deadline)
         {
             bool satisfied = false;
+            string? failureReason = null;
 
             // Check condition on game thread
             var checkCompleted = false;
             QueueGameAction(() =>
             {
+                using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
                 try
                 {
                     satisfied = condition();
+                    // Only check for terminal failure if condition not yet satisfied
+                    if (!satisfied && failureDetector != null)
+                        failureReason = failureDetector();
                 }
                 catch
                 {
@@ -784,7 +1047,7 @@ public class ModEntry : Mod
             var checkTimeout = DateTime.UtcNow.AddSeconds(2);
             while (!checkCompleted && DateTime.UtcNow < checkTimeout)
             {
-                Thread.Sleep(16);
+                Thread.Sleep(TickSleepMs);
             }
 
             if (satisfied)
@@ -793,6 +1056,18 @@ public class ModEntry : Mod
                 {
                     Success = true,
                     Condition = conditionName,
+                    WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds
+                };
+            }
+
+            // Early exit on terminal failure
+            if (failureReason != null)
+            {
+                return new WaitResult
+                {
+                    Success = false,
+                    Condition = conditionName,
+                    Error = failureReason,
                     WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds
                 };
             }
@@ -824,7 +1099,8 @@ public class ModEntry : Mod
         LogSpawnInfo("SaveLoaded");
 
         // Increase chat buffer size for testing (default is 10, which truncates long command outputs)
-        // TODO: Add pagination to server command output so commands with many lines don't overflow the chat buffer
+        // !lobby help produces 15 messages; 20 gives headroom. Sequence-based deduplication
+        // makes buffer size less critical than before.
         if (Game1.chatBox != null)
         {
             Game1.chatBox.maxMessages = 20;
@@ -836,7 +1112,9 @@ public class ModEntry : Mod
     {
         if (e.IsLocalPlayer)
         {
-            Monitor.Log($"[Spawn] Player warped: {e.OldLocation?.Name ?? "null"} -> {e.NewLocation?.Name ?? "null"}", LogLevel.Info);
+            Monitor.Log($"[Spawn] Player warped: {e.OldLocation?.NameOrUniqueName ?? "null"} -> {e.NewLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+            Monitor.Log($"[Spawn] OldLocation.isStructure={e.OldLocation?.isStructure?.Value}, NewLocation.isStructure={e.NewLocation?.isStructure?.Value}", LogLevel.Debug);
+            Monitor.Log($"[Spawn] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
             LogSpawnInfo("AfterWarp");
         }
     }
@@ -849,29 +1127,28 @@ public class ModEntry : Mod
 
     private void LogSpawnInfo(string context)
     {
-        // Verbose spawn debugging - commented out to reduce log noise
-        // var player = Game1.player;
-        // if (player == null)
-        // {
-        //     Monitor.Log($"[Spawn:{context}] Player is null", LogLevel.Warn);
-        //     return;
-        // }
-        // Monitor.Log($"[Spawn:{context}] ========== SPAWN DEBUG INFO ==========", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] Player ID: {player.UniqueMultiplayerID}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] Player Name: {player.Name}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] isCustomized: {player.isCustomized.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] currentLocation: {player.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] Position: {player.Position}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] TileLocation: {player.Tile}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] homeLocation: {player.homeLocation.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] lastSleepLocation: {player.lastSleepLocation.Value ?? "null"}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] lastSleepPoint: {player.lastSleepPoint.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] sleptInTemporaryBed: {player.sleptInTemporaryBed.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] disconnectDay: {player.disconnectDay.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] disconnectLocation: {player.disconnectLocation.Value ?? "null"}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] disconnectPosition: {player.disconnectPosition.Value}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Alert);
-        // Monitor.Log($"[Spawn:{context}] ======================================", LogLevel.Alert);
+        var player = Game1.player;
+        if (player == null)
+        {
+            Monitor.Log($"[Spawn:{context}] Player is null", LogLevel.Warn);
+            return;
+        }
+        Monitor.Log($"[Spawn:{context}] ========== SPAWN DEBUG INFO ==========", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] Player ID: {player.UniqueMultiplayerID}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] Player Name: {player.Name}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] isCustomized: {player.isCustomized.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] currentLocation: {player.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] Position: {player.Position}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] TileLocation: {player.Tile}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] homeLocation: {player.homeLocation.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] lastSleepLocation: {player.lastSleepLocation.Value ?? "null"}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] lastSleepPoint: {player.lastSleepPoint.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] sleptInTemporaryBed: {player.sleptInTemporaryBed.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] disconnectDay: {player.disconnectDay.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] disconnectLocation: {player.disconnectLocation.Value ?? "null"}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] disconnectPosition: {player.disconnectPosition.Value}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+        Monitor.Log($"[Spawn:{context}] ======================================", LogLevel.Debug);
     }
 
     #endregion
@@ -886,8 +1163,6 @@ public class ModEntry : Mod
 
         try
         {
-            var harmony = new Harmony("JunimoTestClient.SteamDiagnostics");
-
             // Patch SteamMatchmaking.SetLobbyGameServer to log what the vanilla client sends
             var setLobbyGameServerMethod = AccessTools.Method(
                 typeof(SteamMatchmaking),
@@ -895,7 +1170,7 @@ public class ModEntry : Mod
 
             if (setLobbyGameServerMethod != null)
             {
-                harmony.Patch(
+                _harmony.Patch(
                     setLobbyGameServerMethod,
                     prefix: new HarmonyMethod(typeof(ModEntry), nameof(SetLobbyGameServer_Prefix)));
                 Monitor.Log("Patched SteamMatchmaking.SetLobbyGameServer for diagnostics", LogLevel.Debug);
