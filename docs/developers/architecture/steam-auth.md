@@ -42,10 +42,10 @@ The steam-auth service runs in a separate container to isolate Steam credentials
 
 ## Security Benefits
 
-1. **Credential Isolation** — Steam username and password never leave the steam-auth container
-2. **Token Security** — Refresh tokens remain private in a dedicated volume
-3. **Minimal Exposure** — Only ephemeral encrypted app tickets are exposed to the game server
-4. **Shared Game Data** — Game files are downloaded once and shared via volume
+1. **Credential Isolation**: Steam username and password never leave the steam-auth container
+2. **Token Security**: Refresh tokens remain private in a dedicated volume
+3. **Minimal Exposure**: Only ephemeral encrypted app tickets are exposed to the game server
+4. **Shared Game Data**: Game files are downloaded once and shared via volume
 
 ## API Endpoints
 

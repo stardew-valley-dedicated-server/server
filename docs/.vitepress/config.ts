@@ -131,6 +131,7 @@ export default withMermaid(defineConfig({
                         { text: "Networking", link: "/admins/operations/networking" },
                         { text: "Upgrading", link: "/admins/operations/upgrading" },
                         { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
+                        { text: "Modern Docker Image", link: "/admins/operations/modern-docker" },
                     ],
                 },
                 {
@@ -213,6 +214,19 @@ export default withMermaid(defineConfig({
                     items: [
                         { text: "Steam Auth", link: "/developers/architecture/steam-auth" },
                         { text: "Networking Internals", link: "/developers/architecture/networking" },
+                        { text: "Game Engine Reference", link: "/developers/architecture/game-engine-notes" },
+                        { text: "Mod Architecture", link: "/developers/architecture/mod-architecture" },
+                        { text: "Events Schema", link: "/developers/events-schema" },
+                    ],
+                },
+                {
+                    text: "Testing",
+                    items: [
+                        { text: "E2E Testing", link: "/developers/testing/e2e-testing" },
+                        { text: "Test Harness Reference", link: "/developers/testing/test-harness" },
+                        { text: "Remote Host Setup", link: "/developers/testing/remote-host-setup" },
+                        { text: "Manual Festival Testing", link: "/developers/testing/festivals-manual" },
+                        { text: "Test Failure Runbook", link: "/developers/testing/test-failure-runbook" },
                     ],
                 },
                 {
@@ -227,6 +241,7 @@ export default withMermaid(defineConfig({
                     items: [
                         { text: "Building from Source", link: "/developers/advanced/building-from-source" },
                         { text: "Decompiling", link: "/developers/advanced/decompiling" },
+                        { text: "Client Manipulation Techniques", link: "/developers/advanced/client-manipulation-techniques" },
                     ],
                 },
             ],

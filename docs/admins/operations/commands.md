@@ -26,8 +26,8 @@ docker compose exec server attach-cli
 
 The CLI provides a split-pane tmux interface:
 
-- **Top pane** — Server logs (read-only, scrollable with mouse)
-- **Bottom pane** — Interactive command input
+- **Top pane**: Server logs (read-only, scrollable with mouse)
+- **Bottom pane**: Interactive command input
 
 ### CLI Commands
 
@@ -90,9 +90,7 @@ Control visual rendering for performance:
 
 | Command | Description |
 |---------|-------------|
-| `rendering on` | Enable rendering |
-| `rendering off` | Disable rendering |
-| `rendering toggle` | Toggle rendering state |
+| `rendering <fps>` | Set render rate (0 disables) |
 | `rendering status` | Show current state |
 
 ### invitecode

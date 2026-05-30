@@ -34,7 +34,7 @@ Ask your admin to verify they are using a dedicated Steam account for the server
 
 ## Getting Help
 
-1. **Ask your server admin** — They can check logs
-2. **Join Discord** — [discord.gg/w23GVXdSF7](https://discord.gg/w23GVXdSF7)
+1. **Ask your server admin**: They can check logs
+2. **Join Discord**: [discord.gg/w23GVXdSF7](https://discord.gg/w23GVXdSF7)
 
 When asking for help, include: error message, your platform (Steam/GOG), and whether you have mods.

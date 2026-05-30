@@ -12,7 +12,7 @@ Control how player cabins are placed and managed on your farm.
 
 ## CabinStack (Default)
 
-Cabins exist but are moved off the visible map. When a player warps to "their cabin," they go to the hidden location. From the player's perspective, they have a cabin — it's just not cluttering the farm.
+Cabins exist but are moved off the visible map. When a player warps to "their cabin," they go to the hidden location. From the player's perspective, they have a cabin; it's just not cluttering the farm.
 
 Benefits:
 - Clean farm layout regardless of player count

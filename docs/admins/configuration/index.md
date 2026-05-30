@@ -20,18 +20,12 @@ JunimoServer uses two configuration mechanisms:
 
 ### server-settings.json
 
-Game settings like farm name, farm type, cabin strategy, and player limits. Created automatically on first startup inside the Docker `settings` volume.
+Game settings like farm name, farm type, cabin strategy, and player limits. Created automatically on first startup at `.local-container/settings/server-settings.json` (relative to your `docker-compose.yml`).
 
-To edit:
+To edit, open the file directly with any text editor and restart:
 
 ```sh
-# View current settings
-docker compose exec server cat /data/settings/server-settings.json
-
-# Copy out for editing
-docker compose cp server:/data/settings/server-settings.json ./server-settings.json
-# ... edit the file ...
-docker compose cp ./server-settings.json server:/data/settings/server-settings.json
+docker compose restart
 ```
 
 See [Server Settings](/admins/configuration/server-settings) for full reference.

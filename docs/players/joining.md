@@ -22,8 +22,8 @@ When both Steam and GOG codes are available, Steam is recommended for better con
 ## How to Connect
 
 1. Launch Stardew Valley
-2. Click **Co-op** → **Join LAN Game**
-3. Enter the invite code
+2. Click **Co-op** → **Enter Invite Code**
+3. Paste the invite code
 4. Click **OK**
 
 ## Password-Protected Servers
@@ -37,7 +37,7 @@ If the server requires a password, you'll spawn in a lobby. Type in chat:
 On success, you'll warp to your cabin.
 
 ::: warning
-Don't drop items while in the lobby — they will be lost.
+Don't drop items while in the lobby. They will be lost.
 :::
 
 ## First Time vs Returning
@@ -53,4 +53,4 @@ Don't drop items while in the lobby — they will be lost.
 | GOG Galaxy | GOG | Works through most networks (~50% success) |
 | Direct IP | Any | Requires port forwarding |
 
-Most servers use Steam SDR or GOG Galaxy — no special setup needed on your end.
+Most servers use Steam SDR or GOG Galaxy. No special setup needed on your end.

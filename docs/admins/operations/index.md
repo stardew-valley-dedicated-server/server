@@ -4,7 +4,7 @@
 
 | Interface | Access | Best For |
 |-----------|--------|----------|
-| **Your Game Client** | Co-op → Enter Invite Code | Playing and testing — just connect like any multiplayer game |
+| **Your Game Client** | Co-op → Enter Invite Code | Playing and testing. Just connect like any multiplayer game. |
 | [CLI Console](/admins/operations/commands) | `docker compose exec server attach-cli` | Server commands, logs, invite codes |
 | [Chat Commands](/admins/operations/commands#chat-commands) | In-game chat | Player management, admin tasks |
 | [REST API](/developers/api/introduction) | HTTP requests | Automation, external tools |
@@ -52,4 +52,4 @@ Save files are stored in the `saves` Docker volume. See [Backup & Recovery](/fea
 - [Console & Chat Commands](/admins/operations/commands)
 - [Networking](/admins/operations/networking)
 - [Upgrading](/admins/operations/upgrading)
-- [Web Interface (VNC)](/admins/operations/vnc) — advanced debugging only
+- [Web Interface (VNC)](/admins/operations/vnc) (advanced debugging only)

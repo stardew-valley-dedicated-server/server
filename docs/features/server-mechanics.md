@@ -47,7 +47,7 @@ Network desyncs can freeze the game. The server automatically kicks stuck player
 | Stuck at day transition | 20 seconds | Kicked |
 | Not ready during save | 60 seconds | Kicked |
 
-Kicked players can reconnect immediately — progress is not lost.
+Kicked players can reconnect immediately. Progress is not lost.
 
 ## Chest Protection
 

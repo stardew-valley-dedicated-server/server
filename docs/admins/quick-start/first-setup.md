@@ -19,7 +19,8 @@ Tokens last ~200 days. Re-run setup before expiry.
 ## Verify Server
 
 ```sh
-docker compose ps      # Both containers should show "Up"
+docker compose ps      # "server" and "steam-auth" should show "Up"
+                       # "discord-bot" will show exited if Discord is not configured (this is normal)
 docker compose logs -f # Look for "Ready for players"
 ```
 
@@ -39,7 +40,7 @@ Once you have the invite code, connect like any other multiplayer game:
 3. Paste the invite code
 4. You're in!
 
-No special tools needed — just your normal game client.
+No special tools needed. Just your normal game client.
 
 ## Troubleshooting
 

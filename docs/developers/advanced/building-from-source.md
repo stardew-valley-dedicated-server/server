@@ -79,11 +79,13 @@ The Makefile provides several useful commands:
 
 | Command | Description |
 |---------|-------------|
+| `make install` | Install development dependencies (commitlint, git hooks) |
+| `make setup` | Run first-time Steam authentication and game download |
 | `make up` | Build and start all containers |
 | `make down` | Stop all containers |
-| `make setup` | Install development dependencies |
 | `make logs` | Follow container logs |
-| `make clean` | Remove built images |
+| `make cli` | Attach to interactive server console |
+| `make clean` | Remove ALL containers, volumes, and images |
 
 ## Project Structure
 
@@ -92,9 +94,14 @@ server/
 ├── mod/                    # JunimoServer SMAPI mod
 │   └── JunimoServer/       # Main mod source
 ├── docker/                 # Docker configuration
-├── steam-service/          # Steam authentication service
-├── discord-bot/            # Discord bot integration
 ├── docs/                   # Documentation (VitePress)
-└── tools/                  # Utility scripts
+├── tests/                  # Test infrastructure
+│   ├── JunimoServer.Tests/ # E2E test assembly
+│   ├── JunimoServer.TestRunner/ # Custom test runner
+│   ├── test-client/        # E2E test client (SMAPI mod)
+│   └── test-ui/            # Test monitoring web UI
+└── tools/                  # Utility tools
+    ├── steam-service/      # Steam authentication service
+    └── discord-bot/        # Discord bot integration
 ```
 

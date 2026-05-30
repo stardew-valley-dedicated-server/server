@@ -39,7 +39,7 @@ function closeAnnouncement() {
         <template #layout-top>
             <div v-if="showAnnouncement" class="announcement-bar">
                 <span class="announcement-content">
-                    ⚠️ The latest release is unstable — use
+                    ⚠️ The latest release is unstable. Use
                     <a :href="announcementLink" class="announcement-link"
                         >preview builds</a
                     >

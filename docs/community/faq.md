@@ -49,7 +49,7 @@ Yes, but use a **separate Steam account** for the server. Steam doesn't allow th
 - Dual-core CPU minimum
 - 1-2 GB disk space
 
-These are ballpark estimates — actual requirements vary based on mods and player count.
+These are ballpark estimates. Actual requirements vary based on mods and player count.
 
 ### Can I run the server on Windows?
 
@@ -68,15 +68,15 @@ Yes. JunimoServer supports SMAPI mods. See [Mod Support](/features/mods).
 ### Do all players need the same mods?
 
 Depends on the mod type:
-- **Server-only mods** — Only on server
-- **Content mods** (new items, NPCs, maps) — Server AND all players
-- **Client-only mods** (UI tweaks) — Individual players
+- **Server-only mods**: Only on server
+- **Content mods** (new items, NPCs, maps): Server AND all players
+- **Client-only mods** (UI tweaks): Individual players
 
 ## Troubleshooting
 
-### VNC shows a black screen — is the server broken?
+### VNC shows a black screen. Is the server broken?
 
-No. The server is working correctly. By default, `DISABLE_RENDERING=true` which means the server doesn't draw graphics to its own display (saving CPU). Players always see the game normally on their own screens — connect with your game client to verify.
+No. The server is working correctly. By default, `SERVER_FPS=0` which means the server doesn't draw graphics to its own display (saving CPU). Players always see the game normally on their own screens. Connect with your game client to verify.
 
 You don't need VNC to play or manage the server. Use the CLI (`docker compose exec server attach-cli`) for server commands.
 

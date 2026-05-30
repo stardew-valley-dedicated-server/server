@@ -202,10 +202,10 @@ All secrets use the `DEPLOY_` prefix.
 | `DEPLOY_VNC_PASSWORD` | Yes | VNC access password |
 | `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web interface |
 
-_¹ Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both—if both are set, refresh token is used)._
+_¹ Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both; if both are set, refresh token is used)._
 
 ::: tip API Key
-Generate a secure API key with: `bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
+Generate a secure API key with: `openssl rand -base64 32`
 :::
 
 ::: tip

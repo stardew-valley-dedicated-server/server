@@ -42,7 +42,7 @@ Direct IP connections don't provide user IDs. Players may lose farmhand ownershi
 | 5800 | TCP | VNC web interface | Only for remote access |
 | 8080 | TCP | HTTP API | Only for external tools |
 
-Steam SDR uses these ports internally but traffic goes through Valve's relay — no port forwarding required for most setups.
+Steam SDR uses these ports internally but traffic goes through Valve's relay. No port forwarding required for most setups.
 
 ### Changing Ports
 
@@ -94,12 +94,12 @@ docker compose exec server netdebug gog-requests
 
 **Remote players** (different network) usually connect fine.
 
-**Same-network players** often have issues due to "hairpinning" — traffic going out and coming back to the same network.
+**Same-network players** often have issues due to "hairpinning," where traffic goes out and comes back to the same network.
 
 Check `netdebug nat` output:
 
-- **Hairpinning: Not supported** — same-network connections won't work
-- **NAT Type: Strict** — some connections may fail
+- **Hairpinning: Not supported** means same-network connections won't work
+- **NAT Type: Strict** means some connections may fail
 
 ::: tip Same-Network Workaround
 Players on the same network can try:
@@ -134,7 +134,7 @@ Check outbound network access and firewall rules for UDP.
 [Steam] SDR relay status: k_ESteamNetworkingAvailability_Unknown
 ```
 
-SDR takes a few seconds to initialize — wait and retry.
+SDR takes a few seconds to initialize. Wait and retry.
 
 ### GOG Clients Can't Connect
 
@@ -148,18 +148,18 @@ If you need to configure firewalls, allow:
 
 **For Steam/GOG players (default setup):**
 
-- Outbound UDP (any port) — for relay connections
-- Outbound TCP 443 — for Steam API
+- Outbound UDP (any port), for relay connections
+- Outbound TCP 443, for Steam API
 
 **For direct IP connections (if enabled):**
 
-- Inbound UDP 24642 — game traffic
+- Inbound UDP 24642, game traffic
 
 **For remote VNC access:**
 
-- Inbound TCP 5800 — VNC web interface
+- Inbound TCP 5800, VNC web interface
 
 **For external API access:**
 
-- Inbound TCP 8080 — REST API
+- Inbound TCP 8080, REST API
 
