@@ -1,5 +1,6 @@
 using System.Reflection.Emit;
 using HarmonyLib;
+using JunimoServer.Shared;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -9,6 +10,7 @@ namespace JunimoTestClient.GameTweaks;
 
 /// <summary>
 /// Applies convenience tweaks for testing:
+/// - Resizes game window to match X display (no black borders in screenshots)
 /// - Removes minimum window size restriction (1280x720 -> 400x300)
 /// - Prevents game from pausing when unfocused
 /// - Mutes all audio (music, sound, ambient, footsteps)
@@ -23,11 +25,11 @@ public class ConvenienceTweaks
     private const int AbsoluteMinWidth = 400;
     private const int AbsoluteMinHeight = 300;
 
-    public ConvenienceTweaks(IModHelper helper, IMonitor monitor)
+    public ConvenienceTweaks(IModHelper helper, IMonitor monitor, Harmony harmony)
     {
         _helper = helper;
         _monitor = monitor;
-        _harmony = new Harmony("JunimoHost.TestClient.Tweaks");
+        _harmony = harmony;
     }
 
     public void Apply()
@@ -37,6 +39,12 @@ public class ConvenienceTweaks
 
         // Skip screen fade animations (warps, sleep, day transitions)
         PatchInstantFades();
+
+        // Guard against vanilla NRE in GameLocation.UpdateWhenCurrentLocation during warps
+        PatchLocationUpdateNullGuard();
+
+        // Resize game window to match X display (no black borders in screenshots)
+        ForceDisplaySize();
 
         // Disable pause when unfocused
         DisablePauseOnUnfocus();
@@ -89,18 +97,27 @@ public class ConvenienceTweaks
         return codes;
     }
 
+    private void ForceDisplaySize()
+    {
+        // Pin the zoom/UI scale in every game mode (revert-proof against save loads and the
+        // gameMode-gated UI-scale getter), then resize the window to match the X display on
+        // GameLaunched. Shared with the server mod via JunimoServer.Shared.DisplaySizing.
+        DisplaySizing.Install(_harmony);
+        _helper.Events.GameLoop.GameLaunched += (_, _) => DisplaySizing.ApplyFromEnv(_monitor);
+    }
+
     private void PatchInstantFades()
     {
         try
         {
-            // Patch UpdateFadeAlpha — screen-level fades (warps, transitions)
+            // Patch UpdateFadeAlpha: screen-level fades (warps, transitions)
             // Forces alpha to overshoot value so the next frame's threshold check
             // in UpdateFade fires the completion callbacks immediately.
             var updateFadeAlpha = AccessTools.Method(typeof(ScreenFade), "UpdateFadeAlpha");
             var fadeAlphaPostfix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateFadeAlpha_Postfix));
             _harmony.Patch(updateFadeAlpha, postfix: fadeAlphaPostfix);
 
-            // Patch UpdateGlobalFade — global fades (menus, sleep, day end)
+            // Patch UpdateGlobalFade: global fades (menus, sleep, day end)
             // Forces alpha to the threshold value so the next frame fires the
             // afterFade callback immediately.
             var updateGlobalFade = AccessTools.Method(typeof(ScreenFade), "UpdateGlobalFade");
@@ -116,7 +133,7 @@ public class ConvenienceTweaks
     }
 
     /// <summary>
-    /// Postfix for ScreenFade.UpdateFadeAlpha — forces instant screen fades.
+    /// Postfix for ScreenFade.UpdateFadeAlpha. Forces instant screen fades.
     /// When fading in (to black): sets alpha to 1.2f so UpdateFade's >1.1f check
     /// fires onFadeToBlackComplete on the next frame.
     /// When fading out (to clear): sets alpha to -0.2f so UpdateFade's less-than -0.1f check
@@ -131,7 +148,7 @@ public class ConvenienceTweaks
     }
 
     /// <summary>
-    /// Postfix for ScreenFade.UpdateGlobalFade — forces instant global fades.
+    /// Postfix for ScreenFade.UpdateGlobalFade. Forces instant global fades.
     /// When fadeIn (clearing to transparent): sets alpha to 0f so the next frame's
     /// less-than-or-equal 0f check fires the afterFade callback.
     /// When !fadeIn (darkening to black): sets alpha to 1f so the next frame's
@@ -203,8 +220,31 @@ public class ConvenienceTweaks
         }
     }
 
-    public void Dispose()
+    private void PatchLocationUpdateNullGuard()
     {
-        _harmony.UnpatchAll("JunimoHost.TestClient.Tweaks");
+        try
+        {
+            // Vanilla bug: GameLocation.UpdateWhenCurrentLocation accesses
+            // Game1.player.currentLocation.Equals(this) without a null check.
+            // During warps/day transitions, currentLocation is transiently null,
+            // causing a NRE that SMAPI catches and logs as [ERROR game].
+            var original = AccessTools.Method(typeof(GameLocation), nameof(GameLocation.UpdateWhenCurrentLocation));
+            var prefix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateWhenCurrentLocation_Prefix));
+            _harmony.Patch(original, prefix: prefix);
+            _monitor.Log("Patched UpdateWhenCurrentLocation with null-safety guard", LogLevel.Trace);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Failed to patch UpdateWhenCurrentLocation: {ex.Message}", LogLevel.Error);
+        }
+    }
+
+    /// <summary>
+    /// Skips GameLocation.UpdateWhenCurrentLocation when Game1.player.currentLocation
+    /// is null. Prevents a vanilla NRE during warp/day-transition frames.
+    /// </summary>
+    private static bool UpdateWhenCurrentLocation_Prefix()
+    {
+        return Game1.player?.currentLocation != null;
     }
 }

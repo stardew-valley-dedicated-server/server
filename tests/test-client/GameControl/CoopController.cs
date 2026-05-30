@@ -162,6 +162,7 @@ public class CoopController
 
     /// <summary>
     /// Enter a LAN/IP address and attempt to join.
+    /// Requires CoopMenu to be active.
     /// </summary>
     public JoinResult EnterLanAddress(string address)
     {
@@ -199,6 +200,38 @@ public class CoopController
     }
 
     /// <summary>
+    /// Connect to a LAN/IP address directly without requiring CoopMenu.
+    /// Works from any menu state (title screen, coop menu, etc.).
+    /// </summary>
+    public JoinResult ConnectLanDirect(string address)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                address = "localhost";
+            }
+
+            var multiplayer = _reflection.GetMultiplayer();
+            var client = multiplayer.InitClient(new LidgrenClient(address));
+            SetMenu(new FarmhandMenu(client));
+
+            _monitor.Log($"Direct LAN connect to: {address}", LogLevel.Trace);
+
+            return new JoinResult
+            {
+                Success = true,
+                Message = $"Connecting to {address}..."
+            };
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Failed direct LAN connect: {ex.Message}", LogLevel.Error);
+            return new JoinResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
     /// Get information about available farmhand slots.
     /// </summary>
     public FarmhandSelectionInfo GetFarmhandSlots()
@@ -217,7 +250,7 @@ public class CoopController
         {
             InFarmhandMenu = true,
             IsConnecting = farmhandMenu.gettingFarmhands || farmhandMenu.approvingFarmhand,
-            Slots = new List<FarmhandSlotInfo>()
+            Farmhands = new List<FarmhandSlotInfo>()
         };
 
         // Get menu slots via reflection
@@ -257,7 +290,7 @@ public class CoopController
                     }
                 }
 
-                info.Slots.Add(slotInfo);
+                info.Farmhands.Add(slotInfo);
             }
         }
 
@@ -465,7 +498,7 @@ public class FarmhandSelectionInfo
     public bool InFarmhandMenu { get; set; }
     public bool IsConnecting { get; set; }
     public string? Error { get; set; }
-    public List<FarmhandSlotInfo> Slots { get; set; } = new();
+    public List<FarmhandSlotInfo> Farmhands { get; set; } = new();
 }
 
 public class FarmhandSlotInfo

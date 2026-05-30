@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using StardewModdingAPI;
 
 namespace JunimoTestClient.Diagnostics;
@@ -35,8 +36,49 @@ public class ErrorCapture
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        CaptureError("UnobservedTaskException", e.Exception.Message, e.Exception.StackTrace, e.Exception.GetType().Name);
         e.SetObserved(); // Prevent crash
+
+        // Filter benign async teardown exceptions that surface during network disconnect.
+        // These are fire-and-forget socket operations in .NET's networking stack (Galaxy SDK,
+        // game multiplayer). The tasks are abandoned when the connection drops.
+        var innerExceptions = e.Exception.Flatten().InnerExceptions;
+        if (innerExceptions.All(IsBenignTeardownException))
+            return;
+
+        // Something slipped past the cancellation filter; log the full exception tree
+        // so we can diagnose what's actually in the AggregateException.
+        _monitor.Log($"UnobservedTaskException captured ({innerExceptions.Count} inner):", LogLevel.Warn);
+        foreach (var inner in innerExceptions)
+        {
+            var chain = (inner.GetType().FullName ?? inner.GetType().Name) + ": " + inner.Message;
+            for (var cause = inner.InnerException; cause != null; cause = cause.InnerException)
+                chain += $"\n    → {(cause.GetType().FullName ?? cause.GetType().Name)}: {cause.Message}";
+            _monitor.Log($"  - {chain}", LogLevel.Warn);
+            if (inner.StackTrace != null)
+                _monitor.Log($"    StackTrace: {inner.StackTrace}", LogLevel.Debug);
+        }
+
+        CaptureError("UnobservedTaskException", e.Exception.Message, e.Exception.StackTrace, e.Exception.GetType().Name);
+    }
+
+    /// <summary>
+    /// Returns true for exceptions that are normal during async network teardown
+    /// and should not be surfaced to the test harness. Only called in the
+    /// UnobservedTaskException context (fire-and-forget tasks abandoned on disconnect).
+    /// </summary>
+    private static bool IsBenignTeardownException(Exception ex)
+    {
+        // CancellationToken-triggered cancellation (includes TaskCanceledException)
+        if (ex is OperationCanceledException)
+            return true;
+
+        // Async socket I/O canceled on disconnect. .NET throws SocketException
+        // from Socket.AwaitableSocketAsyncEventArgs instead of OperationCanceledException.
+        // OperationAborted = WSA 995 on Windows / ECANCELED 125 on Linux.
+        if (ex is SocketException { SocketErrorCode: SocketError.OperationAborted })
+            return true;
+
+        return false;
     }
 
     /// <summary>

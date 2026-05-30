@@ -26,9 +26,21 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\mod\JunimoServer.Shared\JunimoServer.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
     <PackageReference Include="Microsoft.OpenApi" Version="1.6.14" />
     <PackageReference Include="Steamworks.NET" Version="20.1.0" />
+  </ItemGroup>
+
+  <!-- Galaxy SDK for Steam cross-platform auth (needed by ClientAuthService) -->
+  <ItemGroup>
+    <Reference Include="GalaxyCSharp">
+      <HintPath>$(GamePath)\GalaxyCSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- Bundle dependencies with the mod -->

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using Microsoft.Xna.Framework;
 
 namespace JunimoTestClient.Diagnostics;
 
@@ -26,15 +27,29 @@ public class PerformanceStats
     private readonly Queue<double> _tickHistory = new();
     private const int TickHistorySize = 60;
 
+    // TPS tracking
+    private int _tickCount = 0;
+    private double _currentTps = 0;
+    private DateTime _lastTpsUpdate = DateTime.UtcNow;
+
+    // FPS cap (0 = unlimited)
+    private int _targetFps;
+
     // Memory tracking
     private long _lastMemoryBytes = 0;
     private DateTime _lastMemoryUpdate = DateTime.UtcNow;
+    private DateTime _lastGcCollect = DateTime.UtcNow;
 
     public PerformanceStats(IModHelper helper, IMonitor monitor)
     {
         _helper = helper;
         _monitor = monitor;
     }
+
+    /// <summary>
+    /// Set the FPS cap so stats can report the correct target.
+    /// </summary>
+    public void SetTargetFps(int fps) => _targetFps = fps;
 
     public void Start()
     {
@@ -62,11 +77,30 @@ public class PerformanceStats
         _avgTickMs = _tickHistory.Average();
         _maxTickMs = Math.Max(_maxTickMs, _lastTickMs);
 
+        // TPS tracking
+        _tickCount++;
+        var now = DateTime.UtcNow;
+        var tpsElapsed = (now - _lastTpsUpdate).TotalSeconds;
+        if (tpsElapsed >= 1.0)
+        {
+            _currentTps = _tickCount / tpsElapsed;
+            _tickCount = 0;
+            _lastTpsUpdate = now;
+        }
+
+        // Periodic background Gen 2 collect to keep the managed heap trimmed.
+        // Non-blocking so it doesn't stall the game thread; runs concurrently.
+        if ((now - _lastGcCollect).TotalSeconds >= 30)
+        {
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
+            _lastGcCollect = now;
+        }
+
         // Update memory every second
-        if ((DateTime.UtcNow - _lastMemoryUpdate).TotalSeconds >= 1)
+        if ((now - _lastMemoryUpdate).TotalSeconds >= 1)
         {
             _lastMemoryBytes = GC.GetTotalMemory(false);
-            _lastMemoryUpdate = DateTime.UtcNow;
+            _lastMemoryUpdate = now;
         }
     }
 
@@ -83,6 +117,7 @@ public class PerformanceStats
             _frameCount = 0;
             _lastFpsUpdate = now;
         }
+
     }
 
     /// <summary>
@@ -90,10 +125,14 @@ public class PerformanceStats
     /// </summary>
     public PerfStats GetStats()
     {
+        var targetTps = (int)Math.Round(1000.0 / Game1.game1.TargetElapsedTime.TotalMilliseconds);
+
         return new PerfStats
         {
             Fps = Math.Round(_currentFps, 1),
-            TargetFps = Game1.options?.useLegacySlingshotFiring == true ? 60 : 60, // Always 60 for SDV
+            Tps = Math.Round(_currentTps, 1),
+            TargetTps = targetTps,
+            TargetFps = _targetFps > 0 ? _targetFps : targetTps,
             LastTickMs = Math.Round(_lastTickMs, 2),
             AvgTickMs = Math.Round(_avgTickMs, 2),
             MaxTickMs = Math.Round(_maxTickMs, 2),
@@ -124,6 +163,8 @@ public class PerformanceStats
 public class PerfStats
 {
     public double Fps { get; set; }
+    public double Tps { get; set; }
+    public int TargetTps { get; set; }
     public int TargetFps { get; set; }
     public double LastTickMs { get; set; }
     public double AvgTickMs { get; set; }

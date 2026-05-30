@@ -12,10 +12,10 @@ public class SkipIntro
     private readonly IMonitor _monitor;
     private readonly Harmony _harmony;
 
-    public SkipIntro(IMonitor monitor)
+    public SkipIntro(IMonitor monitor, Harmony harmony)
     {
         _monitor = monitor;
-        _harmony = new Harmony("JunimoHost.TestClient.SkipIntro");
+        _harmony = harmony;
     }
 
     public void Apply()
@@ -39,10 +39,5 @@ public class SkipIntro
     {
         // Skip directly to title buttons, bypassing logo animation
         __instance.skipToTitleButtons();
-    }
-
-    public void Dispose()
-    {
-        _harmony.UnpatchAll("JunimoHost.TestClient.SkipIntro");
     }
 }
