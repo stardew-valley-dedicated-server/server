@@ -25,6 +25,19 @@ Artifacts live under `TestResults/runs/{timestamp}_{sha}/`. `TestResults/latest.
 - **`/health` endpoint**: returns `lastTickMs`, `pendingActions`, `gameAvailable`. Status is `"degraded"` when the game thread has stalled for more than 5s.
 - **LLMRenderer + WebRenderer**: both consume the same setup-pipe event stream and project from a shared `TestRunState` model. `summary.json` / `ctrf-report.json` are projections of that model — no parallel per-test list.
 
+### Recording alignment debugging
+
+Where to start when cross-clip alignment regresses (recorder invariants are catalogued in `.claude/rules/recorder-anchor-first-frame.md`):
+
+1. **All clips off by >100ms in the same direction** → check the burn-in (`%{pts}`) value at a known event vs the event's wall-clock — if the burn-in shows the event correctly but UI scrub doesn't, the orchestrator's `timelineOffsetSec` / `actualFirstFramePts` flow is broken. If the burn-in is also wrong, the recorder's PTS stream is wrong (check Invariant 3).
+2. **Clips drift relative to each other** → check `recording_started` events' `phaseLockTargetEpoch` and `phaseLockOvershootMs`. Same target across recorders + healthy overshoot means phase-lock is working; widely different targets means recorders started in different 1/fps windows; healthy `phaseLockOvershootMs` in this image is ~100-200ms (dominated by x11grab open + libx264 init latency on top of sleep precision); investigate when consistently >300ms.
+3. **Anchor value looks impossible** (e.g. ~49254s instead of ~1.78e9s) → ffprobe-of-source-TS regression somewhere (Invariant 4).
+4. **Clips have wrong duration / missing tail frames** → check pass-2 `-copyts` hasn't been re-added (Invariant 6), or `-tune zerolatency` hasn't been removed (Invariant 1).
+5. **Clips show pre-test filler instead of the test body** → Invariant 1 again, almost always.
+6. **`recording_clip_failed` with `stage="ffmpeg_failed"` and `sizeBytes=0`** → could be a true ffmpeg crash OR the active-segment wait timing out before pass-1 had data to read. The shell emits a `WAIT_RESULT:fin=...,phase=...,alive=...` line to stderr that disambiguates (`phase=timeout/fsz=...` = active-segment wait timed out before the file grew). Look in the recorder's logged stderr (the test's container log; `LogStderr` filter keeps the last 10 meaningful lines).
+
+Playground reproducer scripts in `tools/.playground/recording-validator/` are the fastest way to isolate any of these without spinning up the full E2E.
+
 ### Disk-write ownership
 
 | Artifact | Producer | When |
