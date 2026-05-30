@@ -2,30 +2,32 @@
 
 set -euo pipefail
 
+# Game server startup script for the dedicated host
+# Hosts the always-on server via SMAPI
+
 MODS_DEST_DIR="/data/Mods"
+GAME_DEST_DIR="/data/game"
+GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
+SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
+STEAM_SDK_DIR="/root/.steam/sdk64"
 
 # Validate required environment variables
 validate_environment() {
-    local has_errors=false
+    local has_warnings=false
 
+    # Security warnings
     if [ -z "${VNC_PASSWORD:-}" ]; then
         echo ""
-        echo -e "\e[31m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
-        echo -e "\e[31m║  ERROR: VNC_PASSWORD is not set!                                      ║\e[0m"
-        echo -e "\e[31m║                                                                       ║\e[0m"
-        echo -e "\e[31m║  The VNC web interface would be accessible without a password.        ║\e[0m"
-        echo -e "\e[31m║  Set VNC_PASSWORD in your .env file before starting the server.       ║\e[0m"
-        echo -e "\e[31m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+        echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+        echo -e "\e[33m║  WARNING: VNC_PASSWORD is not set!                                     ║\e[0m"
+        echo -e "\e[33m║                                                                       ║\e[0m"
+        echo -e "\e[33m║  The VNC web interface will be accessible without a password.          ║\e[0m"
+        echo -e "\e[33m║  Set VNC_PASSWORD in your .env file to secure it.                     ║\e[0m"
+        echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
         echo ""
-        has_errors=true
+        has_warnings=true
     fi
 
-    if [ "$has_errors" = true ]; then
-        echo "Exiting due to configuration errors."
-        exit 1
-    fi
-
-    # Warnings (non-fatal)
     if [ "${API_ENABLED:-true}" = "true" ] && [ -z "${API_KEY:-}" ]; then
         echo ""
         echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
@@ -37,29 +39,23 @@ validate_environment() {
         echo -e "\e[33m║  Set API_KEY in .env or disable the API with API_ENABLED=false.       ║\e[0m"
         echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
         echo ""
+        has_warnings=true
+    fi
+
+    if [ "$has_warnings" = true ] && [ "${ALLOW_INSECURE_SETUP:-}" != "true" ]; then
+        echo -e "\e[31m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+        echo -e "\e[31m║  Refusing to start with insecure configuration.                       ║\e[0m"
+        echo -e "\e[31m║                                                                       ║\e[0m"
+        echo -e "\e[31m║  Fix the warnings above, or set ALLOW_INSECURE_SETUP=true             ║\e[0m"
+        echo -e "\e[31m║  in your .env file to start anyway.                                   ║\e[0m"
+        echo -e "\e[31m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+        echo ""
+        exit 1
     fi
 }
 
 # Run validation before anything else
 validate_environment
-GAME_DEST_DIR="/data/game"
-GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
-SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
-STEAM_DEST_DIR="/root/.steam/sdk64/"
-
-print_text_for_duration() {
-    local text=$1
-    local duration=$2
-    local interval=$3
-
-    local end_time=$((SECONDS + duration))
-
-    while [ $SECONDS -lt $end_time ]; do
-        local remaining_time=$((end_time - SECONDS))
-        echo "(${remaining_time}s) $text"
-        sleep $interval
-    done
-}
 
 print_error() {
     echo -e "\e[31m$1\e[0m"
@@ -88,12 +84,23 @@ init_time_sync() {
 
 init_xauthority() {
     # Can not be done in Dockerfile, because xauth needs to access the running display ":0"
+    # The 'generate' command queries the X server's Security extension which
+    # may not be available (depends on Xvnc config). It's not required:
+    # the 'add' command below creates the auth entry directly.
     touch ~/.Xauthority
-    xauth generate :0 . trusted
-    xauth add :0 . `mcookie`
+    xauth generate :0 . trusted 2>/dev/null || true
+    xauth add :0 . $(mcookie)
 
     # Expected by e.g. tint2
     export XAUTHORITY=~/.Xauthority
+}
+
+init_display_settings() {
+    # Disable X screensaver and DPMS power management
+    # Prevents display blanking during long-running sessions
+    xset s off 2>/dev/null || true
+    xset -dpms 2>/dev/null || true
+    xset s noblank 2>/dev/null || true
 }
 
 init_stardew() {
@@ -199,10 +206,10 @@ init_steam_sdk() {
     fi
 
     # Create the target directory and symlink
-    mkdir -p "${STEAM_DEST_DIR}"
-    if [ ! -e "${STEAM_DEST_DIR}/steamclient.so" ]; then
-        echo "Linking Steam SDK to ${STEAM_DEST_DIR}..."
-        ln -s "${SDK_SOURCE}" "${STEAM_DEST_DIR}/steamclient.so"
+    mkdir -p "${STEAM_SDK_DIR}"
+    if [ ! -e "${STEAM_SDK_DIR}/steamclient.so" ]; then
+        echo "Linking Steam SDK to ${STEAM_SDK_DIR}..."
+        ln -s "${SDK_SOURCE}" "${STEAM_SDK_DIR}/steamclient.so"
     else
         echo "Steam SDK already linked"
     fi
@@ -213,22 +220,29 @@ init_steam_sdk() {
 }
 
 init_gui() {
-    # Always start polybar for the rendering toggle button
-    /etc/services.d/polybar/run &
+    # Polybar is managed by the supervisor service (disabled returns "false").
+    # Do NOT start it here. Doing so races with the supervisor's own polybar/run
+    # (which calls `pkill polybar` first), causing the `polybar-msg` call below
+    # to fail with "No active ipc channels" (exit 2) and crash the script.
 
-    if [ "$DISABLE_RENDERING" != "true" ]; then
+    if [ "${SERVER_FPS:-0}" != "0" ]; then
         if [ -e "/data/images/wallpaper-junimo-server.png" ]; then
             xwallpaper --zoom /data/images/wallpaper-junimo-server.png
         fi
 
-        bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green
+        # colors-dark.sh calls `polybar-msg cmd restart` which requires polybar
+        # to be running. The supervisor may not have started it yet, so tolerate failure.
+        bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green || true
     fi
 }
+
+echo "Initializing SMAPI..."
 
 # Prepare
 init_time_sync
 init_gui
 init_xauthority
+init_display_settings
 init_stardew
 init_steam_sdk
 init_smapi
@@ -236,25 +250,24 @@ init_smapi
 init_mods
 init_permissions
 
-# Run the game through SMAPI with FIFO for command input
-SESSION_NAME="stardew-server"
+# Run the game through SMAPI (with FIFO to pipe commands via CLI).
 LOG_FILE="/tmp/server-output.log"
 INPUT_FIFO="/tmp/smapi-input"
 
-# Touch the log file to ensure it exists
+# Ensure log file exists
 touch "${LOG_FILE}"
 
-# Create FIFO for command input
+# Ensure FIFO pipe exists
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 
-# Start SMAPI with stdin from FIFO, output to log file and stdout
-# Using 'script' to create a PTY so SMAPI outputs colors (thinks it's a terminal)
-# Using tail -f on the FIFO to keep it open and avoid blocking
-# Note: 'script' writes to both stdout (for docker logs) and the typescript file simultaneously
+# Start SMAPI, piping stdin from FIFO and output to log file + stdout
+# Using `script` to create a PTY so SMAPI prints colored output (make it think it's a terminal)
+# Using `tail -f` on the FIFO to keep it open and avoid blocking
+# Note: `script` writes to both stdout (for docker logs) and the typescript file simultaneously
+echo "Starting SMAPI..."
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
 
-# Wait for SMAPI process to exit (when it exits, the server has stopped)
 wait $SMAPI_PID
-echo "Server session ended"
+echo "SMAPI executable stopped"

@@ -1,13 +1,8 @@
 #!/bin/sh
 
-# Disable composition manager as it might cause lag and tearing in the game, see:
-# https://wiki.archlinux.org/title/Steam/Troubleshooting#Killing_standalone_compositors_when_launching_games
+# The resize handler is always enabled so the VNC window auto-resizes to the
+# client even when the server booted with SERVER_FPS=0 and rendering was turned
+# on later at runtime (the rendering-toggle button, `rendering <fps>`, or
+# POST /rendering?fps=N). It mirrors polybar/disabled for the same reason.
 
-set -e # Exit immediately if a command exits with a non-zero status.
-set -u # Treat unset variables as an error.
-
-if [ "$DISABLE_RENDERING" = "true" ]; then
-  echo "true"
-else
-  echo "false"
-fi
+echo "false"

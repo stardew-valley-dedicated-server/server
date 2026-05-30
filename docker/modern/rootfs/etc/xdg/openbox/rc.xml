@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>50</screen_edge_strength>
+  </resistance>
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+  </focus>
+  <placement>
+    <policy>Smart</policy>
+  </placement>
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout>NLIMC</titleLayout>
+  </theme>
+  <desktops>
+    <number>1</number>
+  </desktops>
+  <applications>
+    <!-- Force all windows to fullscreen (no decorations, fill screen) -->
+    <application class="*">
+      <fullscreen>yes</fullscreen>
+      <decor>no</decor>
+    </application>
+  </applications>
+</openbox_config>

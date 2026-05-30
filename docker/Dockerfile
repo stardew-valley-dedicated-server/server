@@ -60,6 +60,7 @@ COPY --from=game-downloader /game /game
 # Copy project files first for better layer caching
 COPY ./Directory.Build.props /src/
 COPY ./mod/JunimoServer/JunimoServer.csproj /src/mod/JunimoServer/
+COPY ./mod/JunimoServer.Shared/JunimoServer.Shared.csproj /src/mod/JunimoServer.Shared/
 
 # Restore dependencies with cache mount
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -127,9 +128,9 @@ ENV APP_NAME="Stardew Dedicated Server" \
     DARK_MODE=1 \
     # Display
     DISPLAY=:0 \
-    DISPLAY_HEIGHT=800 \
+    DISPLAY_HEIGHT=720 \
     DISPLAY_WIDTH=1280 \
-    DISABLE_RENDERING=true \
+    SERVER_FPS=0 \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
     SMAPI_VERSION=${SMAPI_VERSION} \
@@ -144,6 +145,7 @@ RUN apt-get update && apt-get install -y \
     procps \
     unzip \
     x11-utils \
+    xz-utils \
     # GUI packages
     polybar \
     rofi \
@@ -158,6 +160,7 @@ RUN apt-get update && apt-get install -y \
     tcpdump \
     # TigerVNC
     tigervnc-standalone-server \
+    mesa-utils \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen \
     # Configure TigerVNC
@@ -166,6 +169,14 @@ RUN apt-get update && apt-get install -y \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install ffmpeg 8.1.1. Debian 11 ships 4.3.x with x11grab timing bugs that break the
+# test-recording pipeline; pinning to a date-stamped BtbN release avoids the "latest" tag drift.
+RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-29-14-08/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1.tar.xz && \
+    tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffmpeg /usr/local/bin/ffmpeg && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffprobe /usr/local/bin/ffprobe && \
+    rm -rf /tmp/ffmpeg*
 
 # Install tmux (binary download, separate layer for cacheability)
 RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v3.6a/tmux-3.6a-linux-x86_64.tar.gz && \
@@ -234,7 +245,8 @@ VOLUME [ "/data/game", "/config/xdg/config/StardewValley" ]
 # Expose HTTP API port for external tools and automated testing
 EXPOSE 8080
 
-HEALTHCHECK --interval=1s --timeout=1s --start-period=10s --retries=15 \
-    CMD test -f /tmp/server-output.log || exit 1
+HEALTHCHECK --interval=2s --timeout=2s --start-period=120s --retries=15 \
+    CMD curl -fsS --max-time 2 "http://127.0.0.1:${API_PORT:-8080}/health" > /dev/null \
+        || [ "${API_ENABLED:-true}" = "false" ] || exit 1
 
 WORKDIR /data

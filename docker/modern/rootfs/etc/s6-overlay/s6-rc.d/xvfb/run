@@ -1,0 +1,8 @@
+#!/command/execlineb -P
+with-contenv
+/bin/bash -c "
+exec 2>&1
+
+# Start Xvfb on display :99 with configured resolution
+exec Xvfb :99 -screen 0 ${DISPLAY_WIDTH:-1280}x${DISPLAY_HEIGHT:-720}x24 -ac +extension GLX +render -noreset
+"
