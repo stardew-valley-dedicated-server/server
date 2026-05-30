@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="sdvd-aqua">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <title>Test Runner</title>
+    <script>
+      // Restore saved theme before first paint to prevent flash
+      try {
+        const t = localStorage.getItem('ui-theme');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+      } catch {}
+    </script>
+  </head>
+  <body class="min-h-screen bg-base-300 font-sans antialiased">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
