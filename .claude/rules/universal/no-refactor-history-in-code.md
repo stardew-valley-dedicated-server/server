@@ -1,0 +1,7 @@
+# No refactor history in code or docs
+
+Code comments, docstrings, and published docs describe *what the system is*, not *how it got there*. Phrases like "previous session", "replaces the historical X", "this refactor", "has been removed", "no prior versions were consumed", "absorbed from the prior plan" are refactor-journaling noise in an artifact that readers encounter cold.
+
+**Why:** User caught "No prior versions were ever consumed outside this repo" in a spec doc with "Why do you add garbage like this?". Same session had "Replaces the historical '[ExceptionMonitor]...' prose line" in a docstring and "Correctness contract: ... serialization failure must not reach the game thread" ramble. A reader opening the file for the first time doesn't care about what the code used to be — they care what it does and why. Refactor history belongs in commits and PR descriptions where it can be found by `git log`; leaving it in code produces rot-prone fluff.
+
+**How to apply:** When writing or editing a comment/docstring/markdown in a changeset, skim it for phrases that only make sense if you know the change-history. Red flags: "previous", "prior", "historical", "absorbed", "refactored from", "no longer", "has been removed". Rewrite to state the current rule directly, or delete. Also beware of defensive framing ("this is not X — it is Y", "legitimately uses Z") — if the claim isn't being questioned, don't defend it.

@@ -1,0 +1,13 @@
+---
+paths:
+  - "tests/JunimoServer.TestRunner/**"
+  - "tests/JunimoServer.Tests/Containers/**"
+---
+
+# Drain producer streams explicitly before consumer disposal — don't rely on `await using` ordering
+
+When a consumer's `DisposeAsync` reads accumulated state that depends on late-arriving producer events, you must explicitly drain the producer (await its EOF / completion signal) *before* the consumer's dispose runs. `await using` declaration-scope ordering is not enough — and a producer's `DisposeAsync` typically *cancels* its read loop rather than draining it.
+
+**Why:** Test runner refactor: `summary.json` writing was deferred to `WebRenderer.DisposeAsync` to capture the late-arriving `flaky_tests` IPC event (emitted from `TestSummaryFixture.DisposeAsync`, after xUnit's `OnExecutionComplete` → `OnRunFinished`). I claimed this solved the ordering. It didn't — `await using var setupPipe = …` declared at top-of-program scope disposes *after* `finally { await renderer.DisposeAsync(); }`, AND `SetupPipeServer.DisposeAsync` called `_cts.Cancel()` which torpedoed `ReadLineAsync` mid-buffer instead of awaiting the natural EOF that the child's pipe-close would produce. Net effect would have been silent: `flaky_tests` written by the child, sitting in the kernel pipe buffer, never folded into `TestRunState`, never appearing in `summary.json`. Caught only on user's adversarial "100% confident?" pass — would have shipped otherwise. Fix: added `SetupPipeServer.DrainAsync(timeout)` that does `Task.WhenAny(_readTask, Task.Delay(timeout))` to await natural EOF, and called it explicitly before `renderer.DisposeAsync()`.
+
+**How to apply:** Whenever you wire a consumer's `DisposeAsync` to read state populated by IPC / event-stream messages from another component, ask: (a) does the producer's `DisposeAsync` *drain* or *cancel*? Most cancel — read the source. (b) What's the actual disposal order between the producer and consumer at runtime, including `finally` blocks vs. `await using` declaration scopes? `finally` fires earlier than top-scope `await using`. If either answer makes drainage uncertain, add an explicit `DrainAsync(timeout)` on the producer that awaits its read-loop's natural completion (EOF / channel-completed / etc.) and call it from the orchestrating code before the consumer disposes. Bound the wait so a hung producer doesn't block forever — better to write partial state than to hang.
