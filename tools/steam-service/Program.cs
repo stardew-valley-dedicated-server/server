@@ -3,31 +3,31 @@
  *
  * A unified tool for Steam authentication and game management.
  * Keeps credentials and refresh tokens isolated from the game container.
+ * Supports multiple Steam accounts for multi-container setups (server + client).
  *
  * Commands:
  *   setup        - Interactive login + download game (first-time setup)
  *   login        - Interactive login, saves session
- *   download     - Download/update game depot (uses saved session or STEAM_REFRESH_TOKEN)
+ *   download     - Download/update game depot (uses saved session or token)
  *   ticket       - Output encrypted app ticket to stdout
  *   export-token - Output saved refresh token for CI use
  *   serve        - Run HTTP API for runtime ticket requests (default)
  *
- * Environment Variables:
- *   STEAM_REFRESH_TOKEN - Use this token instead of saved session (for CI)
- *   STEAM_USERNAME      - Username for token or credential auth
- *   STEAM_PASSWORD          - Password for credential-based auth
- *   FORCE_REDOWNLOAD    - Set to "1" to re-download all files
+ * Environment Variables (JSON format - preferred for multi-account):
+ *   STEAM_ACCOUNTS        - JSON array: [{"user":"...","pass":"...","token":"..."},...]
+ *                           Each entry needs "user" + either "pass" or "token".
+ *
+ * Environment Variables (production format - single account, mapped to account 0):
+ *   STEAM_USERNAME        - Username (fallback if STEAM_ACCOUNTS not set)
+ *   STEAM_PASSWORD        - Password (fallback if STEAM_ACCOUNTS not set)
+ *   STEAM_REFRESH_TOKEN   - Refresh token (fallback if STEAM_ACCOUNTS not set)
+ *
+ * HTTP API Query Parameters:
+ *   ?account=N            - Use account N for the request (default: 0)
  *
  * Usage:
  *   docker compose run -it steam-auth setup    # First time (interactive)
  *   docker compose up -d                        # Normal operation
- *
- * CI Usage:
- *   # Export token after local setup
- *   docker compose run steam-auth export-token > token.json
- *
- *   # Use in CI build (with secret)
- *   STEAM_REFRESH_TOKEN=xxx STEAM_USERNAME=user steam-service download
  */
 
 using System.Text.Json;
@@ -44,23 +44,123 @@ const uint SteamworksSdkAppId = 1007; // Steamworks SDK Redistributable (steamcl
 // Parse command
 var command = args.Length > 0 ? args[0].ToLower() : "serve";
 
-var steamService = new SteamAuthService(sessionDir, gameDir);
-
-// Check for token from environment (CI mode)
-// Use helper that treats whitespace-only as null (for optional GitHub secrets)
-var envToken = GetEnvTrimmed("STEAM_REFRESH_TOKEN");
-var envUsername = GetEnvTrimmed("STEAM_USERNAME");
-
 string? GetEnvTrimmed(string name)
 {
     var value = Environment.GetEnvironmentVariable(name)?.Trim();
     return string.IsNullOrEmpty(value) ? null : value;
 }
 
+// ============================================================================
+// Account Discovery
+// ============================================================================
+
+/// <summary>
+/// Discovers all configured Steam accounts from environment variables.
+/// Tries STEAM_ACCOUNTS (JSON) first, falls back to STEAM_USERNAME/PASSWORD for account 0.
+/// Returns a dictionary of account index -> (user, pass, token).
+/// </summary>
+Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
+{
+    var result = new Dictionary<int, (string user, string? pass, string? token)>();
+
+    // JSON format: STEAM_ACCOUNTS='[{"user":"...","pass":"...","token":"..."}]'
+    var json = GetEnvTrimmed("STEAM_ACCOUNTS");
+    if (json != null)
+    {
+        var entries = JsonSerializer.Deserialize<List<SteamAccountConfig>>(json, new JsonSerializerOptions
+        {
+            // STEAM_ACCOUNTS is hand-edited in .env / docker-compose env files.
+            // Tolerate trailing commas and // comments — same defaults as appsettings.json.
+            AllowTrailingCommas = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+        });
+        if (entries != null)
+        {
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (string.IsNullOrEmpty(e.user))
+                {
+                    Logger.Log($"[SteamService] ERROR: STEAM_ACCOUNTS[{i}] missing 'user'");
+                    Environment.Exit(1);
+                }
+                if (string.IsNullOrEmpty(e.pass) && string.IsNullOrEmpty(e.token))
+                {
+                    Logger.Log($"[SteamService] ERROR: STEAM_ACCOUNTS[{i}] needs 'pass' or 'token'");
+                    Environment.Exit(1);
+                }
+                result[i] = (e.user, e.pass, e.token);
+            }
+        }
+
+        // Uniqueness check
+        var usernames = result.Values.Select(a => a.user).ToList();
+        if (usernames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != usernames.Count)
+        {
+            Logger.Log("[SteamService] ERROR: Duplicate Steam usernames in STEAM_ACCOUNTS");
+            Environment.Exit(1);
+        }
+
+        return result;
+    }
+
+    // Production fallback: single account from STEAM_USERNAME/PASSWORD
+    var user = GetEnvTrimmed("STEAM_USERNAME");
+    var pass = GetEnvTrimmed("STEAM_PASSWORD");
+    var token = GetEnvTrimmed("STEAM_REFRESH_TOKEN");
+    if (user != null)
+        result[0] = (user, pass, token);
+
+    return result;
+}
+
+/// <summary>
+/// Creates SteamAuthService instances for all discovered accounts.
+/// </summary>
+Dictionary<int, SteamAuthService> CreateAccountServices(Dictionary<int, (string user, string? pass, string? token)> accountConfigs)
+{
+    var services = new Dictionary<int, SteamAuthService>();
+    foreach (var (index, config) in accountConfigs)
+    {
+        services[index] = new SteamAuthService(index, config.user, sessionDir, gameDir);
+    }
+    return services;
+}
+
+/// <summary>
+/// Logs into an account using the full priority chain (token → saved session →
+/// credentials). Delegates to SteamAuthService.EnsureLoggedInAsync so all login work
+/// is serialized per-account via the login semaphore.
+/// </summary>
+async Task LoginAccountAsync(SteamAuthService svc, (string user, string? pass, string? token) config)
+{
+    var loginConfig = new SteamAuthService.LoginConfig(config.user, config.pass, config.token);
+    try
+    {
+        await svc.EnsureLoggedInAsync(loginConfig);
+    }
+    catch (InvalidOperationException)
+    {
+        // No auth method configured — match prior log message for operators.
+        Logger.Log($"[SteamService] A{svc.AccountIndex}: No authentication method for {config.user}");
+        Logger.Log($"[SteamService] Provide credentials via STEAM_ACCOUNTS JSON or run 'setup'");
+    }
+}
+
+// ============================================================================
+// Discover accounts early (needed for all commands)
+// ============================================================================
+
+var accountConfigs = DiscoverAccounts();
+var accounts = CreateAccountServices(accountConfigs);
+
+// ============================================================================
+// Command dispatch
+// ============================================================================
+
 switch (command)
 {
     case "healthcheck":
-        // Simple HTTP healthcheck (for Docker HEALTHCHECK, no curl needed)
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
@@ -74,90 +174,145 @@ switch (command)
         break;
 
     case "setup":
-        await steamService.LoginInteractiveAsync();
-        if (steamService.IsLoggedIn)
+        if (accounts.Count == 0)
         {
-            await DownloadAllAsync();
+            // No accounts configured; run interactive setup for account 0
+            Logger.Log("[SteamService] No accounts configured, running interactive setup...");
+            var svc = new SteamAuthService(0, "setup", sessionDir, gameDir);
+            await svc.LoginInteractiveAsync();
+            if (svc.IsLoggedIn)
+            {
+                await DownloadAllAsync(svc);
+            }
+            svc.Disconnect();
+        }
+        else
+        {
+            // Authenticate ALL configured accounts (each may need Steam Guard on first run)
+            Logger.Log($"[SteamService] Setting up {accounts.Count} account(s)...");
+            SteamAuthService? downloadAccount = null;
+            foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
+            {
+                Logger.Log($"[SteamService] --- Account {idx}: {svc.Username} ---");
+                if (svc.HasSavedSession())
+                {
+                    Logger.Log($"[SteamService] Account {idx}: Found saved session, logging in...");
+                    await svc.EnsureLoggedInAsync(new SteamAuthService.LoginConfig(svc.Username, null, null));
+                }
+                else
+                {
+                    Logger.Log($"[SteamService] Account {idx}: No saved session, starting interactive login...");
+                    await svc.LoginInteractiveAsync();
+                }
+
+                if (svc.IsLoggedIn)
+                {
+                    Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
+                    if (downloadAccount == null)
+                        downloadAccount = svc;
+                }
+                else
+                {
+                    Logger.Log($"[SteamService] Account {idx}: Login failed");
+                }
+            }
+
+            // Download game files using the first successfully logged-in account
+            if (downloadAccount != null)
+            {
+                await DownloadAllAsync(downloadAccount);
+            }
+            else
+            {
+                Logger.Log("[SteamService] No accounts logged in, skipping game download");
+            }
         }
         break;
 
     case "login":
-        await steamService.LoginInteractiveAsync();
+        if (accounts.Count == 0)
+        {
+            Logger.Log("[SteamService] No accounts configured, running interactive login...");
+            var svc = new SteamAuthService(0, "login", sessionDir, gameDir);
+            await svc.LoginInteractiveAsync();
+            svc.Disconnect();
+        }
+        else
+        {
+            Logger.Log($"[SteamService] Logging in {accounts.Count} account(s)...");
+            foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
+            {
+                Logger.Log($"[SteamService] --- Account {idx}: {svc.Username} ---");
+                if (svc.HasSavedSession())
+                {
+                    Logger.Log($"[SteamService] Account {idx}: Found saved session, logging in...");
+                    await svc.EnsureLoggedInAsync(new SteamAuthService.LoginConfig(svc.Username, null, null));
+                }
+                else
+                {
+                    Logger.Log($"[SteamService] Account {idx}: No saved session, starting interactive login...");
+                    await svc.LoginInteractiveAsync();
+                }
+
+                if (svc.IsLoggedIn)
+                    Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
+                else
+                    Logger.Log($"[SteamService] Account {idx}: Login failed");
+            }
+        }
         break;
 
     case "download":
-        // Support: refresh token, saved session, or username+password
-        var envPass = GetEnvTrimmed("STEAM_PASSWORD");
-        if (envToken != null && envUsername != null)
+        if (accounts.TryGetValue(0, out var dlSvc))
         {
-            Logger.Log("[SteamService] Using STEAM_REFRESH_TOKEN from environment (CI mode)");
-            await steamService.LoginWithTokenAsync(envUsername, envToken);
-        }
-        else if (steamService.HasSavedSession())
-        {
-            await steamService.LoginWithSavedSessionAsync();
-        }
-        else if (envUsername != null && envPass != null)
-        {
-            Logger.Log("[SteamService] Using STEAM_USERNAME + STEAM_PASSWORD from environment");
-            await steamService.LoginWithCredentialsAsync(envUsername, envPass);
+            await LoginAccountAsync(dlSvc, accountConfigs[0]);
+            await DownloadAllAsync(dlSvc);
         }
         else
         {
-            Logger.Log("[SteamService] No authentication method available. Provide one of:");
-            Logger.Log("[SteamService]   - STEAM_REFRESH_TOKEN + STEAM_USERNAME");
-            Logger.Log("[SteamService]   - STEAM_USERNAME + STEAM_PASSWORD");
-            Logger.Log("[SteamService]   - Or run 'login' first to save a session");
+            Logger.Log("[SteamService] No account configured for download");
             Environment.Exit(1);
         }
-        await DownloadAllAsync();
         break;
 
     case "ticket":
-        var envPassTicket = GetEnvTrimmed("STEAM_PASSWORD");
-        if (envToken != null && envUsername != null)
+        if (accounts.TryGetValue(0, out var ticketSvc))
         {
-            await steamService.LoginWithTokenAsync(envUsername, envToken);
-        }
-        else if (steamService.HasSavedSession())
-        {
-            await steamService.LoginWithSavedSessionAsync();
-        }
-        else if (envUsername != null && envPassTicket != null)
-        {
-            Logger.Log("[SteamService] Using STEAM_USERNAME + STEAM_PASSWORD from environment");
-            await steamService.LoginWithCredentialsAsync(envUsername, envPassTicket);
+            await LoginAccountAsync(ticketSvc, accountConfigs[0]);
+            var ticket = await ticketSvc.GetAppTicketAsync(StardewValleyAppId);
+            Console.WriteLine(ticket.TicketBase64);
         }
         else
         {
-            Logger.Log("[SteamService] No authentication method available. Provide one of:");
-            Logger.Log("[SteamService]   - STEAM_REFRESH_TOKEN + STEAM_USERNAME");
-            Logger.Log("[SteamService]   - STEAM_USERNAME + STEAM_PASSWORD");
-            Logger.Log("[SteamService]   - Or run 'login' first to save a session");
+            Logger.Log("[SteamService] No account configured");
             Environment.Exit(1);
         }
-        var ticket = await steamService.GetAppTicketAsync(StardewValleyAppId);
-        Console.WriteLine(ticket); // Just the base64 ticket to stdout
         break;
 
     case "export-token":
-        var session = steamService.GetSavedSession();
-        if (session == null)
+        var anyExported = false;
+        foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
         {
-            Console.Error.WriteLine("No saved session found. Run 'login' or 'setup' first.");
+            var session = svc.GetSavedSession();
+            if (session == null) continue;
+            anyExported = true;
+            var exportJson = JsonSerializer.Serialize(new
+            {
+                accountIndex = idx,
+                username = session.Value.username,
+                refreshToken = session.Value.refreshToken
+            }, new JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine(exportJson);
+        }
+        if (!anyExported)
+        {
+            Console.Error.WriteLine("No saved sessions found. Run 'login' or 'setup' first.");
             Environment.Exit(1);
         }
-        // Output as JSON for easy parsing in CI
-        var exportJson = JsonSerializer.Serialize(new
-        {
-            username = session.Value.username,
-            refreshToken = session.Value.refreshToken
-        }, new JsonSerializerOptions { WriteIndented = true });
-        Console.WriteLine(exportJson);
         break;
 
     case "serve":
-        await RunHttpServerAsync(steamService, port);
+        await RunHttpServerAsync(accounts, accountConfigs, port);
         break;
 
     default:
@@ -168,44 +323,41 @@ switch (command)
         Console.WriteLine("  login        Interactive login, saves session");
         Console.WriteLine("  download     Download/update game depot");
         Console.WriteLine("  ticket       Output encrypted app ticket to stdout");
-        Console.WriteLine("  export-token Export saved refresh token (for CI)");
+        Console.WriteLine("  export-token Export saved refresh tokens (for CI)");
         Console.WriteLine("  serve        Run HTTP API (default)");
-        Console.WriteLine();
-        Console.WriteLine("Environment Variables:");
-        Console.WriteLine("  STEAM_REFRESH_TOKEN  Use token instead of saved session");
-        Console.WriteLine("  STEAM_USERNAME       Username for the token or credentials");
-        Console.WriteLine("  STEAM_PASSWORD           Password for credential-based auth");
-        Console.WriteLine("  FORCE_REDOWNLOAD     Set to '1' to force re-download");
         Environment.Exit(1);
-        return; // Required by compiler, but Exit never returns
+        return;
 }
 
-steamService.Disconnect();
+// Disconnect all accounts
+foreach (var svc in accounts.Values)
+    svc.Disconnect();
 return;
 
 // ============================================================================
 // Helper functions
 // ============================================================================
 
-async Task DownloadAllAsync()
+async Task DownloadAllAsync(SteamAuthService svc)
 {
-    await steamService.DownloadGameAsync(StardewValleyAppId);
+    await svc.DownloadGameAsync(StardewValleyAppId);
 
     // Also download Steamworks SDK for GameServer mode (unless --skip-sdk)
-    // This provides steamclient.so needed for SteamGameServerNetworkingSockets
-    // Downloaded to .steam-sdk subfolder; server container symlinks to /root/.steam/sdk64/
     if (!args.Contains("--skip-sdk"))
     {
         var steamSdkDir = Path.Combine(gameDir, ".steam-sdk");
-        await steamService.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
+        await svc.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
     }
 }
 
 // ============================================================================
-// HTTP Server for runtime
+// HTTP Server for runtime (multi-account)
 // ============================================================================
 
-async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
+async Task RunHttpServerAsync(
+    Dictionary<int, SteamAuthService> accts,
+    Dictionary<int, (string user, string? pass, string? token)> configs,
+    int httpPort)
 {
     var builder = WebApplication.CreateBuilder();
     builder.WebHost.ConfigureKestrel(opts => opts.ListenAnyIP(httpPort));
@@ -213,51 +365,117 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
 
     var app = builder.Build();
 
-    app.MapGet("/health", async () =>
+    // Correlation middleware: reads the inbound X-Request-Id header, binds it
+    // to SidecarRequestContext for the request duration, and echoes it on
+    // the response. Events emitted inside the pipeline (Logger.LogEvent)
+    // carry this id so the test harness can stitch sidecar events to the
+    // triggering mod request. Missing/blank headers leave Current == null.
+    app.Use(async (ctx, next) =>
     {
-        // Lazy login: if not logged in but session exists, try to login.
-        // This handles the case where setup was run in a separate container
-        // via "make setup".
-        if (!service.IsLoggedIn && service.HasSavedSession())
-        {
-            try
+        string? requestId = ctx.Request.Headers["X-Request-Id"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(requestId))
+            ctx.Response.Headers["X-Request-Id"] = requestId;
+
+        using var _scope = SidecarRequestContext.Begin(requestId);
+        await next();
+    });
+
+    // Helper: resolve account from ?account=N query param (default: 0)
+    SteamAuthService GetAccount(HttpContext ctx)
+    {
+        var idx = int.TryParse(ctx.Request.Query["account"].FirstOrDefault(), out var n) ? n : 0;
+        if (!accts.TryGetValue(idx, out var svc))
+            throw new KeyNotFoundException($"Account {idx} not configured");
+        return svc;
+    }
+
+    // Helper: ensure account is logged in (lazy login). Delegates to
+    // SteamAuthService.EnsureLoggedInAsync which serializes concurrent callers via the
+    // per-account login semaphore and tries the full priority chain (token → saved
+    // session → credentials). Throws if no auth method is available; callers' try/catch
+    // converts that to 503.
+    async Task<SteamAuthService> EnsureAccountReadyAsync(HttpContext ctx)
+    {
+        var svc = GetAccount(ctx);
+        var cfg = configs.TryGetValue(svc.AccountIndex, out var c)
+            ? new SteamAuthService.LoginConfig(c.user, c.pass, c.token)
+            : null;
+        await svc.EnsureLoggedInAsync(cfg, ctx.RequestAborted);
+        return svc;
+    }
+
+    // /health is a pure status probe: returns 200 whenever the HTTP server is up so
+    // Docker healthchecks and Testcontainers wait strategies work. It does NOT trigger
+    // logins -- that used to race with real callers hitting /steam/ready. Consumers
+    // that care about per-account login state read the `logged_in` body fields.
+    app.MapGet("/health", (HttpContext ctx) =>
+    {
+        var accountQuery = ctx.Request.Query["account"].FirstOrDefault();
+        var specificAccount = int.TryParse(accountQuery, out var requestedIdx);
+
+        var accountsToCheck = specificAccount && accts.TryGetValue(requestedIdx, out var single)
+            ? new[] { single }
+            : accts.Values.ToArray();
+
+        var loggedIn = accountsToCheck.All(s => s.IsLoggedIn);
+        var accountList = accountsToCheck
+            .OrderBy(s => s.AccountIndex)
+            .Select(s => new
             {
-                Logger.Log("[SteamService] Session found, attempting login...");
-                await service.LoginWithSavedSessionAsync();
-                Logger.Log("[SteamService] Login successful");
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"[SteamService] Login attempt failed: {ex.Message}");
-            }
-        }
+                index = s.AccountIndex,
+                username = s.Username,
+                logged_in = s.IsLoggedIn,
+                steam_id = s.SteamId
+            });
 
         return Results.Json(new
         {
             status = "ok",
-            logged_in = service.IsLoggedIn,
-            timestamp = DateTime.UtcNow.ToString("o")
+            logged_in = loggedIn,
+            timestamp = DateTime.UtcNow.ToString("o"),
+            accounts = accountList
         });
     });
 
-    app.MapGet("/steam/app-ticket", async () =>
+    app.MapGet("/steam/ready", async (HttpContext ctx) =>
     {
         try
         {
-            if (!service.IsLoggedIn)
-            {
-                if (!service.HasSavedSession())
-                {
-                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
-                }
-                await service.LoginWithSavedSessionAsync();
-            }
+            var svc = await EnsureAccountReadyAsync(ctx);
 
-            var ticketBase64 = await service.GetAppTicketAsync(StardewValleyAppId);
+            // Try fetching a ticket to prove full readiness
+            var ticket = await svc.GetAppTicketAsync(StardewValleyAppId);
+
             return Results.Json(new
             {
-                app_ticket = ticketBase64,
-                steam_id = service.SteamId
+                ready = true,
+                account = svc.AccountIndex,
+                username = svc.Username,
+                steam_id = svc.SteamId,
+                has_ticket = !string.IsNullOrEmpty(ticket.TicketBase64)
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HTTP] Ready check failed: {ex.Message}");
+            return Results.Json(new { ready = false, error = ex.Message }, statusCode: 503);
+        }
+    });
+
+    app.MapGet("/steam/app-ticket", async (HttpContext ctx) =>
+    {
+        try
+        {
+            var svc = await EnsureAccountReadyAsync(ctx);
+
+            var ticket = await svc.GetAppTicketAsync(StardewValleyAppId);
+            return Results.Json(new
+            {
+                app_ticket = ticket.TicketBase64,
+                steam_id = svc.SteamId,
+                source = ticket.Source,
+                sha8 = ticket.Sha8,
+                ticket_length_bytes = ticket.TicketLengthBytes
             });
         }
         catch (Exception ex)
@@ -267,16 +485,14 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
         }
     });
 
-    // Endpoint for SteamKit2 lobby creation - returns refresh token for login
-    app.MapGet("/steam/refresh-token", () =>
+    app.MapGet("/steam/refresh-token", (HttpContext ctx) =>
     {
         try
         {
-            var session = service.GetSavedSession();
+            var svc = GetAccount(ctx);
+            var session = svc.GetSavedSession();
             if (session == null)
-            {
                 return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
-            }
 
             return Results.Json(new
             {
@@ -292,26 +508,20 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
     });
 
     // ========================================================================
-    // Lobby Management Endpoints
-    // Uses the same SteamClient session as auth - no separate login needed
+    // Lobby Management Endpoints (always use account from ?account=N, default 0)
     // ========================================================================
 
     app.MapPost("/steam/lobby/create", async (HttpContext ctx) =>
     {
         try
         {
-            if (!service.IsLoggedIn)
-            {
-                if (!service.HasSavedSession())
-                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
-                await service.LoginWithSavedSessionAsync();
-            }
+            var svc = await EnsureAccountReadyAsync(ctx);
 
             var body = await ctx.Request.ReadFromJsonAsync<CreateLobbyRequest>();
             if (body == null)
                 return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
 
-            var lobbyId = await service.CreateLobbyAsync(
+            var lobbyId = await svc.CreateLobbyAsync(
                 appId: StardewValleyAppId,
                 maxMembers: body.max_members,
                 gameServerSteamId: body.game_server_steam_id,
@@ -334,18 +544,13 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
     {
         try
         {
-            if (!service.IsLoggedIn)
-            {
-                if (!service.HasSavedSession())
-                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
-                await service.LoginWithSavedSessionAsync();
-            }
+            var svc = await EnsureAccountReadyAsync(ctx);
 
             var body = await ctx.Request.ReadFromJsonAsync<SetLobbyDataRequest>();
             if (body == null)
                 return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
 
-            await service.SetLobbyDataAsync(
+            await svc.SetLobbyDataAsync(
                 appId: StardewValleyAppId,
                 lobbyId: body.lobby_id,
                 additionalMetadata: body.metadata);
@@ -363,12 +568,7 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
     {
         try
         {
-            if (!service.IsLoggedIn)
-            {
-                if (!service.HasSavedSession())
-                    return Results.Json(new { error = "No session. Run setup first." }, statusCode: 503);
-                await service.LoginWithSavedSessionAsync();
-            }
+            var svc = await EnsureAccountReadyAsync(ctx);
 
             var body = await ctx.Request.ReadFromJsonAsync<SetLobbyPrivacyRequest>();
             if (body == null)
@@ -382,7 +582,7 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
                 _ => SteamKit2.ELobbyType.Public
             };
 
-            await service.SetLobbyPrivacyAsync(
+            await svc.SetLobbyPrivacyAsync(
                 appId: StardewValleyAppId,
                 lobbyId: body.lobby_id,
                 lobbyType: lobbyType);
@@ -396,39 +596,45 @@ async Task RunHttpServerAsync(SteamAuthService service, int httpPort)
         }
     });
 
-    app.MapGet("/steam/lobby/status", () =>
+    app.MapGet("/steam/lobby/status", (HttpContext ctx) =>
     {
+        var svc = GetAccount(ctx);
         return Results.Json(new
         {
-            lobby_id = service.CurrentLobbyId == 0 ? null : service.CurrentLobbyId.ToString(),
-            is_logged_in = service.IsLoggedIn
+            lobby_id = svc.CurrentLobbyId == 0 ? null : svc.CurrentLobbyId.ToString(),
+            is_logged_in = svc.IsLoggedIn
         });
     });
 
     Logger.Log($"[SteamService] HTTP API listening on port {httpPort}");
+    Logger.Log($"[SteamService] {accts.Count} account(s) configured");
     Console.WriteLine("[SteamService] Endpoints:");
-    Console.WriteLine("  GET /health - Health check");
-    Console.WriteLine("  GET /steam/app-ticket - Get encrypted app ticket");
+    Console.WriteLine("  GET  /health              - Health check (all accounts)");
+    Console.WriteLine("  GET  /steam/ready         - Readiness check (?account=N)");
+    Console.WriteLine("  GET  /steam/app-ticket    - Get encrypted app ticket (?account=N)");
+    Console.WriteLine("  GET  /steam/refresh-token - Get refresh token (?account=N)");
+    Console.WriteLine("  POST /steam/lobby/create  - Create lobby (?account=N)");
 
-    // Try to auto-login with saved session
-    if (service.HasSavedSession())
+    // Auto-login all configured accounts in parallel
+    var loginTasks = accts.Select(async kv =>
     {
-        Logger.Log("[SteamService] Found saved session, logging in...");
+        var svc = kv.Value;
         try
         {
-            await service.LoginWithSavedSessionAsync();
-            Logger.Log("[SteamService] Logged in successfully");
+            if (configs.TryGetValue(kv.Key, out var cfg))
+            {
+                await LoginAccountAsync(svc, cfg);
+                if (svc.IsLoggedIn)
+                    Logger.Log($"[SteamService] A{svc.AccountIndex}: Logged in as {svc.SteamId}");
+            }
         }
         catch (Exception ex)
         {
-            Logger.Log($"[SteamService] Auto-login failed: {ex.Message}");
-            Logger.Log("[SteamService] Run 'setup' to re-authenticate");
+            Logger.Log($"[SteamService] A{svc.AccountIndex}: Auto-login failed: {ex.Message}");
         }
-    }
-    else
-    {
-        Logger.Log("[SteamService] No saved session - run 'setup' first");
-    }
+    });
+
+    await Task.WhenAll(loginTasks);
 
     await app.RunAsync();
 }
@@ -449,3 +655,9 @@ record SetLobbyDataRequest(
 record SetLobbyPrivacyRequest(
     ulong lobby_id,
     string? privacy = "public");
+
+// ============================================================================
+// Account Discovery DTO
+// ============================================================================
+
+record SteamAccountConfig(string user, string? pass = null, string? token = null);
