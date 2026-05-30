@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>JunimoServer.TestRunner</RootNamespace>
+    <AssemblyName>JunimoServer.TestRunner</AssemblyName>
+    <!-- Suppress CS7022: xUnit v3 auto-generates a Main() but we use our own top-level entry point -->
+    <NoWarn>$(NoWarn);CS7022</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+    <PackageReference Include="xunit.v3.runner.utility" Version="3.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JunimoServer.Tests\JunimoServer.Tests.csproj" />
+  </ItemGroup>
+
+  <!-- The ASP.NET Core FrameworkReference absorbs Microsoft.Extensions.* transitive
+       dependencies and prevents them from being copied to output. But xUnit loads the
+       test assembly without ASP.NET Core framework probing, so those DLLs must exist
+       on disk. Copy them from the test project's output after build. -->
+  <Target Name="CopyTestDependencies" AfterTargets="Build">
+    <ItemGroup>
+      <_TestDepsToRestore Include="..\JunimoServer.Tests\bin\$(Configuration)\$(TargetFramework)\Microsoft.Extensions.*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TestDepsToRestore)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
