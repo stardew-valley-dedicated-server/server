@@ -1,0 +1,189 @@
+/* Inter font, bundled locally for offline/air-gapped environments */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/inter-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/inter-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/inter-latin-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/inter-latin-700.woff2') format('woff2'); }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Scrollable panels with thin styled scrollbars */
+.panel-scroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--p) / 0.2) transparent;
+}
+
+/* Code blocks */
+.code-block {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  tab-size: 4;
+}
+
+/* Progress bar glow on the filled portion when running.
+ * Stripes live on a ::after pseudo that animates transform on the compositor.
+ * The pseudo is wider than the parent and translates back by one tile, so the
+ * stripe pattern appears to flow without ever exposing an empty edge. */
+.progress-glow {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 8px color-mix(in oklch, currentColor 40%, transparent);
+}
+
+.progress-glow::after {
+  content: '';
+  position: absolute;
+  /* Inset is slightly negative horizontally so the stripe pattern bleeds past
+   * both edges. That way the translateX animation never exposes a blank gap. */
+  inset: 0 -12px 0 -12px;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 12px 12px;
+  animation: progress-stripe 600ms linear infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+
+@keyframes progress-stripe {
+  from { transform: translateX(0); }
+  to { transform: translateX(-12px); }
+}
+
+/* Promote an element to its own compositor layer so transform/opacity
+ * animations (animate-spin, animate-pulse) don't repaint on the main thread.
+ * Apply only to elements that actually animate — each promoted layer costs
+ * a bit of GPU memory. */
+.gpu-accel {
+  will-change: transform;
+}
+
+/* Respect reduced-motion preference globally */
+@media screen and (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Kill browser default image borders */
+img {
+  border: none;
+  outline: none;
+}
+
+/* Selection highlight matching the brand accent */
+::selection {
+  background: oklch(var(--p) / 0.3);
+}
+
+/* Sidebar collapse/expand animation (only when toggling, not while dragging) */
+.sidebar-animate {
+  transition: width 200ms ease-out;
+}
+
+/* Icon sidebar */
+.icon-sidebar {
+  width: 48px;
+  background-color: oklch(var(--b2));
+  border-right: 1px solid oklch(var(--bc) / 0.06);
+}
+
+.icon-sidebar-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: oklch(var(--bc) / 0.3);
+  transition: all 150ms ease;
+  position: relative;
+}
+
+.icon-sidebar-btn:hover {
+  color: oklch(var(--bc) / 0.6);
+  background-color: oklch(var(--bc) / 0.05);
+}
+
+.icon-sidebar-btn.active {
+  color: oklch(var(--p));
+  background-color: oklch(var(--p) / 0.1);
+}
+
+.icon-sidebar-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background-color: oklch(var(--p));
+}
+
+/* Status stripe below output panel header */
+.status-stripe {
+  height: 3px;
+  width: 100%;
+  flex: none;
+  transition: background-color 300ms ease;
+}
+
+
+/* Setup step progress bar */
+.step-progress {
+  height: 3px;
+  border-radius: 1.5px;
+  transition: width 300ms ease;
+}
+
+/* Smooth theme toggle transitions */
+.tree-item,
+header,
+.badge,
+.btn,
+.panel-scroll,
+.icon-sidebar,
+.icon-sidebar-btn {
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+/* Timeline dot hover: subtle brightness boost to signal clickability */
+.dot-hover:hover {
+  filter: brightness(1.6);
+}
+
+/* Timeline breakpoint indicators */
+.ring-breakpoint,
+.ring-breakpoint-hit {
+  outline: 1.5px solid oklch(var(--p));
+  outline-offset: 1px;
+}
+.ring-breakpoint-hit {
+  animation: breakpoint-pulse 1.5s ease-in-out infinite;
+}
+@keyframes breakpoint-pulse {
+  0%, 100% { outline-color: oklch(var(--p)); }
+  50% { outline-color: oklch(var(--p) / 0.4); }
+}
+
+/* Breakpoint marker dashed line in timeline */
+.bp-marker-line {
+  width: 0;
+  border-left: 1px dashed oklch(var(--p) / 0.4);
+}
