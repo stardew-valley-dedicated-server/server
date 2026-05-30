@@ -1,0 +1,7 @@
+# Own the whole file during a cleanup pass
+
+When the user asks for a consistency review or cleanup of a file you're editing, every line in that file is in scope. Do not defer to "pre-existing, not mine" for bad comments, dead stubs, filler docstrings, or code smells — the moment you read and edit the file, its quality becomes your responsibility.
+
+**Why:** User correction: "stop being defensive about stuff not being yours, its all yours". Pattern in this session: during a cleanup pass I kept flagging bad pre-existing comments ("Designed for AI agent parsing and debugging", "JSONL reporter for machine-parseable test output", a dead `IDisposable` stub) and then leaving them untouched with "not mine" framing. That produces half-cleaned files where the reader can't tell what the standard is. The user has to re-read the same file and point at each remaining issue individually — wasted round trips.
+
+**How to apply:** During a cleanup / consistency / review pass, treat the whole file as your surface. If you find a bad comment, rewrite it. If you find a dead stub, delete it (or make it do something real). If you're unsure whether a change is in scope, make the change and name it in the summary so the user can veto — do not silently leave it. This rule does NOT apply to narrow bug-fix edits where the user asked for a specific change in a specific place; it applies when the ask is "clean up" / "review for consistency" / "remove code smells".

@@ -1,0 +1,13 @@
+# Plan discipline
+
+On any non-trivial multi-step plan, three rules apply: include adversarial self-verification *in the plan* before calling ExitPlanMode, re-read the whole plan for cross-step invalidation before coding, and in review cycles match your edit count to what you announced.
+
+**Why:** Three recurring failure patterns, each caught only by user pushback:
+- **Verification-after-pushback.** First plan gets rejected with "are you 100% confident?", "works with LAN and Steam?", "test TPS?". I verify, resubmit, approved. The verification was always needed — presenting it upfront saves a full round trip.
+- **Cross-step invalidation.** In the VNC retained-phase plan, step 2b changed the data flow so disposed instances stayed in `state.instances`, but step 2 still claimed they moved to `stoppedInstances`. I executed faithfully and shipped a regression (the "Open VNC" link appeared on torn-down containers). Adversarial pre-read would have caught it.
+- **Silent edit-count creep.** I listed 4 review-fix items and made 5 edits, slipping in an unannounced compatibility-scope disclaimer. User had to audit the diff. Silent scope creep during a sign-off cycle forces full re-verification and burns the trust that makes fast review loops possible.
+
+**How to apply:**
+- **Adversarial self-verification.** For any refactor touching shared infrastructure (sleep, warp, auth, lobby, netReady, day transition, save flow), include a "Compatibility verification" section in the plan covering: LAN vs Steam transports, lobby/unauthenticated players, test TPS (`SERVER_TPS=15`), FPS caps, disconnect-mid-operation, stuck-latch recovery, other subscribers to the same events. Cite file:line. If something can't be verified read-only, say so explicitly rather than skipping it.
+- **Cross-step pre-read.** Before starting implementation on any plan with 3+ interacting changes, do one adversarial read-through asking: "does any later step invalidate a claim or assumption in an earlier step?" If yes, surface it in the plan or adjust before coding. Skip on small plans; always do it on plans that touch multiple components with data-flow changes.
+- **Match edit count to what you announced.** When responding to review feedback with a list of N fixes, make exactly N edits. If a 5th issue surfaces mid-fix, either fold it into an existing item with a note, or stop and announce it ("also spotted X — adding that too, OK?") before applying. Applies specifically to review/iteration cycles where the user has signed off on a scope; not to open-ended "clean this up" asks.

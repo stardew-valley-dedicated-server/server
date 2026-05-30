@@ -1,0 +1,9 @@
+# Don't pattern-match a project rule into architectural justification — verify the failure mode matches
+
+When you reach for an existing project rule to justify a design decision, re-read the rule and confirm your case actually matches its failure mode. Rules in `.claude/rules/` are written against specific incidents; their scope is the failure mode they were named after, not their title's literal reading. Citing one outside its scope turns it from a guardrail into design-justification fuel that drives unwarranted churn.
+
+**Why:** During a runner-side fix for a misclassified-test bug, I cited `orthogonal-fields.md` to justify splitting `Status` into `LifecyclePhase` + `Outcome` fields — about seven producer-site changes plus a computed getter. User pushed back; re-reading showed the rule targets *information loss from concurrent writes* (the cited example: `disposed` overwriting `poisoned`, losing the poison bit across snapshots). Our case was *misinterpretation of a transient state* — `running` swept to `canceled` because the sweep had no other signal. Different failure mode. The split would have been cosmetic. The actual fix was an enrichment-aware reconciliation at one site.
+
+**How to apply:** Before invoking a rule as design justification, re-read the `**Why:**` block and ask: "does my case have the same failure mode as the rule's incident, or only the same surface shape?" Title-level matching ("two concerns in one field" — yes, that's our Status) is too eager; rules earn their existence from a specific incident. If the incident's mechanism (concurrent writes losing data, etc.) doesn't match yours, the rule isn't speaking to your case. Surface the mismatch in the design discussion rather than borrowing the rule's authority.
+
+Distinct from `verify-claims.md` (which guards against fabricated claims about identifiers/framework behavior); this rule guards against over-applying internally-correct rules to cases they don't cover.

@@ -1,0 +1,7 @@
+# Verify documented config knobs are actually consumed
+
+When you add an env var, flag, or config setting to user-facing documentation (`.env.test.example`, README, spec doc, CLI help), grep the codebase to confirm at least one consumer reads it. A documented-but-unconsumed knob is worse than an undocumented one — operators set it expecting behavior change and then waste time when nothing happens.
+
+**Why:** Caught this session when the user asked why a stuck run wasn't timing out. `SDVD_TEST_TIMEOUT` was documented in `.env.test.example` and the distributed-runner spec, but no code anywhere read it (`grep -rn SDVD_TEST_TIMEOUT tests/` returned zero hits). The intended coordinator-side per-test cancellation was never wired. An operator following the docs would have set the env var, watched a hang, and concluded the feature was broken — when in fact it never existed. Same shape as `verify-claims.md` (verify named claims before publishing) but specifically about *config surface*: every line in `.env.test.example` is a contract with operators.
+
+**How to apply:** When adding any env var, flag, or config field to user-facing docs or example files, immediately grep for at least one consumer. Use the literal name (`grep -rn SDVD_FOO_BAR tests/ tools/`). Zero hits means either the consumer isn't written yet (delete the doc line, or write a clear TODO that the knob is not yet wired) or you've named it wrong somewhere. Same check applies in reverse during reviews: if a config knob name appears in docs but nowhere else, the implementation didn't land.
