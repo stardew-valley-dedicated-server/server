@@ -1,5 +1,7 @@
 # Misc
-.claude
+# Claude Code local machine state (absolute Windows paths, permission history, runtime lock)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 .DS_Store
 .fleet
 
@@ -29,7 +31,12 @@ logs
 .env
 .env.*
 !.env.example
-!.env.dev.example
+!.env.test.example
+
+# SSH private keys for remote Docker hosts (referenced by SDVD_DOCKER_HOSTS sshKey)
+.sdvd_runner_key
+.sdvd_runner_key.pub
+
 
 # Local server settings
 server-settings.json
@@ -38,6 +45,7 @@ server-settings.json
 **/.output
 **/bin
 !docker/rootfs/opt/base/bin/
+!docker/modern/rootfs/opt/bin/
 **/obj
 **/debug
 **/decompiled
@@ -48,6 +56,9 @@ TestResults/
 
 # Dependency folders
 node_modules/
+
+# Test UI build output
+tests/test-ui/dist/
 
 # Decompiler version file
 /version.txt

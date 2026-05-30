@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JunimoServer", "JunimoServe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JunimoServer.Tests", "..\tests\JunimoServer.Tests\JunimoServer.Tests.csproj", "{0FEF6931-B75D-4767-94DC-AA84BB122BDF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JunimoServer.Shared", "JunimoServer.Shared\JunimoServer.Shared.csproj", "{A92150A1-1DCF-4E77-8E73-B2D1933A475D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,6 +44,18 @@ Global
 		{0FEF6931-B75D-4767-94DC-AA84BB122BDF}.Release|x64.Build.0 = Release|Any CPU
 		{0FEF6931-B75D-4767-94DC-AA84BB122BDF}.Release|x86.ActiveCfg = Release|Any CPU
 		{0FEF6931-B75D-4767-94DC-AA84BB122BDF}.Release|x86.Build.0 = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|x64.Build.0 = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Debug|x86.Build.0 = Debug|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|x64.ActiveCfg = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|x64.Build.0 = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|x86.ActiveCfg = Release|Any CPU
+		{A92150A1-1DCF-4E77-8E73-B2D1933A475D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

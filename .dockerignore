@@ -27,9 +27,20 @@ mod/JunimoServer/obj/
 mods/
 sub_modules/
 
-# Build artifacts (avoid Windows path issues in Docker)
+# Build artifacts
 tools/**/bin/
 tools/**/obj/
+tests/**/bin/
+tests/**/obj/
+mod/JunimoServer.Shared/bin/
+mod/JunimoServer.Shared/obj/
+
+# Bypass build artifacts ignore
+!docker/modern/rootfs/opt/bin/
+
+# Test artifacts
+TestResults/
+tests/test-ui/dist/
 
 # Dependency folders
 **/node_modules/

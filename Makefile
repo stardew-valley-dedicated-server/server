@@ -1,6 +1,6 @@
 .PHONY: docs
 
-# Load configuration
+# Load configuration from .env (production settings, ports, etc.)
 -include .env
 
 # Function to strip single/double quotes using Make functions
@@ -27,8 +27,11 @@ DOCKER_PROGRESS ?= plain
 # Export IMAGE_VERSION for usage in docker compose commands
 export IMAGE_VERSION
 
-# Export make variables as actual environment variables,
-# so that we can pass them as docker secrets during build
+# Steam build credentials for Docker image builds (game download).
+# By default these come from .env (loaded above). When the test harness
+# calls `make build`, it overrides these via command-line variables
+# (e.g. `make build STEAM_USERNAME=x`), which take precedence over
+# -include .env values in GNU Make.
 export STEAM_USERNAME := $(call strip_quotes,STEAM_USERNAME)
 export STEAM_PASSWORD := $(call strip_quotes,STEAM_PASSWORD)
 export STEAM_REFRESH_TOKEN := $(call strip_quotes,STEAM_REFRESH_TOKEN)
@@ -46,8 +49,11 @@ install:
 	@npm ci
 	@echo Setup complete. Git hooks are now active.
 
-# Build docker image (downloads game during build for mod compilation)
-build:
+# Build all production docker images (server + steam-service)
+build: build-server build-steam-service
+
+# Build server docker image (downloads game during build for mod compilation)
+build-server:
 	@echo Building image `$(IMAGE_NAME):$(IMAGE_VERSION)` with BUILD_CONFIGURATION=$(BUILD_CONFIGURATION)...
 	@docker buildx build \
 		--platform=linux/amd64 \
@@ -61,7 +67,13 @@ build:
 		--load \
 		--progress=$(DOCKER_PROGRESS) \
 		.
-	@echo Build complete.
+	@echo Server build complete.
+
+# Build steam-service docker image
+build-steam-service:
+	@echo Building steam-service image...
+	@docker compose build steam-auth
+	@echo Steam-service build complete.
 
 # Build test client docker image (for containerized E2E tests)
 build-test-client:
@@ -84,9 +96,16 @@ up: build
 	@docker compose up -d --build
 	@echo Server is now running. Use `make cli` or `make logs` to view output.
 
-setup:
-	@docker compose run --rm -it steam-auth setup
-	@echo Server is now set up. Use `make cli` or `make logs` to view output.
+# Authenticate Steam accounts and download game files (interactive).
+# Passes .env.test (if present) so steam-service sees both production
+# credentials (STEAM_USERNAME/PASSWORD from .env via compose) and test
+# accounts (STEAM_ACCOUNTS JSON from .env.test). Accounts with saved
+# sessions are skipped; only new accounts prompt for Steam Guard.
+setup: build-steam-service
+	@docker compose run --rm -it \
+		$(if $(wildcard .env.test),--env-from-file .env.test) \
+		steam-auth setup
+	@echo Setup complete. Saved sessions are stored in the steam-session volume.
 
 restart:
 	@echo Restarting server `$(IMAGE_NAME):$(IMAGE_VERSION)`...
@@ -128,17 +147,111 @@ clean:
 	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v
 	-@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest
 
-# Run tests. Use FILTER to run specific tests:
+# Test project paths
+TEST_PROJECT := ./tests/JunimoServer.Tests
+RUNNER_PROJECT := ./tests/JunimoServer.TestRunner
+
+# Test filtering. Use FILTER to run specific tests:
 #   make test FILTER=PasswordProtection
 #   make test FILTER="Login_WithCorrectPassword"
 #   make test (runs all tests)
 FILTER ?=
+
+# Verbose output. Use VERBOSE=1 for detailed setup steps and diagnostic logs:
+#   make test VERBOSE=1
+VERBOSE ?=
+
 export COLUMNS=160
+
+# Run tests with custom runner (CI mode - streaming output)
 test:
-	@dotnet tool restore
-	@dotnet test ./tests/JunimoServer.Tests/ --settings ./tests/JunimoServer.Tests/JunimoServer.Tests.runsettings $(if $(FILTER),--filter "$(FILTER)")
-	@echo Generating test report...
-	@dotnet TrxToExtentReport -t ./TestResults/TestResults.trx -o ./TestResults/TestReport.html
+	@dotnet run --project $(RUNNER_PROJECT) -- $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
+
+# Run tests with verbose output (detailed setup steps, diagnostics inline)
+test-verbose:
+	@dotnet run --project $(RUNNER_PROJECT) -- --verbose $(if $(FILTER),--filter "$(FILTER)")
+
+# Run tests with structured JSONL output (for LLM/AI agents)
+# Forces SDVD_TEST_TRACING=full so the AI-debug context captures every
+# cross-process correlation (respBytes, X-Request-Id on reads, wait_started,
+# per-test http_wait mirror). The default `make test` runs at SDVD_TEST_TRACING=none.
+test-llm: export SDVD_TEST_TRACING=full
+test-llm:
+	@dotnet run --project $(RUNNER_PROJECT) -- --llm $(if $(FILTER),--filter "$(FILTER)")
+
+# Build the test UI frontend (required for --web mode)
+build-test-ui:
+ifeq ($(OS),Windows_NT)
+	@where bun >NUL 2>&1 || (echo "Error: bun is required for test-ui. Install: https://bun.sh" && exit 1)
+else
+	@command -v bun >/dev/null || (echo "Error: bun is required for test-ui. Install: https://bun.sh" && exit 1)
+endif
+	@cd tests/test-ui && bun install && bun run build
+
+# Run tests with web UI (opens browser with live results)
+test-web: build-test-ui
+	@dotnet run --project $(RUNNER_PROJECT) -- --web $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
+
+# Run tests with web UI and generate static report
+test-web-report: build-test-ui
+	@dotnet run --project $(RUNNER_PROJECT) -- --web --report $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
+
+# --- Test Observability Targets ---
+# Resolve latest run: prefer latest.txt, fall back to most recent run dir with summary.json
+LATEST_RUN = $(shell cat TestResults/latest.txt 2>/dev/null)
+ifeq ($(LATEST_RUN),)
+  LATEST_RUN = $(shell ls -1d TestResults/runs/*/ 2>/dev/null | sort -r | while read d; do test -f "$$d/summary.json" && echo "$$d" && break; done)
+endif
+
+# Show test run summary (failures, timing, classification)
+test-summary:
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found. Run tests first."; exit 1; fi
+	@if [ ! -f "$(LATEST_RUN)/summary.json" ]; then echo "No summary.json in $(LATEST_RUN) (run may have been aborted)."; exit 1; fi
+	@cat "$(LATEST_RUN)/summary.json" | python3 -m json.tool 2>/dev/null || cat "$(LATEST_RUN)/summary.json"
+
+# Show per-test event log (Usage: make test-events TEST=ClassName.MethodName[(arg=...)])
+# Filters infrastructure.jsonl by test displayName; matches both fact and theory tests.
+test-events:
+	@test -n "$(TEST)" || { echo "Usage: make test-events TEST=ClassName.MethodName[(arg=value)]"; exit 1; }
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
+	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure.jsonl in $(LATEST_RUN)."; exit 1; fi
+	@jq -c 'select(.test.displayName // "" | contains("$(TEST)"))' \
+	    "$(LATEST_RUN)/diagnostics/infrastructure.jsonl"
+
+# Show infrastructure lifecycle log (server/client creation, capacity, sessions)
+test-infra-log:
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
+	@cat "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" 2>/dev/null || echo "No infrastructure log in $(LATEST_RUN)."
+
+# Show full lifecycle log for a container (Usage: make test-container-log CONTAINER=server-0)
+test-container-log:
+	@test -n "$(CONTAINER)" || { echo "Usage: make test-container-log CONTAINER=server-0|client-0|steam-auth-shared|steam-auth-per-N"; exit 1; }
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
+	@if [ -f "$(LATEST_RUN)/containers/$(CONTAINER)/container.log" ]; then \
+	  cat "$(LATEST_RUN)/containers/$(CONTAINER)/container.log"; \
+	elif [ -f "$(LATEST_RUN)/containers/$(CONTAINER)/container.log.gz" ]; then \
+	  gunzip -c "$(LATEST_RUN)/containers/$(CONTAINER)/container.log.gz"; \
+	else \
+	  echo "No container.log for $(CONTAINER) in $(LATEST_RUN)."; \
+	  ls "$(LATEST_RUN)/containers/" 2>/dev/null | head -20; \
+	  exit 1; \
+	fi
+
+# Show run metadata (git, env, runtime info)
+test-metadata:
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
+	@cat "$(LATEST_RUN)/run-metadata.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || cat "$(LATEST_RUN)/run-metadata.json" 2>/dev/null || echo "No metadata in $(LATEST_RUN)."
+
+# Show flakiness data across recent runs
+test-flaky:
+	@test -f TestResults/flakiness.jsonl && tail -2000 TestResults/flakiness.jsonl || echo "No flakiness data. Run tests multiple times first."
+
+# Dump the last failure_context event from the latest run for quick triage.
+# Usage: make test-diagnose [TEST=ClassName.MethodName]
+test-diagnose:
+	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
+	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure log in $(LATEST_RUN)."; exit 1; fi
+	@grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5 | python3 -m json.tool --no-ensure-ascii 2>/dev/null || grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5
 
 # Show help
 help:
@@ -148,15 +261,34 @@ help:
 	@echo "  make install  - Install development dependencies (commitlint, git hooks)"
 	@echo "  make setup    - Run first-time Steam authentication and game download"
 	@echo "  make up       - Build and start server"
-	@echo "  make build    - Build docker image"
+	@echo "  make build    - Build all production images (server + steam-service)"
 	@echo "  make logs     - View server logs"
 	@echo "  make dumplogs - Dump server logs to file on host"
 	@echo "  make cli      - Attach to interactive server console (tmux-based)"
 	@echo "  make down     - Stop the server"
+	@echo "  make restart  - Restart the server (preserves volumes)"
 	@echo "  make docs     - Start docs dev server (requires built image)"
 	@echo "  make clean    - Remove ALL containers, volumes and images"
-	@echo "  make test     - Run E2E tests (use FILTER=X to filter, e.g. FILTER=PasswordProtection)"
+	@echo ""
+	@echo Testing:
+	@echo "  make test         - Run E2E tests (CI mode, streaming output)"
+	@echo "  make test-verbose - Run tests with detailed setup/diagnostic output"
+	@echo "  make test-llm     - Run tests with structured JSONL output (for AI agents)"
+	@echo "  make test-web     - Run tests with web UI (opens browser with live results)"
+	@echo "  make test-web-report - Run tests with web UI + static report generation"
+	@echo "  FILTER=X          - Filter tests, e.g. FILTER=PasswordProtection"
+	@echo "  VERBOSE=1         - Show detailed setup steps, e.g. make test VERBOSE=1"
+	@echo ""
 	@echo "  make build-test-client - Build test client container image (for E2E tests)"
+	@echo ""
+	@echo Test Observability:
+	@echo "  make test-summary  - Show test run summary (failures, timing)"
+	@echo "  make test-events   - Show per-test events (TEST=Class.Method)"
+	@echo "  make test-infra-log - Show infrastructure lifecycle log"
+	@echo "  make test-metadata - Show run metadata (git, env, runtime)"
+	@echo "  make test-flaky    - Show flakiness data across recent runs"
+	@echo "  make test-diagnose - Show last failure_context events for triage"
+	@echo "  make test-container-log - Show full container log (Usage: CONTAINER=server-0)"
 	@echo ""
 	@echo Note: Use GitHub Actions for building and pushing release images
 
