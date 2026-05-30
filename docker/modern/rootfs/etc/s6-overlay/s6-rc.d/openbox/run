@@ -1,0 +1,13 @@
+#!/command/execlineb -P
+with-contenv
+/bin/bash -c "
+exec 2>&1
+
+echo 'Waiting for X server...'
+while ! xdpyinfo -display :99 >/dev/null 2>&1; do
+    sleep 0.5
+done
+echo 'X server ready, starting Openbox'
+
+exec openbox --config-file /etc/xdg/openbox/rc.xml
+"

@@ -1,0 +1,9 @@
+streams:
+  server:
+    - "exec:ffmpeg -f x11grab -video_size 1280x720 -framerate 30 -i :99 -c:v libx264 -profile:v baseline -level 3.1 -pix_fmt yuv420p -preset ultrafast -tune zerolatency -g 60 -f h264 pipe:1#video=h264"
+
+api:
+  listen: ":1984"
+
+webrtc:
+  listen: ":8555"

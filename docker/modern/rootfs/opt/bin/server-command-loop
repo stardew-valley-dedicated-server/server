@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Interactive command input handler for the tmux bottom pane
+# Takes session name as first argument
+
+SESSION_NAME="$1"
+INPUT_FIFO="/tmp/smapi-input"
+PASSWORD_MODE_FILE="/tmp/smapi-password-mode"
+HISTFILE="/tmp/server-command-history"
+
+history -r "$HISTFILE" 2>/dev/null
+
+send_to_server() {
+    local command="$1"
+    echo "$command" >> "$INPUT_FIFO"
+}
+
+read_password() {
+    local prompt="$1"
+    local password=""
+    local char
+
+    printf "%s" "$prompt"
+
+    while IFS= read -rsn1 char; do
+        if [[ -z "$char" ]]; then
+            break
+        fi
+
+        if [[ "$char" == $'\x7f' ]] || [[ "$char" == $'\b' ]]; then
+            if [ -n "$password" ]; then
+                password="${password%?}"
+                printf "\b \b"
+            fi
+        else
+            password+="$char"
+            printf "*"
+        fi
+    done
+
+    echo
+    REPLY="$password"
+}
+
+clear
+stty -echoctl
+
+handle_sigint() {
+    printf "\r\033[Kserver> "
+}
+trap 'handle_sigint' INT
+
+while true; do
+    if [ -f "$PASSWORD_MODE_FILE" ]; then
+        rm -f "$PASSWORD_MODE_FILE"
+        read_password "password> "
+    else
+        if ! read -r -e -p "server> "; then
+            echo
+            tmux kill-session -t "$SESSION_NAME" 2>/dev/null || exit 0
+            break
+        fi
+        [[ -n "$REPLY" ]] && history -s "$REPLY" && history -w "$HISTFILE"
+    fi
+
+    clear
+
+    case "$REPLY" in
+        "cli exit"|"cli quit"|"cli detach")
+            tmux detach-client 2>/dev/null || exit 0
+            break
+            ;;
+        "cli clear")
+            clear
+            continue
+            ;;
+        *)
+            send_to_server "$REPLY"
+            ;;
+    esac
+done

@@ -1,0 +1,4 @@
+#!/command/execlineb -P
+with-contenv
+export XDG_RUNTIME_DIR /tmp/runtime
+exec pipewire

@@ -1,0 +1,14 @@
+#!/command/execlineb -P
+with-contenv
+/bin/bash -c "
+exec 2>&1
+
+# Wait for X server to be ready
+echo 'Waiting for X server...'
+while ! xdpyinfo -display :99 >/dev/null 2>&1; do
+    sleep 0.5
+done
+echo 'X server ready, starting streaming'
+
+exec go2rtc -config /etc/go2rtc/config.yaml
+"
