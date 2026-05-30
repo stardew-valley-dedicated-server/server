@@ -97,7 +97,7 @@ This is the most common cause when:
 
 ### Same-network players can't connect
 
-This is usually a "hairpinning" issue — traffic can't loop back to the same network.
+This is usually a "hairpinning" issue: traffic can't loop back to the same network.
 
 ```sh
 docker compose exec server netdebug nat
@@ -139,16 +139,16 @@ VNC is for advanced debugging only. To play and test your server, just connect w
 
 ### VNC shows black screen
 
-This is **expected behavior** — your server is working correctly.
+This is **expected behavior**. Your server is working correctly.
 
-**Why it's black:** The server has `DISABLE_RENDERING=true` by default. This means the server doesn't draw graphics to its own display, which saves CPU. The server is still running normally and accepting player connections.
+**Why it's black:** The server has `SERVER_FPS=0` by default. This means the server doesn't draw graphics to its own display, which saves CPU (VNC shows a "Rendering Disabled" notice). The server is still running normally and accepting player connections.
 
-**Players are not affected:** When you connect with your game client, you see the game on *your* screen rendered by *your* computer. The black VNC screen only means the *server's display* is blank — that's fine.
+**Players are not affected:** When you connect with your game client, you see the game on *your* screen rendered by *your* computer. The black VNC screen only means the *server's display* is blank, which is fine.
 
 **Do you need to fix it?** Probably not. If you just want to play or test, connect with your game client instead. VNC is only useful for debugging rare visual issues.
 
 If you specifically need VNC for debugging:
-1. Set `DISABLE_RENDERING=false` in `.env`
+1. Set `SERVER_FPS=10` in `.env` (any positive value)
 2. Restart: `docker compose restart`
 3. VNC will now show the game display
 
@@ -191,10 +191,10 @@ Restore from SMAPI backup:
 
 ```sh
 # List backups
-docker compose exec server ls -al /data/Stardew/save-backups
+docker compose exec server ls -al /data/game/save-backups
 
 # Restore (replace BACKUP_FILENAME)
-docker compose exec server unzip /data/Stardew/save-backups/BACKUP_FILENAME.zip -d /config/xdg/config/StardewValley/Saves/
+docker compose exec server unzip "/data/game/save-backups/BACKUP_FILENAME.zip" -d /config/xdg/config/StardewValley/Saves/
 ```
 
 ## Mod Issues
@@ -244,7 +244,7 @@ docker compose logs server | grep -i error
 
 Solutions:
 
-- Enable `DISABLE_RENDERING=true`
+- Disable rendering with `SERVER_FPS=0`
 - Increase container memory limits
 - Reduce `MaxPlayers` setting
 - Remove resource-heavy mods

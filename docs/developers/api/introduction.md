@@ -8,12 +8,12 @@ Use the sidebar to browse available endpoints.
 
 The API provides endpoints for:
 
-- **Server** — Status, health checks, rendering control
-- **Players** — Connected players and invite codes
-- **Farmhands** — Farmhand slot management
-- **Settings** — Server configuration from `server-settings.json`
-- **Cabins** — Cabin state and positions
-- **Time** — In-game time control
+- **Server**: Status, health checks, rendering control
+- **Players**: Connected players and invite codes
+- **Farmhands**: Farmhand slot management
+- **Settings**: Server configuration from `server-settings.json`
+- **Cabins**: Cabin state and positions
+- **Time**: In-game time control
 
 ## Configuration
 
@@ -56,7 +56,7 @@ curl "http://localhost:8080/status" \
 
 ::: tip Generate a Secure Key
 ```sh
-bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+openssl rand -base64 32
 ```
 :::
 
@@ -171,15 +171,15 @@ POST endpoints accept parameters via query string. All write endpoints require a
 
 ### POST /rendering
 
-Toggle rendering on or off.
+Set the server render rate. `fps=0` disables rendering; `fps=N` (N > 0) renders at N fps.
 
 ```sh
-# Enable rendering
-curl -X POST "http://localhost:8080/rendering?enabled=true" \
+# Enable rendering at 15 fps
+curl -X POST "http://localhost:8080/rendering?fps=15" \
   -H "Authorization: Bearer $API_KEY"
 
 # Disable rendering
-curl -X POST "http://localhost:8080/rendering?enabled=false" \
+curl -X POST "http://localhost:8080/rendering?fps=0" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
@@ -201,19 +201,29 @@ Valid range: 600 (6 AM) to 2600 (2 AM next day).
 
 ### POST /roles/admin
 
-Grant admin role to a player.
+Grant admin role to a player. Accepts exactly one of `name` (player name) or `playerId` (UniqueMultiplayerID). Providing both, or neither, returns a 400.
 
 ```sh
+# By name (ergonomic for manual/CLI use)
 curl -X POST "http://localhost:8080/roles/admin?name=PlayerName" \
+  -H "Authorization: Bearer $API_KEY"
+
+# By player ID (stable for automation/tooling — name sync can lag behind player joins)
+curl -X POST "http://localhost:8080/roles/admin?playerId=620826087702429092" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
 ### DELETE /farmhands
 
-Delete a farmhand by name. The farmhand must be offline.
+Delete a farmhand. The farmhand must be offline. Accepts exactly one of `name` or `playerId`. Providing both, or neither, returns a 400.
 
 ```sh
+# By name
 curl -X DELETE "http://localhost:8080/farmhands?name=FarmhandName" \
+  -H "Authorization: Bearer $API_KEY"
+
+# By player ID
+curl -X DELETE "http://localhost:8080/farmhands?playerId=620826087702429092" \
   -H "Authorization: Bearer $API_KEY"
 ```
 

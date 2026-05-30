@@ -1,29 +1,26 @@
 # Server Settings
 
-Game and server settings are configured via `server-settings.json`. This file is auto-created with sensible defaults inside the Docker `settings` volume on first startup.
+Game and server settings are configured via `server-settings.json`. This file is auto-created with sensible defaults on first startup.
 
 ## Accessing the Settings File
 
-To view current settings:
+The settings file is stored on your host machine at `.local-container/settings/server-settings.json` (relative to your `docker-compose.yml`).
+
+To view:
 
 ```sh
-docker compose exec server cat /data/settings/server-settings.json
+cat .local-container/settings/server-settings.json
 ```
 
 To edit:
 
-```sh
-# Copy out
-docker compose cp server:/data/settings/server-settings.json ./server-settings.json
+1. Open `.local-container/settings/server-settings.json` with any text editor
+2. Make your changes
+3. Restart to apply: `docker compose restart`
 
-# Edit the file with your preferred editor
-
-# Copy back
-docker compose cp ./server-settings.json server:/data/settings/server-settings.json
-
-# Restart to apply
-docker compose restart
-```
+::: info First Run
+This file is auto-created with defaults on first server startup. If the file doesn't exist yet, start the server once and it will be created.
+:::
 
 ## Default Settings
 
@@ -45,7 +42,8 @@ docker compose restart
     "AllowIpConnections": false,
     "LobbyMode": "Shared",
     "ActiveLobbyLayout": "default",
-    "AdminSteamIds": []
+    "AdminSteamIds": [],
+    "NetworkBroadcastPeriod": 1
   }
 }
 ```
@@ -86,9 +84,9 @@ These settings only take effect when creating a **new** game. They are ignored w
 
 ### Monster Spawning
 
-- `"true"` — Monsters spawn at night on all farm types
-- `"false"` — No monster spawning
-- `"auto"` — Only spawn on Wilderness farm type
+- `"true"`: Monsters spawn at night on all farm types
+- `"false"`: No monster spawning
+- `"auto"`: Only spawn on Wilderness farm type
 
 ## Server Runtime Settings
 
@@ -105,6 +103,7 @@ These settings apply on every startup and can be changed between runs.
 | `LobbyMode` | Lobby mode for password protection | `"Shared"` |
 | `ActiveLobbyLayout` | Active lobby layout name | `"default"` |
 | `AdminSteamIds` | Steam IDs auto-granted admin on join | `[]` |
+| `NetworkBroadcastPeriod` | Ticks between farmer/location/world-state delta broadcasts (1=every tick, 3=vanilla) | `1` |
 
 ### Cabin Strategies
 
@@ -127,8 +126,8 @@ Controls what happens to visible cabins already on the farm when using a stacked
 
 | Setting | Description |
 |---------|-------------|
-| `false` | Shared wallet — all players share one money pool |
-| `true` | Separate wallets — each player has their own money |
+| `false` | Shared wallet: all players share one money pool |
+| `true` | Separate wallets: each player has their own money |
 
 You can toggle this in-game using the `!changewallet` admin command.
 
@@ -139,6 +138,18 @@ Direct IP connections don't provide user IDs, so the server can't track farmhand
 :::
 
 Only enable if you need it for specific network configurations.
+
+### Network Broadcast Period
+
+Controls how often the server broadcasts farmer, location, and world-state deltas to connected players.
+
+| Value | Behavior |
+|-------|----------|
+| `1` | Broadcast every tick. Lowest perceived latency, highest bandwidth (mod default). |
+| `2` | Broadcast every other tick. Roughly 50% bandwidth reduction with one extra tick of latency (~16ms at 60 TPS). |
+| `3` | Vanilla Stardew default. Roughly 66% bandwidth reduction with two extra ticks of latency. |
+
+Allowed range is `1` to `60`. Out-of-range values are clamped and a warning is logged on startup. Raise this value if connected players report bandwidth saturation; lower it if movement and inventory changes feel laggy.
 
 ## Password Protection Settings
 

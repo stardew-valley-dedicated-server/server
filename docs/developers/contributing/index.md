@@ -18,10 +18,10 @@ Make sure there isn't already an open issue or PR about the feature you're propo
 
 #### Development Setup
 
-Before making your first contribution, run the setup command to install development dependencies:
+Before making your first contribution, run the install command to set up development dependencies:
 
 ```bash
-make setup
+make install
 ```
 
 This installs:
@@ -35,9 +35,9 @@ We use **GitHub Flow** with automated CI/CD:
 
 **Quick workflow:**
 
-1. **Setup** (first time only)
+1. **Install dev dependencies** (first time only)
    ```bash
-   make setup
+   make install
    ```
 
 2. **Create feature branch from master**
@@ -93,7 +93,7 @@ git commit -m "feat!: redesign configuration format"
 
 **Commit validation:**
 
-After running `make setup`, git hooks will automatically validate your commits:
+After running `make install`, git hooks will automatically validate your commits:
 - ❌ Invalid: `"update readme"` → Error: type missing
 - ✅ Valid: `"docs: update readme"` → Accepted
 

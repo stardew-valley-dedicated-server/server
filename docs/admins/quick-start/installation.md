@@ -21,7 +21,15 @@ STEAM_PASSWORD="your_steam_password"
 VNC_PASSWORD="your_secure_password"
 ```
 
-## 3. First-Time Setup
+## 3. Pull Images
+
+Download the pre-built Docker images:
+
+```sh
+docker compose pull
+```
+
+## 4. First-Time Setup
 
 Authenticate with Steam and download game files:
 
@@ -31,13 +39,17 @@ docker compose run --rm -it steam-auth setup
 
 Follow the prompts for Steam Guard (email code, mobile app, or QR code).
 
-## 4. Start the Server
+## 5. Start the Server
 
 ```sh
 docker compose up -d
 ```
 
-## 5. Get Invite Code & Connect
+::: info .local-container Directory
+On first startup, a `.local-container/` directory is created next to your `docker-compose.yml`. This contains your `server-settings.json` and is how settings are persisted on your host machine. See [Server Settings](/admins/configuration/server-settings) to customize.
+:::
+
+## 6. Get Invite Code & Connect
 
 Get your invite code:
 
@@ -46,7 +58,7 @@ docker compose exec server attach-cli
 # Type: info
 ```
 
-Then connect with your game — just like joining any multiplayer server:
+Then connect with your game, just like joining any multiplayer server:
 
 1. Launch Stardew Valley
 2. Click **Co-op** → **Enter Invite Code**

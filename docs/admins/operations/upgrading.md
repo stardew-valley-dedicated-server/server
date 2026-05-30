@@ -12,6 +12,12 @@ docker compose up -d
 
 Your save files and configuration are stored in Docker volumes and will be preserved.
 
+## Upgrade Notes
+
+### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
+
+Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The current release surfaces it as a warning and aborts only when an insecure setup is detected (empty `VNC_PASSWORD`, or empty `API_KEY` with the API enabled). Set `ALLOW_INSECURE_SETUP=true` on closed networks to keep the warnings but skip the abort. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
+
 ## Using Preview Builds
 
 Preview builds contain the latest changes from the `master` branch. Use these when:
@@ -21,21 +27,13 @@ Preview builds contain the latest changes from the `master` branch. Use these wh
 
 ### Enable Preview Builds
 
-**1. Update `docker-compose.yml`**
+Set the image version in your `.env` file:
 
-Change image tags from `latest` to `preview`:
-
-```yaml
-services:
-    server:
-        image: sdvd/server:preview  # [!code highlight]
-    steam-service:
-        image: sdvd/steam-service:preview  # [!code highlight]
-    discord-bot:
-        image: sdvd/discord-bot:preview  # [!code highlight]
+```sh
+IMAGE_VERSION=preview
 ```
 
-**2. Pull and restart**
+Then pull and restart:
 
 ```sh
 docker compose pull
@@ -49,7 +47,13 @@ Preview builds may contain experimental features or bugs. Back up your saves bef
 
 ### Return to Stable
 
-Change `preview` back to `latest` and repeat the pull/restart steps.
+Remove or comment out the `IMAGE_VERSION` line in `.env` (defaults to `latest`):
+
+```sh
+# IMAGE_VERSION=preview
+```
+
+Then pull and restart as above.
 
 ## Updating Game Files
 
@@ -98,28 +102,27 @@ Or look at the SMAPI console output in VNC when the server starts.
 
 Before upgrading:
 
-- [ ] **Backup saves** — Always backup the `saves` volume before major updates
-- [ ] **Check mod compatibility** — Verify mods work with new game versions
-- [ ] **Read release notes** — Check the [changelog](/community/changelog) for breaking changes
-- [ ] **Test first** — For production servers, test in development first
+- [ ] **Backup saves**: Always backup the `saves` volume before major updates
+- [ ] **Check mod compatibility**: Verify mods work with new game versions
+- [ ] **Read release notes**: Check the [changelog](/community/changelog) for breaking changes
+- [ ] **Test first**: For production servers, test in development first
 
 ## Rollback
 
 If you need to revert to a previous version:
 
-**1. Specify version in docker-compose.yml**
+**1. Specify version in `.env`**
 
-```yaml
-services:
-    server:
-        image: sdvd/server:1.0.0
+```sh
+IMAGE_VERSION=1.0.0
 ```
 
 Replace `1.0.0` with your desired version from [GitHub Releases](https://github.com/stardew-valley-dedicated-server/server/releases).
 
-**2. Restart**
+**2. Pull and restart**
 
 ```sh
+docker compose pull
 docker compose down
 docker compose up -d
 ```

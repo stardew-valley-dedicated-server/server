@@ -3,7 +3,7 @@
 ::: warning Advanced Tool
 VNC is for debugging and advanced troubleshooting only. For normal operation, use the [CLI](/admins/operations/commands) and connect to your server with your game client like any multiplayer game.
 
-By default, rendering is disabled (`DISABLE_RENDERING=true`) for performance — VNC will show a black screen. This is intentional.
+By default, rendering is disabled (`SERVER_FPS=0`) for performance. VNC will show a "Rendering Disabled" notice. This is intentional.
 :::
 
 ## When to Use VNC
@@ -65,10 +65,10 @@ For backup, restore, and import procedures, see [Backup & Recovery](/features/ba
 
 ## Why is VNC showing a black screen?
 
-This is **expected behavior**. By default, `DISABLE_RENDERING=true` which means the server doesn't draw graphics to its own display.
+This is **expected behavior**. By default, `SERVER_FPS=0` which means the server doesn't draw graphics to its own display; VNC shows a "Rendering Disabled" notice.
 
 ::: info This doesn't affect players
-Players always see the game normally on their own screens. The `DISABLE_RENDERING` setting only affects the server's display (what you see via VNC). Your server is running correctly — connect with your game client to verify.
+Players always see the game normally on their own screens. `SERVER_FPS` only affects the server's display (what you see via VNC). Your server is running correctly. Connect with your game client to verify.
 :::
 
 ### Enabling VNC display (for debugging only)
@@ -77,7 +77,7 @@ If you specifically need to see the server's display for debugging:
 
 **Option 1: Environment variable (persistent)**
 
-1. Set `DISABLE_RENDERING=false` in `.env`
+1. Set `SERVER_FPS=10` in `.env` (any positive value)
 2. Restart: `docker compose restart`
 
 **Option 2: Console command (temporary)**
@@ -85,9 +85,8 @@ If you specifically need to see the server's display for debugging:
 ```sh
 docker compose exec server attach-cli
 # Then type one of:
-#   rendering on       - Enable rendering
-#   rendering off      - Disable rendering
-#   rendering toggle   - Toggle current state
+#   rendering 10       - Enable rendering at 10 fps (any positive integer)
+#   rendering 0        - Disable rendering
 #   rendering status   - Show current state
 ```
 

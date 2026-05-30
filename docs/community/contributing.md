@@ -2,7 +2,7 @@
 
 Want to help out? Awesome.
 
-For code contributions, check the [Developer Contributing Guide](/developers/contributing/) — it covers setup, commit conventions, and CI/CD.
+For code contributions, check the [Developer Contributing Guide](/developers/contributing/). It covers setup, commit conventions, and CI/CD.
 
 Not a developer? Bug reports, docs improvements, and helping others on Discord are just as valuable.
 

@@ -69,10 +69,10 @@ When choosing mods for your server:
 
 ### Mod Not Loading
 
-1. **Check SMAPI console** — Look for error messages in VNC
-2. **Verify mod location** — Ensure correct directory structure
-3. **Check dependencies** — Some mods require other mods
-4. **Update mods** — Ensure compatibility with your game version
+1. **Check SMAPI console**: Look for error messages in VNC
+2. **Verify mod location**: Ensure correct directory structure
+3. **Check dependencies**: Some mods require other mods
+4. **Update mods**: Ensure compatibility with your game version
 
 ### "Missing assembly" Errors
 

@@ -21,7 +21,7 @@ These must be set for the server to function:
 | `VNC_PORT` | TCP port for VNC web interface | `5800` |
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
-| `DISABLE_RENDERING` | Disable VNC rendering for performance | `true` |
+| `SERVER_FPS` | Render rate: `0` = rendering disabled, `N > 0` = render at N fps | `0` |
 | `VERBOSE_LOGGING` | Override verbose logging setting | - |
 
 ## Security Variables
@@ -33,6 +33,7 @@ These must be set for the server to function:
 | `MAX_LOGIN_ATTEMPTS` | Failed login attempts before kick | `3` |
 | `AUTH_TIMEOUT_SECONDS` | Seconds before unauthenticated players are kicked | `120` |
 | `API_KEY` | API key for authenticating write requests | (empty = disabled) |
+| `ALLOW_INSECURE_SETUP` | Allow startup when `VNC_PASSWORD` or `API_KEY` is empty | `false` |
 
 ## Discord Integration
 
@@ -52,24 +53,21 @@ STEAM_USERNAME=your_steam_username
 STEAM_PASSWORD=your_steam_password
 VNC_PASSWORD=your_secure_password
 
-# ===== Ports =====
-GAME_PORT=24642
-QUERY_PORT=27015
-VNC_PORT=5800
-API_PORT=8080
+# ===== Ports (uncomment to change from defaults) =====
+# GAME_PORT=24642
+# QUERY_PORT=27015
+# VNC_PORT=5800
+# API_PORT=8080
 
-# ===== Performance =====
-DISABLE_RENDERING=true
+# ===== Performance (uncomment to change from defaults) =====
+# SERVER_FPS=10
 
 # ===== Security (optional) =====
 # SERVER_PASSWORD=your_server_password
-# MAX_LOGIN_ATTEMPTS=3
-# AUTH_TIMEOUT_SECONDS=120
 # API_KEY=your_api_key
 
 # ===== Discord (optional) =====
 # DISCORD_BOT_TOKEN=your_bot_token
-# DISCORD_BOT_NICKNAME=My Stardew Server
 # DISCORD_CHAT_CHANNEL_ID=123456789012345678
 
 # ===== CI/Automation (optional) =====
@@ -78,21 +76,28 @@ DISABLE_RENDERING=true
 
 ## Variable Details
 
-### DISABLE_RENDERING
+### SERVER_FPS
 
-Controls whether the server renders graphics to its own display. **This does not affect players** — they always see the game normally on their own screens.
+Controls the rate at which the server draws graphics to its own display. **This does not affect players** — they always see the game normally on their own screens.
 
 | Value | What happens |
 |-------|--------------|
-| `true` (default) | Server skips drawing graphics. VNC shows black screen. **Server works normally.** Players connect and play as usual. Uses less CPU. |
-| `false` | Server draws graphics. VNC shows game display. Only needed for debugging visual issues. |
+| `0` (default) | Rendering disabled. The server installs a null display device and suppresses draws; VNC shows a "Rendering Disabled" notice. **The server works normally** — players connect and play as usual — and it uses less CPU. |
+| `N > 0` | Server draws at up to N frames per second. VNC shows the game display. Useful for debugging visual issues; a low value like `10` keeps CPU cost modest. |
 
-::: info Why is this the default?
-A dedicated server doesn't need to display anything — it just processes game logic and sends updates to players. Skipping the graphics rendering saves significant CPU resources.
+::: info Why is `0` the default?
+A dedicated server doesn't need to display anything. It just processes game logic and sends updates to players. Skipping the graphics rendering saves significant CPU resources.
 :::
 
 ::: tip Players are not affected
-When you connect to the server with your game client, you see the game on *your* screen rendered by *your* computer. The server's `DISABLE_RENDERING` setting only affects the server's own display (viewed via VNC).
+When you connect to the server with your game client, you see the game on *your* screen rendered by *your* computer. `SERVER_FPS` only affects the server's own display (viewed via VNC).
+:::
+
+::: tip Changing the rate at runtime
+You don't have to restart to enable rendering for debugging. Both of these take effect immediately:
+
+- HTTP: `POST /rendering?fps=10` (use `fps=0` to disable again).
+- Console: `docker compose exec server attach-cli`, then `rendering 10` (or `rendering 0`, `rendering status`).
 :::
 
 ### STEAM_REFRESH_TOKEN
@@ -122,19 +127,23 @@ When set, all API endpoints require an `Authorization: Bearer <api-key>` header 
 Generate a secure key:
 
 ```sh
-bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+openssl rand -base64 32
 ```
 
 ::: tip When do I need this?
 Currently, only the Discord bot uses the API. If you:
-- **Use the Discord bot** — Set the same `API_KEY` for both server and bot
-- **Don't use the Discord bot** — You can skip `API_KEY` if the API port (8080) is not exposed externally
-- **Build custom integrations** (web dashboard, monitoring, etc.) — Set `API_KEY` and include it in your requests
+- **Use the Discord bot**: Set the same `API_KEY` for both server and bot
+- **Don't use the Discord bot**: You can skip `API_KEY` if the API port (8080) is not exposed externally
+- **Build custom integrations** (web dashboard, monitoring, etc.): Set `API_KEY` and include it in your requests
 :::
 
 ::: warning
 Without `API_KEY`, anyone with network access to port 8080 can read server data and control your server. Always set this if the API is accessible from untrusted networks.
 :::
+
+### ALLOW_INSECURE_SETUP
+
+By default the server aborts startup when `VNC_PASSWORD` is empty or (with `API_ENABLED=true`) `API_KEY` is empty — leaving the VNC interface or HTTP API exposed without authentication. Set `ALLOW_INSECURE_SETUP=true` to override the abort on closed networks where the affected ports are not reachable from untrusted clients.
 
 ## Port Summary
 
@@ -155,7 +164,7 @@ VNC_PORT=5801
 API_PORT=8081
 ```
 
-The internal container ports remain unchanged — only the host mapping changes.
+The internal container ports remain unchanged; only the host mapping changes.
 
 ## Advanced Variables
 
