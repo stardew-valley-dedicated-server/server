@@ -6,19 +6,12 @@ namespace JunimoServer.Services.HostAutomation
 {
     public class ActivityList : List<Activity>
     {
-        private IModHelper _helper;
-
-#pragma warning disable CS0169 // Ignore unused field `_activities`
-        private List<Activity> _activities;
-#pragma warning restore CS0169
-
         public ActivityList(IModHelper helper, IMonitor monitor)
         {
-            _helper = helper;
-
-            _helper.Events.GameLoop.SaveLoaded += EnableAll;
-            _helper.Events.GameLoop.DayStarted += DayStartAll;
-            _helper.Events.GameLoop.UpdateTicked += TickAll;
+            helper.Events.GameLoop.SaveLoaded += EnableAll;
+            helper.Events.GameLoop.ReturnedToTitle += DisableAll;
+            helper.Events.GameLoop.DayStarted += DayStartAll;
+            helper.Events.GameLoop.UpdateTicked += TickAll;
         }
 
         public void EnableAll(object sender, SaveLoadedEventArgs e)
@@ -29,13 +22,13 @@ namespace JunimoServer.Services.HostAutomation
             }
         }
 
-        // public void DisableAll()
-        // {
-        //   foreach (var activity in this)
-        //   {
-        //     activity.Disable();
-        //   }
-        // }
+        public void DisableAll(object sender, ReturnedToTitleEventArgs e)
+        {
+            foreach (var activity in this)
+            {
+                activity.Disable();
+            }
+        }
 
         public void TickAll(object sender, UpdateTickedEventArgs e)
         {
@@ -51,13 +44,6 @@ namespace JunimoServer.Services.HostAutomation
             {
                 activity.HandleDayStart();
             }
-        }
-
-        ~ActivityList()
-        {
-            _helper.Events.GameLoop.SaveLoaded -= EnableAll;
-            _helper.Events.GameLoop.DayStarted -= DayStartAll;
-            _helper.Events.GameLoop.UpdateTicked -= TickAll;
         }
     }
 }

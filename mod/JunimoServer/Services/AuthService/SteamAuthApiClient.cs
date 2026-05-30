@@ -15,6 +15,7 @@ namespace JunimoServer.Services.Auth
     {
         private readonly string _baseUrl;
         private readonly HttpClient _httpClient;
+        private readonly int _accountIndex;
         private bool _disposed;
 
         // Retry configuration
@@ -24,10 +25,20 @@ namespace JunimoServer.Services.Auth
         public SteamAuthApiClient(string baseUrl, int timeoutMs = 60000)
         {
             _baseUrl = baseUrl.TrimEnd('/');
-            _httpClient = new HttpClient
+            // Handler pipeline: correlation handler adds X-Request-Id from the
+            // ambient ModRequestContext, then the default handler sends.
+            var correlationHandler = new SteamAuthCorrelationHandler
+            {
+                InnerHandler = new HttpClientHandler()
+            };
+            _httpClient = new HttpClient(correlationHandler)
             {
                 Timeout = TimeSpan.FromMilliseconds(timeoutMs)
             };
+
+            // Read Steam account index from environment (set by test infrastructure)
+            var accountEnv = Environment.GetEnvironmentVariable("SDVD_TEST_STEAM_ACCOUNT_INDEX");
+            _accountIndex = int.TryParse(accountEnv, out var idx) ? idx : 0;
         }
 
         public void Dispose()
@@ -158,13 +169,22 @@ namespace JunimoServer.Services.Auth
         // container) so latency is minimal (<10ms).
 
         /// <summary>
+        /// Appends ?account=N to the URL for multi-account support.
+        /// </summary>
+        private string BuildUrl(string path)
+        {
+            var separator = path.Contains('?') ? '&' : '?';
+            return $"{_baseUrl}{path}{separator}account={_accountIndex}";
+        }
+
+        /// <summary>
         /// Generic GET request (blocking) with retry logic.
         /// </summary>
         private T Get<T>(string path)
         {
             return ExecuteWithRetry(() =>
             {
-                var url = $"{_baseUrl}{path}";
+                var url = BuildUrl(path);
                 var response = _httpClient.GetAsync(url).Result;
 
                 if (!response.IsSuccessStatusCode)
@@ -185,7 +205,7 @@ namespace JunimoServer.Services.Auth
         {
             return ExecuteWithRetry(() =>
             {
-                var url = $"{_baseUrl}{path}";
+                var url = BuildUrl(path);
 
                 var jsonBody = body != null
                     ? JsonSerializer.Serialize(body)
@@ -253,12 +273,18 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private static bool IsTransientError(HttpRequestException ex)
         {
-            // Retry on connection failures, timeouts, and 5xx errors
+            // Retry on connection failures, timeouts, and 5xx server errors.
+            // StatusCode renders as enum name (e.g. "InternalServerError") not numeric.
             var message = ex.Message.ToLowerInvariant();
             return message.Contains("connection") ||
                    message.Contains("timeout") ||
-                   message.Contains("503") ||
+                   message.Contains("internalservererror") ||
+                   message.Contains("serviceunavailable") ||
+                   message.Contains("badgateway") ||
+                   message.Contains("gatewaytimeout") ||
+                   message.Contains("500") ||
                    message.Contains("502") ||
+                   message.Contains("503") ||
                    message.Contains("504");
         }
 
@@ -280,6 +306,14 @@ namespace JunimoServer.Services.Auth
         public string status { get; set; }
         public bool logged_in { get; set; }
         public string timestamp { get; set; }
+        public HealthAccount[] accounts { get; set; }
+    }
+
+    public class HealthAccount
+    {
+        public int index { get; set; }
+        public bool logged_in { get; set; }
+        public string steam_id { get; set; }
     }
 
     public class LoginStatusResponse

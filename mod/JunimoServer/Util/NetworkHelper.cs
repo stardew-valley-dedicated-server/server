@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Threading.Tasks;
 
 namespace JunimoServer.Util
 {
@@ -51,6 +52,11 @@ namespace JunimoServer.Util
 
     public class NetworkHelper
     {
+        private static readonly HttpClient _httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
         public static IPAddress GetIpAddressLocal()
         {
             var interfaces = NetworkInterface
@@ -65,28 +71,17 @@ namespace JunimoServer.Util
                 .Address;
         }
 
-        // WebClient is deprecated, not sure if we still need this.. so commenting out for now
-        public static IPAddress GetIpAddressExternal()
+        public static async Task<IPAddress> GetIpAddressExternalAsync()
         {
-            IPAddress address;
-
-
-#pragma warning disable CS0168 // Ignore unused variable `ex`
             try
             {
-                HttpClient client = new HttpClient();
-
-                // Refactor this, just replaced deprecated WebClient quickly
-                string pubIp = client.GetStringAsync("https://api.ipify.org").GetAwaiter().GetResult();
+                string pubIp = await _httpClient.GetStringAsync("https://api.ipify.org").ConfigureAwait(false);
                 return IPAddress.Parse(pubIp);
             }
-            catch (Exception ex)
+            catch
             {
-                address = IPAddress.None;
+                return IPAddress.None;
             }
-#pragma warning restore CS0168
-
-            return address;
         }
 
         public static IncomingMessage ParseOutgoingMessage(OutgoingMessage message)

@@ -51,7 +51,7 @@ namespace JunimoServer.Services.SteamGameServer
             // Register event handlers
             helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-            helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
+            // GameServer continues running on ReturnedToTitle (stays online between save loads)
         }
 
         private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
@@ -73,17 +73,17 @@ namespace JunimoServer.Services.SteamGameServer
             catch (Exception ex)
             {
                 // Only log occasionally to avoid spam
-                if (e.IsMultipleOf(SteamConstants.CallbackErrorLogIntervalFrames)) // Every 5 seconds at 60fps
+                if (e.IsMultipleOf((uint)SteamConstants.CallbackErrorLogIntervalFrames)) // Every 5 seconds
                 {
                     _monitor.Log($"GameServer callback error: {ex.Message}", LogLevel.Trace);
+                    Diagnostics.ModEventLog.Emit("steam_callback_error", new
+                    {
+                        callback = "RunCallbacks",
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message
+                    });
                 }
             }
-        }
-
-        private void OnReturnedToTitle(object sender, ReturnedToTitleEventArgs e)
-        {
-            // GameServer continues running even when returning to title
-            // This allows the server to stay online between save loads
         }
 
         private bool InitializeGameServer()

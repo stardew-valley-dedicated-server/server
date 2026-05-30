@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using StardewValley.Objects;
 using StardewValley.TerrainFeatures;
 
 namespace JunimoServer.Services.CropSaver
@@ -46,13 +47,13 @@ namespace JunimoServer.Services.CropSaver
         public HoeDirt TryGetCoorespondingDirt()
         {
             var location = Game1.getLocationFromName(cropLocationName);
-            if (location.terrainFeatures.TryGetValue(cropLocationTile, out TerrainFeature terrainFeature))
-            {
-                if (terrainFeature is HoeDirt dirt)
-                {
-                    return dirt;
-                }
-            }
+            if (location == null) return null;
+
+            if (location.terrainFeatures.TryGetValue(cropLocationTile, out var tf) && tf is HoeDirt dirt)
+                return dirt;
+
+            if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
+                return pot.hoeDirt.Value;
 
             return null;
         }

@@ -6,26 +6,27 @@ namespace JunimoServer.Services.CropSaver
 {
     public class CropSaverOverrides
     {
-        private static IModHelper _helper;
         private static IMonitor _monitor;
         private static CropSaverDataLoader _cropSaverDataLoader;
 
-        public static void Initialize(IModHelper helper, IMonitor monitor, CropSaverDataLoader cropSaverDataLoader)
+        public static void Initialize(IMonitor monitor, CropSaverDataLoader cropSaverDataLoader)
         {
-            _helper = helper;
             _monitor = monitor;
             _cropSaverDataLoader = cropSaverDataLoader;
         }
 
         public static bool KillCrop_Prefix(ref Crop __instance)
         {
-            var cropLocation = _helper.Reflection.GetField<Vector2>(__instance, "tilePosition").GetValue();
+            var dirt = __instance.Dirt;
+            if (dirt?.Location == null) return true;
 
-            var townieCrop = _cropSaverDataLoader.GetSaverCrop("Farm", cropLocation);
+            var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.Name, dirt.Tile);
+            return managed == null;
+        }
 
-            if (townieCrop != null) return false;
-
-            return true;
+        public static bool IsManaged(string locationName, Vector2 tile)
+        {
+            return _cropSaverDataLoader?.GetSaverCrop(locationName, tile) != null;
         }
     }
 }

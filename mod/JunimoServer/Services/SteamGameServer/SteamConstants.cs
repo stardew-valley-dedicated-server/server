@@ -91,10 +91,10 @@ namespace JunimoServer.Services.SteamGameServer
 
         /// <summary>
         /// Interval (in frames) between logging repeated callback errors.
-        /// At 60 FPS, 300 frames = 5 seconds. Prevents log spam from persistent issues
+        /// 5 seconds at configured TPS. Prevents log spam from persistent issues
         /// while still alerting to problems.
         /// </summary>
-        public const int CallbackErrorLogIntervalFrames = 300;
+        public static readonly int CallbackErrorLogIntervalFrames = Env.ServerTps * 5;
 
         #endregion
 

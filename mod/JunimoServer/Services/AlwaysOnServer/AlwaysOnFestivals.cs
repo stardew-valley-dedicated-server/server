@@ -2,6 +2,7 @@ using JunimoServer.Services.ChatCommands;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
+using System;
 using SObject = StardewValley.Object;
 
 namespace JunimoServer.Services.AlwaysOn
@@ -13,37 +14,53 @@ namespace JunimoServer.Services.AlwaysOn
         private bool eventCommandUsed;
 
         private bool eggHuntAvailable;
-        private int eggHuntCountDown;
+        private DateTime? eggHuntStartTime;
+        private bool eggHuntAnnounced;
+        private bool eggHuntStarted;
 
         private bool flowerDanceAvailable;
-        private int flowerDanceCountDown;
+        private DateTime? flowerDanceStartTime;
+        private bool flowerDanceAnnounced;
+        private bool flowerDanceStarted;
 
         private bool luauSoupAvailable;
-        private int luauSoupCountDown;
+        private DateTime? luauSoupStartTime;
+        private bool luauSoupAnnounced;
+        private bool luauSoupStarted;
 
         private bool jellyDanceAvailable;
-        private int jellyDanceCountDown;
+        private DateTime? jellyDanceStartTime;
+        private bool jellyDanceAnnounced;
+        private bool jellyDanceStarted;
 
         private bool grangeDisplayAvailable;
-        private int grangeDisplayCountDown;
+        private DateTime? grangeDisplayStartTime;
+        private bool grangeDisplayAnnounced;
+        private bool grangeDisplayStarted;
 
         private bool goldenPumpkinAvailable;
-        private int goldenPumpkinCountDown;
+        private DateTime? goldenPumpkinStartTime;
 
         private bool iceFishingAvailable;
-        private int iceFishingCountDown;
+        private DateTime? iceFishingStartTime;
+        private bool iceFishingAnnounced;
+        private bool iceFishingStarted;
 
         private bool winterFeastAvailable;
-        private int winterFeastCountDown;
+        private DateTime? winterFeastStartTime;
 
         // Variables for timeout reset
-        private int festivalTicksForReset;
+        private DateTime? resetStartTime;
+        private bool _timeoutWarned;
 
         // Track if we're currently warping to festival to avoid repeated warps
         private bool _warpingToFestival;
 
         // Track if we've started the festival end process
         private bool _startedFestivalEnd;
+
+        // Log throttle
+        private DateTime _lastLogTime = DateTime.MinValue;
 
         protected readonly IModHelper _helper;
         protected readonly IMonitor _monitor;
@@ -56,6 +73,20 @@ namespace JunimoServer.Services.AlwaysOn
             Config = config;
 
             chatCommandService.RegisterCommand("event", "Tries to start the current festival's event.", StartEventCommand);
+        }
+
+        /// <summary>
+        /// Convert a config value (in ticks at 60 TPS) to seconds.
+        /// </summary>
+        private static double TicksToSeconds(int ticks) => ticks / 60.0;
+
+        /// <summary>
+        /// Get elapsed seconds since a start time, or 0 if not started.
+        /// </summary>
+        private static double ElapsedSeconds(DateTime? startTime)
+        {
+            if (!startTime.HasValue) return 0;
+            return (DateTime.UtcNow - startTime.Value).TotalSeconds;
         }
 
         /// <summary>
@@ -75,58 +106,71 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 ResetFestivalState();
                 eggHuntAvailable = false;
-                eggHuntCountDown = 0;
+                eggHuntStartTime = null;
+                eggHuntAnnounced = false;
+                eggHuntStarted = false;
             }
             else if (SDateHelper.IsFlowerDanceToday() && currentTime >= 1410)
             {
                 ResetFestivalState();
                 flowerDanceAvailable = false;
-                flowerDanceCountDown = 0;
+                flowerDanceStartTime = null;
+                flowerDanceAnnounced = false;
+                flowerDanceStarted = false;
             }
             else if (SDateHelper.IsLuauToday() && currentTime >= 1410)
             {
                 ResetFestivalState();
                 luauSoupAvailable = false;
-                luauSoupCountDown = 0;
+                luauSoupStartTime = null;
+                luauSoupAnnounced = false;
+                luauSoupStarted = false;
             }
             else if (SDateHelper.IsDanceOfJelliesToday() && currentTime >= 2410)
             {
                 ResetFestivalState();
                 jellyDanceAvailable = false;
-                jellyDanceCountDown = 0;
+                jellyDanceStartTime = null;
+                jellyDanceAnnounced = false;
+                jellyDanceStarted = false;
             }
             else if (SDateHelper.IsStardewValleyFairToday() && currentTime >= 1510)
             {
                 ResetFestivalState();
                 Game1.displayHUD = true;
                 grangeDisplayAvailable = false;
-                grangeDisplayCountDown = 0;
+                grangeDisplayStartTime = null;
+                grangeDisplayAnnounced = false;
+                grangeDisplayStarted = false;
             }
             else if (SDateHelper.IsSpiritsEveToday() && currentTime >= 2400)
             {
                 ResetFestivalState();
                 Game1.displayHUD = true;
                 goldenPumpkinAvailable = false;
-                goldenPumpkinCountDown = 0;
+                goldenPumpkinStartTime = null;
             }
             else if (SDateHelper.IsFestivalOfIceToday() && currentTime >= 1410)
             {
                 ResetFestivalState();
                 iceFishingAvailable = false;
-                iceFishingCountDown = 0;
+                iceFishingStartTime = null;
+                iceFishingAnnounced = false;
+                iceFishingStarted = false;
             }
             else if (SDateHelper.IsFeastOfWinterStarToday() && currentTime >= 1410)
             {
                 ResetFestivalState();
                 winterFeastAvailable = false;
-                winterFeastCountDown = 0;
+                winterFeastStartTime = null;
             }
         }
 
         private void ResetFestivalState()
         {
             Game1.options.setServerMode("online");
-            festivalTicksForReset = 0;
+            resetStartTime = null;
+            _timeoutWarned = false;
             _warpingToFestival = false;
             _startedFestivalEnd = false;
         }
@@ -135,15 +179,12 @@ namespace JunimoServer.Services.AlwaysOn
         /// Called every tick. Handles warping the host to the festival when other players are ready.
         /// Uses the same approach as the game's DedicatedServer - monitor ready state and warp directly.
         /// </summary>
-        private int _logThrottle = 0;
-
         public void HandleFestivalStart()
         {
-            _logThrottle++;
-
-            // Debug: log every 60 ticks (once per second) on festival days
-            if (Game1.whereIsTodaysFest != null && _logThrottle % 60 == 0)
+            // Debug: log once per second on festival days
+            if (Game1.whereIsTodaysFest != null && (DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
             {
+                _lastLogTime = DateTime.UtcNow;
                 var numberReady = Game1.netReady.GetNumberReady("festivalStart");
                 var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
                 _monitor.Log($"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}", LogLevel.Info);
@@ -243,29 +284,38 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    eggHuntCountDown = Config.EggHuntCountDownConfig;
+                    eggHuntStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.EggHuntCountDownConfig));
+                    eggHuntAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                eggHuntCountDown += 1;
-
-                float chatEgg = Config.EggHuntCountDownConfig / 60f;
-                if (eggHuntCountDown == 1)
+                if (!eggHuntStartTime.HasValue)
                 {
-                    _helper.SendPublicMessage($"The Egg Hunt will begin in {chatEgg:0.#} minutes.");
-                    _helper.SendPublicMessage(StartNowText);
+                    eggHuntStartTime = DateTime.UtcNow;
                 }
 
-                if (eggHuntCountDown == Config.EggHuntCountDownConfig + 1)
+                double elapsed = ElapsedSeconds(eggHuntStartTime);
+                double countdownSeconds = TicksToSeconds(Config.EggHuntCountDownConfig);
+
+                if (!eggHuntAnnounced)
+                {
+                    float chatEgg = Config.EggHuntCountDownConfig / 60f;
+                    _helper.SendPublicMessage($"The Egg Hunt will begin in {chatEgg:0.#} minutes.");
+                    _helper.SendPublicMessage(StartNowText);
+                    eggHuntAnnounced = true;
+                }
+
+                if (!eggHuntStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    eggHuntStarted = true;
                 }
 
-                if (eggHuntCountDown >= Config.EggHuntCountDownConfig + 5)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0)
                 {
                     if (Game1.activeClickableMenu != null)
                     {
@@ -273,8 +323,11 @@ namespace JunimoServer.Services.AlwaysOn
                     }
 
                     //festival timeout
-                    festivalTicksForReset += 1;
-                    if (festivalTicksForReset >= Config.EggFestivalTimeOut + 180)
+                    if (!resetStartTime.HasValue)
+                    {
+                        resetStartTime = DateTime.UtcNow;
+                    }
+                    if (ElapsedSeconds(resetStartTime) >= TicksToSeconds(Config.EggFestivalTimeOut + 180))
                     {
                         Game1.options.setServerMode("offline");
                     }
@@ -287,29 +340,38 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    flowerDanceCountDown = Config.FlowerDanceCountDownConfig;
+                    flowerDanceStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.FlowerDanceCountDownConfig));
+                    flowerDanceAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                flowerDanceCountDown += 1;
-
-                float chatFlower = Config.FlowerDanceCountDownConfig / 60f;
-                if (flowerDanceCountDown == 1)
+                if (!flowerDanceStartTime.HasValue)
                 {
-                    _helper.SendPublicMessage($"The Flower Dance will begin in {chatFlower:0.#} minutes.");
-                    _helper.SendPublicMessage(StartNowText);
+                    flowerDanceStartTime = DateTime.UtcNow;
                 }
 
-                if (flowerDanceCountDown == Config.FlowerDanceCountDownConfig + 1)
+                double elapsed = ElapsedSeconds(flowerDanceStartTime);
+                double countdownSeconds = TicksToSeconds(Config.FlowerDanceCountDownConfig);
+
+                if (!flowerDanceAnnounced)
+                {
+                    float chatFlower = Config.FlowerDanceCountDownConfig / 60f;
+                    _helper.SendPublicMessage($"The Flower Dance will begin in {chatFlower:0.#} minutes.");
+                    _helper.SendPublicMessage(StartNowText);
+                    flowerDanceAnnounced = true;
+                }
+
+                if (!flowerDanceStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    flowerDanceStarted = true;
                 }
 
-                if (flowerDanceCountDown >= Config.FlowerDanceCountDownConfig + 5)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0)
                 {
                     if (Game1.activeClickableMenu != null)
                     {
@@ -317,8 +379,11 @@ namespace JunimoServer.Services.AlwaysOn
                     }
 
                     //festival timeout
-                    festivalTicksForReset += 1;
-                    if (festivalTicksForReset >= Config.FlowerDanceTimeOut + 90)
+                    if (!resetStartTime.HasValue)
+                    {
+                        resetStartTime = DateTime.UtcNow;
+                    }
+                    if (ElapsedSeconds(resetStartTime) >= TicksToSeconds(Config.FlowerDanceTimeOut + 90))
                     {
                         Game1.options.setServerMode("offline");
                     }
@@ -331,36 +396,45 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    luauSoupCountDown = Config.LuauSoupCountDownConfig;
+                    luauSoupStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.LuauSoupCountDownConfig));
                     // Add iridium starfruit to soup
                     var item = new SObject("268", 1, false, -1, 3);
-                    _helper.Reflection.GetMethod(new Event(), "addItemToLuauSoup").Invoke(item, Game1.player);
+                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "addItemToLuauSoup").Invoke(item, Game1.player);
+                    luauSoupAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                luauSoupCountDown += 1;
-
-                float chatSoup = Config.LuauSoupCountDownConfig / 60f;
-                if (luauSoupCountDown == 1)
+                if (!luauSoupStartTime.HasValue)
                 {
+                    luauSoupStartTime = DateTime.UtcNow;
+                }
+
+                double elapsed = ElapsedSeconds(luauSoupStartTime);
+                double countdownSeconds = TicksToSeconds(Config.LuauSoupCountDownConfig);
+
+                if (!luauSoupAnnounced)
+                {
+                    float chatSoup = Config.LuauSoupCountDownConfig / 60f;
                     _helper.SendPublicMessage($"The Soup Tasting will begin in {chatSoup:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
 
                     // Add iridium starfruit to soup
                     var item = new SObject("268", 1, false, -1, 3);
-                    _helper.Reflection.GetMethod(new Event(), "addItemToLuauSoup").Invoke(item, Game1.player);
+                    _helper.Reflection.GetMethod(Game1.CurrentEvent, "addItemToLuauSoup").Invoke(item, Game1.player);
+                    luauSoupAnnounced = true;
                 }
 
-                if (luauSoupCountDown == Config.LuauSoupCountDownConfig + 1)
+                if (!luauSoupStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    luauSoupStarted = true;
                 }
 
-                if (luauSoupCountDown >= Config.LuauSoupCountDownConfig + 5)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0)
                 {
                     if (Game1.activeClickableMenu != null)
                     {
@@ -368,8 +442,11 @@ namespace JunimoServer.Services.AlwaysOn
                     }
 
                     // Festival timeout
-                    festivalTicksForReset += 1;
-                    if (festivalTicksForReset >= Config.LuauTimeOut + 80)
+                    if (!resetStartTime.HasValue)
+                    {
+                        resetStartTime = DateTime.UtcNow;
+                    }
+                    if (ElapsedSeconds(resetStartTime) >= TicksToSeconds(Config.LuauTimeOut + 80))
                     {
                         Game1.options.setServerMode("offline");
                     }
@@ -382,29 +459,38 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    jellyDanceCountDown = Config.JellyDanceCountDownConfig;
+                    jellyDanceStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.JellyDanceCountDownConfig));
+                    jellyDanceAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                jellyDanceCountDown += 1;
-
-                float chatJelly = Config.JellyDanceCountDownConfig / 60f;
-                if (jellyDanceCountDown == 1)
+                if (!jellyDanceStartTime.HasValue)
                 {
-                    _helper.SendPublicMessage($"The Dance of the Moonlight Jellies will begin in {chatJelly:0.#} minutes.");
-                    _helper.SendPublicMessage(StartNowText);
+                    jellyDanceStartTime = DateTime.UtcNow;
                 }
 
-                if (jellyDanceCountDown == Config.JellyDanceCountDownConfig + 1)
+                double elapsed = ElapsedSeconds(jellyDanceStartTime);
+                double countdownSeconds = TicksToSeconds(Config.JellyDanceCountDownConfig);
+
+                if (!jellyDanceAnnounced)
+                {
+                    float chatJelly = Config.JellyDanceCountDownConfig / 60f;
+                    _helper.SendPublicMessage($"The Dance of the Moonlight Jellies will begin in {chatJelly:0.#} minutes.");
+                    _helper.SendPublicMessage(StartNowText);
+                    jellyDanceAnnounced = true;
+                }
+
+                if (!jellyDanceStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    jellyDanceStarted = true;
                 }
 
-                if (jellyDanceCountDown >= Config.JellyDanceCountDownConfig + 5)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0)
                 {
                     if (Game1.activeClickableMenu != null)
                     {
@@ -412,8 +498,11 @@ namespace JunimoServer.Services.AlwaysOn
                     }
 
                     // Festival timeout
-                    festivalTicksForReset += 1;
-                    if (festivalTicksForReset >= Config.DanceOfJelliesTimeOut + 180)
+                    if (!resetStartTime.HasValue)
+                    {
+                        resetStartTime = DateTime.UtcNow;
+                    }
+                    if (ElapsedSeconds(resetStartTime) >= TicksToSeconds(Config.DanceOfJelliesTimeOut + 180))
                     {
                         Game1.options.setServerMode("offline");
                     }
@@ -426,43 +515,60 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    grangeDisplayCountDown = Config.GrangeDisplayCountDownConfig;
+                    grangeDisplayStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.GrangeDisplayCountDownConfig));
+                    grangeDisplayAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                grangeDisplayCountDown += 1;
-                festivalTicksForReset += 1;
+                if (!grangeDisplayStartTime.HasValue)
+                {
+                    grangeDisplayStartTime = DateTime.UtcNow;
+                }
 
-                // Festival timeout code
-                if (festivalTicksForReset == Config.FairTimeOut - 120)
+                double elapsed = ElapsedSeconds(grangeDisplayStartTime);
+                double countdownSeconds = TicksToSeconds(Config.GrangeDisplayCountDownConfig);
+
+                // Festival timeout (runs from the start for this festival)
+                if (!resetStartTime.HasValue)
+                {
+                    resetStartTime = DateTime.UtcNow;
+                }
+
+                double resetElapsed = ElapsedSeconds(resetStartTime);
+                double fairTimeoutSeconds = TicksToSeconds(Config.FairTimeOut);
+
+                if (!_timeoutWarned && resetElapsed >= fairTimeoutSeconds - TicksToSeconds(120))
                 {
                     _helper.SendPublicMessage("2 minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
+                    _timeoutWarned = true;
                 }
 
-                if (festivalTicksForReset >= Config.FairTimeOut)
+                if (resetElapsed >= fairTimeoutSeconds)
                 {
                     Game1.options.setServerMode("offline");
                 }
 
                 ///////////////////////////////////////////////
-                float chatGrange = Config.GrangeDisplayCountDownConfig / 60f;
-                if (grangeDisplayCountDown == 1)
+                if (!grangeDisplayAnnounced)
                 {
+                    float chatGrange = Config.GrangeDisplayCountDownConfig / 60f;
                     _helper.SendPublicMessage($"The Grange Judging will begin in {chatGrange:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
+                    grangeDisplayAnnounced = true;
                 }
 
-                if (grangeDisplayCountDown == Config.GrangeDisplayCountDownConfig + 1)
+                if (!grangeDisplayStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    grangeDisplayStarted = true;
                 }
 
-                if (grangeDisplayCountDown == Config.GrangeDisplayCountDownConfig + 5 && !_startedFestivalEnd)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0 && !_startedFestivalEnd)
                 {
                     _monitor.Log("Grange display finished, triggering festival end");
                     Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
@@ -473,23 +579,34 @@ namespace JunimoServer.Services.AlwaysOn
             // Golden pumpkin maze event
             else if (goldenPumpkinAvailable)
             {
-                goldenPumpkinCountDown += 1;
-                festivalTicksForReset += 1;
+                if (!goldenPumpkinStartTime.HasValue)
+                {
+                    goldenPumpkinStartTime = DateTime.UtcNow;
+                }
+
+                if (!resetStartTime.HasValue)
+                {
+                    resetStartTime = DateTime.UtcNow;
+                }
+
+                double resetElapsed = ElapsedSeconds(resetStartTime);
+                double spiritsTimeoutSeconds = TicksToSeconds(Config.SpiritsEveTimeOut);
 
                 // Festival timeout code
-                if (festivalTicksForReset == Config.SpiritsEveTimeOut - 120)
+                if (!_timeoutWarned && resetElapsed >= spiritsTimeoutSeconds - TicksToSeconds(120))
                 {
                     _helper.SendPublicMessage("2 minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
+                    _timeoutWarned = true;
                 }
 
-                if (festivalTicksForReset >= Config.SpiritsEveTimeOut)
+                if (resetElapsed >= spiritsTimeoutSeconds)
                 {
                     Game1.options.setServerMode("offline");
                 }
 
                 ///////////////////////////////////////////////
-                if (goldenPumpkinCountDown == 10 && !_startedFestivalEnd)
+                if (ElapsedSeconds(goldenPumpkinStartTime) >= TicksToSeconds(10) && !_startedFestivalEnd)
                 {
                     _monitor.Log("Spirit's Eve timeout, triggering festival end");
                     Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
@@ -502,29 +619,38 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    iceFishingCountDown = Config.IceFishingCountDownConfig;
+                    iceFishingStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.IceFishingCountDownConfig));
+                    iceFishingAnnounced = true;
                     eventCommandUsed = false;
                 }
 
-                iceFishingCountDown += 1;
-
-                float chatIceFish = Config.IceFishingCountDownConfig / 60f;
-                if (iceFishingCountDown == 1)
+                if (!iceFishingStartTime.HasValue)
                 {
-                    _helper.SendPublicMessage($"The Ice Fishing Contest will begin in {chatIceFish:0.#} minutes.");
-                    _helper.SendPublicMessage(StartNowText);
+                    iceFishingStartTime = DateTime.UtcNow;
                 }
 
-                if (iceFishingCountDown == Config.IceFishingCountDownConfig + 1)
+                double elapsed = ElapsedSeconds(iceFishingStartTime);
+                double countdownSeconds = TicksToSeconds(Config.IceFishingCountDownConfig);
+
+                if (!iceFishingAnnounced)
+                {
+                    float chatIceFish = Config.IceFishingCountDownConfig / 60f;
+                    _helper.SendPublicMessage($"The Ice Fishing Contest will begin in {chatIceFish:0.#} minutes.");
+                    _helper.SendPublicMessage(StartNowText);
+                    iceFishingAnnounced = true;
+                }
+
+                if (!iceFishingStarted && elapsed >= countdownSeconds)
                 {
                     var festivalHost = GetFestivalHost();
                     if (festivalHost != null)
                     {
                         Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
                     }
+                    iceFishingStarted = true;
                 }
 
-                if (iceFishingCountDown >= Config.IceFishingCountDownConfig + 5)
+                if (elapsed >= countdownSeconds + 5.0 / 60.0)
                 {
                     if (Game1.activeClickableMenu != null)
                     {
@@ -532,8 +658,11 @@ namespace JunimoServer.Services.AlwaysOn
                     }
 
                     //festival timeout
-                    festivalTicksForReset += 1;
-                    if (festivalTicksForReset >= Config.FestivalOfIceTimeOut + 180)
+                    if (!resetStartTime.HasValue)
+                    {
+                        resetStartTime = DateTime.UtcNow;
+                    }
+                    if (ElapsedSeconds(resetStartTime) >= TicksToSeconds(Config.FestivalOfIceTimeOut + 180))
                     {
                         Game1.options.setServerMode("offline");
                     }
@@ -544,22 +673,34 @@ namespace JunimoServer.Services.AlwaysOn
             // Feast of the Winter event
             else if (winterFeastAvailable)
             {
-                winterFeastCountDown += 1;
-                festivalTicksForReset += 1;
+                if (!winterFeastStartTime.HasValue)
+                {
+                    winterFeastStartTime = DateTime.UtcNow;
+                }
+
+                if (!resetStartTime.HasValue)
+                {
+                    resetStartTime = DateTime.UtcNow;
+                }
+
+                double resetElapsed = ElapsedSeconds(resetStartTime);
+                double winterTimeoutSeconds = TicksToSeconds(Config.WinterStarTimeOut);
+
                 //festival timeout code
-                if (festivalTicksForReset == Config.WinterStarTimeOut - 120)
+                if (!_timeoutWarned && resetElapsed >= winterTimeoutSeconds - TicksToSeconds(120))
                 {
                     _helper.SendPublicMessage("2 minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
+                    _timeoutWarned = true;
                 }
 
-                if (festivalTicksForReset >= Config.WinterStarTimeOut)
+                if (resetElapsed >= winterTimeoutSeconds)
                 {
                     Game1.options.setServerMode("offline");
                 }
 
                 ///////////////////////////////////////////////
-                if (winterFeastCountDown == 10 && !_startedFestivalEnd)
+                if (ElapsedSeconds(winterFeastStartTime) >= TicksToSeconds(10) && !_startedFestivalEnd)
                 {
                     _monitor.Log("Winter Feast timeout, triggering festival end");
                     Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
@@ -585,11 +726,12 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            // Debug: log festivalEnd ready state
+            // Debug: log festivalEnd ready state once per second
             var endReady = Game1.netReady.GetNumberReady("festivalEnd");
             var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
-            if (_logThrottle % 60 == 0)
+            if ((DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
             {
+                _lastLogTime = DateTime.UtcNow;
                 _monitor.Log($"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}", LogLevel.Info);
             }
 

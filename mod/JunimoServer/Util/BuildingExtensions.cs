@@ -1,4 +1,3 @@
-using JunimoServer.Services.CabinManager;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Buildings;
@@ -28,10 +27,11 @@ namespace JunimoServer.Util
             return (T)building.GetIndoors();
         }
 
-        public static bool IsInHiddenStack(this Building building)
-        {
-            return building.tileX.Value == CabinManagerService.HiddenCabinLocation.X && building.tileY.Value == CabinManagerService.HiddenCabinLocation.Y;
-        }
+        public static CabinRole GetCabinRole(this Building building) => CabinPositions.Classify(building);
+
+        public static bool IsLobbyOrEditing(this Building building) => CabinPositions.IsLobbyOrEditing(building);
+
+        public static bool IsInHiddenStack(this Building building) => CabinPositions.IsInPlayerStack(building);
 
         public static bool IsOwnedBy(this Building building, long ownerId)
         {
@@ -46,7 +46,7 @@ namespace JunimoServer.Util
                 return false;
             }
 
-            // building.owner?
+            // Uses cabin interior owner (farmhandReference), not building.owner
             return cabin.IsOwnedBy(ownerId);
         }
 

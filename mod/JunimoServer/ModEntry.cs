@@ -1,4 +1,5 @@
 using HarmonyLib;
+using JunimoServer.Shared;
 using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
@@ -27,8 +28,31 @@ namespace JunimoServer
         private readonly Type modServiceBaseType = typeof(IModService);
         private bool _failFastEnabled;
 
+        // Cold-start phase timing. Captured once at Entry; used to emit
+        // mod_phase events with phaseMs (delta from previous phase) and
+        // bootMs (cumulative since Entry started). Read by the harness's
+        // SimpleContainerLogStreamer.TryForwardSdvdEvent → infrastructure.jsonl.
+        private System.Diagnostics.Stopwatch _bootStopwatch;
+        private long _previousPhaseMs;
+
+        private void EmitModPhase(string phase)
+        {
+            if (_bootStopwatch == null) return;
+            var bootMs = _bootStopwatch.ElapsedMilliseconds;
+            var phaseMs = bootMs - _previousPhaseMs;
+            _previousPhaseMs = bootMs;
+            Services.Diagnostics.ModEventLog.Emit("mod_phase", new
+            {
+                phase,
+                phaseMs,
+                bootMs,
+            });
+        }
+
         public override void Entry(IModHelper helper)
         {
+            _bootStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             // Check for fail-fast mode (used in E2E testing)
             _failFastEnabled = string.Equals(
                 Environment.GetEnvironmentVariable("TEST_FAIL_FAST"),
@@ -41,15 +65,29 @@ namespace JunimoServer
                 AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             }
 
+            EmitModPhase("mod_load_started");
+
             Helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+            Helper.Events.GameLoop.DayStarted += OnFirstDayStarted;
 
             // Clear invite code file on startup
             JunimoServer.Util.InviteCodeFile.Clear(Monitor);
 
             RegisterServices();
+            EmitModPhase("services_started");
+
             RegisterChatCommands();
             RegisterConsoleCommands();
+            EmitModPhase("api_listener_ready");
+        }
+
+        private bool _firstDayStartedEmitted;
+        private void OnFirstDayStarted(object sender, DayStartedEventArgs e)
+        {
+            if (_firstDayStartedEmitted) return;
+            _firstDayStartedEmitted = true;
+            EmitModPhase("world_ready");
         }
 
         private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -62,11 +100,17 @@ namespace JunimoServer
         private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
         {
             Game1.options.pauseWhenOutOfFocus = false;
+
+            // Resize the window to fill the X display so the server renders at the
+            // configured resolution (not the 1280x720 default) — lower resolution
+            // saves CPU per frame and the recorder captures a full, uncropped frame.
+            DisplaySizing.ApplyFromEnv(Monitor);
         }
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
             Game1.options.pauseWhenOutOfFocus = false;
+            EmitModPhase("save_loaded");
         }
 
         private void RegisterServices()
@@ -86,7 +130,32 @@ namespace JunimoServer
         {
             services.AddSingleton(Helper);
             services.AddSingleton(Monitor);
-            services.AddSingleton(new Harmony(ModManifest.UniqueID));
+
+            var harmony = new Harmony(ModManifest.UniqueID);
+            services.AddSingleton(harmony);
+
+            // Fix .NET 6 HttpListener race condition (dotnet/runtime#28658) before
+            // any service can call HttpListener.Start(). Must be patched before
+            // GameLaunched fires (where ApiService starts the HTTP listener).
+            HttpListenerFix.Apply(harmony, Monitor);
+
+            // Fix vanilla NRE: GameLocation.UpdateWhenCurrentLocation accesses
+            // Game1.player.currentLocation without null check during warps/day transitions.
+            harmony.Patch(
+                original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.UpdateWhenCurrentLocation)),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(UpdateWhenCurrentLocation_Prefix)));
+            Monitor.Log("Patched UpdateWhenCurrentLocation with null-safety guard", LogLevel.Trace);
+
+            // Keep the display zoom/UI scale pinned in every game mode (the actual resize
+            // happens on GameLaunched via DisplaySizing.ApplyFromEnv).
+            DisplaySizing.Install(harmony);
+
+            // Test overlay for E2E test debugging (only active when SDVD_ENV=test)
+            if (Env.IsTest)
+            {
+                TestOverlay.Apply(harmony);
+                ButtonTutorialSuppressor.Apply(harmony);
+            }
 
             // Load settings first so we can apply verbose logging before other services start
             var settingsLoader = new ServerSettingsLoader(Helper, Monitor);
@@ -139,9 +208,16 @@ namespace JunimoServer
                 }
                 catch (Exception e)
                 {
-                    // TODO: Currently fails silently. Should throw to fail fast, with bypass via config if users want to keep trying/fiddling
+                    // Fail-fast: a failed service init can leave Harmony patches half-installed
+                    // (e.g. PasswordProtectionService applies 5 patches in its constructor — a
+                    // throw mid-sequence would silently disable the auth gate while accepting
+                    // connections). Terminate the process so the operator/container restarts
+                    // into a coherent state instead of running with partial enforcement.
+                    // To run without password protection, leave SERVER_PASSWORD unset; the
+                    // service short-circuits before installing any patches.
                     Monitor.Log($"   {serviceName} ({serviceType}) FAILED: {e}", LogLevel.Error);
-                    continue;
+                    Monitor.Log("Service initialization failed — exiting to avoid partial-enforcement state", LogLevel.Error);
+                    Environment.Exit(1);
                 }
 
                 Monitor.Log($"   {serviceName} ({serviceType})", LogLevel.Trace);
@@ -203,6 +279,15 @@ namespace JunimoServer
             LoginCommand.Register(Helper, Monitor, chatCommandsService, passwordProtectionService);
             AuthStatusCommand.Register(Helper, Monitor, chatCommandsService, roleService, passwordProtectionService);
             LobbyCommands.Register(Helper, Monitor, chatCommandsService, roleService, lobbyService);
+        }
+
+        /// <summary>
+        /// Skips GameLocation.UpdateWhenCurrentLocation when Game1.player.currentLocation
+        /// is null. Prevents a vanilla NRE during warp/day-transition frames.
+        /// </summary>
+        private static bool UpdateWhenCurrentLocation_Prefix()
+        {
+            return Game1.player?.currentLocation != null;
         }
 
     }

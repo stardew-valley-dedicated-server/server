@@ -57,5 +57,12 @@ namespace JunimoServer.Services.Settings
         /// Example: ["76561198012345678", "76561198087654321"]
         /// </summary>
         public string[] AdminSteamIds { get; set; } = Array.Empty<string>();
+
+        /// <summary>
+        /// How often (in game ticks) the server broadcasts farmer, location, and
+        /// world-state deltas to peers. Lower = lower latency, higher bandwidth.
+        /// Vanilla default is 3; the mod historically used 1. Clamped to [1, 60].
+        /// </summary>
+        public int NetworkBroadcastPeriod { get; set; } = 1;
     }
 }

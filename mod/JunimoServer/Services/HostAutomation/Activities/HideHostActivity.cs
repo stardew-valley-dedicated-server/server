@@ -7,7 +7,7 @@ namespace JunimoServer.Services.HostAutomation.Activities
     {
         protected override void OnDayStart()
         {
-            AutomationUtil.WarpToHidingSpot();
+            AlwaysOnUtil.WarpToFarmDefaultSpawn();
         }
 
         protected override void OnTick()

@@ -39,7 +39,7 @@ namespace JunimoServer.Services.Commands
 
                 var ping = (int)Game1.server.getPingToClient(msg.SourceFarmer);
                 var isReady = Game1.server.isGameAvailable();
-                var renderingEnabled = ServerOptimizerOverrides.IsRenderingEnabled();
+                var renderingFps = ServerOptimizerOverrides.GetCurrentServerFps();
 
                 helper.SendPrivateMessage(msg.SourceFarmer, $"--- Server Info ---");
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Name: {farmName} Farm");
@@ -49,7 +49,7 @@ namespace JunimoServer.Services.Commands
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Players: {playerCount}/{maxPlayers}");
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Ping: {ping}ms");
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Status: {(isReady ? "Ready" : "Busy")}");
-                helper.SendPrivateMessage(msg.SourceFarmer, $"Rendering: {(renderingEnabled ? "On" : "Off")}");
+                helper.SendPrivateMessage(msg.SourceFarmer, $"Rendering: {(renderingFps > 0 ? $"On ({renderingFps} fps)" : "Off")}");
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Invite Code: {inviteCode}");
             });
 
@@ -93,7 +93,7 @@ namespace JunimoServer.Services.Commands
             var season = Game1.currentSeason ?? "unknown";
 
             var isReady = Game1.server.isGameAvailable();
-            var renderingEnabled = ServerOptimizerOverrides.IsRenderingEnabled();
+            var renderingFps = ServerOptimizerOverrides.GetCurrentServerFps();
 
             _monitor.Log("--- Server Info ---", LogLevel.Info);
             _monitor.Log($"  Name: {farmName} Farm", LogLevel.Info);
@@ -102,7 +102,7 @@ namespace JunimoServer.Services.Commands
             _monitor.Log($"  In-Game: {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(season)} {Game1.dayOfMonth}, Year {Game1.year} - {FormatGameTime(Game1.timeOfDay)}", LogLevel.Info);
             _monitor.Log($"  Players: {playerCount}/{maxPlayers}", LogLevel.Info);
             _monitor.Log($"  Status: {(isReady ? "Ready" : "Busy")}", LogLevel.Info);
-            _monitor.Log($"  Rendering: {(renderingEnabled ? "On" : "Off")}", LogLevel.Info);
+            _monitor.Log($"  Rendering: {(renderingFps > 0 ? $"On ({renderingFps} fps)" : "Off")}", LogLevel.Info);
             _monitor.Log($"  Invite Code: {inviteCode}", LogLevel.Info);
         }
     }

@@ -243,21 +243,24 @@ namespace JunimoServer.Services.Commands
                 {
                     var cabinCount = farm.buildings.Count(b => b.isCabin);
                     var hiddenCount = farm.buildings.Count(b => b.isCabin && b.IsInHiddenStack());
-                    var visibleCount = cabinCount - hiddenCount;
+                    var lobbyCount = farm.buildings.Count(b => b.isCabin && b.IsLobbyOrEditing());
+                    var visibleCount = cabinCount - hiddenCount - lobbyCount;
 
                     if (_options.IsNone && hiddenCount == 0)
                     {
-                        _monitor.Log($"  [PASS] {cabinCount} cabins, all visible (consistent with None strategy)", LogLevel.Info);
+                        var lobbyNote = lobbyCount > 0 ? $", {lobbyCount} lobby/editing" : "";
+                        _monitor.Log($"  [PASS] {cabinCount} cabins, {visibleCount} visible{lobbyNote} (consistent with None strategy)", LogLevel.Info);
                         passed++;
                     }
                     else if (_options.UsesHiddenCabins)
                     {
-                        _monitor.Log($"  [PASS] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible, strategy: {_options.Data.CabinStrategy})", LogLevel.Info);
+                        var lobbyNote = lobbyCount > 0 ? $", {lobbyCount} lobby/editing" : "";
+                        _monitor.Log($"  [PASS] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible{lobbyNote}, strategy: {_options.Data.CabinStrategy})", LogLevel.Info);
                         passed++;
                     }
                     else
                     {
-                        _monitor.Log($"  [WARN] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible) — may need migration", LogLevel.Warn);
+                        _monitor.Log($"  [WARN] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible), may need migration", LogLevel.Warn);
                         passed++;
                     }
                 }

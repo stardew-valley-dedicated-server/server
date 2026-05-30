@@ -1,44 +1,57 @@
+using System;
 using JunimoServer.Services.ServerOptim;
 using StardewModdingAPI;
+using StardewModdingAPI.Events;
 
 namespace JunimoServer.Services.Commands
 {
     public class RenderingCommand
     {
+        private static IModHelper _helper;
+        private static IMonitor _monitor;
+
         public static void Register(IModHelper helper, IMonitor monitor)
         {
+            _helper = helper;
+            _monitor = monitor;
+
             helper.ConsoleCommands.Add("rendering",
-                "Toggle rendering: 'rendering on', 'rendering off', 'rendering toggle', or 'rendering status'",
-                (cmd, args) => HandleCommand(args, monitor));
+                "Set render rate: 'rendering <fps>' (0 to disable) or 'rendering status'",
+                (cmd, args) => HandleCommand(args));
         }
 
-        private static void HandleCommand(string[] args, IMonitor monitor)
+        private static void HandleCommand(string[] args)
         {
             if (args.Length == 0)
             {
-                monitor.Log("Usage: rendering on|off|toggle|status", LogLevel.Warn);
+                _monitor.Log("Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)", LogLevel.Warn);
                 return;
             }
 
-            switch (args[0].ToLowerInvariant())
+            if (string.Equals(args[0], "status", StringComparison.OrdinalIgnoreCase))
             {
-                case "on":
-                    ServerOptimizerOverrides.ToggleRendering(true, monitor);
-                    break;
-                case "off":
-                    ServerOptimizerOverrides.ToggleRendering(false, monitor);
-                    break;
-                case "toggle":
-                    ServerOptimizerOverrides.ToggleRendering(!ServerOptimizerOverrides.IsRenderingEnabled(), monitor);
-                    break;
-                case "status":
-                    var state = ServerOptimizerOverrides.IsRenderingEnabled() ? "enabled" : "disabled";
-                    monitor.Log($"Rendering is {state}", LogLevel.Info);
-                    break;
-                default:
-                    monitor.Log("Usage: rendering on|off|toggle|status", LogLevel.Warn);
-                    break;
+                var fps = ServerOptimizerOverrides.GetCurrentServerFps();
+                _monitor.Log(fps == 0 ? "Rendering is disabled (fps 0)" : $"Rendering is at {fps} fps", LogLevel.Info);
+                return;
             }
+
+            if (!int.TryParse(args[0], out var newFps) || newFps < 0)
+            {
+                _monitor.Log($"Invalid argument '{args[0]}'. Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)", LogLevel.Warn);
+                return;
+            }
+
+            // Marshal the mutation onto the game loop. SetServerFps writes
+            // Game1.mapDisplayDevice, which must run on the game thread; SMAPI console
+            // commands run on a background thread. Mirrors ApiService.RunOnGameThreadAsync.
+            // A one-shot UpdateTicked handler runs once on the next tick, then unsubscribes.
+            void Apply(object sender, UpdateTickedEventArgs e)
+            {
+                _helper.Events.GameLoop.UpdateTicked -= Apply;
+                ServerOptimizerOverrides.SetServerFps(newFps, _monitor);
+            }
+
+            _helper.Events.GameLoop.UpdateTicked += Apply;
         }
     }
 }

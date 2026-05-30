@@ -3,6 +3,7 @@ using StardewModdingAPI;
 using StardewValley.SDKs.GogGalaxy;
 using System.Collections.Generic;
 using System.Net;
+using System.Threading.Tasks;
 
 namespace JunimoServer.Util
 {
@@ -31,16 +32,20 @@ namespace JunimoServer.Util
                 _hasPrinted = true;
             }
 
+            _ = PrintAsync(monitor, helper);
+        }
+
+        private static async Task PrintAsync(IMonitor monitor, IModHelper helper)
+        {
             var modInfo = helper.ModRegistry.Get("JunimoHost.Server");
             var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
 
-            var externalIp = NetworkHelper.GetIpAddressExternal();
+            var externalIp = await NetworkHelper.GetIpAddressExternalAsync().ConfigureAwait(false);
             var externalIpValue = externalIp == IPAddress.None ? "n/a" : externalIp.ToString();
             var externalIcon = externalIp == IPAddress.None ? "х" : "✓";
 
             var inviteCode = InviteCodeFile.Read(monitor);
 
-            // Build networking status
             var networkingLines = GetNetworkingStatus();
 
             var bannerLines = new List<string>
@@ -55,10 +60,8 @@ namespace JunimoServer.Util
             bannerLines.AddRange(networkingLines);
             bannerLines.Add("");
 
-            // Show invite codes - in hybrid mode both Steam and Galaxy clients can connect
             if (SteamGameServerService.IsInitialized && inviteCode != null)
             {
-                // Extract the base code (without prefix) and show both variants
                 var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
                 bannerLines.Add($"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{baseCode}");
                 bannerLines.Add($"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{baseCode}");

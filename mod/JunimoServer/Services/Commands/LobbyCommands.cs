@@ -159,6 +159,7 @@ namespace JunimoServer.Services.Commands
                 {
                     indoors.NameOrUniqueName, entry.X, entry.Y, false
                 });
+                lobbyService.UpdateFarmerLocation(playerId, indoors.NameOrUniqueName, entry.X, entry.Y);
 
                 helper.SendPrivateMessage(playerId, $"Created layout '{layoutName}'!");
                 helper.SendPrivateMessage(playerId, "Editing mode: Permanent daylight, immune to exhaustion/sleep.");
@@ -208,6 +209,7 @@ namespace JunimoServer.Services.Commands
                 {
                     indoors.NameOrUniqueName, entry.X, entry.Y, false
                 });
+                lobbyService.UpdateFarmerLocation(playerId, indoors.NameOrUniqueName, entry.X, entry.Y);
 
                 helper.SendPrivateMessage(playerId, $"Editing layout '{layoutName}'");
                 helper.SendPrivateMessage(playerId, "Editing mode: Permanent daylight, immune to exhaustion/sleep.");
