@@ -77,10 +77,17 @@ public class ServerContainerOptions
 
     /// <summary>
     /// Whether to allow direct IP/LAN connections.
+    /// Defaults to false (matching game default). Tests using LAN should set this explicitly.
     /// </summary>
-    public bool AllowIpConnections { get; set; } = true;
+    public bool AllowIpConnections { get; set; } = false;
 
     #endregion
+
+    /// <summary>
+    /// Whether this server needs Steam lobby/invite code support.
+    /// When false, STEAM_AUTH_URL is omitted and no lobby is created.
+    /// </summary>
+    public bool WithSteam { get; set; } = false;
 
     #region Container Settings
 
@@ -93,11 +100,6 @@ public class ServerContainerOptions
     /// Timeout for server to become ready (have invite code).
     /// </summary>
     public TimeSpan ReadyTimeout { get; set; } = TimeSpan.FromSeconds(180);
-
-    /// <summary>
-    /// Whether to disable rendering for performance.
-    /// </summary>
-    public bool DisableRendering { get; set; } = true;
 
     /// <summary>
     /// Whether to enable fail-fast mode (exit on ERROR logs).

@@ -15,8 +15,13 @@ public class CapturedException
     public string? ExceptionType { get; set; }
     public string? StackTrace { get; set; }
 
-    public override string ToString() =>
-        $"[{Source}] {ExceptionType ?? "Exception"}: {Message}";
+    public override string ToString()
+    {
+        var result = $"[{Source}] {ExceptionType ?? "Exception"}: {Message}";
+        if (!string.IsNullOrEmpty(StackTrace))
+            result += $"\n{StackTrace}";
+        return result;
+    }
 }
 
 /// <summary>
@@ -37,12 +42,6 @@ public class ExceptionMonitorOptions
     public bool MonitorGameClient { get; set; } = true;
 
     /// <summary>
-    /// If true, monitor server container logs for exceptions.
-    /// Default is true.
-    /// </summary>
-    public bool MonitorServerLogs { get; set; } = true;
-
-    /// <summary>
     /// Regex patterns to ignore in server logs (e.g., expected warnings).
     /// </summary>
     public List<string> IgnorePatterns { get; set; } = new();
@@ -51,28 +50,25 @@ public class ExceptionMonitorOptions
     /// Default options for standard testing.
     /// </summary>
     public static ExceptionMonitorOptions Default => new();
-
-    /// <summary>
-    /// Options with exception monitoring disabled (for testing exception handling).
-    /// </summary>
-    public static ExceptionMonitorOptions Disabled => new()
-    {
-        AbortOnException = false,
-        MonitorGameClient = false,
-        MonitorServerLogs = false
-    };
 }
 
 /// <summary>
 /// Monitors both the server and game client for exceptions.
 /// Allows tests to fail fast when unexpected errors occur.
 /// </summary>
-public class ExceptionMonitor : IDisposable
+public class ExceptionMonitor
 {
     private readonly GameTestClient _gameClient;
-    private readonly IContainer? _serverContainer;
-    private readonly Action<string>? _logOutput;
+    private Action<string>? _logOutput;
     private readonly ExceptionMonitorOptions _options;
+
+    // Plumbed from TestBase: the monitor performs the server-error precheck
+    // and records the failure before throwing. Both fields point at the
+    // *current* test's values, not the constructing test's, because
+    // PersistentSession reuses one monitor across the class — see
+    // SetTestContext.
+    private Func<IReadOnlyList<string>>? _serverErrorsGetter;
+    private Action<string, string?>? _recordFailure;
 
     private readonly List<CapturedException> _capturedExceptions = new();
     private readonly object _lock = new();
@@ -81,28 +77,12 @@ public class ExceptionMonitor : IDisposable
     // Track what we've seen from client to avoid duplicates
     private readonly HashSet<string> _seenClientErrorIds = new();
 
-    // For server log streaming
-    private CancellationTokenSource? _logStreamCts;
-    private Task? _logStreamTask;
-    private long _lastLogPosition;
-
-    // Regex patterns for detecting exceptions in server logs
-    private static readonly Regex ExceptionPattern = new(
-        @"(?:Exception|Error|FATAL|CRITICAL).*?:.*",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex StackTracePattern = new(
-        @"^\s+at\s+",
-        RegexOptions.Compiled);
-
     public ExceptionMonitor(
         GameTestClient gameClient,
-        IContainer? serverContainer = null,
         ExceptionMonitorOptions? options = null,
         Action<string>? logOutput = null)
     {
         _gameClient = gameClient;
-        _serverContainer = serverContainer;
         _options = options ?? ExceptionMonitorOptions.Default;
         _logOutput = logOutput;
 
@@ -112,140 +92,35 @@ public class ExceptionMonitor : IDisposable
     }
 
     /// <summary>
-    /// Starts background monitoring of server logs.
+    /// Updates the log output callback. Used when a persistent session is reused
+    /// by a new test instance whose ITestOutputHelper differs from the original.
     /// </summary>
-    public void StartServerLogMonitoring()
-    {
-        if (_serverContainer == null || !_options.MonitorServerLogs)
-            return;
-
-        _logStreamCts = new CancellationTokenSource();
-        _logStreamTask = Task.Run(() => StreamServerLogsAsync(_logStreamCts.Token));
-    }
+    public void SetLogOutput(Action<string>? logOutput) => _logOutput = logOutput;
 
     /// <summary>
-    /// Stops server log monitoring.
+    /// Wires the per-test server-errors source and failure-recording sink into
+    /// the monitor. Called once at construction and again on persistent-session
+    /// reuse so the monitor reads the current test's lease and records failures
+    /// against the current test, not the test that originally built the session.
     /// </summary>
-    public async Task StopServerLogMonitoringAsync()
+    public void SetTestContext(
+        Func<IReadOnlyList<string>>? serverErrorsGetter,
+        Action<string, string?>? recordFailure)
     {
-        if (_logStreamCts == null) return;
-
-        _logStreamCts.Cancel();
-        if (_logStreamTask != null)
-        {
-            try
-            {
-                await _logStreamTask.WaitAsync(TimeSpan.FromSeconds(2));
-            }
-            catch (OperationCanceledException) { }
-            catch (TimeoutException) { }
-        }
-        _logStreamCts.Dispose();
-        _logStreamCts = null;
-    }
-
-    private async Task StreamServerLogsAsync(CancellationToken ct)
-    {
-        if (_serverContainer == null) return;
-
-        var accumulatedStackTrace = new List<string>();
-        string? currentExceptionMessage = null;
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                var logs = await _serverContainer.GetLogsAsync(
-                    timestampsEnabled: false,
-                    ct: ct);
-
-                var allLines = logs.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
-                // Process new lines
-                for (var i = (int)_lastLogPosition; i < allLines.Length; i++)
-                {
-                    var line = allLines[i].Trim();
-                    if (string.IsNullOrEmpty(line)) continue;
-
-                    // Output to console with [Server] prefix
-                    _logOutput?.Invoke($"[Server] {line}");
-
-                    // Check for exception patterns
-                    if (ExceptionPattern.IsMatch(line))
-                    {
-                        // Start capturing a new exception
-                        if (currentExceptionMessage != null)
-                        {
-                            // Save previous exception
-                            CaptureServerException(currentExceptionMessage, accumulatedStackTrace);
-                            accumulatedStackTrace.Clear();
-                        }
-                        currentExceptionMessage = line;
-                    }
-                    else if (StackTracePattern.IsMatch(line) && currentExceptionMessage != null)
-                    {
-                        // Accumulate stack trace
-                        accumulatedStackTrace.Add(line);
-                    }
-                    else if (currentExceptionMessage != null)
-                    {
-                        // End of stack trace
-                        CaptureServerException(currentExceptionMessage, accumulatedStackTrace);
-                        currentExceptionMessage = null;
-                        accumulatedStackTrace.Clear();
-                    }
-                }
-
-                _lastLogPosition = allLines.Length;
-
-                await Task.Delay(500, ct); // Poll every 500ms
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception)
-            {
-                // Ignore errors while streaming logs
-                await Task.Delay(1000, ct);
-            }
-        }
-
-        // Capture any remaining exception
-        if (currentExceptionMessage != null)
-        {
-            CaptureServerException(currentExceptionMessage, accumulatedStackTrace);
-        }
-    }
-
-    private void CaptureServerException(string message, List<string> stackTrace)
-    {
-        // Check ignore patterns
-        if (_ignorePatterns.Any(p => p.IsMatch(message)))
-            return;
-
-        lock (_lock)
-        {
-            _capturedExceptions.Add(new CapturedException
-            {
-                Source = "Server",
-                Timestamp = DateTime.UtcNow,
-                Message = message,
-                StackTrace = stackTrace.Count > 0 ? string.Join("\n", stackTrace) : null
-            });
-        }
+        _serverErrorsGetter = serverErrorsGetter;
+        _recordFailure = recordFailure;
     }
 
     /// <summary>
     /// Checks the game client for any captured errors and adds them to our list.
     /// </summary>
-    public async Task CheckGameClientErrorsAsync()
+    public async Task CheckGameClientErrorsAsync(CancellationToken ct = default)
     {
         if (!_options.MonitorGameClient) return;
 
         try
         {
-            var errors = await _gameClient.GetErrors();
+            var errors = await _gameClient.GetErrors(ct: ct);
             if (errors?.Errors == null || errors.Errors.Count == 0) return;
 
             lock (_lock)
@@ -257,6 +132,17 @@ public class ExceptionMonitor : IDisposable
                         continue;
 
                     _seenClientErrorIds.Add(error.Id);
+
+                    // UnobservedTaskException with "Operation canceled" is benign. It comes
+                    // from async teardown in Galaxy SDK / Steam networking when tasks are
+                    // abandoned during disconnect. ErrorCapture on the client side filters
+                    // these too, but older images may not have that filter yet.
+                    if (string.Equals(error.Source, "UnobservedTaskException", StringComparison.Ordinal)
+                        && error.Message.Contains("Operation canceled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logOutput?.Invoke($"[Game] (ignored) UnobservedTaskException: {error.Message}");
+                        continue;
+                    }
 
                     // Log to output
                     _logOutput?.Invoke($"[Game] EXCEPTION: {error}");
@@ -272,9 +158,13 @@ public class ExceptionMonitor : IDisposable
                 }
             }
         }
-        catch (Exception)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Ignore errors while checking for errors
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logOutput?.Invoke($"[ExceptionMonitor] Failed to check game client errors: {ex.Message}");
         }
     }
 
@@ -333,15 +223,32 @@ public class ExceptionMonitor : IDisposable
     /// <summary>
     /// Checks for exceptions and throws if AbortOnException is enabled and exceptions exist.
     /// Call this at key points during a test to fail fast on errors.
+    /// Server errors (from the lease's server-errors getter, if wired) are checked
+    /// first and produce an <see cref="ExceptionMonitorException"/> with no captured
+    /// exceptions attached, matching the historical wrapper's contract.
     /// </summary>
     /// <param name="context">Optional context message for the assertion.</param>
     public async Task AssertNoExceptionsAsync(string? context = null)
     {
+        // Server-error precheck. Throws before touching the game client so a
+        // dead server short-circuits the slower game-client query.
+        var serverErrors = _serverErrorsGetter?.Invoke();
+        if (serverErrors is { Count: > 0 })
+        {
+            var errorList = string.Join("\n", serverErrors);
+            var message = context != null
+                ? $"Server error during: {context}\n\n{errorList}"
+                : $"Server error detected\n\n{errorList}";
+            _recordFailure?.Invoke(message, context);
+            throw new ExceptionMonitorException(message, Array.Empty<CapturedException>());
+        }
+
         // First check game client for new errors
         await CheckGameClientErrorsAsync();
 
         if (!_options.AbortOnException) return;
 
+        ExceptionMonitorException? toThrow = null;
         lock (_lock)
         {
             if (_capturedExceptions.Count > 0)
@@ -351,77 +258,17 @@ public class ExceptionMonitor : IDisposable
                     ? $"Exceptions detected during: {context}\n\n{exceptions}"
                     : $"Exceptions detected:\n\n{exceptions}";
 
-                throw new ExceptionMonitorException(message, _capturedExceptions.ToList());
+                toThrow = new ExceptionMonitorException(message, _capturedExceptions.ToList());
             }
         }
-    }
 
-    /// <summary>
-    /// Creates a scope that will check for exceptions when disposed.
-    /// Usage: using (await monitor.CheckpointAsync("joining server")) { ... }
-    /// </summary>
-    public async Task<ExceptionCheckpoint> CheckpointAsync(string context)
-    {
-        // Check for exceptions at start of checkpoint
-        await AssertNoExceptionsAsync($"before {context}");
-        return new ExceptionCheckpoint(this, context);
-    }
-
-    /// <summary>
-    /// Temporarily disables abort-on-exception for a scope.
-    /// Usage: using (monitor.SuppressAbort()) { ... code that may throw expected exceptions ... }
-    /// </summary>
-    public ExceptionSuppressionScope SuppressAbort()
-    {
-        return new ExceptionSuppressionScope(this);
-    }
-
-    public void Dispose()
-    {
-        _logStreamCts?.Cancel();
-        _logStreamCts?.Dispose();
-    }
-
-    /// <summary>
-    /// Represents a checkpoint scope that checks for exceptions when disposed.
-    /// </summary>
-    public class ExceptionCheckpoint : IAsyncDisposable
-    {
-        private readonly ExceptionMonitor _monitor;
-        private readonly string _context;
-
-        public ExceptionCheckpoint(ExceptionMonitor monitor, string context)
+        if (toThrow != null)
         {
-            _monitor = monitor;
-            _context = context;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _monitor.AssertNoExceptionsAsync($"during {_context}");
+            _recordFailure?.Invoke(toThrow.Message, context);
+            throw toThrow;
         }
     }
 
-    /// <summary>
-    /// Scope that suppresses exception abort behavior.
-    /// </summary>
-    public class ExceptionSuppressionScope : IDisposable
-    {
-        private readonly ExceptionMonitor _monitor;
-        private readonly bool _previousAbortOnException;
-
-        public ExceptionSuppressionScope(ExceptionMonitor monitor)
-        {
-            _monitor = monitor;
-            _previousAbortOnException = monitor._options.AbortOnException;
-            monitor._options.AbortOnException = false;
-        }
-
-        public void Dispose()
-        {
-            _monitor._options.AbortOnException = _previousAbortOnException;
-        }
-    }
 }
 
 /// <summary>

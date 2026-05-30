@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace JunimoServer.Tests.Clients;
 
@@ -75,6 +76,24 @@ public class ErrorsResponse
     public List<CapturedError> Errors { get; set; } = new();
 }
 
+public class ScreenshotResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("base64Png")]
+    public string? Base64Png { get; set; }
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+}
+
 public class NavigationResult
 {
     [JsonPropertyName("success")]
@@ -131,8 +150,8 @@ public class FarmhandsResponse
     [JsonPropertyName("success")]
     public bool Success { get; set; }
 
-    [JsonPropertyName("slots")]
-    public List<FarmhandSlot> Slots { get; set; } = new();
+    [JsonPropertyName("farmhands")]
+    public List<FarmhandSlot> Farmhands { get; set; } = new();
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
@@ -183,6 +202,66 @@ public class SleepResult
     public string? Error { get; set; }
 }
 
+public class WarpResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("locationName")]
+    public string? LocationName { get; set; }
+}
+
+public class PlacePotResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("locationName")]
+    public string? LocationName { get; set; }
+
+    [JsonPropertyName("tileX")]
+    public int? TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int? TileY { get; set; }
+}
+
+public class PlantCropResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("locationName")]
+    public string? LocationName { get; set; }
+
+    [JsonPropertyName("tileX")]
+    public int? TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int? TileY { get; set; }
+
+    [JsonPropertyName("seedItemId")]
+    public string? SeedItemId { get; set; }
+}
+
 public class ChatResult
 {
     [JsonPropertyName("success")]
@@ -215,6 +294,13 @@ public class ChatMessage
     /// </summary>
     [JsonPropertyName("alpha")]
     public float Alpha { get; set; }
+
+    /// <summary>
+    /// Monotonic sequence number assigned by the test-client's Harmony patch.
+    /// Used for deduplication: messages with Seq > snapshot are guaranteed to be new.
+    /// </summary>
+    [JsonPropertyName("seq")]
+    public long Seq { get; set; }
 }
 
 public class ChatHistoryResult
@@ -227,6 +313,13 @@ public class ChatHistoryResult
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    /// <summary>
+    /// Total number of chat messages received since game start.
+    /// Used as a sequence cursor for deduplication.
+    /// </summary>
+    [JsonPropertyName("totalReceived")]
+    public long TotalReceived { get; set; }
 }
 
 public class GameStateResult
@@ -245,6 +338,9 @@ public class GameStateResult
 
     [JsonPropertyName("playerName")]
     public string? PlayerName { get; set; }
+
+    [JsonPropertyName("uniqueId")]
+    public string? UniqueId { get; set; }
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
@@ -346,12 +442,22 @@ public class CoopClient
 
     /// <summary>
     /// Join a server via LAN/IP address.
-    /// POST /coop/join-lan?address=X
+    /// POST /coop/join-lan
     /// </summary>
     /// <param name="address">Server address in "host:port" or "host" format.</param>
     public Task<NavigationResult?> JoinLan(string address = "localhost")
     {
-        return _client.PostAsync<NavigationResult>($"/coop/join-lan?address={Uri.EscapeDataString(address)}", new { });
+        return _client.PostAsync<NavigationResult>("/coop/join-lan", new { Address = address });
+    }
+
+    /// <summary>
+    /// Connect to a server via LAN directly (no menu navigation required).
+    /// POST /connect/lan
+    /// </summary>
+    /// <param name="address">Server address in "host:port" or "host" format.</param>
+    public Task<NavigationResult?> ConnectLanDirect(string address)
+    {
+        return _client.PostAsync<NavigationResult>("/connect/lan", new { Address = address });
     }
 }
 
@@ -438,6 +544,30 @@ public class ActionsClient
     {
         return _client.PostAsync<SleepResult>("/actions/sleep", new { });
     }
+
+    /// <summary>
+    /// Queue a warp to the given location/tile. Async — caller must poll
+    /// <see cref="GameTestClient.WaitForLocationAsync"/> to confirm arrival
+    /// before issuing follow-up actions that depend on currentLocation.
+    /// POST /actions/warp
+    /// </summary>
+    public Task<WarpResult?> Warp(string locationName, int tileX, int tileY)
+        => _client.PostAsync<WarpResult>("/actions/warp", new { locationName, tileX, tileY });
+
+    /// <summary>
+    /// Place a Garden Pot at the given tile on the player's current location.
+    /// POST /actions/place_pot
+    /// </summary>
+    public Task<PlacePotResult?> PlacePot(string locationName, int tileX, int tileY, bool clearObstacles = false)
+        => _client.PostAsync<PlacePotResult>("/actions/place_pot",
+            new { locationName, tileX, tileY, clearObstacles });
+
+    /// <summary>
+    /// Plant a seed in a HoeDirt or IndoorPot at the given tile.
+    /// POST /actions/plant_crop
+    /// </summary>
+    public Task<PlantCropResult?> PlantCrop(string itemId, string locationName, int tileX, int tileY)
+        => _client.PostAsync<PlantCropResult>("/actions/plant_crop", new { itemId, locationName, tileX, tileY });
 }
 
 public class ChatClient
@@ -483,12 +613,14 @@ public class ChatClient
         var effectiveTimeout = timeout ?? Helpers.TestTimings.ChatCommandTimeout;
         ChatHistoryResult? result = null;
 
-        var found = await Helpers.PollingHelper.WaitUntilAsync(async () =>
-        {
-            result = await GetHistory(historySize);
-            return result?.Messages?.Any(m =>
-                keywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))) == true;
-        }, effectiveTimeout);
+        var found = await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_GameTestClient_WaitForChatHistoryKeyword,
+            async () =>
+            {
+                result = await GetHistory(historySize);
+                return result?.Messages?.Any(m =>
+                    keywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))) == true;
+            }, effectiveTimeout);
 
         return found ? result : null;
     }
@@ -503,6 +635,58 @@ public class ChatClient
         int historySize = 10)
     {
         return WaitForMessageContainingAsync(new[] { keyword }, timeout, historySize);
+    }
+
+    /// <summary>
+    /// Sends a chat message and waits for a new response matching the given keywords.
+    /// Uses sequence-based deduplication: snapshots the TotalReceived counter before sending,
+    /// then only checks messages with Seq > snapshot. This avoids the string-comparison
+    /// deduplication bug where identical response texts from different commands are filtered out.
+    /// </summary>
+    /// <param name="message">The chat message to send</param>
+    /// <param name="responseKeywords">Keywords to look for in the response</param>
+    /// <param name="matchAll">If true, ALL keywords must match a single message. If false, ANY keyword suffices.</param>
+    /// <param name="timeout">Maximum time to wait for the response</param>
+    /// <param name="historySize">Number of recent messages to check</param>
+    /// <param name="ct">Cancellation token</param>
+    public async Task<bool> SendAndWaitForResponseAsync(
+        string message,
+        string[] responseKeywords,
+        bool matchAll = false,
+        TimeSpan? timeout = null,
+        int historySize = 20,
+        CancellationToken ct = default)
+    {
+        var chatBefore = await GetHistory(historySize);
+        var seqBefore = chatBefore?.TotalReceived ?? 0;
+
+        await Send(message);
+
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_GameTestClient_SendAndExpectChatResponse,
+            async () =>
+            {
+                var chat = await GetHistory(historySize);
+                if (chat?.Messages == null) return false;
+
+                // Only check messages that arrived after our snapshot
+                var newMessages = chat.Messages.Where(m => m.Seq > seqBefore).ToList();
+                return matchAll
+                    ? keywords_AllPresent(newMessages, responseKeywords)
+                    : keywords_AnyPresent(newMessages, responseKeywords);
+            }, timeout ?? Helpers.TestTimings.ChatCommandTimeout, cancellationToken: ct);
+    }
+
+    private static bool keywords_AllPresent(List<ChatMessage> messages, string[] keywords)
+    {
+        return keywords.All(k =>
+            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool keywords_AnyPresent(List<ChatMessage> messages, string[] keywords)
+    {
+        return keywords.Any(k =>
+            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
     }
 }
 
@@ -532,18 +716,18 @@ public class WaitClient
     /// Wait for farmhand selection screen.
     /// GET /wait/farmhands
     /// </summary>
-    public Task<WaitResult?> ForFarmhands(TimeSpan? timeout = null)
+    public Task<WaitResult?> ForFarmhands(TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        return _client.GetAsync<WaitResult>($"/wait/farmhands?timeout={ToMs(timeout)}");
+        return _client.GetAsync<WaitResult>($"/wait/farmhands?timeout={ToMs(timeout)}", ct);
     }
 
     /// <summary>
     /// Wait for character customization menu.
     /// GET /wait/character
     /// </summary>
-    public Task<WaitResult?> ForCharacter(TimeSpan? timeout = null)
+    public Task<WaitResult?> ForCharacter(TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        return _client.GetAsync<WaitResult>($"/wait/character?timeout={ToMs(timeout)}");
+        return _client.GetAsync<WaitResult>($"/wait/character?timeout={ToMs(timeout)}", ct);
     }
 
     /// <summary>
@@ -602,7 +786,12 @@ public class WaitClient
 public class GameTestClient : IDisposable
 {
     private readonly HttpClient _httpClient;
-    private CancellationToken _errorCancellationToken = CancellationToken.None;
+
+    /// <summary>
+    /// Cancellation token used by all HTTP calls. Set by the test infrastructure
+    /// to abort in-flight requests when the server detects a fatal error.
+    /// </summary>
+    public CancellationToken CancellationToken { get; set; } = CancellationToken.None;
 
     public CoopClient Coop { get; }
     public FarmhandClient Farmhands { get; }
@@ -611,18 +800,10 @@ public class GameTestClient : IDisposable
     public WaitClient Wait { get; }
     public ChatClient Chat { get; }
 
-    /// <summary>
-    /// Sets the cancellation token that will abort HTTP calls when a server error is detected.
-    /// This token is provided by IntegrationTestFixture.GetErrorCancellationToken().
-    /// </summary>
-    public void SetErrorCancellationToken(CancellationToken token)
-    {
-        _errorCancellationToken = token;
-    }
-
     public GameTestClient(string baseUrl = "http://localhost:5123", TimeSpan? defaultWaitTimeout = null)
     {
-        _httpClient = new HttpClient
+        var handler = new TracingHandler("test-client") { InnerHandler = new HttpClientHandler() };
+        _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl),
             Timeout = TimeSpan.FromMinutes(2) // Long timeout for wait endpoints
@@ -668,14 +849,14 @@ public class GameTestClient : IDisposable
     /// </summary>
     /// <param name="limit">Optional limit on number of errors returned.</param>
     /// <param name="clear">If true, clears errors after retrieval.</param>
-    public Task<ErrorsResponse?> GetErrors(int? limit = null, bool clear = false)
+    public Task<ErrorsResponse?> GetErrors(int? limit = null, bool clear = false, CancellationToken ct = default)
     {
         var query = new List<string>();
         if (limit.HasValue) query.Add($"limit={limit.Value}");
         if (clear) query.Add("clear=true");
 
         var path = query.Count > 0 ? $"/errors?{string.Join("&", query)}" : "/errors";
-        return GetAsync<ErrorsResponse>(path);
+        return GetAsync<ErrorsResponse>(path, ct);
     }
 
     /// <summary>
@@ -711,8 +892,79 @@ public class GameTestClient : IDisposable
             Location = status.Farmer?.CurrentLocation ?? string.Empty,
             IsConnected = status.Connection?.IsConnected ?? false,
             IsInGame = status.Connection?.WorldReady ?? false,
-            PlayerName = status.Farmer?.Name
+            PlayerName = status.Farmer?.Name,
+            UniqueId = status.Farmer?.UniqueId
         };
+    }
+
+    /// <summary>
+    /// Polls <see cref="GetState"/> until the player's location matches
+    /// <paramref name="locationPattern"/> (a regular expression, case-insensitive).
+    /// Returns the matching state, or null if timed out.
+    ///
+    /// <para>
+    /// <b>Anchor explicitly.</b> The matcher is unanchored, so a bare <c>"Farm"</c>
+    /// would still substring-match <c>"FarmHouse{guid}"</c> (the cabin interior's
+    /// <c>NameOrUniqueName</c>, produced as <c>IndoorMap + GuidHelper.NewGuid()</c>
+    /// in <c>Buildings/Building.cs</c>). Use anchors:
+    /// <list type="bullet">
+    ///   <item><c>"^Farm$"</c> — exactly the outdoor Farm.</item>
+    ///   <item><c>"^" + <see cref="CabinLocationPrefix"/></c> — any cabin interior.</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    public async Task<GameStateResult?> WaitForLocationAsync(string locationPattern, TimeSpan? timeout = null, CancellationToken ct = default)
+    {
+        var regex = new Regex(locationPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        GameStateResult? state = null;
+        var found = await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_GameTestClient_WaitForLocation,
+            async () =>
+            {
+                state = await GetState();
+                return state?.Location is string loc && regex.IsMatch(loc);
+            }, timeout ?? Helpers.TestTimings.NetworkSyncTimeout, cancellationToken: ct);
+        return found ? state : null;
+    }
+
+    /// <summary>
+    /// Cabin interior location name prefix. Cabin interiors use IndoorMap="FarmHouse"
+    /// (from Buildings.json), so their NameOrUniqueName is "FarmHouse{guid}".
+    /// Both lobby cabins and player cabins share this prefix.
+    /// </summary>
+    internal const string CabinLocationPrefix = "FarmHouse";
+
+    /// <summary>
+    /// Waits for the post-auth warp to complete: the player's location must change
+    /// from <paramref name="lobbyLocation"/> to a different cabin interior.
+    ///
+    /// The passout warp (type 29) sends the client through a fade-to-black animation.
+    /// During this transition, the client's NetLocationRef may transiently resolve to
+    /// "Farm" (the cabin's parent location) before settling on the real cabin interior.
+    /// This method filters out that transient state by requiring the new location to
+    /// start with the cabin prefix ("FarmHouse").
+    /// </summary>
+    /// <returns>True if the warp completed within the timeout.</returns>
+    public async Task<bool> WaitForAuthWarpAsync(string lobbyLocation, TimeSpan? timeout = null, CancellationToken ct = default)
+    {
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_GameTestClient_WaitForAuthWarp,
+            async () =>
+            {
+                var s = await GetState();
+                return !string.IsNullOrEmpty(s?.Location)
+                    && s.Location != lobbyLocation
+                    && s.Location.StartsWith(CabinLocationPrefix, StringComparison.OrdinalIgnoreCase);
+            }, timeout ?? Helpers.TestTimings.AuthLoginAttemptTimeout, cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Capture a screenshot from the game client via POST /screenshot.
+    /// Returns a base64-encoded PNG.
+    /// </summary>
+    public Task<ScreenshotResponse?> CaptureScreenshot()
+    {
+        return PostAsync<ScreenshotResponse>("/screenshot", new { });
     }
 
     /// <summary>
@@ -726,35 +978,25 @@ public class GameTestClient : IDisposable
 
     #region HTTP Helpers
 
-    public async Task<T?> GetAsync<T>(string path) where T : class
+    public async Task<T?> GetAsync<T>(string path, CancellationToken ct = default) where T : class
     {
-        var response = await _httpClient.GetAsync(path, _errorCancellationToken);
+        var effective = ct == default ? CancellationToken : ct;
+        var response = await _httpClient.GetAsync(path, effective);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>(_errorCancellationToken);
+        return await response.Content.ReadFromJsonAsync<T>(effective);
     }
 
     public async Task<T?> PostAsync<T>(string path, object body) where T : class
     {
-        var response = await _httpClient.PostAsJsonAsync(path, body, _errorCancellationToken);
+        var response = await _httpClient.PostAsJsonAsync(path, body, CancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>(_errorCancellationToken);
+        return await response.Content.ReadFromJsonAsync<T>(CancellationToken);
     }
 
     public async Task DeleteAsync(string path)
     {
-        var response = await _httpClient.DeleteAsync(path, _errorCancellationToken);
+        var response = await _httpClient.DeleteAsync(path, CancellationToken);
         response.EnsureSuccessStatusCode();
-    }
-
-    // Keep old methods for backward compatibility with existing tests
-    public Task<HttpResponseMessage> Navigate(NavigateParams navigateParams)
-    {
-        return _httpClient.PostAsJsonAsync("/navigate", navigateParams, _errorCancellationToken);
-    }
-
-    public Task<HttpResponseMessage> Post(string path, object body)
-    {
-        return _httpClient.PostAsJsonAsync(path, body, _errorCancellationToken);
     }
 
     #endregion

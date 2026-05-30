@@ -1,9 +1,8 @@
 using DotNet.Testcontainers.Containers;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Schema.Events;
 using Xunit;
-using Xunit.Abstractions;
-using Xunit.Extensions.AssemblyFixture;
 
 namespace JunimoServer.Tests;
 
@@ -15,15 +14,19 @@ namespace JunimoServer.Tests;
 /// These tests use shared volumes to avoid session conflicts.
 ///
 ///
-/// Uses its own DownloadValidationFixture (separate from IntegrationTestFixture) to avoid
-/// Steam session conflicts that could break the Steam lobby for other integration tests.
+/// Uses its own DownloadValidationFixture so the standalone steam-auth container
+/// here doesn't collide with the Steam lobby used by other integration tests.
 /// </summary>
+/// <remarks>
+/// Does NOT inherit TestBase because these tests manage a standalone steam-auth container
+/// via DownloadValidationFixture, with no server lease or game client. The logging helpers
+/// (Log, LogSuccess, etc.) emit annotations directly through SetupEventBus, matching
+/// TestBase's interface.
+/// </remarks>
 [Collection("DownloadValidation")]
-public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSummaryFixture>
+public class DownloadValidationTests : IAsyncLifetime
 {
-    private readonly ITestOutputHelper _output;
     private readonly DownloadValidationFixture _fixture;
-    private readonly TestLogger _logger;
 
     private readonly string _testClassName;
     private string? _currentTestName;
@@ -33,15 +36,13 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
     private const string TestFilePath = "/data/game/Content/Maps/mermaid_house_tiles.xnb";
     private const string BackupFilePath = "/data/game/Content/Maps/mermaid_house_tiles.xnb.backup";
 
-    public DownloadValidationTests(DownloadValidationFixture fixture, ITestOutputHelper output)
+    public DownloadValidationTests(DownloadValidationFixture fixture)
     {
         _fixture = fixture;
-        _output = output;
         _testClassName = GetType().Name;
-        _logger = new TestLogger("[Test]", output, dualOutput: true);
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _testStartTime = DateTime.UtcNow;
 
@@ -49,10 +50,7 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
         _currentTestName = ExtractTestName();
 
         // Track test count for summary
-        _fixture.RegisterTest(_testClassName, _currentTestName);
-
-        // Print test header
-        PrintTestHeader();
+        _fixture.MarkDispatched(_testClassName, _currentTestName);
 
         // Check if test run was aborted by a previous test
         if (_fixture.IsTestRunAborted)
@@ -73,7 +71,7 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
         await EnsureGameDownloaded();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         // Restore backup if it exists (safety net for shared volumes)
         if (_fixture.SteamAuthContainer != null)
@@ -118,6 +116,7 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
     /// 4. Verify the file is repaired (valid XNB header)
     /// 5. Restore backup
     /// </summary>
+    [Fact(Skip = "Requires 'make setup' with valid Steam credentials")]
     public async Task CorruptedFile_IsDetectedAndRepaired()
     {
         var container = _fixture.SteamAuthContainer!;
@@ -173,6 +172,7 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
     /// 4. Verify the file is re-downloaded (exists and valid)
     /// 5. Restore backup (cleanup)
     /// </summary>
+    [Fact(Skip = "Requires 'make setup' with valid Steam credentials")]
     public async Task DeletedFile_IsDetectedAndRedownloaded()
     {
         var container = _fixture.SteamAuthContainer!;
@@ -225,27 +225,13 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
 
     private string? ExtractTestName()
     {
+        // In xUnit v3, we can use TestContext to get the test name
         try
         {
-            var field = _output.GetType().GetField("test", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(_output) is Xunit.Abstractions.ITest test)
-            {
-                return test.DisplayName;
-            }
+            return TestContext.Current?.Test?.TestDisplayName;
         }
         catch { }
         return null;
-    }
-
-    private void PrintTestHeader()
-    {
-        var testDisplayName = _currentTestName ?? $"{_testClassName}.???";
-        var parts = testDisplayName.Split('.');
-        var shortName = parts.Length >= 2
-            ? $"{parts[^2]}.{parts[^1]}"
-            : testDisplayName;
-
-        IntegrationTestFixture.LogTestPhase("Test", shortName);
     }
 
     private void PrintTestFooter()
@@ -253,36 +239,27 @@ public class DownloadValidationTests : IAsyncLifetime, IAssemblyFixture<TestSumm
         var duration = DateTime.UtcNow - _testStartTime;
 
         // Record duration in unified summary
-        _fixture.CompleteTest(_testClassName, _currentTestName, duration);
+        _fixture.MarkCompleted(_testClassName, _currentTestName, duration);
 
-        LogSuccess($"Done ({duration.TotalSeconds:F2}s)");
-        IntegrationTestFixture.LogTestMessage("");
+        LogSuccess(FormattableString.Invariant($"Done ({duration.TotalSeconds:F2}s)"));
     }
 
-    /// <summary>
-    /// Log a message to console with [Test] prefix.
-    /// </summary>
-    private void Log(string message) => _logger.Log(message);
+    private string DisplayName => _currentTestName ?? $"{_testClassName}.???";
 
-    /// <summary>
-    /// Log a success message with icon.
-    /// </summary>
-    private void LogSuccess(string message) => _logger.LogSuccess(message);
+    private void Log(string message)
+        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Info, AnnotationSource.Body, message);
 
-    /// <summary>
-    /// Log a warning message with icon.
-    /// </summary>
-    private void LogWarning(string message) => _logger.LogWarning(message);
+    private void LogSuccess(string message)
+        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Success, AnnotationSource.Body, message);
 
-    /// <summary>
-    /// Log a detail message with icon.
-    /// </summary>
-    private void LogDetail(string message) => _logger.LogDetail(message);
+    private void LogWarning(string message)
+        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Warning, AnnotationSource.Body, message);
 
-    /// <summary>
-    /// Log a section header.
-    /// </summary>
-    private void LogSection(string title) => _logger.LogSection(title);
+    private void LogDetail(string message)
+        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Detail, AnnotationSource.Body, message);
+
+    private void LogSection(string title)
+        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Section, AnnotationSource.Body, title);
 
     #endregion
 

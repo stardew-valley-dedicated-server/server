@@ -1,7 +1,6 @@
 using JunimoServer.Tests.Clients;
-using JunimoServer.Tests.Fixtures;
+using JunimoServer.Tests.Infrastructure;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace JunimoServer.Tests;
 
@@ -11,43 +10,15 @@ namespace JunimoServer.Tests;
 /// Verifies that the settings file is auto-created with correct defaults,
 /// and that the values are applied to the running server. These tests run
 /// against the default server configuration (no custom settings injected).
+///
+/// API-only. Never calls GetClientAsync().
 /// </summary>
-[Collection("Integration")]
-public class ServerSettingsTests : IDisposable
+[TestServer(Isolation = IsolationMode.SharedAssembly, Clients = 0, Artifacts = false)]
+public class ServerSettingsTests : TestBase
 {
-    private readonly IntegrationTestFixture _fixture;
-    private readonly ServerApiClient _serverApi;
-    private readonly ITestOutputHelper _output;
-    private readonly string? _testName;
-    private readonly DateTime _testStartTime;
+    public ServerSettingsTests() { }
 
-    public ServerSettingsTests(IntegrationTestFixture fixture, ITestOutputHelper output)
-    {
-        _fixture = fixture;
-        _output = output;
-        _testStartTime = DateTime.UtcNow;
-        _serverApi = new ServerApiClient(_fixture.ServerBaseUrl);
-
-        // Register for test counting
-        _testName = ExtractTestName(output);
-        _fixture.RegisterTest(nameof(ServerSettingsTests), _testName);
-    }
-
-    private static string? ExtractTestName(ITestOutputHelper output)
-    {
-        try
-        {
-            var field = output.GetType().GetField("test", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(output) is Xunit.Abstractions.ITest test)
-            {
-                return test.DisplayName;
-            }
-        }
-        catch { }
-        return null;
-    }
-
-    #region GET /settings — default values
+    #region GET /settings: default values
 
     /// <summary>
     /// Verifies the /settings endpoint returns a valid response with the expected structure.
@@ -55,12 +26,12 @@ public class ServerSettingsTests : IDisposable
     [Fact]
     public async Task Settings_ReturnsValidResponse()
     {
-        var settings = await _serverApi.GetSettings();
+        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
 
         Assert.NotNull(settings);
         Assert.NotNull(settings.Game);
         Assert.NotNull(settings.Server);
-        _output.WriteLine($"Settings loaded: FarmName={settings.Game.FarmName}, Strategy={settings.Server.CabinStrategy}");
+        Log($"Settings loaded: FarmName={settings.Game.FarmName}, Strategy={settings.Server.CabinStrategy}");
     }
 
     /// <summary>
@@ -74,10 +45,10 @@ public class ServerSettingsTests : IDisposable
             new object[] { "Game.FarmName", "Junimo" },
             new object[] { "Game.FarmType", 0 },
             new object[] { "Game.ProfitMargin", 1.0f },
-            new object[] { "Game.StartingCabins", 1 },
+            new object[] { "Game.StartingCabins", Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) },
             new object[] { "Game.SpawnMonstersAtNight", "auto" },
             // Server settings
-            new object[] { "Server.MaxPlayers", 10 },
+            new object[] { "Server.MaxPlayers", Math.Max(10, Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) + 1) },
             new object[] { "Server.CabinStrategy", "CabinStack" },
             new object[] { "Server.SeparateWallets", false },
             new object[] { "Server.ExistingCabinBehavior", "KeepExisting" },
@@ -90,11 +61,11 @@ public class ServerSettingsTests : IDisposable
     [MemberData(nameof(DefaultSettingsData))]
     public async Task DefaultSettings_HaveExpectedValues(string settingPath, object expectedValue)
     {
-        var settings = await _serverApi.GetSettings();
+        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
         Assert.NotNull(settings);
 
         var actualValue = GetSettingValue(settings, settingPath);
-        _output.WriteLine($"{settingPath}: expected={expectedValue}, actual={actualValue}");
+        Log($"{settingPath}: expected={expectedValue}, actual={actualValue}");
 
         Assert.Equal(expectedValue, actualValue);
     }
@@ -128,14 +99,14 @@ public class ServerSettingsTests : IDisposable
     [Fact]
     public async Task Settings_FarmNameMatchesStatus()
     {
-        var settings = await _serverApi.GetSettings();
-        var status = await _serverApi.GetStatus();
+        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
 
         Assert.NotNull(settings);
         Assert.NotNull(status);
         Assert.True(status.IsOnline, "Server should be online");
         Assert.Equal(settings.Game.FarmName, status.FarmName);
-        _output.WriteLine($"Both report FarmName: {status.FarmName}");
+        Log($"Both report FarmName: {status.FarmName}");
     }
 
     /// <summary>
@@ -144,21 +115,15 @@ public class ServerSettingsTests : IDisposable
     [Fact]
     public async Task Settings_MaxPlayersMatchesStatus()
     {
-        var settings = await _serverApi.GetSettings();
-        var status = await _serverApi.GetStatus();
+        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
 
         Assert.NotNull(settings);
         Assert.NotNull(status);
         Assert.True(status.IsOnline, "Server should be online");
         Assert.Equal(settings.Server.MaxPlayers, status.MaxPlayers);
-        _output.WriteLine($"Both report MaxPlayers: {status.MaxPlayers}");
+        Log($"Both report MaxPlayers: {status.MaxPlayers}");
     }
 
     #endregion
-
-    public void Dispose()
-    {
-        _fixture.CompleteTest(nameof(ServerSettingsTests), _testName, DateTime.UtcNow - _testStartTime);
-        _serverApi.Dispose();
-    }
 }

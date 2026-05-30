@@ -3,11 +3,12 @@
   <RunConfiguration>
     <ResultsDirectory>..\..\TestResults</ResultsDirectory>
     <EnvironmentVariables>
-      <!-- Set to "true" to use containerized game clients instead of local process -->
-      <SDVD_CONTAINERIZED_CLIENTS>true</SDVD_CONTAINERIZED_CLIENTS>
-      <SDVD_TEST_VERBOSE>true</SDVD_TEST_VERBOSE>
-      <!-- Set to "true" to enable JSONL logging to TestResults/Logs/tests.jsonl (for AI agents) -->
-      <SDVD_REPORTER_JSONL>true</SDVD_REPORTER_JSONL>
+      <!-- Set to "true" to use a local Stardew Valley process instead of Docker containers (requires Steam) -->
+      <!-- <SDVD_HOST_CLIENT>true</SDVD_HOST_CLIENT> -->
+      <!-- Tracing tier: none (default), basic, full. See .env.test.example for details. -->
+      <SDVD_TEST_TRACING>none</SDVD_TEST_TRACING>
+      <!-- Per-container stats collection: docker+game (default), docker, none. -->
+      <SDVD_TEST_STATS>docker+game</SDVD_TEST_STATS>
     </EnvironmentVariables>
   </RunConfiguration>
   <LoggerRunSettings>
@@ -23,8 +24,11 @@
   <xUnit>
     <!-- Stop running further tests once a test has failed -->
     <StopOnFail>true</StopOnFail>
-    <!-- Disable parallel test execution for predictable order -->
-    <ParallelizeTestCollections>false</ParallelizeTestCollections>
+    <!-- Enable parallel execution at the collection level.
+         Each collection has its own server container, so they can run concurrently.
+         Concurrency is gated per-host by `serverSlots`/`clientSlots` in
+         SDVD_DOCKER_HOSTS; xUnit's collection parallelism feeds that gate. -->
+    <ParallelizeTestCollections>true</ParallelizeTestCollections>
     <ParallelizeAssembly>false</ParallelizeAssembly>
   </xUnit>
 </RunSettings>

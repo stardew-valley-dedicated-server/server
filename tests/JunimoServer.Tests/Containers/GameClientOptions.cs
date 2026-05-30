@@ -31,6 +31,24 @@ public class GameClientOptions
     /// Timeout for connection attempts.
     /// </summary>
     public TimeSpan ConnectionTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Whether to expose the VNC port (5800) for visual observation.
+    /// Default is true. Set to false in CI to avoid binding unnecessary ports.
+    /// </summary>
+    public bool ExposeVnc { get; set; } = true;
+
+    /// <summary>
+    /// URL of the steam-auth service for Steam/Galaxy connections.
+    /// When set, the client container will use this to authenticate via Galaxy SDK.
+    /// </summary>
+    public string? SteamAuthUrl { get; set; }
+
+    /// <summary>
+    /// Steam account index to use for authentication (maps to ?account=N on steam-auth).
+    /// Default is 1 (account 0 is reserved for the server).
+    /// </summary>
+    public int SteamAccountIndex { get; set; } = 1;
 }
 
 /// <summary>
