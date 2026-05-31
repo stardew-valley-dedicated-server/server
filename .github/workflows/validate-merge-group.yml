@@ -2,9 +2,10 @@
 # commit is trusted, already-approved, base-repo code, so there is no fork-secret threat model
 # here — hence no `authorize` gate and no environment, unlike validate-pr.yml. This is a separate
 # file rather than a trigger added to validate-pr.yml on purpose: the merge_group payload has no
-# `github.event.pull_request.*` fields, and one workflow per event keeps a single required check
-# per name. The job name (`Validate Build`) matches the pull-request check so the ruleset's
-# required check is satisfied in-queue. See docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
+# `github.event.pull_request.*` fields, and one workflow per event keeps one required check per
+# name. Both required checks (`Validate Build`, `Validate Commits`) are reproduced here under the
+# same names: a required check with no merge_group producer leaves every queued PR stuck in
+# AWAITING_CHECKS until timeout. See docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
 name: Validate Merge Group
 
 on:
@@ -19,6 +20,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-commits:
+    name: Validate Commits
+    runs-on: ubuntu-latest
+
+    steps:
+      # The merge-queue branch lives in the base repo, so checking out head_sha with full history
+      # provides both the commits to lint and the tooling (commitlint.config.js, package*.json).
+      - name: Checkout queue branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate commit messages
+        run: npx commitlint --from ${{ github.event.merge_group.base_sha }} --to ${{ github.event.merge_group.head_sha }} --verbose
+
   validate-build:
     name: Validate Build
     runs-on: ubuntu-latest
