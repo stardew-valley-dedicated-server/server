@@ -1,10 +1,11 @@
+# Runs on pull_request_target, which is privileged for fork PRs (the workflow file and
+# secrets come from the base repo, not the PR head). The `authorize` job gates fork code
+# and secrets behind fork-pr reviewer approval, and the validation jobs run only once it
+# passes (needs: authorize). Do not add a `pull_request` trigger — a single trigger keeps
+# one required check per name. See docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
 name: Validate PR
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches:
-      - master
   pull_request_target:
     types: [opened, synchronize, reopened]
     branches:
@@ -13,21 +14,29 @@ on:
 permissions:
   contents: read
 
-# Cancel in-progress runs when a new workflow with the same group name is triggered
+# Cancel superseded runs for the same PR.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  authorize:
+    name: Start PR Checks
+    # Fork PRs resolve to the 'fork-pr' environment (required reviewer); same-repo + Renovate PRs
+    # resolve to an empty string, i.e. no environment — so the gate passes immediately with no approval.
+    environment: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'fork-pr' || '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Fork PRs require maintainer approval before checks run; same-repo PRs run automatically."
+
   validate-commits:
     name: Validate Commits
-    # Prevents duplicate runs: same-repo PRs use pull_request, fork PRs use pull_request_target
-    if: >-
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    needs: authorize
     runs-on: ubuntu-latest
 
     steps:
+      # Checks out base-repo files only (default ref under pull_request_target) and reads commit
+      # metadata via git fetch — never the fork head — so npm ci runs against trusted lockfiles.
       - name: Checkout base repo code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,8 +52,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -54,13 +63,11 @@ jobs:
 
   validate-build:
     name: Validate Build
-    # Prevents duplicate runs: same-repo PRs use pull_request, fork PRs use pull_request_target
-    if: >-
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    # Checks out fork head and exposes Steam secrets — `needs: authorize` keeps both behind the
+    # fork-pr approval gate. Do not remove it, and do not add an `environment:` here (that would
+    # double-gate forks with a second approval prompt).
+    needs: authorize
     runs-on: ubuntu-latest
-    # Fork PRs require approval via fork-pr environment before secrets are available
-    environment: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'fork-pr' || '' }}
 
     steps:
       - name: Checkout code

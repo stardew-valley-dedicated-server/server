@@ -130,6 +130,31 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
 
+These surface as two required status checks — `Validate Build` and `Validate Commits` — that must pass before a PR can merge.
+
+### Trigger & Security Model
+
+The pipeline triggers on `pull_request_target`. Unlike `pull_request`, this event runs the workflow file and grants secrets from the **base** repository, not the PR head — which is what lets fork PRs be built with the Steam credentials the Docker image needs. It also means fork code is running in a privileged context, so access is gated:
+
+1. **`authorize`** — runs first. Its `environment:` is chosen by an expression: fork PRs resolve to **`fork-pr`** (a required reviewer must approve before the job — and therefore the rest of the pipeline — proceeds); same-repo and Renovate PRs resolve to an empty string, i.e. **no environment**, so the job passes instantly with no approval.
+2. **`validate-commits`** and **`validate-build`** declare `needs: authorize`, so neither starts until the gate passes. For a fork PR this means a maintainer reviews the diff before fork code is checked out or secrets are exposed.
+
+`validate-commits` only reads commit metadata and base-repo files (it never checks out the fork head), so it is safe under the privileged trigger. `validate-build` checks out the fork head and uses the Steam secrets — which is exactly why it sits behind the `authorize` gate.
+
+::: warning
+Keep this a single `pull_request_target` trigger. Adding `pull_request` back produces duplicate check entries (one per event), and the build job must keep `needs: authorize` rather than its own `environment:` — otherwise fork PRs are gated twice.
+:::
+
+### GitHub Environment
+
+The pipeline uses a single GitHub Environment, `fork-pr`, purely as an authorization gate (it holds no deploy secrets):
+
+| Environment | Used for | Protection rules |
+|-------------|----------|------------------|
+| `fork-pr` | Fork PRs — pauses the pipeline for maintainer approval before fork code or secrets run | Required reviewer |
+
+Same-repo and Renovate PRs resolve the `authorize` job's `environment:` expression to an empty string, which GitHub treats as **no environment** — so no gate, no approval, and nothing extra in the repo's environment list.
+
 ## Deploy Docs Pipeline
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-docs.yml)
