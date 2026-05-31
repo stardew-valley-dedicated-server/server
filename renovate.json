@@ -1,0 +1,110 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "rebaseWhen": "behind-base-branch",
+  "automerge": false,
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
+  "dependencyDashboard": true,
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "decompiled/**",
+    "sub_modules/**",
+    "tools/.playground/**",
+    "docker/modern/**"
+  ],
+  "packageRules": [
+    {
+      "description": "npm root (package-lock.json) — npm manager. Group all into one weekly PR.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["package.json"],
+      "groupName": "npm-root"
+    },
+    {
+      "description": "docs — bun.lock → handled by the bun manager, not npm",
+      "matchManagers": ["bun"],
+      "matchFileNames": ["docs/package.json"],
+      "groupName": "npm-docs"
+    },
+    {
+      "description": "discord-bot — bun.lock → bun manager",
+      "matchManagers": ["bun"],
+      "matchFileNames": ["tools/discord-bot/package.json"],
+      "groupName": "npm-discord-bot"
+    },
+    {
+      "description": "test-ui — bun.lock → bun manager. Not previously covered by dependabot.",
+      "matchManagers": ["bun"],
+      "matchFileNames": ["tests/test-ui/package.json"],
+      "groupName": "npm-test-ui"
+    },
+    {
+      "description": "Docker base images across all (in-scope) Dockerfiles",
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker"
+    },
+    {
+      "description": "Freeze test-client mod-builder .NET 6 — must match the game's runtime. Scoped to tag 6.0 in this file only; the 10.0 stages here and in docker/Dockerfile stay updatable.",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["docker/Dockerfile.test-client"],
+      "matchPackageNames": ["mcr.microsoft.com/dotnet/sdk"],
+      "matchCurrentValue": "6.0",
+      "enabled": false
+    },
+    {
+      "description": "NuGet — .csproj + .config/dotnet-tools.json, grouped",
+      "matchManagers": ["nuget"],
+      "groupName": "dotnet-dependencies"
+    },
+    {
+      "description": "GitHub Actions — group all workflow action bumps",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    },
+    {
+      "description": "Custom Dockerfile download-URL/ARG pins (SMAPI, tmux)",
+      "matchManagers": ["custom.regex"],
+      "groupName": "dockerfile-tools"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "SMAPI version (ARG) in docker/Dockerfile and docker/Dockerfile.test-client. Pattern deliberately excludes docker/modern/** (out of scope) — anchored so the modern/ path segment doesn't match, independent of ignorePaths.",
+      "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
+      "matchStrings": [
+        "ARG SMAPI_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "Pathoschild/SMAPI",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "tmux version in download URL (docker/Dockerfile only; test-client has no tmux, modern/ excluded). Uses 'deb' versioning so the letter-suffix tags (3.6a < 3.6b) order correctly — dpkg compares non-digit runs lexically by ASCII. No other scheme (semver/loose/regex/docker) orders the letter; deb/rpm/apk are the only ones built for alphanumeric version segments.",
+      "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
+      "matchStrings": [
+        "tmux-builds/releases/download/v(?<currentValue>[0-9.]+[a-z]?)/"
+      ],
+      "depNameTemplate": "tmux/tmux-builds",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "deb"
+    }
+  ]
+}
