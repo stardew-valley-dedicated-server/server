@@ -114,6 +114,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.11.3 AS server
 
 ARG SMAPI_VERSION
+ARG TMUX_VERSION=3.6a
 
 ENV APP_NAME="Stardew Dedicated Server" \
     USER_ID=0 \
@@ -179,10 +180,10 @@ RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/release
     rm -rf /tmp/ffmpeg*
 
 # Install tmux (binary download, separate layer for cacheability)
-RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v3.6a/tmux-3.6a-linux-x86_64.tar.gz && \
-    tar -xzf tmux-3.6a-linux-x86_64.tar.gz && \
+RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VERSION}/tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
+    tar -xzf tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
     install -m 0755 ./tmux /usr/local/bin/tmux && \
-    rm -r ./tmux tmux-3.6a-linux-x86_64.tar.gz
+    rm -r ./tmux tmux-${TMUX_VERSION}-linux-x86_64.tar.gz
 
 # Install vsdbg for remote debugging
 # TODO: Make installation optional for local/debug builds, commented for now
