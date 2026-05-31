@@ -96,10 +96,10 @@
     },
     {
       "customType": "regex",
-      "description": "tmux version in download URL (docker/Dockerfile only; test-client has no tmux, modern/ excluded). Uses 'deb' versioning so the letter-suffix tags (3.6a < 3.6b) order correctly — dpkg compares non-digit runs lexically by ASCII. No other scheme (semver/loose/regex/docker) orders the letter; deb/rpm/apk are the only ones built for alphanumeric version segments.",
+      "description": "tmux version (ARG TMUX_VERSION in docker/Dockerfile; referenced via ${TMUX_VERSION} in the install RUN so one bump propagates to URL and tarball name alike). Uses 'deb' versioning so the letter-suffix tags (3.6a < 3.6b) order correctly — dpkg compares non-digit runs lexically by ASCII. No other scheme (semver/loose/regex/docker) orders the letter; deb/rpm/apk are the only ones built for alphanumeric version segments.",
       "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
       "matchStrings": [
-        "tmux-builds/releases/download/v(?<currentValue>[0-9.]+[a-z]?)/"
+        "ARG TMUX_VERSION=(?<currentValue>[0-9.]+[a-z]?)"
       ],
       "depNameTemplate": "tmux/tmux-builds",
       "datasourceTemplate": "github-releases",
