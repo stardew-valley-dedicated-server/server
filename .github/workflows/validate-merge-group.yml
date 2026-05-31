@@ -1,0 +1,54 @@
+# Runs on merge_group, the event GitHub fires for each entry in the merge queue. The queued
+# commit is trusted, already-approved, base-repo code, so there is no fork-secret threat model
+# here — hence no `authorize` gate and no environment, unlike validate-pr.yml. This is a separate
+# file rather than a trigger added to validate-pr.yml on purpose: the merge_group payload has no
+# `github.event.pull_request.*` fields, and one workflow per event keeps a single required check
+# per name. The job name (`Validate Build`) matches the pull-request check so the ruleset's
+# required check is satisfied in-queue. See docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
+name: Validate Merge Group
+
+on:
+  merge_group:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs for the same merge-queue branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.merge_group.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-build:
+    name: Validate Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Build Docker image (validation only)
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: false
+          tags: sdvd/server:mq-${{ github.run_id }}
+          secrets: |
+            steam_username=${{ secrets.STEAM_USERNAME }}
+            steam_password=${{ secrets.STEAM_PASSWORD }}
+            steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build summary
+        run: |
+          echo "### Merge Queue Build Validation Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Queue branch:** \`${{ github.event.merge_group.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.event.merge_group.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
