@@ -1,140 +1,176 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
-  "timezone": "Europe/Berlin",
-  "schedule": [
-    "before 6am on monday"
-  ],
-  "labels": [
-    "dependencies"
-  ],
-  "semanticCommits": "enabled",
-  "semanticCommitType": "chore",
-  "semanticCommitScope": "deps",
-  "rebaseWhen": "conflicted",
-  "automerge": true,
-  "automergeType": "pr",
-  "platformAutomerge": true,
-  "prHourlyLimit": 0,
-  "prConcurrentLimit": 0,
-  "dependencyDashboard": true,
-  "lockFileMaintenance": {
-    "enabled": false
-  },
-  "ignorePaths": [
-    "**/node_modules/**",
-    "decompiled/**",
-    "sub_modules/**",
-    "tools/.playground/**",
-    "docker/modern/**"
-  ],
-  "packageRules": [
-    {
-      "description": "npm root (package-lock.json) — npm manager. Group all into one weekly PR.",
-      "matchManagers": ["npm"],
-      "matchFileNames": ["package.json"],
-      "groupName": "npm-root"
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": ["config:recommended"],
+    "timezone": "Europe/Berlin",
+    "schedule": ["before 6am on monday"],
+    "labels": ["dependencies"],
+    "semanticCommits": "enabled",
+    "semanticCommitType": "chore",
+    "semanticCommitScope": "deps",
+    "rebaseWhen": "conflicted",
+    "automerge": true,
+    "automergeType": "pr",
+    "platformAutomerge": true,
+    "prHourlyLimit": 0,
+    "prConcurrentLimit": 0,
+    "separateMultipleMajor": true,
+    "dependencyDashboard": true,
+    "lockFileMaintenance": {
+        "enabled": false
     },
-    {
-      "description": "docs — bun.lock → handled by the bun manager, not npm",
-      "matchManagers": ["bun"],
-      "matchFileNames": ["docs/package.json"],
-      "groupName": "npm-docs"
-    },
-    {
-      "description": "discord-bot — bun.lock → bun manager",
-      "matchManagers": ["bun"],
-      "matchFileNames": ["tools/discord-bot/package.json"],
-      "groupName": "npm-discord-bot"
-    },
-    {
-      "description": "test-ui — bun.lock → bun manager. Not previously covered by dependabot.",
-      "matchManagers": ["bun"],
-      "matchFileNames": ["tests/test-ui/package.json"],
-      "groupName": "npm-test-ui"
-    },
-    {
-      "description": "Docker base images across all (in-scope) Dockerfiles",
-      "matchManagers": ["dockerfile"],
-      "groupName": "docker"
-    },
-    {
-      "description": "Freeze test-client mod-builder .NET 6 — must match the game's runtime. Scoped to tag 6.0 in this file only; the 10.0 stages here and in docker/Dockerfile stay updatable.",
-      "matchManagers": ["dockerfile"],
-      "matchFileNames": ["docker/Dockerfile.test-client"],
-      "matchPackageNames": ["mcr.microsoft.com/dotnet/sdk"],
-      "matchCurrentValue": "6.0",
-      "enabled": false
-    },
-    {
-      "description": "NuGet — .csproj + .config/dotnet-tools.json, grouped",
-      "matchManagers": ["nuget"],
-      "groupName": "dotnet-dependencies"
-    },
-    {
-      "description": "Freeze SteamKit2 at 2.4.1 in the SMAPI mod (net6.0) — 2.5.0+ and the 3.x major are incompatible with the in-game runtime. Scoped by matchFileNames to JunimoServer.csproj only, so tools/steam-service/SteamService.csproj (on 3.x) stays updatable. Must follow the dotnet-dependencies group rule above so this narrower match wins (packageRules are last-match-wins).",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
-      "matchPackageNames": ["SteamKit2"],
-      "allowedVersions": "2.4.1"
-    },
-    {
-      "description": "Cap Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
-      "matchPackageNames": ["Microsoft.OpenApi"],
-      "allowedVersions": "<2.0.0"
-    },
-    {
-      "description": "Cap Microsoft.NET.Test.Sdk below 18.0 in the E2E test project. 18.x bundles Microsoft Testing Platform v2.0, but the default xunit.v3 package targets MTP v1, so the pair fails at runtime with TypeLoadException for IDataConsumer (xunit#3416, by design). Lift only as part of a coordinated migration to the xunit.v3.mtp-v2 packages and matching coverlet 10 (coverlet.collector is left ungated so it can move with that migration).",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["tests/JunimoServer.Tests/JunimoServer.Tests.csproj"],
-      "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
-      "allowedVersions": "<18.0.0"
-    },
-    {
-      "description": "Temporary cap on SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["tests/JunimoServer.Tests/JunimoServer.Tests.csproj"],
-      "matchPackageNames": ["SixLabors.ImageSharp"],
-      "allowedVersions": "<4.0.0"
-    },
-    {
-      "description": "GitHub Actions — group all workflow action bumps",
-      "matchManagers": ["github-actions"],
-      "groupName": "github-actions"
-    },
-    {
-      "description": "Custom Dockerfile download-URL/ARG pins (SMAPI, tmux)",
-      "matchManagers": ["custom.regex"],
-      "groupName": "dockerfile-tools"
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "SMAPI version (ARG) in docker/Dockerfile and docker/Dockerfile.test-client. Pattern deliberately excludes docker/modern/** (out of scope) — anchored so the modern/ path segment doesn't match, independent of ignorePaths.",
-      "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
-      "matchStrings": [
-        "ARG SMAPI_VERSION=(?<currentValue>[0-9.]+)"
-      ],
-      "depNameTemplate": "Pathoschild/SMAPI",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "description": "tmux version (ARG TMUX_VERSION in docker/Dockerfile; referenced via ${TMUX_VERSION} in the install RUN so one bump propagates to URL and tarball name alike). Uses 'deb' versioning so the letter-suffix tags (3.6a < 3.6b) order correctly — dpkg compares non-digit runs lexically by ASCII. No other scheme (semver/loose/regex/docker) orders the letter; deb/rpm/apk are the only ones built for alphanumeric version segments.",
-      "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
-      "matchStrings": [
-        "ARG TMUX_VERSION=(?<currentValue>[0-9.]+[a-z]?)"
-      ],
-      "depNameTemplate": "tmux/tmux-builds",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.+)$",
-      "versioningTemplate": "deb"
-    }
-  ]
+    "ignorePaths": [
+        "**/node_modules/**",
+        "decompiled/**",
+        "sub_modules/**",
+        "tools/.playground/**",
+        "docker/modern/**"
+    ],
+    "packageRules": [
+        {
+            "description": "server — SMAPI mod: mod/JunimoServer + JunimoServer.Shared (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "mod/JunimoServer/JunimoServer.csproj",
+                "mod/JunimoServer.Shared/JunimoServer.Shared.csproj"
+            ],
+            "groupName": "server"
+        },
+        {
+            "description": "test-runner — E2E harness: JunimoServer.TestRunner + JunimoServer.Tests, grouped so xunit.v3 (Tests) and xunit.v3.runner.utility (TestRunner) move in lockstep (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj",
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
+            ],
+            "groupName": "test-runner"
+        },
+        {
+            "description": "test-client — E2E automation mod: JunimoTestClient (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
+            "groupName": "test-client"
+        },
+        {
+            "description": "steam-service — standalone Steam auth sidecar (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["tools/steam-service/SteamService.csproj"],
+            "groupName": "steam-service"
+        },
+        {
+            "description": "tools — low-traffic helpers (dll-patcher, openapi-generator, netdebug) plus solution CLI tools (.config/dotnet-tools.json: csharpier, trxtoextentreport) (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tools/dll-patcher/SDVPatcher.csproj",
+                "tools/openapi-generator/openapi-generator.csproj",
+                "tools/netdebug/NetDebug.csproj",
+                ".config/dotnet-tools.json"
+            ],
+            "groupName": "tools"
+        },
+        {
+            "description": "root — repo tooling: commitlint, lefthook, pako (package-lock.json).",
+            "matchManagers": ["npm"],
+            "matchFileNames": ["package.json"],
+            "groupName": "root"
+        },
+        {
+            "description": "docs — VitePress site (bun.lock).",
+            "matchManagers": ["bun"],
+            "matchFileNames": ["docs/package.json"],
+            "groupName": "docs"
+        },
+        {
+            "description": "discord-bot — Discord integration bot (bun.lock).",
+            "matchManagers": ["bun"],
+            "matchFileNames": ["tools/discord-bot/package.json"],
+            "groupName": "discord-bot"
+        },
+        {
+            "description": "test-ui — Vue test monitoring UI (bun.lock).",
+            "matchManagers": ["bun"],
+            "matchFileNames": ["tests/test-ui/package.json"],
+            "groupName": "test-ui"
+        },
+        {
+            "description": "docker — base images across all in-scope Dockerfiles.",
+            "matchManagers": ["dockerfile"],
+            "groupName": "docker"
+        },
+        {
+            "description": "PIN — test-client mod-builder .NET 6 must match the game's runtime. Scoped to tag 6.0 in this file only; the 10.0 stages here and in docker/Dockerfile stay updatable.",
+            "matchManagers": ["dockerfile"],
+            "matchFileNames": ["docker/Dockerfile.test-client"],
+            "matchPackageNames": ["mcr.microsoft.com/dotnet/sdk"],
+            "matchCurrentValue": "6.0",
+            "enabled": false
+        },
+        {
+            "description": "PIN — SteamKit2 at 2.4.1 in the SMAPI mod (net6.0); 2.5.0+ and the 3.x major are incompatible with the in-game runtime. Scoped to JunimoServer.csproj only, so tools/steam-service/SteamService.csproj (on 3.x) stays updatable.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
+            "matchPackageNames": ["SteamKit2"],
+            "allowedVersions": "2.4.1"
+        },
+        {
+            "description": "CAP — Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
+            "matchPackageNames": ["Microsoft.OpenApi"],
+            "allowedVersions": "<2.0.0"
+        },
+        {
+            "description": "CAP — Microsoft.NET.Test.Sdk below 18.0 in the E2E test project. 18.x bundles Microsoft Testing Platform v2.0, but the default xunit.v3 package targets MTP v1, so the pair fails at runtime with TypeLoadException for IDataConsumer (xunit#3416, by design). Lift only as part of a coordinated migration to the xunit.v3.mtp-v2 packages and matching coverlet 10 (coverlet.collector is left ungated so it can move with that migration).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
+            ],
+            "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
+            "allowedVersions": "<18.0.0"
+        },
+        {
+            "description": "CAP — SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
+            ],
+            "matchPackageNames": ["SixLabors.ImageSharp"],
+            "allowedVersions": "<4.0.0"
+        },
+        {
+            "description": "github-actions — all workflow action bumps.",
+            "matchManagers": ["github-actions"],
+            "groupName": "github-actions"
+        },
+        {
+            "description": "dockerfile-tools — custom Dockerfile download-URL/ARG pins: SMAPI, tmux.",
+            "matchManagers": ["custom.regex"],
+            "groupName": "dockerfile-tools"
+        },
+        {
+            "description": "MAJOR — every major update gets its own PR, no exceptions. Clears the per-module groupName for any major bump (last-match-wins), so each major lands standalone. Must stay last to override every group above.",
+            "matchUpdateTypes": ["major"],
+            "groupName": null
+        }
+    ],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "description": "SMAPI — version ARG in docker/Dockerfile and docker/Dockerfile.test-client. Pattern excludes docker/modern/** (out of scope) — anchored so the modern/ path segment doesn't match, independent of ignorePaths.",
+            "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
+            "matchStrings": ["ARG SMAPI_VERSION=(?<currentValue>[0-9.]+)"],
+            "depNameTemplate": "Pathoschild/SMAPI",
+            "datasourceTemplate": "github-releases",
+            "versioningTemplate": "semver"
+        },
+        {
+            "customType": "regex",
+            "description": "tmux — version ARG TMUX_VERSION in docker/Dockerfile; referenced via ${TMUX_VERSION} in the install RUN so one bump propagates to URL and tarball name alike. Uses 'deb' versioning so the letter-suffix tags (3.6a < 3.6b) order correctly — semver and the other schemes don't order the trailing letter.",
+            "managerFilePatterns": ["/^docker/Dockerfile(\\.[^/]+)?$/"],
+            "matchStrings": ["ARG TMUX_VERSION=(?<currentValue>[0-9.]+[a-z]?)"],
+            "depNameTemplate": "tmux/tmux-builds",
+            "datasourceTemplate": "github-releases",
+            "extractVersionTemplate": "^v(?<version>.+)$",
+            "versioningTemplate": "deb"
+        }
+    ]
 }
