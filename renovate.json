@@ -7,6 +7,7 @@
     "semanticCommits": "enabled",
     "semanticCommitType": "chore",
     "semanticCommitScope": "deps",
+    "commitMessageTopic": "{{depName}}",
     "rebaseWhen": "conflicted",
     "automerge": true,
     "automergeType": "pr",
@@ -32,7 +33,22 @@
                 "mod/JunimoServer/JunimoServer.csproj",
                 "mod/JunimoServer.Shared/JunimoServer.Shared.csproj"
             ],
+            "semanticCommitScope": "deps/server",
             "groupName": "server"
+        },
+        {
+            "description": "steam-service — standalone Steam auth sidecar (NuGet).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["tools/steam-service/SteamService.csproj"],
+            "semanticCommitScope": "deps/steam-service",
+            "groupName": "steam-service"
+        },
+        {
+            "description": "discord-bot — Discord integration bot (bun.lock).",
+            "matchManagers": ["bun"],
+            "matchFileNames": ["tools/discord-bot/package.json"],
+            "semanticCommitScope": "deps/discord-bot",
+            "groupName": "discord-bot"
         },
         {
             "description": "test-runner — E2E harness: JunimoServer.TestRunner + JunimoServer.Tests, grouped so xunit.v3 (Tests) and xunit.v3.runner.utility (TestRunner) move in lockstep (NuGet).",
@@ -41,19 +57,22 @@
                 "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj",
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
             ],
+            "semanticCommitScope": "deps/test-runner",
             "groupName": "test-runner"
         },
         {
             "description": "test-client — E2E automation mod: JunimoTestClient (NuGet).",
             "matchManagers": ["nuget"],
             "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
+            "semanticCommitScope": "deps/test-client",
             "groupName": "test-client"
         },
         {
-            "description": "steam-service — standalone Steam auth sidecar (NuGet).",
-            "matchManagers": ["nuget"],
-            "matchFileNames": ["tools/steam-service/SteamService.csproj"],
-            "groupName": "steam-service"
+            "description": "test-ui — Vue test monitoring UI (bun.lock).",
+            "matchManagers": ["bun"],
+            "matchFileNames": ["tests/test-ui/package.json"],
+            "semanticCommitScope": "deps/test-ui",
+            "groupName": "test-ui"
         },
         {
             "description": "tools — low-traffic helpers (dll-patcher, openapi-generator, netdebug) plus solution CLI tools (.config/dotnet-tools.json: csharpier, trxtoextentreport) (NuGet).",
@@ -64,36 +83,34 @@
                 "tools/netdebug/NetDebug.csproj",
                 ".config/dotnet-tools.json"
             ],
+            "semanticCommitScope": "deps/tools",
             "groupName": "tools"
         },
         {
-            "description": "root — repo tooling: commitlint, lefthook, pako (package-lock.json).",
+            "description": "project — repo tooling: commitlint, lefthook, pako (package-lock.json).",
             "matchManagers": ["npm"],
             "matchFileNames": ["package.json"],
-            "groupName": "root"
+            "semanticCommitScope": "deps/project",
+            "groupName": "project"
         },
         {
             "description": "docs — VitePress site (bun.lock).",
             "matchManagers": ["bun"],
             "matchFileNames": ["docs/package.json"],
+            "semanticCommitScope": "deps/docs",
             "groupName": "docs"
         },
         {
-            "description": "discord-bot — Discord integration bot (bun.lock).",
-            "matchManagers": ["bun"],
-            "matchFileNames": ["tools/discord-bot/package.json"],
-            "groupName": "discord-bot"
-        },
-        {
-            "description": "test-ui — Vue test monitoring UI (bun.lock).",
-            "matchManagers": ["bun"],
-            "matchFileNames": ["tests/test-ui/package.json"],
-            "groupName": "test-ui"
-        },
-        {
-            "description": "docker — base images across all in-scope Dockerfiles.",
-            "matchManagers": ["dockerfile"],
+            "description": "docker — base images (dockerfile) plus custom Dockerfile download-URL/ARG pins, SMAPI + tmux (custom.regex).",
+            "matchManagers": ["dockerfile", "custom.regex"],
+            "semanticCommitScope": "deps/docker",
             "groupName": "docker"
+        },
+        {
+            "description": "github-actions — all workflow action bumps.",
+            "matchManagers": ["github-actions"],
+            "semanticCommitScope": "deps/github-actions",
+            "groupName": "github-actions"
         },
         {
             "description": "PIN — test-client mod-builder .NET 6 must match the game's runtime. Scoped to tag 6.0 in this file only; the 10.0 stages here and in docker/Dockerfile stay updatable.",
@@ -134,16 +151,6 @@
             ],
             "matchPackageNames": ["SixLabors.ImageSharp"],
             "allowedVersions": "<4.0.0"
-        },
-        {
-            "description": "github-actions — all workflow action bumps.",
-            "matchManagers": ["github-actions"],
-            "groupName": "github-actions"
-        },
-        {
-            "description": "dockerfile-tools — custom Dockerfile download-URL/ARG pins: SMAPI, tmux.",
-            "matchManagers": ["custom.regex"],
-            "groupName": "dockerfile-tools"
         },
         {
             "description": "MAJOR — every major update gets its own PR, no exceptions. Clears the per-module groupName for any major bump (last-match-wins), so each major lands standalone. Must stay last to override every group above.",
