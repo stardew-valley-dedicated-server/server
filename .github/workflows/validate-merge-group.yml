@@ -20,6 +20,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Build-Context Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      # On merge_group, paths-filter needs an explicit base/ref (the event provides no PR refs) and
+      # a checkout to diff against. The filter is an allowlist of the paths the Docker build context
+      # actually consumes (the Dockerfile COPY surface) — keep it in sync with docker/Dockerfile, not
+      # with .dockerignore. Must match validate-pr.yml's filter exactly so PR-time and in-queue agree.
+      - name: Checkout queue branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+          fetch-depth: 0
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
+          filters: |
+            docker:
+              - 'docker/**'
+              - 'mod/**'
+              - 'tools/steam-service/**'
+              - 'tools/dll-patcher/**'
+              - 'tools/netdebug/**'
+              - 'tools/openapi-generator/**'
+              - 'Directory.Build.props'
+
   validate-commits:
     name: Validate Commits
     runs-on: ubuntu-latest
@@ -47,18 +79,50 @@ jobs:
 
   validate-build:
     name: Validate Build
+    # Always runs so the required check always reports — but the actual Docker build only runs when
+    # the merge group touches the build context (see the `changes` job). A change that can't affect
+    # the build context can't affect the build result, so skipping is safe and keeps the check green.
+    needs: changes
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
+        if: needs.changes.outputs.docker == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.merge_group.head_sha }}
 
       - name: Set up Docker Buildx
+        id: buildx
+        if: needs.changes.outputs.docker == 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # type=gha does not persist BuildKit `--mount=type=cache` directories (the Dockerfile uses one
+      # for /root/.nuget/packages on every restore), so NuGet re-downloads on each run. actions/cache
+      # persists a local dir across runs; inject seeds the mount before the build, extract writes it
+      # back after. Mirrors validate-pr.yml so the in-queue build is as cache-warm as the PR build.
+      - name: Cache NuGet mount
+        id: nuget-cache
+        if: needs.changes.outputs.docker == 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: nuget-cache-mount
+          key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
+
+      - name: Inject NuGet mount
+        if: needs.changes.outputs.docker == 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          skip-extraction: ${{ steps.nuget-cache.outputs.cache-hit }}
+
       - name: Build Docker image (validation only)
+        if: needs.changes.outputs.docker == 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -72,9 +136,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Extract NuGet mount
+        if: needs.changes.outputs.docker == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          extract: true
+
       - name: Build summary
         run: |
-          echo "### Merge Queue Build Validation Passed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Queue branch:** \`${{ github.event.merge_group.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.event.merge_group.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.changes.outputs.docker }}" = "true" ]; then
+            echo "### Merge Queue Build Validation Passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Queue branch:** \`${{ github.event.merge_group.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** \`${{ github.event.merge_group.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Merge Queue Build Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This merge group does not touch the Docker build context, so the image build was skipped." >> $GITHUB_STEP_SUMMARY
+          fi
