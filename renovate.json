@@ -7,6 +7,7 @@
     "semanticCommits": "enabled",
     "semanticCommitType": "chore",
     "semanticCommitScope": "deps",
+    "commitMessageTopic": "{{depName}}",
     "rebaseWhen": "conflicted",
     "automerge": true,
     "automergeType": "pr",
