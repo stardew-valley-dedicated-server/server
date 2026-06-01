@@ -1,7 +1,7 @@
 # GitHub Workflows Audit & Fixes
 
 ## Context
-Audit of all 11 GitHub workflow files, with fixes for 9 issues spanning JSON-injection vectors, unscoped GHA caches, fragile heredoc/sed shell stitching, and labeler/dependabot completeness. Preview builds become manual-trigger only — push-to-master previews produce too many throwaway releases. The deploy chain (`deploy-server` auto-deploys on `Build Preview` completion) is preserved.
+Audit of the GitHub workflow files, with fixes spanning JSON-injection vectors, unscoped GHA caches, fragile heredoc/sed shell stitching, and labeler completeness. Preview builds become manual-trigger only — push-to-master previews produce too many throwaway releases. The deploy chain (`deploy-server` auto-deploys on `Build Preview` completion) is preserved.
 
 ---
 
@@ -25,9 +25,9 @@ The `concurrency` block and `cancel-in-progress: true` can stay as-is (prevents 
 ---
 
 ## Issue 2: Discord JSON injection in `build-release.yml`
-**File:** `.github/workflows/build-release.yml:110-124`
+**File:** `.github/workflows/build-release.yml:105-124`
 
-The release Discord notification uses raw `${{ }}` interpolation inside a JSON string passed to `curl -d`. If `tag_name` contained quotes or special characters, the JSON would break or allow injection. Every other Discord notification in the repo (`build-preview.yml:206-235`, `deploy-server.yml:221-256`) already uses `jq -n --arg` for safe construction.
+The release Discord notification uses raw `${{ }}` interpolation inside a JSON string passed to `curl -d`. If `tag_name` contained quotes or special characters, the JSON would break or allow injection. Every other Discord notification in the repo (`build-preview.yml:197-235`, `deploy-server.yml:215-257`) already uses `jq -n --arg` for safe construction.
 
 **Fix:** Rewrite to use `jq -n --arg` + `curl -d @-`, matching `build-preview.yml`'s pattern. Move `${{ }}` values into `env:` block.
 
@@ -37,7 +37,7 @@ The release Discord notification uses raw `${{ }}` interpolation inside a JSON s
 **Files:**
 - `.github/workflows/build-preview.yml:155-156`
 - `.github/workflows/build-release.yml:77-78`
-- `.github/workflows/validate-pr.yml:65-66`
+- `.github/workflows/validate-pr.yml:92-93`
 
 The server image builds in all three workflows share the default `type=gha` cache scope. A PR build can write layers that pollute preview/release builds, and preview/release can overwrite each other.
 
@@ -46,7 +46,7 @@ The reusable `build-image.yml` already supports `cache_scope` — steam-service 
 **Fix:**
 - `build-preview.yml`: Add `scope=server-preview` to `cache-from` and `cache-to`
 - `build-release.yml`: Add `scope=server-release` to `cache-from` and `cache-to`
-- `validate-pr.yml`: Make cache **read-only** — keep `cache-from: type=gha` but remove `cache-to` entirely. PR validation builds are throwaway and shouldn't persist cache.
+- `validate-pr.yml`: Make cache **read-only** — keep `cache-from: type=gha` but remove `cache-to` entirely. The `validate-build` job's images are throwaway and shouldn't persist cache. (Cache config sits inside the `Build Docker image (validation only)` step, which runs behind the `authorize` gate — the gate doesn't affect the cache change.)
 
 ---
 
@@ -66,7 +66,7 @@ echo "IMAGE_VERSION=${{ matrix.image_tag }}" >> .env
 ---
 
 ## Issue 5: `deploy-docs.yml` Discord notification uses raw JSON interpolation
-**File:** `.github/workflows/deploy-docs.yml:219-230`
+**File:** `.github/workflows/deploy-docs.yml:213-230`
 
 Same pattern as Issue 2. The docs deploy Discord notification uses inline `${{ }}` inside a `curl -d` JSON string. The `page_url` output comes from `actions/deploy-pages` and is unlikely to contain injection-prone characters, but it's inconsistent with the rest of the repo and fragile.
 
@@ -88,109 +88,6 @@ tests:
 
 ---
 
-## Issue 7: `dependabot.yml` missing `tests/test-ui` npm ecosystem
-**File:** `.github/dependabot.yml`
-
-The `tests/test-ui/` directory contains a Vue.js app with `package.json` and `bun.lock`, but Dependabot isn't configured to track its npm dependencies. The docs and discord-bot directories are already tracked.
-
-**Fix:** Add an entry:
-```yaml
-  - package-ecosystem: "npm"
-    directory: "/tests/test-ui"
-    schedule:
-      interval: "weekly"
-    groups:
-      test-ui:
-        patterns:
-          - "*"
-```
-
----
-
-## Issue 8: Auto-rebase Dependabot PRs after merges
-**File:** `.github/workflows/dependabot-rebase.yml` (new file)
-
-When PRs merge to master, open Dependabot PRs can fall behind and get merge conflicts. This workflow comments `@dependabot rebase` on all open Dependabot PRs after each push to master, keeping them up-to-date automatically.
-
-**Fix:** Create `.github/workflows/dependabot-rebase.yml`:
-```yaml
-name: Rebase Dependabot PRs
-
-on:
-  push:
-    branches: [master]
-
-permissions:
-  pull-requests: write
-  contents: write
-
-jobs:
-  rebase:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Comment rebase on all Dependabot PRs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr list --repo ${{ github.repository }} --author 'app/dependabot' --json number -q '.[].number' | while read pr; do
-            gh pr comment "$pr" --repo ${{ github.repository }} --body '@dependabot rebase'
-          done
-```
-
----
-
-## Issue 9: Dependabot auto-merge for patch bumps
-**File:** `.github/workflows/dependabot-automerge.yml` (new file)
-
-Pairs with Issue 8 (auto-rebase). Patch version bumps from Dependabot are low-risk and often pile up. A workflow that auto-approves and enables auto-merge for Dependabot patch/minor PRs (after CI passes) reduces maintenance burden.
-
-**Fix:** Create `.github/workflows/dependabot-automerge.yml`:
-```yaml
-name: Auto-merge Dependabot PRs
-
-on:
-  pull_request:
-
-permissions:
-  contents: write
-  pull-requests: write
-
-jobs:
-  auto-merge:
-    if: github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-merge patch and minor updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr review "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --approve
-          gh pr merge "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --squash --auto
-```
-
----
-
-## Issue 10: Pending Dependabot action version bumps (no action — informational)
-There are 5 pending Dependabot PRs for GitHub Actions version bumps on remote branches:
-- `docker/setup-buildx-action` 3.12.0 -> 4.0.0
-- `docker/login-action` 3.7.0 -> 4.0.0
-- `docker/metadata-action` 5.10.0 -> 6.0.0
-- `actions/setup-node` 6.2.0 -> 6.3.0
-- `oven-sh/setup-bun` 2.1.2 -> 2.1.3
-
-These are major version bumps for 3 of the Docker actions. They should be reviewed and merged (or the pin hashes updated in the workflow fixes above).
-
-**Decision:** Not part of this PR — handle separately by reviewing/merging the Dependabot PRs. But the fixes in this plan should use the **current** pinned versions to avoid conflicts.
-
----
-
 ## Summary of changes
 
 | # | File | Type | Risk |
@@ -201,9 +98,6 @@ These are major version bumps for 3 of the Docker actions. They should be review
 | 4 | `deploy-server.yml` | Fragility fix (heredoc) | Low |
 | 5 | `deploy-docs.yml` | Bug fix (JSON injection) | Low |
 | 6 | `.github/labeler.yml` | Improvement (missing label) | None |
-| 7 | `.github/dependabot.yml` | Improvement (missing ecosystem) | None |
-| 8 | `dependabot-rebase.yml` | New workflow (auto-rebase) | None |
-| 9 | `dependabot-automerge.yml` | New workflow (auto-merge patch/minor) | Low |
 
 ## Verification
 - **Issue 1:** Manually dispatch Build Preview from Actions tab; confirm deploy-server auto-triggers on completion
@@ -211,6 +105,3 @@ These are major version bumps for 3 of the Docker actions. They should be review
 - **Issue 3:** After merge, open a PR and confirm no `cache-to` in buildx logs; push to master and confirm `scope=server-preview` appears
 - **Issue 4:** Run deploy-server workflow manually, SSH into server and verify `.env` has no leading whitespace
 - **Issue 6:** Open a PR touching `tests/`, verify `tests` label is applied
-- **Issue 7:** After merge, Dependabot should start creating PRs for test-ui dependencies
-- **Issue 8:** Merge a PR to master; confirm `@dependabot rebase` comments appear on open Dependabot PRs
-- **Issue 9:** Open a Dependabot patch PR; confirm it gets auto-approved and auto-merge enabled after CI passes

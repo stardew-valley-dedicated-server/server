@@ -29,6 +29,31 @@ jobs:
     steps:
       - run: echo "Fork PRs require maintainer approval before checks run; same-repo PRs run automatically."
 
+  changes:
+    name: Detect Build-Context Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      # paths-filter reads the changed-file list via the GitHub API (it never checks out fork
+      # code), so it is safe to run before the authorize gate. The filter is an allowlist of the
+      # paths the Docker build context actually consumes (the Dockerfile COPY surface) — keep it
+      # in sync with docker/Dockerfile, not with .dockerignore. A path missing here means a build
+      # that should have run is skipped, so err toward including.
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            docker:
+              - 'docker/**'
+              - 'mod/**'
+              - 'tools/steam-service/**'
+              - 'tools/dll-patcher/**'
+              - 'tools/netdebug/**'
+              - 'tools/openapi-generator/**'
+              - 'Directory.Build.props'
+
   validate-commits:
     name: Validate Commits
     needs: authorize
@@ -63,22 +88,54 @@ jobs:
 
   validate-build:
     name: Validate Build
+    # Always runs so the required check always reports — but the actual Docker build only runs when
+    # the PR touches the build context (see the `changes` job). A PR that can't change the build
+    # context can't change the build result, so skipping the build is safe and keeps the check green.
     # Checks out fork head and exposes Steam secrets — `needs: authorize` keeps both behind the
-    # fork-pr approval gate. Do not remove it, and do not add an `environment:` here (that would
-    # double-gate forks with a second approval prompt).
-    needs: authorize
+    # fork-pr approval gate. Do not remove `authorize`, and do not add an `environment:` here (that
+    # would double-gate forks with a second approval prompt).
+    needs: [authorize, changes]
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
+        if: needs.changes.outputs.docker == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Docker Buildx
+        id: buildx
+        if: needs.changes.outputs.docker == 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # type=gha does not persist BuildKit `--mount=type=cache` directories (the Dockerfile uses
+      # one for /root/.nuget/packages on every restore), so NuGet re-downloads on each run. The
+      # cache-dance bridges that gap: actions/cache persists a local `nuget-cache-mount` dir across
+      # runs, the inject step seeds the BuildKit mount from it before the build, and the extract
+      # step (after the build) writes the updated mount back for actions/cache to save.
+      - name: Cache NuGet mount
+        id: nuget-cache
+        if: needs.changes.outputs.docker == 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: nuget-cache-mount
+          key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
+
+      - name: Inject NuGet mount
+        if: needs.changes.outputs.docker == 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          skip-extraction: ${{ steps.nuget-cache.outputs.cache-hit }}
+
       - name: Build Docker image (validation only)
+        if: needs.changes.outputs.docker == 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -92,10 +149,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Extract NuGet mount
+        if: needs.changes.outputs.docker == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          extract: true
+
       - name: Build summary
         run: |
-          echo "### Build Validation Passed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ github.head_ref }}\` → \`${{ github.base_ref }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.changes.outputs.docker }}" = "true" ]; then
+            echo "### Build Validation Passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Branch:** \`${{ github.head_ref }}\` → \`${{ github.base_ref }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Build Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This PR does not touch the Docker build context, so the image build was skipped." >> $GITHUB_STEP_SUMMARY
+          fi

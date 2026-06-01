@@ -9,6 +9,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Build Release](#build-release-pipeline) | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
 | [Build Preview](#build-preview-pipeline) | Push to `master` | Builds and publishes preview Docker images |
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits and builds |
+| [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 | [Deploy Docs](#deploy-docs-pipeline) | After build / manual | Deploys documentation to GitHub Pages |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual | Deletes old preview tags from DockerHub |
@@ -154,6 +155,27 @@ The pipeline uses a single GitHub Environment, `fork-pr`, purely as an authoriza
 | `fork-pr` | Fork PRs — pauses the pipeline for maintainer approval before fork code or secrets run | Required reviewer |
 
 Same-repo and Renovate PRs resolve the `authorize` job's `environment:` expression to an empty string, which GitHub treats as **no environment** — so no gate, no approval, and nothing extra in the repo's environment list.
+
+## Merge Queue
+
+Merges to `master` go through a [GitHub merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue). You do not merge a PR directly — once it is approved and its checks pass, enabling auto-merge adds it to the queue, and GitHub merges it for you.
+
+### How a PR merges
+
+1. The PR passes its [Validate PR](#validate-pr-pipeline) checks and receives the required approval.
+2. Enabling auto-merge (or, for Renovate PRs, Renovate arming it automatically) hands the PR to the queue.
+3. The queue builds a temporary `gh-readonly-queue/master/...` branch containing the latest `master` plus the PR's changes, and runs the required checks against it. This is what the **Validate Merge Group** workflow ([`validate-merge-group.yml`](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/validate-merge-group.yml)) validates — the PR is re-tested against the current tip of `master`, not the stale base it was branched from.
+4. If those checks pass, the queue fast-forwards `master`. PRs are merged one at a time, each squashed into a single commit.
+
+A PR sitting in the queue shows **`AWAITING_CHECKS`** while its merge-group build runs, and **`UNMERGEABLE`** if its changes no longer apply cleanly on top of the current `master` (typically because an overlapping PR merged ahead of it). An unmergeable PR is dropped from the queue; rebasing it onto `master` and re-queuing resolves it.
+
+### Why Validate Merge Group is a separate workflow
+
+The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build` and `Validate Commits` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces both under the same names. It runs the same commitlint and Docker build, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
+
+::: warning
+Both required checks (`Validate Build`, `Validate Commits`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too.
+:::
 
 ## Deploy Docs Pipeline
 
