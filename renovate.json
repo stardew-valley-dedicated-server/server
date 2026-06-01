@@ -13,7 +13,6 @@
     "platformAutomerge": true,
     "prHourlyLimit": 0,
     "prConcurrentLimit": 0,
-    "separateMultipleMajor": true,
     "dependencyDashboard": true,
     "lockFileMaintenance": {
         "enabled": false
