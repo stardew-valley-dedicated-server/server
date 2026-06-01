@@ -74,6 +74,34 @@
       "groupName": "dotnet-dependencies"
     },
     {
+      "description": "Freeze SteamKit2 at 2.4.1 in the SMAPI mod (net6.0) — 2.5.0+ and the 3.x major are incompatible with the in-game runtime. Scoped by matchFileNames to JunimoServer.csproj only, so tools/steam-service/SteamService.csproj (on 3.x) stays updatable. Must follow the dotnet-dependencies group rule above so this narrower match wins (packageRules are last-match-wins).",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
+      "matchPackageNames": ["SteamKit2"],
+      "allowedVersions": "2.4.1"
+    },
+    {
+      "description": "Cap Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
+      "matchPackageNames": ["Microsoft.OpenApi"],
+      "allowedVersions": "<2.0.0"
+    },
+    {
+      "description": "Cap Microsoft.NET.Test.Sdk below 18.0 in the E2E test project. 18.x bundles Microsoft Testing Platform v2.0, but the default xunit.v3 package targets MTP v1, so the pair fails at runtime with TypeLoadException for IDataConsumer (xunit#3416, by design). Lift only as part of a coordinated migration to the xunit.v3.mtp-v2 packages and matching coverlet 10 (coverlet.collector is left ungated so it can move with that migration).",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["tests/JunimoServer.Tests/JunimoServer.Tests.csproj"],
+      "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
+      "allowedVersions": "<18.0.0"
+    },
+    {
+      "description": "Temporary cap on SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["tests/JunimoServer.Tests/JunimoServer.Tests.csproj"],
+      "matchPackageNames": ["SixLabors.ImageSharp"],
+      "allowedVersions": "<4.0.0"
+    },
+    {
       "description": "GitHub Actions — group all workflow action bumps",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions"
