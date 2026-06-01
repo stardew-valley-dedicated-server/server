@@ -9,6 +9,6 @@
 
   <!-- Same NSwag version as the mod to ensure type compatibility -->
   <ItemGroup>
-    <PackageReference Include="NSwag.Core" Version="14.0.3"/>
+    <PackageReference Include="NSwag.Core" Version="14.7.1"/>
   </ItemGroup>
 </Project>
