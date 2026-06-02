@@ -32,10 +32,10 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
-        <PackageReference Include="NSwag.Core" Version="14.0.3"/>
-        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
-        <PackageReference Include="Websocket.Client" Version="4.6.1"/>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4"/>
+        <PackageReference Include="NSwag.Core" Version="14.7.1"/>
+        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0"/>
+        <PackageReference Include="Websocket.Client" Version="4.7.0"/>
     </ItemGroup>
 
     <ItemGroup>
