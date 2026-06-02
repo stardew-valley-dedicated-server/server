@@ -35,7 +35,7 @@
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
         <PackageReference Include="NSwag.Core" Version="14.0.3"/>
         <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
-        <PackageReference Include="Websocket.Client" Version="4.6.1"/>
+        <PackageReference Include="Websocket.Client" Version="5.5.0"/>
     </ItemGroup>
 
     <ItemGroup>
