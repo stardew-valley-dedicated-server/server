@@ -56,7 +56,7 @@ Every container, network, and volume the harness creates carries the label `sdvd
 
 **Testcontainers' Ryuk reaper is disabled** (`TestcontainersSettings.ResourceReaperEnabled = false` in `ModuleInit.cs`). Two structural reasons:
 
-1. Ryuk dials its container's mapped port from the test process. For `ssh://` Docker endpoints, Testcontainers .NET 4.3.0's `DockerContainer.Hostname` throws "endpoint not supported"; the dial loop times out after 60s with `ResourceReaperException("Initialization has been cancelled")`. See `DockerContainer.cs:148-176` upstream.
+1. Ryuk dials its container's mapped port from the test process. For `ssh://` Docker endpoints, Testcontainers' `DockerContainer.Hostname` throws "endpoint not supported"; the dial loop times out after 60s with `ResourceReaperException("Initialization has been cancelled")`.
 2. Multi-host runs need one reaper per Docker daemon. Testcontainers' reaper is a process-global singleton; per-host instantiation would require private API. `HostPool` is multi-host by design.
 
 **Trade-off — the kill-9 gap**: graceful exits (Ctrl+C, normal completion, unhandled exceptions) run the registered cleanup callbacks. A test process killed with `kill -9` / OOM / BSOD / power loss leaves containers running on each host until the next `make test` sweeps them by label. Ryuk would close that window to ~10 seconds; the in-tree sweep closes it at the next run. Acceptable for the current single-user / personal-VPS workflow.
