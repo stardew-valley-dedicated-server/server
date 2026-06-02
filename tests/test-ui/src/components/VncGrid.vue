@@ -525,7 +525,7 @@ function onSplitDoubleClick() {
                :width="'100%'" :height="'100%'">
             <path v-for="(line, lineIdx) in linesForGroup(groupIdx)" :key="lineIdx"
                   :d="linePath(line)" fill="none"
-                  :stroke="line.active ? 'oklch(var(--su))' : 'oklch(var(--bc) / 0.4)'"
+                  :stroke="line.active ? 'var(--color-success)' : 'color-mix(in oklch, var(--color-base-content) 40%, transparent)'"
                   stroke-width="1.5"
                   :stroke-dasharray="line.active ? '6 3' : 'none'"
                   :class="{ 'topology-line-animated': line.active }" />
@@ -641,8 +641,8 @@ function onSplitDoubleClick() {
 
 /* ── Scroll-to-instance highlight ── */
 @keyframes instance-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--p) / 0); }
-  50% { box-shadow: 0 0 0 3px oklch(var(--p) / 0.4); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 40%, transparent); }
 }
 .instance-highlight {
   animation: instance-pulse 0.6s ease-in-out 3;
