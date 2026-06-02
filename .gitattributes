@@ -1,11 +1,12 @@
-*                   text=auto
+# Authoritative line-ending policy.
+# LF in the index AND the working tree on every OS, regardless of a
+# contributor's core.autocrlf setting. An explicit eol in .gitattributes
+# always wins over core.autocrlf, so contributors do NOT need to change
+# their git config.
+* text=auto eol=lf
 
-# Ensure all scripts have EOL=LF
-*.sh                text eol=lf
-docker/rootfs/**    text eol=lf
-
-# Images/binaries should not change EOL
-*.jpg               -text
-*.png               -text
-*.gif               -text
-*.webp              -text
+# Binary assets: never normalize line endings or diff as text.
+*.png    binary
+*.webp   binary
+*.woff2  binary
+*.svg    binary
