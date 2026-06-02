@@ -40,6 +40,8 @@ namespace JunimoServer.Services.AlwaysOn
 
         private AlwaysOnServerFestivals alwaysOnServerFestivals;
 
+        private readonly AlwaysOnModCompat modCompat;
+
         private readonly AlwaysOnConfig Config;
 
         public AlwaysOnServer(ChatCommandsService chatCommandService, AlwaysOnConfig config, IModHelper helper, IMonitor monitor, Harmony harmony) : base(helper, monitor)
@@ -52,6 +54,9 @@ namespace JunimoServer.Services.AlwaysOn
 
             // Extracted festival logic
             alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandService, config);
+
+            // Third-party mod compatibility workarounds (kept separate from base-game automation)
+            modCompat = new AlwaysOnModCompat(helper, monitor);
 
             // Re-claim Cabin.inventoryMutex inside vanilla's update method so it can
             // never be observed unlocked by peers — replaces the 60Hz polling that
@@ -200,6 +205,8 @@ namespace JunimoServer.Services.AlwaysOn
             HandleMinigame();
             alwaysOnServerFestivals.HandleFestivalEvents();
             HandleLevelUpMenu();
+            // Third-party mod compatibility (see AlwaysOnModCompat)
+            modCompat.HandleSpaceCoreLevelUpMenu();
             HandleShippingMenu();
             HandlePetChoice();
             HandleCaveChoice();
