@@ -1,0 +1,107 @@
+# CodeQL advanced setup. Committing this workflow disables the repo's default setup automatically.
+# Two load-bearing trigger choices the reader can't infer from the YAML: it stays ADVISORY (a
+# required check that the per-language matrix skipped would leave PRs stuck "Waiting for status"),
+# and it uses `pull_request`, NOT pull_request_target (it reads fork HEAD read-only, needs no secrets).
+# See docs/developers/contributing/ci-cd.md#codeql-pipeline.
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Weekly full scan (safety net for changes the PR matrix skipped).
+    # Offset from Cleanup Caches (Sun 06:00) and Cleanup Preview Tags (Mon 06:00).
+    - cron: "17 7 * * 3" # Wednesday 07:17 UTC
+
+# Cancel superseded PR runs only. A push/schedule scan on master must never be cancelled
+# mid-upload — doing so would leave a gap in code-scanning history for that commit — so
+# cancel-in-progress is gated to pull_request (where github.ref is the per-PR merge ref).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changed languages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # JSON array, e.g. ["csharp"] or [] when no analyzable file changed.
+      languages: ${{ steps.select.outputs.languages }}
+    steps:
+      # paths-filter reads the changed-file list via the GitHub API — no checkout needed
+      # (mirrors validate-pr.yml). Skipped off-PR, where Select languages does a full scan.
+      - name: Path filter
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            csharp:
+              - '**/*.cs'
+              - '**/*.csproj'
+              - 'Directory.Build.props'
+            js-ts:
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.vue'
+              - '**/package.json'
+              - '**/tsconfig*.json'
+            actions:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+
+      - name: Select languages
+        id: select
+        env:
+          FULL_SCAN: ${{ github.event_name != 'pull_request' }}
+          CSHARP: ${{ steps.filter.outputs.csharp }}
+          JS_TS: ${{ steps.filter.outputs.js-ts }}
+          ACTIONS: ${{ steps.filter.outputs.actions }}
+        run: |
+          langs=()
+          if [ "$FULL_SCAN" = "true" ] || [ "$CSHARP"  = "true" ]; then langs+=("csharp"); fi
+          if [ "$FULL_SCAN" = "true" ] || [ "$JS_TS"   = "true" ]; then langs+=("javascript-typescript"); fi
+          if [ "$FULL_SCAN" = "true" ] || [ "$ACTIONS" = "true" ]; then langs+=("actions"); fi
+          # jq -cn with --args builds the JSON array directly — correct for 0..n elements
+          # (empty → [], one → ["csharp"]). No temp file, no [""] footgun.
+          languages=$(jq -cn '$ARGS.positional' --args "${langs[@]}")
+          echo "languages=$languages" >> "$GITHUB_OUTPUT"
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: changes
+    if: needs.changes.outputs.languages != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload SARIF results to code scanning
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.changes.outputs.languages) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@21eb7f7842f33eafc83782b56fff2a2c43e9696f # v4.36.1
+        with:
+          languages: ${{ matrix.language }}
+          # build-mode is only meaningful for csharp (buildless DB, no Docker/dotnet). For the others
+          # the empty string is read as unset by codeql-action, matching GitHub's template.
+          build-mode: ${{ matrix.language == 'csharp' && 'none' || '' }}
+          # query-suite: default (matches today). Consider security-extended later.
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@21eb7f7842f33eafc83782b56fff2a2c43e9696f # v4.36.1
