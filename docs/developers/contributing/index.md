@@ -28,6 +28,20 @@ This installs:
 - **commitlint** - Validates commit message format
 - **git hooks** - Automatically validates commits before push
 
+#### Line Endings
+
+The repository enforces **LF line endings** for all text files via `.gitattributes` (`* text=auto eol=lf`). This keeps files identical on Windows and inside the Linux containers, and is required for shell scripts and Dockerfiles to run.
+
+You do **not** need to change your git config — an explicit `eol` in `.gitattributes` overrides `core.autocrlf`, so the result is the same whether yours is `true`, `false`, or `input`. A PR check (`Validate Line Endings`) fails if CRLF reaches the index.
+
+If you cloned before this policy existed and see `CRLF will be replaced by LF` warnings, refresh your working tree once. Commit or stash any work first — `reset --hard` discards uncommitted changes to tracked files (untracked files are left alone):
+
+```bash
+git rm --cached -r -q .                # clear index entries (does NOT delete files)
+git reset --hard                       # re-checkout every tracked file as LF on disk
+git ls-files --eol | grep 'w/crlf'     # expect no output
+```
+
 
 #### Development Workflow
 
@@ -130,7 +144,7 @@ Go to **Settings → Secrets → Actions** and add:
 - Pattern: `master`
 - Enable:
   - ✅ Require pull request before merging
-  - ✅ Require status checks: `Validate Build`
+  - ✅ Require status checks: `Validate Build`, `Validate Line Endings`
   - ✅ Require approvals: 1
 
 #### 3. Configure Fork PR Protection

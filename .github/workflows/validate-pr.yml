@@ -86,6 +86,29 @@ jobs:
       - name: Validate commit messages
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
+  validate-line-endings:
+    name: Validate Line Endings
+    # Checks out fork head — `needs: authorize` keeps it behind the fork-pr approval gate.
+    needs: authorize
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # The index is OS-agnostic, so this catches CRLF regardless of the contributor's
+      # core.autocrlf. .gitattributes (* text=auto eol=lf) makes LF the committed normal form;
+      # a CRLF here means a file was force-added with literal CR bytes, bypassing normalization.
+      - name: Check for CRLF in index
+        run: |
+          if git ls-files --eol | grep -E 'i/crlf'; then
+            echo "::error::CRLF line endings found in the index. The repo enforces LF via .gitattributes — re-normalize with: git add --renormalize . && git commit"
+            exit 1
+          fi
+          echo "No CRLF line endings in the index."
+
   validate-build:
     name: Validate Build
     # Always runs so the required check always reports — but the actual Docker build only runs when
