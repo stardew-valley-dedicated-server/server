@@ -62,8 +62,8 @@ We use **GitHub Flow** with automated CI/CD:
 
 3. **Make changes and commit**
    ```bash
-   # Make your changes
-   git add .
+   # Make your changes, then stage them explicitly by path
+   git add path/to/changed-file
    git commit -m "feat: add cabin management system"
    ```
 
