@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+enable_free_tier: true
+tone_instructions: "Be concise, friendly, and constructive. Explain the why behind a suggestion. Don't nitpick style the linters already cover."
+
+reviews:
+  profile: chill                 # low-noise; switch to "assertive" for stricter first-pass linting
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    ignore_usernames: []
+    ignore_title_keywords:
+      - "release-please"           # changelog PRs carry no code to review
+      - "chore(main): release"
+
+  # Exclude only TRACKED paths that shouldn't be reviewed. Build output, decompiled/,
+  # node_modules/, dist/, TestResults/, and mock-data.json are already gitignored, so
+  # they never enter a diff — no filter needed. These are the tracked-but-noise paths:
+  path_filters:
+    - "!docker/modern/**"          # out-of-scope Alpine/musl variant (tracked; see renovate ignorePaths)
+    - "!sub_modules/**"            # git submodules (vendored external repos)
+    - "!**/*.lock"                 # bun.lock x3 (machine-generated)
+    - "!package-lock.json"         # npm lockfile (machine-generated)
+
+  # Repo invariants, so the reviewer doesn't flag correct code.
+  path_instructions:
+    - path: "tests/JunimoServer.Tests/**"
+      instructions: >-
+        E2E tests use xUnit v3 with IPC. Never suggest Console.WriteLine or any stdout writes in test
+        assemblies — it corrupts xUnit v3 discovery. Output goes through ITestOutputHelper or IMessageSink.
+        Tests are E2E only (Testcontainers); there is no unit-test layer, so don't suggest adding one.
+    - path: "mod/**"
+      instructions: >-
+        The SMAPI mod targets net6.0 to match the game's bundled runtime. Don't suggest newer .NET / C#
+        APIs or package upgrades — several deps are intentionally pinned (see renovate.json). NetDictionary
+        MUTATIONS must use its public API (Remove/Add/indexer), not FieldDict.Remove/Add/Clear, or peer
+        replication breaks; reads via FieldDict (ContainsKey, TryGetValue, iteration) are fine. GamePath
+        comes from .env via Directory.Build.props — don't hardcode a game path in a .csproj.
+    - path: "renovate.json"
+      instructions: >-
+        Version pins and caps (allowedVersions =X.Y.Z / <X.0.0 with versioning:semver) are deliberate
+        compatibility constraints, each documented in its rule description. Don't suggest loosening them.
+    - path: "**/*.csproj"
+      instructions: >-
+        Dependency bumps (often from Renovate): check the new version's release notes for breaking changes
+        and flag any that hit how this repo uses the package — removed/renamed APIs, changed defaults,
+        behavioral shifts, raised transitive framework requirements. Some versions are intentionally pinned
+        for net6.0/runtime compatibility; cross-check renovate.json and don't suggest lifting a documented pin.
+    - path: "**/package.json"
+      instructions: >-
+        Dependency bumps (often from Renovate): check the new version for breaking changes against how the
+        repo uses the package — removed/renamed exports, changed APIs or defaults, peer-dependency or Node
+        version requirements. Call out majors that need code changes in test-ui/docs/discord-bot.
+    - path: ".github/workflows/**"
+      instructions: >-
+        validate-pr.yml and validate-merge-group.yml keep their commitlint job and path filters aligned.
+        Fork PRs are gated behind an authorize job — preserve that boundary for any secret-using step.
+        For action-version bumps (often from Renovate), flag major bumps with breaking input/output or
+        runtime changes that affect these workflows.
+    - path: "docker/**"
+      instructions: >-
+        For base-image / tool-version bumps (often from Renovate), flag breaking changes — the test-client
+        mod-builder stage must stay on .NET 6 to match the game runtime. The Dockerfile is multi-stage;
+        keep the stage boundaries and secret mounts (not ENV) for Steam credentials intact.
+
+  tools:
+    languagetool:
+      enabled: false             # prose/grammar linter — too noisy across docs/; enable for docs proofreading
+    github-checks:
+      enabled: true
+    eslint:
+      enabled: true
+    biome:
+      enabled: true
+    hadolint:
+      enabled: true
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+chat:
+  auto_reply: true
+  allow_non_org_members: true    # external contributors can interact with @coderabbitai on their PRs
+
+knowledge_base:
+  learnings:
+    scope: local                 # keep review learnings to this repo only
