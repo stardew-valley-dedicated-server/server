@@ -7,11 +7,9 @@
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>false</EnableModDeploy>
 		<EnableModZip>false</EnableModZip>
-		<BundleExtraAssemblies>System, ThirdParty</BundleExtraAssemblies>
-        <!-- TODO: Resolve this mod-breaking dependency for .NET 8; removal causes no problems so far, SDV comes with System.Threading.Channels@6.x -->
-        <IgnoreModFilePaths>System.Threading.Channels.dll</IgnoreModFilePaths>
-        <!-- Force SMAPI to use our System.Collections.Immutable 7.0.0 instead of game's 6.0.0 -->
-        <BundleIgnoreConflictingAssemblies>false</BundleIgnoreConflictingAssemblies>
+        <!-- Enables CopyLocalLockFileAssemblies so transitive runtime deps land in $(OutputPath);
+             the DeployMod target below globs that folder to build the mod's bundle. -->
+		<BundleExtraAssemblies>ThirdParty</BundleExtraAssemblies>
         <Nullable>annotations</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
@@ -33,13 +31,10 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Google.Protobuf" Version="3.21.5"/>
-        <PackageReference Include="Grpc.Net.Client" Version="2.48.0"/>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
         <PackageReference Include="NSwag.Core" Version="14.0.3"/>
         <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0"/>
-        <PackageReference Include="SteamKit2" Version="2.4.1"/>
         <PackageReference Include="Websocket.Client" Version="4.6.1"/>
     </ItemGroup>
 
@@ -50,9 +45,11 @@
         </Reference>
         <Reference Include="GalaxyCSharp">
             <HintPath>$(GamePath)\GalaxyCSharp.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Steamworks.NET">
             <HintPath>$(GamePath)\Steamworks.NET.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Lidgren.Network">
             <HintPath>$(GamePath)\Lidgren.Network.dll</HintPath>
@@ -64,7 +61,6 @@
     <Target Name="DeployMod" AfterTargets="Build">
         <!-- Define destination path -->
         <PropertyGroup>
-            <!-- <DestPath>$(MSBuildProjectDirectory)\..\..\.output\mods\JunimoServer</DestPath> -->
             <DestPath>$(MSBuildProjectDirectory)\tmp</DestPath>
         </PropertyGroup>
 
@@ -72,37 +68,21 @@
         <RemoveDir Directories="$(DestPath)"/>
         <MakeDir Directories="$(DestPath)"/>
 
-        <!-- Copy required mod files to destination -->
+        <!-- Bundle everything the build copied locally, except Newtonsoft.Json which SMAPI provides
+             in smapi-internal/. Game DLLs are kept out via <Private>false</Private> on their References.
+             .deps.json/.pdb are excluded by the *.dll glob. $(OutDir) (not $(OutputPath)) is used because
+             it always ends in a separator, including when the output is redirected via `dotnet build -o`. -->
         <ItemGroup>
-            <ModFiles Include="$(OutputPath)\JunimoServer.dll"/>
-            <ModFiles Include="$(OutputPath)\JunimoServer.Shared.dll"/>
-            <!-- <ModFiles Include="$(OutputPath)\JunimoServer.pdb" /> -->
-            <ModFiles Include="$(OutputPath)\Google.Protobuf.dll"/>
-            <ModFiles Include="$(OutputPath)\Grpc.Core.Api.dll"/>
-            <ModFiles Include="$(OutputPath)\Grpc.Net.Client.dll"/>
-            <ModFiles Include="$(OutputPath)\Grpc.Net.Common.dll"/>
-            <!-- Microsoft.Extensions for DI -->
-            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.DependencyInjection.dll"/>
-            <ModFiles Include="$(OutputPath)\Microsoft.Extensions.DependencyInjection.Abstractions.dll"/>
-            <!-- NSwag/NJsonSchema for OpenAPI (include all transitive deps) -->
-            <ModFiles Include="$(OutputPath)\NSwag.Core.dll"/>
-            <ModFiles Include="$(OutputPath)\NJsonSchema.dll"/>
-            <ModFiles Include="$(OutputPath)\NJsonSchema.Annotations.dll"/>
-            <ModFiles Include="$(OutputPath)\Namotion.Reflection.dll"/>
-            <ModFiles Include="$(OutputPath)\System.Reactive.dll"/>
-            <ModFiles Include="$(OutputPath)\Websocket.Client.dll"/>
-            <!-- SteamKit2 for Steam lobby creation -->
-            <ModFiles Include="$(OutputPath)\SteamKit2.dll"/>
-            <ModFiles Include="$(OutputPath)\protobuf-net.dll"/>
-            <ModFiles Include="$(OutputPath)\protobuf-net.Core.dll"/>
+            <ModFiles Include="$(OutDir)*.dll"
+                      Exclude="$(OutDir)Newtonsoft.Json.dll"/>
             <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json"/>
         </ItemGroup>
         <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)"/>
 
         <!-- Clean up build directory after copying files -->
-        <RemoveDir Directories="$(OutputPath)"/>
-        <MakeDir Directories="$(OutputPath)"/>
-        <Exec Command="cp -r $(DestPath)/* $(OutputPath)/" Condition="'$(OS)' != 'Windows_NT'"/>
-        <Exec Command="xcopy /Y /E &quot;$(DestPath)\*&quot; &quot;$(OutputPath)\&quot;" Condition="'$(OS)' == 'Windows_NT'"/>
+        <RemoveDir Directories="$(OutDir)"/>
+        <MakeDir Directories="$(OutDir)"/>
+        <Exec Command="cp -r $(DestPath)/* $(OutDir)" Condition="'$(OS)' != 'Windows_NT'"/>
+        <Exec Command="xcopy /Y /E &quot;$(DestPath)\*&quot; &quot;$(OutDir)&quot;" Condition="'$(OS)' == 'Windows_NT'"/>
     </Target>
 </Project>
