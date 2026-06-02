@@ -10,6 +10,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Build Preview](#build-preview-pipeline) | Push to `master` | Builds and publishes preview Docker images |
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits and builds |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
+| [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 | [Deploy Docs](#deploy-docs-pipeline) | After build / manual | Deploys documentation to GitHub Pages |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual | Deletes old preview tags from DockerHub |
@@ -176,6 +177,49 @@ The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-
 ::: warning
 Both required checks (`Validate Build`, `Validate Commits`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too.
 :::
+
+## CodeQL Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/codeql.yml)
+
+[CodeQL](https://codeql.github.com/) runs GitHub's static security analysis over the codebase. It is configured as **advanced setup** — a committed workflow that gives full control over languages, triggers, and path filters. The workflow runs on pull requests, on push to `master`, and on a weekly schedule (Wednesday 07:17 UTC).
+
+### Advisory, Not Required
+
+CodeQL is **not** a required status check — a PR merges on `Validate Build` + `Validate Commits` alone, and CodeQL findings surface under **Security → Code scanning** without blocking the merge.
+
+This is deliberate. The pipeline uses per-language path scoping (below), so a PR that touches no analyzable source runs **zero** analyze jobs. A *required* check that never reports leaves a PR stuck on "Expected — Waiting for status", so the path-scoping optimization is only safe while CodeQL stays advisory.
+
+::: warning
+If CodeQL is ever promoted to a required check, this pipeline must be revisited: a required check needs a `merge_group` producer (like `validate-merge-group.yml`) and a way to report even when path-scoped out. The current advisory design has neither, on purpose.
+:::
+
+### Languages Analyzed
+
+Three languages are analyzed. C# uses `build-mode: none`, so CodeQL builds its database from source directly with no Docker or `dotnet build`; the other two need no build step at all:
+
+| Language | Covers |
+|----------|--------|
+| `csharp` | The SMAPI mod, shared library, E2E tests, runner, and tools |
+| `javascript-typescript` | The Vue/TypeScript test UI and docs site (JS, TS, and Vue in one unified language) |
+| `actions` | The GitHub Actions workflows themselves |
+
+C/C++ is intentionally excluded: the only `.c`/`.h` files in the repo are deployment shims under `docker/modern/` (`pthread_shim.c`, `steamclient_stub.c`), not application source worth scanning.
+
+### Per-Language Path Scoping
+
+A fast `changes` job runs first and emits a JSON array of just the languages whose files changed in the PR. The `analyze` job consumes that array as its build matrix, so **only the relevant analyze jobs are ever created** — there are no skipped-job rows to read past.
+
+- A PR that touches only a Dockerfile (e.g. a base-image bump) creates **zero** analyze jobs.
+- A `.cs` or `.csproj` change creates only `Analyze (csharp)`.
+- A `package.json`, `.ts`, or `.vue` change creates only `Analyze (javascript-typescript)`.
+- A `.github/workflows/**` change creates only `Analyze (actions)`.
+
+On push to `master` and on the weekly schedule there is no PR diff base, so the `changes` job emits all three languages and the full scan runs — the safety net for anything the per-PR scoping skipped.
+
+### Trigger & Fork Safety
+
+CodeQL triggers on `pull_request`, **not** `pull_request_target` (the opposite choice from [Validate PR](#validate-pr-pipeline)). It analyzes the PR head read-only with the default `GITHUB_TOKEN` and needs no secrets, so it is safe to run on fork PRs — fork code must be read to be scanned, but no secret is ever exposed to it. It is not run on `merge_group`: that event is only for required checks, and running an advisory scan there would be pure waste.
 
 ## Deploy Docs Pipeline
 
