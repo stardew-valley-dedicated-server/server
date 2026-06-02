@@ -293,7 +293,7 @@ public sealed class GameDataDistributor : IDisposable
             lock (_lock)
             {
                 if (_firstError != null) return;
-                var msg = value.Error?.Message ?? value.ErrorMessage;
+                var msg = value.Error?.Message;
                 if (!string.IsNullOrEmpty(msg)) _firstError = msg;
             }
         }
@@ -341,11 +341,13 @@ public sealed class GameDataDistributor : IDisposable
             // container; the daemon walks the bind mount transparently.
             var archive = await _localClient.Containers.GetArchiveFromContainerAsync(
                 srcContainer.ID,
-                new GetArchiveFromContainerParameters { Path = MountPath },
+                new ContainerPathStatParameters { Path = MountPath },
                 statOnly: false,
                 ct);
 
-            var counted = new ByteCountingStream(archive.Stream);
+            var counted = new ByteCountingStream(archive.Stream
+                ?? throw new InvalidOperationException(
+                    $"GetArchiveFromContainer returned no stream for {srcContainer.ID}:{MountPath}."));
             var startedAt = Stopwatch.StartNew();
             var progress = new TransferProgress(host.Id, attempt, startedAt, counted, renderer);
 
@@ -364,7 +366,7 @@ public sealed class GameDataDistributor : IDisposable
                 // both ends.
                 await host.ApiClient.Containers.ExtractArchiveToContainerAsync(
                     dstContainer.ID,
-                    new ContainerPathStatParameters { Path = "/" },
+                    new CopyToContainerParameters { Path = "/" },
                     counted,
                     ct);
             }

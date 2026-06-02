@@ -1,3 +1,4 @@
+using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
@@ -207,10 +208,9 @@ public class DownloadValidationFixture : IAsyncLifetime
             await _network.CreateAsync();
 
             // Build steam-auth container using shared volumes
-            _steamAuthContainer = new ContainerBuilder()
+            _steamAuthContainer = new ContainerBuilder($"sdvd/steam-service:{ImageTag}")
                 .WithDockerEndpoint(Infrastructure.HostPool.Instance.First.EndpointConfig)
                 .WithLogger(NullLogger.Instance)
-                .WithImage($"sdvd/steam-service:{ImageTag}")
                 .WithImagePullPolicy(UseLocalImages ? PullPolicy.Never : PullPolicy.Missing)
                 .WithName($"sdvd-steam-auth-dltest-{Guid.NewGuid():N}")
                 .WithNetwork(_network)
@@ -223,6 +223,7 @@ public class DownloadValidationFixture : IAsyncLifetime
                 .WithEnvironment("SESSION_DIR", "/data/steam-session")
                 .WithCreateParameterModifier(p =>
                 {
+                    p.HostConfig ??= new HostConfig();
                     p.HostConfig.CapAdd ??= new List<string>();
                     p.HostConfig.CapAdd.Add("SYS_TIME");
                     p.Labels ??= new Dictionary<string, string>();

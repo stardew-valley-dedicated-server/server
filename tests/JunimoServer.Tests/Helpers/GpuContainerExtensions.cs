@@ -29,6 +29,7 @@ public static class GpuContainerExtensions
             .WithCreateParameterModifier(p =>
             {
                 // Request all available GPUs, equivalent to `docker run --gpus all`
+                p.HostConfig ??= new HostConfig();
                 p.HostConfig.DeviceRequests ??= new List<DeviceRequest>();
                 p.HostConfig.DeviceRequests.Add(new DeviceRequest
                 {

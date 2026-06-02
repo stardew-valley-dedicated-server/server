@@ -233,19 +233,27 @@ public static class ContainerStatsCollector
                 {
                     try
                     {
+                        // The daemon omits these blocks for a container that has no
+                        // CPU/memory accounting yet (just-created, or between restarts);
+                        // skip the sample rather than synthesize zeroes.
+                        if (response.CPUStats is null || response.PreCPUStats is null
+                            || response.MemoryStats is null)
+                            return;
+
                         var cpuDelta = response.CPUStats.CPUUsage.TotalUsage
                                      - response.PreCPUStats.CPUUsage.TotalUsage;
-                        var systemDelta = response.CPUStats.SystemUsage
-                                        - response.PreCPUStats.SystemUsage;
+                        var systemDelta = (response.CPUStats.SystemUsage ?? 0)
+                                        - (response.PreCPUStats.SystemUsage ?? 0);
+                        var onlineCpus = response.CPUStats.OnlineCPUs ?? 0;
 
                         double cpuPercent = 0;
-                        if (systemDelta > 0 && response.CPUStats.OnlineCPUs > 0)
+                        if (systemDelta > 0 && onlineCpus > 0)
                         {
                             cpuPercent = (double)cpuDelta / systemDelta
-                                       * response.CPUStats.OnlineCPUs * 100.0;
+                                       * onlineCpus * 100.0;
                         }
 
-                        var memBytes = response.MemoryStats.Usage;
+                        var memBytes = response.MemoryStats.Usage ?? 0;
                         if (response.MemoryStats.Stats?.TryGetValue("cache", out var cache) == true)
                             memBytes -= cache;
 
@@ -276,8 +284,9 @@ public static class ContainerStatsCollector
                         }
 
                         // Memory limit
-                        double memLimitMb = response.MemoryStats.Limit > 0
-                            ? response.MemoryStats.Limit / (1024.0 * 1024.0)
+                        var memLimit = response.MemoryStats.Limit ?? 0;
+                        double memLimitMb = memLimit > 0
+                            ? memLimit / (1024.0 * 1024.0)
                             : 0;
 
                         entry.Latest = new StatsSnapshot

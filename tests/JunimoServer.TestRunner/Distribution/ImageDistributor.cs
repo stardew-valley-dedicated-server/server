@@ -377,7 +377,7 @@ public sealed class ImageDistributor : IDisposable
         {
             if (_firstError == null)
             {
-                var msg = value.Error?.Message ?? value.ErrorMessage;
+                var msg = value.Error?.Message;
                 if (!string.IsNullOrEmpty(msg)) _firstError = msg;
             }
 

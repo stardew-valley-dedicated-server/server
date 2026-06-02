@@ -119,7 +119,7 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
                     url
                 });
 
-            if (exec.ExitCode != 0)
+            if (exec.ExitCode != DockerExitCodes.Success)
             {
                 SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
                     SetupStepStatus.InProgress, $"attempt #{_attemptCount}: curl exit={exec.ExitCode}",
@@ -140,7 +140,7 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
                     return false;
                 }
                 var bodyExec = await container.ExecAsync(new[] { "cat", "/tmp/health.json" });
-                if (bodyExec.ExitCode != 0)
+                if (bodyExec.ExitCode != DockerExitCodes.Success)
                 {
                     return false;
                 }

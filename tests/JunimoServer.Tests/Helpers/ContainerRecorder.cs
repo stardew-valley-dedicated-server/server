@@ -319,7 +319,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 var launchExecStart = Stopwatch.GetTimestamp();
                 var result = await _container.ExecAsync(new[] { "sh", "-c", ffmpegCmd }, ct);
                 var launchExecDoneTicks = Stopwatch.GetTimestamp();
-                if (result.ExitCode != 0)
+                if (result.ExitCode != DockerExitCodes.Success)
                 {
                     _log($"[Recording] WARNING: ffmpeg launch failed in {_displayLabel} (attempt {attempt}/3): exit={result.ExitCode}");
                     lastFailureReason = "exec_failed";
@@ -600,7 +600,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 $"last=$(ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | tail -1); " +
                 $"[ -n \"$last\" ] && ffmpeg -y -i \"$last\" -c copy \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" " +
                 $"&& mv \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" \"$last\" || true" }, ct);
-            var remuxFixed = remux.ExitCode == 0;
+            var remuxFixed = remux.ExitCode == DockerExitCodes.Success;
             if (!remuxFixed)
             {
                 _log($"[Recording] WARNING: Last segment remux failed in {_displayLabel}: exit={remux.ExitCode}");
@@ -827,7 +827,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 $"rc=$?; rm -f {RecDir}/concat_all.txt; exit $rc" }, ct);
             sw.Stop();
 
-            if (result.ExitCode != 0)
+            if (result.ExitCode != DockerExitCodes.Success)
             {
                 _log($"[Recording] WARNING: TS->MP4 failed in {_displayLabel}: exit={result.ExitCode}, took {sw.ElapsedMilliseconds}ms");
                 LogStderr(result.Stderr);
@@ -1474,7 +1474,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); " +
                 $"if [ -z \"$pid\" ]; then echo 'NO_PID' >&2; exit 1; fi; " +
                 $"kill -{signal} $pid" }, ct);
-            if (result.ExitCode != 0)
+            if (result.ExitCode != DockerExitCodes.Success)
             {
                 var stderr = result.Stderr.Trim();
                 // "No such process" is expected during StopAsync escalation (process already exited)
