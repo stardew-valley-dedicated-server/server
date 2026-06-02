@@ -1,3 +1,4 @@
+using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
@@ -234,10 +235,9 @@ public class ServerContainer : IAsyncDisposable
         }
 
         // Build server container with custom settings — pinned to the chosen host's daemon.
-        var serverBuilder = new ContainerBuilder()
+        var serverBuilder = new ContainerBuilder($"sdvd/server:{options.ImageTag}")
             .WithDockerEndpoint(host.EndpointConfig)
             .WithLogger(NullLogger.Instance)
-            .WithImage($"sdvd/server:{options.ImageTag}")
             .WithImagePullPolicy(options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
             .WithName(containerName)
             .WithNetwork(network)
@@ -272,6 +272,7 @@ public class ServerContainer : IAsyncDisposable
             // SYS_TIME capability for GOG Galaxy auth + Docker labels for ownership
             .WithCreateParameterModifier(p =>
             {
+                p.HostConfig ??= new HostConfig();
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
                 p.Labels ??= new Dictionary<string, string>();
@@ -848,7 +849,7 @@ public class ServerContainer : IAsyncDisposable
             host_id = HostId
         });
 
-        if (exitCode == 137)
+        if (exitCode == DockerExitCodes.SigKill)
         {
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
             {

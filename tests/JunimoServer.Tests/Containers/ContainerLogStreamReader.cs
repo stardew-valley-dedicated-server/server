@@ -167,7 +167,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 };
 
                 stream = await _client.Containers.GetContainerLogsAsync(
-                    _container.Id, tty: false, parameters, ct);
+                    _container.Id, parameters, ct);
 
                 // Reconnecting with a non-null cursor: Docker's Since filter
                 // is inclusive, so the first line it returns is the one

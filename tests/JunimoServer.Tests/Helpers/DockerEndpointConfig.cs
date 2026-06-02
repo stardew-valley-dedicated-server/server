@@ -1,23 +1,27 @@
 using System.Reflection;
 using Docker.DotNet;
+using Docker.DotNet.Handler.Abstractions;
+using Docker.DotNet.NPipe;
 using DotNet.Testcontainers.Configurations;
 
 namespace JunimoServer.Tests.Helpers;
 
 /// <summary>
-/// Wraps a Docker endpoint auth and overrides
-/// <see cref="DockerClientConfiguration"/> timeouts:
-/// - <c>namedPipeConnectTimeout</c>: 5s (vs Docker.DotNet default 100ms). Windows
-///   named-pipe accept queue saturates under parallel container startup; the 100ms
-///   default fails individual API calls when the daemon is busy.
-/// - <c>defaultTimeout</c>: <see cref="Timeout.InfiniteTimeSpan"/>. Caller-provided
+/// Wraps a Docker endpoint auth and builds Docker.DotNet clients/builders with
+/// two timeout overrides plus identifying headers:
+/// - <c>NPipeTransportOptions.ConnectTimeout</c>: 5s (vs Docker.DotNet default 100ms),
+///   applied only for named-pipe endpoints. Windows named-pipe accept queue saturates
+///   under parallel container startup; the 100ms default fails individual API calls when
+///   the daemon is busy.
+/// - default timeout: <see cref="Timeout.InfiniteTimeSpan"/>. Caller-provided
 ///   CancellationTokens are the authoritative deadline (<c>StartupTimeout</c>,
 ///   <c>_errorCancellation</c>); the 100s HTTP default is a redundant lower bound.
 ///
 /// One instance per Docker host. Local hosts get the Testcontainers-resolved auth
 /// (Unix socket on Linux/macOS, named pipe on Windows). Remote hosts get a
-/// <see cref="DockerEndpointAuthenticationConfiguration"/> built from a
-/// <c>ssh://user@machine</c> endpoint URI.
+/// <see cref="DockerEndpointAuthenticationConfiguration"/> built from a coordinator-side
+/// <c>tcp://localhost:N</c> endpoint that <c>TunnelManager</c> forwards to the remote
+/// daemon socket over SSH.
 ///
 /// Wire via <c>builder.WithDockerEndpoint(host.EndpointConfig)</c> on every
 /// ContainerBuilder/NetworkBuilder. For direct Docker.DotNet callers, use
@@ -57,65 +61,58 @@ public sealed class DockerEndpointConfig : IDockerEndpointAuthenticationConfigur
     public static readonly DockerEndpointConfig Instance = CreateLocal();
 
     /// <summary>
-    /// Remote config — uses a `ssh://user@machine` endpoint. Docker.DotNet's
-    /// transport handles the SSH dial. Local-host timeout overrides remain
-    /// harmless for SSH transports.
+    /// Remote config — uses the coordinator-side <c>tcp://localhost:N</c> endpoint that
+    /// <c>TunnelManager</c> opened via <c>ssh -L N:/var/run/docker.sock</c>. Docker.DotNet
+    /// doesn't speak <c>ssh://</c>, so the daemon socket is forwarded over SSH and dialed
+    /// as plain TCP. No daemon authentication is required over the loopback forward.
     /// </summary>
-    public static DockerEndpointConfig CreateRemote(Uri sshEndpoint) =>
-        new(new DockerEndpointAuthenticationConfiguration(sshEndpoint));
+    public static DockerEndpointConfig CreateRemote(Uri endpoint) =>
+        new(new DockerEndpointAuthenticationConfiguration(endpoint, NoopAuthProvider.Instance));
 
     public Uri Endpoint => _inner.Endpoint;
 
-    public Credentials Credentials => _inner.Credentials;
+    public Version Version => _inner.Version;
 
-    public DockerClientConfiguration GetDockerClientConfiguration(Guid sessionId = default)
+    public IAuthProvider AuthProvider => _inner.AuthProvider;
+
+    /// <summary>
+    /// Builds the Docker.DotNet client builder Testcontainers uses for this endpoint,
+    /// and the single source of truth for our client overrides. Applies the infinite
+    /// default timeout and the two identifying headers unconditionally; applies the
+    /// named-pipe connect-timeout override only for named-pipe endpoints, since
+    /// <c>WithTransportOptions</c> selects the transport and must not force a pipe
+    /// transport onto a TCP/Unix endpoint.
+    /// </summary>
+    public DockerClientBuilder GetDockerClientBuilder(Guid sessionId = default)
     {
-        var headers = new Dictionary<string, string>
-        {
-            ["User-Agent"] = TestcontainersUserAgent,
-            ["x-tc-sid"] = sessionId.ToString("D"),
-        };
+        var builder = new DockerClientBuilder()
+            .WithEndpoint(Endpoint)
+            .WithAuthProvider(AuthProvider)
+            .WithTimeout(Timeout.InfiniteTimeSpan)
+            .WithHeader("User-Agent", TestcontainersUserAgent)
+            .WithHeader("x-tc-sid", sessionId.ToString("D"));
 
-        return new DockerClientConfiguration(
-            endpoint: Endpoint,
-            credentials: Credentials,
-            defaultTimeout: Timeout.InfiniteTimeSpan,
-            namedPipeConnectTimeout: NamedPipeConnectTimeout,
-            defaultHttpRequestHeaders: headers);
+        if (string.Equals(Endpoint.Scheme, "npipe", StringComparison.OrdinalIgnoreCase))
+        {
+            return builder.WithTransportOptions(
+                new NPipeTransportOptions { ConnectTimeout = NamedPipeConnectTimeout });
+        }
+
+        return builder;
     }
 
     /// <summary>
-    /// Builds a Docker.DotNet client with the same timeout overrides as the
+    /// Builds a Docker.DotNet client with the same overrides as the
     /// Testcontainers-routed clients. Use this for direct Docker.DotNet consumers
     /// (e.g. ContainerStatsCollector, EmergencyCleanup, ManagedServer) so they
     /// inherit the same fix.
     /// </summary>
     public DockerClient CreateDockerClient() =>
-        GetDockerClientConfiguration().CreateClient();
+        GetDockerClientBuilder().Build();
 
     private static int ParseSeconds(string envVar, int defaultValue)
     {
         var raw = Environment.GetEnvironmentVariable(envVar);
         return int.TryParse(raw, out var v) && v > 0 ? v : defaultValue;
     }
-}
-
-/// <summary>
-/// Minimal endpoint config for an arbitrary Docker.DotNet endpoint URI (e.g.
-/// <c>ssh://user@host</c>). Testcontainers' built-in auth resolver assumes the
-/// local daemon, so for remote hosts we synthesize the auth config directly.
-/// </summary>
-internal sealed class DockerEndpointAuthenticationConfiguration : IDockerEndpointAuthenticationConfiguration
-{
-    public DockerEndpointAuthenticationConfiguration(Uri endpoint)
-    {
-        Endpoint = endpoint;
-    }
-
-    public Uri Endpoint { get; }
-
-    public Credentials Credentials => new AnonymousCredentials();
-
-    public DockerClientConfiguration GetDockerClientConfiguration(Guid sessionId = default) =>
-        new(endpoint: Endpoint, credentials: Credentials);
 }

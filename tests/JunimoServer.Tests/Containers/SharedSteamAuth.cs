@@ -110,10 +110,9 @@ public class SharedSteamAuth : IAsyncDisposable
         // capable host), so {runId} alone is not unique. {hostId}-{runId} is.
         var containerName = $"sdvd-steam-auth-{host.Id}-{runId}";
 
-        var builder = new ContainerBuilder()
+        var builder = new ContainerBuilder($"sdvd/steam-service:{imageTag}")
             .WithDockerEndpoint(host.EndpointConfig)
             .WithLogger(NullLogger.Instance)
-            .WithImage($"sdvd/steam-service:{imageTag}")
             .WithImagePullPolicy(imageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
             .WithName(containerName)
             .WithNetwork(network)
@@ -126,6 +125,7 @@ public class SharedSteamAuth : IAsyncDisposable
             .WithEnvironment("SESSION_DIR", "/data/steam-session")
             .WithCreateParameterModifier(p =>
             {
+                p.HostConfig ??= new HostConfig();
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
                 p.Labels ??= new Dictionary<string, string>();
@@ -514,7 +514,7 @@ public class SharedSteamAuth : IAsyncDisposable
             host_id = HostId
         });
 
-        if (exitCode == 137)
+        if (exitCode == DockerExitCodes.SigKill)
         {
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
             {

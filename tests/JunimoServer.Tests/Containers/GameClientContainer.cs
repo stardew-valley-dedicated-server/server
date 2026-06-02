@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
@@ -167,10 +168,9 @@ public class GameClientContainer : IAsyncDisposable
         // container instance once it's constructed at the bottom of this method.
         GameClientContainer? selfRef = null;
 
-        var builder = new ContainerBuilder()
+        var builder = new ContainerBuilder($"sdvd/test-client:{options.ImageTag}")
             .WithDockerEndpoint(host.EndpointConfig)
             .WithLogger(NullLogger.Instance)
-            .WithImage($"sdvd/test-client:{options.ImageTag}")
             .WithImagePullPolicy(options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
             .WithName(containerName)
             .WithPortBinding(ContainerApiPort, true) // Dynamic host port
@@ -200,6 +200,7 @@ public class GameClientContainer : IAsyncDisposable
             .WithGpuIfEnabled(host)
             .WithCreateParameterModifier(p =>
             {
+                p.HostConfig ??= new HostConfig();
                 p.HostConfig.CapAdd ??= new List<string>();
                 p.HostConfig.CapAdd.Add("SYS_TIME");
                 p.Labels ??= new Dictionary<string, string>();
@@ -653,7 +654,7 @@ public class GameClientContainer : IAsyncDisposable
             host_id = HostId
         });
 
-        if (exitCode == 137)
+        if (exitCode == DockerExitCodes.SigKill)
         {
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
             {

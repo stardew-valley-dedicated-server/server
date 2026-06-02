@@ -268,7 +268,7 @@ public class DownloadValidationTests : IAsyncLifetime
     private static async Task<string> ExecInContainer(IContainer container, string command)
     {
         var result = await container.ExecAsync(new[] { "sh", "-c", command });
-        if (result.ExitCode != 0)
+        if (result.ExitCode != DockerExitCodes.Success)
         {
             throw new Exception($"Command failed with exit code {result.ExitCode}: {command}\nStderr: {result.Stderr}");
         }
@@ -311,7 +311,9 @@ public class DownloadValidationTests : IAsyncLifetime
         var combinedStdout = result.Stdout + "\n" + logs.Stdout;
         var combinedStderr = result.Stderr + "\n" + logs.Stderr;
 
-        return ((int)result.ExitCode, combinedStdout, combinedStderr);
+        // A null ExitCode means the daemon reported no exit status; treat that as a
+        // non-zero failure so callers don't read it as success.
+        return ((int)(result.ExitCode ?? DockerExitCodes.Unknown), combinedStdout, combinedStderr);
     }
 
     #endregion
