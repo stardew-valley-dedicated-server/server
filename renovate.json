@@ -129,6 +129,33 @@
             "allowedVersions": "=2.4.1"
         },
         {
+            "description": "PIN — NSwag.Core at exactly 14.2.0 in the SMAPI mod (net6.0) and the openapi-generator tool. 14.3.0+ pulls NJsonSchema's transitive System.Text.Json above the game's net6 6.0.0 line (8.0.5, then 9.0.9 at 14.7.1), which drags in System.IO.Pipelines and reintroduces the net6 build warning. Both files are pinned in lockstep because the generator reflectively loads JunimoServer.dll and receives an NSwag.OpenApiDocument across the assembly boundary — the NSwag type identity must match. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases. =14.2.0 (not bare, which semver reads as a >= floor).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "mod/JunimoServer/JunimoServer.csproj",
+                "tools/openapi-generator/openapi-generator.csproj"
+            ],
+            "matchPackageNames": ["NSwag.Core"],
+            "versioning": "semver",
+            "allowedVersions": "=14.2.0"
+        },
+        {
+            "description": "PIN — Grpc.Net.Client at exactly 2.71.0 in the SMAPI mod (net6.0). Inert guard: the package is not currently referenced, but 2.72.0+ pulls Microsoft.Extensions.Logging.Abstractions/DependencyInjection.Abstractions to 8.0.0, whose ServiceCollection collides with the mod's DI assembly (CS0433) and sits above the game's loaded 5.0.0.0 line. Pinning pre-emptively documents the net6 boundary so a future re-add can't silently regress. versioning:semver. =2.71.0 (not bare, which semver reads as a >= floor).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
+            "matchPackageNames": ["Grpc.Net.Client"],
+            "versioning": "semver",
+            "allowedVersions": "=2.71.0"
+        },
+        {
+            "description": "PIN — Microsoft.Extensions.DependencyInjection at exactly 5.0.2 in the SMAPI mod (net6.0). The game ships Microsoft.Extensions.DependencyInjection.Abstractions.dll at AssemblyVersion 5.0.0.0 in its root folder and SMAPI loads that copy first; a mod that hard-references Abstractions 6.0.0.0 (which DI 6.x pulls transitively) is skipped with FileLoadException at mod-load time. DI must therefore track the version that yields Abstractions 5.0.0.0 — the 5.x line (5.0.2 is the terminal 5.x stable). Scoped to the mod csproj only; net10 projects (tests/runner/tools) keep their own Microsoft.Extensions.* versions. Lift only if the game's bundled Abstractions version changes (re-pin to match). versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases. =5.0.2 (not bare, which semver reads as a >= floor).",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
+            "matchPackageNames": ["Microsoft.Extensions.DependencyInjection"],
+            "versioning": "semver",
+            "allowedVersions": "=5.0.2"
+        },
+        {
             "description": "CAP — Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
@@ -147,7 +174,7 @@
             "allowedVersions": "<18.0.0"
         },
         {
-            "description": "CAP — SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build.",
+            "description": "CAP — SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": [
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"

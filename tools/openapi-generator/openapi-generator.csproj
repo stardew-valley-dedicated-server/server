@@ -7,8 +7,11 @@
     <AssemblyName>openapi-generator</AssemblyName>
   </PropertyGroup>
 
-  <!-- Same NSwag version as the mod to ensure type compatibility -->
+  <!-- Same NSwag.Core version as the mod (mod/JunimoServer/JunimoServer.csproj):
+       the generator reflectively loads JunimoServer.dll and receives an
+       NSwag.OpenApiDocument across the assembly boundary, so the two must match.
+       Renovate pins both to 14.2.0 in lockstep (see renovate.json). -->
   <ItemGroup>
-    <PackageReference Include="NSwag.Core" Version="14.7.1"/>
+    <PackageReference Include="NSwag.Core" Version="14.2.0"/>
   </ItemGroup>
 </Project>
