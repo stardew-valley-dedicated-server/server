@@ -30,9 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="1.6.14" />
-    <PackageReference Include="Steamworks.NET" Version="20.1.0" />
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="1.6.29" />
+    <PackageReference Include="Steamworks.NET" Version="20.2.0" />
   </ItemGroup>
 
   <!-- Galaxy SDK for Steam cross-platform auth (needed by ClientAuthService) -->
