@@ -121,17 +121,19 @@
             "enabled": false
         },
         {
-            "description": "PIN — SteamKit2 at 2.4.1 in the SMAPI mod (net6.0); 2.5.0+ and the 3.x major are incompatible with the in-game runtime. Scoped to JunimoServer.csproj only, so tools/steam-service/SteamService.csproj (on 3.x) stays updatable.",
+            "description": "PIN — SteamKit2 at exactly 2.4.1 in the SMAPI mod (net6.0); 2.5.0+ and the 3.x major are incompatible with the in-game runtime. Scoped to JunimoServer.csproj only, so tools/steam-service/SteamService.csproj (on 3.x) stays updatable. versioning:semver is required — under the default nuget scheme allowedVersions silently no-ops for SteamKit2 because its version list interleaves prereleases (2.5.0-beta, 3.0.0-alpha); semver evaluates the constraint correctly. =2.4.1 (not bare 2.4.1, which semver reads as a >= floor).",
             "matchManagers": ["nuget"],
             "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
             "matchPackageNames": ["SteamKit2"],
-            "allowedVersions": "2.4.1"
+            "versioning": "semver",
+            "allowedVersions": "=2.4.1"
         },
         {
-            "description": "CAP — Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model.",
+            "description": "CAP — Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
             "matchPackageNames": ["Microsoft.OpenApi"],
+            "versioning": "semver",
             "allowedVersions": "<2.0.0"
         },
         {
@@ -141,6 +143,7 @@
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
             ],
             "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
+            "versioning": "semver",
             "allowedVersions": "<18.0.0"
         },
         {
@@ -150,6 +153,7 @@
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
             ],
             "matchPackageNames": ["SixLabors.ImageSharp"],
+            "versioning": "semver",
             "allowedVersions": "<4.0.0"
         },
         {
