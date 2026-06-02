@@ -4,16 +4,82 @@
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/inter-latin-600.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/inter-latin-700.woff2') format('woff2'); }
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: sdvd-aqua --default --prefersdark, sdvd-light;
+}
+
+/* Dark theme – Aqua Gold. Brand: #63dbe4 / #25ac8a / #dda122 */
+@plugin "daisyui/theme" {
+  name: "sdvd-aqua";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-primary: #63dbe4;
+  --color-primary-content: #0a1a1c;
+  --color-secondary: #25ac8a;
+  --color-secondary-content: #ffffff;
+  --color-accent: #dda122;
+  --color-accent-content: #1a1400;
+  --color-neutral: #1c2627;
+  --color-neutral-content: #c6e8e5;
+  --color-base-100: #222b30;
+  --color-base-200: #182024;
+  --color-base-300: #0d1315;
+  --color-base-content: #c6e0de;
+  --color-info: #63dbe4;
+  --color-info-content: #0a1a1c;
+  --color-success: #a6e3a1;
+  --color-success-content: #0a180a;
+  --color-warning: #dda122;
+  --color-warning-content: #1a1400;
+  --color-error: #f38ba8;
+  --color-error-content: #1a0a10;
+  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-selector: 0.5rem;
+}
+
+@plugin "daisyui/theme" {
+  name: "sdvd-light";
+  color-scheme: light;
+  --color-primary: #7c5cbf;
+  --color-primary-content: #ffffff;
+  --color-secondary: #5b21b6;
+  --color-secondary-content: #ffffff;
+  --color-accent: #34327a;
+  --color-accent-content: #ffffff;
+  --color-neutral: #f0eef6;
+  --color-neutral-content: #2d2b42;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f7fc;
+  --color-base-300: #f0eef6;
+  --color-base-content: #2d2b42;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #22c55e;
+  --color-success-content: #ffffff;
+  --color-warning: #eab308;
+  --color-warning-content: #1a1a2e;
+  --color-error: #ef4444;
+  --color-error-content: #ffffff;
+  --radius-box: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-selector: 0.5rem;
+}
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Consolas', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+}
 
 /* Scrollable panels with thin styled scrollbars */
 .panel-scroll {
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: oklch(var(--p) / 0.2) transparent;
+  scrollbar-color: color-mix(in oklch, var(--color-primary) 20%, transparent) transparent;
 }
 
 /* Code blocks */
@@ -85,7 +151,7 @@ img {
 
 /* Selection highlight matching the brand accent */
 ::selection {
-  background: oklch(var(--p) / 0.3);
+  background: color-mix(in oklch, var(--color-primary) 30%, transparent);
 }
 
 /* Sidebar collapse/expand animation (only when toggling, not while dragging) */
@@ -96,8 +162,8 @@ img {
 /* Icon sidebar */
 .icon-sidebar {
   width: 48px;
-  background-color: oklch(var(--b2));
-  border-right: 1px solid oklch(var(--bc) / 0.06);
+  background-color: var(--color-base-200);
+  border-right: 1px solid color-mix(in oklch, var(--color-base-content) 6%, transparent);
 }
 
 .icon-sidebar-btn {
@@ -107,19 +173,19 @@ img {
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  color: oklch(var(--bc) / 0.3);
+  color: color-mix(in oklch, var(--color-base-content) 30%, transparent);
   transition: all 150ms ease;
   position: relative;
 }
 
 .icon-sidebar-btn:hover {
-  color: oklch(var(--bc) / 0.6);
-  background-color: oklch(var(--bc) / 0.05);
+  color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+  background-color: color-mix(in oklch, var(--color-base-content) 5%, transparent);
 }
 
 .icon-sidebar-btn.active {
-  color: oklch(var(--p));
-  background-color: oklch(var(--p) / 0.1);
+  color: var(--color-primary);
+  background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
 }
 
 .icon-sidebar-btn.active::before {
@@ -130,7 +196,7 @@ img {
   bottom: 25%;
   width: 3px;
   border-radius: 0 2px 2px 0;
-  background-color: oklch(var(--p));
+  background-color: var(--color-primary);
 }
 
 /* Status stripe below output panel header */
@@ -171,19 +237,19 @@ header,
 /* Timeline breakpoint indicators */
 .ring-breakpoint,
 .ring-breakpoint-hit {
-  outline: 1.5px solid oklch(var(--p));
+  outline: 1.5px solid var(--color-primary);
   outline-offset: 1px;
 }
 .ring-breakpoint-hit {
   animation: breakpoint-pulse 1.5s ease-in-out infinite;
 }
 @keyframes breakpoint-pulse {
-  0%, 100% { outline-color: oklch(var(--p)); }
-  50% { outline-color: oklch(var(--p) / 0.4); }
+  0%, 100% { outline-color: var(--color-primary); }
+  50% { outline-color: color-mix(in oklch, var(--color-primary) 40%, transparent); }
 }
 
 /* Breakpoint marker dashed line in timeline */
 .bp-marker-line {
   width: 0;
-  border-left: 1px dashed oklch(var(--p) / 0.4);
+  border-left: 1px dashed color-mix(in oklch, var(--color-primary) 40%, transparent);
 }
