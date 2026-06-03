@@ -459,10 +459,9 @@ namespace JunimoServer.Services.CabinManager
                     // Block all human players from the farmhouse - it's reserved for the server host
                     if (!roleService.IsServerHost(farmer))
                     {
-                        Game1.Multiplayer.sendChatMessage(
-                            LocalizedContentManager.CurrentLanguageCode,
-                            "Can't enter main building, porting to your own cabin",
-                            farmer.UniqueMultiplayerID
+                        Helper.SendPrivateMessage(
+                            farmer.UniqueMultiplayerID,
+                            "Can't enter main building, porting to your own cabin"
                         );
 
                         farmer.WarpHome();
