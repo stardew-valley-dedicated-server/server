@@ -3,9 +3,10 @@
 # here — hence no `authorize` gate and no environment, unlike validate-pr.yml. This is a separate
 # file rather than a trigger added to validate-pr.yml on purpose: the merge_group payload has no
 # `github.event.pull_request.*` fields, and one workflow per event keeps one required check per
-# name. Both required checks (`Validate Build`, `Validate Commits`) are reproduced here under the
-# same names: a required check with no merge_group producer leaves every queued PR stuck in
-# AWAITING_CHECKS until timeout. See docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
+# name. All three required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`)
+# are reproduced here under the same names: a required check with no merge_group producer leaves
+# every queued PR stuck in AWAITING_CHECKS until timeout. See
+# docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
 name: Validate Merge Group
 
 on:
@@ -76,6 +77,27 @@ jobs:
 
       - name: Validate commit messages
         run: npx commitlint --from ${{ github.event.merge_group.base_sha }} --to ${{ github.event.merge_group.head_sha }} --verbose
+
+  validate-line-endings:
+    name: Validate Line Endings
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout queue branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+
+      # The index is OS-agnostic, so this catches CRLF regardless of the contributor's
+      # core.autocrlf. .gitattributes (* text=auto eol=lf) makes LF the committed normal form;
+      # a CRLF here means a file was force-added with literal CR bytes, bypassing normalization.
+      - name: Check for CRLF in index
+        run: |
+          if git ls-files --eol | grep -E 'i/crlf'; then
+            echo "::error::CRLF line endings found in the index. The repo enforces LF via .gitattributes — re-normalize with: git add --renormalize . && git commit"
+            exit 1
+          fi
+          echo "No CRLF line endings in the index."
 
   validate-build:
     name: Validate Build
