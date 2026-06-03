@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Audio;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -145,6 +146,15 @@ namespace JunimoServer
                 original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.UpdateWhenCurrentLocation)),
                 prefix: new HarmonyMethod(typeof(ModEntry), nameof(UpdateWhenCurrentLocation_Prefix)));
             Monitor.Log("Patched UpdateWhenCurrentLocation with null-safety guard", LogLevel.Trace);
+
+            // Server throws out audio (Wave Bank stripped; DummySoundBank in use). Disable
+            // LoopingCueManager.Update entirely: it only plays/stops ambient location cues
+            // (no game-state effect). On the silent host a null ICue can get cached in its
+            // playingCues dict and NRE on .Stop() every frame, locking the server (issue #249).
+            harmony.Patch(
+                original: AccessTools.Method(typeof(LoopingCueManager), nameof(LoopingCueManager.Update)),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(LoopingCueManager_Update_Prefix)));
+            Monitor.Log("Disabled LoopingCueManager.Update (server audio is off)", LogLevel.Trace);
 
             // Keep the display zoom/UI scale pinned in every game mode (the actual resize
             // happens on GameLaunched via DisplaySizing.ApplyFromEnv).
@@ -289,6 +299,14 @@ namespace JunimoServer
         {
             return Game1.player?.currentLocation != null;
         }
+
+        /// <summary>
+        /// Skips LoopingCueManager.Update unconditionally. The server runs without
+        /// audio, so the looping-cue manager has nothing to do; skipping it avoids the
+        /// recurring vanilla NRE (#249) where a null cached ICue in playingCues throws
+        /// on .Stop() in the host update loop.
+        /// </summary>
+        private static bool LoopingCueManager_Update_Prefix() => false;
 
     }
 }
