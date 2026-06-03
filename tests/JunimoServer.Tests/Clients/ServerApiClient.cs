@@ -457,6 +457,21 @@ public class TestSetDateResponse
 }
 
 /// <summary>
+/// Response from /test/farmevent POST endpoint (test-only).
+/// </summary>
+public class TestFarmEventResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+}
+
+/// <summary>
 /// Response from /test/saver_crop POST endpoint (test-only).
 /// </summary>
 public class TestSaverCropResponse
@@ -1079,6 +1094,18 @@ public class ServerApiClient : IDisposable
             () => JsonContent.Create(new { season, day, year }));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSetDateResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: queue an overnight FarmEvent (e.g. the Mr. Qi mystery box) for the next night.
+    /// POST /test/farmevent?type=qiplane
+    /// </summary>
+    public async Task<TestFarmEventResponse?> QueueFarmEvent(string type, CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post, $"/test/farmevent?type={type}", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestFarmEventResponse>(ct);
     }
 
     /// <summary>

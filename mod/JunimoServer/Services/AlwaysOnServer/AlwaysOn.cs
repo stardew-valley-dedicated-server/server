@@ -66,6 +66,15 @@ namespace JunimoServer.Services.AlwaysOn
                 original: AccessTools.Method(typeof(Cabin), nameof(Cabin.updateEvenIfFarmerIsntHere)),
                 postfix: new HarmonyMethod(typeof(CabinOverrides), nameof(CabinOverrides.UpdateEvenIfFarmerIsntHere_Postfix))
             );
+
+            // Force-complete the Mr. Qi mystery-box overnight cutscene on the host. Its completion gate
+            // lives in draw() rather than tickUpdate(), so on a headless host (draws gated/desynced) it
+            // never converges and the new day never starts. See QiPlaneEventOverrides.
+            QiPlaneEventOverrides.Initialize(monitor);
+            harmony.Patch(
+                original: AccessTools.Method(typeof(StardewValley.Events.QiPlaneEvent), nameof(StardewValley.Events.QiPlaneEvent.tickUpdate)),
+                postfix: new HarmonyMethod(typeof(QiPlaneEventOverrides), nameof(QiPlaneEventOverrides.TickUpdate_Postfix))
+            );
         }
 
         // TODO: Rename to OnStart, OnLoad or whatever fits best.. need to double-check
@@ -201,6 +210,7 @@ namespace JunimoServer.Services.AlwaysOn
             }
 
             HandleDialogueBox();
+            HandleOvernightNamingMenu();
             HandleSkippableEvent();
             HandleMinigame();
             alwaysOnServerFestivals.HandleFestivalEvents();
@@ -224,6 +234,7 @@ namespace JunimoServer.Services.AlwaysOn
 
             HandleAutoPause();
             HandleAutoSleep();
+            HandleStuckFarmEvent();
 
             alwaysOnServerFestivals.HandleFestivalStart();
             alwaysOnServerFestivals.HandleFestivalLeave();
@@ -533,6 +544,80 @@ namespace JunimoServer.Services.AlwaysOn
                 Game1.CurrentEvent.skipEvent();
                 Game1.CurrentEvent.receiveMouseClick(1, 2);
             }
+        }
+
+        /// <summary>
+        /// Auto-name the baby during the overnight BirthingEvent / PlayerCoupleBirthingEvent. Those
+        /// events open a <see cref="NamingMenu"/> and only complete once a name is submitted; the menu
+        /// is not a DialogueBox, so <see cref="HandleDialogueBox"/> can't dismiss it, and a headless
+        /// host has no one to type a name — the overnight transition hangs forever. We supply a vanilla
+        /// random name (the same source the menu pre-fills), which runs the event's real side effects
+        /// (creates the Child NPC) and lets the new day proceed. Scoped to an active overnight farm
+        /// event so no other NamingMenu use is touched.
+        /// </summary>
+        private void HandleOvernightNamingMenu()
+        {
+            if (!IsAutomating || Game1.farmEvent == null)
+            {
+                return;
+            }
+
+            if (Game1.activeClickableMenu is not NamingMenu naming)
+            {
+                return;
+            }
+
+            var name = Dialogue.randomName();
+            naming.textBox.Text = name;
+            naming.textBoxEnter(naming.textBox);
+            Monitor.Log($"Auto-named overnight baby '{name}' to unblock the host.", LogLevel.Info);
+        }
+
+        // Tracks how long the current Game1.farmEvent has been active (game-time, framerate-independent).
+        // Reset when farmEvent clears. Used by HandleStuckFarmEvent to surface modded/unknown overnight
+        // events that never complete on a headless host.
+        private double _farmEventActiveMs;
+        private bool _stuckFarmEventLogged;
+
+        /// <summary>
+        /// Watchdog for overnight farm events that never complete on a headless host. The known
+        /// headless-hangers are handled directly — <see cref="QiPlaneEventOverrides"/> force-completes
+        /// the Mr. Qi mystery box, and <see cref="HandleOvernightNamingMenu"/> auto-names births — so
+        /// those resolve before this fires. For an unknown/modded <c>FarmEvent</c> still stuck well past
+        /// any vanilla event's natural duration, log once at Warn with its type so we can see what's
+        /// hanging. We deliberately do NOT force-complete unknown types: skipping their tickUpdate would
+        /// bypass their makeChangesToLocation side effects and could corrupt the save.
+        /// </summary>
+        private void HandleStuckFarmEvent()
+        {
+            if (Game1.farmEvent == null)
+            {
+                _farmEventActiveMs = 0.0;
+                _stuckFarmEventLogged = false;
+                return;
+            }
+
+            if (!Game1.IsMasterGame)
+            {
+                return;
+            }
+
+            _farmEventActiveMs += Game1.currentGameTime?.ElapsedGameTime.TotalMilliseconds ?? 0.0;
+
+            // Fire only well after the QiPlane fallback so a healthy or already-handled event never
+            // trips this — anything still stuck past here is an event we don't auto-complete.
+            const double StuckThresholdMs = QiPlaneEventOverrides.FallbackThresholdMs + 15000.0;
+            if (_stuckFarmEventLogged || _farmEventActiveMs < StuckThresholdMs)
+            {
+                return;
+            }
+
+            _stuckFarmEventLogged = true;
+            var type = Game1.farmEvent.GetType().Name;
+            Monitor.Log(
+                $"Overnight farm event '{type}' has not completed after {_farmEventActiveMs / 1000.0:0}s " +
+                "of game-time — the host may be stuck. Not force-completing it, since skipping its " +
+                "tickUpdate would bypass any makeChangesToLocation side effects.", LogLevel.Warn);
         }
 
         /// <summary>
