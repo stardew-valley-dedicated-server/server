@@ -305,7 +305,9 @@ public class HostAutomationTests : TestBase
         var ct = TestContext.Current.CancellationToken;
         await Farmers.ConnectNewAsync(ct: ct);
 
-        var initialFps = (await ServerApi.GetRendering(ct))?.Fps ?? 0;
+        var initialRendering = await ServerApi.GetRendering(ct);
+        Assert.NotNull(initialRendering);
+        var initialFps = initialRendering.Fps;
 
         try
         {
@@ -340,7 +342,10 @@ public class HostAutomationTests : TestBase
         finally
         {
             // Restore the server's render rate so the shared server isn't left at the test's FPS.
-            await ServerApi.SetServerFps(initialFps, ct);
+            // Use a fresh cleanup token (not ct) so the restore still runs if the test was cancelled
+            // mid-body — otherwise a timeout would leave the shared server stuck at the test's FPS.
+            using var cleanupCts = new CancellationTokenSource(TestTimings.CleanupTimeout);
+            await ServerApi.SetServerFps(initialFps, cleanupCts.Token);
         }
     }
 
