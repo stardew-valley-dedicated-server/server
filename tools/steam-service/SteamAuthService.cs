@@ -967,6 +967,32 @@ public class SteamAuthService
         Logger.Log($"{_logPrefix} Pruned ContentHashes.json: removed {removed} stripped entries, {kept.Count} remain");
     }
 
+    /// <summary>
+    /// Runs a Steam CDN/content request with bounded retry + linear backoff, mirroring the
+    /// per-chunk retry in the download loop. These are single network calls (CDN server list,
+    /// manifest request code, manifest download) where a transient 5xx (e.g. a 503 during a
+    /// depot rollout) would otherwise abort the entire download/build. Retries on any
+    /// exception — Steam surfaces transient failures as <see cref="SteamKit2.SteamKitWebRequestException"/>,
+    /// and a genuinely permanent failure (bad auth, missing depot) still throws after the
+    /// last attempt, preserving the original exception for the caller.
+    /// </summary>
+    private async Task<T> RetryTransientAsync<T>(string label, Func<Task<T>> operation)
+    {
+        const int maxAttempts = 4;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                Logger.Log($"{_logPrefix} {label} failed (attempt {attempt}/{maxAttempts}): {ex.Message}");
+                await Task.Delay(1000 * attempt); // Linear backoff: 1s, 2s, 3s
+            }
+        }
+    }
+
     // Audio is always stripped — the dedicated server runs silent (no Wave Bank).
     private static readonly Regex[] WaveBankPatterns =
     [
@@ -1179,8 +1205,10 @@ public class SteamAuthService
 
             Logger.Log($"{_logPrefix} Got depot decryption key");
 
-            // Get CDN servers
-            var cdnServers = await _steamContent.GetServersForSteamPipe();
+            // Get CDN servers. Steam's content API returns transient 5xx under load
+            // (e.g. 503 during depot rollouts), so retry like the chunk loop below.
+            var cdnServers = await RetryTransientAsync("Get CDN servers",
+                () => _steamContent.GetServersForSteamPipe());
             if (cdnServers == null || !cdnServers.Any())
             {
                 throw new Exception("No CDN servers available");
@@ -1193,7 +1221,8 @@ public class SteamAuthService
 
             // Get manifest request code
             Logger.Log($"{_logPrefix} Getting manifest request code...");
-            var manifestCode = await _steamContent.GetManifestRequestCode(depotId, appId, manifestId, "public");
+            var manifestCode = await RetryTransientAsync("Get manifest request code",
+                () => _steamContent.GetManifestRequestCode(depotId, appId, manifestId, "public"));
             Logger.Log($"{_logPrefix} Manifest request code: {manifestCode}");
 
             // Download using CDN client
@@ -1201,12 +1230,16 @@ public class SteamAuthService
 
             Logger.Log($"{_logPrefix} Downloading manifest...");
 
-            var manifest = await cdnClient.DownloadManifestAsync(
-                depotId,
-                manifestId,
-                manifestCode,
-                server,
-                depotKeyResult.DepotKey);
+            // The manifest fetch is a single CDN request that previously crashed the
+            // whole download on a transient 503 (no retry, unlike the chunk loop). Wrap
+            // it so a flaky CDN response backs off and retries instead of aborting.
+            var manifest = await RetryTransientAsync("Download manifest",
+                () => cdnClient.DownloadManifestAsync(
+                    depotId,
+                    manifestId,
+                    manifestCode,
+                    server,
+                    depotKeyResult.DepotKey));
 
             // Calculate totals and savings from filtering
             var skippedByFilter = manifest.Files!
