@@ -43,13 +43,13 @@ namespace JunimoServer.Util
         public static void SendPublicMessage(this IModHelper helper, string msg)
         {
             helper.GetMultiplayer()
-                .sendChatMessage(LocalizedContentManager.CurrentLanguageCode, msg, Multiplayer.AllPlayers);
+                .sendChatMessage(ChatLanguageDetector.DetectLanguage(msg), msg, Multiplayer.AllPlayers);
         }
 
         public static void SendPrivateMessage(this IModHelper helper, long uniqueMultiplayerId, string msg)
         {
             helper.GetMultiplayer()
-                .sendChatMessage(LocalizedContentManager.CurrentLanguageCode, msg, uniqueMultiplayerId);
+                .sendChatMessage(ChatLanguageDetector.DetectLanguage(msg), msg, uniqueMultiplayerId);
         }
 
         public static int GetCurrentNumCabins(this IModHelper helper)
