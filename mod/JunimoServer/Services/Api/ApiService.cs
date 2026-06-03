@@ -447,6 +447,16 @@ namespace JunimoServer.Services.Api
     }
 
     /// <summary>
+    /// Response from /test/farmevent (test-only: queue an overnight FarmEvent for the next night).
+    /// </summary>
+    public class TestFarmEventResponse
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+        public string? Type { get; set; }
+    }
+
+    /// <summary>
     /// Body for POST /test/saver_crop. Mutates an existing CropSaver entry in
     /// place. Optional fields are skipped when null. Used by E2E tests to
     /// pre-arm extraDays past CropSaver.OnDayEnd's branch-1 floor without
@@ -1873,6 +1883,9 @@ namespace JunimoServer.Services.Api
                             break;
                         case "/test/set_date":
                             await WriteJsonAsync(response, await HandlePostTestSetDateAsync(request));
+                            break;
+                        case "/test/farmevent":
+                            await WriteJsonAsync(response, await HandlePostTestFarmEventAsync(request));
                             break;
                         case "/test/saver_crop":
                             await WriteJsonAsync(response, await HandlePostTestSaverCropAsync(request));
@@ -3502,6 +3515,33 @@ namespace JunimoServer.Services.Api
                 Day = body.Day,
                 Year = body.Year
             };
+        }
+
+        [ApiEndpoint("POST", "/test/farmevent", Summary = "Queue an overnight FarmEvent for the next night (test-only)", Tag = "Test")]
+        [ApiResponse(typeof(TestFarmEventResponse), 200)]
+        private async Task<TestFarmEventResponse> HandlePostTestFarmEventAsync(HttpListenerRequest request)
+        {
+            // Game1.farmEventOverride is consumed by _newDayAfterFade as the fallback when no random
+            // farm event is picked (decompiled Game1.cs:8588), so this deterministically queues the
+            // event for the next overnight transition without seeding mail or stats.
+            var type = request.QueryString["type"]?.ToLowerInvariant() ?? "qiplane";
+
+            StardewValley.Events.FarmEvent? farmEvent = type switch
+            {
+                "qiplane" => new StardewValley.Events.QiPlaneEvent(),
+                _ => null
+            };
+
+            if (farmEvent == null)
+            {
+                return new TestFarmEventResponse { Success = false, Error = $"Unknown farm event type '{type}' (supported: qiplane)" };
+            }
+
+            await RunOnGameThreadAsync(() => Game1.farmEventOverride = farmEvent);
+
+            Monitor.Log($"Queued overnight farm event '{type}' for the next night via test API", LogLevel.Info);
+
+            return new TestFarmEventResponse { Success = true, Type = type };
         }
 
         [ApiEndpoint("POST", "/test/saver_crop", Summary = "Mutate a CropSaver entry (test-only)", Tag = "Test")]

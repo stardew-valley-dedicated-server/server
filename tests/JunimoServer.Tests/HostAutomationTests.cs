@@ -286,4 +286,67 @@ public class HostAutomationTests : TestBase
             $"Expected a new day but still on {seasonBefore} {dayBefore}, Year {yearBefore}");
     }
 
+    /// <summary>
+    /// Regression for issue #242: the Mr. Qi mystery-box overnight cutscene (QiPlaneEvent) hangs the
+    /// host, so the new day never starts. QiPlaneEvent's completion gate is advanced in its draw(),
+    /// not its tickUpdate(), so on a headless host (draws gated/desynced) it never converges.
+    /// QiPlaneEventOverrides force-completes it via a framerate-independent game-time fallback.
+    ///
+    /// Runs across an FPS matrix because the fix must NOT assume a particular SERVER_FPS — the bug
+    /// reporter was on unbounded FPS. The day must advance whether rendering is disabled (0) or capped.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(1)]
+    [TestServer(Exclusive = true)]
+    public async Task HostCompletesQiPlaneEvent_AcrossFpsMatrix(int fps)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await Farmers.ConnectNewAsync(ct: ct);
+
+        var initialRendering = await ServerApi.GetRendering(ct);
+        Assert.NotNull(initialRendering);
+        var initialFps = initialRendering.Fps;
+
+        try
+        {
+            var fpsResult = await ServerApi.SetServerFps(fps, ct);
+            Assert.True(fpsResult?.Success, $"SetServerFps({fps}) failed: {fpsResult?.Error}");
+
+            // Queue the Mr. Qi mystery-box event for the next overnight transition.
+            var queueResult = await ServerApi.QueueFarmEvent("qiplane", ct);
+            Assert.NotNull(queueResult);
+            Assert.True(queueResult.Success, $"QueueFarmEvent failed: {queueResult.Error}");
+
+            var statusBefore = await ServerApi.GetStatus(ct);
+            Assert.NotNull(statusBefore);
+            var dayBefore = statusBefore.Day;
+            var seasonBefore = statusBefore.Season;
+            var yearBefore = statusBefore.Year;
+            Log($"Before sleep (fps={fps}): {seasonBefore} {dayBefore}, Year {yearBefore}");
+
+            // Sleep the farmhand; the host auto-sleeps and runs the overnight QiPlaneEvent.
+            var sleepResult = await GameClient.Actions.Sleep();
+            Assert.True(sleepResult?.Success, $"Sleep action failed: {sleepResult?.Error}");
+
+            // Without the fix the overnight transition hangs here (QiPlaneEvent never completes) and
+            // this times out. With the fix the game-time fallback completes the event and the day starts.
+            var (dayChanged, disconnected) = await DayChange.WaitAsync(
+                dayBefore, seasonBefore, yearBefore, checkConnection: true, ct);
+
+            Assert.False(disconnected, "Farmhand disconnected during the QiPlaneEvent overnight wait");
+            Assert.True(dayChanged,
+                $"Day should advance after the host completes the overnight QiPlaneEvent (fps={fps})");
+        }
+        finally
+        {
+            // Restore the server's render rate so the shared server isn't left at the test's FPS.
+            // Use a fresh cleanup token (not ct) so the restore still runs if the test was cancelled
+            // mid-body — otherwise a timeout would leave the shared server stuck at the test's FPS.
+            using var cleanupCts = new CancellationTokenSource(TestTimings.CleanupTimeout);
+            await ServerApi.SetServerFps(initialFps, cleanupCts.Token);
+        }
+    }
+
 }
