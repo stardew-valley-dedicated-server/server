@@ -50,6 +50,14 @@ string? GetEnvTrimmed(string name)
     return string.IsNullOrEmpty(value) ? null : value;
 }
 
+// STEAM_KEEP_LANGUAGES: comma-separated language codes (e.g. "pt-BR,ru-RU") whose
+// fonts/content to keep in the download. Default (unset) strips all localized content
+// for the smallest image; the server itself runs English-only. An unknown code is
+// warned-and-ignored (not fatal) so a typo can't abort the whole download.
+var keepLanguages = SteamAuthService.ParseKeepLanguages(GetEnvTrimmed("STEAM_KEEP_LANGUAGES"));
+if (keepLanguages.Count > 0)
+    Logger.Log($"[SteamService] Keeping localized content for: {string.Join(", ", keepLanguages)}");
+
 // ============================================================================
 // Account Discovery
 // ============================================================================
@@ -122,7 +130,7 @@ Dictionary<int, SteamAuthService> CreateAccountServices(Dictionary<int, (string 
     var services = new Dictionary<int, SteamAuthService>();
     foreach (var (index, config) in accountConfigs)
     {
-        services[index] = new SteamAuthService(index, config.user, sessionDir, gameDir);
+        services[index] = new SteamAuthService(index, config.user, sessionDir, gameDir, keepLanguages);
     }
     return services;
 }

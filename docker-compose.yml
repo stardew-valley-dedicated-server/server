@@ -61,6 +61,9 @@ services:
       STEAM_USERNAME: "${STEAM_USERNAME:-}"
       STEAM_PASSWORD: "${STEAM_PASSWORD:-}"
       STEAM_REFRESH_TOKEN: "${STEAM_REFRESH_TOKEN:-}"
+      # Comma-separated language codes whose fonts to keep in the download
+      # (e.g. "pt-BR,ru-RU"). Default strips all localized content (English-only).
+      STEAM_KEEP_LANGUAGES: "${STEAM_KEEP_LANGUAGES:-}"
     restart: unless-stopped
 
   # Discord bot for server status display and chat relay

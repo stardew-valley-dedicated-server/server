@@ -103,11 +103,34 @@ Refresh tokens are saved to `/data/steam-session/session-{username}.json` and re
 
 The download process skips unnecessary files to reduce download size:
 
-- Large audio files (Wave Bank.xwb ~370MB)
-- Non-English language files (~50MB)
+- Large audio files (Wave Bank.xwb ~370MB) — always stripped (the server runs silent)
+- Non-English language files (~50MB) — stripped by default; opt back in per language
+  with `STEAM_KEEP_LANGUAGES` (see below)
 - Other assets not needed for dedicated server operation
 
 This reduces the download from ~1.5GB to ~600MB.
+
+After filtering, `Content/ContentHashes.json` is pruned to list only the files that
+were actually downloaded. The game checks this manifest (not the filesystem) to decide
+whether an asset exists, so leaving a stripped file listed would make the game attempt
+to load a missing `.xnb` and throw `ContentLoadException`. Pruning keeps the manifest
+honest so the game's built-in localized→English font fallback works.
+
+### Keeping a language's fonts
+
+By default every localized font/content file is stripped and the server falls back to
+the English font, so non-Latin chat (e.g. Cyrillic, CJK) renders as empty boxes on
+clients. To keep a language's fonts in the download — so that language renders
+correctly — set `STEAM_KEEP_LANGUAGES` to a comma-separated list of language codes:
+
+```bash
+STEAM_KEEP_LANGUAGES=pt-BR,ru-RU
+```
+
+Valid codes: `de-DE`, `es-ES`, `fr-FR`, `hu-HU`, `it-IT`, `ja-JP`, `ko-KR`, `pt-BR`,
+`ru-RU`, `tr-TR`, `zh-CN`, `th-TH`. CJK codes (`zh-CN`, `ja-JP`, `ko-KR`) also keep
+their larger font families, so those add more to the image size than the others. An
+unrecognized code is logged as a warning and ignored.
 
 ## CI/CD Usage
 
@@ -134,6 +157,7 @@ STEAM_REFRESH_TOKEN=xxx STEAM_USERNAME=user docker compose run steam-auth downlo
 | `SESSION_DIR` | Token storage directory | /data/steam-session |
 | `GAME_DIR` | Game files directory | /data/game |
 | `FORCE_REDOWNLOAD` | Set to "1" to re-download all files | - |
+| `STEAM_KEEP_LANGUAGES` | Comma-separated language codes whose fonts to keep in the download (e.g. `pt-BR,ru-RU`). Default strips all localized content (English-only). | - |
 
 ### Game Server Container
 

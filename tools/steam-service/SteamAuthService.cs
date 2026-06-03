@@ -84,13 +84,15 @@ public class SteamAuthService
     public string? SteamId => _steamClient.SteamID?.ConvertToUInt64().ToString();
     public ulong CurrentLobbyId => _currentLobbyId;
 
-    public SteamAuthService(int accountIndex, string username, string sessionDir, string gameDir)
+    public SteamAuthService(int accountIndex, string username, string sessionDir, string gameDir,
+        IReadOnlyCollection<string>? keepLanguages = null)
     {
         AccountIndex = accountIndex;
         Username = username;
         _sessionDir = Path.Combine(sessionDir, username);
         _gameDir = gameDir;
         _logPrefix = $"[SteamAuth:A{accountIndex}]";
+        _skipPatterns = BuildSkipPatterns(keepLanguages ?? []);
 
         Directory.CreateDirectory(_sessionDir);
         MigrateOldSession(sessionDir);
@@ -910,20 +912,147 @@ public class SteamAuthService
         Logger.Log($"{_logPrefix} Download marker saved (manifest: {manifestId})");
     }
 
-    // Patterns to skip during download (not needed for dedicated server)
-    private static readonly Regex[] SkipPatterns =
+    /// <summary>
+    /// Rewrites Content/ContentHashes.json to list only files actually present on disk,
+    /// dropping entries for assets the download filter stripped. Keeps each surviving
+    /// entry's original hash (no recompute — we only prune). Keys are content-root-relative
+    /// with forward slashes (e.g. "Fonts/SmallFont.pt-BR.xnb"); we join them against
+    /// &lt;downloadDir&gt;/Content to check existence.
+    /// <para>
+    /// The download filter only skips <i>downloading</i> files; it never deletes files
+    /// already on disk. So after a re-download (or a STEAM_KEEP_LANGUAGES change), a
+    /// previously-downloaded localized file may still be present — this keeps its manifest
+    /// entry, which is correct: manifest and filesystem stay in agreement, so the game's
+    /// DoesAssetExist never lies and never crashes. The only effect is that stale files
+    /// aren't reclaimed on reconfigure (a size concern, not a correctness one).
+    /// </para>
+    /// </summary>
+    private void PruneContentManifest(string downloadDir)
+    {
+        var contentDir = Path.Combine(downloadDir, "Content");
+        var manifestPath = Path.Combine(contentDir, "ContentHashes.json");
+        if (!File.Exists(manifestPath))
+        {
+            Logger.Log($"{_logPrefix} ContentHashes.json not found at {manifestPath}; skipping manifest prune");
+            return;
+        }
+
+        Dictionary<string, JsonElement>? entries;
+        try
+        {
+            entries = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(manifestPath));
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"{_logPrefix} WARN: failed to parse ContentHashes.json ({ex.Message}); leaving it unchanged");
+            return;
+        }
+        if (entries == null || entries.Count == 0)
+            return;
+
+        var kept = new Dictionary<string, JsonElement>(entries.Count);
+        foreach (var (key, value) in entries)
+        {
+            // Manifest keys use forward slashes regardless of OS; normalize for the local FS.
+            var localPath = Path.Combine(contentDir, key.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(localPath))
+                kept[key] = value;
+        }
+
+        var removed = entries.Count - kept.Count;
+        if (removed == 0)
+            return;
+
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(kept));
+        Logger.Log($"{_logPrefix} Pruned ContentHashes.json: removed {removed} stripped entries, {kept.Count} remain");
+    }
+
+    // Audio is always stripped — the dedicated server runs silent (no Wave Bank).
+    private static readonly Regex[] WaveBankPatterns =
     [
         new Regex(@"Content/XACT/Wave Bank.xwb", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new Regex(@"Content/XACT/Wave Bank\(1.4\).xwb", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"Content/Fonts/Chinese.*", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"Content/Fonts/Korean.*", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"Content/Fonts/Japanese.*", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"\.(de-DE|es-ES|fr-FR|hu-HU|it-IT|ja-JP|ko-KR|pt-BR|ru-RU|tr-TR|zh-CN)\.xnb$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
-    private static bool ShouldSkipFile(string fileName)
+    // Every localized content code the game ships (matches LocalizedContentManager
+    // .LanguageCodeString in the decompiled game). A file named "*.{code}.xnb" is a
+    // per-language variant; by default all are stripped to keep the image small.
+    private static readonly string[] AllLanguageCodes =
+        ["de-DE", "es-ES", "fr-FR", "hu-HU", "it-IT", "ja-JP", "ko-KR", "pt-BR", "ru-RU", "tr-TR", "zh-CN", "th-TH"];
+
+    // CJK fonts are large, multi-file families keyed by family name (not a "*.{code}.xnb"
+    // suffix), so a kept CJK language must also un-strip its whole family directory.
+    private static readonly Dictionary<string, string> CjkFontFamilyByCode = new(StringComparer.OrdinalIgnoreCase)
     {
-        foreach (var pattern in SkipPatterns)
+        ["zh-CN"] = "Chinese",
+        ["ja-JP"] = "Japanese",
+        ["ko-KR"] = "Korean",
+    };
+
+    // Built per-instance in the constructor from the operator's STEAM_KEEP_LANGUAGES.
+    private readonly Regex[] _skipPatterns;
+
+    /// <summary>
+    /// Parses a STEAM_KEEP_LANGUAGES value ("pt-BR, ru-RU") into validated language
+    /// codes. Whitespace-tolerant and case-insensitive on each code; unknown codes are
+    /// warned-and-dropped (never throws) so a typo can't abort the download. Returns the
+    /// canonical-cased codes from <see cref="AllLanguageCodes"/>.
+    /// </summary>
+    public static IReadOnlyCollection<string> ParseKeepLanguages(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return [];
+
+        var canonical = AllLanguageCodes.ToDictionary(c => c, StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (canonical.TryGetValue(token, out var code))
+            {
+                if (!result.Contains(code))
+                    result.Add(code);
+            }
+            else
+            {
+                Logger.Log($"[SteamService] WARN: STEAM_KEEP_LANGUAGES has unknown code '{token}' — ignoring. " +
+                           $"Valid codes: {string.Join(", ", AllLanguageCodes)}");
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Builds the download skip-set: always-stripped audio, plus the per-language
+    /// "*.{code}.xnb" variants and CJK font families for every code NOT in <paramref name="keepLanguages"/>.
+    /// A kept language's font/content files are left in the download (and survive into
+    /// the regenerated manifest) so that language renders correctly on clients.
+    /// </summary>
+    private static Regex[] BuildSkipPatterns(IReadOnlyCollection<string> keepLanguages)
+    {
+        var keep = new HashSet<string>(keepLanguages, StringComparer.OrdinalIgnoreCase);
+        var patterns = new List<Regex>(WaveBankPatterns);
+
+        // Strip CJK font families only for non-kept CJK languages.
+        foreach (var (code, family) in CjkFontFamilyByCode)
+        {
+            if (!keep.Contains(code))
+                patterns.Add(new Regex($@"Content/Fonts/{family}.*", RegexOptions.IgnoreCase | RegexOptions.Compiled));
+        }
+
+        // Strip "*.{code}.xnb" localized variants for every non-kept code.
+        var strippedCodes = AllLanguageCodes.Where(c => !keep.Contains(c)).ToArray();
+        if (strippedCodes.Length > 0)
+        {
+            var alternation = string.Join("|", strippedCodes.Select(Regex.Escape));
+            patterns.Add(new Regex($@"\.({alternation})\.xnb$", RegexOptions.IgnoreCase | RegexOptions.Compiled));
+        }
+
+        return patterns.ToArray();
+    }
+
+    private bool ShouldSkipFile(string fileName)
+    {
+        foreach (var pattern in _skipPatterns)
         {
             if (pattern.IsMatch(fileName))
                 return true;
@@ -1251,6 +1380,14 @@ public class SteamAuthService
             Logger.Log($"{_logPrefix} Total size: {FormatSize(processedBytes)}");
             if (skippedExisting > 0)
                 Logger.Log($"{_logPrefix} Skipped {skippedExisting} existing files (already up to date)");
+
+            // Prune the content manifest to match what we actually downloaded. The game's
+            // LocalizedContentManager.DoesAssetExist checks ContentHashes.json (a manifest),
+            // not the filesystem — so a stripped-but-still-listed asset makes the game think
+            // the file exists, then throw ContentLoadException on the missing on-disk read.
+            // Removing the stale entries lets the game's built-in localized→English fallback
+            // work instead of crashing.
+            PruneContentManifest(downloadDir);
 
             // Save download marker to skip re-download next time
             SaveDownloadMarker(downloadDir, appId, depotId, manifestId, targetOs, totalBytes, totalFiles);
