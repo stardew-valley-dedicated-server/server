@@ -144,7 +144,7 @@ Go to **Settings → Secrets → Actions** and add:
 - Pattern: `master`
 - Enable:
   - ✅ Require pull request before merging
-  - ✅ Require status checks: `Validate Build`, `Validate Line Endings`
+  - ✅ Require status checks: `Validate Build`, `Validate Commits`, `Validate Line Endings`
   - ✅ Require approvals: 1
 
 #### 3. Configure Fork PR Protection

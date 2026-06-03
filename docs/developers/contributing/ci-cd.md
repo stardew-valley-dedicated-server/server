@@ -8,7 +8,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 |----------|---------|---------|
 | [Build Release](#build-release-pipeline) | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
 | [Build Preview](#build-preview-pipeline) | Push to `master` | Builds and publishes preview Docker images |
-| [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits and builds |
+| [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
@@ -131,8 +131,9 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
+- **Line endings** - Fails if a file with CRLF line endings reached the index, bypassing the LF normalization `.gitattributes` enforces
 
-These surface as two required status checks — `Validate Build` and `Validate Commits` — that must pass before a PR can merge.
+These surface as three required status checks — `Validate Build`, `Validate Commits`, and `Validate Line Endings` — that must pass before a PR can merge.
 
 ### Trigger & Security Model
 
@@ -172,10 +173,10 @@ A PR sitting in the queue shows **`AWAITING_CHECKS`** while its merge-group buil
 
 ### Why Validate Merge Group is a separate workflow
 
-The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build` and `Validate Commits` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces both under the same names. It runs the same commitlint and Docker build, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
+The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, and `Validate Line Endings` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all three under the same names. It runs the same commitlint, Docker build, and line-ending scan, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
 
 ::: warning
-Both required checks (`Validate Build`, `Validate Commits`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too.
+All three required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too.
 :::
 
 ## CodeQL Pipeline
@@ -186,7 +187,7 @@ Both required checks (`Validate Build`, `Validate Commits`) must have a `merge_g
 
 ### Advisory, Not Required
 
-CodeQL is **not** a required status check — a PR merges on `Validate Build` + `Validate Commits` alone, and CodeQL findings surface under **Security → Code scanning** without blocking the merge.
+CodeQL is **not** a required status check — a PR merges on `Validate Build` + `Validate Commits` + `Validate Line Endings` alone, and CodeQL findings surface under **Security → Code scanning** without blocking the merge.
 
 This is deliberate. The pipeline uses per-language path scoping (below), so a PR that touches no analyzable source runs **zero** analyze jobs. A *required* check that never reports leaves a PR stuck on "Expected — Waiting for status", so the path-scoping optimization is only safe while CodeQL stays advisory.
 
