@@ -155,9 +155,19 @@ public class CabinPositionPersistenceTests : TestBase
         Assert.True(deleteResult?.Success, $"Delete should succeed: {deleteResult?.Error ?? "timeout"}");
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == ownerId);
 
-        var afterDelete = await ServerApi.GetCabins(ct);
-        Assert.NotNull(afterDelete);
-        Assert.DoesNotContain(ownerId, afterDelete.SavedPositionPlayerIds);
+        // /cabins is snapshot-backed, so the cleared intent can lag the deletion by a
+        // snapshot tick. Poll until the owner is gone instead of asserting immediately.
+        CabinsResponse? afterDelete = null;
+        var cleared = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinStrategy_FarmerDeletionReflected,
+            async () =>
+            {
+                afterDelete = await ServerApi.GetCabins(ct);
+                return afterDelete != null
+                    && !afterDelete.SavedPositionPlayerIds.Contains(ownerId);
+            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+
+        Assert.True(cleared, $"Saved-position intent was not cleared for deleted owner {ownerId}");
         Log($"Intent cleared for deleted owner {ownerId}");
     }
 
