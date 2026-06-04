@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Docker.DotNet;
@@ -17,7 +19,8 @@ namespace JunimoServer.Tests.Infrastructure;
 /// <c>SDVD_DOCKER_HOSTS</c> is a JSON array. Each entry must specify
 /// <c>id</c>, <c>serverSlots</c>, and <c>clientSlots</c>. Optional fields:
 /// <c>endpoint</c> (omit for local daemon, or <c>ssh://user@host</c>),
-/// <c>sshKey</c> (path to a private key; <c>~</c> is expanded), and
+/// <c>sshKey</c> (either a path to a private key — <c>~</c>-expanded — or inline
+/// <c>-----BEGIN…</c> key material, which is written to a 0600 temp file), and
 /// <c>socketPath</c> (remote Unix socket; defaults to <c>/var/run/docker.sock</c>,
 /// override e.g. <c>~/.docker/run/docker.sock</c> for macOS Docker Desktop).
 /// </para>
@@ -199,6 +202,24 @@ public sealed class HostPool : IAsyncDisposable
         return string.IsNullOrEmpty(uri.UserInfo) ? uri.Host : $"{uri.UserInfo}@{uri.Host}";
     }
 
+    /// <summary>
+    /// Resolves a host's <c>sshKey</c> to a file path <c>ssh -i</c> can consume.
+    /// Accepts two forms:
+    /// <list type="bullet">
+    ///   <item><b>Inline key material</b> (the value starts with
+    ///   <c>-----BEGIN</c>): the PEM/OpenSSH-format private key is written to a
+    ///   private (0600) temp file and that path is returned. This is what CI
+    ///   uses — the whole <c>SDVD_DOCKER_HOSTS</c> JSON (key included) lives in
+    ///   one GitHub secret, with no separate key-file step.</item>
+    ///   <item><b>A path</b> (anything else): resolved against the project root
+    ///   (<c>~</c>-expanded, relative paths anchored at the repo so <c>./foo</c>
+    ///   works regardless of the runner's CWD) and required to exist. This is
+    ///   the local-dev form pointing at <c>~/.ssh/&lt;key&gt;</c>.</item>
+    /// </list>
+    /// Either way the result is a filesystem path; every downstream consumer
+    /// (<see cref="DockerHost.SshKeyPath"/>, <see cref="TunnelManager"/>'s
+    /// <c>ssh -i</c>) is path-based and unchanged.
+    /// </summary>
     private static string? ResolveSshKeyPath(string id, string? sshDest, string? sshKey)
     {
         if (string.IsNullOrWhiteSpace(sshKey)) return null;
@@ -207,13 +228,88 @@ public sealed class HostPool : IAsyncDisposable
                 $"SDVD_DOCKER_HOSTS entry '{id}': 'sshKey' is set but 'endpoint' is local. " +
                 "Drop sshKey for local entries.");
 
-        // Relative paths anchor at the project root, not the binary's CWD,
-        // so `./foo` works regardless of how the runner was launched.
+        // Inline PEM/OpenSSH key material (CI passes the key inside the JSON
+        // secret). OpenSSH and PEM private keys begin with a `-----BEGIN` armor
+        // line; a filesystem path never contains one. So a `-----BEGIN`
+        // *anywhere* in the value means inline was intended — match loosely on
+        // Contains (not StartsWith) so a stray leading character can't misroute
+        // the key into the path branch, whose "not found" error would otherwise
+        // echo the key bytes into logs.
+        var looksInline = sshKey.Contains("-----BEGIN", StringComparison.Ordinal);
+        if (looksInline)
+        {
+            if (!sshKey.TrimStart().StartsWith("-----BEGIN", StringComparison.Ordinal))
+                // Inline was intended but the armor isn't at the start (leading
+                // junk / wrong indentation). Fail WITHOUT echoing the key.
+                throw new InvalidOperationException(
+                    $"SDVD_DOCKER_HOSTS entry '{id}': sshKey looks like inline key material " +
+                    "but does not start with '-----BEGIN'. Provide the key with the armor " +
+                    "line first and no leading characters. (Key content omitted from this error.)");
+            return MaterializeInlineKey(id, sshKey);
+        }
+
+        // Otherwise treat as a path. Relative paths anchor at the project root,
+        // not the binary's CWD, so `./foo` works regardless of how the runner
+        // was launched. Safe to echo `sshKey` here — it is a path, not a key.
         var full = Helpers.ProjectRoot.Resolve(sshKey);
         if (!File.Exists(full))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': sshKey '{sshKey}' does not exist at '{full}'.");
+                $"SDVD_DOCKER_HOSTS entry '{id}': sshKey '{sshKey}' is neither inline key " +
+                $"material (a '-----BEGIN…' block) nor an existing file (resolved to '{full}').");
         return full;
+    }
+
+    /// <summary>
+    /// Writes inline private-key material to a 0600 temp file and returns its
+    /// path. The filename is derived from a hash of the key content so the
+    /// coordinator and the xUnit child — which independently re-parse
+    /// <c>SDVD_DOCKER_HOSTS</c> — converge on the same file rather than racing
+    /// two writes of divergently-named files. A trailing newline is ensured
+    /// because OpenSSH rejects a key file whose final armor line lacks one.
+    /// </summary>
+    private static string MaterializeInlineKey(string id, string keyMaterial)
+    {
+        var normalized = keyMaterial.Replace("\r\n", "\n").TrimEnd('\n') + "\n";
+        var hash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))
+            .ToLowerInvariant()[..16];
+        var path = Path.Combine(Path.GetTempPath(), $"sdvd-test-sshkey-{hash}");
+
+        // Content-addressed: a matching file from a sibling process (parent +
+        // xUnit child both parse this) or a prior run holds these exact bytes
+        // already. Create-new-only — if it exists, the content is identical, so
+        // reuse it. The file is created 0600 atomically (UnixCreateMode applies
+        // at open(2)), so the key bytes are never momentarily group/world-
+        // readable in the temp dir — no write-then-chmod window.
+        if (File.Exists(path)) return path;
+
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+        };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        try
+        {
+            using var stream = new FileStream(path, options);
+            using var writer = new StreamWriter(stream);
+            writer.Write(normalized);
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            // A sibling process created it between our Exists check and
+            // CreateNew. Same content — its file is fine.
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException(
+                $"SDVD_DOCKER_HOSTS entry '{id}': failed to materialize inline sshKey " +
+                $"to '{path}': {ex.Message}", ex);
+        }
+
+        return path;
     }
 
     /// <summary>

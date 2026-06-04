@@ -27,7 +27,6 @@ namespace JunimoServer.TestRunner.Rendering;
 /// </summary>
 public sealed class WebRenderer : RendererBase
 {
-    private readonly bool _generateReport;
     private readonly RunRecorder _recorder;
     private readonly TestRunState _state;
     private readonly Channel<string> _eventChannel = Channel.CreateBounded<string>(
@@ -53,11 +52,10 @@ public sealed class WebRenderer : RendererBase
     private Action<string>? _onCommand;
     public void OnCommand(Action<string> handler) => _onCommand = handler;
 
-    public WebRenderer(RunRecorder recorder, bool generateReport = false) : base(verbose: true)
+    public WebRenderer(RunRecorder recorder) : base(verbose: true)
     {
         _recorder = recorder;
         _state = recorder.State;
-        _generateReport = generateReport;
     }
 
     /// <summary>
@@ -73,7 +71,7 @@ public sealed class WebRenderer : RendererBase
 
     public override async ValueTask InitializeAsync()
     {
-        var spaDistPath = FindSpaProjectPath() is { } proj ? Path.Combine(proj, "dist") : null;
+        var spaDistPath = ReportGenerator.FindSpaProjectPath() is { } proj ? Path.Combine(proj, "dist") : null;
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -271,27 +269,9 @@ public sealed class WebRenderer : RendererBase
         if (!_recorder.IsRunFinished)
             WriteMockData();
 
-        // Generate static report if requested
-        if (_generateReport || IsCI())
-        {
-            try
-            {
-                var spaDistPath = FindSpaProjectPath() is { } p ? Path.Combine(p, "dist") : null;
-                if (spaDistPath != null)
-                {
-                    var generator = new ReportGenerator(_state, spaDistPath, "TestResults");
-                    generator.Generate();
-                }
-                else
-                {
-                    Console.Error.WriteLine("WARNING: Report generation skipped. SPA dist not found. Run 'make build-test-ui' first.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"WARNING: Report generation failed: {ex.Message}");
-            }
-        }
+        // The static report bundle is assembled from Program.cs's finally (one
+        // site, runs in every mode incl. CIRenderer) — not here, which only ran
+        // when the renderer was a WebRenderer.
 
         // Drain queued events so post-run events (recordings, late artifacts)
         // reach the browser before we stop accepting new sends.
@@ -502,7 +482,7 @@ public sealed class WebRenderer : RendererBase
         {
             // Write snapshot and artifacts to public/mock-artifacts/ for frontend development.
             // Vite serves public/ as static files, so the dev server can load mock data directly.
-            var projectDir = FindSpaProjectPath();
+            var projectDir = ReportGenerator.FindSpaProjectPath();
             if (projectDir == null) return;
 
             var mockArtifactsDir = Path.Combine(projectDir, "public", "mock-artifacts");
@@ -518,24 +498,6 @@ public sealed class WebRenderer : RendererBase
         {
             Console.Error.WriteLine($"[WebUI] Failed to write mock data: {ex.Message}");
         }
-    }
-
-    private static string? FindSpaProjectPath()
-    {
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 8 && dir != null; i++)
-        {
-            var candidate = Path.Combine(dir, "tests", "test-ui");
-            if (Directory.Exists(Path.Combine(candidate, "src")))
-                return candidate;
-            dir = Path.GetDirectoryName(dir);
-        }
-
-        var cwdCandidate = Path.GetFullPath("tests/test-ui");
-        if (Directory.Exists(Path.Combine(cwdCandidate, "src")))
-            return cwdCandidate;
-
-        return null;
     }
 
     private static bool IsCI()

@@ -4,12 +4,18 @@ using System.Text.Json;
 namespace JunimoServer.TestRunner.Rendering.Web;
 
 /// <summary>
-/// Generates a self-contained static HTML report by injecting the final test state
-/// into the SPA's index.html. Screenshots are base64-inlined for offline viewing.
-/// TODO: Should this be renamed to HtmlReportGenerator?
+/// Assembles the self-contained offline bundle of the test-UI SPA: copies the
+/// built SPA next to the run's media and injects the final run snapshot as
+/// <c>&lt;script id="test-report-data"&gt;</c>, which the SPA bootstraps from in
+/// report mode (no WebSocket). Screenshots and videos are copied to a sibling
+/// <c>artifacts/</c> directory with relative paths so they resolve over
+/// <c>file://</c>.
 /// </summary>
 public sealed class ReportGenerator
 {
+    /// <summary>Sibling directory (next to index.html) holding copied media.</summary>
+    private const string BundleArtifactsDir = "artifacts";
+
     private readonly TestRunState _state;
     private readonly string _spaDistPath;
     private readonly string _testResultsPath;
@@ -19,6 +25,56 @@ public sealed class ReportGenerator
         _state = state;
         _spaDistPath = spaDistPath;
         _testResultsPath = testResultsPath;
+    }
+
+    /// <summary>
+    /// Single entrypoint for assembling the offline report bundle, called from
+    /// the runner's finally regardless of renderer mode. Resolves the built SPA,
+    /// writes the bundle inside <paramref name="runDir"/> (so it rides along in
+    /// the uploaded per-run artifact tree), and no-ops with a warning when the
+    /// SPA has not been built. Never throws.
+    /// </summary>
+    public static void TryGenerate(TestRunState state, string runDir)
+    {
+        try
+        {
+            var spaDistPath = FindSpaProjectPath() is { } proj ? Path.Combine(proj, "dist") : null;
+            if (spaDistPath == null || !File.Exists(Path.Combine(spaDistPath, "index.html")))
+            {
+                Console.Error.WriteLine(
+                    "WARNING: Report generation skipped. SPA dist not found. Run 'make build-test-ui' first.");
+                return;
+            }
+
+            new ReportGenerator(state, spaDistPath, runDir).Generate();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"WARNING: Report generation failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Locates the test-UI SPA project dir by walking up from the runner's base
+    /// directory (then the cwd) for <c>tests/test-ui/src</c>. Shared with
+    /// mock-data export.
+    /// </summary>
+    public static string? FindSpaProjectPath()
+    {
+        var dir = AppContext.BaseDirectory;
+        for (var i = 0; i < 8 && dir != null; i++)
+        {
+            var candidate = Path.Combine(dir, "tests", "test-ui");
+            if (Directory.Exists(Path.Combine(candidate, "src")))
+                return candidate;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        var cwdCandidate = Path.GetFullPath("tests/test-ui");
+        if (Directory.Exists(Path.Combine(cwdCandidate, "src")))
+            return cwdCandidate;
+
+        return null;
     }
 
     public void Generate()
@@ -33,20 +89,24 @@ public sealed class ReportGenerator
         var reportDir = Path.Combine(_testResultsPath, "report");
         Directory.CreateDirectory(reportDir);
 
-        // Copy assets (JS, CSS files)
+        // Copy the SPA (JS, CSS) next to the bundle.
         CopyAssets(reportDir);
 
-        // Build the report HTML
-        var html = File.ReadAllText(indexPath);
-
-        // Get the snapshot and inline screenshots
-        var snapshotJson = GetSnapshotWithInlinedScreenshots();
+        // Copy screenshots + videos into reportDir/artifacts/ and rewrite the
+        // snapshot's paths to that relative location, so both kinds of media
+        // resolve over file:// once Kestrel is gone. (The SPA's screenshotSrc
+        // passes these relative paths through unchanged in report mode.)
+        var snapshotJson = CopyArtifacts(
+            _state.ToSnapshotJson(),
+            Path.Combine(reportDir, BundleArtifactsDir),
+            BundleArtifactsDir,
+            _testResultsPath);
 
         // Inject state JSON using a safe script tag
         // System.Text.Json's default encoder escapes <, >, & (safe against </script> breakout)
         var dataTag = $"<script type=\"application/json\" id=\"test-report-data\">{snapshotJson}</script>";
 
-        // Insert before closing </head> tag
+        var html = File.ReadAllText(indexPath);
         if (html.Contains("</head>"))
         {
             html = html.Replace("</head>", $"{dataTag}\n</head>");
@@ -57,7 +117,7 @@ public sealed class ReportGenerator
             html = dataTag + "\n" + html;
         }
 
-        // Fix asset paths to be relative (report is served from TestResults/report/)
+        // Fix asset paths to be relative (the bundle is opened over file://).
         // Vite outputs paths like /assets/xxx.js; make them ./assets/xxx.js
         html = html.Replace("src=\"/assets/", "src=\"./assets/");
         html = html.Replace("href=\"/assets/", "href=\"./assets/");
@@ -68,80 +128,40 @@ public sealed class ReportGenerator
         Console.Error.WriteLine($"[WebUI] Static report generated: {reportPath}");
     }
 
-    private string GetSnapshotWithInlinedScreenshots()
-    {
-        var snapshotJson = _state.ToSnapshotJson();
-        return InlineScreenshots(snapshotJson, _testResultsPath);
-    }
-
-    /// <summary>
-    /// Replaces absolute screenshot file paths in snapshot JSON with base64 data URIs,
-    /// making the JSON self-contained. Used by report generation for offline viewing.
-    /// </summary>
-    public static string InlineScreenshots(string snapshotJson, string? testResultsPath = null)
-    {
-        try
-        {
-            var paths = CollectArtifactPaths(snapshotJson);
-
-            foreach (var screenshotPath in paths)
-            {
-                // Only inline image files; videos are too large for base64
-                var ext = Path.GetExtension(screenshotPath).ToLowerInvariant();
-                if (ext is not (".png" or ".jpg" or ".jpeg" or ".gif"))
-                    continue;
-
-                var resolvedPath = ResolveArtifactPath(screenshotPath, testResultsPath);
-                if (resolvedPath == null || !File.Exists(resolvedPath))
-                {
-                    Console.Error.WriteLine($"[WebUI] Warning: Screenshot not found: {screenshotPath}");
-                    continue;
-                }
-
-                var fileInfo = new FileInfo(resolvedPath);
-                if (fileInfo.Length > 2 * 1024 * 1024)
-                    Console.Error.WriteLine($"[WebUI] Warning: Large screenshot ({fileInfo.Length / 1024}KB): {resolvedPath}");
-
-                var bytes = File.ReadAllBytes(resolvedPath);
-                var base64 = Convert.ToBase64String(bytes);
-                var mimeType = ext switch
-                {
-                    ".jpg" or ".jpeg" => "image/jpeg",
-                    ".gif" => "image/gif",
-                    _ => "image/png"
-                };
-                var dataUrl = $"data:{mimeType};base64,{base64}";
-
-                // Replace all occurrences of this path in the JSON with the data URL
-                snapshotJson = snapshotJson.Replace(
-                    JsonSerializer.Serialize(screenshotPath),
-                    JsonSerializer.Serialize(dataUrl));
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[WebUI] Warning: Failed to inline screenshots: {ex.Message}");
-        }
-
-        return snapshotJson;
-    }
-
     /// <summary>
     /// Exports artifact files (screenshots and videos) to a directory with content-hashed
     /// filenames and rewrites all paths in the snapshot JSON to relative paths.
-    /// Used by mock data export for frontend development.
+    /// Used by mock data export for frontend development. Replaces the directory's
+    /// contents (mock data is regenerated wholesale each run).
     /// </summary>
     public static string ExportMockArtifacts(string snapshotJson, string mockArtifactsDir, string? testResultsPath = null)
     {
+        if (Directory.Exists(mockArtifactsDir))
+            Directory.Delete(mockArtifactsDir, recursive: true);
+
+        return CopyArtifacts(
+            snapshotJson,
+            mockArtifactsDir,
+            Path.GetFileName(mockArtifactsDir), // "mock-artifacts"
+            testResultsPath);
+    }
+
+    /// <summary>
+    /// Copies every screenshot/video referenced in the snapshot into
+    /// <paramref name="targetDir"/> with a content-hashed filename, then rewrites
+    /// each path in the snapshot JSON to <paramref name="relativePrefix"/>/&lt;hash&gt;.&lt;ext&gt;.
+    /// The shared mechanism behind both the offline report bundle and mock-data
+    /// export — content hashing dedupes identical media across tests.
+    /// </summary>
+    private static string CopyArtifacts(
+        string snapshotJson, string targetDir, string relativePrefix, string? testResultsPath)
+    {
         try
         {
-            if (Directory.Exists(mockArtifactsDir))
-                Directory.Delete(mockArtifactsDir, recursive: true);
-            Directory.CreateDirectory(mockArtifactsDir);
+            Directory.CreateDirectory(targetDir);
 
             var paths = CollectArtifactPaths(snapshotJson);
             var replacements = new Dictionary<string, string>();
-            var dirName = Path.GetFileName(mockArtifactsDir); // "mock-artifacts"
 
             foreach (var originalPath in paths)
             {
@@ -158,8 +178,8 @@ public sealed class ReportGenerator
                 if (string.IsNullOrEmpty(ext)) ext = ".png";
                 var fileName = $"{hash}{ext}";
 
-                File.WriteAllBytes(Path.Combine(mockArtifactsDir, fileName), bytes);
-                replacements[originalPath] = $"{dirName}/{fileName}";
+                File.WriteAllBytes(Path.Combine(targetDir, fileName), bytes);
+                replacements[originalPath] = $"{relativePrefix}/{fileName}";
             }
 
             foreach (var (originalPath, newPath) in replacements)
@@ -176,11 +196,11 @@ public sealed class ReportGenerator
                 snapshotJson = snapshotJson.Replace(escapedOld, escapedNew);
             }
 
-            Console.Error.WriteLine($"[WebUI] Exported {replacements.Count} artifacts to {mockArtifactsDir}");
+            Console.Error.WriteLine($"[WebUI] Exported {replacements.Count} artifacts to {targetDir}");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[WebUI] Warning: Failed to export mock artifacts: {ex.Message}");
+            Console.Error.WriteLine($"[WebUI] Warning: Failed to copy artifacts: {ex.Message}");
         }
 
         return snapshotJson;
