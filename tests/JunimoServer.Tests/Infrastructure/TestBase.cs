@@ -533,6 +533,23 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         ServerStatus = await ServerApi.GetStatus(TestCt);
     }
 
+    /// <summary>
+    /// Re-reads server-settings.json and reloads the current world in-process (no
+    /// container restart), re-running the mod's OnSaveLoaded path. Suspends health
+    /// checks during the transition and waits for the server to come back online.
+    /// Only valid when the test has an active server lease.
+    /// </summary>
+    protected async Task ReloadServerAsync()
+    {
+        if (Lease == null)
+            throw new InvalidOperationException("No server lease. Call AcquireServerAsync() first.");
+
+        await Lease.ReloadAsync(TestCt);
+
+        // Refresh the cached server status
+        ServerStatus = await ServerApi.GetStatus(TestCt);
+    }
+
     #endregion
 
     #region Exception Monitoring

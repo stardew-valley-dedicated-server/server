@@ -986,6 +986,44 @@ internal sealed class ManagedServer : IAsyncDisposable
     }
 
     /// <summary>
+    /// Re-reads server-settings.json and reloads the active world via the API,
+    /// suspending health checks during the title→reload transition. Used by tests
+    /// that need OnSaveLoaded to re-run (e.g. cabin-position persistence).
+    /// </summary>
+    public async Task ReloadAsync(CancellationToken ct = default)
+    {
+        SuspendHealthChecks();
+        try
+        {
+            using var api = Server.CreateApiClient();
+
+            var result = await api.ReloadAsync(ct);
+            if (result?.Success != true)
+                throw new InvalidOperationException($"Reload failed: {result?.Error ?? "unknown"}");
+
+            // Verify the server is actually back online
+            var status = await api.WaitForServerOnline(
+                timeout: TimeSpan.FromSeconds(120),
+                pollInterval: TimeSpan.FromSeconds(2),
+                cancellationToken: ct,
+                requireInviteCode: Server.Options.WithSteam);
+
+            if (status == null)
+            {
+                ct.ThrowIfCancellationRequested();
+                throw new TimeoutException("Server did not come back online after reload");
+            }
+
+            Server.ClearErrors();
+            TestLog.Server($"{_displayLabel} world reloaded");
+        }
+        finally
+        {
+            ResumeHealthChecks();
+        }
+    }
+
+    /// <summary>
     /// Disposal path for poisoned servers. Releases the environment slot
     /// immediately so a replacement can start, then waits for active leases
     /// to drain (so tests can finish their artifacts phase against the

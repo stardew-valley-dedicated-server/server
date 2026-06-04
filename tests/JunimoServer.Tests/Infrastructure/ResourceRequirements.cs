@@ -13,7 +13,7 @@ public sealed record ResourceRequirements(
     int StartingCabins, int MaxPlayers, int Clients,
     string CabinStrategy, bool AllowIpConnections,
     IsolationMode Isolation, string? TestClassName, string? TestMethodName,
-    bool Exclusive = false)
+    bool Exclusive = false, string ExistingCabinBehavior = "KeepExisting")
 {
     private static int _perTestCounter;
 
@@ -50,7 +50,7 @@ public sealed record ResourceRequirements(
     private string ComputeConfigHash()
     {
         var configString = $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}" +
-                          $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}";
+                          $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}";
         var bytes = Encoding.UTF8.GetBytes(configString);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..12].ToLowerInvariant();
@@ -72,7 +72,7 @@ public sealed record ResourceRequirements(
         AllowIpConnections: attr.WithSteam ? attr.AllowIpConnections : true,
         Isolation: attr.Isolation, TestClassName: testClassName,
         TestMethodName: testMethodName,
-        Exclusive: attr.Exclusive);
+        Exclusive: attr.Exclusive, ExistingCabinBehavior: attr.ExistingCabinBehavior);
 
     /// <summary>
     /// Convenience factory for FarmMapTypeTests Theory parameters.
@@ -96,6 +96,7 @@ public sealed record ResourceRequirements(
             StartingCabins = StartingCabins,
             MaxPlayers = MaxPlayers,
             CabinStrategy = CabinStrategy,
+            ExistingCabinBehavior = ExistingCabinBehavior,
             AllowIpConnections = AllowIpConnections,
             WithSteam = WithSteam
         };

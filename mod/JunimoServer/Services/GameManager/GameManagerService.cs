@@ -1,5 +1,6 @@
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
+using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Settings;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -15,6 +16,7 @@ namespace JunimoServer.Services.GameManager
         private readonly GameCreatorService _gameCreatorService;
         private readonly GameLoaderService _gameLoaderService;
         private readonly ServerSettingsLoader _settings;
+        private readonly PersistentOptions _options;
 
         private bool _titleLaunched = false;
         private bool _gameStarted = false;
@@ -24,6 +26,10 @@ namespace JunimoServer.Services.GameManager
         // New game creation via API
         private NewGameConfig? _pendingNewGameConfig;
         private TaskCompletionSource<bool>? _newGameCompletion;
+
+        // Reload-current-world via API (apply settings + reload, no process restart)
+        private bool _pendingReload;
+        private TaskCompletionSource<bool>? _reloadCompletion;
 
         /// <summary>
         /// Whether a new game creation has been requested via the API.
@@ -37,11 +43,12 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         internal static GameManagerService? Instance { get; private set; }
 
-        public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, ServerSettingsLoader settings, IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, ServerSettingsLoader settings, PersistentOptions options, IModHelper helper, IMonitor monitor) : base(helper, monitor)
         {
             _gameCreatorService = gameCreator;
             _gameLoaderService = gameLoader;
             _settings = settings;
+            _options = options;
             Instance = this;
         }
 
@@ -61,6 +68,37 @@ namespace JunimoServer.Services.GameManager
             _lastNullCodeTime = null;
             Game1.ExitToTitle();
             return _newGameCompletion.Task;
+        }
+
+        /// <summary>
+        /// Re-reads server-settings.json and reloads the current world in-process
+        /// (no container restart). Applies any runtime settings change — notably a
+        /// CabinStrategy switch, which the cabin manager migrates on the next save load.
+        /// MUST be called on the game thread (via RunOnGameThreadAsync).
+        /// Returns a Task that completes when the world has finished reloading.
+        /// </summary>
+        public Task RequestReloadSave()
+        {
+            // Coalesce overlapping requests: a second /reload while one is in flight would
+            // otherwise replace _reloadCompletion and orphan the first caller until its 120s
+            // timeout. Always invoked on the game thread (via RunOnGameThreadAsync), so this
+            // check-and-act needs no lock. Returns the in-flight task to the late caller.
+            if (_pendingReload && _reloadCompletion != null)
+            {
+                return _reloadCompletion.Task;
+            }
+
+            // Reload returns to title intentionally. Flag it so AlwaysOn.OnReturnedToTitle
+            // treats this as expected instead of logging a critical (test-poisoning) error.
+            IsNewGamePending = true;
+            _pendingReload = true;
+            _reloadCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _gameStarted = false;
+            _titleLaunched = false;
+            _healthCheckTimer = 0;
+            _lastNullCodeTime = null;
+            Game1.ExitToTitle();
+            return _reloadCompletion.Task;
         }
 
         public override void Entry()
@@ -114,6 +152,38 @@ namespace JunimoServer.Services.GameManager
             }
 
             _gameStarted = true;
+
+            // If a reload was requested via the API, re-read settings and reload the
+            // current world. RecaptureAndSync makes a CabinStrategy change detectable
+            // by the cabin manager on the SaveLoaded that LoadSave triggers.
+            if (_pendingReload)
+            {
+                _pendingReload = false;
+                // Clear here (not only on success) so a failed reload doesn't leave the
+                // intent flag stuck true, which would mask a later genuine crash-to-title.
+                IsNewGamePending = false;
+                try
+                {
+                    Monitor.Log("Reloading current world from API request", LogLevel.Info);
+                    _settings.Reload();
+                    _options.RecaptureAndSync(_settings);
+                    if (!_gameLoaderService.LoadSave())
+                    {
+                        throw new InvalidOperationException("LoadSave returned false (no loadable save found)");
+                    }
+                    _reloadCompletion?.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    // Reset startup so the next tick retries ConditionallyStartGame instead
+                    // of early-returning on _gameStarted and parking the server at title.
+                    _gameStarted = false;
+                    Monitor.Log($"World reload failed: {ex}", LogLevel.Warn);
+                    _reloadCompletion?.TrySetException(ex);
+                }
+                _reloadCompletion = null;
+                return;
+            }
 
             // If a new game was requested via the API, use the provided config
             if (_pendingNewGameConfig != null)

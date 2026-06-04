@@ -94,6 +94,15 @@ public sealed class ResourceLease : IAsyncDisposable
     }
 
     /// <summary>
+    /// Re-reads settings and reloads the current world, suspending health checks
+    /// during the transition.
+    /// </summary>
+    public async Task ReloadAsync(CancellationToken ct = default)
+    {
+        await _managed.ReloadAsync(ct);
+    }
+
+    /// <summary>
     /// Current reference count on the underlying managed server.
     /// </summary>
     internal int RefCount => _managed.RefCount;

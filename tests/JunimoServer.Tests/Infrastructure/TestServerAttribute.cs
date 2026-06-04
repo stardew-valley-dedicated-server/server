@@ -17,6 +17,7 @@ public class TestServerAttribute : Attribute
     private int? _maxPlayers;
     private int? _clients;
     private string? _cabinStrategy;
+    private string? _existingCabinBehavior;
     private bool? _allowIpConnections;
     private IsolationMode? _isolation;
     private int? _priority;
@@ -40,6 +41,7 @@ public class TestServerAttribute : Attribute
     public int MaxPlayers { get => _maxPlayers ?? Math.Max(10, StartingCabins + 1); set => _maxPlayers = value; }
     public int Clients { get => _clients ?? 1; set => _clients = value; }
     public string CabinStrategy { get => _cabinStrategy ?? "CabinStack"; set => _cabinStrategy = value; }
+    public string ExistingCabinBehavior { get => _existingCabinBehavior ?? "KeepExisting"; set => _existingCabinBehavior = value; }
     public bool AllowIpConnections { get => _allowIpConnections ?? false; set => _allowIpConnections = value; }
     public IsolationMode Isolation { get => _isolation ?? IsolationMode.SharedClass; set => _isolation = value; }
 
@@ -98,6 +100,7 @@ public class TestServerAttribute : Attribute
         merged._startingCabins = method._startingCabins ?? _startingCabins;
         merged._maxPlayers = method._maxPlayers ?? _maxPlayers;
         merged._cabinStrategy = method._cabinStrategy ?? _cabinStrategy;
+        merged._existingCabinBehavior = method._existingCabinBehavior ?? _existingCabinBehavior;
         merged._allowIpConnections = method._allowIpConnections ?? _allowIpConnections;
         merged._isolation = method._isolation ?? _isolation;
         merged._priority = method._priority ?? _priority;

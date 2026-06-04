@@ -267,9 +267,10 @@ namespace JunimoServer.Services.CabinManager
             }
             else if (!fromUsesHidden && toUsesHidden)
             {
-                // None → Stacked: move visible cabins to hidden stack (exclude lobby/editing cabins)
+                // None → Stacked: move visible cabins to hidden stack (exclude lobby/editing
+                // cabins and any cabin a player explicitly placed via /cabin)
                 var visibleCabins = farm.buildings
-                    .Where(b => b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing())
+                    .Where(b => b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing() && !HasSavedPosition(b))
                     .ToList();
 
                 foreach (var cabin in visibleCabins)
@@ -293,6 +294,18 @@ namespace JunimoServer.Services.CabinManager
         #endregion
 
         #region Existing Cabin Import Handling
+
+        /// <summary>
+        /// True if the cabin's owner has explicitly placed it via the /cabin command.
+        /// Such a cabin must not be pulled back into the hidden stack by the bulk
+        /// movers (MoveToStack / strategy migration). This distinguishes a /cabin-placed
+        /// cabin from an imported-but-claimed one, which MoveToStack should still sweep.
+        /// </summary>
+        private bool HasSavedPosition(Building cabin)
+        {
+            var ownerId = cabin.GetIndoors<Cabin>()?.owner?.UniqueMultiplayerID ?? 0;
+            return ownerId != 0 && Data.PlayerCabinPositions.ContainsKey(ownerId);
+        }
 
         private void SyncExistingCabins()
         {
@@ -334,7 +347,7 @@ namespace JunimoServer.Services.CabinManager
             // Handle ExistingCabinBehavior for stacked strategies
             if (options.UsesHiddenCabins && options.Data.ExistingCabinBehavior == ExistingCabinBehavior.MoveToStack)
             {
-                var visibleCabins = allCabins.Where(b => !b.IsInHiddenStack() && !b.IsLobbyOrEditing()).ToList();
+                var visibleCabins = allCabins.Where(b => !b.IsInHiddenStack() && !b.IsLobbyOrEditing() && !HasSavedPosition(b)).ToList();
                 if (visibleCabins.Count > 0)
                 {
                     Monitor.Log($"MoveToStack: relocating {visibleCabins.Count} visible cabin(s) to hidden stack", LogLevel.Info);

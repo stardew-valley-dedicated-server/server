@@ -62,6 +62,9 @@ public class ServerContainer : IAsyncDisposable
     public const int ContainerGamePort = 24642;
     public const string ContainerGamePortUdp = "24642/udp";
 
+    /// <summary>In-container path of the server settings file (injected at create, re-read by /reload).</summary>
+    public const string SettingsPath = "/config/server-settings.json";
+
     /// <summary>
     /// Mapped host ports (available after StartAsync).
     /// </summary>
@@ -250,8 +253,8 @@ public class ServerContainer : IAsyncDisposable
             // Inject settings via the Testcontainers tar API so no host temp
             // file is involved (and so remote-host runs work without uploading
             // a path that doesn't exist on the daemon side).
-            .WithResourceMapping(settingsBytes, "/config/server-settings.json")
-            .WithEnvironment("SETTINGS_PATH", "/config/server-settings.json")
+            .WithResourceMapping(settingsBytes, SettingsPath)
+            .WithEnvironment("SETTINGS_PATH", SettingsPath)
             .WithEnvironment("API_ENABLED", "true")
             .WithEnvironment("API_PORT", ContainerApiPort.ToString())
             // Performance/test settings
