@@ -472,6 +472,17 @@ public class TestFarmEventResponse
 }
 
 /// <summary>
+/// Response from /test/house_upgrade POST endpoint (test-only). Mirrors the server-side
+/// TestHouseUpgradeResponse DTO.
+/// </summary>
+public class TestHouseUpgradeResponse
+{
+    [JsonPropertyName("success")] public bool Success { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+    [JsonPropertyName("hostHouseUpgradeLevel")] public int HostHouseUpgradeLevel { get; set; }
+}
+
+/// <summary>
 /// Response from /test/saver_crop POST endpoint (test-only).
 /// </summary>
 public class TestSaverCropResponse
@@ -1109,6 +1120,20 @@ public class ServerApiClient : IDisposable
             HttpMethod.Post, $"/test/farmevent?type={type}", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestFarmEventResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: run a vanilla debug house-upgrade command on the host (via parseDebugInput, so the
+    /// HostFarmhouseUpgradeGuard Harmony prefix is exercised) and return the host's resulting
+    /// HouseUpgradeLevel. Used to pin that the host farmhouse cannot be upgraded (stays 0).
+    /// POST /test/house_upgrade?command=...
+    /// </summary>
+    public async Task<TestHouseUpgradeResponse?> RunDebugHouseUpgrade(string command, CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post, $"/test/house_upgrade?command={Uri.EscapeDataString(command)}", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHouseUpgradeResponse>(ct);
     }
 
     /// <summary>

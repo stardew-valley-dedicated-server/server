@@ -486,6 +486,21 @@ namespace JunimoServer.Services.Api
     }
 
     /// <summary>
+    /// Response from POST /test/house_upgrade (test-only). Runs a vanilla debug house-upgrade
+    /// command through parseDebugInput (exercising the HostFarmhouseUpgradeGuard Harmony prefix) and
+    /// reports the host's resulting HouseUpgradeLevel, so a test can pin "the host farmhouse can't be
+    /// upgraded" (it must stay 0).
+    /// </summary>
+    public class TestHouseUpgradeResponse
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+
+        /// <summary>The host farmer's HouseUpgradeLevel after the debug command ran (expected 0).</summary>
+        public int HostHouseUpgradeLevel { get; set; }
+    }
+
+    /// <summary>
     /// Response from time set operation.
     /// </summary>
     public class TimeSetResponse
@@ -1914,6 +1929,9 @@ namespace JunimoServer.Services.Api
                             break;
                         case "/test/saver_crop":
                             await WriteJsonAsync(response, await HandlePostTestSaverCropAsync(request));
+                            break;
+                        case "/test/house_upgrade":
+                            await WriteJsonAsync(response, await HandlePostTestHouseUpgradeAsync(request));
                             break;
                         default:
                             response.StatusCode = 404;
@@ -3658,6 +3676,29 @@ namespace JunimoServer.Services.Api
                     ExtraDays = saverCrop.extraDays,
                     OwnerId = saverCrop.ownerId
                 };
+            });
+
+            return result;
+        }
+
+        [ApiEndpoint("POST", "/test/house_upgrade", Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)", Tag = "Test")]
+        [ApiResponse(typeof(TestHouseUpgradeResponse), 200)]
+        private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(HttpListenerRequest request)
+        {
+            var command = request.QueryString["command"];
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                return new TestHouseUpgradeResponse { Success = false, Error = "Missing 'command' query parameter" };
+            }
+
+            // Route through parseDebugInput so the real vanilla handler — and thus the
+            // HostFarmhouseUpgradeGuard Harmony prefix — is exercised, exactly as an admin typing it
+            // at the console would be.
+            var result = new TestHouseUpgradeResponse { Success = true };
+            await RunOnGameThreadAsync(() =>
+            {
+                Game1.game1.parseDebugInput(command);
+                result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
             });
 
             return result;

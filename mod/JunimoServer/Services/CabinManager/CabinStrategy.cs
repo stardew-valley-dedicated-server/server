@@ -13,10 +13,12 @@ namespace JunimoServer.Services.CabinManager
         CabinStack,
 
         /// <summary>
-        /// Use one instanced Farmhouse.
+        /// Hidden cabins that exit at the main farmhouse's front door.
         ///
-        /// All cabins remain hidden. Cabin door warps are redirected to the main farmhouse,
-        /// so every player shares the farmhouse interior.
+        /// All cabins remain hidden and each player keeps their own cabin interior. Cabin-exit
+        /// warps are redirected to the main farmhouse's front-door tile on the Farm map, so every
+        /// player steps out at the same spot. The main farmhouse interior stays reserved for the
+        /// server host — players entering it are warped back to their own cabin.
         /// </summary>
         FarmhouseStack,
 
