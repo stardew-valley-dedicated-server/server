@@ -8,6 +8,7 @@ using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Services.Settings;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -3830,7 +3831,7 @@ namespace JunimoServer.Services.Api
                 }
 
                 _roleService.AssignAdmin(farmer.UniqueMultiplayerID);
-                Monitor.Log($"Admin role granted to '{farmer.Name}' (ID: {farmer.UniqueMultiplayerID}) via API", LogLevel.Info);
+                Monitor.Log($"Admin role granted to '{ChatRedaction.MaskValue(farmer.Name)}' (ID: {farmer.UniqueMultiplayerID}) via API", LogLevel.Info);
 
                 result = new RoleGrantResponse
                 {
@@ -3914,7 +3915,7 @@ namespace JunimoServer.Services.Api
 
                     var resolvedName = targetFarmhand.Name ?? string.Empty;
                     ExecuteFarmhandDeletion(targetFarmhand.UniqueMultiplayerID, resolvedName);
-                    Monitor.Log($"Deleted farmhand '{resolvedName}' (ID: {targetFarmhand.UniqueMultiplayerID})", LogLevel.Info);
+                    Monitor.Log($"Deleted farmhand '{ChatRedaction.MaskValue(resolvedName)}' (ID: {targetFarmhand.UniqueMultiplayerID})", LogLevel.Info);
                     result = new FarmhandResponse
                     {
                         Success = true,
@@ -3966,7 +3967,7 @@ namespace JunimoServer.Services.Api
             if (targetCabin != null)
             {
                 _cabinManager.DestroyCabin(cabinBuilding);
-                Monitor.Log($"Destroyed cabin for farmhand '{farmhandName}'", LogLevel.Debug);
+                Monitor.Log($"Destroyed cabin for farmhand '{ChatRedaction.MaskValue(farmhandName)}'", LogLevel.Debug);
             }
             else
             {
@@ -3983,16 +3984,16 @@ namespace JunimoServer.Services.Api
                             && cabin.farmhandReference.uid.Value == farmhandId)
                         {
                             cabin.farmhandReference.Value = null;
-                            Monitor.Log($"Cleared dangling farmhandReference on cabin '{cabin.NameOrUniqueName}' for farmhand '{farmhandName}' (id={farmhandId})", LogLevel.Warn);
+                            Monitor.Log($"Cleared dangling farmhandReference on cabin '{cabin.NameOrUniqueName}' for farmhand '{ChatRedaction.MaskValue(farmhandName)}' (id={farmhandId})", LogLevel.Warn);
                         }
                     }
 
-                    Monitor.Log($"No cabin found for farmhand '{farmhandName}', removing from farmhandData directly", LogLevel.Warn);
+                    Monitor.Log($"No cabin found for farmhand '{ChatRedaction.MaskValue(farmhandName)}', removing from farmhandData directly", LogLevel.Warn);
                     Game1.netWorldState.Value.farmhandData.Remove(farmhandId);
                 }
                 else
                 {
-                    Monitor.Log($"Farmhand '{farmhandName}' already deleted (no cabin or farmhandData found)", LogLevel.Debug);
+                    Monitor.Log($"Farmhand '{ChatRedaction.MaskValue(farmhandName)}' already deleted (no cabin or farmhandData found)", LogLevel.Debug);
                     return;
                 }
             }

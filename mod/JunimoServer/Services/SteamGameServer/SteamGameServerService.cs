@@ -1,5 +1,6 @@
 using System;
 using HarmonyLib;
+using JunimoServer.Shared;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -169,11 +170,11 @@ namespace JunimoServer.Services.SteamGameServer
             _monitor.Log($"Connected to Steam servers!", LogLevel.Info);
             _monitor.Log($"Server Steam ID: {_serverSteamId.m_SteamID}", LogLevel.Info);
 
-            // Log the public IP if available
+            // Log the public IP if available (masked — captured into the public report).
             var publicIp = Steamworks.SteamGameServer.GetPublicIP();
             if (publicIp.IsSet())
             {
-                _monitor.Log($"Server public IP: {publicIp}", LogLevel.Info);
+                _monitor.Log($"Server public IP: {ChatRedaction.MaskIp(publicIp.ToString())}", LogLevel.Info);
             }
 
             // Check relay network status

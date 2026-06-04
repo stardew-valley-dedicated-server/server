@@ -1,4 +1,5 @@
 using JunimoServer.Services.Lobby;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -111,7 +112,7 @@ namespace JunimoServer.Services.NetworkTweaks
                         Game1.player.team.endOfNightStatus.GetStatusText(farmer.UniqueMultiplayerID) != "ready"
                     ))
                     {
-                        _monitor.Log($"Kicking {farmer.Name} because they aren't ready");
+                        _monitor.Log($"Kicking {ChatRedaction.MaskValue(farmer.Name)} because they aren't ready");
                         Game1.server.kick(farmer.UniqueMultiplayerID);
                     }
                 });

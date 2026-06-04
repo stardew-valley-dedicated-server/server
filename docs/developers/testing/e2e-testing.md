@@ -175,8 +175,7 @@ The E2E smoke suite runs from `.github/workflows/e2e-tests.yml` (`workflow_dispa
 only — the coordinator runs on the GitHub runner; the game containers run on a
 remote VPS over SSH). That workflow is the source of truth for CI invocation.
 
-Results surface in two GitHub-native places, both produced from artifacts the
-runner already emits:
+Results surface in three places, all produced from artifacts the runner emits:
 
 - **Job Summary tab** — the [CTRF reporter action](https://github.com/ctrf-io/github-test-reporter)
   renders `runs/{id}/ctrf-report.json` into a pass/fail + failed-tests table. No
@@ -185,12 +184,75 @@ runner already emits:
   SPA with the run snapshot inlined and screenshots/videos copied alongside.
   Download it and open `report/index.html` over `file://`; screenshots and videos
   play without a running server.
+- **Hosted report URL (optional)** — when Cloudflare R2 is configured (see below),
+  the bundle is published to `…/e2e/{branch}/{run-id}/index.html` and linked from
+  the Job Summary, so the interactive report (with playing videos) can be opened
+  directly and shared. Per-branch history is kept; an R2 lifecycle rule expires
+  reports after 30 days.
 
 Under `CI` (or with the `--report` flag locally), the runner assembles that
 bundle into `TestResults/runs/{id}/report/` after the run — it requires the
 test-UI SPA to be built first (the workflow runs `bun run build` in
 `tests/test-ui`). Locally, `make test-web-report FILTER=<name>` does the same
 build-then-report in one step.
+
+### Hosted report (Cloudflare R2)
+
+The hosted-report URL is **optional**: with none of the `R2_*` secrets set, the
+publish step skips cleanly and the run stays green — the `e2e-web-report` artifact
+is always the fallback. GitHub Pages is deliberately not used (its ~1 GB limit is
+smaller than a single recording-heavy run, and the docs already own the Pages site).
+R2 gives 10 GB free with zero egress fees, so videos stream without cost.
+
+The bucket is **public-read, token-write**: reads are world-readable (anyone with the
+link opens the report), but uploads require the write token (only CI has it). The
+published snapshot is redacted (IPs, Steam credentials, player names, keys masked — see
+"Redaction" below), but because the bucket is public, treat it as a hard rule that
+**secrets must never be logged in the first place**.
+
+One-time setup (Cloudflare dashboard, outside this repo):
+
+1. Create an R2 bucket (e.g. `sdvd-e2e-reports`).
+2. Enable **public read** access (managed `r2.dev` subdomain or a custom domain); record
+   the public base URL. Do not grant public write — writes use the API token (step 4).
+3. Add an **object-lifecycle rule** on the bucket to expire objects after 30 days
+   (scope it to the `e2e/` prefix). This is the retention mechanism — R2 deletes old
+   reports server-side, so CI does no pruning.
+4. Create an R2 API token scoped to **Object Read & Write** → Access Key ID + Secret.
+   This token is the only write path; keep it in the `test-vps` environment, never public.
+5. Add these as secrets in the **`test-vps`** GitHub Environment (same scoping as the
+   other E2E secrets):
+
+   | Secret | Value |
+   |--------|-------|
+   | `R2_ACCOUNT_ID` | Cloudflare account ID (the `<id>` in the S3 endpoint) |
+   | `R2_ACCESS_KEY_ID` | R2 API token access key |
+   | `R2_SECRET_ACCESS_KEY` | R2 API token secret |
+   | `R2_BUCKET` | Bucket name (e.g. `sdvd-e2e-reports`) |
+   | `R2_PUBLIC_BASE_URL` | Public base URL of the bucket (no trailing slash) |
+
+The publish step runs `aws s3 sync` against R2's S3-compatible endpoint
+(`https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com`). It is wrapped in
+`continue-on-error: true` with internal config/credential guards, so a missing or
+broken R2 never fails the test run.
+
+### Redaction
+
+The published report inlines captured server logs, so it is redacted in two layers
+(defense-in-depth) before reaching the public URL:
+
+- **At the mod source** — `ChatRedaction.MaskIp`/`MaskValue` mask the server's IP banner,
+  the public-IP log line, the Steam SDR ID, invite codes, and player names where the mod
+  logs them. Values are masked in place (`46.38.238.188` → `***.***.***.188`,
+  `secret` → `s***t`) so the diagnostic shape survives.
+- **At the report boundary** — `ReportRedactor.Scrub` runs over the whole snapshot before
+  publishing: it masks values the runner knows exactly (the VPS host/IP from
+  `SDVD_DOCKER_HOSTS`, Steam credentials from `STEAM_ACCOUNTS`) plus high-confidence
+  patterns (private-key blocks, `/run/secrets`, `password=`/`token=` assignments,
+  `user@host`). It deliberately does **not** mask bare IPs by regex (a version string like
+  `Unix 6.1.0.17` is indistinguishable from an IP) — those are caught at the mod source
+  and by the known-value set. If redaction ever yields invalid JSON, the report is not
+  published (fail-closed).
 
 ## Troubleshooting
 

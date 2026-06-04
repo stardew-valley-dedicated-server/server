@@ -1,4 +1,5 @@
 using JunimoServer.Services.SteamGameServer;
+using JunimoServer.Shared;
 using StardewModdingAPI;
 using StardewValley.SDKs.GogGalaxy;
 using System.Collections.Generic;
@@ -48,27 +49,32 @@ namespace JunimoServer.Util
 
             var networkingLines = GetNetworkingStatus();
 
+            // IPs are masked: the banner is captured into the public E2E report, so it
+            // must not disclose the host's real addresses (keep the last octet for shape).
             var bannerLines = new List<string>
             {
                 $"JunimoServer {version}",
                 "",
-                $"✓ Local:   {NetworkHelper.GetIpAddressLocal()}",
-                $"{externalIcon} Network: {externalIpValue}",
+                $"✓ Local:   {ChatRedaction.MaskIp(NetworkHelper.GetIpAddressLocal().ToString())}",
+                $"{externalIcon} Network: {ChatRedaction.MaskIp(externalIpValue)}",
                 "",
             };
 
             bannerLines.AddRange(networkingLines);
             bannerLines.Add("");
 
+            // Invite codes let anyone join, so they're masked in the banner (which is
+            // captured into the public report). The real code is still served verbatim
+            // via /tmp/invite-code.txt and the API for legitimate clients.
             if (SteamGameServerService.IsInitialized && inviteCode != null)
             {
                 var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
-                bannerLines.Add($"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{baseCode}");
-                bannerLines.Add($"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{baseCode}");
+                bannerLines.Add($"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{ChatRedaction.MaskValue(baseCode)}");
+                bannerLines.Add($"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{ChatRedaction.MaskValue(baseCode)}");
             }
             else
             {
-                bannerLines.Add($"Invite Code: {inviteCode ?? "n/a"}");
+                bannerLines.Add($"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "n/a")}");
             }
 
             monitor.LogBanner(bannerLines.ToArray());
@@ -81,8 +87,10 @@ namespace JunimoServer.Util
             // Steam GameServer (SDR) status
             if (SteamGameServerService.IsInitialized)
             {
+                // Masked: the SDR ID identifies the hosting Steam account and the banner
+                // is captured into the public report.
                 var steamId = SteamGameServerService.ServerSteamId.m_SteamID;
-                lines.Add($"✓ Steam SDR: {steamId}");
+                lines.Add($"✓ Steam SDR: {ChatRedaction.MaskValue(steamId.ToString())}");
             }
             else
             {

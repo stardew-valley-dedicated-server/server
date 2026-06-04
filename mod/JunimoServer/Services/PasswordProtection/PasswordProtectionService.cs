@@ -245,20 +245,20 @@ namespace JunimoServer.Services.PasswordProtection
             }
 
             _instance._monitor.Log(
-                $"[Auth] Clearing homeLocation '{home}' ({reason}) for '{farmer.Name}' (id={farmer.UniqueMultiplayerID})",
+                $"[Auth] Clearing homeLocation '{home}' ({reason}) for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID})",
                 LogLevel.Info);
             farmer.homeLocation.Value = "";
 
             if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
             {
                 _instance._monitor.Log(
-                    $"[Auth] Reassigned '{farmer.Name}' (id={farmer.UniqueMultiplayerID}) to real cabin: homeLocation='{farmer.homeLocation.Value}'",
+                    $"[Auth] Reassigned '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) to real cabin: homeLocation='{farmer.homeLocation.Value}'",
                     LogLevel.Info);
             }
             else
             {
                 _instance._monitor.Log(
-                    $"[Auth] TryAssignFarmhandHome failed for '{farmer.Name}' (id={farmer.UniqueMultiplayerID}) - no available cabin",
+                    $"[Auth] TryAssignFarmhandHome failed for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) - no available cabin",
                     LogLevel.Warn);
             }
         }
@@ -307,7 +307,7 @@ namespace JunimoServer.Services.PasswordProtection
 
             var isNewPlayer = !farmer.Value.isCustomized.Value;
             var playerType = isNewPlayer ? "new" : "returning";
-            _monitor.Log($"[Auth] {farmer.Value.Name} ({playerType}) connecting", LogLevel.Debug);
+            _monitor.Log($"[Auth] {ChatRedaction.MaskValue(farmer.Value.Name)} ({playerType}) connecting", LogLevel.Debug);
 
             // Create auth tracking
             var authData = new PlayerAuthData(farmerId)
@@ -793,7 +793,7 @@ namespace JunimoServer.Services.PasswordProtection
                         var cabin = building.GetIndoors<Cabin>();
                         if (cabin != null && cabin.NameOrUniqueName == homeLocation)
                         {
-                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{player.Name}' (id={playerId}), " +
+                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), " +
                                 $"found via homeLocation fallback: {homeLocation}", LogLevel.Warn);
                             return cabin;
                         }
@@ -808,7 +808,7 @@ namespace JunimoServer.Services.PasswordProtection
             if (player != null && Game1.netWorldState.Value.TryAssignFarmhandHome(player))
             {
                 _monitor.Log($"[Auth] FindPlayerCabin: recovered via TryAssignFarmhandHome " +
-                    $"for '{player.Name}' (id={playerId}), homeLocation now '{player.homeLocation.Value}'", LogLevel.Warn);
+                    $"for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), homeLocation now '{player.homeLocation.Value}'", LogLevel.Warn);
 
                 foreach (var building in farm.buildings)
                 {
@@ -844,7 +844,7 @@ namespace JunimoServer.Services.PasswordProtection
                 var ownerName = ind?.owner?.Name;
                 var ownerId = ind?.owner?.UniqueMultiplayerID;
                 var isLobby = LobbyService.IsLobbyCabin(c);
-                _monitor.Log($"[Auth]   Cabin '{ind?.NameOrUniqueName}': refDefined={refDefined}, refUid={refUid}, owner='{ownerName}' (id={ownerId}), isLobby={isLobby}", LogLevel.Error);
+                _monitor.Log($"[Auth]   Cabin '{ind?.NameOrUniqueName}': refDefined={refDefined}, refUid={refUid}, owner='{ChatRedaction.MaskValue(ownerName)}' (id={ownerId}), isLobby={isLobby}", LogLevel.Error);
             }
             var inFarmhandData = Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(playerId);
             var inOtherFarmers = Game1.otherFarmers.ContainsKey(playerId);

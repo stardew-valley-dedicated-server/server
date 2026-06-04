@@ -4,6 +4,7 @@ using JunimoServer.Services.MessageInterceptors;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using Microsoft.Xna.Framework;
 using Netcode;
@@ -174,13 +175,13 @@ namespace JunimoServer.Services.CabinManager
                 {
                     if (homeStale)
                     {
-                        Monitor.Log($"Cleared stale homeLocation '{home}' from farmhand '{f.Name}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
+                        Monitor.Log($"Cleared stale homeLocation '{home}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
                         f.homeLocation.Value = "";
                         homeCleared++;
                     }
                     if (lastSleepStale)
                     {
-                        Monitor.Log($"Cleared stale lastSleepLocation '{lastSleep}' from farmhand '{f.Name}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
+                        Monitor.Log($"Cleared stale lastSleepLocation '{lastSleep}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
                         f.lastSleepLocation.Value = null;
                         lastSleepCleared++;
                     }
@@ -777,7 +778,7 @@ namespace JunimoServer.Services.CabinManager
             if (ownerId != 0 && farmhandData.FieldDict.ContainsKey(ownerId))
             {
                 Monitor.Log(
-                    $"Cabin owner {ownerId} ('{ownerName}') still in farmhandData after Cabin.DeleteFarmhand; " +
+                    $"Cabin owner {ownerId} ('{ChatRedaction.MaskValue(ownerName)}') still in farmhandData after Cabin.DeleteFarmhand; " +
                     $"not removing to preserve investigability",
                     LogLevel.Warn);
             }
