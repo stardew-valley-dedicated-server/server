@@ -793,7 +793,7 @@ namespace JunimoServer.Services.PasswordProtection
                         var cabin = building.GetIndoors<Cabin>();
                         if (cabin != null && cabin.NameOrUniqueName == homeLocation)
                         {
-                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{player.Name}' (id={playerId}), " +
+                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), " +
                                 $"found via homeLocation fallback: {homeLocation}", LogLevel.Warn);
                             return cabin;
                         }
