@@ -102,6 +102,19 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Build the test-UI SPA so the runner can assemble the offline web report
+      # (test-web) from it after the run. The runner's report path (ReportGenerator,
+      # triggered by CI) needs tests/test-ui/dist/index.html to exist; without this
+      # step it no-ops with a "SPA dist not found" warning. Mirrors build-docs.yml's
+      # Bun setup and `make build-test-ui` (bun install && bun run build →
+      # vue-tsc --noEmit && vite build).
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Build test-UI SPA
+        run: bun install && bun run build
+        working-directory: tests/test-ui
+
       # For the runner's own `make build` (the E2E step), which shells out to
       # `docker buildx build --load`. There is NO separate image-build step in
       # this job — the runner builds all three images (server, test-client,
@@ -209,6 +222,24 @@ jobs:
         run: |
           dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
 
+      # Render the run's results into the GitHub job Summary tab from the CTRF
+      # report the runner already emits (TestRunArtifactWriter.WriteCtrfReport →
+      # runs/{id}/ctrf-report.json — exactly one run per CI invocation, so the
+      # glob resolves it unambiguously). summary-report = the pass/fail table;
+      # failed-report = a table of failing tests with their error; test-list-report
+      # = the full per-test list. `summary: true` (the action default) writes to
+      # $GITHUB_STEP_SUMMARY. No PR comment — `pull-request` defaults to false and
+      # this workflow is dispatch-only with no PR context. if: always() so a failed
+      # or aborted run still surfaces its results.
+      - name: Publish CTRF results to job summary
+        if: always()
+        uses: ctrf-io/github-test-reporter@0f299074936c32ccaab5be5230511f6b2b9080aa # v1.0.28
+        with:
+          report-path: 'TestResults/runs/**/ctrf-report.json'
+          summary-report: true
+          failed-report: true
+          test-list-report: true
+
       # After the build (which seeds the BuildKit mount), write the updated NuGet
       # mount back for actions/cache to save. Gated on cache-miss only — matches
       # validate-pr.yml; do NOT add `if: always()`.
@@ -234,4 +265,18 @@ jobs:
         with:
           name: e2e-test-results
           path: TestResults/runs/
+          if-no-files-found: warn
+
+      # The self-contained offline test-web bundle (the test-UI SPA + run snapshot
+      # + copied screenshots/videos under report/artifacts/), assembled by the
+      # runner inside the run dir. Uploaded separately so reviewers can grab a
+      # clean, openable report (open report/index.html over file://) without
+      # downloading the multi-GB raw runs/ tree. if-no-files-found: warn covers an
+      # early abort before report assembly (e.g. preflight failure).
+      - name: Upload web report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-web-report
+          path: TestResults/runs/*/report/
           if-no-files-found: warn

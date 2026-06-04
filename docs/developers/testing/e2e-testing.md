@@ -171,21 +171,26 @@ TestResults/runs/{timestamp}_{sha}/tests/{Class}.{Method}/
 
 ## CI Usage
 
-### GitHub Actions Example
+The E2E smoke suite runs from `.github/workflows/e2e-tests.yml` (`workflow_dispatch`
+only — the coordinator runs on the GitHub runner; the game containers run on a
+remote VPS over SSH). That workflow is the source of truth for CI invocation.
 
-```yaml
-- name: Run E2E Tests
-  env:
-    STEAM_REFRESH_TOKEN: ${{ secrets.STEAM_REFRESH_TOKEN }}
-    SDVD_TEST_SCREENSHOTS: done
-    SDVD_TEST_RECORDING: failure
-    CI: true
-  run: |
-    make setup
-    make test-web-report FILTER=Smoke
-```
+Results surface in two GitHub-native places, both produced from artifacts the
+runner already emits:
 
-The `test-web-report` target generates a static HTML report in `TestResults/report/` that can be uploaded as a CI artifact.
+- **Job Summary tab** — the [CTRF reporter action](https://github.com/ctrf-io/github-test-reporter)
+  renders `runs/{id}/ctrf-report.json` into a pass/fail + failed-tests table. No
+  PR comment (the workflow is dispatch-only and has no PR context).
+- **`e2e-web-report` artifact** — a self-contained offline bundle of the test-UI
+  SPA with the run snapshot inlined and screenshots/videos copied alongside.
+  Download it and open `report/index.html` over `file://`; screenshots and videos
+  play without a running server.
+
+Under `CI` (or with the `--report` flag locally), the runner assembles that
+bundle into `TestResults/runs/{id}/report/` after the run — it requires the
+test-UI SPA to be built first (the workflow runs `bun run build` in
+`tests/test-ui`). Locally, `make test-web-report FILTER=<name>` does the same
+build-then-report in one step.
 
 ## Troubleshooting
 

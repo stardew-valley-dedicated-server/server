@@ -22,6 +22,7 @@ export function useScreenshotCache(): ScreenshotCache {
     if (blobCache.has(artifactPath) || fetchPending.has(artifactPath)) return
     if (artifactPath.startsWith('data:')) return // already inline
     if (artifactPath.startsWith('mock-artifacts/')) return // static files served by Vite
+    if (artifactPath.startsWith('artifacts/')) return // offline report bundle: media sits next to index.html
     fetchPending.add(artifactPath)
     fetch(`/artifacts/${artifactPath}`)
       .then(res => {
@@ -43,6 +44,9 @@ export function useScreenshotCache(): ScreenshotCache {
     if (blobCache.has(path)) return blobCache.get(path)!
     // mock-artifacts/ paths are static files served directly from public/ by Vite
     if (path.startsWith('mock-artifacts/')) return `/${path}`
+    // artifacts/ paths come from the offline report bundle, where media sits
+    // next to index.html — keep them document-relative so they resolve over file://
+    if (path.startsWith('artifacts/')) return path
     return `/artifacts/${path}`
   }
 

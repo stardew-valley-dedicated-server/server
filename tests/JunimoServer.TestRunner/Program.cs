@@ -6,6 +6,7 @@ using JunimoServer.Tests.Schema.Events;
 using JunimoServer.Tests.Schema.Json;
 using JunimoServer.TestRunner.IPC;
 using JunimoServer.TestRunner.Rendering;
+using JunimoServer.TestRunner.Rendering.Web;
 using JunimoServer.TestRunner.Setup;
 using JunimoServer.TestRunner.Sinks;
 using System.Diagnostics;
@@ -79,7 +80,7 @@ recorder.SeedRunIdentity(TestArtifacts.RunDir, RunMetadata.RunId!);
 ITestRenderer baseRenderer = mode switch
 {
     OutputMode.LLM => new LLMRenderer(recorder, verbose),
-    OutputMode.Web => new WebRenderer(recorder, generateReport),
+    OutputMode.Web => new WebRenderer(recorder),
     _ => new CIRenderer(verbose)
 };
 
@@ -672,6 +673,14 @@ finally
     {
         Console.Error.WriteLine($"[ArtifactWriter] finally-path write failed: {ex.Message}");
     }
+
+    // Assemble the offline test-web bundle (SPA + run snapshot + copied media)
+    // inside the run dir, so it rides along in the uploaded artifact tree and
+    // opens over file://. One site, every renderer mode — driven by --report or
+    // CI. No-ops with a warning when the SPA hasn't been built. Requires the
+    // final state, so it runs after WriteRunArtifacts.
+    if (generateReport || IsCIEnvironment())
+        ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir);
 
     // Dev-mode Web runs that completed normally: hold the browser open
     // until the operator presses a key (or signals shutdown). Skipped on
