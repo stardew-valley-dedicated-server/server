@@ -79,6 +79,9 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         public Task RequestReloadSave()
         {
+            // Reload returns to title intentionally. Flag it so AlwaysOn.OnReturnedToTitle
+            // treats this as expected instead of logging a critical (test-poisoning) error.
+            IsNewGamePending = true;
             _pendingReload = true;
             _reloadCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _gameStarted = false;
@@ -147,6 +150,9 @@ namespace JunimoServer.Services.GameManager
             if (_pendingReload)
             {
                 _pendingReload = false;
+                // Clear here (not only on success) so a failed reload doesn't leave the
+                // intent flag stuck true, which would mask a later genuine crash-to-title.
+                IsNewGamePending = false;
                 try
                 {
                     Monitor.Log("Reloading current world from API request", LogLevel.Info);
@@ -160,7 +166,7 @@ namespace JunimoServer.Services.GameManager
                 }
                 catch (Exception ex)
                 {
-                    Monitor.Log($"World reload failed: {ex}", LogLevel.Error);
+                    Monitor.Log($"World reload failed: {ex}", LogLevel.Warn);
                     _reloadCompletion?.TrySetException(ex);
                 }
                 _reloadCompletion = null;
