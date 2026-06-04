@@ -680,7 +680,7 @@ finally
     // CI. No-ops with a warning when the SPA hasn't been built. Requires the
     // final state, so it runs after WriteRunArtifacts.
     if (generateReport || IsCIEnvironment())
-        ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir);
+        ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir, CollectKnownSecrets());
 
     // Dev-mode Web runs that completed normally: hold the browser open
     // until the operator presses a key (or signals shutdown). Skipped on
@@ -728,6 +728,44 @@ static bool IsCIEnvironment()
     => Environment.GetEnvironmentVariable("CI") != null
        || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null
        || Environment.GetEnvironmentVariable("TF_BUILD") != null;
+
+/// <summary>
+/// Collects the sensitive values the runner knows, for the report redactor to mask out
+/// of the published (public) snapshot: Steam credentials from <c>STEAM_ACCOUNTS</c> and
+/// each remote host's <c>user@host</c> + bare host from <see cref="HostPool"/>. Best-effort
+/// — any failure yields an empty set (the redactor's regex pass still runs).
+/// </summary>
+static IReadOnlyCollection<string> CollectKnownSecrets()
+{
+    var secrets = new HashSet<string>(StringComparer.Ordinal);
+
+    try
+    {
+        var accountsJson = Environment.GetEnvironmentVariable("STEAM_ACCOUNTS");
+        foreach (var account in JunimoServer.Tests.Schema.Json.UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", accountsJson))
+        {
+            foreach (var field in new[] { "user", "pass", "refreshToken" })
+                if (account?[field]?.GetValue<string>() is { Length: > 0 } v)
+                    secrets.Add(v);
+        }
+    }
+    catch { /* malformed STEAM_ACCOUNTS — rely on regex + host values */ }
+
+    try
+    {
+        foreach (var host in HostPool.Instance.Hosts)
+        {
+            if (string.IsNullOrEmpty(host.SshDestination)) continue;
+            secrets.Add(host.SshDestination);                       // user@host
+            var at = host.SshDestination.IndexOf('@');
+            if (at >= 0 && at < host.SshDestination.Length - 1)
+                secrets.Add(host.SshDestination[(at + 1)..]);       // bare host / IP
+        }
+    }
+    catch { /* host pool unavailable — rely on regex + steam values */ }
+
+    return secrets;
+}
 
 /// <summary>
 /// Unwrap a <see cref="RendererDispatchGuard"/> to its inner renderer for type

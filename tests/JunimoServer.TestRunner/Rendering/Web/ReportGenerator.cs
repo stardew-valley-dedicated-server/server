@@ -19,12 +19,15 @@ public sealed class ReportGenerator
     private readonly TestRunState _state;
     private readonly string _spaDistPath;
     private readonly string _testResultsPath;
+    private readonly IReadOnlyCollection<string> _knownSecrets;
 
-    public ReportGenerator(TestRunState state, string spaDistPath, string testResultsPath)
+    public ReportGenerator(TestRunState state, string spaDistPath, string testResultsPath,
+        IReadOnlyCollection<string> knownSecrets)
     {
         _state = state;
         _spaDistPath = spaDistPath;
         _testResultsPath = testResultsPath;
+        _knownSecrets = knownSecrets;
     }
 
     /// <summary>
@@ -32,9 +35,10 @@ public sealed class ReportGenerator
     /// the runner's finally regardless of renderer mode. Resolves the built SPA,
     /// writes the bundle inside <paramref name="runDir"/> (so it rides along in
     /// the uploaded per-run artifact tree), and no-ops with a warning when the
-    /// SPA has not been built. Never throws.
+    /// SPA has not been built. <paramref name="knownSecrets"/> are masked out of the
+    /// published snapshot (see <see cref="ReportRedactor"/>). Never throws.
     /// </summary>
-    public static void TryGenerate(TestRunState state, string runDir)
+    public static void TryGenerate(TestRunState state, string runDir, IReadOnlyCollection<string> knownSecrets)
     {
         try
         {
@@ -46,7 +50,7 @@ public sealed class ReportGenerator
                 return;
             }
 
-            new ReportGenerator(state, spaDistPath, runDir).Generate();
+            new ReportGenerator(state, spaDistPath, runDir, knownSecrets).Generate();
         }
         catch (Exception ex)
         {
@@ -77,15 +81,10 @@ public sealed class ReportGenerator
         return null;
     }
 
-    public void Generate()
+    // Assumes the SPA index.html exists — TryGenerate (the only caller) verifies it.
+    private void Generate()
     {
         var indexPath = Path.Combine(_spaDistPath, "index.html");
-        if (!File.Exists(indexPath))
-        {
-            Console.Error.WriteLine("WARNING: Report generation skipped. index.html not found in SPA dist.");
-            return;
-        }
-
         var reportDir = Path.Combine(_testResultsPath, "report");
         Directory.CreateDirectory(reportDir);
 
@@ -101,6 +100,21 @@ public sealed class ReportGenerator
             Path.Combine(reportDir, BundleArtifactsDir),
             BundleArtifactsDir,
             _testResultsPath);
+
+        // Redact secrets/infra before the snapshot is published to the public report.
+        // Runs after the media-path rewrite so the artifacts/<hash> paths are preserved.
+        snapshotJson = ReportRedactor.Scrub(snapshotJson, _knownSecrets);
+
+        // Fail closed: if redaction somehow produced invalid JSON, do NOT publish the
+        // bundle (an unredacted fallback could leak). Masked output can't break JSON by
+        // construction, so this is a backstop that should never trip.
+        try { using var _ = JsonDocument.Parse(snapshotJson); }
+        catch (JsonException ex)
+        {
+            Console.Error.WriteLine(
+                $"WARNING: Report generation aborted — redacted snapshot is not valid JSON ({ex.Message}). Not publishing.");
+            return;
+        }
 
         // Inject state JSON using a safe script tag
         // System.Text.Json's default encoder escapes <, >, & (safe against </script> breakout)
