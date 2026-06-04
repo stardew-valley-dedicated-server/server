@@ -175,6 +175,9 @@ namespace JunimoServer.Services.GameManager
                 }
                 catch (Exception ex)
                 {
+                    // Reset startup so the next tick retries ConditionallyStartGame instead
+                    // of early-returning on _gameStarted and parking the server at title.
+                    _gameStarted = false;
                     Monitor.Log($"World reload failed: {ex}", LogLevel.Warn);
                     _reloadCompletion?.TrySetException(ex);
                 }
