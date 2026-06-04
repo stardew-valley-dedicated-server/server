@@ -4095,7 +4095,10 @@ namespace JunimoServer.Services.Api
         private async Task HandlePostReloadAsync(HttpListenerResponse response)
         {
             // Validate no clients are connected — reload returns to title and would
-            // disconnect everyone (same precondition as /newgame).
+            // disconnect everyone. Fail closed: if the count can't be read because the
+            // game thread is busy, treat it as transient (503) rather than assuming 0
+            // connected, which could silently disconnect active players if the thread
+            // recovers before the reload fires.
             int connectedClients = 0;
             try
             {
@@ -4104,9 +4107,16 @@ namespace JunimoServer.Services.Api
                     connectedClients = Game1.otherFarmers.Count;
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                // Game thread unavailable; allow the attempt anyway
+                Monitor.Log($"[API] Reload precheck could not read connected-client count: {ex.Message}", LogLevel.Warn);
+                response.StatusCode = 503;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = "Cannot verify connected clients right now (game thread busy, likely a day transition or save sync). Retry after a few seconds."
+                });
+                return;
             }
 
             if (connectedClients > 0)
