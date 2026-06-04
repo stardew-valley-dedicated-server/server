@@ -3918,8 +3918,12 @@ namespace JunimoServer.Services.Api
                 }
             }
 
-            // Remove from cabin manager tracking
-            if (_cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId))
+            // Remove from cabin manager tracking. PlayerCabinPositions shares the
+            // farmhand's lifecycle, so clear its intent entry here too — otherwise a
+            // deleted player's position record leaks into the save indefinitely.
+            var removedEverJoined = _cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId);
+            var removedPosition = _cabinManager.Data.PlayerCabinPositions.TryRemove(farmhandId, out _);
+            if (removedEverJoined || removedPosition)
             {
                 _cabinManager.Data.Write();
                 Monitor.Log($"Removed farmhand from cabin tracking", LogLevel.Debug);
