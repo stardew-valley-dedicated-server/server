@@ -1356,7 +1356,10 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<NewGameResponse?> ReloadAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsync("/reload", content: null, ct);
+        // Reload runs during title/save transitions, where the game thread is most
+        // likely busy and the server returns a transient 503. Go through the retry
+        // helper so those are retried transparently like every other mutating call.
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/reload", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<NewGameResponse>(ct);
     }
