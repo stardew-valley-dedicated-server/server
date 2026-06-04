@@ -171,9 +171,11 @@ TestResults/runs/{timestamp}_{sha}/tests/{Class}.{Method}/
 
 ## CI Usage
 
-The E2E smoke suite runs from `.github/workflows/e2e-tests.yml` (`workflow_dispatch`
+The E2E suite runs from `.github/workflows/e2e-tests.yml` (`workflow_dispatch`
 only — the coordinator runs on the GitHub runner; the game containers run on a
-remote VPS over SSH). That workflow is the source of truth for CI invocation.
+remote VPS over SSH). A bare dispatch runs the full suite; the optional `filter`
+input narrows it to a class/method. That workflow is the source of truth for CI
+invocation.
 
 Results surface in three places, all produced from artifacts the runner emits:
 
