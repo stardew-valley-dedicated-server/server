@@ -12,7 +12,7 @@ How to configure `SDVD_DOCKER_HOSTS` for multi-host runs and how `STEAM_ACCOUNTS
 | `serverSlots` | yes | Concurrent server containers this host can run. Combined with other hosts via Hamilton allocation. |
 | `clientSlots` | yes | Concurrent client containers this host can run. Sets the upper bound on how many clients a server on this host can serve concurrently. |
 | `endpoint` | no | `ssh://user@machine` for remote daemons. Omit for the local Docker daemon. |
-| `sshKey` | no | Path to a private key (relative paths anchor at the project root, `~` is expanded). Omit to use `~/.ssh/config` + ssh-agent. |
+| `sshKey` | no | Either a path to a private key (relative paths anchor at the project root, `~` is expanded), or inline key material (a `-----BEGIN…` block, written to a 0600 temp file — used in CI so the whole `SDVD_DOCKER_HOSTS` JSON, key included, can live in one secret). Omit to use `~/.ssh/config` + ssh-agent. |
 | `socketPath` | no | Remote Unix socket path. Defaults to `/var/run/docker.sock` (the standard Docker location). Override for hosts where the daemon listens elsewhere — most commonly macOS Docker Desktop's per-user `~/.docker/run/docker.sock`. Ignored for local entries. |
 | `gpu` | no | `true` if this host has an NVIDIA GPU + Container Toolkit. Defaults to `false`. Per-host so a fleet can mix GPU workstations and CPU-only VPSes. |
 | `concurrentStarts` | no | Cap on simultaneous `docker create+start` calls against this daemon. When omitted, falls back to `SDVD_MAX_CONCURRENT_STARTS` (if set) and otherwise to this host's `serverSlots + clientSlots`. Independent across hosts. |

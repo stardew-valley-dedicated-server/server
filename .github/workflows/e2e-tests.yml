@@ -1,0 +1,237 @@
+# Runs the heavy Docker E2E suite as a smoke subset. The coordinator
+# (JunimoServer.TestRunner, a net10.0 app) runs here on ubuntu-latest; the actual
+# Stardew game containers run on a remote VPS reached over SSH — the harness's
+# existing multi-host model with SDVD_DOCKER_HOSTS set to a VPS-only fleet.
+#
+# workflow_dispatch only — never automatic. E2E depends on an external VPS being
+# up; that availability risk must never gate the merge queue. Manual-from-a-
+# trusted-branch also keeps the VPS SSH key and Steam secrets away from fork code.
+# Do NOT add pull_request_target / push / schedule / merge_group. A future move to
+# any automatic trigger would first require copying validate-pr.yml's authorize /
+# fork-pr environment gate (the VPS private key reaching fork code = root on the
+# test VPS via the docker group), and must never become a required check.
+#
+# All secrets resolve from the `test-vps` GitHub Environment (the same per-
+# environment mechanism deploy-server.yml uses), not loose repo-level secrets.
+name: E2E Tests (Smoke)
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'Test filter (xUnit class/method substring)'
+        required: false
+        default: 'ServerSettingsTests'
+
+permissions:
+  contents: read
+
+# Cancel superseded dispatches. Keyed on github.ref — a dispatch has no PR number.
+# A cancel triggers the runner's abort path (writes summary.json, sweeps VPS
+# containers by run-id).
+concurrency:
+  group: e2e-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-smoke:
+    name: E2E Smoke (VPS)
+    runs-on: ubuntu-latest
+    # Holds the Steam + SSH secrets. Mirrors deploy-server.yml's per-environment
+    # secret scoping.
+    environment: test-vps
+    # Generous headroom for a cold first run: server + test-client + steam-service
+    # image builds, the one-time ~250 MB game-data stream to the VPS, a remote
+    # server cold-start (slower than local), plus a handful of HTTP asserts.
+    # Tighten toward ~20 once steady-state.
+    timeout-minutes: 30
+
+    # Non-secret runner config shared by every step. The Steam secrets are scoped
+    # to the two steps that consume them (populate + run), not broadcast here.
+    env:
+      CI: "true"
+      # SDVD_IMAGE_TAG=local ⇒ PullPolicy.Never on the VPS (ServerContainer): the
+      # VPS never pulls sdvd/server:local from a registry — the run depends
+      # entirely on ImageDistributor having streamed the freshly-built image to
+      # the VPS daemon (build local → stream → skip-when-digests-match). A
+      # broken/skipped distribution surfaces as a container-create "image not
+      # found" on the VPS, not a pull retry. Keep this `local`.
+      SDVD_IMAGE_TAG: local
+      SDVD_STOP_ON_FAIL: "true"
+      # Rendering + recording knobs, mirrored from the local .env.test so a CI run
+      # behaves like a local `make test` run (watchable video per test). FPS > 0
+      # turns on the in-container draw loop AND the video recorder; on this
+      # gpu:false VPS the recorder uses libx264 software encoding (no NVENC). The
+      # .mp4 clips land under TestResults/runs/ and are uploaded as artifacts.
+      # SDVD_TEST_SCREENSHOTS / SDVD_TEST_TRACING are intentionally unset here
+      # (as in .env.test) so they take their defaults.
+      SERVER_TPS: "5"
+      SERVER_FPS: "5"
+      CLIENT_TPS: "5"
+      CLIENT_FPS: "5"
+      SDVD_TEST_RECORDING: all
+      DISPLAY_WIDTH: "640"
+      DISPLAY_HEIGHT: "360"
+      # Consumed by `make build` as --build-arg BUILD_CONFIGURATION (Makefile),
+      # inherited by the runner's in-process `make build` subprocess. Not read by
+      # any C#. The Makefile default is Debug; pin Release for CI.
+      BUILD_CONFIGURATION: Release
+      # The harness's host-fleet config, verbatim — set as ONE GitHub secret in
+      # the test-vps environment, exactly as you'd put it in .env.test locally.
+      # It carries the whole VPS-only fleet: id / endpoint (ssh://user@host, keep
+      # the VPS on port 22 — SDVD_DOCKER_HOSTS has no port field) / serverSlots /
+      # clientSlots / gpu:false (recording uses libx264 software encode), AND the SSH
+      # private key INLINE in the `sshKey` field (a "-----BEGIN…" block). HostPool
+      # writes inline key material to a 0600 temp file at startup and resolves
+      # `sshKey` to that path, so no key-file step is needed here. Shape the
+      # secret like:
+      #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
+      #     "clientSlots":2,"gpu":false,
+      #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
+      SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # The coordinator is a net10.0 app that runs HERE on the runner (the mod
+      # builds inside Docker; the runner does not). .NET 10 is GA, so the default
+      # quality channel resolves a stable SDK — no preview pin needed.
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # For the runner's own `make build` (the E2E step), which shells out to
+      # `docker buildx build --load`. There is NO separate image-build step in
+      # this job — the runner builds all three images (server, test-client,
+      # steam-service) in-process.
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # The Dockerfile uses a BuildKit `--mount=type=cache` for /root/.nuget/packages
+      # that BuildKit does not persist across runs. The cache-dance bridges that:
+      # actions/cache persists a local nuget-cache-mount dir, the inject step seeds
+      # the BuildKit mount from it before the build, and the extract step (after)
+      # writes the updated mount back. Mirrors validate-pr.yml — but with no
+      # `changes`-job gating (this job always builds).
+      - name: Cache NuGet mount
+        id: nuget-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: nuget-cache-mount
+          key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
+
+      - name: Inject NuGet mount
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          skip-extraction: ${{ steps.nuget-cache.outputs.cache-hit }}
+
+      # Seed known_hosts so the runner's `ssh -M` master is non-interactive. The
+      # master spawns with BatchMode=yes and the default known_hosts file (no
+      # StrictHostKeyChecking override, TunnelManager.SpawnMasterAsync), so an
+      # unknown host key is a hard failure — this keyscan is mandatory, not
+      # cosmetic. The host(s) are parsed out of SDVD_DOCKER_HOSTS itself (strip
+      # the ssh:// scheme and any user@), so there's no separate host secret to
+      # keep in sync. The private key is NOT written here — HostPool materializes
+      # the inline `sshKey` to its own 0600 temp file.
+      #
+      # SECURITY: the jq below extracts ONLY `.endpoint`. Never change it to read
+      # `.sshKey` (or pipe the raw $SDVD_DOCKER_HOSTS to stdout). `jq -r .sshKey`
+      # would emit the DECODED key with real newlines — different bytes than the
+      # registered secret, so GitHub's log masker would NOT redact it, leaking the
+      # private key into public CI logs.
+      - name: Trust VPS host key
+        env:
+          SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          hosts=$(printf '%s' "$SDVD_DOCKER_HOSTS" \
+            | jq -r '.[] | select(.endpoint) | .endpoint' \
+            | sed -E 's#^ssh://##; s#^[^@]*@##')
+          if [ -z "$hosts" ]; then
+            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS — cannot keyscan." >&2
+            exit 1
+          fi
+          for h in $hosts; do
+            echo "Scanning host key for $h"
+            ssh-keyscan -t rsa,ecdsa,ed25519 "$h" >> ~/.ssh/known_hosts 2>/dev/null
+          done
+          chmod 644 ~/.ssh/known_hosts
+
+      # Populate the LOCAL server_game-data volume — the precondition for
+      # GameDataDistributor, which throws if the local volume is empty (it probes
+      # for /data/StardewValley inside it) and otherwise streams it to the VPS.
+      # STEAM_ACCOUNTS is the single source of Steam credentials: steam-service's
+      # DiscoverAccounts() reads STEAM_ACCOUNTS (JSON) first and only falls back
+      # to bare STEAM_USERNAME/PASSWORD when it's absent (tools/steam-service/
+      # Program.cs). compose doesn't map STEAM_ACCOUNTS into the steam-auth
+      # service, so we forward it with `-e STEAM_ACCOUNTS` (value comes from this
+      # step's env, never the command line) — the CI analogue of `make setup`,
+      # which injects .env.test (carrying STEAM_ACCOUNTS) via --env-from-file.
+      # `download` logs in headlessly (no 2FA on the test accounts → no Steam
+      # Guard) and fills /data/game. COMPOSE_PROJECT_NAME=server pins the volume
+      # name to the hardcoded `server_game-data` (ServerContainerOptions);
+      # IMAGE_VERSION=local makes compose resolve the locally-built
+      # sdvd/steam-service:local rather than the :latest default.
+      - name: Populate local game-data volume
+        env:
+          COMPOSE_PROJECT_NAME: server
+          IMAGE_VERSION: local
+          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
+        run: |
+          docker compose build steam-auth
+          docker compose run --rm -e STEAM_ACCOUNTS steam-auth download
+
+      # The whole pipeline in one command. The runner builds all three images
+      # in-process (reading STEAM_ACCOUNTS[0] for the Steam --secret login),
+      # streams them + the game-data volume to the VPS, then runs the filtered
+      # tests there. --filter is a substring match against the FQ test name, so a
+      # class name runs that class. STEAM_ACCOUNTS is required here from the very
+      # first run — without it the in-process image build fails with a Steam-login
+      # error.
+      - name: Run E2E smoke
+        env:
+          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
+          # Pass the (operator-controlled) filter through the environment, not
+          # interpolated into the command line, so its value can never be parsed
+          # as shell. The input already defaults to ServerSettingsTests; the
+          # fallback covers an explicitly-cleared input.
+          FILTER: ${{ inputs.filter || 'ServerSettingsTests' }}
+        run: |
+          dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
+
+      # After the build (which seeds the BuildKit mount), write the updated NuGet
+      # mount back for actions/cache to save. Gated on cache-miss only — matches
+      # validate-pr.yml; do NOT add `if: always()`.
+      - name: Extract NuGet mount
+        if: steps.nuget-cache.outputs.cache-hit != 'true'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: nuget-cache-mount
+          cache-map: |
+            {
+              "nuget-cache-mount": "/root/.nuget/packages"
+            }
+          extract: true
+
+      # Per-run artifact tree: summary.json, ctrf-report.json, run-metadata.json,
+      # diagnostics/infrastructure.jsonl, tests/{Class}.{Method}/, containers/...
+      # (TestArtifacts: TestResults/runs/{timestamp}_{sha}/). Always upload so a
+      # failed or aborted run is still inspectable.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-test-results
+          path: TestResults/runs/
+          if-no-files-found: warn
