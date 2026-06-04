@@ -3693,13 +3693,25 @@ namespace JunimoServer.Services.Api
 
             // Route through parseDebugInput so the real vanilla handler — and thus the
             // HostFarmhouseUpgradeGuard Harmony prefix — is exercised, exactly as an admin typing it
-            // at the console would be.
-            var result = new TestHouseUpgradeResponse { Success = true };
-            await RunOnGameThreadAsync(() =>
+            // at the console would be. Set Success only after the command actually runs, so a throw
+            // can't report a false-positive pass to the guard test.
+            var result = new TestHouseUpgradeResponse();
+            try
             {
-                Game1.game1.parseDebugInput(command);
-                result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
-            });
+                await RunOnGameThreadAsync(() =>
+                {
+                    Game1.game1.parseDebugInput(command);
+                    result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
+                    result.Success = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                // Don't log at Error level — that trips ServerContainer's error cancellation and
+                // poisons the test (.claude/rules/debugging.md). Surface via the response instead.
+                result.Success = false;
+                result.Error = ex.Message;
+            }
 
             return result;
         }
