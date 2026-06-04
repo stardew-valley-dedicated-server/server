@@ -76,23 +76,46 @@ jobs:
       # inherited by the runner's in-process `make build` subprocess. Not read by
       # any C#. The Makefile default is Debug; pin Release for CI.
       BUILD_CONFIGURATION: Release
-      # The harness's host-fleet config, verbatim — set as ONE GitHub secret in
-      # the test-vps environment, exactly as you'd put it in .env.test locally.
-      # It carries the whole VPS-only fleet: id / endpoint (ssh://user@host, keep
-      # the VPS on port 22 — SDVD_DOCKER_HOSTS has no port field) / serverSlots /
-      # clientSlots / gpu:false (recording uses libx264 software encode), AND the SSH
-      # private key INLINE in the `sshKey` field (a "-----BEGIN…" block). HostPool
-      # writes inline key material to a 0600 temp file at startup and resolves
-      # `sshKey` to that path, so no key-file step is needed here. Shape the
-      # secret like:
+      # The harness's host-fleet config is supplied as SDVD_DOCKER_HOSTS_B64 — the
+      # base64 of the JSON (the same shape as .env.test, but with the SSH private key
+      # INLINE in each `sshKey` field). It is base64-encoded because the inline key is
+      # multiline, and GitHub masks multiline secrets line-by-line — registering the
+      # PEM's `-----` armor would mask every `-` in the whole log (client-0 → client***0,
+      # dates, etc.) while leaving the real IP unmasked. Base64 makes it a single-line
+      # secret that GitHub registers atomically, so nothing in normal logs matches it.
+      # The "Decode host fleet" step (below) restores SDVD_DOCKER_HOSTS into $GITHUB_ENV
+      # for the keyscan + runner steps. Shape of the pre-encoding JSON:
       #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
       #     "clientSlots":2,"gpu":false,
       #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
-      SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+      # To (re)create the secret:
+      #   jq -c --rawfile k key.pem '.[0].sshKey=$k' hosts.json | base64 -w0 | gh secret set SDVD_DOCKER_HOSTS_B64 --env test-vps
 
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Decode the base64 host-fleet config into SDVD_DOCKER_HOSTS for the keyscan +
+      # runner steps. Written to $GITHUB_ENV via the heredoc form (multiline-safe),
+      # NOT echoed to the log. The decoded JSON carries the inline SSH key with real
+      # newlines; GitHub does NOT auto-mask it (only the registered base64 blob is
+      # masked, never derived values) — so it MUST NEVER be printed. Do not add an
+      # `echo`/`cat` of $SDVD_DOCKER_HOSTS anywhere; the keyscan step's jq already
+      # extracts only `.endpoint`.
+      - name: Decode host fleet
+        env:
+          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
+        run: |
+          if [ -z "$SDVD_DOCKER_HOSTS_B64" ]; then
+            echo "::error::SDVD_DOCKER_HOSTS_B64 is not set in the test-vps environment." >&2
+            exit 1
+          fi
+          {
+            echo 'SDVD_DOCKER_HOSTS<<__SDVD_HOSTS_EOF__'
+            printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d
+            echo
+            echo '__SDVD_HOSTS_EOF__'
+          } >> "$GITHUB_ENV"
 
       # The coordinator is a net10.0 app that runs HERE on the runner (the mod
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
@@ -157,13 +180,12 @@ jobs:
       # the inline `sshKey` to its own 0600 temp file.
       #
       # SECURITY: the jq below extracts ONLY `.endpoint`. Never change it to read
-      # `.sshKey` (or pipe the raw $SDVD_DOCKER_HOSTS to stdout). `jq -r .sshKey`
-      # would emit the DECODED key with real newlines — different bytes than the
-      # registered secret, so GitHub's log masker would NOT redact it, leaking the
-      # private key into public CI logs.
+      # `.sshKey` (or pipe the raw $SDVD_DOCKER_HOSTS to stdout) — the decoded JSON
+      # carries the private key with real newlines, which GitHub does NOT mask (only
+      # the base64 blob is registered), so printing it would leak the key. The host
+      # is NOT echoed either: it's the VPS IP, which would otherwise show in the log.
+      # SDVD_DOCKER_HOSTS comes from $GITHUB_ENV (the Decode host fleet step).
       - name: Trust VPS host key
-        env:
-          SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -174,10 +196,12 @@ jobs:
             echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS — cannot keyscan." >&2
             exit 1
           fi
+          count=0
           for h in $hosts; do
-            echo "Scanning host key for $h"
             ssh-keyscan -t rsa,ecdsa,ed25519 "$h" >> ~/.ssh/known_hosts 2>/dev/null
+            count=$((count + 1))
           done
+          echo "Scanned host keys for $count host(s)."
           chmod 644 ~/.ssh/known_hosts
 
       # Populate the LOCAL server_game-data volume — the precondition for
