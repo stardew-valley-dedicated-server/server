@@ -75,6 +75,23 @@ namespace JunimoServer.Services.AlwaysOn
                 original: AccessTools.Method(typeof(StardewValley.Events.QiPlaneEvent), nameof(StardewValley.Events.QiPlaneEvent.tickUpdate)),
                 postfix: new HarmonyMethod(typeof(QiPlaneEventOverrides), nameof(QiPlaneEventOverrides.TickUpdate_Postfix))
             );
+
+            // Keep the host's main farmhouse at level 0 (internal-only). The only way to upgrade it on
+            // a dedicated server is an admin debug command at the console/host chat; block those when
+            // they target the host farmhouse. See HostFarmhouseUpgradeGuard (#346).
+            HostFarmhouseUpgradeGuard.Initialize(monitor);
+            harmony.Patch(
+                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.HouseUpgrade)),
+                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix))
+            );
+            harmony.Patch(
+                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.UpgradeHouse)),
+                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix))
+            );
+            harmony.Patch(
+                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.ThisHouseUpgrade)),
+                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockThisHouseUpgrade_Prefix))
+            );
         }
 
         // TODO: Rename to OnStart, OnLoad or whatever fits best.. need to double-check
@@ -138,6 +155,7 @@ namespace JunimoServer.Services.AlwaysOn
                     Game1.player.ignoreCollisions = true;
 
                     PreSeedEarlyGameEvents();
+                    HealUpgradedHostFarmhouse();
                 }
 
                 // Seed locks for cabins whose farmhands are already offline at load time.
@@ -933,6 +951,23 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 Game1.player.eventsSeen.Add("980559");
             }
+        }
+
+        /// <summary>
+        /// Reset a host farmhouse that a prior build left upgraded back to level 0 (the host farmhouse
+        /// is internal-only, see <see cref="HostFarmhouseUpgradeGuard"/>). No-op for new/healthy saves.
+        ///
+        /// TRANSITIONAL: remove after 2026-09-01 once affected saves have self-healed (#346).
+        /// </summary>
+        private void HealUpgradedHostFarmhouse()
+        {
+            if (Game1.player.HouseUpgradeLevel == 0)
+            {
+                return;
+            }
+
+            HostFarmhouseUpgradeGuard.ResetHostFarmhouseToLevelZero();
+            Monitor.Log("Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.", LogLevel.Info);
         }
 
         /// <summary>

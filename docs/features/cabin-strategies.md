@@ -7,7 +7,7 @@ Control how player cabins are placed and managed on your farm.
 | Strategy | Description |
 |----------|-------------|
 | `CabinStack` | Cabins hidden off-map. Each player sees only their own cabin at a shared position. |
-| `FarmhouseStack` | Cabins hidden off-map. All players warp to a shared farmhouse interior. |
+| `FarmhouseStack` | Cabins hidden off-map. All players exit at the main farmhouse's front door (shared entry point). |
 | `None` | Vanilla behavior. Cabins placed at real farm positions. |
 
 ## CabinStack (Default)
@@ -21,9 +21,9 @@ Benefits:
 
 ## FarmhouseStack
 
-Similar to CabinStack, but all players share the farmhouse interior instead of having separate cabins. Players still have individual inventories and beds.
+Similar to CabinStack — every player still has their own hidden cabin interior, inventory, and bed — but each cabin's exit is redirected to the main farmhouse's front door on the farm, so everyone steps out at the same spot. The main farmhouse interior itself stays reserved for the server host; a player who walks into it is sent back to their own cabin.
 
-Use this for a more communal feel.
+Use this for a more communal feel where everyone congregates at one front door.
 
 ## None (Vanilla)
 

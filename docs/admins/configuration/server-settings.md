@@ -110,7 +110,7 @@ These settings apply on every startup and can be changed between runs.
 | Strategy | Description | Best For |
 |----------|-------------|----------|
 | `CabinStack` | Cabins hidden off-map. Each player sees only their own at a shared position. | Most servers |
-| `FarmhouseStack` | Cabins hidden off-map. All players warp to shared farmhouse interior. | Co-op focused |
+| `FarmhouseStack` | Cabins hidden off-map. All players exit at the main farmhouse's front door (shared entry point). | Co-op focused |
 | `None` | Vanilla behavior. Cabins placed at real farm positions. | Traditional multiplayer |
 
 ### Existing Cabin Behavior

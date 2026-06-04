@@ -12,7 +12,6 @@ namespace JunimoServer.Services.HostAutomation
             _activities = new ActivityList(helper, monitor)
             {
                 new HideHostActivity(),
-                new MatchFarmhouseToOwnerCabinLevelActivity(),
             };
         }
     }
