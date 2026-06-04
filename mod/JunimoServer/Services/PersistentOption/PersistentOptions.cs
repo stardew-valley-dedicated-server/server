@@ -23,12 +23,21 @@ namespace JunimoServer.Services.PersistentOption
         {
             _helper = helper;
             Data = helper.Data.ReadGlobalData<PersistentOptionsSaveData>(SaveKey) ?? new PersistentOptionsSaveData();
+            RecaptureAndSync(settings);
+        }
 
-            // Capture persisted strategy before overwriting with settings file values
+        /// <summary>
+        /// Captures the currently-persisted strategy as PreviousCabinStrategy, then
+        /// overwrites Data from the current settings file. Called on construction and
+        /// again on a runtime /reload so a CabinStrategy change is detected by
+        /// CabinManagerService.DetectAndMigrateStrategyChange without a process restart.
+        /// </summary>
+        public void RecaptureAndSync(ServerSettingsLoader settings)
+        {
+            // Persisted value = the strategy the cabins are currently arranged for.
             PreviousCabinStrategy = Data.CabinStrategy;
 
-            // Sync runtime settings from settings file on construction so services
-            // always see the current values
+            // Sync runtime settings from the settings file so services see current values.
             SyncFromSettings(settings);
         }
 

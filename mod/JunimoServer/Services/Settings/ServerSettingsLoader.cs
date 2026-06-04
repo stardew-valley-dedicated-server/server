@@ -12,7 +12,7 @@ namespace JunimoServer.Services.Settings
     /// </summary>
     public class ServerSettingsLoader
     {
-        private readonly ServerSettings _settings;
+        private ServerSettings _settings;
         private readonly string _settingsPath;
         private readonly IMonitor _monitor;
 
@@ -78,6 +78,16 @@ namespace JunimoServer.Services.Settings
         #endregion
 
         #region Runtime setters
+
+        /// <summary>
+        /// Re-reads the settings file from disk, picking up any changes made since
+        /// startup. Used by the in-process reload path so an operator can edit
+        /// server-settings.json and apply it without a process restart.
+        /// </summary>
+        public void Reload()
+        {
+            _settings = LoadOrCreate();
+        }
 
         public void SetVerboseLogging(bool value)
         {

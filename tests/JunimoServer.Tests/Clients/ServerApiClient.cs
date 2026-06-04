@@ -623,6 +623,9 @@ public class CabinsResponse
 
     [JsonPropertyName("cabins")]
     public List<CabinInfoResponse> Cabins { get; set; } = new();
+
+    [JsonPropertyName("savedPositionPlayerIds")]
+    public List<long> SavedPositionPlayerIds { get; set; } = new();
 }
 
 /// <summary>
@@ -1341,6 +1344,19 @@ public class ServerApiClient : IDisposable
 
         var content = JsonContent.Create(body);
         var response = await _httpClient.PostAsync("/newgame", content, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NewGameResponse>(ct);
+    }
+
+    /// <summary>
+    /// Re-reads server-settings.json and reloads the active world in-process (no
+    /// container restart). Applies any runtime settings change (e.g. CabinStrategy)
+    /// and fires the mod's SaveLoaded path. The response shape matches /newgame.
+    /// POST /reload
+    /// </summary>
+    public async Task<NewGameResponse?> ReloadAsync(CancellationToken ct = default)
+    {
+        var response = await _httpClient.PostAsync("/reload", content: null, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<NewGameResponse>(ct);
     }

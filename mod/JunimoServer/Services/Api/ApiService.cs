@@ -612,6 +612,13 @@ namespace JunimoServer.Services.Api
 
         /// <summary>Individual cabin details.</summary>
         public List<CabinInfo> Cabins { get; set; } = new();
+
+        /// <summary>
+        /// UniqueMultiplayerIDs of players who have an explicitly-placed cabin position
+        /// recorded (via the cabin command). These cabins are exempt from the
+        /// MoveToStack / strategy-migration sweep. Cleared when the farmhand is deleted.
+        /// </summary>
+        public List<long> SavedPositionPlayerIds { get; set; } = new();
     }
 
     /// <summary>
@@ -719,6 +726,21 @@ namespace JunimoServer.Services.Api
     public class NewGameResponse
     {
         /// <summary>Whether the new game was created successfully.</summary>
+        public bool Success { get; set; }
+
+        /// <summary>Message describing the result.</summary>
+        public string? Message { get; set; }
+
+        /// <summary>Error message if the operation failed.</summary>
+        public string? Error { get; set; }
+    }
+
+    /// <summary>
+    /// Response from POST /reload.
+    /// </summary>
+    public class ReloadResponse
+    {
+        /// <summary>Whether the world reloaded successfully.</summary>
         public bool Success { get; set; }
 
         /// <summary>Message describing the result.</summary>
@@ -1880,6 +1902,9 @@ namespace JunimoServer.Services.Api
                             break;
                         case "/newgame":
                             await HandlePostNewGameAsync(request, response);
+                            break;
+                        case "/reload":
+                            await HandlePostReloadAsync(response);
                             break;
                         case "/test/set_date":
                             await WriteJsonAsync(response, await HandlePostTestSetDateAsync(request));
@@ -3195,7 +3220,8 @@ namespace JunimoServer.Services.Api
                 TotalCount = snap.CabinTotalCount,
                 AssignedCount = snap.CabinAssignedCount,
                 AvailableCount = snap.CabinAvailableCount,
-                Cabins = snap.Cabins
+                Cabins = snap.Cabins,
+                SavedPositionPlayerIds = _cabinManager.Data.PlayerCabinPositions.Keys.ToList()
             };
         }
 
@@ -4060,6 +4086,108 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     Error = $"New game creation failed: {ex.Message}"
+                });
+            }
+        }
+
+        [ApiEndpoint("POST", "/reload", Summary = "Re-read server-settings.json and reload the active world (no restart)", Tag = "Server")]
+        [ApiResponse(typeof(ReloadResponse), 200, Description = "World reloaded successfully")]
+        private async Task HandlePostReloadAsync(HttpListenerResponse response)
+        {
+            // Validate no clients are connected — reload returns to title and would
+            // disconnect everyone (same precondition as /newgame).
+            int connectedClients = 0;
+            try
+            {
+                await RunOnGameThreadAsync(() =>
+                {
+                    connectedClients = Game1.otherFarmers.Count;
+                });
+            }
+            catch
+            {
+                // Game thread unavailable; allow the attempt anyway
+            }
+
+            if (connectedClients > 0)
+            {
+                response.StatusCode = 409;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = $"Cannot reload while {connectedClients} client(s) are connected. Disconnect all players first."
+                });
+                return;
+            }
+
+            var gameManager = GameManagerService.Instance;
+            if (gameManager == null)
+            {
+                response.StatusCode = 503;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = "Game manager not initialized yet"
+                });
+                return;
+            }
+
+            Monitor.Log("[API] World reload requested", LogLevel.Info);
+
+            // Call RequestReloadSave on the game thread (sets flags + ExitToTitle).
+            // The returned Task completes when the world has finished reloading.
+            Task? reloadTask = null;
+            try
+            {
+                await RunOnGameThreadAsync(() =>
+                {
+                    reloadTask = gameManager.RequestReloadSave();
+                });
+            }
+            catch (Exception ex)
+            {
+                response.StatusCode = 500;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = $"Failed to initiate reload: {ex.Message}"
+                });
+                return;
+            }
+
+            // Wait for the reload to complete (ExitToTitle → title screen → LoadSave → ready).
+            try
+            {
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+                var timeoutTask = Task.Delay(Timeout.Infinite, timeoutCts.Token);
+                var completed = await Task.WhenAny(reloadTask!, timeoutTask);
+
+                if (completed == reloadTask)
+                {
+                    await reloadTask!; // Propagate any exception from LoadSave
+                    await WriteJsonAsync(response, new ReloadResponse
+                    {
+                        Success = true,
+                        Message = "World reloaded"
+                    });
+                    return;
+                }
+
+                // Timeout
+                response.StatusCode = 504;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = "World reload timed out (120s)"
+                });
+            }
+            catch (Exception ex)
+            {
+                response.StatusCode = 500;
+                await WriteJsonAsync(response, new ReloadResponse
+                {
+                    Success = false,
+                    Error = $"World reload failed: {ex.Message}"
                 });
             }
         }
