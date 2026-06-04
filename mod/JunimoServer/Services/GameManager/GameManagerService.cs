@@ -79,6 +79,15 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         public Task RequestReloadSave()
         {
+            // Coalesce overlapping requests: a second /reload while one is in flight would
+            // otherwise replace _reloadCompletion and orphan the first caller until its 120s
+            // timeout. Always invoked on the game thread (via RunOnGameThreadAsync), so this
+            // check-and-act needs no lock. Returns the in-flight task to the late caller.
+            if (_pendingReload && _reloadCompletion != null)
+            {
+                return _reloadCompletion.Task;
+            }
+
             // Reload returns to title intentionally. Flag it so AlwaysOn.OnReturnedToTitle
             // treats this as expected instead of logging a critical (test-poisoning) error.
             IsNewGamePending = true;
