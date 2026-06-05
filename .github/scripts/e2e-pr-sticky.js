@@ -20,11 +20,22 @@ const RERUN_REQUESTED_LABEL = `${RERUN_LABEL} (requested)`;
 
 // --- marker (de)serialization -------------------------------------------------------
 
+/**
+ * Read the run filter the sticky recorded in its hidden `<!-- filter: … -->` marker.
+ * @param {string} body - The sticky comment body.
+ * @returns {string} The filter (empty string = full suite, or no marker present).
+ */
 function readFilter(body) {
   const m = body && body.match(/<!-- filter:([\s\S]*?)-->/);
   return m ? m[1].trim() : '';
 }
 
+/**
+ * Read the retained run-history array from the sticky's `<!-- run-history: … -->` marker.
+ * Corrupt or absent history yields `[]` (it must never break a run).
+ * @param {string} body - The sticky comment body.
+ * @returns {Array<object>} The history rows (newest appended last).
+ */
 function readHistory(body) {
   const m = body && body.match(/<!-- run-history:([\s\S]*?)-->/);
   if (!m) return [];
@@ -36,20 +47,51 @@ function readHistory(body) {
   }
 }
 
-// Is the re-run checkbox currently checked? Matches `- [x] 🔁 Re-run E2E tests...`.
+/**
+ * Whether the re-run task-list checkbox is currently ticked (`- [x] 🔁 Re-run E2E tests`).
+ * @param {string} body - The comment body to inspect.
+ * @returns {boolean}
+ */
 function isReRunChecked(body) {
   if (!body) return false;
   return new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s*${escapeRe(RERUN_LABEL)}`, 'm').test(body);
 }
 
+/**
+ * Reset a ticked re-run box back to unchecked, leaving the rest of the body untouched.
+ * Used to "disarm" the sticky after a click we won't act on (e.g. a non-maintainer
+ * ticked it) so it doesn't look stuck mid-request.
+ * @param {string} body - The sticky comment body.
+ * @returns {string} The body with the re-run box set to `- [ ]`.
+ */
+function resetReRunCheckbox(body) {
+  if (!body) return body;
+  return body.replace(
+    new RegExp(`^(\\s*-\\s*\\[)[xX](\\]\\s*${escapeRe(RERUN_LABEL)})`, 'm'),
+    '$1 $2',
+  );
+}
+
+/** Escape a string for safe interpolation into a `RegExp`. */
 function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // --- body rendering -----------------------------------------------------------------
 
-// state: { status, statusEmoji, headline, filter, history, requested }
-//   status: 'queued' | 'passed' | 'failed' | 'aborted'
+/**
+ * Render the full sticky comment body: hidden markers (filter + run-history) for the
+ * next event to recover, a status block, the re-run checkbox, and the collapsed
+ * run-history table.
+ * @param {object} state
+ * @param {'queued'|'passed'|'failed'|'aborted'} state.status - Run status (drives wording).
+ * @param {string} state.statusEmoji - Emoji shown in the heading.
+ * @param {string} state.headline - Markdown headline line under the heading.
+ * @param {string} state.filter - The run filter (empty = full suite).
+ * @param {Array<object>} state.history - Run-history rows to render + re-embed.
+ * @param {boolean} state.requested - When true, label the box "… (requested)".
+ * @returns {string} The complete comment body.
+ */
 function renderBody(state) {
   const filter = state.filter || '';
   const filterLabel = filter ? `\`${filter}\`` : '_full suite_';
@@ -95,6 +137,10 @@ function renderBody(state) {
 
 // --- comment upsert -----------------------------------------------------------------
 
+/**
+ * Find the one E2E sticky comment on the PR by its hidden `MARKER` (paginates the thread).
+ * @returns {Promise<object|null>} The comment object, or null if none exists yet.
+ */
 async function findSticky({ github, owner, repo, issue_number }) {
   // Paginate so the sticky is found even on a long PR thread.
   const comments = await github.paginate(github.rest.issues.listComments, {
@@ -103,6 +149,10 @@ async function findSticky({ github, owner, repo, issue_number }) {
   return comments.find((c) => (c.body || '').includes(MARKER)) || null;
 }
 
+/**
+ * Create-or-update the single E2E sticky comment with `body` (one comment per PR).
+ * @returns {Promise<number>} The comment id written.
+ */
 async function upsertSticky({ github, owner, repo, issue_number, body }) {
   const existing = await findSticky({ github, owner, repo, issue_number });
   if (existing) {
@@ -115,14 +165,17 @@ async function upsertSticky({ github, owner, repo, issue_number, body }) {
 
 // --- maintainer authorization (authoritative; author_association is NOT used) -------
 
-// Returns true iff `username` has write or admin permission on the repo (maintain->write,
-// triage->read are collapsed by the API, so write|admin == "can push"). A non-collaborator
-// makes getCollaboratorPermissionLevel throw 404 — that is a DENY, not an error.
-//
-// The endpoint needs only repo metadata read, which every GITHUB_TOKEN has (the gate job
-// also grants contents: read). If the token were ever too narrow it would throw 403, not
-// 404 — we rethrow that so the gate FAILS CLOSED (red job, no run) rather than silently
-// allowing. Fail-closed is the safe direction for an auth check.
+/**
+ * Whether `username` has write or admin permission on the repo (the authoritative
+ * maintainer check; `author_association` is deliberately not used).
+ *
+ * The API collapses maintain->write and triage->read, so write|admin == "can push".
+ * A non-collaborator makes getCollaboratorPermissionLevel throw 404 — treated as a DENY,
+ * not an error. The endpoint needs only repo metadata read, which every GITHUB_TOKEN has
+ * (the gate job also grants contents: read). A too-narrow token would throw 403, which we
+ * rethrow so the gate FAILS CLOSED (red job, no run) — the safe direction for an auth check.
+ * @returns {Promise<boolean>}
+ */
 async function isMaintainer({ github, owner, repo, username }) {
   try {
     const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
@@ -140,6 +193,7 @@ module.exports = {
   readFilter,
   readHistory,
   isReRunChecked,
+  resetReRunCheckbox,
   renderBody,
   findSticky,
   upsertSticky,

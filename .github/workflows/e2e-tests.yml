@@ -70,11 +70,15 @@ jobs:
     permissions:
       pull-requests: write   # post/update the sticky + reactions
       contents: read
+    # NB: use github.event.sender (the actor who triggered the event), NOT
+    # github.event.comment.user. On an `edited` checkbox toggle, comment.user is the
+    # comment's ORIGINAL author — our own bot sticky — so a comment.user.type != 'Bot'
+    # filter would block every re-run. sender is the human who clicked.
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment'
        && github.event.issue.pull_request != null
-       && github.event.comment.user.type != 'Bot'
+       && github.event.sender.type != 'Bot'
        && (
             (github.event.action == 'created'
                && startsWith(github.event.comment.body, '/run-tests-e2e'))
@@ -122,6 +126,9 @@ jobs:
             const issueNumber = context.payload.issue.number;
             const action = context.payload.action;
             const body = comment.body || '';
+            // The ACTOR is the sender (who clicked/commented), not comment.user — on an
+            // `edited` checkbox toggle comment.user is the original author (our bot).
+            const actor = context.payload.sender.login;
 
             const noop = (reason) => { core.info(`No-op: ${reason}`); core.setOutput('proceed', 'false'); };
 
@@ -145,17 +152,23 @@ jobs:
 
             // Authorize the actor (the commenter / the clicker). Authoritative permission
             // API — NOT author_association. 404 (non-collaborator) is a deny.
-            const username = comment.user.login;
-            const allowed = await helper.isMaintainer({ github, owner, repo, username });
+            const allowed = await helper.isMaintainer({ github, owner, repo, username: actor });
             if (!allowed) {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: comment.id, content: '-1',
               });
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issueNumber,
-                body: `@${username} — E2E runs are maintainer-only (repo write access required).`,
+                body: `@${actor} — E2E runs are maintainer-only (repo write access required).`,
               });
-              return noop(`${username} is not a maintainer`);
+              // A non-maintainer ticked the box: disarm it so the sticky doesn't look stuck.
+              if (action === 'edited') {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: comment.id,
+                  body: helper.resetReRunCheckbox(body),
+                });
+              }
+              return noop(`${actor} is not a maintainer`);
             }
 
             // Resolve PR HEAD (the comment payload has the PR number but not the head SHA).
@@ -267,6 +280,23 @@ jobs:
           # no later step needs the git credential, so don't persist it in .git/config
           # (defense in depth — keeps the token out of anything we upload).
           persist-credentials: false
+
+      # SECURITY: the workspace above is PR HEAD — on a fork PR it is untrusted code.
+      # The "Update PR sticky" step runs with the test-vps secrets + pull-requests:write,
+      # so it must NOT require() the sticky helper from that checkout (a fork could edit it
+      # to run arbitrary JS with secrets — CodeQL "Untrusted Checkout TOCTOU"). Pull the
+      # helper from the TRUSTED default branch into a separate path and require() that copy.
+      # (Building/testing the PR code itself is the intended, fork-pr-gated behaviour; this
+      # just avoids handing forks an extra code-execution vector through our own tooling.)
+      - name: Checkout trusted sticky helper
+        if: github.event_name == 'issue_comment'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts/e2e-pr-sticky.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          path: trusted-helper
 
       # The coordinator is a net10.0 app that runs HERE on the runner (the mod
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
@@ -562,7 +592,9 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const helper = require('./.github/scripts/e2e-pr-sticky.js');
+            // Trusted (default-branch) copy — NOT the PR-HEAD checkout (see "Checkout
+            // trusted sticky helper" above). require() resolves relative to the workspace.
+            const helper = require(`${process.env.GITHUB_WORKSPACE}/trusted-helper/.github/scripts/e2e-pr-sticky.js`);
             const { owner, repo } = context.repo;
             const issue_number = Number(process.env.PR_NUMBER);
             const sha = (process.env.HEAD_SHA || '').slice(0, 7);
