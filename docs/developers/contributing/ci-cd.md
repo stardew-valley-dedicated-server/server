@@ -11,7 +11,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
-| [E2E Tests](#e2e-tests-pipeline) | Manual: `workflow_dispatch` or maintainer `/run-tests-e2e` PR comment | Runs the Docker E2E suite on a remote VPS (never a required check) |
+| [E2E Tests](#e2e-tests-pipeline) | Manual: `workflow_dispatch`, or a maintainer's `/run-tests-e2e` PR comment / re-run checkbox | Runs the Docker E2E suite on a remote VPS (never a required check) |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 | [Deploy Docs](#deploy-docs-pipeline) | After build / manual | Deploys documentation to GitHub Pages |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual | Deletes old preview tags from DockerHub |

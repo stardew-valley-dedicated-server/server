@@ -82,6 +82,11 @@ function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Shorten a commit SHA for display (the 7-char form used in headlines + history rows). */
+function shortSha(sha) {
+  return (sha || '').slice(0, 7);
+}
+
 // --- result derivation ---------------------------------------------------------------
 
 /** The `skipped` clause shared by the pass/fail headlines (empty when none were skipped). */
@@ -342,6 +347,7 @@ module.exports = {
   RERUN_REQUESTED_LABEL,
   readFilter,
   readHistory,
+  shortSha,
   isReRunChecked,
   resetReRunCheckbox,
   deriveResult,

@@ -54,6 +54,12 @@ test('readHistory round-trips and tolerates corruption', () => {
   assert.deepEqual(helper.readHistory('no marker'), []);
 });
 
+test('shortSha takes the first 7 chars and is null-safe (empty/undefined → "")', () => {
+  assert.equal(helper.shortSha('abcdef0123456'), 'abcdef0');
+  assert.equal(helper.shortSha(''), '');
+  assert.equal(helper.shortSha(undefined), '');
+});
+
 // --- re-run checkbox state machine -------------------------------------------------
 
 test('isReRunChecked detects only the ticked box', () => {

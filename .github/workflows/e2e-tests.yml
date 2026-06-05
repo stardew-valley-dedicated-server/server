@@ -201,13 +201,17 @@ jobs:
             await github.rest.reactions.createForIssueComment({
               owner, repo, comment_id: comment.id, content: 'eyes',
             });
+            // Read the sticky LIVE (not from context.payload.comment) on BOTH paths: the
+            // singleton-queue means a prior run's "Update PR sticky" can append a history row
+            // between the checkbox tick and this queued gate's execution, so a payload snapshot
+            // would be stale and overwrite that row away. findSticky reads the settled comment.
             const existing = await helper.findSticky({ github, owner, repo, issue_number: issueNumber });
             const history = existing ? helper.readHistory(existing.body) : [];
             await helper.upsertSticky({
               github, owner, repo, issue_number: issueNumber, existing,
               body: helper.renderBody({
                 status: 'queued', statusEmoji: '🟡',
-                headline: `Queued for \`${pr.head.sha.slice(0, 7)}\`…`,
+                headline: `Queued for \`${helper.shortSha(pr.head.sha)}\`…`,
                 filter, history, requested: action === 'edited',
               }),
             });
@@ -621,7 +625,7 @@ jobs:
             const helper = require(`${process.env.GITHUB_WORKSPACE}/trusted-helper/.github/scripts/e2e-pr-sticky.js`);
             const { owner, repo } = context.repo;
             const issue_number = Number(process.env.PR_NUMBER);
-            const sha = (process.env.HEAD_SHA || '').slice(0, 7);
+            const sha = helper.shortSha(process.env.HEAD_SHA);
             const filter = process.env.FILTER || '';
             const reportUrl = process.env.REPORT_URL || '';
             const jobStatus = process.env.JOB_STATUS;
