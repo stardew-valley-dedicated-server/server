@@ -88,8 +88,10 @@ jobs:
       #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
       #     "clientSlots":2,"gpu":false,
       #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
-      # To (re)create the secret:
+      # To (re)create the secrets (STEAM_ACCOUNTS_B64 is the same idea — the Steam
+      # credentials JSON is also base64'd to a single line for the same masking reason):
       #   jq -c --rawfile k key.pem '.[0].sshKey=$k' hosts.json | base64 -w0 | gh secret set SDVD_DOCKER_HOSTS_B64 --env test-vps
+      #   jq -c . steam-accounts.json | base64 -w0 | gh secret set STEAM_ACCOUNTS_B64 --env test-vps
 
     steps:
       - name: Checkout code
@@ -174,7 +176,9 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          hosts_json=$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)
+          # tr -d strips any stray whitespace/newline in the stored secret before decode
+          # (base64 is whitespace-free, so this only removes corruption, not data).
+          hosts_json=$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | tr -d '[:space:]' | base64 -d)
           hosts=$(printf '%s' "$hosts_json" \
             | jq -r '.[] | select(.endpoint) | .endpoint' \
             | sed -E 's#^ssh://##; s#^[^@]*@##')
@@ -209,8 +213,11 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: server
           IMAGE_VERSION: local
-          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
+          # base64 (single-line) so GitHub registers it atomically — multiline JSON
+          # secrets break log masking (see the SDVD_DOCKER_HOSTS_B64 note above).
+          STEAM_ACCOUNTS_B64: ${{ secrets.STEAM_ACCOUNTS_B64 }}
         run: |
+          export STEAM_ACCOUNTS="$(printf '%s' "$STEAM_ACCOUNTS_B64" | tr -d '[:space:]' | base64 -d)"
           docker compose build steam-auth
           docker compose run --rm -e STEAM_ACCOUNTS steam-auth download
 
@@ -223,17 +230,19 @@ jobs:
       # with a Steam-login error.
       - name: Run E2E suite
         env:
-          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
-          # The base64 host fleet is decoded STEP-LOCALLY below (not $GITHUB_ENV) so
-          # the inline SSH key isn't exposed to other steps.
+          # Both fleet + Steam creds are base64 (single-line) secrets, decoded
+          # STEP-LOCALLY below — never into $GITHUB_ENV (would expose them to other
+          # steps) and never as multiline secrets (would break log masking).
           SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
+          STEAM_ACCOUNTS_B64: ${{ secrets.STEAM_ACCOUNTS_B64 }}
           # Pass the (operator-controlled) filter through the environment, not
           # interpolated into the command line, so its value can never be parsed
           # as shell. Empty (the default) runs the full suite — pass --filter only
           # when a non-whitespace value was provided.
           FILTER: ${{ inputs.filter }}
         run: |
-          export SDVD_DOCKER_HOSTS="$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)"
+          export SDVD_DOCKER_HOSTS="$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | tr -d '[:space:]' | base64 -d)"
+          export STEAM_ACCOUNTS="$(printf '%s' "$STEAM_ACCOUNTS_B64" | tr -d '[:space:]' | base64 -d)"
           if [ -n "${FILTER//[[:space:]]/}" ]; then
             dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
           else
