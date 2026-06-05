@@ -503,6 +503,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                 `📊 **Roster Information**`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `🟢 **Online Now (${onlineList.length}):**`,
+                onlineList.length ? onlineList.join("\n") : "• Nobody online",
           `\n🛖 **Cabin Strategy & Real Estate:**`,
           `• Total Cabins Built: **${cabinsRes.totalCount}**`,
           `• Assigned to Players: **${cabinsRes.assignedCount}**`,
@@ -702,23 +703,24 @@ client.once(Events.ClientReady, async () => {
     // Connect WebSocket for chat relay
     connectWebSocket();
 
-    if (STATUS_DASHBOARD_CHANNEL_ID !== null) {
+    if (STATUS_DASHBOARD_CHANNEL_ID) {
         await updateLiveDashboard();
         setInterval(updateLiveDashboard, STATUS_DASHBOARD_REFRESH_RATE * 1000);
+    }
 
-        // Periodic updates with error handling
-        setInterval(() => {
-            updatePresence().catch((error) => {
-                console.error(`[Discord Bot] Presence update failed: ${error instanceof Error ? error.message : error}`);
-            });
-        }, UPDATE_INTERVAL_MS);
+    // Periodic updates with error handling
+    setInterval(() => {
+        updatePresence().catch((error) => {
+            console.error(`[Discord Bot] Presence update failed: ${error instanceof Error ? error.message : error}`);
+        });
+    }, UPDATE_INTERVAL_MS);
 
-        setInterval(() => {
-            updateBotNickname().catch((error) => {
-                console.error(`[Discord Bot] Nickname update failed: ${error instanceof Error ? error.message : error}`);
-            });
-        }, UPDATE_INTERVAL_MS);
-    });
+    setInterval(() => {
+        updateBotNickname().catch((error) => {
+            console.error(`[Discord Bot] Nickname update failed: ${error instanceof Error ? error.message : error}`);
+        });
+    }, UPDATE_INTERVAL_MS);
+});
 
 client.on(Events.Error, (error) => {
     console.error(`[Discord Bot] Client error: ${error.message}`);
