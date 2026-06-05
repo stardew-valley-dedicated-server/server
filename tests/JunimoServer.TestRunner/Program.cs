@@ -394,8 +394,10 @@ try
     using var preflightCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
     foreach (var host in hostPool.Hosts)
     {
+        // Detail is "remote"/"local" only — never host.SshDestination (the VPS
+        // user@IP), which the CIRenderer prints to the public CI log.
         renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Preflight {host.Id}",
-            SetupStepStatus.Started, host.SshDestination ?? "local"));
+            SetupStepStatus.Started, host.SshDestination != null ? "remote" : "local"));
     }
     await hostPool.PreflightAsync(tunnelManager, preflightCts.Token);
     foreach (var host in hostPool.Hosts)
@@ -407,9 +409,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[HostPool] Preflight failed: {ex.Message}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "host_preflight", message = ex.Message });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Preflight", false, ex.Message));
+    var preflightMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[HostPool] Preflight failed: {preflightMsg}");
+    InfrastructureEventLog.Emit("run_aborted", new { cause = "host_preflight", message = preflightMsg });
+    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Preflight", false, preflightMsg));
     recorder.SetAbortReason("preflight");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -426,7 +429,7 @@ try
     foreach (var host in hostPool.Hosts)
     {
         renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {host.Id}",
-            SetupStepStatus.Started, host.SshDestination ?? "local"));
+            SetupStepStatus.Started, host.SshDestination != null ? "remote" : "local"));
     }
     await foreach (var result in JunimoServer.Tests.Helpers.EmergencyCleanup
         .SweepStaleResourcesAsync(hostPool.Hosts))
@@ -434,7 +437,7 @@ try
         if (result.Error != null)
         {
             renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {result.HostId}",
-                SetupStepStatus.Warning, $"{result.Error.GetType().Name}: {result.Error.Message}"));
+                SetupStepStatus.Warning, $"{result.Error.GetType().Name}: {ScrubForLog(result.Error.Message)}"));
         }
         else
         {
@@ -449,8 +452,9 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[Cleanup] Stale-resource sweep failed: {ex.Message}");
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", false, ex.Message));
+    var cleanupMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[Cleanup] Stale-resource sweep failed: {cleanupMsg}");
+    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", false, cleanupMsg));
     // Don't abort the run — sweep failure is recoverable; the run can still
     // execute against whatever leftover state exists, and process-exit cleanup
     // will mop up at the end.
@@ -481,9 +485,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[ImageBuild] Parent-side build failed: {ex.Message}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_build", message = ex.Message });
-    parentBuildProgress.PhaseCompleted("Docker Images", false, ex.Message);
+    var buildMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[ImageBuild] Parent-side build failed: {buildMsg}");
+    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_build", message = buildMsg });
+    parentBuildProgress.PhaseCompleted("Docker Images", false, buildMsg);
     recorder.SetAbortReason("image_build");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -516,9 +521,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[ImageTransfer] aborted: {ex.Message}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_transfer_exception", message = ex.Message });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", false, ex.Message));
+    var transferMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[ImageTransfer] aborted: {transferMsg}");
+    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_transfer_exception", message = transferMsg });
+    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", false, transferMsg));
     recorder.SetAbortReason("image_transfer_exception");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -554,9 +560,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[GameData] aborted: {ex.Message}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "game_data_transfer_exception", message = ex.Message });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", false, ex.Message));
+    var gameDataMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[GameData] aborted: {gameDataMsg}");
+    InfrastructureEventLog.Emit("run_aborted", new { cause = "game_data_transfer_exception", message = gameDataMsg });
+    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", false, gameDataMsg));
     recorder.SetAbortReason("game_data_transfer_exception");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -637,12 +644,13 @@ try
 }
 catch (Exception ex)
 {
-    JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(ex.Message);
+    var runMsg = ScrubForLog(ex.Message);
+    JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(runMsg);
     JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_aborted", new
     {
         cause = "exception",
         exceptionType = ex.GetType().Name,
-        message = ex.Message
+        message = runMsg
     });
     recorder.SetAbortReason("exception");
     throw;
@@ -728,6 +736,15 @@ static bool IsCIEnvironment()
     => Environment.GetEnvironmentVariable("CI") != null
        || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null
        || Environment.GetEnvironmentVariable("TF_BUILD") != null;
+
+/// <summary>
+/// Masks secrets/infra out of a free-text setup error before it reaches the CI log —
+/// preflight/transfer exceptions carry SSH stderr that can embed the VPS host/IP. Delegates
+/// to the same <see cref="ReportRedactor"/> + <see cref="CollectKnownSecrets"/> used for the
+/// published report, so masking is consistent everywhere (e.g. <c>***.***.***.188</c>).
+/// </summary>
+static string ScrubForLog(string message)
+    => ReportRedactor.Scrub(message, CollectKnownSecrets());
 
 /// <summary>
 /// Collects the sensitive values the runner knows, for the report redactor to mask out

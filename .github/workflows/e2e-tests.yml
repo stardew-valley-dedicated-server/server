@@ -1,4 +1,5 @@
-# Runs the heavy Docker E2E suite as a smoke subset. The coordinator
+# Runs the heavy Docker E2E suite (the full suite by default; a dispatch-time
+# `filter` input narrows it to a class/method). The coordinator
 # (JunimoServer.TestRunner, a net10.0 app) runs here on ubuntu-latest; the actual
 # Stardew game containers run on a remote VPS reached over SSH — the harness's
 # existing multi-host model with SDVD_DOCKER_HOSTS set to a VPS-only fleet.
@@ -13,15 +14,15 @@
 #
 # All secrets resolve from the `test-vps` GitHub Environment (the same per-
 # environment mechanism deploy-server.yml uses), not loose repo-level secrets.
-name: E2E Tests (Smoke)
+name: E2E Tests
 
 on:
   workflow_dispatch:
     inputs:
       filter:
-        description: 'Test filter (xUnit class/method substring)'
+        description: 'Test filter (xUnit class/method substring). Empty = run the full suite.'
         required: false
-        default: 'ServerSettingsTests'
+        default: ''
 
 permissions:
   contents: read
@@ -34,17 +35,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e-smoke:
-    name: E2E Smoke (VPS)
+  e2e:
+    name: E2E (VPS)
     runs-on: ubuntu-latest
     # Holds the Steam + SSH secrets. Mirrors deploy-server.yml's per-environment
     # secret scoping.
     environment: test-vps
-    # Generous headroom for a cold first run: server + test-client + steam-service
-    # image builds, the one-time ~250 MB game-data stream to the VPS, a remote
-    # server cold-start (slower than local), plus a handful of HTTP asserts.
-    # Tighten toward ~20 once steady-state.
-    timeout-minutes: 30
+    # No job-level timeout-minutes: a bare dispatch runs the FULL suite, whose size
+    # varies, so we don't hardcode a wall-clock cap. The runner's own per-test and
+    # broker timeouts catch real hangs; GitHub's default job timeout is the backstop.
 
     # Non-secret runner config shared by every step. The Steam secrets are scoped
     # to the two steps that consume them (populate + run), not broadcast here.
@@ -76,23 +75,30 @@ jobs:
       # inherited by the runner's in-process `make build` subprocess. Not read by
       # any C#. The Makefile default is Debug; pin Release for CI.
       BUILD_CONFIGURATION: Release
-      # The harness's host-fleet config, verbatim — set as ONE GitHub secret in
-      # the test-vps environment, exactly as you'd put it in .env.test locally.
-      # It carries the whole VPS-only fleet: id / endpoint (ssh://user@host, keep
-      # the VPS on port 22 — SDVD_DOCKER_HOSTS has no port field) / serverSlots /
-      # clientSlots / gpu:false (recording uses libx264 software encode), AND the SSH
-      # private key INLINE in the `sshKey` field (a "-----BEGIN…" block). HostPool
-      # writes inline key material to a 0600 temp file at startup and resolves
-      # `sshKey` to that path, so no key-file step is needed here. Shape the
-      # secret like:
+      # The harness's host-fleet config is supplied as SDVD_DOCKER_HOSTS_B64 — the
+      # base64 of the JSON (the same shape as .env.test, but with the SSH private key
+      # INLINE in each `sshKey` field). It is base64-encoded because the inline key is
+      # multiline, and GitHub masks multiline secrets line-by-line — registering the
+      # PEM's `-----` armor would mask every `-` in the whole log (client-0 → client***0,
+      # dates, etc.) while leaving the real IP unmasked. Base64 makes it a single-line
+      # secret that GitHub registers atomically, so nothing in normal logs matches it.
+      # It is decoded STEP-LOCALLY in the two steps that need it (keyscan + runner) —
+      # never into $GITHUB_ENV, which would expose the inline SSH key to every later
+      # step (incl. third-party actions). Shape of the pre-encoding JSON:
       #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
       #     "clientSlots":2,"gpu":false,
       #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
-      SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+      # To (re)create the secret:
+      #   jq -c --rawfile k key.pem '.[0].sshKey=$k' hosts.json | base64 -w0 | gh secret set SDVD_DOCKER_HOSTS_B64 --env test-vps
 
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # This job uploads artifacts and publishes a report to a PUBLIC bucket, and
+          # no later step needs the git credential, so don't persist it in .git/config
+          # (defense in depth — keeps the token out of anything we upload).
+          persist-credentials: false
 
       # The coordinator is a net10.0 app that runs HERE on the runner (the mod
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
@@ -156,28 +162,32 @@ jobs:
       # keep in sync. The private key is NOT written here — HostPool materializes
       # the inline `sshKey` to its own 0600 temp file.
       #
-      # SECURITY: the jq below extracts ONLY `.endpoint`. Never change it to read
-      # `.sshKey` (or pipe the raw $SDVD_DOCKER_HOSTS to stdout). `jq -r .sshKey`
-      # would emit the DECODED key with real newlines — different bytes than the
-      # registered secret, so GitHub's log masker would NOT redact it, leaking the
-      # private key into public CI logs.
+      # SECURITY: the base64 host-fleet config is decoded into a STEP-LOCAL shell var
+      # (never $GITHUB_ENV — that would expose the inline SSH key to every later step,
+      # incl. third-party actions). The jq below extracts ONLY `.endpoint`; never read
+      # `.sshKey` or pipe the decoded JSON to stdout — GitHub does NOT mask the decoded
+      # value (only the base64 blob is registered), so printing it would leak the key.
+      # The host is NOT echoed either: it's the VPS IP.
       - name: Trust VPS host key
         env:
-          SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          hosts=$(printf '%s' "$SDVD_DOCKER_HOSTS" \
+          hosts_json=$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)
+          hosts=$(printf '%s' "$hosts_json" \
             | jq -r '.[] | select(.endpoint) | .endpoint' \
             | sed -E 's#^ssh://##; s#^[^@]*@##')
           if [ -z "$hosts" ]; then
-            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS — cannot keyscan." >&2
+            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS_B64 — cannot keyscan." >&2
             exit 1
           fi
+          count=0
           for h in $hosts; do
-            echo "Scanning host key for $h"
             ssh-keyscan -t rsa,ecdsa,ed25519 "$h" >> ~/.ssh/known_hosts 2>/dev/null
+            count=$((count + 1))
           done
+          echo "Scanned host keys for $count host(s)."
           chmod 644 ~/.ssh/known_hosts
 
       # Populate the LOCAL server_game-data volume — the precondition for
@@ -206,21 +216,29 @@ jobs:
 
       # The whole pipeline in one command. The runner builds all three images
       # in-process (reading STEAM_ACCOUNTS[0] for the Steam --secret login),
-      # streams them + the game-data volume to the VPS, then runs the filtered
-      # tests there. --filter is a substring match against the FQ test name, so a
-      # class name runs that class. STEAM_ACCOUNTS is required here from the very
-      # first run — without it the in-process image build fails with a Steam-login
-      # error.
-      - name: Run E2E smoke
+      # streams them + the game-data volume to the VPS, then runs the tests there.
+      # --filter is a substring match against the FQ test name (a class name runs
+      # that class); with no filter the full suite runs. STEAM_ACCOUNTS is required
+      # here from the very first run — without it the in-process image build fails
+      # with a Steam-login error.
+      - name: Run E2E suite
         env:
           STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
+          # The base64 host fleet is decoded STEP-LOCALLY below (not $GITHUB_ENV) so
+          # the inline SSH key isn't exposed to other steps.
+          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
           # Pass the (operator-controlled) filter through the environment, not
           # interpolated into the command line, so its value can never be parsed
-          # as shell. The input already defaults to ServerSettingsTests; the
-          # fallback covers an explicitly-cleared input.
-          FILTER: ${{ inputs.filter || 'ServerSettingsTests' }}
+          # as shell. Empty (the default) runs the full suite — pass --filter only
+          # when a non-whitespace value was provided.
+          FILTER: ${{ inputs.filter }}
         run: |
-          dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
+          export SDVD_DOCKER_HOSTS="$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)"
+          if [ -n "${FILTER//[[:space:]]/}" ]; then
+            dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
+          else
+            dotnet run --project ./tests/JunimoServer.TestRunner
+          fi
 
       # Render the runner's ctrf-report.json (TestRunArtifactWriter.WriteCtrfReport,
       # one per CI invocation) into the job Summary tab. summary-report = pass/fail
