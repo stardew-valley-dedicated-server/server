@@ -137,19 +137,18 @@ jobs:
             const noop = (reason) => { core.info(`No-op: ${reason}`); core.setOutput('proceed', 'false'); };
 
             // Classify + parse (pure logic lives in the helper, where it's unit-tested).
+            // These are the cheap, side-effect-free structural filters that decide "is this
+            // even our command / our sticky" — they must run BEFORE authorization so an edit
+            // to an unrelated comment is ignored silently (no auth API call, no bot reply).
+            // Filter validity is recorded here but only ACTED ON after the maintainer check,
+            // so a non-maintainer's bad input never elicits a bot reaction (see below).
             let filter = '';
+            let filterValid = true;
             if (action === 'created') {
               const cmd = helper.parseCommand(body);
               if (!cmd.isCommand) return noop('comment is not an anchored /run-tests-e2e command');
-              // Reject a filter with characters that could break the hidden markers or the
-              // markdown table (or that xUnit wouldn't accept) rather than corrupt the sticky.
-              if (!cmd.valid) {
-                await github.rest.reactions.createForIssueComment({
-                  owner, repo, comment_id: comment.id, content: 'confused',
-                });
-                return noop('filter contains disallowed characters');
-              }
               filter = cmd.filter;
+              filterValid = cmd.valid;
             } else {
               // edited: react only to OUR sticky AND a confirmed unchecked->checked tick.
               if (!body.includes(helper.MARKER)) return noop('edited comment is not the e2e sticky');
@@ -161,7 +160,8 @@ jobs:
             }
 
             // Authorize the actor (the commenter / the clicker). Authoritative permission
-            // API — NOT author_association. 404 (non-collaborator) is a deny.
+            // API — NOT author_association. 404 (non-collaborator) is a deny. Runs before any
+            // bot reaction so a non-maintainer can't elicit one (beyond the deny reply below).
             const allowed = await helper.isMaintainer({ github, owner, repo, username: actor });
             if (!allowed) {
               await github.rest.reactions.createForIssueComment({
@@ -179,6 +179,16 @@ jobs:
                 });
               }
               return noop(`${actor} is not a maintainer`);
+            }
+
+            // Maintainer, but the filter has characters that could break the hidden markers
+            // or the markdown table (or that xUnit wouldn't accept). React 'confused' and
+            // bail rather than corrupt the sticky. Only reachable on the `created` path.
+            if (!filterValid) {
+              await github.rest.reactions.createForIssueComment({
+                owner, repo, comment_id: comment.id, content: 'confused',
+              });
+              return noop('filter contains disallowed characters');
             }
 
             // Resolve PR HEAD (the comment payload has the PR number but not the head SHA).
