@@ -11,6 +11,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
+| [E2E Tests](#e2e-tests-pipeline) | Manual: `workflow_dispatch` or maintainer `/run-tests-e2e` PR comment | Runs the Docker E2E suite on a remote VPS (never a required check) |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 | [Deploy Docs](#deploy-docs-pipeline) | After build / manual | Deploys documentation to GitHub Pages |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual | Deletes old preview tags from DockerHub |
@@ -221,6 +222,45 @@ On push to `master` and on the weekly schedule there is no PR diff base, so the 
 ### Trigger & Fork Safety
 
 CodeQL triggers on `pull_request`, **not** `pull_request_target` (the opposite choice from [Validate PR](#validate-pr-pipeline)). It analyzes the PR head read-only with the default `GITHUB_TOKEN` and needs no secrets, so it is safe to run on fork PRs — fork code must be read to be scanned, but no secret is ever exposed to it. It is not run on `merge_group`: that event is only for required checks, and running an advisory scan there would be pure waste.
+
+## E2E Tests Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/e2e-tests.yml)
+
+Runs the heavy Docker E2E suite. The coordinator (`JunimoServer.TestRunner`) runs on the GitHub runner; the actual Stardew game containers run on a **remote VPS over SSH**. It is **manual and maintainer-gated** — never an automatic merge gate, and **never a required check** (an external VPS being down must not block the queue). For how to *use* it (triggers, results, the re-run checkbox), see [E2E Testing → CI Usage](../testing/e2e-testing.md#ci-usage); this section covers the pipeline's safety model and one-time setup.
+
+### Three entry points
+
+| Trigger | How |
+|---------|-----|
+| `workflow_dispatch` | Actions tab → **Run workflow** (full suite from a trusted branch; optional `filter`). |
+| `/run-tests-e2e [filter]` | A PR comment (the `issue_comment: created` event). Runs against the PR's HEAD. |
+| **Re-run checkbox** | Ticking "🔁 Re-run E2E tests" in the bot's results comment (`issue_comment: edited`). |
+
+### Trigger & Fork Safety
+
+The PR-comment path is privileged (it reaches the VPS SSH key = root on the test VPS via the docker group), so it is gated in layers:
+
+- **`issue_comment` always runs the workflow file from the default branch** (`master`), never the PR/fork copy — a fork cannot inject workflow code via a comment.
+- The **`gate` job** (no secrets) authorizes the **event actor** (`github.event.sender`, not the comment author — they differ on a checkbox edit) via the repo-permission API (`getCollaboratorPermissionLevel`; **write/admin required**, `author_association` is deliberately not used; a non-collaborator's `404` is a deny; a `403` fails closed). Non-maintainers get a 👎 + a "not authorized" reply and **no secret-bearing job runs**.
+- **Fork PRs** additionally pass through the **`fork-pr` GitHub Environment** approval (a required reviewer) on the `authorize` job before the secret-bearing `e2e` job runs. Same-repo PRs resolve no environment (no prompt). This mirrors [Validate PR](#validate-pr-pipeline)'s `authorize` gate.
+- The `e2e` job checks out the **PR HEAD at a pinned SHA** (resolved by the gate) to build and test the proposed code — this is the intended behaviour, gated by the fork-pr approval. The PR-sticky helper is loaded from a **separate trusted (default-branch) checkout**, never from the PR checkout, so fork code can't run with secrets through our own tooling.
+- **Single VPS runner:** a global `concurrency` singleton means runs **queue** (active + at most one pending); a newer trigger replaces the waiting one and never preempts the active run. To preempt, a maintainer cancels the in-flight run from the Actions tab — kept off the comment surface deliberately, since `cancel-in-progress` is evaluated *before* the gate authorizes, so a comment-driven cancel would let a non-maintainer grief the queue. The cancelled run reports "⚪ aborted".
+
+### One-time setup (required for the PR path to be safe)
+
+1. **`fork-pr` Environment** (Settings → Environments) — must exist with **at least one required reviewer**. This is the load-bearing control for fork PRs; without a reviewer the approval auto-passes and fork code would reach the secrets. (Shared with Validate PR.)
+2. **`test-vps` Environment** — holds the run secrets: `SDVD_DOCKER_HOSTS` (the host-fleet JSON with the inline SSH key) and `STEAM_ACCOUNTS`. The Cloudflare-R2 report publish uses `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID` (secrets) plus `R2_BUCKET` / `R2_PUBLIC_BASE_URL` (**variables**, not secrets — they contain a hyphen that the secret masker would over-mask). See [E2E Testing → Hosted report](../testing/e2e-testing.md#hosted-report-cloudflare-r2).
+
+### Helper script & tests
+
+The PR sticky-comment logic lives in [`.github/scripts/e2e-pr-sticky.js`](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/scripts/e2e-pr-sticky.js) (pure functions + thin GitHub-API wrappers). Its unit tests (`e2e-pr-sticky.test.js`) use Node's built-in runner — run them with `npm test`. These cover the command parsing, the re-run checkbox state machine, the marker round-tripping, the run-history cap, the filter validation, and the maintainer-auth fail-closed behaviour.
+
+To lint the workflow YAML itself, run [actionlint](https://github.com/rhysd/actionlint) via its Docker image (no local install needed):
+
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color .github/workflows/e2e-tests.yml
+```
 
 ## Deploy Docs Pipeline
 

@@ -179,7 +179,7 @@ VPS being down must not block the queue):
 
 - **Actions tab → "Run workflow"** (`workflow_dispatch`) — runs the full suite from a
   trusted branch; the optional `filter` input narrows it to a class/method.
-- **`/run-tests-e2e [filter] [--abort-current]` PR comment** — runs against the PR's
+- **`/run-tests-e2e [filter]` PR comment** — runs against the PR's
   HEAD commit and posts results back to the PR (see below). `filter` is an xUnit
   class/method substring; omit it for the full suite.
 - **The "🔁 Re-run E2E tests" checkbox** in the bot's results comment — ticking it
@@ -194,8 +194,8 @@ runs (a maintainer clicks "approve"); same-repo PRs run without a prompt.
 
 **Single runner / queueing.** There is one physical VPS runner, so all runs share a
 global concurrency singleton: a new trigger **queues** behind an active run (it does
-not abort it). To deliberately preempt the in-flight run, add `--abort-current` to
-the comment. The aborted run still writes its summary and reports "⚪ aborted".
+not abort it). To deliberately preempt the in-flight run, a maintainer cancels it from
+the **Actions tab**; the cancelled run still writes its summary and reports "⚪ aborted".
 
 Results surface in several places, all produced from artifacts the runner emits:
 
