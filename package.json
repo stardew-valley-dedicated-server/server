@@ -4,7 +4,8 @@
   "description": "Stardew Valley Dedicated Server",
   "private": true,
   "scripts": {
-    "postinstall": "lefthook install"
+    "postinstall": "lefthook install",
+    "test": "node --test \".github/scripts/**/*.test.js\""
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
