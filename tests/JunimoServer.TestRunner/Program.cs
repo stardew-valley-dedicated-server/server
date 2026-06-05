@@ -437,7 +437,7 @@ try
         if (result.Error != null)
         {
             renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {result.HostId}",
-                SetupStepStatus.Warning, $"{result.Error.GetType().Name}: {result.Error.Message}"));
+                SetupStepStatus.Warning, $"{result.Error.GetType().Name}: {ScrubForLog(result.Error.Message)}"));
         }
         else
         {
@@ -485,9 +485,10 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[ImageBuild] Parent-side build failed: {ex.Message}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_build", message = ex.Message });
-    parentBuildProgress.PhaseCompleted("Docker Images", false, ex.Message);
+    var buildMsg = ScrubForLog(ex.Message);
+    Console.Error.WriteLine($"[ImageBuild] Parent-side build failed: {buildMsg}");
+    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_build", message = buildMsg });
+    parentBuildProgress.PhaseCompleted("Docker Images", false, buildMsg);
     recorder.SetAbortReason("image_build");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -643,12 +644,13 @@ try
 }
 catch (Exception ex)
 {
-    JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(ex.Message);
+    var runMsg = ScrubForLog(ex.Message);
+    JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(runMsg);
     JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_aborted", new
     {
         cause = "exception",
         exceptionType = ex.GetType().Name,
-        message = ex.Message
+        message = runMsg
     });
     recorder.SetAbortReason("exception");
     throw;

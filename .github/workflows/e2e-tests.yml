@@ -93,6 +93,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # This job uploads artifacts and publishes a report to a PUBLIC bucket, and
+          # no later step needs the git credential, so don't persist it in .git/config
+          # (defense in depth — keeps the token out of anything we upload).
+          persist-credentials: false
 
       # Decode the base64 host-fleet config into SDVD_DOCKER_HOSTS for the keyscan +
       # runner steps. Written to $GITHUB_ENV via the heredoc form (multiline-safe),
