@@ -82,8 +82,9 @@ jobs:
       # PEM's `-----` armor would mask every `-` in the whole log (client-0 → client***0,
       # dates, etc.) while leaving the real IP unmasked. Base64 makes it a single-line
       # secret that GitHub registers atomically, so nothing in normal logs matches it.
-      # The "Decode host fleet" step (below) restores SDVD_DOCKER_HOSTS into $GITHUB_ENV
-      # for the keyscan + runner steps. Shape of the pre-encoding JSON:
+      # It is decoded STEP-LOCALLY in the two steps that need it (keyscan + runner) —
+      # never into $GITHUB_ENV, which would expose the inline SSH key to every later
+      # step (incl. third-party actions). Shape of the pre-encoding JSON:
       #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
       #     "clientSlots":2,"gpu":false,
       #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
@@ -98,28 +99,6 @@ jobs:
           # no later step needs the git credential, so don't persist it in .git/config
           # (defense in depth — keeps the token out of anything we upload).
           persist-credentials: false
-
-      # Decode the base64 host-fleet config into SDVD_DOCKER_HOSTS for the keyscan +
-      # runner steps. Written to $GITHUB_ENV via the heredoc form (multiline-safe),
-      # NOT echoed to the log. The decoded JSON carries the inline SSH key with real
-      # newlines; GitHub does NOT auto-mask it (only the registered base64 blob is
-      # masked, never derived values) — so it MUST NEVER be printed. Do not add an
-      # `echo`/`cat` of $SDVD_DOCKER_HOSTS anywhere; the keyscan step's jq already
-      # extracts only `.endpoint`.
-      - name: Decode host fleet
-        env:
-          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
-        run: |
-          if [ -z "$SDVD_DOCKER_HOSTS_B64" ]; then
-            echo "::error::SDVD_DOCKER_HOSTS_B64 is not set in the test-vps environment." >&2
-            exit 1
-          fi
-          {
-            echo 'SDVD_DOCKER_HOSTS<<__SDVD_HOSTS_EOF__'
-            printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d
-            echo
-            echo '__SDVD_HOSTS_EOF__'
-          } >> "$GITHUB_ENV"
 
       # The coordinator is a net10.0 app that runs HERE on the runner (the mod
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
@@ -183,21 +162,24 @@ jobs:
       # keep in sync. The private key is NOT written here — HostPool materializes
       # the inline `sshKey` to its own 0600 temp file.
       #
-      # SECURITY: the jq below extracts ONLY `.endpoint`. Never change it to read
-      # `.sshKey` (or pipe the raw $SDVD_DOCKER_HOSTS to stdout) — the decoded JSON
-      # carries the private key with real newlines, which GitHub does NOT mask (only
-      # the base64 blob is registered), so printing it would leak the key. The host
-      # is NOT echoed either: it's the VPS IP, which would otherwise show in the log.
-      # SDVD_DOCKER_HOSTS comes from $GITHUB_ENV (the Decode host fleet step).
+      # SECURITY: the base64 host-fleet config is decoded into a STEP-LOCAL shell var
+      # (never $GITHUB_ENV — that would expose the inline SSH key to every later step,
+      # incl. third-party actions). The jq below extracts ONLY `.endpoint`; never read
+      # `.sshKey` or pipe the decoded JSON to stdout — GitHub does NOT mask the decoded
+      # value (only the base64 blob is registered), so printing it would leak the key.
+      # The host is NOT echoed either: it's the VPS IP.
       - name: Trust VPS host key
+        env:
+          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          hosts=$(printf '%s' "$SDVD_DOCKER_HOSTS" \
+          hosts_json=$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)
+          hosts=$(printf '%s' "$hosts_json" \
             | jq -r '.[] | select(.endpoint) | .endpoint' \
             | sed -E 's#^ssh://##; s#^[^@]*@##')
           if [ -z "$hosts" ]; then
-            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS — cannot keyscan." >&2
+            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS_B64 — cannot keyscan." >&2
             exit 1
           fi
           count=0
@@ -242,13 +224,17 @@ jobs:
       - name: Run E2E suite
         env:
           STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
+          # The base64 host fleet is decoded STEP-LOCALLY below (not $GITHUB_ENV) so
+          # the inline SSH key isn't exposed to other steps.
+          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
           # Pass the (operator-controlled) filter through the environment, not
           # interpolated into the command line, so its value can never be parsed
           # as shell. Empty (the default) runs the full suite — pass --filter only
-          # when a value was provided.
+          # when a non-whitespace value was provided.
           FILTER: ${{ inputs.filter }}
         run: |
-          if [ -n "$FILTER" ]; then
+          export SDVD_DOCKER_HOSTS="$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | base64 -d)"
+          if [ -n "${FILTER//[[:space:]]/}" ]; then
             dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
           else
             dotnet run --project ./tests/JunimoServer.TestRunner
