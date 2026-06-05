@@ -217,6 +217,14 @@ test('parseCommand: anchored to the first line; a mid-text mention is ignored', 
   assert.deepEqual(helper.parseCommand('/run-tests-e2e Foo'), { isCommand: true, filter: 'Foo', valid: true });
 });
 
+test('parseCommand: CRLF line endings are handled (GitHub comments often arrive as \\r\\n)', () => {
+  // JS `.` does not match \r, so a naive \n-split would leave a trailing \r and the command
+  // would be silently ignored. Both no-arg and filtered forms must parse under CRLF.
+  assert.deepEqual(helper.parseCommand('/run-tests-e2e\r\nsecond'), { isCommand: true, filter: '', valid: true });
+  assert.deepEqual(helper.parseCommand('/run-tests-e2e MyClass\r\nsecond'), { isCommand: true, filter: 'MyClass', valid: true });
+  assert.deepEqual(helper.parseCommand('/run-tests-e2e MyClass\r'), { isCommand: true, filter: 'MyClass', valid: true });
+});
+
 test('parseCommand: no filter = full suite; extra whitespace collapses', () => {
   assert.deepEqual(helper.parseCommand('/run-tests-e2e'), { isCommand: true, filter: '', valid: true });
   assert.deepEqual(helper.parseCommand('/run-tests-e2e   MyClass   Method  '),

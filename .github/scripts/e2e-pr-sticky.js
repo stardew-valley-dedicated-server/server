@@ -282,7 +282,10 @@ const FILTER_ALLOWED = /^[A-Za-z0-9_.+=() -]*$/;
  *   the filter has disallowed characters (the caller should reject, not run).
  */
 function parseCommand(body) {
-  const firstLine = (body || '').split('\n', 1)[0];
+  // Split on CRLF or LF and strip any trailing \r — GitHub comment bodies often arrive
+  // with \r\n, and JS `.` does not match \r, so a bare `\n` split would leave the regex
+  // unable to match `/run-tests-e2e Foo\r` (silently ignoring the command).
+  const firstLine = (body || '').split(/\r?\n/, 1)[0].replace(/\r$/, '');
   const m = firstLine.match(/^\/run-tests-e2e(?:\s+(.*))?$/);
   if (!m) return { isCommand: false, filter: '', valid: false };
   const filter = (m[1] || '').trim().split(/\s+/).filter(Boolean).join(' ');
