@@ -1,19 +1,34 @@
-# Runs the heavy Docker E2E suite (the full suite by default; a dispatch-time
-# `filter` input narrows it to a class/method). The coordinator
-# (JunimoServer.TestRunner, a net10.0 app) runs here on ubuntu-latest; the actual
-# Stardew game containers run on a remote VPS reached over SSH — the harness's
-# existing multi-host model with SDVD_DOCKER_HOSTS set to a VPS-only fleet.
+# Runs the heavy Docker E2E suite (the full suite by default; a `filter` narrows it
+# to a class/method). The coordinator (JunimoServer.TestRunner, a net10.0 app) runs
+# here on ubuntu-latest; the actual Stardew game containers run on a remote VPS
+# reached over SSH — the harness's existing multi-host model with SDVD_DOCKER_HOSTS
+# set to a VPS-only fleet.
 #
-# workflow_dispatch only — never automatic. E2E depends on an external VPS being
-# up; that availability risk must never gate the merge queue. Manual-from-a-
-# trusted-branch also keeps the VPS SSH key and Steam secrets away from fork code.
-# Do NOT add pull_request_target / push / schedule / merge_group. A future move to
-# any automatic trigger would first require copying validate-pr.yml's authorize /
-# fork-pr environment gate (the VPS private key reaching fork code = root on the
-# test VPS via the docker group), and must never become a required check.
+# THREE ways in, all manual and maintainer-gated — never an automatic merge gate:
+#   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch.
+#   2. `/run-tests-e2e [filter] [--abort-current]` PR comment.
+#   3. the "Re-run E2E tests" checkbox in the bot's results comment (a click in the
+#      PR view; toggling it fires issue_comment: edited).
 #
-# All secrets resolve from the `test-vps` GitHub Environment (the same per-
-# environment mechanism deploy-server.yml uses), not loose repo-level secrets.
+# Why this is safe despite touching PRs:
+#   - issue_comment ALWAYS runs THIS workflow file from the default branch (master),
+#     never the PR/fork version — a fork cannot inject workflow code via a comment.
+#   - The `gate` job authorizes the commenter via the repo-permission API (write/admin
+#     required; NOT author_association, which is permission-blind). Non-maintainers are
+#     refused before any secret-bearing job runs.
+#   - Fork PRs additionally pass through the `fork-pr` Environment approval (mirrors
+#     validate-pr.yml) before the secret-bearing `e2e` job runs — the VPS private key
+#     reaching fork code = root on the test VPS via the docker group.
+#   - Single physical VPS runner: a global concurrency singleton QUEUES runs (active +
+#     1 waiting); a run is only aborted on explicit `--abort-current`. A cancel triggers
+#     the runner's abort path (writes summary.json, sweeps VPS containers by run-id).
+#   - This workflow must NEVER become a required check (external-VPS availability can't
+#     gate the merge queue). Do NOT add pull_request_target / push / schedule /
+#     merge_group.
+#
+# All secrets resolve from the `test-vps` GitHub Environment (the same per-environment
+# mechanism deploy-server.yml uses), not loose repo-level secrets. R2_BUCKET /
+# R2_PUBLIC_BASE_URL are test-vps *variables* (public by design; see the R2 step).
 name: E2E Tests
 
 on:
@@ -23,24 +38,179 @@ on:
         description: 'Test filter (xUnit class/method substring). Empty = run the full suite.'
         required: false
         default: ''
+  # PR comments: `created` = the typed `/run-tests-e2e` command; `edited` = the re-run
+  # checkbox in the bot's results comment being ticked. The `gate` job's `if:` narrows
+  # this to PR comments that are actually our command or our sticky (see that job).
+  issue_comment:
+    types: [created, edited]
 
 permissions:
   contents: read
 
-# Cancel superseded dispatches. Keyed on github.ref — a dispatch has no PR number.
-# A cancel triggers the runner's abort path (writes summary.json, sweeps VPS
-# containers by run-id).
+# ONE concurrency key for the single physical VPS runner — dispatch, comment, and
+# checkbox runs all share it, so they QUEUE rather than run in parallel. Default
+# behaviour keeps the active run + at most one pending (a newer trigger replaces the
+# waiting one). cancel-in-progress is OFF unless the comment carries `--abort-current`,
+# so a plain re-run never preempts an in-flight run; an explicit abort does (and the
+# runner's abort path writes summary.json + sweeps VPS containers by run-id). The
+# event_name guard short-circuits before comment.body is read on a dispatch (null-safe).
 concurrency:
-  group: e2e-tests-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-tests-singleton
+  cancel-in-progress: ${{ github.event_name == 'issue_comment' && contains(github.event.comment.body, '--abort-current') }}
 
 jobs:
+  # ── Authorize + parse + resolve the PR HEAD. NO secrets here; this job decides
+  # whether the run is allowed and what it should run, then hands the e2e job a
+  # resolved SHA/filter. The `if:` is a coarse pre-filter (GitHub expressions can't do
+  # regex); the authoritative checks (anchored command match, maintainer permission,
+  # checkbox transition) run inside the github-script step.
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # post/update the sticky + reactions
+      contents: read
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment'
+       && github.event.issue.pull_request != null
+       && github.event.comment.user.type != 'Bot'
+       && (
+            (github.event.action == 'created'
+               && startsWith(github.event.comment.body, '/run-tests-e2e'))
+         || (github.event.action == 'edited'
+               && contains(github.event.comment.body, '<!-- e2e-results -->'))
+          ))
+    outputs:
+      proceed: ${{ steps.gate.outputs.proceed }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+      head_ref: ${{ steps.gate.outputs.head_ref }}
+      filter: ${{ steps.gate.outputs.filter }}
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      is_fork: ${{ steps.gate.outputs.is_fork }}
+    steps:
+      # Check out ONLY the shared helper script from the (trusted) default branch, so
+      # the github-script step can require() it. issue_comment already runs the default-
+      # branch workflow; this checkout is the default ref too (never the PR head).
+      - name: Checkout gate helper
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          sparse-checkout: .github/scripts/e2e-pr-sticky.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Authorize, parse, resolve PR HEAD
+        id: gate
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          DISPATCH_FILTER: ${{ inputs.filter }}
+        with:
+          script: |
+            const helper = require('./.github/scripts/e2e-pr-sticky.js');
+            const { owner, repo } = context.repo;
+
+            // ---- workflow_dispatch: trusted branch, no PR context ----
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('proceed', 'true');
+              core.setOutput('filter', process.env.DISPATCH_FILTER || '');
+              core.setOutput('is_fork', 'false');
+              return;
+            }
+
+            // ---- issue_comment (created command | edited checkbox) ----
+            const comment = context.payload.comment;
+            const issueNumber = context.payload.issue.number;
+            const action = context.payload.action;
+            const body = comment.body || '';
+
+            const noop = (reason) => { core.info(`No-op: ${reason}`); core.setOutput('proceed', 'false'); };
+
+            // Classify + parse.
+            let filter = '';
+            if (action === 'created') {
+              // Anchored command match on the first line — a quoted/mid-text mention is ignored.
+              const firstLine = body.split('\n', 1)[0];
+              const m = firstLine.match(/^\/run-tests-e2e(?:\s+(.*))?$/);
+              if (!m) return noop('comment is not an anchored /run-tests-e2e command');
+              const args = (m[1] || '').trim().split(/\s+/).filter(Boolean);
+              filter = args.filter((a) => a !== '--abort-current').join(' ');
+            } else {
+              // edited: react only to OUR sticky AND an unchecked->checked transition of the box.
+              if (!body.includes(helper.MARKER)) return noop('edited comment is not the e2e sticky');
+              const wasChecked = helper.isReRunChecked(context.payload.changes?.body?.from || '');
+              const nowChecked = helper.isReRunChecked(body);
+              if (!(nowChecked && !wasChecked)) return noop('re-run box was not just ticked');
+              filter = helper.readFilter(body); // re-run reuses the filter the sticky recorded
+            }
+
+            // Authorize the actor (the commenter / the clicker). Authoritative permission
+            // API — NOT author_association. 404 (non-collaborator) is a deny.
+            const username = comment.user.login;
+            const allowed = await helper.isMaintainer({ github, owner, repo, username });
+            if (!allowed) {
+              await github.rest.reactions.createForIssueComment({
+                owner, repo, comment_id: comment.id, content: '-1',
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `@${username} — E2E runs are maintainer-only (repo write access required).`,
+              });
+              return noop(`${username} is not a maintainer`);
+            }
+
+            // Resolve PR HEAD (the comment payload has the PR number but not the head SHA).
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data;
+            const headRepo = pr.head.repo ? pr.head.repo.full_name : null;
+            const isFork = headRepo !== `${owner}/${repo}`; // null head.repo (deleted fork) => treat as fork
+
+            // Acknowledge: 👀 on the comment + a "queued" sticky (re-run box reset; "(requested)"
+            // on the checkbox path so the click is visibly picked up). Preserve run history.
+            await github.rest.reactions.createForIssueComment({
+              owner, repo, comment_id: comment.id, content: 'eyes',
+            });
+            const existing = await helper.findSticky({ github, owner, repo, issue_number: issueNumber });
+            const history = existing ? helper.readHistory(existing.body) : [];
+            await helper.upsertSticky({
+              github, owner, repo, issue_number: issueNumber,
+              body: helper.renderBody({
+                status: 'queued', statusEmoji: '🟡',
+                headline: `Queued for \`${pr.head.sha.slice(0, 7)}\`…`,
+                filter, history, requested: action === 'edited',
+              }),
+            });
+
+            core.setOutput('proceed', 'true');
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('filter', filter);
+            core.setOutput('pr_number', String(issueNumber));
+            core.setOutput('is_fork', String(isFork));
+
+  # ── Fork-PR approval gate. Same-repo PRs and dispatch resolve the empty environment
+  # (no prompt); fork PRs resolve `fork-pr`, requiring a maintainer to approve the
+  # deployment before the secret-bearing e2e job runs (the VPS key reaching fork code =
+  # root on the test VPS). `needs` is permitted in jobs.<id>.environment. Defense in
+  # depth atop the gate's permission check.
+  authorize:
+    name: Authorize (fork-pr)
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.gate.outputs.is_fork == 'true' && 'fork-pr' || '' }}
+    steps:
+      - run: echo "Authorized — fork=${{ needs.gate.outputs.is_fork }}."
+
   e2e:
     name: E2E (VPS)
+    needs: [gate, authorize]
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     # Holds the Steam + SSH secrets. Mirrors deploy-server.yml's per-environment
     # secret scoping.
     environment: test-vps
+    permissions:
+      pull-requests: write   # the "Update PR sticky" step posts results back to the PR
+      contents: read
     # No job-level timeout-minutes: a bare dispatch runs the FULL suite, whose size
     # varies, so we don't hardcode a wall-clock cap. The runner's own per-test and
     # broker timeouts catch real hangs; GitHub's default job timeout is the backstop.
@@ -88,6 +258,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          # On the PR-comment path, check out the PR's HEAD (resolved by the gate) so we
+          # test the proposed code, not master — a full SHA fetches a fork commit fine.
+          # On dispatch, gate.outputs.head_sha is empty → checkout's default ref (the
+          # dispatched branch). The default-branch workflow file is what runs either way.
+          ref: ${{ needs.gate.outputs.head_sha }}
           # This job uploads artifacts and publishes a report to a PUBLIC bucket, and
           # no later step needs the git credential, so don't persist it in .git/config
           # (defense in depth — keeps the token out of anything we upload).
@@ -214,11 +389,12 @@ jobs:
         env:
           SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
           STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
-          # Pass the (operator-controlled) filter through the environment, not
+          # Pass the (maintainer-controlled) filter through the environment, not
           # interpolated into the command line, so its value can never be parsed
-          # as shell. Empty (the default) runs the full suite — pass --filter only
+          # as shell. The gate resolves it from the dispatch input OR the comment /
+          # checkbox; empty (the default) runs the full suite — pass --filter only
           # when a non-whitespace value was provided.
-          FILTER: ${{ inputs.filter }}
+          FILTER: ${{ needs.gate.outputs.filter }}
         run: |
           if [ -n "${FILTER//[[:space:]]/}" ]; then
             dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
@@ -300,6 +476,7 @@ jobs:
       # account id, all hex) stay secrets. Do NOT move R2_BUCKET / R2_PUBLIC_BASE_URL back
       # to secrets.
       - name: Publish web report to R2
+        id: r2
         if: always()
         continue-on-error: true
         env:
@@ -308,7 +485,9 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
-          BRANCH_REF: ${{ github.ref_name }}
+          # Prefer the PR head ref (comment path) so the object key is keyed on the PR's
+          # branch — on issue_comment, github.ref_name is the default branch (master).
+          BRANCH_REF: ${{ needs.gate.outputs.head_ref || github.ref_name }}
         run: |
           # GitHub runs steps with `bash -eo pipefail` (errexit ON). Relax it so a
           # partial failure can't truncate the script before the summary write.
@@ -355,7 +534,82 @@ jobs:
               echo ""
               echo "**[Open interactive report]($url)** (screenshots + videos, $size)"
             } >> "$GITHUB_STEP_SUMMARY"
+            # Hand the URL to the PR-sticky step (no-op on dispatch / when unconfigured).
+            echo "report_url=$url" >> "$GITHUB_OUTPUT"
             echo "Published report: $url ($size)"
           else
             echo "::warning::R2 publish failed (network/credentials/quota). Report remains in the 'e2e-web-report' artifact."
           fi
+
+      # Replace the PR sticky with the final result (PR-comment path only). Reads the
+      # runner's summary.json for counts/status, resets the re-run checkbox to its idle
+      # label, and APPENDS a row to the retained run-history table (older rows kept) so
+      # the PR keeps a full per-run trail for debugging. if: always() fires on pass, fail,
+      # AND cancel (an --abort-current preempt) — a sibling status check picks the headline
+      # so an aborted run reports "⚪ aborted" instead of stranding on "🟡 queued". The
+      # GITHUB_TOKEN edit does not retrigger the workflow (recursion guard).
+      - name: Update PR sticky
+        if: always() && github.event_name == 'issue_comment'
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          REPORT_URL: ${{ steps.r2.outputs.report_url }}
+          FILTER: ${{ needs.gate.outputs.filter }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          # job.status is success | failure | cancelled at always()-eval time.
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const fs = require('fs');
+            const helper = require('./.github/scripts/e2e-pr-sticky.js');
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const sha = (process.env.HEAD_SHA || '').slice(0, 7);
+            const filter = process.env.FILTER || '';
+            const reportUrl = process.env.REPORT_URL || '';
+            const jobStatus = process.env.JOB_STATUS;
+
+            // Find the one summary.json the runner wrote (one run dir per invocation).
+            let summary = null;
+            const runsDir = 'TestResults/runs';
+            for (const dir of (fs.existsSync(runsDir) ? fs.readdirSync(runsDir) : [])) {
+              const p = `${runsDir}/${dir}/summary.json`;
+              if (fs.existsSync(p)) { try { summary = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} break; }
+            }
+
+            // Derive status. A cancelled job (--abort-current) wins regardless of partial summary.
+            let status, statusEmoji, resultEmoji, resultWord, headline;
+            if (jobStatus === 'cancelled' || (summary && summary.aborted)) {
+              status = 'aborted'; statusEmoji = resultEmoji = '⚪'; resultWord = 'aborted';
+              headline = `Aborted (\`--abort-current\`) for \`${sha}\`.`;
+            } else if (summary && summary.failed > 0) {
+              status = 'failed'; statusEmoji = resultEmoji = '🔴'; resultWord = 'failed';
+              headline = `**${summary.failed} failed**, ${summary.passed} passed` +
+                `${summary.skipped ? `, ${summary.skipped} skipped` : ''} for \`${sha}\`.`;
+            } else if (summary) {
+              status = 'passed'; statusEmoji = resultEmoji = '🟢'; resultWord = 'passed';
+              headline = `**${summary.passed} passed**` +
+                `${summary.skipped ? `, ${summary.skipped} skipped` : ''} for \`${sha}\`.`;
+            } else {
+              // No summary.json (early failure before the runner wrote it).
+              status = 'failed'; statusEmoji = resultEmoji = '🔴'; resultWord = 'no results';
+              headline = `Run finished without a summary for \`${sha}\` (check the Actions log).`;
+            }
+
+            // Append a history row to whatever the sticky already holds (older rows kept).
+            const existing = await helper.findSticky({ github, owner, repo, issue_number });
+            const history = existing ? helper.readHistory(existing.body) : [];
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            history.push({
+              n: history.length + 1, result: resultWord, resultEmoji, sha,
+              filter, when: new Date().toISOString().replace('T', ' ').slice(0, 16) + 'Z',
+              runUrl, reportUrl,
+            });
+
+            const body = helper.renderBody({
+              status, statusEmoji,
+              headline: reportUrl ? `${headline}\n\n**[▶ Open interactive report](${reportUrl})** (screenshots + videos)` : headline,
+              filter, history, requested: false,
+            });
+            await helper.upsertSticky({ github, owner, repo, issue_number, body });

@@ -171,26 +171,49 @@ TestResults/runs/{timestamp}_{sha}/tests/{Class}.{Method}/
 
 ## CI Usage
 
-The E2E suite runs from `.github/workflows/e2e-tests.yml` (`workflow_dispatch`
-only — the coordinator runs on the GitHub runner; the game containers run on a
-remote VPS over SSH). A bare dispatch runs the full suite; the optional `filter`
-input narrows it to a class/method. That workflow is the source of truth for CI
-invocation.
+The E2E suite runs from `.github/workflows/e2e-tests.yml` (the coordinator runs on
+the GitHub runner; the game containers run on a remote VPS over SSH). That workflow
+is the source of truth for CI invocation. There are three ways to launch it, all
+manual and **maintainer-gated** — it is never an automatic merge gate (an external
+VPS being down must not block the queue):
 
-Results surface in three places, all produced from artifacts the runner emits:
+- **Actions tab → "Run workflow"** (`workflow_dispatch`) — runs the full suite from a
+  trusted branch; the optional `filter` input narrows it to a class/method.
+- **`/run-tests-e2e [filter] [--abort-current]` PR comment** — runs against the PR's
+  HEAD commit and posts results back to the PR (see below). `filter` is an xUnit
+  class/method substring; omit it for the full suite.
+- **The "🔁 Re-run E2E tests" checkbox** in the bot's results comment — ticking it
+  re-runs with the same filter (a click-in-the-PR control; it fires `issue_comment:
+  edited`). The box auto-resets and shows "(requested)" until fresh results arrive.
 
+**Authorization.** Only repo maintainers (write/admin permission — checked via the
+repo-permission API, not `author_association`) can trigger a run from a PR; anyone
+else gets a 👎 and a "not authorized" reply, and no test job runs. **Fork PRs**
+additionally pause at a `fork-pr` Environment approval before the secret-bearing job
+runs (a maintainer clicks "approve"); same-repo PRs run without a prompt.
+
+**Single runner / queueing.** There is one physical VPS runner, so all runs share a
+global concurrency singleton: a new trigger **queues** behind an active run (it does
+not abort it). To deliberately preempt the in-flight run, add `--abort-current` to
+the comment. The aborted run still writes its summary and reports "⚪ aborted".
+
+Results surface in several places, all produced from artifacts the runner emits:
+
+- **PR sticky comment** (comment/checkbox path only) — a single bot comment, updated
+  in place each run, with the pass/fail headline, the hosted report link, the re-run
+  checkbox, and a collapsed **"Run history"** table that is appended to every run
+  (older rows kept) so the PR retains a full per-run trail for debugging.
 - **Job Summary tab** — the [CTRF reporter action](https://github.com/ctrf-io/github-test-reporter)
-  renders `runs/{id}/ctrf-report.json` into a pass/fail + failed-tests table. No
-  PR comment (the workflow is dispatch-only and has no PR context).
+  renders `runs/{id}/ctrf-report.json` into a pass/fail + failed-tests table.
 - **`e2e-web-report` artifact** — a self-contained offline bundle of the test-UI
   SPA with the run snapshot inlined and screenshots/videos copied alongside.
   Download it and open `report/index.html` over `file://`; screenshots and videos
   play without a running server.
 - **Hosted report URL (optional)** — when Cloudflare R2 is configured (see below),
-  the bundle is published to `…/e2e/{branch}/{run-id}/index.html` and linked from
-  the Job Summary, so the interactive report (with playing videos) can be opened
-  directly and shared. Per-branch history is kept; an R2 lifecycle rule expires
-  reports after 30 days.
+  the bundle is published to `…/e2e/{branch}/{run-id}/index.html` and linked from the
+  Job Summary and the PR sticky, so the interactive report (with playing videos) can
+  be opened directly and shared. Per-branch history is kept; an R2 lifecycle rule
+  expires reports after 30 days.
 
 Under `CI` (or with the `--report` flag locally), the runner assembles that
 bundle into `TestResults/runs/{id}/report/` after the run — it requires the
