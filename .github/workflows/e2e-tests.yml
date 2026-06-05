@@ -6,7 +6,7 @@
 #
 # THREE ways in, all manual and maintainer-gated — never an automatic merge gate:
 #   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch.
-#   2. `/run-tests-e2e [filter] [--abort-current]` PR comment.
+#   2. `/run-tests-e2e [filter]` PR comment.
 #   3. the "Re-run E2E tests" checkbox in the bot's results comment (a click in the
 #      PR view; toggling it fires issue_comment: edited).
 #
@@ -20,8 +20,10 @@
 #     validate-pr.yml) before the secret-bearing `e2e` job runs — the VPS private key
 #     reaching fork code = root on the test VPS via the docker group.
 #   - Single physical VPS runner: a global concurrency singleton QUEUES runs (active +
-#     1 waiting); a run is only aborted on explicit `--abort-current`. A cancel triggers
-#     the runner's abort path (writes summary.json, sweeps VPS containers by run-id).
+#     1 waiting); a newer trigger replaces the waiting one, never preempting the active
+#     run. To preempt, a maintainer cancels the in-flight run from the Actions tab — that
+#     cancel triggers the runner's abort path (writes summary.json, sweeps VPS containers
+#     by run-id), and the sticky reports "⚪ aborted".
 #   - This workflow must NEVER become a required check (external-VPS availability can't
 #     gate the merge queue). Do NOT add pull_request_target / push / schedule /
 #     merge_group.
@@ -48,15 +50,17 @@ permissions:
   contents: read
 
 # ONE concurrency key for the single physical VPS runner — dispatch, comment, and
-# checkbox runs all share it, so they QUEUE rather than run in parallel. Default
-# behaviour keeps the active run + at most one pending (a newer trigger replaces the
-# waiting one). cancel-in-progress is OFF unless the comment carries `--abort-current`,
-# so a plain re-run never preempts an in-flight run; an explicit abort does (and the
-# runner's abort path writes summary.json + sweeps VPS containers by run-id). The
-# event_name guard short-circuits before comment.body is read on a dispatch (null-safe).
+# checkbox runs all share it, so they QUEUE rather than run in parallel (active + at most
+# one pending; a newer trigger replaces the waiting one).
+#
+# cancel-in-progress is ALWAYS false: it is evaluated at the run-scheduling layer, BEFORE
+# the gate authorizes, so making it an expression on comment.body would let any commenter
+# (a non-maintainer) cancel a running job — griefing with no secret/code access, but still
+# a nuisance. Preempting an in-flight run is a maintainer action via the Actions tab, not a
+# comment-triggered one. Do NOT make this an expression on comment.body.
 concurrency:
   group: e2e-tests-singleton
-  cancel-in-progress: ${{ github.event_name == 'issue_comment' && contains(github.event.comment.body, '--abort-current') }}
+  cancel-in-progress: false
 
 jobs:
   # ── Authorize + parse + resolve the PR HEAD. NO secrets here; this job decides
@@ -132,21 +136,27 @@ jobs:
 
             const noop = (reason) => { core.info(`No-op: ${reason}`); core.setOutput('proceed', 'false'); };
 
-            // Classify + parse.
+            // Classify + parse (pure logic lives in the helper, where it's unit-tested).
             let filter = '';
             if (action === 'created') {
-              // Anchored command match on the first line — a quoted/mid-text mention is ignored.
-              const firstLine = body.split('\n', 1)[0];
-              const m = firstLine.match(/^\/run-tests-e2e(?:\s+(.*))?$/);
-              if (!m) return noop('comment is not an anchored /run-tests-e2e command');
-              const args = (m[1] || '').trim().split(/\s+/).filter(Boolean);
-              filter = args.filter((a) => a !== '--abort-current').join(' ');
+              const cmd = helper.parseCommand(body);
+              if (!cmd.isCommand) return noop('comment is not an anchored /run-tests-e2e command');
+              // Reject a filter with characters that could break the hidden markers or the
+              // markdown table (or that xUnit wouldn't accept) rather than corrupt the sticky.
+              if (!cmd.valid) {
+                await github.rest.reactions.createForIssueComment({
+                  owner, repo, comment_id: comment.id, content: 'confused',
+                });
+                return noop('filter contains disallowed characters');
+              }
+              filter = cmd.filter;
             } else {
-              // edited: react only to OUR sticky AND an unchecked->checked transition of the box.
+              // edited: react only to OUR sticky AND a confirmed unchecked->checked tick.
               if (!body.includes(helper.MARKER)) return noop('edited comment is not the e2e sticky');
-              const wasChecked = helper.isReRunChecked(context.payload.changes?.body?.from || '');
-              const nowChecked = helper.isReRunChecked(body);
-              if (!(nowChecked && !wasChecked)) return noop('re-run box was not just ticked');
+              const priorBody = context.payload.changes?.body?.from;
+              if (!helper.shouldFireRerun({ priorBody, body })) {
+                return noop('re-run box was not just ticked (or prior body unavailable)');
+              }
               filter = helper.readFilter(body); // re-run reuses the filter the sticky recorded
             }
 
@@ -184,7 +194,7 @@ jobs:
             const existing = await helper.findSticky({ github, owner, repo, issue_number: issueNumber });
             const history = existing ? helper.readHistory(existing.body) : [];
             await helper.upsertSticky({
-              github, owner, repo, issue_number: issueNumber,
+              github, owner, repo, issue_number: issueNumber, existing,
               body: helper.renderBody({
                 status: 'queued', statusEmoji: '🟡',
                 headline: `Queued for \`${pr.head.sha.slice(0, 7)}\`…`,
@@ -224,9 +234,13 @@ jobs:
     permissions:
       pull-requests: write   # the "Update PR sticky" step posts results back to the PR
       contents: read
-    # No job-level timeout-minutes: a bare dispatch runs the FULL suite, whose size
-    # varies, so we don't hardcode a wall-clock cap. The runner's own per-test and
-    # broker timeouts catch real hangs; GitHub's default job timeout is the backstop.
+    # The runner's own per-test and broker timeouts catch real hangs; this job cap is only
+    # a coarse backstop for a wedged process (e.g. a stuck SSH master) that those miss. It
+    # matters because of the single-runner concurrency singleton: a zombie run would block
+    # the next QUEUED run for as long as it lives, and GitHub's default is 6h. 120 min sits
+    # well above a real full-suite run (even serialized at serverSlots:1, plus image build +
+    # data transfer) but far below that 6h default, so a hang frees the queue in good time.
+    timeout-minutes: 120
 
     # Non-secret runner config shared by every step. The Steam secrets are scoped
     # to the two steps that consume them (populate + run), not broadcast here.
@@ -575,9 +589,9 @@ jobs:
       # runner's summary.json for counts/status, resets the re-run checkbox to its idle
       # label, and APPENDS a row to the retained run-history table (older rows kept) so
       # the PR keeps a full per-run trail for debugging. if: always() fires on pass, fail,
-      # AND cancel (an --abort-current preempt) — a sibling status check picks the headline
-      # so an aborted run reports "⚪ aborted" instead of stranding on "🟡 queued". The
-      # GITHUB_TOKEN edit does not retrigger the workflow (recursion guard).
+      # AND cancel (a maintainer preempting the run from the Actions tab) — a sibling status
+      # check picks the headline so a cancelled run reports "⚪ aborted" instead of stranding
+      # on "🟡 queued". The GITHUB_TOKEN edit does not retrigger the workflow (recursion guard).
       - name: Update PR sticky
         if: always() && github.event_name == 'issue_comment'
         continue-on-error: true
@@ -610,38 +624,26 @@ jobs:
               if (fs.existsSync(p)) { try { summary = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} break; }
             }
 
-            // Derive status. A cancelled job (--abort-current) wins regardless of partial summary.
-            let status, statusEmoji, resultEmoji, resultWord, headline;
-            if (jobStatus === 'cancelled' || (summary && summary.aborted)) {
-              status = 'aborted'; statusEmoji = resultEmoji = '⚪'; resultWord = 'aborted';
-              headline = `Aborted (\`--abort-current\`) for \`${sha}\`.`;
-            } else if (summary && summary.failed > 0) {
-              status = 'failed'; statusEmoji = resultEmoji = '🔴'; resultWord = 'failed';
-              headline = `**${summary.failed} failed**, ${summary.passed} passed` +
-                `${summary.skipped ? `, ${summary.skipped} skipped` : ''} for \`${sha}\`.`;
-            } else if (summary) {
-              status = 'passed'; statusEmoji = resultEmoji = '🟢'; resultWord = 'passed';
-              headline = `**${summary.passed} passed**` +
-                `${summary.skipped ? `, ${summary.skipped} skipped` : ''} for \`${sha}\`.`;
-            } else {
-              // No summary.json (early failure before the runner wrote it).
-              status = 'failed'; statusEmoji = resultEmoji = '🔴'; resultWord = 'no results';
-              headline = `Run finished without a summary for \`${sha}\` (check the Actions log).`;
-            }
+            // Derive the result (status, emoji, headline) from the job status + summary.json.
+            // Pure logic lives in the helper, where it's unit-tested.
+            const { status, statusEmoji, resultEmoji, resultWord, headline } =
+              helper.deriveResult({ summary, jobStatus, sha, reportUrl });
 
-            // Append a history row to whatever the sticky already holds (older rows kept).
+            // Append a history row. renderBody caps the retained rows, so derive the run
+            // number from the highest existing n (NOT array length, which is bounded).
             const existing = await helper.findSticky({ github, owner, repo, issue_number });
             const history = existing ? helper.readHistory(existing.body) : [];
+            const nextN = history.reduce((mx, h) => Math.max(mx, h.n || 0), 0) + 1;
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             history.push({
-              n: history.length + 1, result: resultWord, resultEmoji, sha,
+              n: nextN, result: resultWord, resultEmoji, sha,
               filter, when: new Date().toISOString().replace('T', ' ').slice(0, 16) + 'Z',
               runUrl, reportUrl,
             });
 
             const body = helper.renderBody({
-              status, statusEmoji,
-              headline: reportUrl ? `${headline}\n\n**[▶ Open interactive report](${reportUrl})** (screenshots + videos)` : headline,
-              filter, history, requested: false,
+              status, statusEmoji, headline, filter, history, requested: false,
             });
-            await helper.upsertSticky({ github, owner, repo, issue_number, body });
+            // Pass `existing` so the write targets the exact comment we read history from
+            // (one find per update; no lost-update race against a concurrent edit).
+            await helper.upsertSticky({ github, owner, repo, issue_number, body, existing });
