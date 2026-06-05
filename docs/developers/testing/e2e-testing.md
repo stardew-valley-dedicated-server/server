@@ -214,7 +214,7 @@ published snapshot is redacted (IPs, Steam credentials, player names, keys maske
 
 One-time setup (Cloudflare dashboard, outside this repo):
 
-1. Create an R2 bucket (e.g. `sdvd-e2e-reports`).
+1. Create an R2 bucket (e.g. `sdvd-test-artifacts`).
 2. Enable **public read** access (managed `r2.dev` subdomain or a custom domain); record
    the public base URL. Do not grant public write — writes use the API token (step 4).
 3. Add an **object-lifecycle rule** on the bucket to expire objects after 30 days
@@ -222,16 +222,23 @@ One-time setup (Cloudflare dashboard, outside this repo):
    reports server-side, so CI does no pruning.
 4. Create an R2 API token scoped to **Object Read & Write** → Access Key ID + Secret.
    This token is the only write path; keep it in the `test-vps` environment, never public.
-5. Add these as secrets in the **`test-vps`** GitHub Environment (same scoping as the
-   other E2E secrets):
+5. In the **`test-vps`** GitHub Environment, add the credentials as **secrets** and the
+   bucket name + public URL as **variables**:
 
    | Secret | Value |
    |--------|-------|
    | `R2_ACCOUNT_ID` | Cloudflare account ID (the `<id>` in the S3 endpoint) |
    | `R2_ACCESS_KEY_ID` | R2 API token access key |
    | `R2_SECRET_ACCESS_KEY` | R2 API token secret |
-   | `R2_BUCKET` | Bucket name (e.g. `sdvd-e2e-reports`) |
+
+   | Variable | Value |
+   |----------|-------|
+   | `R2_BUCKET` | Bucket name (e.g. `sdvd-test-artifacts`) |
    | `R2_PUBLIC_BASE_URL` | Public base URL of the bucket (no trailing slash) |
+
+   The bucket name and URL are **variables, not secrets** — they're public by design, and
+   both contain a hyphen. GitHub's secret masker over-masks the `-` substring across the
+   entire log when these are secrets (turning every `-` into `***`). Keep them as variables.
 
 The publish step runs `aws s3 sync` against R2's S3-compatible endpoint
 (`https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com`). It is wrapped in
