@@ -75,23 +75,14 @@ jobs:
       # inherited by the runner's in-process `make build` subprocess. Not read by
       # any C#. The Makefile default is Debug; pin Release for CI.
       BUILD_CONFIGURATION: Release
-      # The harness's host-fleet config is supplied as SDVD_DOCKER_HOSTS_B64 — the
-      # base64 of the JSON (the same shape as .env.test, but with the SSH private key
-      # INLINE in each `sshKey` field). It is base64-encoded because the inline key is
-      # multiline, and GitHub masks multiline secrets line-by-line — registering the
-      # PEM's `-----` armor would mask every `-` in the whole log (client-0 → client***0,
-      # dates, etc.) while leaving the real IP unmasked. Base64 makes it a single-line
-      # secret that GitHub registers atomically, so nothing in normal logs matches it.
-      # It is decoded STEP-LOCALLY in the two steps that need it (keyscan + runner) —
-      # never into $GITHUB_ENV, which would expose the inline SSH key to every later
-      # step (incl. third-party actions). Shape of the pre-encoding JSON:
+      # The harness's host-fleet config — set as ONE GitHub secret in the test-vps
+      # environment, exactly as in .env.test, with the SSH private key INLINE in each
+      # `sshKey` field (a "-----BEGIN…" block). HostPool materializes the inline key to
+      # a 0600 temp file at startup. Shape:
       #   [{"id":"vps","endpoint":"ssh://sdvd-runner@HOST","serverSlots":1,
       #     "clientSlots":2,"gpu":false,
       #     "sshKey":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END…-----\n"}]
-      # To (re)create the secrets (STEAM_ACCOUNTS_B64 is the same idea — the Steam
-      # credentials JSON is also base64'd to a single line for the same masking reason):
-      #   jq -c --rawfile k key.pem '.[0].sshKey=$k' hosts.json | base64 -w0 | gh secret set SDVD_DOCKER_HOSTS_B64 --env test-vps
-      #   jq -c . steam-accounts.json | base64 -w0 | gh secret set STEAM_ACCOUNTS_B64 --env test-vps
+      SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
 
     steps:
       - name: Checkout code
@@ -164,26 +155,20 @@ jobs:
       # keep in sync. The private key is NOT written here — HostPool materializes
       # the inline `sshKey` to its own 0600 temp file.
       #
-      # SECURITY: the base64 host-fleet config is decoded into a STEP-LOCAL shell var
-      # (never $GITHUB_ENV — that would expose the inline SSH key to every later step,
-      # incl. third-party actions). The jq below extracts ONLY `.endpoint`; never read
-      # `.sshKey` or pipe the decoded JSON to stdout — GitHub does NOT mask the decoded
-      # value (only the base64 blob is registered), so printing it would leak the key.
-      # The host is NOT echoed either: it's the VPS IP.
+      # SECURITY: the jq below extracts ONLY `.endpoint`. Never change it to read
+      # `.sshKey` or pipe the raw $SDVD_DOCKER_HOSTS to stdout — that would leak the
+      # inline private key into the log. The host is NOT echoed either: it's the VPS IP.
       - name: Trust VPS host key
         env:
-          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
+          SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          # tr -d strips any stray whitespace/newline in the stored secret before decode
-          # (base64 is whitespace-free, so this only removes corruption, not data).
-          hosts_json=$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | tr -d '[:space:]' | base64 -d)
-          hosts=$(printf '%s' "$hosts_json" \
+          hosts=$(printf '%s' "$SDVD_DOCKER_HOSTS" \
             | jq -r '.[] | select(.endpoint) | .endpoint' \
             | sed -E 's#^ssh://##; s#^[^@]*@##')
           if [ -z "$hosts" ]; then
-            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS_B64 — cannot keyscan." >&2
+            echo "::error::No ssh:// endpoint found in SDVD_DOCKER_HOSTS — cannot keyscan." >&2
             exit 1
           fi
           count=0
@@ -213,11 +198,8 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: server
           IMAGE_VERSION: local
-          # base64 (single-line) so GitHub registers it atomically — multiline JSON
-          # secrets break log masking (see the SDVD_DOCKER_HOSTS_B64 note above).
-          STEAM_ACCOUNTS_B64: ${{ secrets.STEAM_ACCOUNTS_B64 }}
+          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
         run: |
-          export STEAM_ACCOUNTS="$(printf '%s' "$STEAM_ACCOUNTS_B64" | tr -d '[:space:]' | base64 -d)"
           docker compose build steam-auth
           docker compose run --rm -e STEAM_ACCOUNTS steam-auth download
 
@@ -230,19 +212,14 @@ jobs:
       # with a Steam-login error.
       - name: Run E2E suite
         env:
-          # Both fleet + Steam creds are base64 (single-line) secrets, decoded
-          # STEP-LOCALLY below — never into $GITHUB_ENV (would expose them to other
-          # steps) and never as multiline secrets (would break log masking).
-          SDVD_DOCKER_HOSTS_B64: ${{ secrets.SDVD_DOCKER_HOSTS_B64 }}
-          STEAM_ACCOUNTS_B64: ${{ secrets.STEAM_ACCOUNTS_B64 }}
+          SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
+          STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
           # Pass the (operator-controlled) filter through the environment, not
           # interpolated into the command line, so its value can never be parsed
           # as shell. Empty (the default) runs the full suite — pass --filter only
           # when a non-whitespace value was provided.
           FILTER: ${{ inputs.filter }}
         run: |
-          export SDVD_DOCKER_HOSTS="$(printf '%s' "$SDVD_DOCKER_HOSTS_B64" | tr -d '[:space:]' | base64 -d)"
-          export STEAM_ACCOUNTS="$(printf '%s' "$STEAM_ACCOUNTS_B64" | tr -d '[:space:]' | base64 -d)"
           if [ -n "${FILTER//[[:space:]]/}" ]; then
             dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
           else
@@ -315,8 +292,13 @@ jobs:
       # lifecycle rule (operator setup), so CI does no pruning.
       #
       # Fully optional and never fails the run: continue-on-error decouples it from the
-      # job result, and the body (below) skips cleanly when the R2_* secrets are unset.
-      # The R2_* values come from the test-vps environment, like the other secrets.
+      # job result, and the body (below) skips cleanly when R2 is unconfigured.
+      # The bucket name and public base URL are NOT secret (the bucket is world-readable
+      # by design) and are stored as test-vps *variables*, not secrets — both contain a
+      # hyphen, and GitHub's secret masker over-masks the `-` substring across the WHOLE
+      # log if they're secrets (turning every `-` into ***). Only the credentials (keys /
+      # account id, all hex) stay secrets. Do NOT move R2_BUCKET / R2_PUBLIC_BASE_URL back
+      # to secrets.
       - name: Publish web report to R2
         if: always()
         continue-on-error: true
@@ -324,8 +306,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
           BRANCH_REF: ${{ github.ref_name }}
         run: |
           # GitHub runs steps with `bash -eo pipefail` (errexit ON). Relax it so a
