@@ -284,7 +284,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    eggHuntStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.EggHuntCountDownConfig));
+                    eggHuntStartTime = DateTime.UtcNow.AddSeconds(-Config.EggHuntCountdownSeconds);
                     eggHuntAnnounced = true;
                     eventCommandUsed = false;
                 }
@@ -295,11 +295,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(eggHuntStartTime);
-                double countdownSeconds = TicksToSeconds(Config.EggHuntCountDownConfig);
+                double countdownSeconds = Config.EggHuntCountdownSeconds;
 
                 if (!eggHuntAnnounced)
                 {
-                    float chatEgg = Config.EggHuntCountDownConfig / 60f;
+                    float chatEgg = Config.EggHuntCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Egg Hunt will begin in {chatEgg:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
                     eggHuntAnnounced = true;
@@ -340,7 +340,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    flowerDanceStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.FlowerDanceCountDownConfig));
+                    flowerDanceStartTime = DateTime.UtcNow.AddSeconds(-Config.FlowerDanceCountdownSeconds);
                     flowerDanceAnnounced = true;
                     eventCommandUsed = false;
                 }
@@ -351,11 +351,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(flowerDanceStartTime);
-                double countdownSeconds = TicksToSeconds(Config.FlowerDanceCountDownConfig);
+                double countdownSeconds = Config.FlowerDanceCountdownSeconds;
 
                 if (!flowerDanceAnnounced)
                 {
-                    float chatFlower = Config.FlowerDanceCountDownConfig / 60f;
+                    float chatFlower = Config.FlowerDanceCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Flower Dance will begin in {chatFlower:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
                     flowerDanceAnnounced = true;
@@ -396,7 +396,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    luauSoupStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.LuauSoupCountDownConfig));
+                    luauSoupStartTime = DateTime.UtcNow.AddSeconds(-Config.LuauSoupCountdownSeconds);
                     // Add iridium starfruit to soup
                     var item = new SObject("268", 1, false, -1, 3);
                     _helper.Reflection.GetMethod(Game1.CurrentEvent, "addItemToLuauSoup").Invoke(item, Game1.player);
@@ -410,11 +410,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(luauSoupStartTime);
-                double countdownSeconds = TicksToSeconds(Config.LuauSoupCountDownConfig);
+                double countdownSeconds = Config.LuauSoupCountdownSeconds;
 
                 if (!luauSoupAnnounced)
                 {
-                    float chatSoup = Config.LuauSoupCountDownConfig / 60f;
+                    float chatSoup = Config.LuauSoupCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Soup Tasting will begin in {chatSoup:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
 
@@ -459,7 +459,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    jellyDanceStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.JellyDanceCountDownConfig));
+                    jellyDanceStartTime = DateTime.UtcNow.AddSeconds(-Config.JellyDanceCountdownSeconds);
                     jellyDanceAnnounced = true;
                     eventCommandUsed = false;
                 }
@@ -470,11 +470,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(jellyDanceStartTime);
-                double countdownSeconds = TicksToSeconds(Config.JellyDanceCountDownConfig);
+                double countdownSeconds = Config.JellyDanceCountdownSeconds;
 
                 if (!jellyDanceAnnounced)
                 {
-                    float chatJelly = Config.JellyDanceCountDownConfig / 60f;
+                    float chatJelly = Config.JellyDanceCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Dance of the Moonlight Jellies will begin in {chatJelly:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
                     jellyDanceAnnounced = true;
@@ -515,7 +515,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    grangeDisplayStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.GrangeDisplayCountDownConfig));
+                    grangeDisplayStartTime = DateTime.UtcNow.AddSeconds(-Config.GrangeDisplayCountdownSeconds);
                     grangeDisplayAnnounced = true;
                     eventCommandUsed = false;
                 }
@@ -526,7 +526,7 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(grangeDisplayStartTime);
-                double countdownSeconds = TicksToSeconds(Config.GrangeDisplayCountDownConfig);
+                double countdownSeconds = Config.GrangeDisplayCountdownSeconds;
 
                 // Festival timeout (runs from the start for this festival)
                 if (!resetStartTime.HasValue)
@@ -537,9 +537,10 @@ namespace JunimoServer.Services.AlwaysOn
                 double resetElapsed = ElapsedSeconds(resetStartTime);
                 double fairTimeoutSeconds = TicksToSeconds(Config.FairTimeOut);
 
-                if (!_timeoutWarned && resetElapsed >= fairTimeoutSeconds - TicksToSeconds(120))
+                // Festival timeout code
+                if (!_timeoutWarned && resetElapsed >= fairTimeoutSeconds - Config.FestivalExitWarningSeconds)
                 {
-                    _helper.SendPublicMessage("2 minutes to the exit or");
+                    _helper.SendPublicMessage($"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
                     _timeoutWarned = true;
                 }
@@ -552,7 +553,7 @@ namespace JunimoServer.Services.AlwaysOn
                 ///////////////////////////////////////////////
                 if (!grangeDisplayAnnounced)
                 {
-                    float chatGrange = Config.GrangeDisplayCountDownConfig / 60f;
+                    float chatGrange = Config.GrangeDisplayCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Grange Judging will begin in {chatGrange:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
                     grangeDisplayAnnounced = true;
@@ -593,9 +594,9 @@ namespace JunimoServer.Services.AlwaysOn
                 double spiritsTimeoutSeconds = TicksToSeconds(Config.SpiritsEveTimeOut);
 
                 // Festival timeout code
-                if (!_timeoutWarned && resetElapsed >= spiritsTimeoutSeconds - TicksToSeconds(120))
+                if (!_timeoutWarned && resetElapsed >= spiritsTimeoutSeconds - Config.FestivalExitWarningSeconds)
                 {
-                    _helper.SendPublicMessage("2 minutes to the exit or");
+                    _helper.SendPublicMessage($"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
                     _timeoutWarned = true;
                 }
@@ -619,7 +620,7 @@ namespace JunimoServer.Services.AlwaysOn
             {
                 if (eventCommandUsed)
                 {
-                    iceFishingStartTime = DateTime.UtcNow.AddSeconds(-TicksToSeconds(Config.IceFishingCountDownConfig));
+                    iceFishingStartTime = DateTime.UtcNow.AddSeconds(-Config.IceFishingCountdownSeconds);
                     iceFishingAnnounced = true;
                     eventCommandUsed = false;
                 }
@@ -630,11 +631,11 @@ namespace JunimoServer.Services.AlwaysOn
                 }
 
                 double elapsed = ElapsedSeconds(iceFishingStartTime);
-                double countdownSeconds = TicksToSeconds(Config.IceFishingCountDownConfig);
+                double countdownSeconds = Config.IceFishingCountdownSeconds;
 
                 if (!iceFishingAnnounced)
                 {
-                    float chatIceFish = Config.IceFishingCountDownConfig / 60f;
+                    float chatIceFish = Config.IceFishingCountdownSeconds / 60f;
                     _helper.SendPublicMessage($"The Ice Fishing Contest will begin in {chatIceFish:0.#} minutes.");
                     _helper.SendPublicMessage(StartNowText);
                     iceFishingAnnounced = true;
@@ -686,10 +687,10 @@ namespace JunimoServer.Services.AlwaysOn
                 double resetElapsed = ElapsedSeconds(resetStartTime);
                 double winterTimeoutSeconds = TicksToSeconds(Config.WinterStarTimeOut);
 
-                //festival timeout code
-                if (!_timeoutWarned && resetElapsed >= winterTimeoutSeconds - TicksToSeconds(120))
+                // Festival timeout code
+                if (!_timeoutWarned && resetElapsed >= winterTimeoutSeconds - Config.FestivalExitWarningSeconds)
                 {
-                    _helper.SendPublicMessage("2 minutes to the exit or");
+                    _helper.SendPublicMessage($"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or");
                     _helper.SendPublicMessage("everyone will be kicked.");
                     _timeoutWarned = true;
                 }
