@@ -189,11 +189,12 @@ namespace JunimoServer.Services.Api
         public string OwnerName { get; set; } = "";
         public bool OwnerIsCustomized { get; set; }
 
-        /// <summary>Owner's platform ID (Steam/GOG); empty when unclaimed. A non-empty value with
+        /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
         /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, which
         /// yields the live otherFarmers copy while the owner is connected (so the in-flight userID
-        /// stamp is visible here before disconnect persists it to farmhandData).</summary>
-        public string OwnerUserId { get; set; } = "";
+        /// stamp is visible here before disconnect persists it to farmhandData). Exposed as a bool,
+        /// not the raw ID: /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+        public bool OwnerHasUserId { get; set; }
 
         public string HomeLocationOfOwner { get; set; } = "";
         public bool FarmhandReferenceDefined { get; set; }
@@ -208,9 +209,10 @@ namespace JunimoServer.Services.Api
         public string HomeLocation { get; set; } = "";
         public string LastSleepLocation { get; set; } = "";
 
-        /// <summary>Platform ID (Steam/GOG) stamped on slot claim; empty when unclaimed.
-        /// A non-empty value with IsCustomized=false is the abandoned-claim state.</summary>
-        public string UserId { get; set; } = "";
+        /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
+        /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID:
+        /// /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+        public bool HasUserId { get; set; }
     }
 
     public class ReadyCheckState
@@ -2572,7 +2574,7 @@ namespace JunimoServer.Services.Api
                         OwnerId = owner?.UniqueMultiplayerID ?? 0,
                         OwnerName = owner?.Name ?? "",
                         OwnerIsCustomized = owner?.isCustomized?.Value ?? false,
-                        OwnerUserId = owner?.userID?.Value ?? "",
+                        OwnerHasUserId = !string.IsNullOrEmpty(owner?.userID?.Value),
                         HomeLocationOfOwner = owner?.homeLocation?.Value ?? "",
                         FarmhandReferenceDefined = cabin?.farmhandReference?.defined?.Value ?? false,
                         FarmhandReferenceUid = cabin?.farmhandReference?.uid?.Value ?? 0
@@ -2602,7 +2604,7 @@ namespace JunimoServer.Services.Api
                         IsCustomized = f.isCustomized?.Value ?? false,
                         HomeLocation = f.homeLocation?.Value ?? "",
                         LastSleepLocation = f.lastSleepLocation?.Value ?? "",
-                        UserId = f.userID?.Value ?? ""
+                        HasUserId = !string.IsNullOrEmpty(f.userID?.Value)
                     });
                 }
                 catch { /* per-entry failure tolerated */ }

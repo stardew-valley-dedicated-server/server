@@ -643,7 +643,7 @@ namespace JunimoServer.Services.CabinManager
                 return false; // real player — must not touch
 
             Monitor.Log(
-                $"Releasing abandoned cabin claim (userID='{farmhand.userID.Value}', slot was claimed but not customized)",
+                $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', slot was claimed but not customized)",
                 LogLevel.Info);
             Diagnostics.ModEventLog.Emit("cabin_claim_abandoned", new
             {

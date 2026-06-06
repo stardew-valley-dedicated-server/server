@@ -202,11 +202,12 @@ public class DiagnosticsCabinState
     [JsonPropertyName("ownerIsCustomized")]
     public bool OwnerIsCustomized { get; set; }
 
-    /// <summary>Owner's platform ID (Steam/GOG); empty when unclaimed. A non-empty value with
+    /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
     /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, so it
-    /// reflects the live otherFarmers copy while the owner is connected.</summary>
-    [JsonPropertyName("ownerUserId")]
-    public string OwnerUserId { get; set; } = "";
+    /// reflects the live otherFarmers copy while the owner is connected. A bool, not the raw ID
+    /// (/diagnostics/state is unauthenticated).</summary>
+    [JsonPropertyName("ownerHasUserId")]
+    public bool OwnerHasUserId { get; set; }
 
     [JsonPropertyName("homeLocationOfOwner")]
     public string HomeLocationOfOwner { get; set; } = "";
@@ -235,10 +236,11 @@ public class DiagnosticsFarmhandState
     [JsonPropertyName("lastSleepLocation")]
     public string LastSleepLocation { get; set; } = "";
 
-    /// <summary>Platform ID (Steam/GOG) stamped on slot claim; empty when unclaimed.
-    /// A non-empty value with IsCustomized=false is the abandoned-claim state.</summary>
-    [JsonPropertyName("userId")]
-    public string UserId { get; set; } = "";
+    /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
+    /// IsCustomized=false is the abandoned-claim state. A bool, not the raw ID
+    /// (/diagnostics/state is unauthenticated).</summary>
+    [JsonPropertyName("hasUserId")]
+    public bool HasUserId { get; set; }
 }
 
 public class ReadyCheckState

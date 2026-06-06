@@ -18,11 +18,12 @@ namespace JunimoServer.Tests;
 /// always-on GameServer.playerDisconnected postfix), which fires on every transport and
 /// regardless of password protection.
 ///
-/// Assertions are server-authoritative via /diagnostics/state Cabins, whose OwnerUserId is
+/// Assertions are server-authoritative via /diagnostics/state Cabins, whose OwnerHasUserId is
 /// resolved through cabin.owner — the live otherFarmers copy while connected (where the
 /// in-flight userID stamp lives), then the persisted farmhandData copy after the player is
-/// removed. The grey-out itself is client-side render and /cabins AvailableCount can't
-/// distinguish a stuck slot, so the userID field is the deterministic signal.
+/// removed. (The endpoint exposes a bool, not the raw ID, since it is unauthenticated.) The
+/// grey-out itself is client-side render and /cabins AvailableCount can't distinguish a stuck
+/// slot, so the userID-present flag is the deterministic signal.
 ///
 /// Transport: this requires Steam (WithSteam=true) — vanilla only stamps userID when
 /// getUserID() != "", and LidgrenClient (LAN) returns "", so LAN is immune to the bug and
@@ -70,7 +71,7 @@ public class AbandonedClaimTests : TestBase
         // Confirm the stuck state on the server and capture the slot's owner uid. We read via
         // /diagnostics/state Cabins (cabin.owner), which resolves to the LIVE otherFarmers copy
         // while the client is connected — that's where the in-flight userID stamp lives before
-        // disconnect persists it to farmhandData (FarmhandData[].UserId would still be empty here).
+        // disconnect persists it to farmhandData (FarmhandData[].HasUserId would still be false here).
         long stuckUid = 0;
         var reproduced = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_AbandonedClaim_StuckStateReproduced,
@@ -78,7 +79,7 @@ public class AbandonedClaimTests : TestBase
             {
                 var state = await ServerApi.GetDiagnosticsState(ct);
                 var stuck = state?.Cabins.FirstOrDefault(
-                    c => !string.IsNullOrEmpty(c.OwnerUserId) && !c.OwnerIsCustomized);
+                    c => c.OwnerHasUserId && !c.OwnerIsCustomized);
                 if (stuck == null) return false;
                 stuckUid = stuck.OwnerId;
                 return true;
@@ -101,11 +102,12 @@ public class AbandonedClaimTests : TestBase
             async () =>
             {
                 var state = await ServerApi.GetDiagnosticsState(ct);
-                var cabin = state?.Cabins.FirstOrDefault(c => c.OwnerId == stuckUid);
-                var entry = state?.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
+                if (state == null) return false; // transient null must not read as "healed"
+                var cabin = state.Cabins.FirstOrDefault(c => c.OwnerId == stuckUid);
+                var entry = state.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
                 // Healed when no surviving view of the slot still carries the userID claim.
-                var cabinClear = cabin == null || string.IsNullOrEmpty(cabin.OwnerUserId);
-                var farmhandClear = entry == null || string.IsNullOrEmpty(entry.UserId);
+                var cabinClear = cabin == null || !cabin.OwnerHasUserId;
+                var farmhandClear = entry == null || !entry.HasUserId;
                 return cabinClear && farmhandClear;
             }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
         Assert.True(healed,
@@ -164,7 +166,7 @@ public class AbandonedClaimTests : TestBase
         var preState = await ServerApi.GetDiagnosticsState(ct);
         var preEntry = preState?.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
         Assert.NotNull(preEntry);
-        Assert.False(string.IsNullOrEmpty(preEntry!.UserId), "Stamped slot should carry a userId before save");
+        Assert.True(preEntry!.HasUserId, "Stamped slot should carry a userId before save");
         Assert.False(preEntry.IsCustomized, "Stamped slot must be uncustomized (abandoned-claim shape)");
 
         // Flush the stuck claim to disk via a day-transition save, then disconnect (/reload needs 0
@@ -181,9 +183,10 @@ public class AbandonedClaimTests : TestBase
             async () =>
             {
                 postState = await ServerApi.GetDiagnosticsState(ct);
-                var entry = postState?.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
-                // Cleared when the slot's entry is gone or its userId is empty.
-                return entry == null || string.IsNullOrEmpty(entry.UserId);
+                if (postState == null) return false; // transient null must not read as "swept"
+                var entry = postState.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
+                // Cleared when the slot's entry is gone or no longer carries the userID claim.
+                return entry == null || !entry.HasUserId;
             }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
         Assert.True(swept,
             $"Abandoned claim on uid={stuckUid} was not released by the save-load sweep after reload " +
