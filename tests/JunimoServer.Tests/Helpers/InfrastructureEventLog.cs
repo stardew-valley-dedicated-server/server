@@ -91,8 +91,11 @@ namespace JunimoServer.Tests.Helpers;
 /// cabinsFailed, excludePeer, strategy</c>) · <c>cabin_build_failed</c>
 /// (<c>hidden, tileX?, tileY?, reason</c>) · <c>cabin_destroyed</c> (<c>tileX,
 /// tileY, indoorsName, ownerId, ownerName</c>) · <c>cabin_claim_abandoned</c>
-/// (fired when a player disconnects mid-customization: <c>odId, tileX, tileY,
-/// ownerUniqueMultiplayerId</c>) · <c>cabin_strategy_migration</c>
+/// (fired by <c>CabinManagerService</c> when an abandoned slot claim is released —
+/// from the player-disconnect heal and from the save-load sweep:
+/// <c>clearedUserId, ownerUniqueMultiplayerId</c>) ·
+/// <c>cabin_claims_swept_on_load</c> (save-load sweep summary, emitted only when it
+/// released at least one claim: <c>cleared</c>) · <c>cabin_strategy_migration</c>
 /// (<c>fromStrategy, toStrategy, migrated, migrateFailed</c>) ·
 /// <c>farmhand_references_cleaned</c> (save-load stale-ref cleanup:
 /// <c>orphansRemoved, homeCleared, lastSleepCleared, validCabins</c>).</item>

@@ -206,24 +206,6 @@ public class CabinPositionPersistenceTests : TestBase
     }
 
     /// <summary>
-    /// Sleeps the farmhand and waits for the day transition, which writes the save to
-    /// disk. Mandatory before a reload — WriteSaveData and building tileX/tileY are
-    /// in-memory until a game save, so a reload without a save proves nothing.
-    /// </summary>
-    private async Task SleepToSaveAsync(CancellationToken ct)
-    {
-        var statusBefore = await ServerApi.GetStatus(ct);
-        Assert.NotNull(statusBefore);
-
-        var sleep = await GameClient.Actions.Sleep();
-        Assert.True(sleep?.Success == true, $"Sleep failed: {sleep?.Error}");
-
-        var dayChanged = await DayChange.WaitAsync(
-            statusBefore.Day, statusBefore.Season, statusBefore.Year, ct);
-        Assert.True(dayChanged, "Day did not advance; save was not written");
-    }
-
-    /// <summary>
     /// Rewrites the in-container server-settings.json cabinStrategy value in place.
     /// The change is applied by the next ReloadServerAsync (which re-reads the file).
     /// Mirrors the real operator flow: edit settings, reload — no test-only API added.

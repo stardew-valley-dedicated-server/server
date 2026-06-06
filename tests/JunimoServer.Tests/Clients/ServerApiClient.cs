@@ -202,6 +202,12 @@ public class DiagnosticsCabinState
     [JsonPropertyName("ownerIsCustomized")]
     public bool OwnerIsCustomized { get; set; }
 
+    /// <summary>Owner's platform ID (Steam/GOG); empty when unclaimed. A non-empty value with
+    /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, so it
+    /// reflects the live otherFarmers copy while the owner is connected.</summary>
+    [JsonPropertyName("ownerUserId")]
+    public string OwnerUserId { get; set; } = "";
+
     [JsonPropertyName("homeLocationOfOwner")]
     public string HomeLocationOfOwner { get; set; } = "";
 
@@ -228,6 +234,11 @@ public class DiagnosticsFarmhandState
 
     [JsonPropertyName("lastSleepLocation")]
     public string LastSleepLocation { get; set; } = "";
+
+    /// <summary>Platform ID (Steam/GOG) stamped on slot claim; empty when unclaimed.
+    /// A non-empty value with IsCustomized=false is the abandoned-claim state.</summary>
+    [JsonPropertyName("userId")]
+    public string UserId { get; set; } = "";
 }
 
 public class ReadyCheckState
@@ -480,6 +491,20 @@ public class TestHouseUpgradeResponse
     [JsonPropertyName("success")] public bool Success { get; set; }
     [JsonPropertyName("error")] public string? Error { get; set; }
     [JsonPropertyName("hostHouseUpgradeLevel")] public int HostHouseUpgradeLevel { get; set; }
+}
+
+/// <summary>
+/// Response from /test/stamp_claim POST endpoint (test-only). Mirrors the server-side
+/// TestStampClaimResponse DTO. Stamps a synthetic abandoned slot claim onto an uncustomized,
+/// homed farmhand so the save-load sweep can be exercised on reload.
+/// </summary>
+public class TestStampClaimResponse
+{
+    [JsonPropertyName("success")] public bool Success { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+    [JsonPropertyName("stampedUid")] public long StampedUid { get; set; }
+    [JsonPropertyName("stampedUserId")] public string StampedUserId { get; set; } = "";
+    [JsonPropertyName("homeLocation")] public string HomeLocation { get; set; } = "";
 }
 
 /// <summary>
@@ -1134,6 +1159,20 @@ public class ServerApiClient : IDisposable
             HttpMethod.Post, $"/test/house_upgrade?command={Uri.EscapeDataString(command)}", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestHouseUpgradeResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: deterministically construct an abandoned slot claim by stamping a synthetic userID
+    /// onto an uncustomized, homed farmhand entry (the on-disk shape vanilla's load-time reset leaves
+    /// intact). Used to verify the save-load sweep clears it on reload — the live disconnect heal can't
+    /// persist such a claim to disk for a sweep test.
+    /// POST /test/stamp_claim
+    /// </summary>
+    public async Task<TestStampClaimResponse?> StampClaim(CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/stamp_claim", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestStampClaimResponse>(ct);
     }
 
     /// <summary>

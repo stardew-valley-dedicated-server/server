@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using JunimoServer.Services.CabinManager;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Network;
@@ -438,9 +437,6 @@ namespace JunimoServer.Services.SteamGameServer
                 return;
 
             _monitor.Log($"{steamId.m_SteamID} disconnected", LogLevel.Debug);
-
-            // Clean up any abandoned cabin claim if player disconnected before completing character customization
-            CabinManagerService.CleanupAbandonedCabinClaim(steamId.m_SteamID.ToString());
 
             if (!_connectionDataMap.TryGetValue(callback.m_hConn, out var value))
             {

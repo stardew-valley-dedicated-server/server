@@ -550,6 +550,25 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         ServerStatus = await ServerApi.GetStatus(TestCt);
     }
 
+    /// <summary>
+    /// Sleeps the primary client's farmhand and waits for the day transition, which writes the
+    /// save to disk. Mandatory before a reload — WriteSaveData and building tileX/tileY (and any
+    /// farmhandData mutation) are in-memory until a game save, so a reload without a save proves
+    /// nothing. Requires the primary client to be connected and in-world.
+    /// </summary>
+    protected async Task SleepToSaveAsync(CancellationToken ct)
+    {
+        var statusBefore = await ServerApi.GetStatus(ct);
+        Assert.NotNull(statusBefore);
+
+        var sleep = await GameClient.Actions.Sleep();
+        Assert.True(sleep?.Success == true, $"Sleep failed: {sleep?.Error}");
+
+        var dayChanged = await DayChange.WaitAsync(
+            statusBefore.Day, statusBefore.Season, statusBefore.Year, ct);
+        Assert.True(dayChanged, "Day did not advance; save was not written");
+    }
+
     #endregion
 
     #region Exception Monitoring

@@ -92,6 +92,11 @@ public enum WaitName
     Polling_CabinStrategy_FarmerSyncedCabinAndFarmhand,
     Polling_CabinStrategy_FarmerDeletionReflected,
 
+    // AbandonedClaimTests.cs (3)
+    Polling_AbandonedClaim_StuckStateReproduced,
+    Polling_AbandonedClaim_DisconnectHealConfirmed,
+    Polling_AbandonedClaim_SweptOnReload,
+
     // FarmhandManagementTests.cs (1)
     Polling_FarmhandManagement_FarmhandGone,
 
