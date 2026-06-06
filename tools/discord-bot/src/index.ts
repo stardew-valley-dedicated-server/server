@@ -512,7 +512,6 @@ client.on(Events.MessageCreate, async (message: Message) => {
             }
             return;
         }
-        setCooldown(message.author.id);
         
     // COMMAND: !status
         if (input === "!status") {
