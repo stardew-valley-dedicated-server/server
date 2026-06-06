@@ -79,6 +79,9 @@ public class SharedSteamAuth : IAsyncDisposable
         // Forward any SDVD_EVENT structured event lines from the steam-auth
         // sidecar (e.g. account-login state transitions) to infrastructure.jsonl,
         // and write the human-readable line to the per-container log file.
+        // The return value (was-an-event) is intentionally discarded: this path
+        // has no human-facing sink to keep transport lines off of — container.log
+        // is a verbatim record by design.
         SimpleContainerLogStreamer.TryForwardSdvdEvent(line, "steam-auth-shared");
         _containerLog.WriteLine(line);
     }

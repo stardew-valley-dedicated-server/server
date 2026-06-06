@@ -681,11 +681,15 @@ public class ServerContainer : IAsyncDisposable
         _containerLog?.WriteLine(line);
 
         // Forward any SDVD_EVENT structured event lines (stdout fallback
-        // transport from the mod) to infrastructure.jsonl.
-        SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"server-{_serverIndex}");
+        // transport from the mod) to infrastructure.jsonl. Once forwarded, the
+        // line is a spent machine envelope — keep it off the UI ticker below.
+        // Error detection still runs unconditionally: a SDVD_EVENT line is JSON,
+        // so SmapiLogLinePrefix never matches it, and leaving the block
+        // unguarded preserves error-continuation accounting exactly.
+        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"server-{_serverIndex}");
 
         // Emit to UI during startup phases (callback is null post-startup)
-        _startupLogCallback?.Invoke(line);
+        if (!isEvent) _startupLogCallback?.Invoke(line);
 
         var isNewLogLine = SmapiLogLinePrefix.IsMatch(line);
 

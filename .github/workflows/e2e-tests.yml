@@ -434,7 +434,16 @@ jobs:
           STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
         run: |
           docker compose build steam-auth
-          docker compose run --rm -e STEAM_ACCOUNTS steam-auth download
+          # Drop the sidecar's SDVD_EVENT transport lines from this step's log:
+          # they're a machine envelope with no consumer here (unlike the E2E run,
+          # nothing tails/forwards a `docker compose run` stdout). Keep the
+          # human-readable [SteamService] progress lines. grep is the last pipe
+          # stage, so guard the producer's real exit via PIPESTATUS; grep exiting
+          # 1 (every line filtered) must not fail the step.
+          set -o pipefail
+          docker compose run --rm -e STEAM_ACCOUNTS steam-auth download \
+            | { grep -v '^SDVD_EVENT ' || true; }
+          exit "${PIPESTATUS[0]}"
 
       # The whole pipeline in one command. The runner builds all three images
       # in-process (reading STEAM_ACCOUNTS[0] for the Steam --secret login),

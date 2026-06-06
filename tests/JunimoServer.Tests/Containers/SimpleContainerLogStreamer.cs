@@ -26,13 +26,17 @@ internal static class SimpleContainerLogStreamer
     /// <param name="line">The raw stdout line, including the <c>SDVD_EVENT </c> prefix.</param>
     /// <param name="forwardedVia">Container of origin (e.g. <c>server-0</c>,
     /// <c>client-2</c>, <c>steam-auth-shared</c>).</param>
-    public static void TryForwardSdvdEvent(string line, string forwardedVia)
+    /// <returns><c>true</c> if the line was a <c>SDVD_EVENT </c> transport line
+    /// (forwarded and now spent) — callers should keep it off human-facing
+    /// sinks; <c>false</c> for ordinary log lines.</returns>
+    public static bool TryForwardSdvdEvent(string line, string forwardedVia)
     {
         const string prefix = "SDVD_EVENT ";
-        if (line.Length <= prefix.Length || !line.StartsWith(prefix, StringComparison.Ordinal)) return;
+        if (line.Length <= prefix.Length || !line.StartsWith(prefix, StringComparison.Ordinal)) return false;
         var jsonTail = line.Substring(prefix.Length);
         InfrastructureEventLog.ForwardRaw(jsonTail, forwardedVia);
         TryAnnotateModPhase(jsonTail, forwardedVia);
+        return true;
     }
 
     /// <summary>
