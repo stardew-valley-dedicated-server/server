@@ -100,6 +100,17 @@ namespace JunimoServer.Services.CabinManager
                 postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnServerJoined_Postfix))
             );
 
+            // Always hook player disconnect to release abandoned slot claims, on ALL transports.
+            // GameServer.playerDisconnected is the single choke point every transport routes through
+            // (Steam SDR, GOG/Galaxy, LAN). This patch is registered here — unconditionally — rather
+            // than in PasswordProtectionService, whose patches are skipped entirely on passwordless
+            // servers (its constructor returns early when !IsEnabled), which would leave the heal
+            // dead for the common no-password case.
+            harmony.Patch(
+                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.playerDisconnected)),
+                postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnPlayerDisconnected_Postfix))
+            );
+
             // Defensive: make Utility.getHomeOfFarmer null-safe.
             // The vanilla implementation calls RequireLocation which throws KeyNotFoundException
             // if the cabin interior isn't findable yet (e.g. during new game setup, day transitions,
@@ -129,6 +140,16 @@ namespace JunimoServer.Services.CabinManager
             // it's null after deserialize; only homeLocation / lastSleepLocation can
             // carry stale refs across the save boundary.
             ClearStaleFarmhandReferences();
+
+            // Release abandoned slot claims that survived into the save. The disconnect-path heal
+            // (OnPlayerDisconnected_Postfix) covers every clean disconnect, but a stuck claim whose
+            // home cabin still exists is NOT cleared by vanilla's load-time ResetFarmhandState —
+            // it clears userID only when TryAssignFarmhandHome fails (no valid cabin), and a homed
+            // farmhand takes the early-return branch (NetWorldState.cs:783) leaving userID intact.
+            // So a claim stamped right before a host crash (or carried by a pre-fix corrupted save)
+            // would reload still-locked. This sweep closes that gap. It runs after
+            // ClearStaleFarmhandReferences, which has already purged cabin-less orphans.
+            ClearAbandonedCabinClaimsOnLoad();
 
             EnsureAtLeastXCabins();
         }
@@ -210,6 +231,15 @@ namespace JunimoServer.Services.CabinManager
         private static void OnServerJoined_Postfix(long peer)
         {
             _instance?.OnServerJoined(peer);
+        }
+
+        // Postfix on GameServer.playerDisconnected — runs while the disconnecting farmhand is still
+        // in otherFarmers (removeDisconnectedFarmers is deferred to later in the same update), and
+        // after vanilla saveFarmhand has cloned its state into farmhandData. Releases any abandoned
+        // slot claim on the persisted entry. CleanupAbandonedCabinClaim null-guards _instance.
+        private static void OnPlayerDisconnected_Postfix(long disconnectee)
+        {
+            CleanupAbandonedCabinClaim(disconnectee);
         }
 
         private void OnServerJoined(long peer)
@@ -590,45 +620,100 @@ namespace JunimoServer.Services.CabinManager
         }
 
         /// <summary>
-        /// Cleans up an abandoned cabin claim when a player disconnects before completing character customization.
-        /// If a cabin has userID set (player claimed it) but isCustomized is false (didn't finish customization),
-        /// clear the userID to release the slot for other players.
+        /// Releases an abandoned slot claim on a single farmhand entry. A claim is "abandoned" when
+        /// the farmhand has a userID set (a player clicked the slot, which stamps their platform ID
+        /// via vanilla Client.sendPlayerIntroduction) but isCustomized is false (they quit before
+        /// finishing character creation). Vanilla FarmhandMenu then greys the slot out for every
+        /// other player, locking it to the ghost. Clearing userID re-opens the slot.
+        ///
+        /// Caller-agnostic: both the disconnect heal (CleanupAbandonedCabinClaim) and the save-load
+        /// sweep (ClearAbandonedCabinClaimsOnLoad) pass the persisted farmhandData entry. The only
+        /// mutation is the userID NetString value write; the rest of the farmhand stays in its
+        /// default uncustomized state. Returns true if a claim was cleared.
         /// </summary>
-        /// <param name="odId">The platform ID (Steam/GOG) of the disconnecting player as a string</param>
-        public static void CleanupAbandonedCabinClaim(string odId)
+        private bool TryClearAbandonedClaim(Farmer farmhand)
         {
-            if (string.IsNullOrEmpty(odId) || _instance == null)
-                return;
+            if (farmhand == null)
+                return false;
 
-            var farm = Game1.getFarm();
-            if (farm == null)
-                return;
+            if (string.IsNullOrEmpty(farmhand.userID.Value))
+                return false; // no claim
 
-            foreach (var building in farm.buildings)
+            if (farmhand.isCustomized.Value)
+                return false; // real player — must not touch
+
+            Monitor.Log(
+                $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', slot was claimed but not customized)",
+                LogLevel.Info);
+            Diagnostics.ModEventLog.Emit("cabin_claim_abandoned", new
             {
-                if (!building.isCabin)
-                    continue;
+                clearedUserId = farmhand.userID.Value,
+                ownerUniqueMultiplayerId = farmhand.UniqueMultiplayerID
+            });
+            farmhand.userID.Value = "";
+            return true;
+        }
 
-                var cabin = building.GetIndoors<Cabin>();
-                var owner = cabin?.owner;
-                if (owner == null)
-                    continue;
+        /// <summary>
+        /// Releases an abandoned slot claim for a disconnecting player. Called from this service's
+        /// own always-on GameServer.playerDisconnected postfix (OnPlayerDisconnected_Postfix), so it
+        /// covers Steam SDR, GOG/Galaxy, and LAN alike — including passwordless servers.
+        ///
+        /// Clears the persisted farmhandData entry — at postfix time the disconnecting farmhand is
+        /// still in otherFarmers (removal is deferred to removeDisconnectedFarmers later in the same
+        /// update), so Cabin.owner resolves to the live copy that's about to be discarded; vanilla's
+        /// saveFarmhand already cloned the stuck userID into the persisted entry. We also clear the
+        /// live copy so any read before removal (e.g. /diagnostics/state) reflects the heal.
+        /// </summary>
+        /// <param name="disconnecteeId">UniqueMultiplayerID of the disconnecting player.</param>
+        public static void CleanupAbandonedCabinClaim(long disconnecteeId)
+        {
+            if (_instance == null)
+                return;
 
-                // Check if this cabin was claimed by the disconnecting player but not customized
-                if (owner.userID.Value == odId && !owner.isCustomized.Value)
+            // TryGetValue, not the indexer: NetLongDictionary's indexer throws KeyNotFoundException
+            // on a missing key (see NetworkTweaker's checkFarmhandRequest safe-lookup patch).
+            if (!Game1.netWorldState.Value.farmhandData.TryGetValue(disconnecteeId, out var farmhand))
+                return;
+
+            if (_instance.TryClearAbandonedClaim(farmhand)
+                && Game1.otherFarmers.TryGetValue(disconnecteeId, out var liveFarmhand))
+            {
+                liveFarmhand.userID.Value = "";
+            }
+        }
+
+        /// <summary>
+        /// Sweeps the persisted farmhandData on save load and releases any abandoned slot claim that
+        /// survived into the save. Covers the gap vanilla's load-time ResetFarmhandState leaves: it
+        /// clears userID only for farmhands whose home cabin is missing (the else-branch when
+        /// TryAssignFarmhandHome fails), so a stuck-but-homed claim — the normal shape, since the
+        /// slot's cabin still exists — reloads with userID intact. The live disconnect heal can be
+        /// skipped only by an unclean exit (host crash before the next disconnect, or a save written
+        /// by a build predating that heal); this sweep catches those on the next load.
+        ///
+        /// Reuses TryClearAbandonedClaim, so the guard (userID set + not customized) and the
+        /// cabin_claim_abandoned emit are identical to the disconnect path. No live otherFarmers
+        /// clear is needed here: no farmhand is connected during save load, so Cabin.owner resolves
+        /// to the persisted entry this mutates. FieldDict iteration is a read-only enumeration
+        /// (mutation goes through the userID NetString setter), allowed by netdictionary-public-surface.
+        /// </summary>
+        private void ClearAbandonedCabinClaimsOnLoad()
+        {
+            var farmhandData = Game1.netWorldState.Value.farmhandData;
+            int cleared = 0;
+            foreach (var kvp in farmhandData.FieldDict)
+            {
+                if (TryClearAbandonedClaim(kvp.Value.Value))
+                    cleared++;
+            }
+
+            if (cleared > 0)
+            {
+                Diagnostics.ModEventLog.Emit("cabin_claims_swept_on_load", new
                 {
-                    _instance.Monitor.Log($"Cleaning up abandoned cabin claim for user '{odId}' (slot was claimed but not customized)", LogLevel.Info);
-                    Diagnostics.ModEventLog.Emit("cabin_claim_abandoned", new
-                    {
-                        odId,
-                        tileX = building.tileX.Value,
-                        tileY = building.tileY.Value,
-                        ownerUniqueMultiplayerId = owner.UniqueMultiplayerID
-                    });
-                    owner.userID.Value = "";
-                    // No need to clear other fields - they should already be in default state
-                    return; // A player can only claim one cabin at a time
-                }
+                    cleared
+                });
             }
         }
 

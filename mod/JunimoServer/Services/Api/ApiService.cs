@@ -188,6 +188,14 @@ namespace JunimoServer.Services.Api
         public long OwnerId { get; set; }
         public string OwnerName { get; set; } = "";
         public bool OwnerIsCustomized { get; set; }
+
+        /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
+        /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, which
+        /// yields the live otherFarmers copy while the owner is connected (so the in-flight userID
+        /// stamp is visible here before disconnect persists it to farmhandData). Exposed as a bool,
+        /// not the raw ID: /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+        public bool OwnerHasUserId { get; set; }
+
         public string HomeLocationOfOwner { get; set; } = "";
         public bool FarmhandReferenceDefined { get; set; }
         public long FarmhandReferenceUid { get; set; }
@@ -200,6 +208,11 @@ namespace JunimoServer.Services.Api
         public bool IsCustomized { get; set; }
         public string HomeLocation { get; set; } = "";
         public string LastSleepLocation { get; set; } = "";
+
+        /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
+        /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID:
+        /// /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+        public bool HasUserId { get; set; }
     }
 
     public class ReadyCheckState
@@ -499,6 +512,29 @@ namespace JunimoServer.Services.Api
 
         /// <summary>The host farmer's HouseUpgradeLevel after the debug command ran (expected 0).</summary>
         public int HostHouseUpgradeLevel { get; set; }
+    }
+
+    /// <summary>
+    /// Response from POST /test/stamp_claim (test-only). Constructs an abandoned-claim slot
+    /// deterministically: stamps a synthetic userID onto an uncustomized, homed farmhandData entry,
+    /// reproducing the on-disk shape (<c>userID != "" &amp;&amp; isCustomized == false</c>, homeLocation
+    /// resolving to a Cabin) that a player leaves when they claim "New Farmer" and quit before
+    /// customizing. Used to verify the save-load sweep (ClearAbandonedCabinClaimsOnLoad) clears such a
+    /// claim on reload — the live disconnect heal cannot persist one to disk for a sweep test.
+    /// </summary>
+    public class TestStampClaimResponse
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+
+        /// <summary>UniqueMultiplayerID of the farmhand slot that was stamped.</summary>
+        public long StampedUid { get; set; }
+
+        /// <summary>The synthetic userID written onto the slot.</summary>
+        public string StampedUserId { get; set; } = "";
+
+        /// <summary>The slot's homeLocation after stamping (must resolve to a Cabin for the homed-path test).</summary>
+        public string HomeLocation { get; set; } = "";
     }
 
     /// <summary>
@@ -1934,6 +1970,9 @@ namespace JunimoServer.Services.Api
                         case "/test/house_upgrade":
                             await WriteJsonAsync(response, await HandlePostTestHouseUpgradeAsync(request));
                             break;
+                        case "/test/stamp_claim":
+                            await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
+                            break;
                         default:
                             response.StatusCode = 404;
                             await WriteJsonAsync(response, new { error = "Not found" });
@@ -2535,6 +2574,7 @@ namespace JunimoServer.Services.Api
                         OwnerId = owner?.UniqueMultiplayerID ?? 0,
                         OwnerName = owner?.Name ?? "",
                         OwnerIsCustomized = owner?.isCustomized?.Value ?? false,
+                        OwnerHasUserId = !string.IsNullOrEmpty(owner?.userID?.Value),
                         HomeLocationOfOwner = owner?.homeLocation?.Value ?? "",
                         FarmhandReferenceDefined = cabin?.farmhandReference?.defined?.Value ?? false,
                         FarmhandReferenceUid = cabin?.farmhandReference?.uid?.Value ?? 0
@@ -2563,7 +2603,8 @@ namespace JunimoServer.Services.Api
                         Name = f.Name ?? "",
                         IsCustomized = f.isCustomized?.Value ?? false,
                         HomeLocation = f.homeLocation?.Value ?? "",
-                        LastSleepLocation = f.lastSleepLocation?.Value ?? ""
+                        LastSleepLocation = f.lastSleepLocation?.Value ?? "",
+                        HasUserId = !string.IsNullOrEmpty(f.userID?.Value)
                     });
                 }
                 catch { /* per-entry failure tolerated */ }
@@ -3710,6 +3751,67 @@ namespace JunimoServer.Services.Api
             {
                 // Don't log at Error level — that trips ServerContainer's error cancellation and
                 // poisons the test (.claude/rules/debugging.md). Surface via the response instead.
+                result.Success = false;
+                result.Error = ex.Message;
+            }
+
+            return result;
+        }
+
+        [ApiEndpoint("POST", "/test/stamp_claim", Summary = "Stamp a synthetic abandoned slot claim onto an uncustomized homed farmhand (test-only)", Tag = "Test")]
+        [ApiResponse(typeof(TestStampClaimResponse), 200)]
+        private async Task<TestStampClaimResponse> HandlePostTestStampClaimAsync()
+        {
+            // Synthetic platform id mimicking a Steam/GOG stamp. Fixed so a test could match it,
+            // but the test only needs StampedUid; the value just has to be non-empty.
+            const string syntheticUserId = "test-stuck-claim-9999";
+
+            var result = new TestStampClaimResponse();
+            try
+            {
+                await RunOnGameThreadAsync(() =>
+                {
+                    var farm = Game1.getFarm();
+                    if (farm == null)
+                    {
+                        result.Error = "No farm loaded";
+                        return;
+                    }
+
+                    // Find an unclaimed slot with an existing farmhand entry whose home resolves to its
+                    // cabin: owner present, not customized, no userID yet (exactly IsCabinAvailable's
+                    // "available" shape). Stamping its userID reproduces the homed abandoned-claim state
+                    // — the case vanilla's load-time ResetFarmhandState does NOT clear (NetWorldState.cs
+                    // :783 returns true for a homed farmhand, skipping the userID-clearing else-branch),
+                    // so only the sweep heals it on reload.
+                    foreach (var building in farm.buildings)
+                    {
+                        if (!building.isCabin || LobbyService.IsLobbyCabin(building)) continue;
+
+                        var cabin = building.GetIndoors<Cabin>();
+                        var owner = cabin?.owner;
+                        if (owner == null) continue;
+                        if (owner.isCustomized.Value) continue;
+                        if (!string.IsNullOrEmpty(owner.userID.Value)) continue;
+
+                        // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
+                        // (the slot's home should already be its cabin; set it to be deterministic).
+                        owner.homeLocation.Value = cabin.NameOrUniqueName;
+                        owner.userID.Value = syntheticUserId;
+
+                        result.StampedUid = owner.UniqueMultiplayerID;
+                        result.StampedUserId = syntheticUserId;
+                        result.HomeLocation = owner.homeLocation.Value ?? "";
+                        result.Success = true;
+                        return;
+                    }
+
+                    result.Error = "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
+                });
+            }
+            catch (Exception ex)
+            {
+                // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
                 result.Success = false;
                 result.Error = ex.Message;
             }
