@@ -7,9 +7,15 @@ const API_KEY = process.env.API_KEY || "";
 const WS_URL = process.env.WS_URL || API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws";
 const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
 const STATUS_DASHBOARD_CHANNEL_ID = process.env.STATUS_DASHBOARD_CHANNEL_ID;
-const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE ?? 30);
+const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE)  || 30;
+const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED = STATUS_DASHBOARD_REFRESH_RATE < 60 
+    ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds` 
+    : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
 let targetMessageId: string | null = null;
+const COOLDOWN_DURATION_MS = 30000; 
+const MAX_COMMANDS_PER_WINDOW = 3;
+const commandHistory = new Map<string, number[]>();
 
 // Discord rate limit for presence updates is ~5 per 20 seconds.
 // 30 seconds is a safe default that won't trigger rate limits.
@@ -346,6 +352,43 @@ function sendChatToGame(author: string, message: string): boolean {
 // HELPER FUNCTIONS
 // ============================================================================
 
+
+/**
+ * Checks if a user has exceeded their command rate limit.
+ */
+function isRateLimited(userId: string): boolean {
+    const now = Date.now();
+    
+    if (!commandHistory.has(userId)) {
+        commandHistory.set(userId, [now]);
+        return false;
+    }
+
+    const timestamps = commandHistory.get(userId)!;
+    
+    const validTimestamps = timestamps.filter(time => now - time < COOLDOWN_DURATION_MS);
+    
+    if (validTimestamps.length >= MAX_COMMANDS_PER_WINDOW) {
+        commandHistory.set(userId, validTimestamps);
+        return true;
+    }
+    
+    validTimestamps.push(now);
+    commandHistory.set(userId, validTimestamps);
+    return false;
+}
+
+function setCooldown(userId: string): void {
+    const now = Date.now();
+    const timestamps = commandHistory.get(userId) || [];
+    
+    const activeTimestamps = timestamps.filter(time => now - time < COOLDOWN_DURATION_MS);
+    activeTimestamps.push(now);
+    
+    commandHistory.set(userId, activeTimestamps);
+}
+
+
 // Auto-updating status dashboard
 async function updateLiveDashboard() {
     try {
@@ -361,11 +404,11 @@ async function updateLiveDashboard() {
         const embed: any = {
             title: "🧑‍🌾 Stardew Valley Server Status Dashboard",
             timestamp: new Date().toISOString(),
-            footer: { text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE < 60 ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds` : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`}` }
+            footer: { text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` }
         };
 
         if (!status || !status.isOnline) {
-            embed.color = 0xe74c3c; //red
+            embed.color = Colors.red; //red
             embed.description = "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_";
         } else {
             const seasonEmojis: Record<string, string> = {
@@ -373,7 +416,7 @@ async function updateLiveDashboard() {
             };
             const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-            embed.color = 0x3498db; // blue
+            embed.color = Colors.blue; // blue
             embed.fields = [
                 { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
                 { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
@@ -452,99 +495,115 @@ client.on(Events.MessageCreate, async (message: Message) => {
 
     const input = message.content.trim().toLowerCase();
 
+
     // --------------------------------------------------------------------------
     // BOT COMMAND HANDLING
     // --------------------------------------------------------------------------
 
-    // COMMAND: !status
-    if (input === "!status") {
-        try {
-            const status: ServerStatus | null = await fetchServerStatus();
-
-            if (!status || !status.isOnline) {
-                await message.reply("❌ **Server Status:** The server is currently offline.");
-                return;
+    const validCommands = ["!status", "!players", "!server", "!help"];
+    const isCommand = validCommands.includes(input);
+    if (isCommand) {
+        if (isRateLimited(message.author.id)) {
+            try {
+                const reply = await message.reply("⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.");
+                setTimeout(() => reply.delete().catch(() => {}), 5000);
+            } catch (err) {
+                console.error(`[Rate Limit] Failed to send cooldown warning: ${err}`);
             }
-
-            const seasonEmojis: Record<string, string> = {
-                spring: "🌸 Spring", summer: "☀️ Summer", fall: "🍂 Fall", winter: "❄️ Winter"
-            };
-            const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
-
-            const lines = [
-                `🏡 **Farm Name:** ${status.farmName}`,
-                `🗺️ **Farm Type:** ${getFarmTypeName(status.farmTypeKey)}`,
-          `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
-          `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
-          `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
-          `📡 **Server State:** ${status.isReady ? "Ready ✓" : "Busy (Saving/Transitioning) ⏳"}`,
-          `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``
-            ];
-
-            await message.reply(lines.join("\n"));
-        } catch (e) {
-            await message.reply("⚠️ Failed to load server status.");
+            return;
         }
-        return; // Crucial: stops the command text from executing down into the chat relay
-    }
+        setCooldown(message.author.id);
+        
+    // COMMAND: !status
+        if (input === "!status") {
+            try {
+                const status: ServerStatus | null = await fetchServerStatus();
 
-    // COMMAND: !players
-    if (input === "!players") {
-        try {
-            const [playersRes, cabinsRes] = await Promise.all([
-                fetch(`${API_URL}/players`, { headers: getApiHeaders() }).then(r => r.json() as Promise<PlayersResponse>),
-                                                              fetch(`${API_URL}/cabins`, { headers: getApiHeaders() }).then(r => r.json() as Promise<CabinsResponse>)
-            ]);
+                if (!status || !status.isOnline) {
+                    await message.reply("❌ **Server Status:** The server is currently offline.");
+                    return;
+                }
 
-            const onlineList = playersRes.players.filter(p => p.isOnline).map(p => `• 🟢 **${p.name}**`);
-            const offlineList = playersRes.players.filter(p => !p.isOnline).map(p => `• ⚪ ${p.name}`);
+                const seasonEmojis: Record<string, string> = {
+                    spring: "🌸 Spring", summer: "☀️ Summer", fall: "🍂 Fall", winter: "❄️ Winter"
+                };
+                const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-            const lines = [
-                `📊 **Roster Information**`,
-                `━━━━━━━━━━━━━━━━━━━━━━━━`,
-                `🟢 **Online Now (${onlineList.length}):**`,
-                onlineList.length ? onlineList.join("\n") : "• Nobody online",
-          `\n🛖 **Cabin Strategy & Real Estate:**`,
-          `• Total Cabins Built: **${cabinsRes.totalCount}**`,
-          `• Assigned to Players: **${cabinsRes.assignedCount}**`,
-          `• Available Vacancies: **${cabinsRes.availableCount}**`
-            ];
+                const lines = [
+                    `🏡 **Farm Name:** ${status.farmName}`,
+                    `🗺️ **Farm Type:** ${getFarmTypeName(status.farmTypeKey)}`,
+            `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
+            `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
+            `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
+            `📡 **Server State:** ${status.isReady ? "Ready ✓" : "Busy (Saving/Transitioning) ⏳"}`,
+            `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``
+                ];
 
-            await message.reply(lines.join("\n"));
-        } catch (e) {
-            await message.reply("⚠️ Failed to parse player lists and cabin layouts.");
+                await message.reply(lines.join("\n"));
+            } catch (e) {
+                await message.reply("⚠️ Failed to load server status.");
+            }
+            return;
         }
-        return; // Crucial: stops execution here
-    }
 
-    // COMMAND: !server
-    if (input === "!server") {
-        try {
-            const [stats, settings]: [StatsResponse, SettingsResponse] = await Promise.all([
-                fetch(`${API_URL}/stats`, { headers: getApiHeaders() }).then(r => r.json()),
-                                                                                           fetch(`${API_URL}/settings`, { headers: getApiHeaders() }).then(r => r.json())
-            ]);
+        // COMMAND: !players
+        if (input === "!players") {
+            try {
+                const [playersRes, cabinsRes] = await Promise.all([
+                    fetch(`${API_URL}/players`, { headers: getApiHeaders() }).then(r => r.json() as Promise<PlayersResponse>),
+                                                                fetch(`${API_URL}/cabins`, { headers: getApiHeaders() }).then(r => r.json() as Promise<CabinsResponse>)
+                ]);
 
-            const lines = [
-                `⚙️ **Server Configuration & Telemetry**`,
-                `━━━━━━━━━━━━━━━━━━━━━━━━`,
-                `🖥️ **Performance Metrics:**`,
-                `• Tick Speed: **${stats.tps.toFixed(1)} / ${stats.targetTps} TPS** (Ticks Per Sec)`,
-          `• (Web)VNC Frame Rate: **${stats.fps.toFixed(1)} FPS**`,
-          `• Average Tick Time: **${stats.avgTickMs.toFixed(2)} ms**`,
-          `• Ram Overhead: **${stats.memoryMb.toFixed(1)} MB**`,
-          `\n🛠️ **Gameplay Rules:**`,
-          `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
-          `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
-          `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
-          `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://stardew-valley-dedicated-server.github.io/server/features/cabin-strategies.html#cabinstack-default))`
-            ];
+                const onlineList = playersRes.players.filter(p => p.isOnline).map(p => `• 🟢 **${p.name}**`);
+                const offlineList = playersRes.players.filter(p => !p.isOnline).map(p => `• ⚪ ${p.name}`);
 
-            await message.reply(lines.join("\n"));
-        } catch (e) {
-            await message.reply("⚠️ Failed to retrieve system performance diagnostics.");
+                const lines = [
+                    `📊 **Roster Information**`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `🟢 **Online Now (${onlineList.length}):**`,
+                    onlineList.length ? onlineList.join("\n") : "• Nobody online",
+            `\n🛖 **Cabin Strategy & Real Estate:**`,
+            `• Total Cabins Built: **${cabinsRes.totalCount}**`,
+            `• Assigned to Players: **${cabinsRes.assignedCount}**`,
+            `• Available Vacancies: **${cabinsRes.availableCount}**`
+                ];
+
+                await message.reply(lines.join("\n"));
+            } catch (e) {
+                await message.reply("⚠️ Failed to parse player lists and cabin layouts.");
+            }
+            return;
         }
-        return; // Crucial: stops execution here
+
+        // COMMAND: !server
+        if (input === "!server") {
+            try {
+                const [stats, settings]: [StatsResponse, SettingsResponse] = await Promise.all([
+                    fetch(`${API_URL}/stats`, { headers: getApiHeaders() }).then(r => r.json()),
+                                                                                            fetch(`${API_URL}/settings`, { headers: getApiHeaders() }).then(r => r.json())
+                ]);
+
+                const lines = [
+                    `⚙️ **Server Configuration & Telemetry**`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `🖥️ **Performance Metrics:**`,
+                    `• Tick Speed: **${stats.tps.toFixed(1)} / ${stats.targetTps} TPS** (Ticks Per Sec)`,
+            `• (Web)VNC Frame Rate: **${stats.fps.toFixed(1)} FPS**`,
+            `• Average Tick Time: **${stats.avgTickMs.toFixed(2)} ms**`,
+            `• Ram Overhead: **${stats.memoryMb.toFixed(1)} MB**`,
+            `\n🛠️ **Gameplay Rules:**`,
+            `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
+            `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
+            `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
+            `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://stardew-valley-dedicated-server.github.io/server/features/cabin-strategies.html#cabinstack-default))`
+                ];
+
+                await message.reply(lines.join("\n"));
+            } catch (e) {
+                await message.reply("⚠️ Failed to retrieve system performance diagnostics.");
+            }
+            return;
+        }
     }
 
     // COMMAND: !help
@@ -557,7 +616,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
           `• \`!help\` - Display this command map.`
         ];
         await message.reply(helpLines.join("\n"));
-        return; // Crucial: stops execution here
+        return;
     }
 
     // --------------------------------------------------------------------------
