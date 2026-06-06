@@ -510,13 +510,15 @@ public class GameClientContainer : IAsyncDisposable
         _containerLog?.WriteLine(line);
 
         // Forward any SDVD_EVENT structured event lines (stdout fallback
-        // transport from the test-client mod) to infrastructure.jsonl.
-        SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"client-{_clientIndex}");
+        // transport from the test-client mod) to infrastructure.jsonl. Once
+        // forwarded, the line is a spent machine envelope — keep it off the
+        // human-facing sinks (UI ticker, operator terminal/CI log) below.
+        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"client-{_clientIndex}");
 
         // Emit to UI during startup phases (callback is null post-startup)
-        _startupLogCallback?.Invoke(line);
+        if (!isEvent) _startupLogCallback?.Invoke(line);
 
-        _logCallback?.Invoke(line);
+        if (!isEvent) _logCallback?.Invoke(line);
     }
 
     public async ValueTask DisposeAsync()
