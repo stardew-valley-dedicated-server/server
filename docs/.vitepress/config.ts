@@ -227,6 +227,7 @@ export default withMermaid(defineConfig({
                         { text: "Remote Host Setup", link: "/developers/testing/remote-host-setup" },
                         { text: "Manual Festival Testing", link: "/developers/testing/festivals-manual" },
                         { text: "Test Failure Runbook", link: "/developers/testing/test-failure-runbook" },
+                        { text: "CI Log Masking Runbook", link: "/developers/testing/ci-log-masking-runbook" },
                     ],
                 },
                 {

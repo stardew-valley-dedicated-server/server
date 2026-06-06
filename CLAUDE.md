@@ -12,6 +12,8 @@ JunimoServer is a Stardew Valley dedicated server mod enabling 24/7 multiplayer 
 
 Always-on behavioral rules live in `.claude/rules/universal/` (loaded every session). Code-area rules live in `.claude/rules/*.md` (gated by `paths:` frontmatter). Read `.claude/rules/README.md` for the layer model and full index.
 
+A question answered by the transcript gets a direct answer — no pre-narration, no re-confirming tool call, no appended next-steps. World-facts (code, tools, values) still get verified even when you feel sure (see `rules/universal/answer-then-stop.md`).
+
 ## Implementation Discipline
 
 - When implementing a multi-item plan, check off EVERY item before declaring completion. After finishing, re-read the plan and verify each item was addressed. Pay attention to file naming conventions already established in the project (e.g., .env.test not .test.env).

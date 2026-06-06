@@ -9,6 +9,7 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 | File | One-liner |
 |---|---|
 | `adversarial-review-split-findings.md` | Adversarial review must split findings (no OOS-as-cover) and must not collapse a valid recommendation along with weak framing |
+| `answer-then-stop.md` | A question answered *by the transcript* gets a one-line answer, then stop (no pre-narration / re-confirm tool call / next-steps) — but world-facts still defer to `verify-claims` even when you feel sure |
 | `git-workflow.md` | Project-specific git rules (no `git add .`, chained PRs, PR descriptions) |
 | `holistic-or-explicit-todo.md` | Don't hedge with empty scaffolding — build the holistic solution or write a concrete TODO |
 | `mirror-target-component-resolution.md` | A probe that detects another component's state must mirror that component's full resolution logic, not just the happy path |
