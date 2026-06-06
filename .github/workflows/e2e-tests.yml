@@ -538,6 +538,10 @@ jobs:
         if: always()
         continue-on-error: true
         env:
+          # The credential pair MUST use the AWS_* names: the aws CLI (R2 speaks the S3
+          # API) auto-discovers credentials only from AWS_ACCESS_KEY_ID / _SECRET_ACCESS_KEY.
+          # The rest stay R2_* — they're read by the script by hand. The guard below checks
+          # these env names (AWS_* for creds), not the secret names that feed them.
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -553,8 +557,9 @@ jobs:
           set +e
 
           # Unconfigured is the EXPECTED opt-out, not an error. Clean skip, green run.
-          if [ -z "${R2_BUCKET:-}" ] || [ -z "${R2_ACCESS_KEY_ID:-}" ] \
-             || [ -z "${R2_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ] \
+          # Check the env-var names defined in `env:` above (AWS_* for the credentials).
+          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
+             || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ] \
              || [ -z "${R2_PUBLIC_BASE_URL:-}" ]; then
             echo "R2 publish not configured — skipping. The report is still available as the 'e2e-web-report' artifact."
             exit 0
