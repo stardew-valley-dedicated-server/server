@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Shared;
@@ -23,20 +23,22 @@ namespace JunimoServer.Services.ServerOptim
 
         private static bool _automationSuppressesInput;
 
-        // The host-automation hotkeys (F9/F10 by default), kept live even while input is
-        // suppressed so the operator can drop automation from the VNC display. Resolved
-        // from AlwaysOnConfig at Initialize; entries that have no keyboard equivalent
-        // (e.g. a controller-only binding) are dropped.
-        private static Keys[] _carveOutKeys = Array.Empty<Keys>();
+        // The host-automation hotkeys (F9/F10 by default) that stay live while automation
+        // suppresses input, so the operator can drop automation from the VNC display.
+        // Resolved from AlwaysOnConfig at Initialize; a binding with no keyboard equivalent
+        // (e.g. controller-only) is dropped.
+        private static Keys[] _allowedHotkeys = Array.Empty<Keys>();
 
         public static void Initialize(IMonitor monitor, AlwaysOnConfig config)
         {
             _monitor = monitor;
             _rendering = new RenderingController(monitor, "Server");
-            _carveOutKeys = new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility }
-                .Where(b => b.TryGetKeyboard(out _))
-                .Select(b => { b.TryGetKeyboard(out var k); return k; })
-                .ToArray();
+
+            var hotkeys = new List<Keys>();
+            foreach (var button in new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility })
+                if (button.TryGetKeyboard(out var key))
+                    hotkeys.Add(key);
+            _allowedHotkeys = hotkeys.ToArray();
         }
 
         /// <summary>
@@ -75,23 +77,35 @@ namespace JunimoServer.Services.ServerOptim
         private static bool InputSuppressed
             => _rendering.CurrentFps == 0 || _automationSuppressesInput;
 
+        // The hotkeys stay live only while rendering is on: they exist so an operator
+        // watching VNC can drop automation. With rendering off there's nothing to see, so
+        // input is suppressed fully.
+        private static bool HotkeysStayLive
+            => _rendering.CurrentFps > 0 && _automationSuppressesInput;
+
         /// <summary>
         /// Harmony postfix on Keyboard.PlatformGetState — the single source feeding the game
-        /// (control, menus, chat, minigames) AND SMAPI's ButtonPressed pipeline. While
-        /// suppressed, strip the state down to the host-automation hotkeys so all other input
-        /// is blocked but those toggles still reach SMAPI — the operator's only way to drop
-        /// automation from the VNC display.
+        /// (control, menus, chat, minigames) AND SMAPI's ButtonPressed pipeline. Three cases:
+        /// not suppressed → pass through; suppressed with rendering on → strip to the
+        /// host-automation hotkeys so all other input is blocked but those toggles still reach
+        /// SMAPI (the operator's only way to drop automation from VNC); suppressed with
+        /// rendering off → blank fully.
         /// </summary>
         public static void KeyboardState_Postfix(ref KeyboardState __result)
         {
             if (!InputSuppressed) return;
-            var down = Array.FindAll(_carveOutKeys, __result.IsKeyDown);
-            __result = down.Length == 0 ? default : new KeyboardState(down);
+            if (HotkeysStayLive)
+            {
+                var down = Array.FindAll(_allowedHotkeys, __result.IsKeyDown);
+                __result = down.Length == 0 ? default : new KeyboardState(down);
+                return;
+            }
+            __result = default;
         }
 
         /// <summary>
         /// Harmony postfix on Mouse.PlatformGetState. While suppressed the mouse is fully
-        /// blanked — there is no mouse equivalent of the keyboard carve-out.
+        /// blanked — there is no mouse equivalent of the keyboard hotkeys.
         /// </summary>
         public static void MouseState_Postfix(ref MouseState __result)
         {
