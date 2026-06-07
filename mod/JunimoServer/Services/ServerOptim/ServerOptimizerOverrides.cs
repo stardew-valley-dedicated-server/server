@@ -1,7 +1,11 @@
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Shared;
 using Galaxy.Api;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using xTile.Display;
@@ -19,10 +23,22 @@ namespace JunimoServer.Services.ServerOptim
 
         private static bool _automationSuppressesInput;
 
-        public static void Initialize(IMonitor monitor)
+        // The host-automation hotkeys (F9/F10 by default) that stay live while automation
+        // suppresses input, so the operator can drop automation from the VNC display.
+        // Resolved from AlwaysOnConfig at Initialize; a binding with no keyboard equivalent
+        // (e.g. controller-only) is dropped.
+        private static Keys[] _allowedHotkeys = Array.Empty<Keys>();
+
+        public static void Initialize(IMonitor monitor, AlwaysOnConfig config)
         {
             _monitor = monitor;
             _rendering = new RenderingController(monitor, "Server");
+
+            var hotkeys = new List<Keys>();
+            foreach (var button in new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility })
+                if (button.TryGetKeyboard(out var key))
+                    hotkeys.Add(key);
+            _allowedHotkeys = hotkeys.ToArray();
         }
 
         /// <summary>
@@ -54,17 +70,47 @@ namespace JunimoServer.Services.ServerOptim
             _automationSuppressesInput = suppress;
         }
 
+        // Input is suppressed while rendering is off (no operator can see anything to
+        // drive) or host automation is driving the host. Both inputs are read live, so a
+        // runtime fps switch (the VNC button, `rendering <fps>`, POST /rendering?fps=N) or
+        // a host-auto/F9 toggle flips input behavior without a restart.
+        private static bool InputSuppressed
+            => _rendering.CurrentFps == 0 || _automationSuppressesInput;
+
+        // The hotkeys stay live only while rendering is on: they exist so an operator
+        // watching VNC can drop automation. With rendering off there's nothing to see, so
+        // input is suppressed fully.
+        private static bool HotkeysStayLive
+            => _rendering.CurrentFps > 0 && _automationSuppressesInput;
+
         /// <summary>
-        /// Shared Harmony prefix for Game1.UpdateControlInput and the raw Keyboard/Mouse
-        /// PlatformGetState reads. Returning false skips the original, blocking input both
-        /// where the game processes it and at the device source. Suppresses input while
-        /// rendering is off (the server isn't drawing, so a watching operator can't
-        /// meaningfully drive the game) or host automation is driving the host. Both inputs
-        /// are live, so a runtime fps switch (the VNC button, `rendering &lt;fps&gt;`,
-        /// POST /rendering?fps=N) restores input without a restart.
+        /// Harmony postfix on Keyboard.PlatformGetState — the single source feeding the game
+        /// (control, menus, chat, minigames) AND SMAPI's ButtonPressed pipeline. Three cases:
+        /// not suppressed → pass through; suppressed with rendering on → strip to the
+        /// host-automation hotkeys so all other input is blocked but those toggles still reach
+        /// SMAPI (the operator's only way to drop automation from VNC); suppressed with
+        /// rendering off → blank fully.
         /// </summary>
-        public static bool SuppressInput_Prefix()
-            => _rendering.CurrentFps != 0 && !_automationSuppressesInput;
+        public static void KeyboardState_Postfix(ref KeyboardState __result)
+        {
+            if (!InputSuppressed) return;
+            if (HotkeysStayLive)
+            {
+                var down = Array.FindAll(_allowedHotkeys, __result.IsKeyDown);
+                __result = down.Length == 0 ? default : new KeyboardState(down);
+                return;
+            }
+            __result = default;
+        }
+
+        /// <summary>
+        /// Harmony postfix on Mouse.PlatformGetState. While suppressed the mouse is fully
+        /// blanked — there is no mouse equivalent of the keyboard hotkeys.
+        /// </summary>
+        public static void MouseState_Postfix(ref MouseState __result)
+        {
+            if (InputSuppressed) __result = default;
+        }
 
         private static int _galaxyLobbyFailureCount;
         private const int MaxGalaxyLobbyRetries = 3;
