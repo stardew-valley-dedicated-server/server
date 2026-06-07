@@ -77,7 +77,7 @@ namespace JunimoServer.Services.Api
                     break;
             }
 
-            await WriteNotFoundAsync(response);
+            await WriteNotFoundAsync(response, path);
         }
 
         [ApiEndpoint("GET", "/test/crops", Summary = "Enumerate every HoeDirt-with-crop in the world (test-only)", Tag = "Test")]

@@ -1558,11 +1558,13 @@ namespace JunimoServer.Services.Api
         /// <summary>
         /// Writes the standard 404 Not Found response. The single source of the 404 body so
         /// every dispatcher arm (and the production /test/* gate) returns byte-identical output.
+        /// The requested path is echoed to match the test-client mirror's 404 shape
+        /// (tests/test-client/HttpServer/TestApiServer.cs).
         /// </summary>
-        private static async Task WriteNotFoundAsync(HttpListenerResponse response)
+        private static async Task WriteNotFoundAsync(HttpListenerResponse response, string path)
         {
             response.StatusCode = 404;
-            await WriteJsonAsync(response, new { error = "Not found" });
+            await WriteJsonAsync(response, new { error = "Not found", path });
         }
 
         private void StartServer()
@@ -1750,7 +1752,7 @@ namespace JunimoServer.Services.Api
                 {
                     if (!Env.IsTest)
                     {
-                        await WriteNotFoundAsync(response);
+                        await WriteNotFoundAsync(response, path);
                         return;
                     }
                     await DispatchTestEndpointAsync(method, path, request, response);
@@ -1820,7 +1822,7 @@ namespace JunimoServer.Services.Api
                             await WriteHtmlAsync(response, GetScalarHtml());
                             break;
                         default:
-                            await WriteNotFoundAsync(response);
+                            await WriteNotFoundAsync(response, path);
                             break;
                     }
                 }
@@ -1856,7 +1858,7 @@ namespace JunimoServer.Services.Api
                             await HandlePostReloadAsync(response);
                             break;
                         default:
-                            await WriteNotFoundAsync(response);
+                            await WriteNotFoundAsync(response, path);
                             break;
                     }
                 }
@@ -1870,7 +1872,7 @@ namespace JunimoServer.Services.Api
                             await WriteJsonAsync(response, await HandleDeleteFarmhandAsync(nameParam, farmhandIdParam));
                             break;
                         default:
-                            await WriteNotFoundAsync(response);
+                            await WriteNotFoundAsync(response, path);
                             break;
                     }
                 }

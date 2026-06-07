@@ -32,10 +32,10 @@ try
     var generateMethod = generatorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Static)
         ?? throw new Exception("Generate method not found");
 
-    // Exclude test-only endpoints (/test/*) from the published spec — this build-time
-    // spec feeds the public operator docs and should match what a production server
-    // exposes (which gates /test/* off via Env.IsTest). The prefix is duplicated here
-    // because this tool loads the mod by reflection and can't reference its IsTestPath.
+    // Exclude test-only endpoints (/test/*) from the published spec — it feeds the public
+    // operator docs and should match a production server, which gates /test/* off via Env.IsTest.
+    // The /test/ prefix is duplicated here rather than reflecting the mod's IsTestPath: invoking
+    // across the net10-tool/net6-mod boundary is fragile (see the typed-attribute note below).
     // NOTE: Generate has an optional includeMethod parameter; MethodInfo.Invoke does not
     // apply C# optional-argument defaults, so this argument must be passed explicitly.
     var apiEndpointAttrType = asm.GetType("JunimoServer.Services.Api.ApiEndpointAttribute")
