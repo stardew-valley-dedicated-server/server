@@ -15,7 +15,7 @@ If the skill was invoked with arguments (e.g. `/review-rules universal only`, `/
 
 In scope: `.claude/rules/**/*.md`, `.claude/rules/README.md`, `CLAUDE.md` (root + nested), `.claude/skills/**/SKILL.md`.
 
-Out of scope unless the user opts in: `.claude/archive/**`, `.claude/tasks/**`, `.claude/commands/**`, `docs/**`, anything outside `.claude/` and root `CLAUDE.md`.
+Out of scope unless the user opts in: `.claude/tasks/**`, `.claude/commands/**`, `docs/**`, anything outside `.claude/` and root `CLAUDE.md`.
 
 ## Procedure
 
