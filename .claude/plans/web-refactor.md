@@ -120,8 +120,8 @@ Replace the AsyncAPI/WebSocket-based communication in `/web` with the server's H
 | `web/nuxt.config.ts`                                    | Add proxy config                         |
 | `web/components/map/Map.vue`                            | Replace WS with HTTP                     |
 | `web/pages/game/map.vue`                                | May also have WS references              |
-| `web/plugins/websocket-client.client.ts`                | Understand before archiving              |
-| `web/composables/useWebSocketClientCodegen.ts`          | Understand before archiving              |
+| `web/plugins/websocket-client.client.ts`                | Understand before removing                |
+| `web/composables/useWebSocketClientCodegen.ts`          | Understand before removing                |
 
 ---
 

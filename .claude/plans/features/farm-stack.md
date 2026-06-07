@@ -25,7 +25,7 @@ Each question is answered by reading `decompiled/sdv-1.6.15-24356/` (and greppin
 
 4. **Existing `dedicatedServer.Tick()` primitives.** Read `decompiled/sdv-1.6.15-24356/DedicatedServer.cs` (and any 1.6 dedicated-host helpers). Does the engine already provide farm-routing or location-resolution primitives we can hook into instead of patching every call site?
 
-5. **Cabin-stacking overlap.** The user need driving "farm-stack" might already be served by the existing cabin-stacking (multiple cabins on one Farm). Document the actual user requirement that cabin-stacking does *not* satisfy. If none, archive the feature.
+5. **Cabin-stacking overlap.** The user need driving "farm-stack" might already be served by the existing cabin-stacking (multiple cabins on one Farm). Document the actual user requirement that cabin-stacking does *not* satisfy. If none, drop the feature.
 
 6. **LandGrants 1.5 → 1.6 portability.** Two LandGrants techniques bear scrutiny — a global `String.Equals` patch (treats `"Farm" == "Farm_JS_1"` as true everywhere) and per-farmer routing via `Game1.currentLocation.modData["JunimoServer." + targetName]`. For each:
    - Does it still work on 1.6's location resolution?
@@ -48,8 +48,8 @@ A markdown report (in `.claude/plans/research/` or appended below the spike, as 
 ## Exit criteria
 
 1. **Feasible** — answers to questions 1–4 show a tractable hook surface, and question 6 shows LandGrants' techniques port cleanly to 1.6. → Write a fresh build plan citing the decompiled findings.
-2. **Infeasible without engine changes** — questions 1 or 2 reveal `Game1.getFarm()` or `SaveGame` assumptions that would require pervasive patching with no clean hook. → Archive the feature; document in admin docs why JunimoServer doesn't support per-player farms.
-3. **Already covered by cabin-stacking** — question 5 shows the real user need is met by stacking cabins on the master farm. → Archive farm-stack; document the cabin-stacking migration path for users who think they want farm-stack.
+2. **Infeasible without engine changes** — questions 1 or 2 reveal `Game1.getFarm()` or `SaveGame` assumptions that would require pervasive patching with no clean hook. → Drop the feature; document in admin docs why JunimoServer doesn't support per-player farms.
+3. **Already covered by cabin-stacking** — question 5 shows the real user need is met by stacking cabins on the master farm. → Drop farm-stack; document the cabin-stacking migration path for users who think they want farm-stack.
 
 ## References (read-only)
 
