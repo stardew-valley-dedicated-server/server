@@ -54,6 +54,42 @@ jobs:
               - 'tools/openapi-generator/**'
               - 'Directory.Build.props'
 
+  validate-pr-title:
+    name: Validate PR Title
+    # Squash-merge makes the PR title the commit subject, which the merge queue lints — but
+    # validate-commits lints only the fork's commits, not the title. Lint it here through the same
+    # commitlint.config.js so a bad title fails on the PR, not cryptically in the queue. Title-only,
+    # no fork code or secrets, so no `authorize` gate.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout base repo code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          sparse-checkout: |
+            package.json
+            package-lock.json
+            commitlint.config.js
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate PR title
+        # Via env, never interpolated into the script — a title with shell metacharacters is data, not code.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! printf '%s\n' "$PR_TITLE" | npx commitlint --verbose; then
+            echo "::error title=Invalid PR title::\"$PR_TITLE\" is not a Conventional Commit. The title becomes the squash commit subject — use e.g. 'feat: add missing game options'. See CONTRIBUTING.md."
+            exit 1
+          fi
+
   validate-commits:
     name: Validate Commits
     needs: authorize
