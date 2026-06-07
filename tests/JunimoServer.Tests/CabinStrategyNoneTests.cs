@@ -44,8 +44,9 @@ public class CabinStrategyNoneTests : TestBase
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
-        Assert.True(cabinsResponse.TotalCount >= 1,
-            $"Expected at least 1 cabin with default settings, got {cabinsResponse.TotalCount}");
+        // Exact count, not a lower bound: a lower bound passed even when vanilla placed 0 and
+        // the mod backfilled 1 (the bug this guards). startingCabins:1 must yield exactly 1.
+        Assert.Equal(1, cabinsResponse.TotalCount);
 
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
     }
@@ -65,10 +66,10 @@ public class CabinStrategyNoneTests : TestBase
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
 
-        Assert.True(cabinsResponse.TotalCount >= 1,
-            $"Expected at least 1 cabin, got {cabinsResponse.TotalCount}");
-        Assert.True(cabinsResponse.TotalCount <= 6,
-            $"Expected at most 6 cabins, got {cabinsResponse.TotalCount}");
+        // Exact count: startingCabins:6 must place 6 visible cabins (the Standard farm's Paths
+        // layer has 7 designated positions, so 6 fit). A <= 6 upper bound previously passed even
+        // when only 1 cabin existed — the silent regression this test now catches.
+        Assert.Equal(6, cabinsResponse.TotalCount);
 
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
 

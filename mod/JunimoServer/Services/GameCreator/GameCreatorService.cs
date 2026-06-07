@@ -164,7 +164,14 @@ namespace JunimoServer.Services.GameCreator
 
             _gameLoader.SetCurrentGameAsSaveToLoad(config.FarmName);
 
-            _cabinManagerService.EnsureAtLeastXCabins();
+            // Place the starting cabins through the mod's own path. Vanilla BuildStartingCabins
+            // (run during loadForNewGame) does not leave its cabins on the realized farm on the
+            // headless path, so for None we place config.StartingCabins visible cabins here via
+            // EnsureAtLeastXCabins → BuildNewCabinVisible (which runs after the farm is fully
+            // realized and verifies each interior). Stacked strategies don't use map positions,
+            // so they keep the default minimum of 1 hidden cabin.
+            var minCabins = _options.IsNone ? Math.Max(1, config.StartingCabins) : 1;
+            _cabinManagerService.EnsureAtLeastXCabins(minCabins);
 
             GameIsCreating = false;
         }
