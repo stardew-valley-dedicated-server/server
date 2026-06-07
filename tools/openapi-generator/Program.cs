@@ -32,13 +32,37 @@ try
     var generateMethod = generatorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Static)
         ?? throw new Exception("Generate method not found");
 
+    // Exclude test-only endpoints (/test/*) from the published spec — this build-time
+    // spec feeds the public operator docs and should match what a production server
+    // exposes (which gates /test/* off via Env.IsTest). The prefix is duplicated here
+    // because this tool loads the mod by reflection and can't reference its IsTestPath.
+    // NOTE: Generate has an optional includeMethod parameter; MethodInfo.Invoke does not
+    // apply C# optional-argument defaults, so this argument must be passed explicitly.
+    var apiEndpointAttrType = asm.GetType("JunimoServer.Services.Api.ApiEndpointAttribute")
+        ?? throw new Exception("ApiEndpointAttribute type not found");
+    var apiEndpointPathProp = apiEndpointAttrType.GetProperty("Path")
+        ?? throw new Exception("ApiEndpointAttribute.Path property not found");
+
+    // Read ONLY the typed ApiEndpointAttribute. Do not enumerate all attributes
+    // (m.GetCustomAttributes()) — that materializes [AsyncStateMachine], whose
+    // constructor argument is the compiler-generated state-machine type, and resolving
+    // that nested type across the tool/mod runtime boundary (net10 tool reflecting a
+    // net6 mod assembly) throws "Could not resolve type ...d__NNN".
+    Func<MethodInfo, bool> includeMethod = m =>
+    {
+        var ep = Attribute.GetCustomAttribute(m, apiEndpointAttrType);
+        var path = ep is null ? null : apiEndpointPathProp.GetValue(ep) as string;
+        return path is null || !path.StartsWith("/test/", StringComparison.Ordinal);
+    };
+
     // Invoke it
     var document = generateMethod.Invoke(null, new object?[]
     {
         apiServiceType,
         "Stardew Dedicated Server API",
         "v1",
-        "HTTP API for monitoring and interacting with the Stardew Valley dedicated server"
+        "HTTP API for monitoring and interacting with the Stardew Valley dedicated server",
+        includeMethod
     }) ?? throw new Exception("Generate returned null");
 
     // Call ToJson() on the OpenApiDocument

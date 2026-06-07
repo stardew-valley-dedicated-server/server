@@ -29,6 +29,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -402,142 +403,6 @@ namespace JunimoServer.Services.Api
     }
 
     /// <summary>
-    /// A single managed/unmanaged crop snapshot row returned by /test/crops.
-    /// </summary>
-    public class TestCrop
-    {
-        /// <summary>Internal location name where the crop lives (e.g. "Farm", "Greenhouse", "IslandWest").</summary>
-        public string LocationName { get; set; } = "";
-
-        /// <summary>Tile X coordinate (terrain HoeDirt tile, or pot's TileLocation).</summary>
-        public int TileX { get; set; }
-
-        /// <summary>Tile Y coordinate.</summary>
-        public int TileY { get; set; }
-
-        /// <summary>True if the crop is alive (not flagged dead).</summary>
-        public bool IsAlive { get; set; }
-
-        /// <summary>True if the crop sits inside a Garden Pot (IndoorPot.hoeDirt).</summary>
-        public bool IsInPot { get; set; }
-
-        /// <summary>Seed item id used to plant the crop, e.g. "(O)474" for Cauliflower.</summary>
-        public string? SeedItemId { get; set; }
-
-        /// <summary>True if CropSaver has a tracking entry for this (locationName, tile).</summary>
-        public bool IsManaged { get; set; }
-    }
-
-    /// <summary>
-    /// Response from /test/crops (test-only enumeration of every HoeDirt-with-crop in the world).
-    /// </summary>
-    public class TestCropsResponse
-    {
-        public bool Success { get; set; }
-        public List<TestCrop> Crops { get; set; } = new();
-        public string? Error { get; set; }
-    }
-
-    /// <summary>
-    /// Response from /test/set_date (test-only date jump).
-    /// </summary>
-    public class TestSetDateResponse
-    {
-        public bool Success { get; set; }
-        public string? Error { get; set; }
-        public string? Season { get; set; }
-        public int? Day { get; set; }
-        public int? Year { get; set; }
-    }
-
-    /// <summary>
-    /// Body for POST /test/set_date.
-    /// </summary>
-    public class TestSetDateRequest
-    {
-        public string? Season { get; set; }
-        public int Day { get; set; }
-        public int Year { get; set; }
-    }
-
-    /// <summary>
-    /// Response from /test/farmevent (test-only: queue an overnight FarmEvent for the next night).
-    /// </summary>
-    public class TestFarmEventResponse
-    {
-        public bool Success { get; set; }
-        public string? Error { get; set; }
-        public string? Type { get; set; }
-    }
-
-    /// <summary>
-    /// Body for POST /test/saver_crop. Mutates an existing CropSaver entry in
-    /// place. Optional fields are skipped when null. Used by E2E tests to
-    /// pre-arm extraDays past CropSaver.OnDayEnd's branch-1 floor without
-    /// having to simulate many real day-transitions.
-    /// </summary>
-    public class TestSaverCropRequest
-    {
-        public string? LocationName { get; set; }
-        public int TileX { get; set; }
-        public int TileY { get; set; }
-        public int? ExtraDays { get; set; }
-        public long? OwnerId { get; set; }
-        public TestSetDateRequest? DatePlanted { get; set; }
-    }
-
-    /// <summary>
-    /// Response from /test/saver_crop.
-    /// </summary>
-    public class TestSaverCropResponse
-    {
-        public bool Success { get; set; }
-        public string? Error { get; set; }
-        /// <summary>True if a SaverCrop entry was found at the requested (location, tile).</summary>
-        public bool Found { get; set; }
-        public int? ExtraDays { get; set; }
-        public long? OwnerId { get; set; }
-    }
-
-    /// <summary>
-    /// Response from POST /test/house_upgrade (test-only). Runs a vanilla debug house-upgrade
-    /// command through parseDebugInput (exercising the HostFarmhouseUpgradeGuard Harmony prefix) and
-    /// reports the host's resulting HouseUpgradeLevel, so a test can pin "the host farmhouse can't be
-    /// upgraded" (it must stay 0).
-    /// </summary>
-    public class TestHouseUpgradeResponse
-    {
-        public bool Success { get; set; }
-        public string? Error { get; set; }
-
-        /// <summary>The host farmer's HouseUpgradeLevel after the debug command ran (expected 0).</summary>
-        public int HostHouseUpgradeLevel { get; set; }
-    }
-
-    /// <summary>
-    /// Response from POST /test/stamp_claim (test-only). Constructs an abandoned-claim slot
-    /// deterministically: stamps a synthetic userID onto an uncustomized, homed farmhandData entry,
-    /// reproducing the on-disk shape (<c>userID != "" &amp;&amp; isCustomized == false</c>, homeLocation
-    /// resolving to a Cabin) that a player leaves when they claim "New Farmer" and quit before
-    /// customizing. Used to verify the save-load sweep (ClearAbandonedCabinClaimsOnLoad) clears such a
-    /// claim on reload — the live disconnect heal cannot persist one to disk for a sweep test.
-    /// </summary>
-    public class TestStampClaimResponse
-    {
-        public bool Success { get; set; }
-        public string? Error { get; set; }
-
-        /// <summary>UniqueMultiplayerID of the farmhand slot that was stamped.</summary>
-        public long StampedUid { get; set; }
-
-        /// <summary>The synthetic userID written onto the slot.</summary>
-        public string StampedUserId { get; set; } = "";
-
-        /// <summary>The slot's homeLocation after stamping (must resolve to a Cabin for the homed-path test).</summary>
-        public string HomeLocation { get; set; } = "";
-    }
-
-    /// <summary>
     /// Response from time set operation.
     /// </summary>
     public class TimeSetResponse
@@ -807,7 +672,7 @@ namespace JunimoServer.Services.Api
     /// <summary>
     /// HTTP API service using HttpListener with NSwag OpenAPI support.
     /// </summary>
-    public class ApiService : ModService
+    public partial class ApiService : ModService
     {
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
@@ -1690,18 +1555,36 @@ namespace JunimoServer.Services.Api
             await WriteJsonAsync(response, new { error = "Unauthorized. Provide a valid Authorization header: Bearer <api-key>" });
         }
 
+        /// <summary>
+        /// Writes the standard 404 Not Found response. The single source of the 404 body so
+        /// every dispatcher arm (and the production /test/* gate) returns byte-identical output.
+        /// </summary>
+        private static async Task WriteNotFoundAsync(HttpListenerResponse response)
+        {
+            response.StatusCode = 404;
+            await WriteJsonAsync(response, new { error = "Not found" });
+        }
+
         private void StartServer()
         {
             if (_isRunning) return;
 
             try
             {
-                // Generate OpenAPI spec
+                // Generate OpenAPI spec. Test-only endpoints are spec-visible iff they are
+                // runtime-reachable (Env.IsTest) — the same gate the dispatcher uses, so the
+                // published contract and the routing cannot drift.
+                // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this predicate's IsTestPath/Env.IsTest use.
                 var document = OpenApiGenerator.Generate(
                     typeof(ApiService),
                     "Stardew Dedicated Server API",
                     "v1",
-                    "HTTP API for monitoring and interacting with the Stardew Valley dedicated server"
+                    "HTTP API for monitoring and interacting with the Stardew Valley dedicated server",
+                    includeMethod: m =>
+                    {
+                        var ep = m.GetCustomAttribute<ApiEndpointAttribute>();
+                        return ep == null || !IsTestPath(ep.Path) || Env.IsTest;
+                    }
                 );
                 _openApiSpec = document.ToJson();
 
@@ -1856,6 +1739,24 @@ namespace JunimoServer.Services.Api
                     return;
                 }
 
+                // Test-only routes — a third early-return gate, mirroring the WebSocket and auth
+                // gates above. Placed AFTER auth so production behaves identically to an unknown
+                // route: an unauthenticated caller already got 401 (same as any non-public path),
+                // and an authenticated caller gets the same 404 a missing route gets.
+                // DO NOT add /test/* to isPublicEndpoint — that would both unauthenticate these
+                // routes AND leak their existence (404 vs 401) in production.
+                // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this block.
+                if (IsTestPath(path))
+                {
+                    if (!Env.IsTest)
+                    {
+                        await WriteNotFoundAsync(response);
+                        return;
+                    }
+                    await DispatchTestEndpointAsync(method, path, request, response);
+                    return;
+                }
+
                 // Route request
                 if (method == "GET")
                 {
@@ -1912,9 +1813,6 @@ namespace JunimoServer.Services.Api
                         case "/auth":
                             await WriteJsonAsync(response, HandleGetAuthStatus());
                             break;
-                        case "/test/crops":
-                            await WriteJsonAsync(response, await HandleGetTestCropsAsync());
-                            break;
                         case "/swagger/v1/swagger.json":
                             await WriteJsonRawAsync(response, _openApiSpec ?? "{}");
                             break;
@@ -1922,8 +1820,7 @@ namespace JunimoServer.Services.Api
                             await WriteHtmlAsync(response, GetScalarHtml());
                             break;
                         default:
-                            response.StatusCode = 404;
-                            await WriteJsonAsync(response, new { error = "Not found" });
+                            await WriteNotFoundAsync(response);
                             break;
                     }
                 }
@@ -1958,24 +1855,8 @@ namespace JunimoServer.Services.Api
                         case "/reload":
                             await HandlePostReloadAsync(response);
                             break;
-                        case "/test/set_date":
-                            await WriteJsonAsync(response, await HandlePostTestSetDateAsync(request));
-                            break;
-                        case "/test/farmevent":
-                            await WriteJsonAsync(response, await HandlePostTestFarmEventAsync(request));
-                            break;
-                        case "/test/saver_crop":
-                            await WriteJsonAsync(response, await HandlePostTestSaverCropAsync(request));
-                            break;
-                        case "/test/house_upgrade":
-                            await WriteJsonAsync(response, await HandlePostTestHouseUpgradeAsync(request));
-                            break;
-                        case "/test/stamp_claim":
-                            await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
-                            break;
                         default:
-                            response.StatusCode = 404;
-                            await WriteJsonAsync(response, new { error = "Not found" });
+                            await WriteNotFoundAsync(response);
                             break;
                     }
                 }
@@ -1989,8 +1870,7 @@ namespace JunimoServer.Services.Api
                             await WriteJsonAsync(response, await HandleDeleteFarmhandAsync(nameParam, farmhandIdParam));
                             break;
                         default:
-                            response.StatusCode = 404;
-                            await WriteJsonAsync(response, new { error = "Not found" });
+                            await WriteNotFoundAsync(response);
                             break;
                     }
                 }
@@ -3478,345 +3358,6 @@ namespace JunimoServer.Services.Api
                 TimeOfDay = time,
                 Message = $"Time set to {time}"
             };
-        }
-
-        [ApiEndpoint("GET", "/test/crops", Summary = "Enumerate every HoeDirt-with-crop in the world (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestCropsResponse), 200)]
-        private async Task<TestCropsResponse> HandleGetTestCropsAsync()
-        {
-            var crops = new List<TestCrop>();
-            try
-            {
-                await RunOnGameThreadAsync(() =>
-                {
-                    Utility.ForEachLocation(location =>
-                    {
-                        var locName = location.Name;
-
-                        foreach (var feature in location.terrainFeatures.Values)
-                        {
-                            if (feature is not HoeDirt dirt) continue;
-                            var crop = dirt.crop;
-                            if (crop == null) continue;
-                            crops.Add(new TestCrop
-                            {
-                                LocationName = locName,
-                                TileX = (int)dirt.Tile.X,
-                                TileY = (int)dirt.Tile.Y,
-                                IsAlive = !crop.dead.Value,
-                                IsInPot = false,
-                                SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile)
-                            });
-                        }
-
-                        foreach (var pot in location.Objects.Values.OfType<IndoorPot>())
-                        {
-                            var dirt = pot.hoeDirt.Value;
-                            if (dirt == null) continue;
-                            var crop = dirt.crop;
-                            if (crop == null) continue;
-                            crops.Add(new TestCrop
-                            {
-                                LocationName = locName,
-                                TileX = (int)pot.TileLocation.X,
-                                TileY = (int)pot.TileLocation.Y,
-                                IsAlive = !crop.dead.Value,
-                                IsInPot = true,
-                                SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, pot.TileLocation)
-                            });
-                        }
-
-                        return true;
-                    });
-                });
-            }
-            catch (Exception ex)
-            {
-                return new TestCropsResponse { Success = false, Error = ex.Message };
-            }
-
-            return new TestCropsResponse { Success = true, Crops = crops };
-        }
-
-        [ApiEndpoint("POST", "/test/set_date", Summary = "Set season/day/year directly (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestSetDateResponse), 200)]
-        private async Task<TestSetDateResponse> HandlePostTestSetDateAsync(HttpListenerRequest request)
-        {
-            TestSetDateRequest? body = null;
-            try
-            {
-                using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
-                var json = await reader.ReadToEndAsync();
-                if (!string.IsNullOrWhiteSpace(json))
-                {
-                    body = JsonConvert.DeserializeObject<TestSetDateRequest>(json);
-                }
-            }
-            catch (Exception ex)
-            {
-                return new TestSetDateResponse { Success = false, Error = $"Failed to parse body: {ex.Message}" };
-            }
-
-            if (body == null || string.IsNullOrEmpty(body.Season))
-            {
-                return new TestSetDateResponse { Success = false, Error = "Missing 'season' in request body" };
-            }
-
-            if (!Enum.TryParse<Season>(body.Season, ignoreCase: true, out var season))
-            {
-                return new TestSetDateResponse { Success = false, Error = $"Invalid season '{body.Season}' (expected spring/summer/fall/winter)" };
-            }
-
-            if (body.Day < 1 || body.Day > 28)
-            {
-                return new TestSetDateResponse { Success = false, Error = $"Day {body.Day} out of range (1-28)" };
-            }
-
-            if (body.Year < 1)
-            {
-                return new TestSetDateResponse { Success = false, Error = $"Year {body.Year} out of range (>= 1)" };
-            }
-
-            await RunOnGameThreadAsync(() =>
-            {
-                Game1.season = season;
-                Game1.dayOfMonth = body.Day;
-                Game1.year = body.Year;
-                // Writes to Game1.season/dayOfMonth/year mirror NetWorldState
-                // fields that replicate to peers. Without this push, the next
-                // peer's sendServerIntroduction snapshot carries the previous
-                // day's stale NetField — see decompiled Game1.cs:8264 for
-                // Stardew's own day-end usage of the same primitive.
-                Game1.netWorldState.Value.UpdateFromGame1();
-            });
-
-            Monitor.Log($"Date set to {season} {body.Day}, year {body.Year} via test API", LogLevel.Info);
-
-            return new TestSetDateResponse
-            {
-                Success = true,
-                Season = season.ToString().ToLowerInvariant(),
-                Day = body.Day,
-                Year = body.Year
-            };
-        }
-
-        [ApiEndpoint("POST", "/test/farmevent", Summary = "Queue an overnight FarmEvent for the next night (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestFarmEventResponse), 200)]
-        private async Task<TestFarmEventResponse> HandlePostTestFarmEventAsync(HttpListenerRequest request)
-        {
-            // Game1.farmEventOverride is consumed by _newDayAfterFade as the fallback when no random
-            // farm event is picked (decompiled Game1.cs:8588), so this deterministically queues the
-            // event for the next overnight transition without seeding mail or stats.
-            var type = request.QueryString["type"]?.ToLowerInvariant() ?? "qiplane";
-
-            StardewValley.Events.FarmEvent? farmEvent = type switch
-            {
-                "qiplane" => new StardewValley.Events.QiPlaneEvent(),
-                _ => null
-            };
-
-            if (farmEvent == null)
-            {
-                return new TestFarmEventResponse { Success = false, Error = $"Unknown farm event type '{type}' (supported: qiplane)" };
-            }
-
-            await RunOnGameThreadAsync(() => Game1.farmEventOverride = farmEvent);
-
-            Monitor.Log($"Queued overnight farm event '{type}' for the next night via test API", LogLevel.Info);
-
-            return new TestFarmEventResponse { Success = true, Type = type };
-        }
-
-        [ApiEndpoint("POST", "/test/saver_crop", Summary = "Mutate a CropSaver entry (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestSaverCropResponse), 200)]
-        private async Task<TestSaverCropResponse> HandlePostTestSaverCropAsync(HttpListenerRequest request)
-        {
-            TestSaverCropRequest? body = null;
-            try
-            {
-                using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
-                var json = await reader.ReadToEndAsync();
-                if (!string.IsNullOrWhiteSpace(json))
-                {
-                    body = JsonConvert.DeserializeObject<TestSaverCropRequest>(json);
-                }
-            }
-            catch (Exception ex)
-            {
-                return new TestSaverCropResponse { Success = false, Error = $"Failed to parse body: {ex.Message}" };
-            }
-
-            if (body == null || string.IsNullOrEmpty(body.LocationName))
-            {
-                return new TestSaverCropResponse { Success = false, Error = "Missing 'locationName' in request body" };
-            }
-
-            var loader = JunimoServer.Services.CropSaver.CropSaver.Instance?.DataLoader;
-            if (loader == null)
-            {
-                return new TestSaverCropResponse { Success = false, Error = "CropSaver not initialized" };
-            }
-
-            SDate? newDatePlanted = null;
-            if (body.DatePlanted != null)
-            {
-                if (string.IsNullOrEmpty(body.DatePlanted.Season)
-                    || !Enum.TryParse<Season>(body.DatePlanted.Season, ignoreCase: true, out var dpSeason))
-                {
-                    return new TestSaverCropResponse
-                    {
-                        Success = false,
-                        Error = $"Invalid datePlanted.season '{body.DatePlanted.Season}'"
-                    };
-                }
-                if (body.DatePlanted.Day < 1 || body.DatePlanted.Day > 28)
-                {
-                    return new TestSaverCropResponse
-                    {
-                        Success = false,
-                        Error = $"datePlanted.day {body.DatePlanted.Day} out of range (1-28)"
-                    };
-                }
-                if (body.DatePlanted.Year < 1)
-                {
-                    return new TestSaverCropResponse
-                    {
-                        Success = false,
-                        Error = $"datePlanted.year {body.DatePlanted.Year} out of range (>= 1)"
-                    };
-                }
-                newDatePlanted = new SDate(body.DatePlanted.Day, dpSeason.ToString().ToLowerInvariant(), body.DatePlanted.Year);
-            }
-
-            var tile = new Microsoft.Xna.Framework.Vector2(body.TileX, body.TileY);
-            TestSaverCropResponse result = new();
-            await RunOnGameThreadAsync(() =>
-            {
-                var saverCrop = loader.GetSaverCrop(body.LocationName, tile);
-                if (saverCrop == null)
-                {
-                    result = new TestSaverCropResponse
-                    {
-                        Success = false,
-                        Found = false,
-                        Error = $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY})"
-                    };
-                    return;
-                }
-
-                if (body.ExtraDays.HasValue) saverCrop.extraDays = body.ExtraDays.Value;
-                if (body.OwnerId.HasValue) saverCrop.ownerId = body.OwnerId.Value;
-                if (newDatePlanted != null) saverCrop.datePlanted = newDatePlanted;
-
-                result = new TestSaverCropResponse
-                {
-                    Success = true,
-                    Found = true,
-                    ExtraDays = saverCrop.extraDays,
-                    OwnerId = saverCrop.ownerId
-                };
-            });
-
-            return result;
-        }
-
-        [ApiEndpoint("POST", "/test/house_upgrade", Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestHouseUpgradeResponse), 200)]
-        private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(HttpListenerRequest request)
-        {
-            var command = request.QueryString["command"];
-            if (string.IsNullOrWhiteSpace(command))
-            {
-                return new TestHouseUpgradeResponse { Success = false, Error = "Missing 'command' query parameter" };
-            }
-
-            // Route through parseDebugInput so the real vanilla handler — and thus the
-            // HostFarmhouseUpgradeGuard Harmony prefix — is exercised, exactly as an admin typing it
-            // at the console would be. Set Success only after the command actually runs, so a throw
-            // can't report a false-positive pass to the guard test.
-            var result = new TestHouseUpgradeResponse();
-            try
-            {
-                await RunOnGameThreadAsync(() =>
-                {
-                    Game1.game1.parseDebugInput(command);
-                    result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
-                    result.Success = true;
-                });
-            }
-            catch (Exception ex)
-            {
-                // Don't log at Error level — that trips ServerContainer's error cancellation and
-                // poisons the test (.claude/rules/debugging.md). Surface via the response instead.
-                result.Success = false;
-                result.Error = ex.Message;
-            }
-
-            return result;
-        }
-
-        [ApiEndpoint("POST", "/test/stamp_claim", Summary = "Stamp a synthetic abandoned slot claim onto an uncustomized homed farmhand (test-only)", Tag = "Test")]
-        [ApiResponse(typeof(TestStampClaimResponse), 200)]
-        private async Task<TestStampClaimResponse> HandlePostTestStampClaimAsync()
-        {
-            // Synthetic platform id mimicking a Steam/GOG stamp. Fixed so a test could match it,
-            // but the test only needs StampedUid; the value just has to be non-empty.
-            const string syntheticUserId = "test-stuck-claim-9999";
-
-            var result = new TestStampClaimResponse();
-            try
-            {
-                await RunOnGameThreadAsync(() =>
-                {
-                    var farm = Game1.getFarm();
-                    if (farm == null)
-                    {
-                        result.Error = "No farm loaded";
-                        return;
-                    }
-
-                    // Find an unclaimed slot with an existing farmhand entry whose home resolves to its
-                    // cabin: owner present, not customized, no userID yet (exactly IsCabinAvailable's
-                    // "available" shape). Stamping its userID reproduces the homed abandoned-claim state
-                    // — the case vanilla's load-time ResetFarmhandState does NOT clear (NetWorldState.cs
-                    // :783 returns true for a homed farmhand, skipping the userID-clearing else-branch),
-                    // so only the sweep heals it on reload.
-                    foreach (var building in farm.buildings)
-                    {
-                        if (!building.isCabin || LobbyService.IsLobbyCabin(building)) continue;
-
-                        var cabin = building.GetIndoors<Cabin>();
-                        var owner = cabin?.owner;
-                        if (owner == null) continue;
-                        if (owner.isCustomized.Value) continue;
-                        if (!string.IsNullOrEmpty(owner.userID.Value)) continue;
-
-                        // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
-                        // (the slot's home should already be its cabin; set it to be deterministic).
-                        owner.homeLocation.Value = cabin.NameOrUniqueName;
-                        owner.userID.Value = syntheticUserId;
-
-                        result.StampedUid = owner.UniqueMultiplayerID;
-                        result.StampedUserId = syntheticUserId;
-                        result.HomeLocation = owner.homeLocation.Value ?? "";
-                        result.Success = true;
-                        return;
-                    }
-
-                    result.Error = "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
-                });
-            }
-            catch (Exception ex)
-            {
-                // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
-                result.Success = false;
-                result.Error = ex.Message;
-            }
-
-            return result;
         }
 
         [ApiEndpoint("POST", "/clock-speed", Summary = "Adjust game clock speed", Tag = "Server")]
