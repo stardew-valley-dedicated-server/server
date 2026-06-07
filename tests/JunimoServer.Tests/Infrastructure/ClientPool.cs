@@ -415,6 +415,9 @@ internal sealed class ClientPool : IAsyncDisposable
             {
                 TestLog.Client($"Client creation failed: {ex.GetType().Name}: {ex.Message}");
                 InfrastructureEventLog.Emit("client_create_failed", new { error = $"{ex.GetType().Name}: {ex.Message}", ctCancelled = ct.IsCancellationRequested });
+                // Client leasing is a separate mid-run path from server creation;
+                // a tunnel death here must poison too, else it's a blind spot.
+                await _host.PoisonIfTransportFaultAsync(ex);
                 throw;
             }
             finally

@@ -83,3 +83,18 @@ Per-host slice decisions are emitted as `steam_account_slicing` events in `infra
 ```
 
 These events fire once per host at the top of pre-start, before any container starts. If a Steam test fails to place, grep these events first — they tell you exactly which hosts the slicer considered capable, and which globally-indexed accounts each got.
+
+## Troubleshooting
+
+**Symptom:** tests on a remote host time out, or a whole class fails with `host_disconnected`. The Docker daemon is reached over an SSH tunnel (`ssh -M` ControlMaster + `ssh -L` daemon-socket forward), so a tunnel that dies mid-run surfaces only as a downstream timeout unless you look at the SSH layer.
+
+**Where to look** (all under `diagnostics/` in the run dir):
+
+- `infrastructure.jsonl` — grep `host_disconnected` (poison reason + `sshMasterLogTail` when the cause was transport), `ssh_master_log` (the master's own death line, emitted at teardown when non-empty), `ssh_master_exited` / `tunnel_forward_closed` (non-zero `exitCode` = a teardown step failed).
+- `ssh-master-{hostId}.log` — the master's full `-E` error log. Holds ssh's own message (e.g. `Timeout, server not responding.`) for a silent network drop. Empty for an abrupt RST drop (expected — that path is caught by the exception classifier, not the log).
+
+**Common causes:**
+
+- VPS rebooted or the `docker` daemon / `docker` group was restarted mid-run — the forward's remote end dies (TCP reset), classified directly as a transport fault.
+- Network loss to the VPS — the master self-exits ~30s after the link goes quiet (`ServerAliveInterval=15` × `ServerAliveCountMax=2`); the `Timeout, server not responding.` line lands in the master log. A bare-timeout failure within that ~30s window may not poison until the next test re-probes (`ssh -O check`) after the master has self-exited — by design, see `test-broker-invariants.md`.
+- SSH master never came up — look for `ssh_master_spawn_failed` / `ssh_master_check_failed` at preflight (bad key, host unreachable, wrong `socketPath`).

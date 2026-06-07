@@ -181,19 +181,28 @@ namespace JunimoServer.Tests.Helpers;
 /// <item><b>SSH tunnel lifecycle</b> (<c>TunnelManager</c>; remote hosts only):
 /// <c>ssh_preflight</c> (<c>sshPath, staleSocketsDeleted</c>; emitted once at
 /// HostPool.PreflightAsync start when any host is remote) ·
-/// <c>ssh_master_ready</c> (<c>host_id, controlPath, durationMs</c>) ·
-/// <c>ssh_master_spawn_failed</c> (<c>host_id, exitCode, stderr,
-/// durationMs</c>) · <c>ssh_master_check_failed</c> (<c>host_id, exitCode,
-/// stderr, spawnStderr, durationMs</c>) · <c>ssh_master_exited</c>
-/// (<c>host_id, durationMs</c>; emitted per host during DrainAsync) ·
+/// <c>ssh_master_ready</c> (<c>host_id, controlPath, logPath, durationMs</c>;
+/// <c>logPath</c> = the master's <c>-E</c> error log) ·
+/// <c>ssh_master_spawn_failed</c> (<c>host_id, exitCode, stderr, durationMs</c>;
+/// <c>stderr</c> falls back to the <c>-E</c> log tail when the parent pipe is
+/// empty) · <c>ssh_master_check_failed</c> (<c>host_id, exitCode, stderr,
+/// spawnStderr, durationMs</c>) · <c>ssh_master_exited</c> (<c>host_id, exitCode,
+/// stderr?, durationMs</c>; per host during DrainAsync; <c>stderr</c> only when
+/// <c>exitCode != 0</c>) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
+/// tail</c>; emitted at teardown only when the <c>-E</c> log is non-empty —
+/// carries the master's death line, e.g. "Timeout, server not responding.") ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
 /// <c>tunnel_forward_failed</c> (<c>host_id, coordinator_port?, mapped_port?,
 /// remote_socket?, reason:"forward_failed"|"probe_timeout"|"cancelled"|
-/// "port_collision_retry", message, attempt, attempts</c>; emitted per attempt
-/// during the open retry loop) ·
+/// "port_collision_retry", message, attempt, attempts</c>; per attempt) ·
 /// <c>tunnel_forward_closed</c> (<c>host_id, coordinator_port,
-/// via:"dispose"|"drain", durationMs</c>).</item>
+/// via:"dispose"|"drain", exitCode, stderr?, durationMs</c>; <c>stderr</c> only
+/// when <c>exitCode != 0</c>) ·
+/// <c>host_disconnected</c> (<c>host_id, reason, sshMasterLogTail?</c>; emitted by
+/// <see cref="Infrastructure.DockerHost.Poison"/> — <c>sshMasterLogTail</c> present
+/// only for transport-class poisons. <see cref="Infrastructure.HostPool.Place"/>
+/// then filters the host and cascades a KeepConnected class).</item>
 ///
 /// <item><b>Discovery &amp; setup</b>:
 /// <c>config_discovery_completed</c> (once-per-process:
