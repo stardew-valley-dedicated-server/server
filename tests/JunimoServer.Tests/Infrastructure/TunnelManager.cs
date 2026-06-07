@@ -82,6 +82,10 @@ public sealed class TunnelManager : IAsyncDisposable
         }
 
         var controlPath = ComputeControlPath(hostId);
+        // Per-host, run-scoped error log for the -f-forked master. -E redirects
+        // ssh's stderr here (GetDiagnosticsDir self-creates the dir, and RunDir
+        // is already set by RunMetadata.BeginRun before preflight runs).
+        var logPath = ComputeMasterLogPath(hostId);
 
         // Specific delete: any file at this exact path is debris from a prior
         // crashed run with the same (hostId, runId, pid). Leaving it would make
@@ -92,19 +96,23 @@ public sealed class TunnelManager : IAsyncDisposable
 
         var spawnedAt = Stopwatch.GetTimestamp();
         var (spawnExit, spawnStderr) = await SpawnMasterAsync(
-            sshDestination, sshKeyPath, controlPath, ct);
+            sshDestination, sshKeyPath, controlPath, logPath, ct);
 
         if (spawnExit != 0)
         {
+            // -E moved ssh's stderr to the log, so the parent pipe may be empty
+            // even on a real failure — fall back to the log tail.
+            var spawnDiag = string.IsNullOrEmpty(spawnStderr)
+                ? ReadMasterLogTail(logPath, MaxLogTailBytes) : spawnStderr;
             EmitSafe("ssh_master_spawn_failed", new
             {
                 host_id = hostId,
                 exitCode = spawnExit,
-                stderr = spawnStderr,
+                stderr = spawnDiag,
                 durationMs = ElapsedMs(spawnedAt)
             });
             throw new InvalidOperationException(
-                $"ssh -M spawn failed for {hostId} (exit {spawnExit}): {spawnStderr}");
+                $"ssh -M spawn failed for {hostId} (exit {spawnExit}): {spawnDiag}");
         }
 
         var (checkExit, checkStderr) = await RunCheckAsync(controlPath, sshDestination, ct);
@@ -113,12 +121,15 @@ public sealed class TunnelManager : IAsyncDisposable
 
         if (!masterRunning)
         {
+            // Same -E-moves-stderr fallback as the spawn path.
+            var spawnDiag = string.IsNullOrEmpty(spawnStderr)
+                ? ReadMasterLogTail(logPath, MaxLogTailBytes) : spawnStderr;
             EmitSafe("ssh_master_check_failed", new
             {
                 host_id = hostId,
                 exitCode = checkExit,
                 stderr = checkStderr,
-                spawnStderr,
+                spawnStderr = spawnDiag,
                 durationMs = ElapsedMs(spawnedAt)
             });
             // Best-effort cleanup of whatever the spawn left behind so a retry
@@ -127,7 +138,7 @@ public sealed class TunnelManager : IAsyncDisposable
             TryDeleteFile(controlPath);
             throw new InvalidOperationException(
                 $"ssh -M did not produce a usable master for {hostId}. " +
-                $"spawn stderr: {spawnStderr}; -O check stderr: {checkStderr}");
+                $"spawn stderr: {spawnDiag}; -O check stderr: {checkStderr}");
         }
 
         lock (_lock)
@@ -138,6 +149,7 @@ public sealed class TunnelManager : IAsyncDisposable
                 SshDestination = sshDestination,
                 SshKeyPath = sshKeyPath,
                 ControlPath = controlPath,
+                LogPath = logPath,
                 Owned = true,
             };
         }
@@ -146,12 +158,13 @@ public sealed class TunnelManager : IAsyncDisposable
         {
             host_id = hostId,
             controlPath,
+            logPath,
             durationMs = ElapsedMs(spawnedAt)
         });
     }
 
     private async Task<(int ExitCode, string Stderr)> SpawnMasterAsync(
-        string sshDestination, string? sshKeyPath, string controlPath, CancellationToken ct)
+        string sshDestination, string? sshKeyPath, string controlPath, string logPath, CancellationToken ct)
     {
         // -f forks ssh after auth; the parent exits 0 and the forked child
         // becomes the long-lived master. The Process handle returned by
@@ -169,8 +182,19 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ControlPersist=10m");
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("Compression=yes");
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ServerAliveInterval=15");
+        // 2 (not OpenSSH's default 3) → master self-exits ~30s after a silent
+        // drop instead of ~45s, shrinking the IsMasterAliveAsync self-heal window.
+        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ServerAliveCountMax=2");
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("TCPKeepAlive=yes");
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("BatchMode=yes");
+        // INFO, not ERROR: the silent-drop line "Timeout, server not responding."
+        // is LOG_INFO, so ERROR would suppress the one line this log exists for.
+        // A healthy -N master stays at 0 bytes, so the happy path stays lean.
+        // -E *moves* ssh's stderr to the file (parent pipe goes empty), so the
+        // spawn/check failure paths read the tail instead. Only the silent-timeout
+        // drop lands here; an RST drop leaves it empty (caught by the classifier).
+        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("LogLevel=INFO");
+        psi.ArgumentList.Add("-E"); psi.ArgumentList.Add(logPath);
         psi.ArgumentList.Add(sshDestination);
 
         return await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(15), ct);
@@ -184,6 +208,50 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={controlPath}");
         psi.ArgumentList.Add(sshDestination);
         return await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
+    }
+
+    /// <summary>
+    /// Corroboration probe: does the host's SSH ControlMaster still answer
+    /// <c>ssh -O check</c>? Returns false (never throws) when the master is gone
+    /// (no entry, or socket removed → exit 255). The mid-run seams use this to
+    /// resolve a bare <see cref="TimeoutException"/>: master dead ⇒ tunnel dead ⇒
+    /// poison. NOTE: this checks master-*process* liveness, not tunnel liveness,
+    /// so it has a bounded ~30s self-healing false-negative window — see the
+    /// "Host disconnect cascades" invariant in <c>test-broker-invariants.md</c>.
+    /// </summary>
+    public async Task<bool> IsMasterAliveAsync(string hostId, CancellationToken ct = default)
+    {
+        // Lookup-then-hydrate-then-lookup, mirroring ResolveMasterOrThrow's body
+        // but returning false on the second miss instead of throwing. The xUnit
+        // child's _masters is empty until HydrateFromEnvIfPresent reads
+        // SDVD_SSH_HOST_MASTERS; the -O check then works against the
+        // filesystem-global ControlPath socket regardless of spawning process.
+        HostMaster? master = TryGetMaster(hostId);
+        if (master is null)
+        {
+            HydrateFromEnvIfPresent();
+            master = TryGetMaster(hostId);
+        }
+        if (master is null) return false;
+
+        try
+        {
+            var (exit, stderr) = await RunCheckAsync(master.ControlPath, master.SshDestination, ct);
+            return exit == 0 && stderr.Contains("Master running", StringComparison.Ordinal);
+        }
+        catch
+        {
+            // -O check 255 on a removed socket, or any IO error → "already gone".
+            return false;
+        }
+    }
+
+    private HostMaster? TryGetMaster(string hostId)
+    {
+        lock (_lock)
+        {
+            return _masters.TryGetValue(hostId, out var m) ? m : null;
+        }
     }
 
     /// <summary>
@@ -490,13 +558,16 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add($"127.0.0.1:{entry.CoordinatorPort}:{target}");
         psi.ArgumentList.Add(entry.SshDestination);
 
+        // Best-effort, but record why a cancel failed instead of discarding it.
+        int exit;
+        string stderr;
         try
         {
-            await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
+            (exit, stderr) = await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
-            // best effort — broker may already be torn down
+            (exit, stderr) = (-1, ex.Message);
         }
 
         EmitSafe("tunnel_forward_closed", new
@@ -504,6 +575,9 @@ public sealed class TunnelManager : IAsyncDisposable
             host_id = entry.HostId,
             coordinator_port = entry.CoordinatorPort,
             via,
+            exitCode = exit,
+            // Happy path stays lean: no stderr field on a clean close.
+            stderr = exit != 0 ? stderr : null,
             durationMs = ElapsedMs(startedAt)
         });
     }
@@ -516,13 +590,16 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
         psi.ArgumentList.Add(master.SshDestination);
 
+        // Best-effort, but record why the exit failed instead of discarding it.
+        int exit;
+        string stderr;
         try
         {
-            await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
+            (exit, stderr) = await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
-            // best effort
+            (exit, stderr) = (-1, ex.Message);
         }
 
         // ssh -O exit removes the socket file as part of clean shutdown.
@@ -533,8 +610,28 @@ public sealed class TunnelManager : IAsyncDisposable
         EmitSafe("ssh_master_exited", new
         {
             host_id = master.HostId,
+            exitCode = exit,
+            // Happy path stays lean: no stderr field on a clean exit.
+            stderr = exit != 0 ? stderr : null,
             durationMs = ElapsedMs(startedAt)
         });
+
+        // Fold the master's own -E death line into the log. Read AFTER -O exit
+        // (final line flushed); emit only when non-empty (a stable master logs
+        // nothing, and an RST drop leaves it empty — that's the classifier's job).
+        var tail = ReadMasterLogTail(master.LogPath, MaxLogTailBytes);
+        if (tail.Length > 0)
+        {
+            long byteLength = 0;
+            try { byteLength = new FileInfo(master.LogPath!).Length; } catch { /* size is advisory */ }
+            EmitSafe("ssh_master_log", new
+            {
+                host_id = master.HostId,
+                logPath = master.LogPath,
+                byteLength,
+                tail
+            });
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -793,6 +890,57 @@ public sealed class TunnelManager : IAsyncDisposable
         catch { /* best effort */ }
     }
 
+    /// <summary>Max bytes of the master log tail attached to any event.</summary>
+    private const int MaxLogTailBytes = 2048;
+
+    /// <summary>
+    /// Reads the last <paramref name="maxBytes"/> of the master's <c>-E</c> log.
+    /// The death reason (e.g. "Timeout, server not responding.") is at the end,
+    /// so we tail rather than head. Returns "" on any IO error or missing file
+    /// — diagnostic-only, never load-bearing. Shared by the spawn/check failure
+    /// paths (parent stderr empty under <c>-E</c>), the <c>ssh_master_log</c>
+    /// teardown emit, and the <c>host_disconnected</c> transport enrichment.
+    /// </summary>
+    private static string ReadMasterLogTail(string? logPath, int maxBytes)
+    {
+        if (string.IsNullOrEmpty(logPath)) return "";
+        try
+        {
+            if (!File.Exists(logPath)) return "";
+            using var stream = new FileStream(
+                logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var length = stream.Length;
+            if (length == 0) return "";
+            var take = (int)Math.Min(length, maxBytes);
+            stream.Seek(-take, SeekOrigin.End);
+            var buffer = new byte[take];
+            var read = stream.Read(buffer, 0, take);
+            return Encoding.UTF8.GetString(buffer, 0, read).TrimEnd();
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Run-scoped path of a host's master <c>-E</c> log. Deterministic from
+    /// <paramref name="hostId"/> + the run's diagnostics dir, so any process
+    /// (including the xUnit child that poisons the host) can locate the file the
+    /// parent's master wrote on the shared filesystem.
+    /// </summary>
+    private static string ComputeMasterLogPath(string hostId)
+        => Path.Combine(TestArtifacts.GetDiagnosticsDir(), $"ssh-master-{hostId}.log");
+
+    /// <summary>
+    /// Reads the tail of a host's master log by host id (recomputing the path),
+    /// for <see cref="DockerHost.Poison"/>'s transport-class
+    /// <c>sshMasterLogTail</c> enrichment. Returns "" when the log is missing or
+    /// empty — e.g. an RST drop, where the reset line never reaches <c>-E</c>.
+    /// </summary>
+    public static string ReadMasterLogTailForHost(string hostId)
+        => ReadMasterLogTail(ComputeMasterLogPath(hostId), MaxLogTailBytes);
+
     private readonly record struct ForwardKey(string HostId, int CoordinatorPort);
 
     private sealed class ForwardEntry
@@ -812,6 +960,14 @@ public sealed class TunnelManager : IAsyncDisposable
         public required string SshDestination { get; init; }
         public required string? SshKeyPath { get; init; }
         public required string ControlPath { get; init; }
+        /// <summary>
+        /// Path to the master's <c>-E</c> error log. Set only on owned masters
+        /// (the parent that spawned them); null on adopted masters in the xUnit
+        /// child, which never spawn or tear down the log. Only owned masters
+        /// reach <see cref="ExitMasterAsync"/>, so the <c>ssh_master_log</c>
+        /// emit there always has a path.
+        /// </summary>
+        public string? LogPath { get; init; }
         /// <summary>
         /// True in the parent process where <see cref="RegisterHostMasterAsync"/>
         /// spawned this master; false in the xUnit child where the master was

@@ -995,6 +995,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
             var serverIndex = ex.Data["serverIndex"] as int?;
             InfrastructureEventLog.Emit("server_creation_failed",
                 new { server = key, displayLabel, serverIndex, error = ex.Message, host_id = host.Id });
+            // Poison the host on a transport fault. This catch runs under the
+            // triggering test's EC (fire-and-forget, no SuppressFlow), so
+            // host_disconnected is attributed to the test that hit the dead host.
+            await host.PoisonIfTransportFaultAsync(ex);
             throw;
         }
         finally

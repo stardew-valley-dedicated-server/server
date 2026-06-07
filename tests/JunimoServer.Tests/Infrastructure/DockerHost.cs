@@ -376,8 +376,15 @@ public sealed class DockerHost : IAsyncDisposable
     /// </summary>
     internal int GetCoordinatorPortOrZero() => _daemonForward?.CoordinatorPort ?? 0;
 
-    /// <summary>Marks the host as poisoned. Idempotent.</summary>
-    public void Poison(string reason)
+    /// <summary>
+    /// Marks the host as poisoned. Idempotent — the first caller wins, emits one
+    /// <c>host_disconnected</c>; later calls no-op. When <paramref name="transport"/>
+    /// (a tunnel/daemon fault, vs an app-level steam-auth poison), the event
+    /// carries the master's death line and a console breadcrumb points at the log.
+    /// When false, NO tail is attached — a stale log from an earlier blip must not
+    /// be misread as the cause of an app failure.
+    /// </summary>
+    public void Poison(string reason, bool transport = false)
     {
         if (Interlocked.Exchange(ref _poisoned, 1) == 0)
         {
@@ -388,12 +395,48 @@ public sealed class DockerHost : IAsyncDisposable
             // Release calls; per-host they'd hang without this.
             StartLimiter.CancelPending();
             ExtractLimiter.CancelPending();
+
+            // Tail only for transport poisons; null (omitted) when absent — an
+            // RST drop or an app poison leaves no tail.
+            var tail = transport ? TunnelManager.ReadMasterLogTailForHost(Id) : "";
             InfrastructureEventLog.Emit("host_disconnected", new
             {
                 host_id = Id,
-                reason
+                reason,
+                sshMasterLogTail = string.IsNullOrEmpty(tail) ? null : tail
             });
+
+            // Console breadcrumb so the CI job log isn't blind to a tunnel fault.
+            // Names the host + log file only — the VPS IP is kept out of CI logs.
+            if (transport)
+                TestLog.Test($"[ssh] host '{Id}' poisoned (transport): {reason}. " +
+                             $"See diagnostics/ssh-master-{Id}.log");
         }
+    }
+
+    /// <summary>
+    /// Shared mid-run failure-seam wiring: poison the host iff <paramref name="ex"/>
+    /// was a transport fault. Called from both on-demand container-creation seams
+    /// (<c>TestResourceBroker.CreateAndResolveAsync</c>,
+    /// <c>ClientPool.CreateClientGuardedAsync</c>) so the decision is identical.
+    /// A no-op for application faults; never throws (the probe swallows its own
+    /// errors) — the caller re-throws the original exception afterward.
+    /// </summary>
+    internal async Task PoisonIfTransportFaultAsync(Exception ex)
+    {
+        var transportReason = TransportFaultClassifier.ClassifyHostTransportFault(ex);
+
+        // A bare TimeoutException is ambiguous (slow-but-live server vs dead
+        // tunnel); corroborate via -O check against the master (remote only).
+        // Directly-classified socket/http faults skip this.
+        if (transportReason is null && ex is TimeoutException && SshDestination is not null)
+        {
+            if (!await TunnelManager.Default.IsMasterAliveAsync(Id))
+                transportReason = $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
+        }
+
+        if (transportReason is not null)
+            Poison(transportReason, transport: true);
     }
 
     /// <summary>
