@@ -92,6 +92,7 @@ These settings only take effect when creating a **new** game. They are ignored w
 | `5` | Four Corners |
 | `6` | Beach |
 | `7` | Meadowlands |
+| `8+` | Mod-added farms in mod load order, excluding Meadowlands (8 = first mod farm, 9 = second, etc.) |
 
 ### Profit Margin
 

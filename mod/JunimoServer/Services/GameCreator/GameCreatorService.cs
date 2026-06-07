@@ -105,12 +105,13 @@ namespace JunimoServer.Services.GameCreator
             }
             else
             {
-                Game1.whichFarm = config.WhichFarm;
+                // Farm.mod_layout (7) is the game's signal to use whichModFarm; map any mod farm
+                // type (8+) to 7 upfront so the lookup branches below only need to set whichModFarm.
+                Game1.whichFarm = config.WhichFarm > 7 ? 7 : config.WhichFarm;
 
-                // Farm type 7 (Meadowlands) uses the AdditionalFarms system.
-                // whichModFarm MUST be set BEFORE loadForNewGame() because the Farm map
-                // is created during loadForNewGame() using Farm.getMapNameFromTypeInt()
-                // which checks whichModFarm when whichFarm is 7.
+                // Farm types >= 7 use the AdditionalFarms system. whichModFarm MUST be set BEFORE
+                // loadForNewGame() because the Farm map is created during loadForNewGame() using
+                // Farm.getMapNameFromTypeInt() which checks whichModFarm when whichFarm is 7.
                 if (config.WhichFarm == 7)
                 {
                     var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
@@ -119,6 +120,23 @@ namespace JunimoServer.Services.GameCreator
                     if (Game1.whichModFarm == null)
                     {
                         _monitor.Log("Could not find MeadowlandsFarm data, falling back to Standard farm", LogLevel.Warn);
+                        Game1.whichFarm = 0;
+                    }
+                }
+                else if (config.WhichFarm > 7)
+                {
+                    // 8+ = mod-added farms in load order (excluding Meadowlands), so index 0 = FarmType 8.
+                    var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
+                    var modFarms = additionalFarms?.Where(f => f.Id != "MeadowlandsFarm").ToList();
+                    var modFarmIndex = config.WhichFarm - 8;
+
+                    Game1.whichModFarm = modFarms != null && modFarmIndex < modFarms.Count
+                        ? modFarms[modFarmIndex]
+                        : null;
+
+                    if (Game1.whichModFarm == null)
+                    {
+                        _monitor.Log($"Could not find mod farm at index {modFarmIndex} (FarmType {config.WhichFarm}), falling back to Standard farm", LogLevel.Warn);
                         Game1.whichFarm = 0;
                     }
                 }
