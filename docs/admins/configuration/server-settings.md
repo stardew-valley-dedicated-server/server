@@ -31,7 +31,17 @@ This file is auto-created with defaults on first server startup. If the file doe
     "FarmType": 0,
     "ProfitMargin": 1.0,
     "StartingCabins": 1,
-    "SpawnMonstersAtNight": "auto"
+    "SpawnMonstersAtNight": "auto",
+    "RemixBundles": false,
+    "RemixMines": false,
+    "CommunityCenterYear1": false,
+    "CabinLayoutNearby": false,
+    "UseLegacyRandom": false,
+    "RandomSeed": null,
+    "PetBreed": 1,
+    "PetName": "Apples",
+    "MushroomCave": true,
+    "BuyJoja": false
   },
   "Server": {
     "MaxPlayers": 10,
@@ -59,6 +69,16 @@ These settings only take effect when creating a **new** game. They are ignored w
 | `ProfitMargin` | Sell price multiplier | `1.0` |
 | `StartingCabins` | Number of cabins created with new game | `1` |
 | `SpawnMonstersAtNight` | Monster spawning: `"true"`, `"false"`, or `"auto"` | `"auto"` |
+| `RemixBundles` | Use remixed or default CC bundles | `"false"` |
+| `RemixMines` | Use remixed or default mines rewards | `"false"` |
+| `CommunityCenterYear1` | Guarantee the community center is completable in year 1 | `false` |
+| `CabinLayoutNearby` | Whether to use nearby cabin layout. Only has an effect when CabinStrategy is `"None"` | `false` |
+| `UseLegacyRandom` | Use the legacy RNG algorithms | `false` |
+| `RandomSeed` | Seed to use for RNG. `"null"` for a random seed | `"null"` |
+| `PetBreed` | Breed of pet. [0-4] are cats, [5-9] are dogs. -1 for no pet | `1` |
+| `PetName` | Name of starting pet | `"Apples"` |
+| `MushroomCave` | Makes the farm cave a mushroom cave. Set to false for fruit bats. | `true` |
+| `BuyJoja` | Whether to buy the Joja membership when available. | `false` |
 
 ### Farm Types
 

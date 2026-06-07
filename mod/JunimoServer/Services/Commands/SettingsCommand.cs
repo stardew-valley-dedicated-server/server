@@ -100,6 +100,16 @@ namespace JunimoServer.Services.Commands
                 ? _settings.SpawnMonstersAtNight.Value.ToString()
                 : "auto";
             _monitor.Log($"  SpawnMonstersAtNight = {monstersLabel}", LogLevel.Info);
+            _monitor.Log($"  RemixBundles = {_settings.RemixBundles}", LogLevel.Info);
+            _monitor.Log($"  RemixMines = {_settings.RemixMines}", LogLevel.Info);
+            _monitor.Log($"  CommunityCenterYear1 = {_settings.CommunityCenterYear1}", LogLevel.Info);
+            _monitor.Log($"  CabinLayoutNearby = {_settings.CabinLayoutNearby}", LogLevel.Info);
+            _monitor.Log($"  UseLegacyRandom = {_settings.UseLegacyRandom}", LogLevel.Info);
+            _monitor.Log($"  RandomSeed = {_settings.RandomSeed}", LogLevel.Info);
+            _monitor.Log($"  PetBreed = {_settings.PetBreed}", LogLevel.Info);
+            _monitor.Log($"  PetName = {_settings.PetName}", LogLevel.Info);
+            _monitor.Log($"  MushroomCave = {_settings.MushroomCave}", LogLevel.Info);
+            _monitor.Log($"  BuyJoja = {_settings.BuyJoja}", LogLevel.Info);
 
             _monitor.Log("  -- Runtime settings (applied on every startup) --", LogLevel.Info);
             _monitor.Log($"  MaxPlayers           = {_settings.MaxPlayers}", LogLevel.Info);

@@ -66,6 +66,28 @@ namespace JunimoServer.Services.GameCreator
 
             Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
 
+            Game1.cabinsSeparate = !config.CabinLayoutNearby;
+            Game1.bundleType = config.BundlesRemix ? Game1.BundleType.Remixed : Game1.BundleType.Default;
+            Game1.game1.SetNewGameOption("MineChests",  config.MinesRemix ? Game1.MineChestType.Remixed : Game1.MineChestType.Default);
+            Game1.game1.SetNewGameOption("YearOneCompletable", config.CommunityCenterYear1);
+            Game1.startingGameSeed = config.RandomSeed;
+            Game1.UseLegacyRandom = config.UseLegacyRandom;
+
+            const int dogIndex = 5;
+            if (config.PetBreed is >= 0 and <= 9)
+            {
+                if (config.PetBreed < dogIndex)
+                {
+                    Game1.player.whichPetType = "Cat";
+                    Game1.player.whichPetBreed = config.PetBreed.ToString();
+                }
+                else
+                {
+                    Game1.player.whichPetType = "Dog";
+                    Game1.player.whichPetBreed = (config.PetBreed - dogIndex).ToString();
+                }
+            }
+
             // For CabinStack/FarmhouseStack: BuildStartingCabins is patched out, so this value
             // is unused; we create cabins ourselves at the hidden location.
             // For None strategy: this controls how many vanilla cabins are placed at
@@ -108,9 +130,6 @@ namespace JunimoServer.Services.GameCreator
 
             // Monster spawning: explicit override or auto-detect from farm type
             Game1.spawnMonstersAtNight = config.SpawnMonstersAtNight ?? (config.WhichFarm == 4);
-
-            // Dedicated server always uses cat as the farm pet
-            Game1.player.whichPetType = "Cat";
 
             Game1.player.Name = "Server";
             Game1.player.displayName = Game1.player.Name;

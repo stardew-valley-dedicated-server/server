@@ -177,7 +177,8 @@ namespace JunimoServer
             SmapiLogConfig.SetVerboseLogging(ModManifest.UniqueID, verboseLogging, Monitor);
 
             services.AddSingleton<PersistentOptions>();
-            services.AddSingleton<AlwaysOnConfig>();
+            AlwaysOnConfig alwaysOnConfig = AlwaysOnConfig.FromSettings(settingsLoader);
+            services.AddSingleton(alwaysOnConfig);
         }
 
         private void LoadServices(ServiceCollection services)

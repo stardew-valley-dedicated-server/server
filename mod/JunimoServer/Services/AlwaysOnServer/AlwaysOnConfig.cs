@@ -1,13 +1,25 @@
+using JunimoServer.Services.Settings;
 using StardewModdingAPI;
 
 namespace JunimoServer.Services.AlwaysOn
 {
     public class AlwaysOnConfig
     {
+        public static AlwaysOnConfig FromSettings(ServerSettingsLoader settings)
+        {
+            return new AlwaysOnConfig()
+            {
+                PetName = settings.PetName,
+                FarmCaveChoiceIsMushrooms = settings.MushroomCave,
+                IsCommunityCenterRun = !settings.BuyJoja,
+                ShouldCreatePet = settings.PetBreed is >= 0 and <= 9,
+            };
+        }
         public SButton HotKeyToggleAutoMode { get; set; } = SButton.F9;
         public SButton HotKeyToggleVisibility { get; set; } = SButton.F10;
 
         public string PetName { get; set; } = "Apples";
+        public bool ShouldCreatePet { get; set; } = true;
         public bool FarmCaveChoiceIsMushrooms { get; set; } = true;
         public bool IsCommunityCenterRun { get; set; } = true;
 

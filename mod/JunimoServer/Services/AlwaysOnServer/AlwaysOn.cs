@@ -459,6 +459,13 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
+            if (!Config.ShouldCreatePet)
+            {
+                Monitor.Log($"[Automation] Not creating a pet", LogLevel.Info);
+                _petChoiceHandled = true;
+                return;
+            }
+
             // Call hostActionNamePet directly via reflection, avoiding the throwaway
             // Event() + namePet() pattern which calls Game1.exitActiveMenu() and
             // would destroy any active menu (e.g. ReadyCheckDialog from sleep).

@@ -13,6 +13,15 @@ namespace JunimoServer.Services.GameCreator
         public int MaxPlayers { get; set; } = 10;
         public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
 
+        // advanced creation options
+        public bool BundlesRemix { get; set; } = false;
+        public bool MinesRemix { get; set; } = false;
+        public bool CommunityCenterYear1 { get; set; } = false;
+        public bool CabinLayoutNearby { get; set; } = false;
+        public bool UseLegacyRandom { get; set; } = false;
+        public ulong? RandomSeed { get; set; } = null;
+        public int PetBreed { get; set; } = 1;
+
         /// <summary>
         /// Nullable: null means "auto" (true only for Wilderness farm type 4).
         /// </summary>
@@ -35,6 +44,14 @@ namespace JunimoServer.Services.GameCreator
                 SpawnMonstersAtNight = settings.SpawnMonstersAtNight,
                 ProfitMargin = settings.ProfitMargin,
                 StartingCabins = settings.StartingCabins,
+
+                BundlesRemix = settings.RemixBundles,
+                MinesRemix = settings.RemixMines,
+                CommunityCenterYear1 = settings.CommunityCenterYear1,
+                CabinLayoutNearby = settings.CabinLayoutNearby,
+                UseLegacyRandom = settings.UseLegacyRandom,
+                RandomSeed = settings.RandomSeed,
+                PetBreed = settings.PetBreed,
             };
         }
 
@@ -71,7 +88,14 @@ namespace JunimoServer.Services.GameCreator
                    $"{nameof(MaxPlayers)}: {MaxPlayers}, {nameof(CabinStrategy)}: {CabinStrategy}, " +
                    $"{nameof(UseSeparateWallets)}: {UseSeparateWallets}, " +
                    $"{nameof(SpawnMonstersAtNight)}: {SpawnMonstersAtNight?.ToString() ?? "auto"}, " +
-                   $"{nameof(ProfitMargin)}: {ProfitMargin}, {nameof(StartingCabins)}: {StartingCabins}";
+                   $"{nameof(ProfitMargin)}: {ProfitMargin}, {nameof(StartingCabins)}: {StartingCabins}, " +
+                   $"{nameof(BundlesRemix)}: {BundlesRemix}, " +
+                   $"{nameof(MinesRemix)}: {MinesRemix}, " +
+                   $"{nameof(CommunityCenterYear1)}: {CommunityCenterYear1}, " +
+                   $"{nameof(CabinLayoutNearby)}: {CabinLayoutNearby}, " +
+                   $"{nameof(UseLegacyRandom)}: {UseLegacyRandom}, " +
+                   $"{nameof(RandomSeed)}: {RandomSeed}, " +
+                   $"{nameof(PetBreed)}: {PetBreed}";
         }
     }
 }
