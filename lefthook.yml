@@ -2,3 +2,24 @@ commit-msg:
   commands:
     commitlint:
       run: npx commitlint --edit {1}
+
+# Local guard against accidental direct pushes to master.
+#
+# The "master" ruleset requires a PR + approval for the normal case (fork/external PRs).
+# GitHub forbids self-approval, so own PRs rely on an OrganizationAdmin "always" bypass to
+# merge once CI is green. That bypass also silently permits a stray push straight to
+# master — this hook sits below the bypass layer and is the only thing that catches it.
+#
+# `only: ref: master` runs only while master is checked out, so a push from master always
+# fails here. A deliberate direct push means temporarily removing this block by hand.
+pre-push:
+  commands:
+    block-master:
+      only:
+        - ref: master
+      # Single-quoted echoes: lefthook wraps the script in sh -c "...", so embedded
+      # double-quotes would break that outer quoting and swallow the exit code.
+      run: |
+        echo '✋ Direct push to master is blocked — open a PR instead.'
+        echo '   (Deliberate push? Temporarily remove the block-master hook in lefthook.yml.)'
+        exit 1
