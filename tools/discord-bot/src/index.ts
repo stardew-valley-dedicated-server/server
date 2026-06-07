@@ -1,4 +1,4 @@
-import { Client, Events, GatewayIntentBits, ActivityType, TextChannel, Message, PermissionFlagsBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, ActivityType, TextChannel, Message, PermissionFlagsBits, Colors } from "discord.js";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -378,15 +378,6 @@ function isRateLimited(userId: string): boolean {
     return false;
 }
 
-function setCooldown(userId: string): void {
-    const now = Date.now();
-    const timestamps = commandHistory.get(userId) || [];
-    
-    const activeTimestamps = timestamps.filter(time => now - time < COOLDOWN_DURATION_MS);
-    activeTimestamps.push(now);
-    
-    commandHistory.set(userId, activeTimestamps);
-}
 
 
 // Auto-updating status dashboard
@@ -408,7 +399,7 @@ async function updateLiveDashboard() {
         };
 
         if (!status || !status.isOnline) {
-            embed.color = Colors.red; //red
+            embed.color = Colors.red;
             embed.description = "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_";
         } else {
             const seasonEmojis: Record<string, string> = {
@@ -416,7 +407,7 @@ async function updateLiveDashboard() {
             };
             const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-            embed.color = Colors.blue; // blue
+            embed.color = Colors.blue;
             embed.fields = [
                 { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
                 { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
