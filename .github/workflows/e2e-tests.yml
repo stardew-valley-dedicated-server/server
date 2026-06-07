@@ -296,6 +296,14 @@ jobs:
       SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
 
     steps:
+      # containerd image store makes `docker save` emit compressed OCI blobs
+      # (~60% smaller), shrinking the E2E image transfer. Must be the first step.
+      - name: Set up Docker with containerd image store
+        uses: docker/setup-docker-action@0234bb73ccb40f0c430b795634f9247e2b5c2d23 # v5.2.0
+        with:
+          daemon-config: |
+            { "features": { "containerd-snapshotter": true } }
+
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
