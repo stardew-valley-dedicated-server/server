@@ -1,7 +1,11 @@
+using System;
+using System.Linq;
 using System.Threading.Tasks;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Shared;
 using Galaxy.Api;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using xTile.Display;
@@ -19,10 +23,20 @@ namespace JunimoServer.Services.ServerOptim
 
         private static bool _automationSuppressesInput;
 
-        public static void Initialize(IMonitor monitor)
+        // The host-automation hotkeys (F9/F10 by default), kept live even while input is
+        // suppressed so the operator can drop automation from the VNC display. Resolved
+        // from AlwaysOnConfig at Initialize; entries that have no keyboard equivalent
+        // (e.g. a controller-only binding) are dropped.
+        private static Keys[] _carveOutKeys = Array.Empty<Keys>();
+
+        public static void Initialize(IMonitor monitor, AlwaysOnConfig config)
         {
             _monitor = monitor;
             _rendering = new RenderingController(monitor, "Server");
+            _carveOutKeys = new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility }
+                .Where(b => b.TryGetKeyboard(out _))
+                .Select(b => { b.TryGetKeyboard(out var k); return k; })
+                .ToArray();
         }
 
         /// <summary>
@@ -54,17 +68,35 @@ namespace JunimoServer.Services.ServerOptim
             _automationSuppressesInput = suppress;
         }
 
+        // Input is suppressed while rendering is off (no operator can see anything to
+        // drive) or host automation is driving the host. Both inputs are read live, so a
+        // runtime fps switch (the VNC button, `rendering <fps>`, POST /rendering?fps=N) or
+        // a host-auto/F9 toggle flips input behavior without a restart.
+        private static bool InputSuppressed
+            => _rendering.CurrentFps == 0 || _automationSuppressesInput;
+
         /// <summary>
-        /// Shared Harmony prefix for Game1.UpdateControlInput and the raw Keyboard/Mouse
-        /// PlatformGetState reads. Returning false skips the original, blocking input both
-        /// where the game processes it and at the device source. Suppresses input while
-        /// rendering is off (the server isn't drawing, so a watching operator can't
-        /// meaningfully drive the game) or host automation is driving the host. Both inputs
-        /// are live, so a runtime fps switch (the VNC button, `rendering &lt;fps&gt;`,
-        /// POST /rendering?fps=N) restores input without a restart.
+        /// Harmony postfix on Keyboard.PlatformGetState — the single source feeding the game
+        /// (control, menus, chat, minigames) AND SMAPI's ButtonPressed pipeline. While
+        /// suppressed, strip the state down to the host-automation hotkeys so all other input
+        /// is blocked but those toggles still reach SMAPI — the operator's only way to drop
+        /// automation from the VNC display.
         /// </summary>
-        public static bool SuppressInput_Prefix()
-            => _rendering.CurrentFps != 0 && !_automationSuppressesInput;
+        public static void KeyboardState_Postfix(ref KeyboardState __result)
+        {
+            if (!InputSuppressed) return;
+            var down = Array.FindAll(_carveOutKeys, __result.IsKeyDown);
+            __result = down.Length == 0 ? default : new KeyboardState(down);
+        }
+
+        /// <summary>
+        /// Harmony postfix on Mouse.PlatformGetState. While suppressed the mouse is fully
+        /// blanked — there is no mouse equivalent of the keyboard carve-out.
+        /// </summary>
+        public static void MouseState_Postfix(ref MouseState __result)
+        {
+            if (InputSuppressed) __result = default;
+        }
 
         private static int _galaxyLobbyFailureCount;
         private const int MaxGalaxyLobbyRetries = 3;

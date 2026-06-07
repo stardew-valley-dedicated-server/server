@@ -100,6 +100,10 @@ You don't have to restart to enable rendering for debugging. Both of these take 
 - Console: `docker compose exec server attach-cli`, then `rendering 10` (or `rendering 0`, `rendering status`).
 :::
 
+::: tip Driving the game over VNC
+While rendering is off (`SERVER_FPS=0`), VNC input is fully suppressed — there is nothing to see, so input has no meaning. While rendering is on, the VNC view is input-blocked except **F9** (toggle host automation) and **F10** (toggle visibility). Press **F9** to drop automation and gain full keyboard/mouse control; press it again to re-arm the guard.
+:::
+
 ### STEAM_REFRESH_TOKEN
 
 Alternative to username/password for automated environments. Export after initial setup:

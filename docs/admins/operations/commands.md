@@ -109,6 +109,8 @@ Toggle automatic host behavior (auto-sleep, event skipping, etc.):
 host-auto
 ```
 
+Pressing **F9** on the VNC display is the in-view equivalent of this command. It works over VNC whenever rendering is on (`SERVER_FPS` > 0), even while automation is suppressing all other input — F9 is deliberately kept live so you can drop automation and take manual control without a restart.
+
 ### host-visibility
 
 Toggle whether the host player is visible to other players:

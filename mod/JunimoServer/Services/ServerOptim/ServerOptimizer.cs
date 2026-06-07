@@ -1,4 +1,5 @@
 using HarmonyLib;
+using JunimoServer.Services.AlwaysOn;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -18,13 +19,14 @@ namespace JunimoServer.Services.ServerOptim
         public ServerOptimizer(
             Harmony harmony,
             IMonitor monitor,
-            IModHelper helper
+            IModHelper helper,
+            AlwaysOnConfig alwaysOnConfig
         )
         {
             _monitor = monitor;
             _helper = helper;
 
-            ServerOptimizerOverrides.Initialize(monitor);
+            ServerOptimizerOverrides.Initialize(monitor, alwaysOnConfig);
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(Game), "BeginDraw"),
@@ -91,24 +93,21 @@ namespace JunimoServer.Services.ServerOptim
                 prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.OnGalaxyLobbyCreated_Prefix))
             );
 
-            // Blocks input when rendering is disabled or host automation is active (e.g.
-            // toggled via F9 on VNC). The same prefix gates UpdateControlInput (where the
-            // game processes input) and the raw Keyboard/Mouse reads below (the device
-            // source); both check the live state every call, so a runtime fps switch
-            // restores input without a restart.
-            harmony.Patch(
-                original: AccessTools.Method("StardewValley.Game1:UpdateControlInput"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.SuppressInput_Prefix))
-            );
-
+            // Keyboard/Mouse PlatformGetState is the single source feeding every input
+            // consumer — the game (control, menus, chat) and SMAPI's ButtonPressed pipeline.
+            // The postfixes suppress input there when rendering is off or host automation is
+            // active, carving out only the F9/F10 hotkeys so the operator can still drop
+            // automation from the VNC display. Read live, so a runtime fps switch or host-auto
+            // toggle restores input without a restart. No game-side UpdateControlInput patch
+            // is needed — when the device returns empty state, every consumer sees nothing.
             harmony.Patch(
                 original: AccessTools.Method("Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.SuppressInput_Prefix))
+                postfix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.KeyboardState_Postfix))
             );
 
             harmony.Patch(
                 original: AccessTools.Method("Microsoft.Xna.Framework.Input.Mouse:PlatformGetState"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.SuppressInput_Prefix))
+                postfix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.MouseState_Postfix))
             );
 
             // musl/.NET 6 fix: SMAPI's SModHooks.StartTask uses RunSynchronously() which
