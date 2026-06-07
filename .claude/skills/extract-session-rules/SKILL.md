@@ -53,7 +53,7 @@ If a rule only matters for `tests/**/*.cs`, it MUST be path-scoped. Loading it f
 
 ## Canonical rule format
 
-Reproduce this skeleton exactly — match the style of existing rules (`move-not-delete.md`, `verify-claims.md`):
+Reproduce this skeleton exactly — match the style of existing rules (`verify-claims.md`, `simplest-solution.md`):
 
 ```markdown
 ---

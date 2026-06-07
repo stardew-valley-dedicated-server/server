@@ -10,10 +10,10 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 |---|---|
 | `adversarial-review-split-findings.md` | Adversarial review must split findings (no OOS-as-cover) and must not collapse a valid recommendation along with weak framing |
 | `answer-then-stop.md` | A question answered *by the transcript* gets a one-line answer, then stop (no pre-narration / re-confirm tool call / next-steps) — but world-facts still defer to `verify-claims` even when you feel sure |
+| `comments-earn-their-length.md` | Comments earn their length — why-not-what, cut anything the code/name/another comment already says, rough magnitudes over false precision; much-longer-than-the-code is the signal to compact |
 | `git-workflow.md` | Project-specific git rules (no `git add .`, chained PRs, PR descriptions) |
 | `holistic-or-explicit-todo.md` | Don't hedge with empty scaffolding — build the holistic solution or write a concrete TODO |
 | `mirror-target-component-resolution.md` | A probe that detects another component's state must mirror that component's full resolution logic, not just the happy path |
-| `move-not-delete.md` | Never delete generated/untracked files without moving them first |
 | `no-refactor-history-in-code.md` | Code/docs describe what is, not how it got there |
 | `orthogonal-fields.md` | Split a field only when a later write erases a still-needed earlier write — not for lifecycle-progression where the earlier value is no longer current |
 | `own-the-whole-file.md` | Cleanup passes own every line — no "not mine" deferrals |
@@ -36,7 +36,8 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 | File | Triggers on | One-liner |
 |---|---|---|
 | `asynclocal-pitfalls.md` | `mod/`, `tests/`, `tools/` `.cs` | `AsyncLocal` doesn't flow across external pump boundaries — capture and rebind |
-| `cabin-system.md` | `CabinManager/`, `GameLoader/`, `GameCreator/` | Cabin allocation invariants (startingCabins ordering, EnsureAtLeastXCabins, SlotSelectionGate, coordinates, master-only build) |
+| `cabin-system.md` | `CabinManager/`, `GameLoader/`, `GameCreator/` | Cabin allocation invariants (startingCabins usage, EnsureAtLeastXCabins, SlotSelectionGate, coordinates, master-only build) |
+| `chat-font-language-tag.md` | `mod/**/*.cs` | Chat font is chosen solely by the per-message `LanguageCode` tag (no glyph fallback) — tag relayed/system messages by inferring script, and pair with the kept font file |
 | `colocate-event-emit.md` | test `Containers/`, `Infrastructure/` | Emit state-transition events from inside the producer, not an outer coordinator |
 | `debugging.md` | `mod/**/*.cs` | `LogLevel.Error` in mod code is test poison — `\b(ERROR\|FATAL)\b` triggers cancellation |
 | `display-scaling.md` | `mod/JunimoServer/**`, `mod/JunimoServer.Shared/**` | To render Stardew into a small framebuffer, zoom out via Harmony-patched `desired*` getters (revert-proof) — don't poke the scale fields; `Game1.Update` reconciles them away and save-load clobbers the persisted `zoomLevel` |
