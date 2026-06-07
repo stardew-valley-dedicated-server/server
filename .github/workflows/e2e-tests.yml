@@ -321,13 +321,18 @@ jobs:
       - name: Enable containerd image store on the daemon
         run: |
           # Merge into a temp var, not `cat f | tee f` (that pipeline truncates f);
-          # `|| echo` covers a runner with no daemon.json.
-          merged=$(sudo jq '. + {"features": {"containerd-snapshotter": true}}' \
+          # `(.features // {})` deep-merges so preinstalled feature keys (buildkit)
+          # survive; `|| echo` covers a runner with no daemon.json.
+          merged=$(sudo jq '.features = (.features // {}) + {"containerd-snapshotter": true}' \
             /etc/docker/daemon.json 2>/dev/null \
             || echo '{"features": {"containerd-snapshotter": true}}')
           printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
           for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break || sleep 1; done
+          # Distinguish "daemon never came back" from "store didn't flip" — else the
+          # driver check below reports a misleading Driver= empty.
+          docker info >/dev/null 2>&1 \
+            || { echo "::error::Docker daemon did not respond 30s after restart"; exit 1; }
           # The containerd store reports Driver=overlayfs (classic=overlay2); fail
           # fast if the restart didn't flip it, else save silently uses the ~2.5×
           # legacy format.
