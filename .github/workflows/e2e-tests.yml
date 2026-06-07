@@ -114,7 +114,7 @@ jobs:
 
       - name: Authorize, parse, resolve PR HEAD
         id: gate
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DISPATCH_FILTER: ${{ inputs.filter }}
         with:
@@ -668,7 +668,7 @@ jobs:
       - name: Update PR sticky
         if: always() && github.event_name == 'issue_comment'
         continue-on-error: true
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REPORT_URL: ${{ steps.r2.outputs.report_url }}
           FILTER: ${{ needs.gate.outputs.filter }}
