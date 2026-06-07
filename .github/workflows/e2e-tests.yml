@@ -4,11 +4,14 @@
 # reached over SSH — the harness's existing multi-host model with SDVD_DOCKER_HOSTS
 # set to a VPS-only fleet.
 #
-# THREE ways in, all manual and maintainer-gated — never an automatic merge gate:
+# FOUR ways in — three manual/maintainer-gated, plus one bounded nightly schedule:
 #   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch.
 #   2. `/run-tests-e2e [filter]` PR comment.
 #   3. the "Re-run E2E tests" checkbox in the bot's results comment (a click in the
 #      PR view; toggling it fires issue_comment: edited).
+#   4. schedule (nightly 08:00 UTC) — a full-suite run on master so the README E2E
+#      badge has a real, recent master result to show. Trusted (default-branch
+#      workflow on master), no PR context; it never gates a merge (see below).
 #
 # Why this is safe despite touching PRs:
 #   - issue_comment ALWAYS runs THIS workflow file from the default branch (master),
@@ -25,8 +28,11 @@
 #     cancel triggers the runner's abort path (writes summary.json, sweeps VPS containers
 #     by run-id), and the sticky reports "⚪ aborted".
 #   - This workflow must NEVER become a required check (external-VPS availability can't
-#     gate the merge queue). Do NOT add pull_request_target / push / schedule /
-#     merge_group.
+#     gate the merge queue). The nightly `schedule` is the ONLY automatic trigger and is
+#     safe precisely because it doesn't gate anything — it runs on master after the fact,
+#     never blocks a merge, and is bounded to one run/day on the single VPS. Do NOT add a
+#     merge-coupled trigger (push / pull_request_target / merge_group) or mark any job a
+#     required check.
 #
 # All secrets resolve from the `test-vps` GitHub Environment (the same per-environment
 # mechanism deploy-server.yml uses), not loose repo-level secrets. R2_BUCKET /
@@ -40,6 +46,11 @@ on:
         description: 'Test filter (xUnit class/method substring). Empty = run the full suite.'
         required: false
         default: ''
+  # Nightly full-suite run on master so the README E2E badge reflects a real, recent
+  # result. 08:00 UTC is clear of the other crons (CodeQL Wed 07:17; cleanups Sun/Mon
+  # 06:00). Handled like workflow_dispatch in the gate (trusted, no PR context).
+  schedule:
+    - cron: '0 8 * * *'
   # PR comments: `created` = the typed `/run-tests-e2e` command; `edited` = the re-run
   # checkbox in the bot's results comment being ticked. The `gate` job's `if:` narrows
   # this to PR comments that are actually our command or our sticky (see that job).
@@ -73,6 +84,7 @@ jobs:
     # filter would block every re-run. sender is the human who clicked.
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       (github.event_name == 'issue_comment'
        && github.event.issue.pull_request != null
        && github.event.sender.type != 'Bot'
@@ -110,10 +122,14 @@ jobs:
             const helper = require('./.github/scripts/e2e-pr-sticky.js');
             const { owner, repo } = context.repo;
 
-            // ---- workflow_dispatch: trusted branch, no PR context ----
-            if (context.eventName === 'workflow_dispatch') {
+            // ---- workflow_dispatch / schedule: trusted, no PR context ----
+            // Both run the default-branch workflow with no PR head; leaving head_sha
+            // unset makes the e2e checkout fall back to the default ref (master).
+            // dispatch may carry a filter input; the nightly schedule always runs the
+            // full suite.
+            if (context.eventName === 'workflow_dispatch' || context.eventName === 'schedule') {
               core.setOutput('proceed', 'true');
-              core.setOutput('filter', process.env.DISPATCH_FILTER || '');
+              core.setOutput('filter', context.eventName === 'workflow_dispatch' ? (process.env.DISPATCH_FILTER || '') : '');
               core.setOutput('is_fork', 'false');
               return;
             }
