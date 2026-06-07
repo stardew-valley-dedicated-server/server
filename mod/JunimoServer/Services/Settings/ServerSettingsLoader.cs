@@ -32,6 +32,18 @@ namespace JunimoServer.Services.Settings
         public float ProfitMargin => _settings.Game.ProfitMargin;
         public int StartingCabins => _settings.Game.StartingCabins;
 
+        public bool RemixBundles => _settings.Game.RemixBundles;
+        public bool RemixMines => _settings.Game.RemixMines;
+        public bool CommunityCenterYear1 => _settings.Game.CommunityCenterYear1;
+        public bool CabinLayoutNearby => _settings.Game.CabinLayoutNearby;
+        public bool UseLegacyRandom => _settings.Game.UseLegacyRandom;
+        public ulong? RandomSeed => _settings.Game.RandomSeed;
+        public int PetBreed => _settings.Game.PetBreed;
+        public string PetName => _settings.Game.PetName;
+        public bool MushroomCave => _settings.Game.MushroomCave;
+        public bool BuyJoja => _settings.Game.BuyJoja;
+
+
         /// <summary>
         /// Nullable bool: null means "auto" (true only for Wilderness farm type 4).
         /// </summary>

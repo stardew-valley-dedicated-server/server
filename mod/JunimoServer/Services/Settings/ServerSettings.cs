@@ -26,6 +26,17 @@ namespace JunimoServer.Services.Settings
         public float ProfitMargin { get; set; } = 1.0f;
         public int StartingCabins { get; set; } = 1;
         public string SpawnMonstersAtNight { get; set; } = "auto";
+        // advanced creation options
+        public bool RemixBundles { get; set; } = false;
+        public bool RemixMines { get; set; } = false;
+        public bool CommunityCenterYear1 { get; set; } = false;
+        public bool CabinLayoutNearby { get; set; } = false;
+        public bool UseLegacyRandom { get; set; } = false;
+        public ulong? RandomSeed { get; set; } = null;
+        public int PetBreed { get; set; } = 1;
+        public string PetName { get; set; } = "Apples";
+        public bool MushroomCave { get; set; } = true;
+        public bool BuyJoja { get; set; } = false;
     }
 
     public class ServerRuntimeSettings
