@@ -49,18 +49,11 @@ on:
 permissions:
   contents: read
 
-# ONE concurrency key for the single physical VPS runner — dispatch, comment, and
-# checkbox runs all share it, so they QUEUE rather than run in parallel (active + at most
-# one pending; a newer trigger replaces the waiting one).
-#
-# cancel-in-progress is ALWAYS false: it is evaluated at the run-scheduling layer, BEFORE
-# the gate authorizes, so making it an expression on comment.body would let any commenter
-# (a non-maintainer) cancel a running job — griefing with no secret/code access, but still
-# a nuisance. Preempting an in-flight run is a maintainer action via the Actions tab, not a
-# comment-triggered one. Do NOT make this an expression on comment.body.
-concurrency:
-  group: e2e-tests-singleton
-  cancel-in-progress: false
+# Concurrency singleton is on the `e2e` JOB, not here. Workflow-level acquires the group
+# before any job `if:`, so a no-op comment run (bot edit; gate skips it) would enter the
+# group and cancel a maintainer's waiting run. Job-level acquires only when the job starts;
+# a skipped `e2e` never starts. Do NOT re-add a workflow-level `e2e-tests-singleton` group —
+# a same-name workflow+job group deadlocks.
 
 jobs:
   # ── Authorize + parse + resolve the PR HEAD. NO secrets here; this job decides
@@ -242,6 +235,13 @@ jobs:
     needs: [gate, authorize]
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
+    # Singleton against the one physical VPS runner. cancel-in-progress: false — a maintainer
+    # preempts via the Actions tab, never a comment. queue: max FIFO-queues runs instead of
+    # the default `single`, which cancels the waiting run when a newer one queues.
+    concurrency:
+      group: e2e-tests-singleton
+      cancel-in-progress: false
+      queue: max
     # Holds the Steam + SSH secrets. Mirrors deploy-server.yml's per-environment
     # secret scoping.
     environment: test-vps
