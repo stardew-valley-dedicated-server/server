@@ -30,7 +30,7 @@ Cross-clip alignment between two recorders on the same host is currently within 
 
 **Failure mode without it:** MKV's `1/1000` time_base can't exactly represent 1/15 fps (66.67ms) — it quantizes to alternating 66ms/67ms intervals. The `-c copy + -f concat` stitching at per-test extraction accumulates ~5-15ms of drift per segment boundary, reaching ~500ms cross-clip differential on a 75s clip. TS's `1/90000` time_base represents 1/15 fps exactly as 6000-tick intervals — zero drift across concat-copy.
 
-**Evidence:** `tools/.playground/recording-validator/vfr-absolute-pts-results/parallel/`: two parallel TS recorders, 20s clips, <100µs cross-clip differential; same setup with MKV sources, 60-500ms differential.
+**Evidence:** measured in `tools/.playground/recording-validator/`: two parallel TS recorders, 20s clips, <100µs cross-clip differential; same setup with MKV sources, 60-500ms differential. (Raw capture not retained in-tree.)
 
 **Caveat:** MPEG-TS encapsulates PTS in a 33-bit wrapping field, which leads directly to Invariant 4 below.
 

@@ -1,6 +1,6 @@
-# Git Workflow
+# Stage git files explicitly by path — never `git add .`
 
-Project-specific rules. Generic git knowledge is assumed.
+Project-specific git rules; generic git knowledge is assumed.
 
 ## Staging
 
