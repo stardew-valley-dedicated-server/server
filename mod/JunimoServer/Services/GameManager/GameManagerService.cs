@@ -31,6 +31,10 @@ namespace JunimoServer.Services.GameManager
         private bool _pendingReload;
         private TaskCompletionSource<bool>? _reloadCompletion;
 
+        // Set by OnSaveLoaded; consumed on the next UpdateTicked to resolve a pending reload/
+        // newgame completion after all SaveLoaded handlers have run. See OnUpdateTicked.
+        private bool _saveLoadedSinceRequest;
+
         /// <summary>
         /// Whether a new game creation has been requested via the API.
         /// Checked by AlwaysOnServer to distinguish intentional returns to title.
@@ -66,6 +70,9 @@ namespace JunimoServer.Services.GameManager
             _titleLaunched = false;
             _healthCheckTimer = 0;
             _lastNullCodeTime = null;
+            // Clear any stale flag from a prior load (e.g. boot), so the completion resolves
+            // only after THIS request's SaveLoaded — not on the first tick from an old one.
+            _saveLoadedSinceRequest = false;
             Game1.ExitToTitle();
             return _newGameCompletion.Task;
         }
@@ -97,6 +104,9 @@ namespace JunimoServer.Services.GameManager
             _titleLaunched = false;
             _healthCheckTimer = 0;
             _lastNullCodeTime = null;
+            // Clear any stale flag from a prior load, so the completion resolves only after
+            // THIS reload's SaveLoaded — not on the first tick from an old one.
+            _saveLoadedSinceRequest = false;
             Game1.ExitToTitle();
             return _reloadCompletion.Task;
         }
@@ -106,10 +116,39 @@ namespace JunimoServer.Services.GameManager
             // Unsubscribe first to avoid duplicate bindings
             Helper.Events.Display.RenderedActiveMenu -= OnRenderedActiveMenu;
             Helper.Events.GameLoop.OneSecondUpdateTicked -= OnOneSecondTicked;
+            Helper.Events.GameLoop.SaveLoaded -= OnSaveLoaded;
+            Helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
 
             // Subscribe to the events
             Helper.Events.Display.RenderedActiveMenu += OnRenderedActiveMenu;
             Helper.Events.GameLoop.OneSecondUpdateTicked += OnOneSecondTicked;
+            Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+            Helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        }
+
+        private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
+        {
+            _saveLoadedSinceRequest = true;
+        }
+
+        // Resolve a pending /reload or /newgame completion only AFTER SaveLoaded has fired —
+        // by then every SaveLoaded handler (cabin migration/sync/sweep, EnsureAtLeastXCabins)
+        // has run this tick, so a post-reload snapshot reflects the final world. LoadSave()
+        // /CreateNewGame() only arm the loader (SaveGame.Load sets Game1.currentLoader; the
+        // world loads over later ticks), so resolving when they return would race that work.
+        // Next-tick (not in OnSaveLoaded) so the resolve never depends on SaveLoaded subscriber
+        // order — all handlers run synchronously in the firing tick. The completion TCSs are
+        // non-null only while a request is pending, so a stray SaveLoaded is a no-op here.
+        private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
+        {
+            if (!_saveLoadedSinceRequest)
+                return;
+            _saveLoadedSinceRequest = false;
+
+            _reloadCompletion?.TrySetResult(true);
+            _reloadCompletion = null;
+            _newGameCompletion?.TrySetResult(true);
+            _newGameCompletion = null;
         }
 
         private void OnOneSecondTicked(object sender, OneSecondUpdateTickedEventArgs e)
@@ -171,7 +210,8 @@ namespace JunimoServer.Services.GameManager
                     {
                         throw new InvalidOperationException("LoadSave returned false (no loadable save found)");
                     }
-                    _reloadCompletion?.TrySetResult(true);
+                    // Success is signalled from OnUpdateTicked once SaveLoaded has fired and run
+                    // the migration/sync/sweep — not here, where the loader has only been armed.
                 }
                 catch (Exception ex)
                 {
@@ -179,9 +219,11 @@ namespace JunimoServer.Services.GameManager
                     // of early-returning on _gameStarted and parking the server at title.
                     _gameStarted = false;
                     Monitor.Log($"World reload failed: {ex}", LogLevel.Warn);
+                    // No SaveLoaded fires on a failed load, so fault the TCS here or the
+                    // /reload HTTP call hangs to its 120s timeout.
                     _reloadCompletion?.TrySetException(ex);
+                    _reloadCompletion = null;
                 }
-                _reloadCompletion = null;
                 return;
             }
 
@@ -195,14 +237,18 @@ namespace JunimoServer.Services.GameManager
                 {
                     Monitor.Log($"Creating new game from API request: {config}", LogLevel.Info);
                     _gameCreatorService.CreateNewGame(config);
-                    _newGameCompletion?.TrySetResult(true);
+                    // Success is signalled from OnUpdateTicked once SaveLoaded has fired — see
+                    // the reload branch. CreateNewGame's loadForNewGame also loads over later ticks.
                 }
                 catch (Exception ex)
                 {
-                    Monitor.Log($"New game creation failed: {ex}", LogLevel.Error);
+                    // Warn, not Error: LogLevel.Error trips ServerContainer's ERROR/FATAL test-
+                    // poison detector. The faulted TCS already surfaces the failure as a 500.
+                    Monitor.Log($"New game creation failed: {ex}", LogLevel.Warn);
+                    // No SaveLoaded fires on a failed create, so fault the TCS here.
                     _newGameCompletion?.TrySetException(ex);
+                    _newGameCompletion = null;
                 }
-                _newGameCompletion = null;
                 return;
             }
 
