@@ -63,6 +63,16 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         public Task RequestNewGame(NewGameConfig config)
         {
+            // One load operation in flight at a time: reject if a /reload is already pending.
+            // Without this, both completion TCSs would be armed at once and OnUpdateTicked's
+            // first SaveLoaded would resolve both, returning a false success to whichever
+            // operation never ran. Game-thread serialized, so the check needs no lock.
+            if (_reloadCompletion != null)
+            {
+                return Task.FromException(
+                    new InvalidOperationException("A reload is already in progress; cannot start a new game."));
+            }
+
             IsNewGamePending = true;
             _pendingNewGameConfig = config;
             _newGameCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -86,6 +96,14 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         public Task RequestReloadSave()
         {
+            // One load operation in flight at a time: reject if a /newgame is already pending
+            // (see RequestNewGame for why a second concurrent op would falsely succeed).
+            if (_newGameCompletion != null)
+            {
+                return Task.FromException(
+                    new InvalidOperationException("A new game is already in progress; cannot reload."));
+            }
+
             // Coalesce overlapping requests: a second /reload while one is in flight would
             // otherwise replace _reloadCompletion and orphan the first caller until its 120s
             // timeout. Always invoked on the game thread (via RunOnGameThreadAsync), so this
