@@ -436,7 +436,19 @@ public sealed class DockerHost : IAsyncDisposable
         }
 
         if (transportReason is not null)
-            Poison(transportReason, transport: true);
+        {
+            // Poison emits an event + reads the master-log tail, either of which
+            // can throw. The caller invokes us from a catch before re-throwing
+            // the real fault, so a throw here would mask it — best-effort only.
+            try
+            {
+                Poison(transportReason, transport: true);
+            }
+            catch (Exception poisonEx)
+            {
+                TestLog.Test($"[ssh] best-effort transport poison failed on '{Id}': {poisonEx.Message}");
+            }
+        }
     }
 
     /// <summary>
