@@ -1,7 +1,12 @@
 # JunimoServer
 
+<!-- Project -->
 ![GitHub Tag](https://img.shields.io/github/v/tag/stardew-valley-dedicated-server/server?label=Latest%20Release&style=flat&colorA=18181B)
 ![Static Badge](https://img.shields.io/badge/Stardew%20Valley-v1.6.15-34D058?style=flat&colorA=18181B)
+<!-- CI status (master) -->
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/codeql.yml?branch=master&label=CodeQL&style=flat&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/codeql.yml)
+[![E2E Tests](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/e2e-tests.yml?branch=master&label=E2E%20Tests&style=flat&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/e2e-tests.yml)
+<!-- Community -->
 [![Discord](https://img.shields.io/discord/947923329057185842?label=Discord&logo=discord&color=34D058&style=flat&colorA=18181B)](https://discord.gg/w23GVXdSF7)
 
 **JunimoServer** makes [Stardew Valley](https://www.stardewvalley.net/) multiplayer hosting simple and flexible. Host your farm anytime, anywhere — on your local machine, a VPS, or a dedicated server.
