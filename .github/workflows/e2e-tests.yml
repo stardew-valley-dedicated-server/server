@@ -312,13 +312,29 @@ jobs:
       SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
 
     steps:
-      # containerd image store makes `docker save` emit compressed OCI blobs
-      # (~60% smaller), shrinking the E2E image transfer. Must be the first step.
-      - name: Set up Docker with containerd image store
-        uses: docker/setup-docker-action@0234bb73ccb40f0c430b795634f9247e2b5c2d23 # v5.2.0
-        with:
-          daemon-config: |
-            { "features": { "containerd-snapshotter": true } }
+      # Enable the containerd image store so `docker save` emits compressed OCI
+      # blobs (~60% smaller), shrinking the E2E transfer. Must be first (pre-build).
+      # Reconfigure the runner's existing daemon in place rather than
+      # docker/setup-docker-action — that action's second daemon splits the build
+      # socket from the distributor's _localClient socket (rules/docker-save-format-
+      # source-daemon.md). One daemon = build, compose, and _localClient agree.
+      - name: Enable containerd image store on the daemon
+        run: |
+          # Merge into a temp var, not `cat f | tee f` (that pipeline truncates f);
+          # `|| echo` covers a runner with no daemon.json.
+          merged=$(sudo jq '. + {"features": {"containerd-snapshotter": true}}' \
+            /etc/docker/daemon.json 2>/dev/null \
+            || echo '{"features": {"containerd-snapshotter": true}}')
+          printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break || sleep 1; done
+          # The containerd store reports Driver=overlayfs (classic=overlay2); fail
+          # fast if the restart didn't flip it, else save silently uses the ~2.5×
+          # legacy format.
+          driver=$(docker info --format '{{.Driver}}')
+          echo "Storage Driver: $driver"
+          [ "$driver" = "overlayfs" ] \
+            || { echo "::error::containerd snapshotter not active (Driver=$driver)"; exit 1; }
 
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
