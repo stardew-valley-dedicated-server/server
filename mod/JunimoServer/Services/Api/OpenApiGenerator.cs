@@ -17,7 +17,12 @@ namespace JunimoServer.Services.Api
         /// <summary>
         /// Generates an OpenAPI document from a type's methods decorated with ApiEndpoint attributes.
         /// </summary>
-        public static OpenApiDocument Generate(Type serviceType, string title, string version, string? description = null)
+        /// <param name="includeMethod">
+        /// Optional predicate to filter which endpoint methods are emitted. When null, all
+        /// decorated methods are included. Used to omit test-only endpoints from the
+        /// production spec (gated on <c>Env.IsTest</c> at the call site).
+        /// </param>
+        public static OpenApiDocument Generate(Type serviceType, string title, string version, string? description = null, Func<MethodInfo, bool>? includeMethod = null)
         {
             var document = new OpenApiDocument
             {
@@ -31,7 +36,8 @@ namespace JunimoServer.Services.Api
             };
 
             var methods = serviceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                .Where(m => m.GetCustomAttribute<ApiEndpointAttribute>() != null);
+                .Where(m => m.GetCustomAttribute<ApiEndpointAttribute>() != null
+                            && (includeMethod == null || includeMethod(m)));
 
             foreach (var method in methods)
             {
