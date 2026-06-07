@@ -161,9 +161,11 @@ public sealed class GameDataDistributor : IDisposable
                     bytesSent = bytes,
                     elapsedMs = sw.ElapsedMilliseconds
                 });
-                Console.Error.WriteLine($"[GameData] {host.Id}: {FormatMb(bytes)} sent in {sw.Elapsed.TotalSeconds:F1}s");
+                Console.Error.WriteLine(FormattableString.Invariant(
+                    $"[GameData] {host.Id}: {FormatMb(bytes)} sent in {sw.Elapsed.TotalSeconds:F1}s"));
                 renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                    SetupStepStatus.Completed, $"{FormatMb(bytes)} in {sw.Elapsed.TotalSeconds:F1}s"));
+                    SetupStepStatus.Completed,
+                    FormattableString.Invariant($"{FormatMb(bytes)} in {sw.Elapsed.TotalSeconds:F1}s")));
                 return new TransferResult(host.Id, true, Skipped: false, Error: null);
             }
             catch (OperationCanceledException) { throw; }
@@ -177,7 +179,7 @@ public sealed class GameDataDistributor : IDisposable
                     var delay = delays[Math.Min(attempt, delays.Length - 1)];
                     renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
                         SetupStepStatus.InProgress,
-                        $"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s"));
+                        FormattableString.Invariant($"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s")));
                     try { await Task.Delay(delay, ct); }
                     catch (OperationCanceledException) { throw; }
                 }
@@ -392,7 +394,10 @@ public sealed class GameDataDistributor : IDisposable
             progress.PollByteProgress();
     }
 
-    private static string FormatMb(long bytes) => $"{bytes / 1024.0 / 1024.0:F1} MB";
+    // Invariant culture — these strings land in CI logs and the WebUI; a locale's
+    // "," decimal would mangle them per-runner.
+    private static string FormatMb(long bytes) =>
+        FormattableString.Invariant($"{bytes / 1024.0 / 1024.0:F1} MB");
 
     /// <summary>
     /// Read-only stream decorator that increments a byte counter on every read.
@@ -489,7 +494,8 @@ public sealed class GameDataDistributor : IDisposable
                     bytesSent,
                     elapsedMs = _startedAt.ElapsedMilliseconds,
                 });
-                var detail = $"transferring game files {FormatMb(bytesSent)} ({rateMbPerSec:F1} MB/s, {_startedAt.Elapsed.TotalSeconds:F0}s)";
+                var detail = FormattableString.Invariant(
+                    $"transferring game files {FormatMb(bytesSent)} ({rateMbPerSec:F1} MB/s, {_startedAt.Elapsed.TotalSeconds:F0}s)");
                 Console.Error.WriteLine($"[GameData] {_hostId}: {detail}");
                 _renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, _hostId,
                     SetupStepStatus.InProgress, detail));

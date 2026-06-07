@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using JunimoServer.Tests.Helpers;
@@ -13,8 +14,8 @@ namespace JunimoServer.TestRunner.Distribution;
 /// Builds Docker images once on the coordinator and transfers them to remote
 /// hosts via Docker.DotNet over the per-host <c>ssh -N -L</c> daemon-socket
 /// tunnel that <see cref="TunnelManager"/> opens during preflight. Skips hosts
-/// whose Docker daemon already holds an image with a matching ID. Local hosts
-/// are no-ops — the image is already on the same daemon.
+/// whose Docker daemon already holds every image with matching layer digests.
+/// Local hosts are no-ops — the image is already on the same daemon.
 ///
 /// <para>Concurrency-bounded across hosts: at most
 /// <see cref="MaxConcurrentTransfers"/> transfers run at once.</para>
@@ -60,7 +61,7 @@ public sealed class ImageDistributor : IDisposable
 
     /// <summary>
     /// Transfers images to all remote hosts in <paramref name="hosts"/>; skips
-    /// any whose image IDs all match the coordinator's. Local hosts are no-ops.
+    /// any whose layer digests all match the coordinator's. Local hosts are no-ops.
     ///
     /// <para>When <paramref name="renderer"/> is non-null, per-host progress
     /// surfaces in the WebUI / CLI tree as setup-step events under the
@@ -90,6 +91,8 @@ public sealed class ImageDistributor : IDisposable
             localLayers[fullName] = ExtractLayers(inspect);
         }
 
+        var baseline = ReadBaseline();
+
         // Bucket hosts: skip those whose every image's layer list matches
         // the coordinator's; otherwise queue for transfer.
         var transferNeeded = new List<DockerHost>();
@@ -115,19 +118,26 @@ public sealed class ImageDistributor : IDisposable
             if (allMatch)
             {
                 InfrastructureEventLog.Emit("image_skip_match", new { host_id = h.Id });
+                var savedSuffix = baseline.TryGetValue(h.Id, out var saved)
+                    ? $" (~{FormatMb(saved)} skipped)" : "";
                 renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, h.Id,
-                    SetupStepStatus.Completed, "already up-to-date"));
+                    SetupStepStatus.Completed, $"already up-to-date{savedSuffix}"));
                 continue;
             }
             transferNeeded.Add(h);
         }
+
+        if (transferNeeded.Count > 0)
+            Console.Error.WriteLine(
+                $"[ImageTransfer] distributing {_imageNames.Length} image(s) to {transferNeeded.Count} host(s)");
 
         // Bounded-concurrency parallel transfer.
         using var gate = new SemaphoreSlim(MaxConcurrentTransfers, MaxConcurrentTransfers);
         var tasks = transferNeeded.Select(async h =>
         {
             await gate.WaitAsync(ct);
-            try { return await TransferWithRetryAsync(h, renderer, ct); }
+            var expectedBytes = baseline.TryGetValue(h.Id, out var b) ? b : 0L;
+            try { return await TransferWithRetryAsync(h, expectedBytes, renderer, ct); }
             finally { gate.Release(); }
         }).ToArray();
         var results = await Task.WhenAll(tasks);
@@ -161,7 +171,7 @@ public sealed class ImageDistributor : IDisposable
     }
 
     private async Task<TransferResult> TransferWithRetryAsync(
-        DockerHost host, ITestRenderer? renderer, CancellationToken ct)
+        DockerHost host, long expectedBytes, ITestRenderer? renderer, CancellationToken ct)
     {
         var delays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(60) };
         Exception? last = null;
@@ -174,7 +184,7 @@ public sealed class ImageDistributor : IDisposable
                     SetupStepStatus.Started,
                     attempt == 0 ? "transferring images" : $"retry {attempt}: transferring images"));
                 var sw = Stopwatch.StartNew();
-                var bytesSent = await TransferAsync(host, attempt, renderer, ct);
+                var bytesSent = await TransferAsync(host, attempt, expectedBytes, renderer, ct);
                 sw.Stop();
 
                 // Post-load: verify every image is present on the remote.
@@ -199,6 +209,8 @@ public sealed class ImageDistributor : IDisposable
                     }
                 }
 
+                WriteBaseline(host.Id, bytesSent);
+
                 InfrastructureEventLog.Emit("image_transfer_completed", new
                 {
                     host_id = host.Id,
@@ -206,10 +218,13 @@ public sealed class ImageDistributor : IDisposable
                     bytesSent,
                     elapsedMs = sw.ElapsedMilliseconds
                 });
-                Console.Error.WriteLine($"[ImageTransfer] {host.Id}: {FormatMb(bytesSent)} sent in {sw.Elapsed.TotalSeconds:F1}s");
+                var avgRate = sw.Elapsed.TotalSeconds > 0
+                    ? bytesSent / 1024.0 / 1024.0 / sw.Elapsed.TotalSeconds : 0;
+                Console.Error.WriteLine(FormattableString.Invariant(
+                    $"[ImageTransfer] {host.Id}: {FormatMb(bytesSent)} sent in {sw.Elapsed.TotalSeconds:F1}s ({avgRate:F1} MB/s)"));
                 renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
                     SetupStepStatus.Completed,
-                    $"{FormatMb(bytesSent)} in {sw.Elapsed.TotalSeconds:F1}s"));
+                    FormattableString.Invariant($"{FormatMb(bytesSent)} in {sw.Elapsed.TotalSeconds:F1}s")));
                 return new TransferResult(host.Id, true, null);
             }
             catch (OperationCanceledException) { throw; }
@@ -222,7 +237,7 @@ public sealed class ImageDistributor : IDisposable
                     var delay = delays[Math.Min(attempt, delays.Length - 1)];
                     renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
                         SetupStepStatus.InProgress,
-                        $"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s"));
+                        FormattableString.Invariant($"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s")));
                     try { await Task.Delay(delay, ct); }
                     catch (OperationCanceledException) { throw; }
                 }
@@ -236,7 +251,7 @@ public sealed class ImageDistributor : IDisposable
         return new TransferResult(host.Id, false, last?.Message ?? "unknown");
     }
 
-    private async Task<long> TransferAsync(DockerHost host, int attempt, ITestRenderer? renderer, CancellationToken ct)
+    private async Task<long> TransferAsync(DockerHost host, int attempt, long expectedBytes, ITestRenderer? renderer, CancellationToken ct)
     {
         var imageList = _imageNames.Select(n => $"{n}:{_imageTag}").ToArray();
         var startedAt = Stopwatch.StartNew();
@@ -246,7 +261,7 @@ public sealed class ImageDistributor : IDisposable
         // remote daemon as chunked HTTP — no temp file, no in-memory buffer.
         await using var tar = await _localClient.Images.SaveImagesAsync(imageList, ct);
         var counted = new ByteCountingStream(tar);
-        var progress = new TransferProgress(host.Id, attempt, startedAt, counted, renderer);
+        var progress = new TransferProgress(host.Id, attempt, expectedBytes, startedAt, counted, renderer);
 
         // Docker.DotNet's IProgress<JSONMessage> only fires on the daemon's
         // *response* body — silent during the chunked HTTP upload. Run a
@@ -290,7 +305,72 @@ public sealed class ImageDistributor : IDisposable
         }
     }
 
-    private static string FormatMb(long bytes) => $"{bytes / 1024.0 / 1024.0:F1} MB";
+    // Invariant culture — these strings land in CI logs and the WebUI; a locale's
+    // "," decimal would mangle them per-runner.
+    private static string FormatMb(long bytes) =>
+        FormattableString.Invariant($"{bytes / 1024.0 / 1024.0:F1} MB");
+
+    /// <summary>Compact duration for ETA display: "45s", "2m18s", "1h03m".</summary>
+    private static string FormatEta(double seconds)
+    {
+        if (seconds < 0 || double.IsInfinity(seconds) || double.IsNaN(seconds)) return "?";
+        var t = TimeSpan.FromSeconds(seconds);
+        if (t.TotalHours >= 1) return FormattableString.Invariant($"{(int)t.TotalHours}h{t.Minutes:D2}m");
+        if (t.TotalMinutes >= 1) return FormattableString.Invariant($"{t.Minutes}m{t.Seconds:D2}s");
+        return FormattableString.Invariant($"{t.Seconds}s");
+    }
+
+    // {hostId → last transfer bytes}, persisted across runs. Image metadata can't
+    // predict the deduped+compressed save-tar size, so we estimate from the prior
+    // run. Display only; never gates correctness.
+    private static readonly object BaselineLock = new();
+
+    private static string BaselinePath =>
+        Path.Combine(TestArtifacts.OutputDir, RunArtifactNames.ImageTransferBaseline);
+
+    private static Dictionary<string, long> ReadBaseline()
+    {
+        lock (BaselineLock)
+        {
+            try
+            {
+                if (!File.Exists(BaselinePath)) return new Dictionary<string, long>();
+                return JsonSerializer.Deserialize<Dictionary<string, long>>(File.ReadAllText(BaselinePath))
+                       ?? new Dictionary<string, long>();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ImageTransfer] baseline read failed: {ex.Message}");
+                return new Dictionary<string, long>();
+            }
+        }
+    }
+
+    private static void WriteBaseline(string hostId, long bytes)
+    {
+        lock (BaselineLock)
+        {
+            try
+            {
+                var map = ReadBaselineUnlocked();
+                map[hostId] = bytes;
+                Directory.CreateDirectory(TestArtifacts.OutputDir);
+                File.WriteAllText(BaselinePath, JsonSerializer.Serialize(map));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ImageTransfer] baseline write failed: {ex.Message}");
+            }
+        }
+    }
+
+    // Caller must already hold BaselineLock (it is non-recursive).
+    private static Dictionary<string, long> ReadBaselineUnlocked()
+    {
+        if (!File.Exists(BaselinePath)) return new Dictionary<string, long>();
+        return JsonSerializer.Deserialize<Dictionary<string, long>>(File.ReadAllText(BaselinePath))
+               ?? new Dictionary<string, long>();
+    }
 
     /// <summary>
     /// Read-only <see cref="Stream"/> decorator that increments a counter on
@@ -353,6 +433,7 @@ public sealed class ImageDistributor : IDisposable
 
         private readonly string _hostId;
         private readonly int _attempt;
+        private readonly long _expectedBytes; // 0 = no baseline yet (first run)
         private readonly Stopwatch _startedAt;
         private readonly ByteCountingStream _counted;
         private readonly ITestRenderer? _renderer;
@@ -363,11 +444,12 @@ public sealed class ImageDistributor : IDisposable
         private string? _lastEmittedStatus;
         private string? _firstError;
 
-        public TransferProgress(string hostId, int attempt, Stopwatch startedAt,
-            ByteCountingStream counted, ITestRenderer? renderer)
+        public TransferProgress(string hostId, int attempt, long expectedBytes,
+            Stopwatch startedAt, ByteCountingStream counted, ITestRenderer? renderer)
         {
             _hostId = hostId;
             _attempt = attempt;
+            _expectedBytes = expectedBytes;
             _startedAt = startedAt;
             _counted = counted;
             _renderer = renderer;
@@ -407,19 +489,36 @@ public sealed class ImageDistributor : IDisposable
                                     && _lastEmit.Elapsed >= StatusEmitThreshold;
                 if (!bytesAdvanced && !statusChanged) return;
 
-                var rateMbPerSec = _startedAt.Elapsed.TotalSeconds > 0
-                    ? bytesSent / 1024.0 / 1024.0 / _startedAt.Elapsed.TotalSeconds
-                    : 0;
+                var elapsedSec = _startedAt.Elapsed.TotalSeconds;
+                var rateMbPerSec = elapsedSec > 0 ? bytesSent / 1024.0 / 1024.0 / elapsedSec : 0;
+
+                // Clamp so an overrun of the estimate caps at the bar's 100%.
+                int? pct = _expectedBytes > 0
+                    ? (int)Math.Min(100, bytesSent * 100.0 / _expectedBytes) : null;
+
                 InfrastructureEventLog.Emit("image_transfer_progress", new
                 {
                     host_id = _hostId,
                     attempt = _attempt,
                     bytesSent,
+                    expectedBytes = _expectedBytes,
+                    pct,
                     elapsedMs = _startedAt.ElapsedMilliseconds,
                 });
+
                 var phase = bytesAdvanced ? "uploading" : "remote";
+                var sizePart = _expectedBytes > 0
+                    ? $"{FormatMb(bytesSent)} / ~{FormatMb(_expectedBytes)}"
+                    : FormatMb(bytesSent);
+                var pctPart = pct is int p
+                    ? (bytesSent >= _expectedBytes ? ">99%, " : $"{p}%, ")
+                    : "";
+                var etaPart = _expectedBytes > bytesSent && rateMbPerSec > 0
+                    ? $", ETA {FormatEta((_expectedBytes - bytesSent) / 1024.0 / 1024.0 / rateMbPerSec)}"
+                    : "";
                 var statusSuffix = _lastStatus != null ? $" — {_lastStatus}" : "";
-                var detail = $"{phase} {FormatMb(bytesSent)} ({rateMbPerSec:F1} MB/s, {_startedAt.Elapsed.TotalSeconds:F0}s){statusSuffix}";
+                var detail = FormattableString.Invariant(
+                    $"{phase} {sizePart} ({pctPart}{rateMbPerSec:F1} MB/s, {elapsedSec:F0}s{etaPart}){statusSuffix}");
                 Console.Error.WriteLine($"[ImageTransfer] {_hostId}: {detail}");
                 _renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, _hostId,
                     SetupStepStatus.InProgress, detail));

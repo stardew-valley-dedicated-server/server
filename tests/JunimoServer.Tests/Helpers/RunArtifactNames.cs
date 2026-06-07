@@ -24,6 +24,12 @@ public static class RunArtifactNames
     public const string FlakinessJsonl = "flakiness.jsonl";
 
     /// <summary>
+    /// Cross-run sidecar (<c>{hostId → bytes}</c>) at <see cref="TestArtifacts.OutputDir"/>
+    /// estimating the next image transfer's size for progress display.
+    /// </summary>
+    public const string ImageTransferBaseline = "image-transfer-baseline.json";
+
+    /// <summary>
     /// Filename used by parent processes (TestRunner / DistributedRunner) for their
     /// own structured-event log. Distinct from <see cref="InfrastructureJsonl"/>
     /// because the test-child opens the canonical log with <c>append: false</c>
