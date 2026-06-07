@@ -544,7 +544,11 @@ namespace JunimoServer.Services.CabinManager
                 else
                 {
                     failed++;
-                    Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Error);
+                    // Warn, not Error: a failed build is recoverable (server continues; the
+                    // failure is also surfaced via cabin_build_failed and the cabinsFailed
+                    // field below). LogLevel.Error trips ServerContainer's ERROR/FATAL test
+                    // poison. For None this is the expected "ran out of map positions" cap.
+                    Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Warn);
                 }
             }
 
