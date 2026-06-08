@@ -73,7 +73,7 @@ We use **GitHub Flow** with automated CI/CD:
    # Then create a PR on GitHub targeting 'master'
    ```
 
-5. **After merge** - Preview builds publish automatically to DockerHub
+5. **After merge** - A [Build Preview](ci-cd.md#build-preview-pipeline) publishes a preview image to DockerHub for testing — automatically on merge when `AUTO_BUILD_PREVIEW=true`, otherwise on a maintainer's manual dispatch
 
 #### Commit Conventions
 

@@ -205,8 +205,9 @@ jobs:
             steam_username=${{ secrets.STEAM_USERNAME }}
             steam_password=${{ secrets.STEAM_PASSWORD }}
             steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Read-only: reads the shared `server` scope that preview/release builds populate,
+          # but never persists (no cache-to) since the validation image is throwaway.
+          cache-from: type=gha,scope=server
 
       - name: Extract NuGet mount
         if: needs.changes.outputs.docker == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
