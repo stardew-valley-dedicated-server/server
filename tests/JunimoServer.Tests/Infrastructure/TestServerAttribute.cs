@@ -24,6 +24,7 @@ public class TestServerAttribute : Attribute
     private bool? _keepConnected;
     internal bool? _exclusive;
     private bool? _artifacts;
+    private bool? _fixtureFarmMod;
 
     // "Was this property explicitly set?" tracking for Password
     // because null is a meaningful value (no password)
@@ -35,7 +36,21 @@ public class TestServerAttribute : Attribute
         set { _password = value; _passwordSet = true; }
     }
 
+    /// <summary>
+    /// Vanilla boot farm index (0-6). Attribute arguments can't hold a custom struct, so
+    /// only vanilla indices are expressible here; a modded farm is selected at runtime via
+    /// <c>CreateNewGameOnServerAsync("&lt;Id&gt;")</c> (POST /newgame), not at boot.
+    /// </summary>
     public int FarmType { get => _farmType ?? 0; set => _farmType = value; }
+
+    /// <summary>
+    /// When true, the test's server loads the TestFarmMod fixture (adds a second
+    /// Data/AdditionalFarms entry) so by-Id farm disambiguation can be exercised. This
+    /// changes which mods load, so it is part of the server reuse key — at most one extra
+    /// pooled server for the test class that sets it.
+    /// </summary>
+    public bool FixtureFarmMod { get => _fixtureFarmMod ?? false; set => _fixtureFarmMod = value; }
+
     public bool WithSteam { get => _withSteam ?? false; set => _withSteam = value; }
     public int StartingCabins { get => _startingCabins ?? Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3); set => _startingCabins = value; }
     public int MaxPlayers { get => _maxPlayers ?? Math.Max(10, StartingCabins + 1); set => _maxPlayers = value; }
@@ -106,6 +121,7 @@ public class TestServerAttribute : Attribute
         merged._priority = method._priority ?? _priority;
         merged._keepConnected = method._keepConnected ?? _keepConnected;
         merged._exclusive = method._exclusive ?? _exclusive;
+        merged._fixtureFarmMod = method._fixtureFarmMod ?? _fixtureFarmMod;
         merged.SharedGroup = method.SharedGroup ?? SharedGroup;
 
         // DeferAcquisition uses OR: if either says defer, we defer

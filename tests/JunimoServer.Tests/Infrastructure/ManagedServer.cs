@@ -950,7 +950,7 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// <summary>
     /// Requests a new game creation via the API, suspending health checks during the transition.
     /// </summary>
-    public async Task CreateNewGameAsync(int farmType, string farmName = "Junimo",
+    public async Task CreateNewGameAsync(FarmTypeSetting farmType, string farmName = "Junimo",
         int startingCabins = 1, string cabinStrategy = "CabinStack",
         CancellationToken ct = default)
     {

@@ -65,7 +65,7 @@ These settings only take effect when creating a **new** game. They are ignored w
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `FarmName` | Farm name displayed in-game | `"Junimo"` |
-| `FarmType` | Farm map type (see table below) | `0` |
+| `FarmType` | Farm map type: a number `0`-`7` or a name for a built-in farm, or a farm Id string for a mod-added farm (see table below) | `0` |
 | `ProfitMargin` | Sell price multiplier | `1.0` |
 | `StartingCabins` | Number of cabins created with new game | `1` |
 | `SpawnMonstersAtNight` | Monster spawning: `"true"`, `"false"`, or `"auto"` | `"auto"` |
@@ -82,16 +82,38 @@ These settings only take effect when creating a **new** game. They are ignored w
 
 ### Farm Types
 
-| Value | Farm Type |
-|-------|-----------|
-| `0` | Standard |
-| `1` | Riverland |
-| `2` | Forest |
-| `3` | Hilltop |
-| `4` | Wilderness |
-| `5` | Four Corners |
-| `6` | Beach |
-| `7` | Meadowlands |
+The eight built-in farms can be selected by **number or by name** (names are case- and space-insensitive, so `"FourCorners"` and `"four corners"` both work):
+
+| Value | Name | Farm Type |
+|-------|------|-----------|
+| `0` | `"Standard"` | Standard |
+| `1` | `"Riverland"` | Riverland |
+| `2` | `"Forest"` | Forest |
+| `3` | `"Hilltop"` | Hilltop |
+| `4` | `"Wilderness"` | Wilderness |
+| `5` | `"FourCorners"` | Four Corners |
+| `6` | `"Beach"` | Beach |
+| `7` | `"MeadowlandsFarm"` | Meadowlands |
+
+Either column works and the two are equivalent — e.g. `"FarmType": 7` and `"FarmType": "MeadowlandsFarm"` select the same farm.
+
+#### Mod-added farms
+
+A farm added by a mod is selected by its **Id string** (mod farms have no number):
+
+```json
+"FarmType": "FrontierFarm"
+```
+
+The Id is the `Id` field of the farm's entry in the mod's `Data/AdditionalFarms` content (check the mod for the exact value). The mod must be installed on the server for the Id to resolve. An unknown Id — or a number above `7` — falls back to the Standard farm with a warning in the log.
+
+If you have a **single** farm mod installed and don't want to look up its Id, use the keyword `"modded"`, which selects the first installed mod farm:
+
+```json
+"FarmType": "modded"
+```
+
+Because mod load order isn't guaranteed, prefer the explicit Id when more than one farm mod is installed. With no farm mod installed, `"modded"` falls back to Standard with a warning.
 
 ### Profit Margin
 

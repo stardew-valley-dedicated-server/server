@@ -9,11 +9,12 @@ namespace JunimoServer.Tests.Infrastructure;
 /// The server key includes isolation context, not just config.
 /// </summary>
 public sealed record ResourceRequirements(
-    string? Password, int FarmType, bool WithSteam, string? SharedGroup,
+    string? Password, FarmTypeSetting FarmType, bool WithSteam, string? SharedGroup,
     int StartingCabins, int MaxPlayers, int Clients,
     string CabinStrategy, bool AllowIpConnections,
     IsolationMode Isolation, string? TestClassName, string? TestMethodName,
-    bool Exclusive = false, string ExistingCabinBehavior = "KeepExisting")
+    bool Exclusive = false, string ExistingCabinBehavior = "KeepExisting",
+    bool FixtureFarmMod = false)
 {
     private static int _perTestCounter;
 
@@ -41,16 +42,19 @@ public sealed record ResourceRequirements(
     {
         var connection = WithSteam ? "steam" : "lan";
         var pw = Password != null ? "+pw" : "";
-        return $"{connection}{pw}-farm{FarmType}-{CabinStrategy}-c{StartingCabins}";
+        var fixture = FixtureFarmMod ? "+fixturemod" : "";
+        return $"{connection}{pw}{fixture}-farm{FarmType}-{CabinStrategy}-c{StartingCabins}";
     }
 
     /// <summary>
     /// Hash of server-affecting config fields (not Clients, which doesn't affect server identity).
+    /// FixtureFarmMod changes which mods load, which is server identity — so it enters the key.
     /// </summary>
     private string ComputeConfigHash()
     {
         var configString = $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}" +
-                          $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}";
+                          $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}" +
+                          $"|{FixtureFarmMod}";
         var bytes = Encoding.UTF8.GetBytes(configString);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..12].ToLowerInvariant();
@@ -72,18 +76,8 @@ public sealed record ResourceRequirements(
         AllowIpConnections: attr.WithSteam ? attr.AllowIpConnections : true,
         Isolation: attr.Isolation, TestClassName: testClassName,
         TestMethodName: testMethodName,
-        Exclusive: attr.Exclusive, ExistingCabinBehavior: attr.ExistingCabinBehavior);
-
-    /// <summary>
-    /// Convenience factory for FarmMapTypeTests Theory parameters.
-    /// </summary>
-    public static ResourceRequirements ForFarmType(int farmType, string testClassName,
-        string? cabinStrategy = null, int startingCabins = 1) => new(
-        Password: null, FarmType: farmType, WithSteam: false, SharedGroup: null,
-        StartingCabins: startingCabins, MaxPlayers: 10, Clients: 1,
-        CabinStrategy: cabinStrategy ?? "CabinStack", AllowIpConnections: true,
-        Isolation: IsolationMode.PerTest, TestClassName: testClassName,
-        TestMethodName: $"FarmType_{farmType}");
+        Exclusive: attr.Exclusive, ExistingCabinBehavior: attr.ExistingCabinBehavior,
+        FixtureFarmMod: attr.FixtureFarmMod);
 
     /// <summary>
     /// Maps requirements to ServerContainerOptions for container creation.
@@ -98,7 +92,8 @@ public sealed record ResourceRequirements(
             CabinStrategy = CabinStrategy,
             ExistingCabinBehavior = ExistingCabinBehavior,
             AllowIpConnections = AllowIpConnections,
-            WithSteam = WithSteam
+            WithSteam = WithSteam,
+            FixtureFarmMod = FixtureFarmMod
         };
         return options;
     }

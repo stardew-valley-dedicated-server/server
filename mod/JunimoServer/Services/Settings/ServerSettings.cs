@@ -1,3 +1,4 @@
+using JunimoServer.Services.GameCreator;
 using System;
 
 namespace JunimoServer.Services.Settings
@@ -22,7 +23,7 @@ namespace JunimoServer.Services.Settings
     public class GameSettings
     {
         public string FarmName { get; set; } = "Junimo";
-        public int FarmType { get; set; } = 0;
+        public FarmTypeSetting FarmType { get; set; } = FarmTypeSetting.Default;
         public float ProfitMargin { get; set; } = 1.0f;
         public int StartingCabins { get; set; } = 1;
         public string SpawnMonstersAtNight { get; set; } = "auto";

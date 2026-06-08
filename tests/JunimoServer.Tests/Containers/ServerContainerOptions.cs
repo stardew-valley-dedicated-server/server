@@ -1,3 +1,5 @@
+using JunimoServer.Tests.Infrastructure;
+
 namespace JunimoServer.Tests.Containers;
 
 /// <summary>
@@ -28,13 +30,8 @@ public class ServerContainerOptions
     /// </summary>
     public string FarmName { get; set; } = "Junimo";
 
-    /// <summary>
-    /// Farm type ID (0-7):
-    /// 0=Standard, 1=Riverland, 2=Forest, 3=Hilltop,
-    /// 4=Wilderness, 5=Four Corners, 6=Beach, 7=Meadowlands
-    /// Note: Type 7 (Meadowlands) uses the AdditionalFarms system internally.
-    /// </summary>
-    public int FarmType { get; set; } = 0;
+    /// <summary>Boot farm type written to server-settings.json.</summary>
+    public FarmTypeSetting FarmType { get; set; } = FarmTypeSetting.FromIndex(0);
 
     /// <summary>
     /// Profit margin multiplier (1.0 = normal).
@@ -89,6 +86,12 @@ public class ServerContainerOptions
     /// </summary>
     public bool WithSteam { get; set; } = false;
 
+    /// <summary>
+    /// Whether to inject the TestFarmMod fixture (adds a second Data/AdditionalFarms entry)
+    /// into /data/Mods at container start. See <see cref="ServerContainer"/>.
+    /// </summary>
+    public bool FixtureFarmMod { get; set; } = false;
+
     #region Container Settings
 
     /// <summary>
@@ -107,39 +110,4 @@ public class ServerContainerOptions
     public bool FailFast { get; set; } = true;
 
     #endregion
-
-    /// <summary>
-    /// Creates options for a specific farm type with sensible defaults.
-    /// </summary>
-    public static ServerContainerOptions ForFarmType(int farmType, string? farmName = null)
-    {
-        var farmTypeNames = new Dictionary<int, string>
-        {
-            { 0, "Standard" }, { 1, "Riverland" }, { 2, "Forest" },
-            { 3, "Hilltop" }, { 4, "Wilderness" }, { 5, "FourCorners" },
-            { 6, "Beach" }, { 7, "Meadowlands" }
-        };
-
-        return new ServerContainerOptions
-        {
-            FarmType = farmType,
-            FarmName = farmName ?? farmTypeNames.GetValueOrDefault(farmType, $"Farm{farmType}")
-        };
-    }
-
-    /// <summary>
-    /// Gets the farm type name for display purposes.
-    /// </summary>
-    public string FarmTypeName => FarmType switch
-    {
-        0 => "Standard",
-        1 => "Riverland",
-        2 => "Forest",
-        3 => "Hilltop",
-        4 => "Wilderness",
-        5 => "Four Corners",
-        6 => "Beach",
-        7 => "Meadowlands",
-        _ => $"Custom ({FarmType})"
-    };
 }

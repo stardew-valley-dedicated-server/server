@@ -7,7 +7,10 @@ using Xunit;
 namespace JunimoServer.Tests;
 
 /// <summary>
-/// Tests that verify game creation and player joining works for all 8 farm map types.
+/// Tests that game creation and player joining work for the vanilla farm types (0-6) plus
+/// modded-farm selection by Data/AdditionalFarms Id (base-game MeadowlandsFarm) and the
+/// unknown-Id → Standard fallback. By-Id disambiguation between two AdditionalFarms entries
+/// needs a fixture mod and lives in <see cref="ModFarmDisambiguationTests"/>.
 /// Uses a single shared server and POST /newgame to reset between tests instead of
 /// spinning up separate containers.
 ///
@@ -24,6 +27,7 @@ public class FarmMapTypeTests : TestBase
     public FarmMapTypeTests() { }
 
     [Theory]
+    // Built-in farms by index.
     [InlineData(0, "Standard")]
     [InlineData(1, "Riverland")]
     [InlineData(2, "Forest")]
@@ -31,13 +35,25 @@ public class FarmMapTypeTests : TestBase
     [InlineData(4, "Wilderness")]
     [InlineData(5, "FourCorners")]
     [InlineData(6, "Beach")]
+    // Meadowlands is a built-in farm too — selectable by index 7 or its Id, interchangeably.
     [InlineData(7, "MeadowlandsFarm")]
-    public async Task NewGame_WithFarmType_CabinsBuiltAndPlayerCanJoin(int farmType, string expectedFarmTypeKey)
+    [InlineData("MeadowlandsFarm", "MeadowlandsFarm")]
+    // Vanilla farms are also selectable by name (case/space-insensitive).
+    [InlineData("Standard", "Standard")]
+    [InlineData("four corners", "FourCorners")]
+    // Unknown Id, out-of-range index, and the "modded" keyword with no mod farm installed all
+    // fall back to Standard with a Warn, not a crash. ("modded" resolving to an actual mod farm
+    // is covered by ModFarmDisambiguationTests, which loads the fixture mod.)
+    [InlineData("Nonexistent.Farm", "Standard")]
+    [InlineData(9, "Standard")]
+    [InlineData("modded", "Standard")]
+    public async Task NewGame_WithFarmType_CabinsBuiltAndPlayerCanJoin(object farmType, string expectedFarmTypeKey)
     {
-        LogSection($"Testing {expectedFarmTypeKey} farm (type {farmType})");
+        var farmTypeSetting = FarmTypeSetting.FromObject(farmType);
+        LogSection($"Testing {expectedFarmTypeKey} farm (type {farmTypeSetting})");
 
         // Create a new game with the specified farm type on the shared server
-        await CreateNewGameOnServerAsync(farmType);
+        await CreateNewGameOnServerAsync(farmTypeSetting);
 
         Log($"Server ready: {Server.BaseUrl}");
 

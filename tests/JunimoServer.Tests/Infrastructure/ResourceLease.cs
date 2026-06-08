@@ -86,7 +86,7 @@ public sealed class ResourceLease : IAsyncDisposable
     /// <summary>
     /// Creates a new game on the server, suspending health checks during the transition.
     /// </summary>
-    public async Task CreateNewGameAsync(int farmType, string farmName = "Junimo",
+    public async Task CreateNewGameAsync(FarmTypeSetting farmType, string farmName = "Junimo",
         int startingCabins = 1, string cabinStrategy = "CabinStack",
         CancellationToken ct = default)
     {

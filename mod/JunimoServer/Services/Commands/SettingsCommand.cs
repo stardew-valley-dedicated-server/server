@@ -8,7 +8,6 @@ using StardewModdingAPI;
 using SmapiLogConfig = JunimoServer.Util.SmapiLogConfig;
 using StardewValley;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace JunimoServer.Services.Commands
@@ -76,23 +75,23 @@ namespace JunimoServer.Services.Commands
 
         #region Show Config
 
+        /// <summary>
+        /// Label for the config display: "N - Name" when selected by a built-in index, else the
+        /// name/Id. (e.g. "0 - Standard", "7 - Meadowlands", "FrontierFarm").
+        /// </summary>
+        private static string FarmTypeLabel(FarmTypeSetting farmType) =>
+            farmType.Index is { } index
+                ? $"{index} - {farmType.DisplayName()}"
+                : farmType.DisplayName();
+
         private static void ShowConfig()
         {
-            var farmTypeNames = new Dictionary<int, string>
-            {
-                { 0, "Standard" }, { 1, "Riverland" }, { 2, "Forest" },
-                { 3, "Hilltop" }, { 4, "Wilderness" }, { 5, "Four Corners" }, { 6, "Beach" }
-            };
-
             _monitor.Log("Current Configuration (server-settings.json)", LogLevel.Info);
 
             _monitor.Log("  -- Game creation settings (immutable after game created) --", LogLevel.Info);
             _monitor.Log($"  FarmName             = {_settings.FarmName}", LogLevel.Info);
 
-            var farmTypeLabel = farmTypeNames.TryGetValue(_settings.FarmType, out var ftName)
-                ? $"{_settings.FarmType} - {ftName}"
-                : _settings.FarmType.ToString();
-            _monitor.Log($"  FarmType             = {farmTypeLabel}", LogLevel.Info);
+            _monitor.Log($"  FarmType             = {FarmTypeLabel(_settings.FarmType)}", LogLevel.Info);
             _monitor.Log($"  ProfitMargin         = {_settings.ProfitMargin}", LogLevel.Info);
             _monitor.Log($"  StartingCabins       = {_settings.StartingCabins}", LogLevel.Info);
 
@@ -134,18 +133,10 @@ namespace JunimoServer.Services.Commands
             if (!confirm)
             {
                 var config = NewGameConfig.FromSettings(_settings);
-                var farmTypeNames = new Dictionary<int, string>
-                {
-                    { 0, "Standard" }, { 1, "Riverland" }, { 2, "Forest" },
-                    { 3, "Hilltop" }, { 4, "Wilderness" }, { 5, "Four Corners" }, { 6, "Beach" }
-                };
-                var farmLabel = farmTypeNames.TryGetValue(config.WhichFarm, out var n)
-                    ? $"{config.WhichFarm} - {n}"
-                    : config.WhichFarm.ToString();
 
                 _monitor.Log("New Game Preview (from server-settings.json):", LogLevel.Info);
                 _monitor.Log($"  Farm Name:        {config.FarmName}", LogLevel.Info);
-                _monitor.Log($"  Farm Type:        {farmLabel}", LogLevel.Info);
+                _monitor.Log($"  Farm Type:        {FarmTypeLabel(config.WhichFarm)}", LogLevel.Info);
                 _monitor.Log($"  Max Players:      {config.MaxPlayers}", LogLevel.Info);
                 _monitor.Log($"  Cabin Strategy:   {config.CabinStrategy}", LogLevel.Info);
                 _monitor.Log($"  Separate Wallets: {config.UseSeparateWallets}", LogLevel.Info);
@@ -172,22 +163,21 @@ namespace JunimoServer.Services.Commands
             int passed = 0;
             int total = 0;
 
-            // FarmType valid
             total++;
-            var validFarmTypes = new[] { 0, 1, 2, 3, 4, 5, 6 };
-            if (validFarmTypes.Contains(_settings.FarmType))
+            var farmType = _settings.FarmType;
+            // A numeric index outside the built-in 0-7 range can't name a farm (mod farms use a
+            // string Id); it resolves to Standard at creation. Everything else — a built-in
+            // index/name or a mod Id — is accepted (a mod Id is verified against
+            // Data/AdditionalFarms at game creation, with a Standard fallback if missing).
+            if (farmType.Index is { } idx && (idx < 0 || idx > FarmTypeSetting.MeadowlandsIndex))
             {
-                var farmTypeNames = new Dictionary<int, string>
-                {
-                    { 0, "Standard" }, { 1, "Riverland" }, { 2, "Forest" },
-                    { 3, "Hilltop" }, { 4, "Wilderness" }, { 5, "Four Corners" }, { 6, "Beach" }
-                };
-                _monitor.Log($"  [PASS] FarmType={_settings.FarmType} is valid ({farmTypeNames[_settings.FarmType]})", LogLevel.Info);
+                _monitor.Log($"  [WARN] FarmType={idx} is not a built-in farm (0-{FarmTypeSetting.MeadowlandsIndex}); will use Standard. Use a mod farm's Id string instead.", LogLevel.Warn);
                 passed++;
             }
             else
             {
-                _monitor.Log($"  [FAIL] FarmType={_settings.FarmType} is not a known farm type", LogLevel.Error);
+                _monitor.Log($"  [PASS] FarmType={FarmTypeLabel(farmType)}", LogLevel.Info);
+                passed++;
             }
 
             // MaxPlayers range

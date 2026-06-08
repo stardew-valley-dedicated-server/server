@@ -1,4 +1,5 @@
 using JunimoServer.Services.CabinManager;
+using JunimoServer.Services.GameCreator;
 using Newtonsoft.Json;
 using StardewModdingAPI;
 using System;
@@ -28,7 +29,7 @@ namespace JunimoServer.Services.Settings
         #region Typed accessors: game creation settings (immutable after game created)
 
         public string FarmName => _settings.Game.FarmName;
-        public int FarmType => _settings.Game.FarmType;
+        public FarmTypeSetting FarmType => _settings.Game.FarmType;
         public float ProfitMargin => _settings.Game.ProfitMargin;
         public int StartingCabins => _settings.Game.StartingCabins;
 

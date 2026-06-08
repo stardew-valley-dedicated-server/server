@@ -162,6 +162,21 @@ namespace JunimoServer.Services.Api
                 return innerSchema;
             }
 
+            // Emit the union scalar explicitly: without this, the fall-through "complex type"
+            // branch would expose FarmTypeSetting's Index/Id/IsModded members as object properties.
+            if (type == typeof(GameCreator.FarmTypeSetting))
+            {
+                return new JsonSchemaProperty
+                {
+                    Description = "A built-in farm index (0-7) or name, or a Data/AdditionalFarms farm Id.",
+                    OneOf =
+                    {
+                        new JsonSchema { Type = JsonObjectType.Integer },
+                        new JsonSchema { Type = JsonObjectType.String }
+                    }
+                };
+            }
+
             // Handle common types
             if (type == typeof(string))
                 return new JsonSchemaProperty { Type = JsonObjectType.String };

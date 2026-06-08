@@ -1,3 +1,4 @@
+using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.Settings;
 using StardewModdingAPI;
@@ -108,7 +109,7 @@ namespace JunimoServer.Services.Commands
             }
 
             _monitor.Log($"Save: {saveName}", LogLevel.Info);
-            _monitor.Log($"  Farm Type:  {info.FarmTypeName} ({info.FarmType})", LogLevel.Info);
+            _monitor.Log($"  Farm Type:  {info.FarmTypeDisplay}", LogLevel.Info);
             _monitor.Log($"  Farm Name:  {info.FarmName}", LogLevel.Info);
             _monitor.Log($"  Cabins:     {info.CabinCount}", LogLevel.Info);
 
@@ -135,7 +136,7 @@ namespace JunimoServer.Services.Commands
 
                 if (info != null)
                 {
-                    _monitor.Log($"  Farm Type:               {info.FarmTypeName} ({info.FarmType})", LogLevel.Info);
+                    _monitor.Log($"  Farm Type:               {info.FarmTypeDisplay}", LogLevel.Info);
                     _monitor.Log($"  Existing Cabins:         {info.CabinCount}", LogLevel.Info);
                 }
 
@@ -157,10 +158,15 @@ namespace JunimoServer.Services.Commands
         private class SaveInfo
         {
             public string FarmName = "Unknown";
-            public int FarmType = -1;
+            /// <summary>Raw &lt;whichFarm&gt; token: a vanilla index "0"-"6" or a modded farm Id.</summary>
+            public string FarmTypeRaw = "Unknown";
             public string FarmTypeName = "Unknown";
             public int CabinCount = 0;
             public List<string> PlayerNames = new List<string>();
+
+            /// <summary>Detail label: "Name (raw)" for vanilla, just the Id for a modded farm.</summary>
+            public string FarmTypeDisplay =>
+                FarmTypeName == FarmTypeRaw ? FarmTypeName : $"{FarmTypeName} ({FarmTypeRaw})";
         }
 
         private static SaveInfo ReadSaveGameInfo(string saveDirectory)
@@ -170,12 +176,6 @@ namespace JunimoServer.Services.Commands
             {
                 return null;
             }
-
-            var farmTypeNames = new Dictionary<int, string>
-            {
-                { 0, "Standard" }, { 1, "Riverland" }, { 2, "Forest" },
-                { 3, "Hilltop" }, { 4, "Wilderness" }, { 5, "Four Corners" }, { 6, "Beach" }
-            };
 
             try
             {
@@ -196,11 +196,18 @@ namespace JunimoServer.Services.Commands
                     var mainDoc = new XmlDocument();
                     mainDoc.Load(mainSavePath);
 
+                    // whichFarm is serialized as a string (GetFarmTypeID): "0"-"6" for vanilla
+                    // farms, or the Data/AdditionalFarms Id for a modded farm. An int.TryParse
+                    // here would return false on a modded Id and silently drop the farm type.
                     var whichFarmNode = mainDoc.SelectSingleNode("//whichFarm");
-                    if (whichFarmNode != null && int.TryParse(whichFarmNode.InnerText, out var farmType))
+                    if (whichFarmNode != null && !string.IsNullOrWhiteSpace(whichFarmNode.InnerText))
                     {
-                        info.FarmType = farmType;
-                        info.FarmTypeName = farmTypeNames.TryGetValue(farmType, out var n) ? n : $"Custom ({farmType})";
+                        info.FarmTypeRaw = whichFarmNode.InnerText;
+                        // The token is a vanilla index ("0"-"6") or a Data/AdditionalFarms Id;
+                        // DisplayName() turns either into the same friendly label as elsewhere.
+                        info.FarmTypeName = (int.TryParse(info.FarmTypeRaw, out var index)
+                            ? FarmTypeSetting.FromIndex(index)
+                            : FarmTypeSetting.FromId(info.FarmTypeRaw)).DisplayName();
                     }
 
                     var buildingNodes = mainDoc.SelectNodes("//Building[buildingType='Cabin']");

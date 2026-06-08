@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Infrastructure;
 
 namespace JunimoServer.Tests.Clients;
 
@@ -56,12 +57,7 @@ public class ServerStatus
     [JsonPropertyName("timeOfDay")]
     public int TimeOfDay { get; set; }
 
-    /// <summary>
-    /// Farm type key as returned by Game1.GetFarmTypeKey().
-    /// Vanilla: "Standard", "Riverland", "Forest", "Hilltop", "Wilderness", "FourCorners", "Beach".
-    /// Meadowlands: "MeadowlandsFarm".
-    /// Modded farms: the mod's farm ID.
-    /// </summary>
+    /// <summary>Farm type key from Game1.GetFarmTypeKey() (a vanilla name, or the farm Id for Data/AdditionalFarms farms).</summary>
     [JsonPropertyName("farmTypeKey")]
     public string FarmTypeKey { get; set; } = string.Empty;
 
@@ -573,7 +569,7 @@ public class GameSettingsInfo
     public string FarmName { get; set; } = string.Empty;
 
     [JsonPropertyName("farmType")]
-    public int FarmType { get; set; }
+    public FarmTypeSetting FarmType { get; set; }
 
     [JsonPropertyName("profitMargin")]
     public float ProfitMargin { get; set; }
@@ -1392,7 +1388,7 @@ public class ServerApiClient : IDisposable
     /// Only explicitly provided fields are sent; omitted fields use server-settings.json defaults.
     /// </summary>
     public async Task<NewGameResponse?> CreateNewGameAsync(
-        int? farmType = null,
+        FarmTypeSetting? farmType = null,
         string? farmName = null,
         int? startingCabins = null,
         string? cabinStrategy = null,
@@ -1401,7 +1397,7 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default)
     {
         var body = new Dictionary<string, object>();
-        if (farmType.HasValue) body["farmType"] = farmType.Value;
+        if (farmType.HasValue) body["farmType"] = farmType.Value.ToJsonValue();
         if (farmName != null) body["farmName"] = farmName;
         if (startingCabins.HasValue) body["startingCabins"] = startingCabins.Value;
         if (cabinStrategy != null) body["cabinStrategy"] = cabinStrategy;
