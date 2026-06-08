@@ -229,6 +229,7 @@ namespace JunimoServer.Services.AlwaysOn
             _runStartTime = null;
             _announced = false;
             _started = false;
+            eventCommandUsed = false;
         }
 
         /// <summary>
@@ -354,8 +355,11 @@ namespace JunimoServer.Services.AlwaysOn
             if (eventCommandUsed)
             {
                 _runStartTime = DateTime.UtcNow.AddSeconds(-spec.CountdownSeconds());
-                spec.OnAnnounce?.Invoke();
-                _announced = true;
+                if (!_announced)
+                {
+                    spec.OnAnnounce?.Invoke();
+                    _announced = true;
+                }
                 eventCommandUsed = false;
             }
 
@@ -498,11 +502,19 @@ namespace JunimoServer.Services.AlwaysOn
             }
 
             var spec = _festivals.FirstOrDefault(f => f.IsToday());
-            if (spec != null)
+            if (spec == null)
             {
-                eventCommandUsed = true;
-                _activeFestival = spec;
+                return;
             }
+
+            if (!spec.HasMainEvent)
+            {
+                _helper.SendPublicMessage("This festival doesn't have a host-started event.");
+                return;
+            }
+
+            eventCommandUsed = true;
+            _activeFestival = spec;
         }
     }
 }
