@@ -34,6 +34,25 @@ public sealed record RunArtifactView(
     IReadOnlyList<string>? MissingArtifacts = null,
     IReadOnlyList<System.Text.Json.JsonElement>? WorkerRunMetadata = null);
 
+/// <summary>
+/// Minimal run-level view used to compose the report's link-preview meta tags
+/// and the generated OG summary card (see ReportGenerator / OgImageGenerator).
+/// Distinct from <see cref="RunArtifactView"/>: it carries the run <c>Status</c>
+/// string and git branch/sha (which the artifact view doesn't), and omits the
+/// per-test list. Counts are computed from the same test-tree iteration so they
+/// match the published snapshot.
+/// </summary>
+public sealed record RunSummary(
+    string Status,
+    int TotalTests,
+    int Passed,
+    int Failed,
+    int Skipped,
+    int Canceled,
+    long? DurationMs,
+    string? GitBranch,
+    string? GitSha);
+
 /// <summary>Per-test view used by the artifact writer.</summary>
 public sealed record TestArtifactView(
     string Collection,

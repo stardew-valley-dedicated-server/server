@@ -184,6 +184,16 @@
             "allowedVersions": "<4.0.0"
         },
         {
+            "description": "CAP — SixLabors.ImageSharp.Drawing below 3.0 in the E2E test project, lockstep with the ImageSharp <4.0 cap above. Drawing 3.0.0 depends on ImageSharp >=4.0.0, so bumping it forces a 4.0 downgrade conflict (NU1605) against the pinned 3.1.x. The 2.1.x line targets ImageSharp 3.1.x. Lift together with the ImageSharp cap once the license key is wired in. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
+            ],
+            "matchPackageNames": ["SixLabors.ImageSharp.Drawing"],
+            "versioning": "semver",
+            "allowedVersions": "<3.0.0"
+        },
+        {
             "description": "MAJOR — every major update gets its own PR, no exceptions. Clears the per-module groupName for any major bump (last-match-wins), so each major lands standalone. Must stay last to override every group above.",
             "matchUpdateTypes": ["major"],
             "groupName": null

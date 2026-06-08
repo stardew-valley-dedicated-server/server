@@ -1288,6 +1288,60 @@ public sealed class TestRunState
     }
 
     /// <summary>
+    /// Run-level view for the report's social-media meta tags + OG card. Counts
+    /// come from the same test-tree iteration BuildSnapshot uses (the _passed/
+    /// _failed fields are only set at run_finished), so they match the published
+    /// snapshot mid-run too. Git branch/sha are pulled from the run-metadata
+    /// payload's nested "git" object when present.
+    /// </summary>
+    public RunSummary GetRunSummary()
+    {
+        lock (_lock)
+        {
+            var passed = 0;
+            var failed = 0;
+            var canceled = 0;
+            var skipped = 0;
+            foreach (var col in _collections.Values)
+                foreach (var cls in col.Classes.Values)
+                    foreach (var test in cls.Tests.Values)
+                    {
+                        switch (test.Status)
+                        {
+                            case "passed": passed++; break;
+                            case "failed": failed++; break;
+                            case "canceled": canceled++; break;
+                            case "skipped": skipped++; break;
+                        }
+                    }
+
+            string? gitBranch = null;
+            string? gitSha = null;
+            if (_runMetadataData is { } meta
+                && meta.ValueKind == JsonValueKind.Object
+                && meta.TryGetProperty("git", out var git)
+                && git.ValueKind == JsonValueKind.Object)
+            {
+                if (git.TryGetProperty("branch", out var b) && b.ValueKind == JsonValueKind.String)
+                    gitBranch = b.GetString();
+                if (git.TryGetProperty("sha", out var s) && s.ValueKind == JsonValueKind.String)
+                    gitSha = s.GetString();
+            }
+
+            return new RunSummary(
+                Status: _status,
+                TotalTests: _totalTests,
+                Passed: passed,
+                Failed: failed,
+                Skipped: skipped,
+                Canceled: canceled,
+                DurationMs: _duration.HasValue ? (long)_duration.Value.TotalMilliseconds : null,
+                GitBranch: gitBranch,
+                GitSha: gitSha);
+        }
+    }
+
+    /// <summary>
     /// Strongly-typed run-level view consumed by the runner-side artifact writer
     /// (summary.json, ctrf-report.json). Read under lock and copied into immutable
     /// records so the writer never reaches back into mutable state.

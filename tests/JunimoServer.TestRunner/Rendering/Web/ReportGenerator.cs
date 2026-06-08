@@ -1,5 +1,7 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace JunimoServer.TestRunner.Rendering.Web;
 
@@ -91,6 +93,23 @@ public sealed class ReportGenerator
         // Copy the SPA (JS, CSS) next to the bundle.
         CopyAssets(reportDir);
 
+        // Root-level dist statics (favicon) aren't under dist/assets/, so CopyAssets
+        // misses them — copy the ones the report references explicitly.
+        CopyRootStatic(reportDir, "logo.svg");
+
+        // Generate the link-preview og:image alongside index.html. Best-effort: a
+        // failure leaves the og:image sentinel pointing at a missing file, which
+        // degrades the unfurl to text-only rather than breaking the bundle.
+        var summary = _state.GetRunSummary();
+        try
+        {
+            File.WriteAllBytes(Path.Combine(reportDir, "og-image.png"), OgImageGenerator.Render(summary));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[WebUI] Warning: OG image generation failed: {ex.Message}");
+        }
+
         // Copy screenshots + videos into reportDir/artifacts/ and rewrite the
         // snapshot's paths to that relative location, so both kinds of media
         // resolve over file:// once Kestrel is gone. (The SPA's screenshotSrc
@@ -136,11 +155,98 @@ public sealed class ReportGenerator
         html = html.Replace("src=\"/assets/", "src=\"./assets/");
         html = html.Replace("href=\"/assets/", "href=\"./assets/");
 
+        html = ReplaceMetaBlock(html, summary);
+
         var reportPath = Path.Combine(reportDir, "index.html");
         File.WriteAllText(reportPath, html);
 
         Console.Error.WriteLine($"[WebUI] Static report generated: {reportPath}");
     }
+
+    private void CopyRootStatic(string reportDir, string fileName)
+    {
+        var src = Path.Combine(_spaDistPath, fileName);
+        if (File.Exists(src))
+            File.Copy(src, Path.Combine(reportDir, fileName), overwrite: true);
+    }
+
+    // Replaces the source index.html's <!-- META:BEGIN/END --> block with per-run
+    // tags. The absolute __OG_URL__/__OG_IMAGE__ sentinels stay literal here and
+    // are filled by the R2 publish step (only it knows the public URL).
+    private static string ReplaceMetaBlock(string html, RunSummary summary)
+    {
+        const string begin = "<!-- META:BEGIN -->";
+        const string end = "<!-- META:END -->";
+        if (!html.Contains(begin) || !html.Contains(end))
+        {
+            Console.Error.WriteLine("[WebUI] Warning: META marker block not found — meta tags left as built defaults.");
+            return html;
+        }
+        // MatchEvaluator (not a replacement string) so a `$` in the meta HTML
+        // — e.g. from a git branch/sha — isn't parsed as a regex group token.
+        var tags = BuildMetaTags(summary);
+        return Regex.Replace(html, $"{Regex.Escape(begin)}.*?{Regex.Escape(end)}",
+            _ => tags, RegexOptions.Singleline);
+    }
+
+    private static string BuildMetaTags(RunSummary s)
+    {
+        var title = Enc(BuildTitle(s));
+        var desc = Enc(BuildDescription(s));
+        var themeColor = s.Status == "aborted" ? "#6b7280" : s.Failed > 0 ? "#dc2626" : "#16a34a";
+        return $"""
+        <!-- META:BEGIN -->
+        <title>{title}</title>
+        <meta name="description" content="{desc}" />
+        <meta name="theme-color" content="{themeColor}" />
+        <meta name="robots" content="noindex, nofollow" />
+        <link rel="canonical" href="__OG_URL__" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="SDVD E2E Test Report" />
+        <meta property="og:locale" content="en_US" />
+        <meta property="og:title" content="{title}" />
+        <meta property="og:description" content="{desc}" />
+        <meta property="og:url" content="__OG_URL__" />
+        <meta property="og:image" content="__OG_IMAGE__" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="{desc}" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="{title}" />
+        <meta name="twitter:description" content="{desc}" />
+        <meta name="twitter:image" content="__OG_IMAGE__" />
+        <meta name="twitter:image:alt" content="{desc}" />
+        <!-- META:END -->
+        """;
+    }
+
+    private static string BuildTitle(RunSummary s)
+    {
+        var git = GitSuffix(s);
+        if (s.Status == "aborted") return $"⚪ Run aborted{git}";
+        var icon = s.Failed > 0 ? "❌" : "✅";
+        return s.Failed > 0
+            ? $"{icon} {s.Failed} failed of {s.TotalTests}{git}"
+            : $"{icon} {s.Passed} passed · 0 failed{git}";
+    }
+
+    private static string BuildDescription(RunSummary s)
+    {
+        var parts = new List<string> { $"{s.Passed} passed", $"{s.Failed} failed" };
+        if (s.Skipped > 0) parts.Add($"{s.Skipped} skipped");
+        if (s.Canceled > 0) parts.Add($"{s.Canceled} canceled");
+        return $"{string.Join(" · ", parts)} of {s.TotalTests} tests{GitSuffix(s)}";
+    }
+
+    private static string GitSuffix(RunSummary s)
+    {
+        if (s.GitBranch == null && s.GitSha == null) return "";
+        var sha = s.GitSha is { Length: >= 7 } ? s.GitSha[..7] : s.GitSha;
+        var branch = s.GitBranch ?? "?";
+        return sha != null ? $" — {branch} @ {sha}" : $" — {branch}";
+    }
+
+    private static string Enc(string value) => WebUtility.HtmlEncode(value);
 
     /// <summary>
     /// Exports artifact files (screenshots and videos) to a directory with content-hashed
