@@ -3,9 +3,9 @@
 # here — hence no `authorize` gate and no environment, unlike validate-pr.yml. This is a separate
 # file rather than a trigger added to validate-pr.yml on purpose: the merge_group payload has no
 # `github.event.pull_request.*` fields, and one workflow per event keeps one required check per
-# name. All three required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`)
-# are reproduced here under the same names: a required check with no merge_group producer leaves
-# every queued PR stuck in AWAITING_CHECKS until timeout. See
+# name. All four required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`,
+# `Validate PR Title`) are reproduced here under the same names: a required check with no
+# merge_group producer leaves every queued PR stuck in AWAITING_CHECKS until timeout. See
 # docs/developers/contributing/ci-cd.md#validate-pr-pipeline.
 name: Validate Merge Group
 
@@ -52,6 +52,18 @@ jobs:
               - 'tools/netdebug/**'
               - 'tools/openapi-generator/**'
               - 'Directory.Build.props'
+
+  validate-pr-title:
+    name: Validate PR Title
+    # The PR title is linted at PR time (validate-pr.yml) and is immutable once the PR is in the
+    # queue, so there is nothing to re-lint here — but the required check still needs a merge_group
+    # producer to report, or the queue waits on it forever. This job exists solely to satisfy that
+    # contract. (The merge_group payload carries no pull_request.title to lint even if we wanted to,
+    # and the queue branch holds the PR's original commits, not the squash subject, so Validate
+    # Commits doesn't cover the title either.)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "PR title was validated at PR time and is immutable in the queue."
 
   validate-commits:
     name: Validate Commits
