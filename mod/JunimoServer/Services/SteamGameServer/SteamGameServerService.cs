@@ -25,6 +25,10 @@ namespace JunimoServer.Services.SteamGameServer
         private static bool _initialized = false;
         private static CSteamID _serverSteamId;
 
+        // Counts SteamServersConnected_t callbacks. >1 means an auto-reconnect happened, which is
+        // the lobby-recreation repro's success signal (emitted as steam_session_connected.isReconnect).
+        private static int _connectCount;
+
         // Callbacks
         private static Callback<SteamServersConnected_t> _steamServersConnectedCallback;
         private static Callback<SteamServerConnectFailure_t> _steamServersConnectFailureCallback;
@@ -164,6 +168,12 @@ namespace JunimoServer.Services.SteamGameServer
         /// </summary>
         public static event Action<ulong> OnServerSteamIdReceived;
 
+        /// <summary>
+        /// Fired when the GameServer loses its Steam server session.
+        /// Subscribers should treat any cached Steam lobby/session state as invalid.
+        /// </summary>
+        public static event Action OnSteamServersLost;
+
         private static void OnSteamServersConnected(SteamServersConnected_t callback)
         {
             _serverSteamId = Steamworks.SteamGameServer.GetSteamID();
@@ -180,6 +190,15 @@ namespace JunimoServer.Services.SteamGameServer
             // Check relay network status
             var relayStatus = SteamGameServerNetworkingUtils.GetRelayNetworkStatus(out var details);
             _monitor.Log($"SDR relay status: {relayStatus}", LogLevel.Info);
+
+            // Note: fires on the first connect too, not just reconnects — isReconnect disambiguates.
+            var connectNumber = ++_connectCount;
+            Diagnostics.ModEventLog.Emit("steam_session_connected", new
+            {
+                steamId = _serverSteamId.m_SteamID.ToString(),
+                connectNumber,
+                isReconnect = connectNumber > 1
+            });
 
             // Notify subscribers that the Steam ID is now available
             OnServerSteamIdReceived?.Invoke(_serverSteamId.m_SteamID);
@@ -198,6 +217,11 @@ namespace JunimoServer.Services.SteamGameServer
         {
             _monitor.Log($"Disconnected from Steam servers: {callback.m_eResult}", LogLevel.Warn);
             _monitor.Log("SDR connections may be affected until reconnected", LogLevel.Warn);
+
+            // Structured emit so the reconnect repro can grep infrastructure.jsonl, not just the text log.
+            Diagnostics.ModEventLog.Emit("steam_session_lost", new { result = callback.m_eResult.ToString() });
+
+            OnSteamServersLost?.Invoke();
         }
 
         /// <summary>
