@@ -136,7 +136,11 @@ namespace JunimoServer.Services.GameCreator
             switch (reader.TokenType)
             {
                 case JsonToken.Integer:
-                    return FarmTypeSetting.FromIndex(Convert.ToInt32(reader.Value));
+                    // Out-of-int values fall through to an out-of-range index, which the resolver maps
+                    // to Standard with a warning — parsing stays total (see class summary).
+                    return int.TryParse(reader.Value?.ToString(), out var jsonIndex)
+                        ? FarmTypeSetting.FromIndex(jsonIndex)
+                        : FarmTypeSetting.FromIndex(int.MaxValue);
 
                 case JsonToken.String:
                     var raw = (string)reader.Value!;

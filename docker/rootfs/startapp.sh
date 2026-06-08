@@ -191,7 +191,7 @@ init_mods() {
     # used by the by-Id modded-farm disambiguation test. Staged at /opt/test-fixtures by
     # the image build; copied in here (a sibling of smapi/, so the rm -rf above leaves it
     # untouched) only when the test broker sets the flag.
-    if [ "${SDVD_TEST_FIXTURE_FARM_MOD}" = "true" ] && [ -d /opt/test-fixtures/TestFarmMod ]; then
+    if [ "${SDVD_TEST_FIXTURE_FARM_MOD:-false}" = "true" ] && [ -d /opt/test-fixtures/TestFarmMod ]; then
         echo "Installing E2E test fixture mod: TestFarmMod"
         rm -rf "${MODS_DEST_DIR}/TestFarmMod"
         cp -r /opt/test-fixtures/TestFarmMod "${MODS_DEST_DIR}/TestFarmMod"
