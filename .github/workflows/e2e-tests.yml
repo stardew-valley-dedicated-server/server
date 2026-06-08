@@ -560,20 +560,6 @@ jobs:
           path: TestResults/runs/
           if-no-files-found: warn
 
-      # The self-contained offline test-web bundle (the test-UI SPA + run snapshot
-      # + copied screenshots/videos under report/artifacts/), assembled by the
-      # runner inside the run dir. Uploaded separately so reviewers can grab a
-      # clean, openable report (open report/index.html over file://) without
-      # downloading the multi-GB raw runs/ tree. if-no-files-found: warn covers an
-      # early abort before report assembly (e.g. preflight failure).
-      - name: Upload web report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: e2e-web-report
-          path: TestResults/runs/*/report/
-          if-no-files-found: warn
-
       # Publish the offline web report to Cloudflare R2 for a real, linkable URL
       # (GitHub artifacts aren't URL-addressable — the report can't be viewed without
       # downloading the zip). Served at {R2_PUBLIC_BASE_URL}/e2e/{branch}/{run-id}/
@@ -658,6 +644,21 @@ jobs:
           else
             echo "::warning::R2 publish failed (network/credentials/quota). Report remains in the 'e2e-web-report' artifact."
           fi
+
+      # Fallback only: the self-contained offline test-web bundle (test-UI SPA + run
+      # snapshot + copied screenshots/videos under report/artifacts/) as a downloadable
+      # GitHub artifact. R2 is the primary path (clickable URL); both uploads cost 30s+
+      # each, so this runs ONLY when R2 produced no URL — unconfigured, aws missing, no
+      # report dir, or sync failure (every such case leaves report_url empty). Reviewers
+      # then open report/index.html over file:// from the zip.
+      - name: Upload web report (fallback)
+        if: always() && steps.r2.outputs.report_url == ''
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-web-report
+          path: TestResults/runs/*/report/
+          if-no-files-found: warn
 
       # Replace the PR sticky with the final result (PR-comment path only). Reads the
       # runner's summary.json for counts/status, resets the re-run checkbox to its idle
