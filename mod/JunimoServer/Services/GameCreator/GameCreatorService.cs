@@ -5,6 +5,7 @@ using JunimoServer.Services.Settings;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.GameData;
 using System;
 using System.Linq;
 
@@ -94,42 +95,33 @@ namespace JunimoServer.Services.GameCreator
             // map-designated positions by the unpatched BuildStartingCabins.
             Game1.startingCabins = config.StartingCabins;
 
-            // Ultimate Farm CP compat: the mod expects whichFarm to be set to Riverland (1)
-            // to correctly apply its custom farm map. Override the user's farm type setting.
             var isUltimateFarmModLoaded = _helper.ModRegistry.GetAll()
                 .Any(mod => mod.Manifest.Name == "Ultimate Farm CP");
+
+            // Resolve the user's requested farm to (whichFarm bucket, modFarm data). The
+            // monster-spawn default keys off this requested farm, matching the prior behavior
+            // even when Ultimate Farm CP overrides the map below.
+            var (whichFarm, modFarm) = ResolveFarmType(config.WhichFarm);
+
+            // Monster spawning: explicit override, else the requested farm's default — vanilla
+            // Wilderness (4) or the modded farm's SpawnMonstersByDefault (matches the new-game
+            // UI at CharacterCustomization.optionButtonClick).
+            Game1.spawnMonstersAtNight = config.SpawnMonstersAtNight
+                ?? (modFarm?.SpawnMonstersByDefault ?? whichFarm == 4);
+
+            // Ultimate Farm CP compat: the mod expects whichFarm = Riverland (1) to apply its
+            // custom farm map, overriding the requested map (but not the monster default above).
             if (isUltimateFarmModLoaded)
             {
-                Game1.whichFarm = 1;
-                Game1.whichModFarm = null;
-            }
-            else
-            {
-                Game1.whichFarm = config.WhichFarm;
-
-                // Farm type 7 (Meadowlands) uses the AdditionalFarms system.
-                // whichModFarm MUST be set BEFORE loadForNewGame() because the Farm map
-                // is created during loadForNewGame() using Farm.getMapNameFromTypeInt()
-                // which checks whichModFarm when whichFarm is 7.
-                if (config.WhichFarm == 7)
-                {
-                    var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
-                    Game1.whichModFarm = additionalFarms?.FirstOrDefault(f => f.Id == "MeadowlandsFarm");
-
-                    if (Game1.whichModFarm == null)
-                    {
-                        _monitor.Log("Could not find MeadowlandsFarm data, falling back to Standard farm", LogLevel.Warn);
-                        Game1.whichFarm = 0;
-                    }
-                }
-                else
-                {
-                    Game1.whichModFarm = null;
-                }
+                whichFarm = 1;
+                modFarm = null;
             }
 
-            // Monster spawning: explicit override or auto-detect from farm type
-            Game1.spawnMonstersAtNight = config.SpawnMonstersAtNight ?? (config.WhichFarm == 4);
+            // whichModFarm MUST be set BEFORE loadForNewGame(): the Farm map is created
+            // during loadForNewGame() via Farm.getMapNameFromTypeInt(), which consults
+            // whichModFarm when whichFarm is 7.
+            Game1.whichFarm = whichFarm;
+            Game1.whichModFarm = modFarm;
 
             Game1.player.Name = "Server";
             Game1.player.displayName = Game1.player.Name;
@@ -174,6 +166,91 @@ namespace JunimoServer.Services.GameCreator
             _cabinManagerService.EnsureAtLeastXCabins(minCabins);
 
             GameIsCreating = false;
+        }
+
+        /// <summary>
+        /// Resolves a <see cref="FarmTypeSetting"/> into the game's two-part farm identity:
+        /// the <c>whichFarm</c> bucket and the <c>whichModFarm</c> data (null for vanilla).
+        /// Accepts, interchangeably: a vanilla index 0-6 or its name ("Standard", "FourCorners",
+        /// case/space-insensitive); the index 7 or the Id "MeadowlandsFarm" (both always select
+        /// the base-game Meadowlands farm); the keyword "modded" (the first installed mod farm);
+        /// or any other Data/AdditionalFarms Id for a specific mod farm. Anything invalid — an
+        /// out-of-range index, an unknown Id, or "modded" with no mod farm installed — falls back
+        /// to Standard with a warning (a config mistake shouldn't abort game creation).
+        /// </summary>
+        private (int whichFarm, ModFarmType? modFarm) ResolveFarmType(FarmTypeSetting setting)
+        {
+            // Normalize the selector to either a vanilla index (0-6) or an AdditionalFarms Id
+            // to look up. Index 7 is a permanent alias for Meadowlands' Id (it ships with the
+            // game, so it's a built-in 0-7 farm regardless of which mods are installed).
+            string? lookupId = null;
+            if (setting.IsModded)
+            {
+                if (setting.IsFirstModFarmKeyword)
+                {
+                    return ResolveFirstModFarm();
+                }
+                if (FarmTypeSetting.TryGetVanillaIndex(setting.Id!, out var namedIndex))
+                {
+                    return (namedIndex, null);
+                }
+                lookupId = setting.Id;
+            }
+            else
+            {
+                var index = setting.Index ?? 0;
+                if (index >= 0 && index < FarmTypeSetting.FirstModdedIndex)
+                {
+                    return (index, null);
+                }
+                if (index == FarmTypeSetting.MeadowlandsIndex)
+                {
+                    lookupId = FarmTypeSetting.MeadowlandsFarmId;
+                }
+                else
+                {
+                    _monitor.Log(
+                        $"Farm type index {index} is not a vanilla farm (0-{FarmTypeSetting.MeadowlandsIndex}); " +
+                        "falling back to Standard. Use a Data/AdditionalFarms Id string to select a mod farm.",
+                        LogLevel.Warn);
+                    return (0, null);
+                }
+            }
+
+            // Resolve the Id against Data/AdditionalFarms (matched exactly, as the game does).
+            var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
+            var match = additionalFarms?.FirstOrDefault(f => f.Id == lookupId);
+            if (match != null)
+            {
+                return (FarmTypeSetting.FirstModdedIndex, match);
+            }
+
+            _monitor.Log(
+                $"Farm type '{lookupId}' not found in Data/AdditionalFarms; falling back to Standard farm. " +
+                "Check the Id matches the mod's AdditionalFarms entry.", LogLevel.Warn);
+            return (0, null);
+        }
+
+        /// <summary>
+        /// Resolves the "modded" keyword to the first installed mod farm — the first
+        /// Data/AdditionalFarms entry that isn't base-game Meadowlands. Falls back to Standard
+        /// with a warning when no mod farm is present.
+        /// </summary>
+        private (int whichFarm, ModFarmType? modFarm) ResolveFirstModFarm()
+        {
+            var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
+            var modFarm = additionalFarms?.FirstOrDefault(f => f.Id != FarmTypeSetting.MeadowlandsFarmId);
+            if (modFarm != null)
+            {
+                _monitor.Log($"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' resolved to mod farm '{modFarm.Id}'.", LogLevel.Info);
+                return (FarmTypeSetting.FirstModdedIndex, modFarm);
+            }
+
+            _monitor.Log(
+                $"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' was requested but no mod farm is installed " +
+                "(Data/AdditionalFarms has only the base-game Meadowlands); falling back to Standard farm.",
+                LogLevel.Warn);
+            return (0, null);
         }
     }
 }

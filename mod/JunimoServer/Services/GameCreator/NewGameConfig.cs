@@ -6,7 +6,7 @@ namespace JunimoServer.Services.GameCreator
 {
     public class NewGameConfig
     {
-        public int WhichFarm { get; set; } = 0;
+        public FarmTypeSetting WhichFarm { get; set; } = FarmTypeSetting.Default;
         public bool UseSeparateWallets { get; set; } = false;
         public int StartingCabins { get; set; } = 1;
         public string FarmName { get; set; } = "Junimo";
@@ -59,7 +59,7 @@ namespace JunimoServer.Services.GameCreator
         /// Creates a NewGameConfig from API request parameters with sensible defaults.
         /// </summary>
         public static NewGameConfig FromRequest(
-            int farmType = 0, string farmName = "Junimo", int startingCabins = 1,
+            FarmTypeSetting farmType, string farmName = "Junimo", int startingCabins = 1,
             string cabinStrategy = "CabinStack", int maxPlayers = 10,
             float profitMargin = 1.0f, bool? spawnMonstersAtNight = null,
             bool separateWallets = false)

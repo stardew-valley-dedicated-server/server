@@ -108,6 +108,18 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     /output/JunimoServer/JunimoServer.dll \
     /output/openapi.json
 
+# Build the E2E test-fixture farm mod (needs game DLLs, hence built here). It is NOT a
+# loaded mod in normal operation — it's copied into /data/Mods only on servers that opt in
+# via SDVD_TEST_FIXTURE_FARM_MOD (see docker/rootfs/startapp.sh). manifest.json is copied
+# alongside the dll because EnableModDeploy=false leaves it in the project dir, not /output.
+COPY ./tests/fixtures/TestFarmMod /src/tests/fixtures/TestFarmMod
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet build /src/tests/fixtures/TestFarmMod/TestFarmMod.csproj \
+    --configuration ${BUILD_CONFIGURATION} \
+    /p:GamePath=/game \
+    -o /output/TestFarmMod && \
+    cp /src/tests/fixtures/TestFarmMod/manifest.json /output/TestFarmMod/manifest.json
+
 # ============================================================================
 # Stage 4: Final runtime image (no game files, downloads on first run)
 # ============================================================================
@@ -236,6 +248,11 @@ RUN cp -a /tmp/services/. /etc/services.d/ && \
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer
+
+# Stage the E2E test-fixture farm mod OUTSIDE the loaded Mods path. startapp.sh copies it
+# into /data/Mods/TestFarmMod only when SDVD_TEST_FIXTURE_FARM_MOD=true, so it never loads
+# on normal servers (keeping Data/AdditionalFarms vanilla for everyone else).
+COPY --from=mod-builder /output/TestFarmMod /opt/test-fixtures/TestFarmMod
 
 # Copy OpenAPI spec (for extraction via: docker cp or docker run --rm sdvd/server cat /data/openapi.json)
 COPY --from=mod-builder /output/openapi.json /data/openapi.json

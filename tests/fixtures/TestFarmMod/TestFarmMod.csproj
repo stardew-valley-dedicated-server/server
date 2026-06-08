@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>TestFarmMod</AssemblyName>
+    <RootNamespace>TestFarmMod</RootNamespace>
+    <Version>0.1.0</Version>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Test fixture: never auto-deploy to the dev machine's Mods folder, never zip.
+         The compiled output is injected into the container at create time. -->
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pulls in Stardew Valley.dll (ModFarmType) and StardewModdingAPI.dll (Mod, content events)
+         via $(GamePath). The game DLLs are only available inside a Docker build stage that has
+         the game files, so this project is compiled there (docker/Dockerfile TestFarmMod stage),
+         not on the host. -->
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
+  </ItemGroup>
+
+</Project>

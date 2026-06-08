@@ -1,0 +1,9 @@
+{
+  "Name": "JunimoTest Farm Mod",
+  "Author": "JunimoHost",
+  "Version": "0.1.0",
+  "Description": "E2E test fixture: adds a second Data/AdditionalFarms entry so by-Id modded-farm disambiguation can be tested.",
+  "UniqueID": "JunimoHost.TestFarmMod",
+  "EntryDll": "TestFarmMod.dll",
+  "MinimumApiVersion": "3.0.0"
+}

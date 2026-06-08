@@ -82,12 +82,7 @@ namespace JunimoServer.Services.Api
         /// <summary>Current time in 24-hour format (e.g., 1430 = 2:30 PM).</summary>
         public int TimeOfDay { get; set; }
 
-        /// <summary>
-        /// Farm type key as returned by Game1.GetFarmTypeKey().
-        /// Vanilla: "Standard", "Riverland", "Forest", "Hilltop", "Wilderness", "FourCorners", "Beach".
-        /// Meadowlands: "MeadowlandsFarm".
-        /// Modded farms: the mod's farm ID.
-        /// </summary>
+        /// <summary>Farm type key as returned by Game1.GetFarmTypeKey() (a vanilla name, or the farm Id for Data/AdditionalFarms farms).</summary>
         public string FarmTypeKey { get; set; } = "";
 
         /// <summary>Whether the game clock is currently paused (no players connected, or time not passing).</summary>
@@ -479,8 +474,7 @@ namespace JunimoServer.Services.Api
         /// <summary>Farm name.</summary>
         public string FarmName { get; set; } = "";
 
-        /// <summary>Farm type ID (0=Standard, 1=Riverland, 2=Forest, 3=Hilltop, 4=Wilderness, 5=Four Corners, 6=Beach, 7=Meadowlands).</summary>
-        public int FarmType { get; set; }
+        public FarmTypeSetting FarmType { get; set; } = FarmTypeSetting.Default;
 
         /// <summary>Profit margin multiplier (1.0 = normal).</summary>
         public float ProfitMargin { get; set; }
@@ -612,8 +606,8 @@ namespace JunimoServer.Services.Api
     /// </summary>
     public class NewGameRequest
     {
-        /// <summary>Farm type ID (0=Standard, 1=Riverland, 2=Forest, 3=Hilltop, 4=Wilderness, 5=FourCorners, 6=Beach, 7=Meadowlands).</summary>
-        public int? FarmType { get; set; }
+        /// <summary>Absent = use the server's configured farm type.</summary>
+        public FarmTypeSetting? FarmType { get; set; }
 
         /// <summary>Farm name.</summary>
         public string? FarmName { get; set; }

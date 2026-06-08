@@ -217,7 +217,7 @@ public class ServerContainer : IAsyncDisposable
         var savesVolume = $"sdvd-test-saves-{runId}";
         var containerName = $"sdvd-server-{runId}";
 
-        logCallback?.Invoke($"Creating Server {serverIndex} ({options.FarmTypeName} farm)...");
+        logCallback?.Invoke($"Creating Server {serverIndex} (farm {options.FarmType})...");
 
         // Build the server-settings.json bytes injected into the container at start
         // via WithResourceMapping (Testcontainers tar API). No host temp file involved.
@@ -270,6 +270,9 @@ public class ServerContainer : IAsyncDisposable
             .WithEnvironment("DISPLAY_HEIGHT", RecordingPolicy.Height.ToString())
             .WithEnvironment("TEST_FAIL_FAST", options.FailFast.ToString().ToLowerInvariant())
             .WithEnvironment("SDVD_ENV", "test")
+            // Opt-in: copy the image-staged TestFarmMod fixture into /data/Mods at startup
+            // (adds a second Data/AdditionalFarms entry for the by-Id disambiguation test).
+            .WithEnvironment("SDVD_TEST_FIXTURE_FARM_MOD", options.FixtureFarmMod.ToString().ToLowerInvariant())
             // GPU passthrough — per-host, no-op on hosts without GPU
             .WithGpuIfEnabled(host)
             // SYS_TIME capability for GOG Galaxy auth + Docker labels for ownership
@@ -351,7 +354,7 @@ public class ServerContainer : IAsyncDisposable
             game = new
             {
                 farmName = options.FarmName,
-                farmType = options.FarmType,
+                farmType = options.FarmType.ToJsonValue(),
                 profitMargin = options.ProfitMargin,
                 startingCabins = options.StartingCabins,
                 spawnMonstersAtNight = options.SpawnMonstersAtNight
@@ -369,7 +372,7 @@ public class ServerContainer : IAsyncDisposable
 
         var json = JsonConvert.SerializeObject(settings, Formatting.Indented);
 
-        logCallback?.Invoke($"Settings: FarmType={options.FarmType} ({options.FarmTypeName}), Cabins={options.StartingCabins}");
+        logCallback?.Invoke($"Settings: FarmType={options.FarmType}, Cabins={options.StartingCabins}");
 
         return Encoding.UTF8.GetBytes(json);
     }

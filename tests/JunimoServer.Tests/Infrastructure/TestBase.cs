@@ -521,7 +521,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// Suspends health checks during the transition and waits for the server to come back online.
     /// Only valid when the test has an active server lease.
     /// </summary>
-    protected async Task CreateNewGameOnServerAsync(int farmType, string farmName = "Junimo",
+    protected async Task CreateNewGameOnServerAsync(FarmTypeSetting farmType, string farmName = "Junimo",
         int startingCabins = 1, string cabinStrategy = "CabinStack")
     {
         if (Lease == null)

@@ -35,15 +35,17 @@ public class ServerSettingsTests : TestBase
     }
 
     /// <summary>
-    /// Test data for default settings verification.
-    /// Each entry: (settingName, expectedValue, valueExtractor)
+    /// Test data for default settings verification: (settingPath, expectedValue), matched
+    /// against <see cref="GetSettingValue"/>. Expected values must be xUnit-serializable for
+    /// theory discovery, so a non-serializable value type (FarmTypeSetting) is given as its
+    /// scalar string and compared via ToString().
     /// </summary>
     public static IEnumerable<object[]> DefaultSettingsData =>
         new List<object[]>
         {
             // Game settings
             new object[] { "Game.FarmName", "Junimo" },
-            new object[] { "Game.FarmType", 0 },
+            new object[] { "Game.FarmType", "0" },
             new object[] { "Game.ProfitMargin", 1.0f },
             new object[] { "Game.StartingCabins", Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) },
             new object[] { "Game.SpawnMonstersAtNight", "auto" },
@@ -75,7 +77,7 @@ public class ServerSettingsTests : TestBase
         return path switch
         {
             "Game.FarmName" => settings.Game.FarmName,
-            "Game.FarmType" => settings.Game.FarmType,
+            "Game.FarmType" => settings.Game.FarmType.ToString(),
             "Game.ProfitMargin" => settings.Game.ProfitMargin,
             "Game.StartingCabins" => settings.Game.StartingCabins,
             "Game.SpawnMonstersAtNight" => settings.Game.SpawnMonstersAtNight,
