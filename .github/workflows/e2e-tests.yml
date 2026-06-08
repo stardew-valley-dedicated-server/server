@@ -516,7 +516,9 @@ jobs:
 
       # Render the runner's ctrf-report.json (TestRunArtifactWriter.WriteCtrfReport,
       # one per CI invocation) into the job Summary tab. summary-report = pass/fail
-      # table, failed-report = failing tests + errors, test-list-report = full list;
+      # table, failed-report = failing tests + errors. The full test-list-report is
+      # off — it dwarfs the summary with one row per passing test, and failures are
+      # already covered by failed-report.
       # `summary: true` (action default) targets $GITHUB_STEP_SUMMARY. No PR comment —
       # dispatch-only workflow has no PR context. The action defaults exit-on-no-files
       # and exit-on-fail to false, so a missing report (early abort) or failing tests
@@ -530,7 +532,6 @@ jobs:
           report-path: 'TestResults/runs/**/ctrf-report.json'
           summary-report: true
           failed-report: true
-          test-list-report: true
 
       # After the build (which seeds the BuildKit mount), write the updated NuGet
       # mount back for actions/cache to save. Gated on cache-miss only — matches
