@@ -113,8 +113,10 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
 
   // One re-resolve path for both dimensions: when the tree or instance list
   // populates and a deep-link is still unresolved, re-apply the whole route.
+  // The instance arrays are mutated in place (splice/push), so watch .length —
+  // watching the array ref wouldn't fire on an in-place mutation.
   watch(
-    [store.collections, () => store.state.instances, () => store.stoppedInstances],
+    [store.collections, () => store.state.instances?.length, () => store.stoppedInstances.length],
     () => {
       if (pending) applyFromRoute()
     },

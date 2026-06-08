@@ -107,16 +107,22 @@ export function relativeRunPath(runDir: string): string | null {
 
 export function useTestStore(): TestStore {
   const state = reactive<StateSnapshot>(createEmptyState())
-  const { selectedTest, selectedStep, selectedError, selectedTestVersion, selectTest, selectStep, selectError } = useSelectionState()
+  const { selectedTest, selectedStep, selectedError, selectedTestVersion, selectTest: _selectTest, selectStep, selectError } = useSelectionState()
   const isReportMode = ref(false)
 
-  // Set when the store auto-selects a test from a WS event (not a user click), so
-  // useRouteSync can route it with replace instead of push (no history spam). The
-  // route watcher reads and clears it.
+  // Tracks whether the *most recent* selection came from a WS auto-select (vs a
+  // user/route action), so useRouteSync can route it with replace instead of push
+  // (no history spam). Every direct selectTest resets it to false; autoSelect sets
+  // it true. So a hydrate-time autoSelect (which may run before useRouteSync exists)
+  // can't poison a later user selection — that selectTest clears the flag first.
   const lastSelectionWasAuto = ref(false)
+  function selectTest(test: TestSnapshot | null) {
+    lastSelectionWasAuto.value = false
+    _selectTest(test)
+  }
   function autoSelect(test: TestSnapshot) {
+    _selectTest(test)
     lastSelectionWasAuto.value = true
-    selectTest(test)
   }
 
   // ── Shallow collections: the core perf optimization ──

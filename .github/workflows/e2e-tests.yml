@@ -627,10 +627,16 @@ jobs:
           key="e2e/${branch}/${run_id}"
 
           # Fill the report's absolute OG sentinels before upload (only this step
-          # knows the public URL). # delimiter since URLs contain /.
+          # knows the public URL). # delimiter since URLs contain /. Escape the
+          # sed delimiter, &, and \ on the replacement side — a branch name can
+          # still contain those after the slash-sanitize above, and they'd
+          # otherwise terminate the s### or expand to the matched text.
+          esc() { printf '%s' "$1" | sed 's/[#&\\]/\\&/g'; }
+          og_url=$(esc "${R2_PUBLIC_BASE_URL%/}/${key}/index.html")
+          og_image=$(esc "${R2_PUBLIC_BASE_URL%/}/${key}/og-image.png")
           sed -i \
-            -e "s#__OG_URL__#${R2_PUBLIC_BASE_URL%/}/${key}/index.html#g" \
-            -e "s#__OG_IMAGE__#${R2_PUBLIC_BASE_URL%/}/${key}/og-image.png#g" \
+            -e "s#__OG_URL__#${og_url}#g" \
+            -e "s#__OG_IMAGE__#${og_image}#g" \
             "$report_dir/index.html"
 
           # sync sets each object's Content-Type from its extension (so index.html

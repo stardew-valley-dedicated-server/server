@@ -182,8 +182,11 @@ public sealed class ReportGenerator
             Console.Error.WriteLine("[WebUI] Warning: META marker block not found — meta tags left as built defaults.");
             return html;
         }
+        // MatchEvaluator (not a replacement string) so a `$` in the meta HTML
+        // — e.g. from a git branch/sha — isn't parsed as a regex group token.
+        var tags = BuildMetaTags(summary);
         return Regex.Replace(html, $"{Regex.Escape(begin)}.*?{Regex.Escape(end)}",
-            BuildMetaTags(summary), RegexOptions.Singleline);
+            _ => tags, RegexOptions.Singleline);
     }
 
     private static string BuildMetaTags(RunSummary s)
