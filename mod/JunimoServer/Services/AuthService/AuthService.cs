@@ -36,6 +36,13 @@ namespace JunimoServer.Services.Auth
         private static SteamHelper _pendingSteamHelper;
         private static bool _galaxyInitComplete;
 
+        // Diagnostic-only: count GameServer-mode Galaxy auth-lost / state-change callbacks so a
+        // full-NIC-outage repro can tell whether the closed-source Galaxy SDK re-fires them after
+        // reconnect. That single observation decides the Galaxy-reinit fix (callback-driven if it
+        // re-fires, poll-based if it doesn't). Game thread only; remove once the design is chosen.
+        private static int _galaxyAuthLostCount;
+        private static int _galaxyStateChangeCount;
+
         // Use constants from SteamConstants for consistency
         private static string ServerName => SteamConstants.DefaultServerName;
         private static long FallbackSteamId => SteamConstants.FallbackSteamId;
@@ -66,6 +73,13 @@ namespace JunimoServer.Services.Auth
         /// Whether lobby creation has been attempted
         /// </summary>
         private static bool _lobbyCreationAttempted;
+
+        /// <summary>
+        /// Bumped on every Steam-session invalidation. A Task.Run captures it at its
+        /// game-thread spawn site and commits its lobby result only if the value still
+        /// matches — so a task from a torn-down session can't overwrite fresh state.
+        /// </summary>
+        private static volatile int _steamSessionGeneration;
 
         /// <summary>
         /// When true, UpdateGalaxyLobbyWithSteamLobbyId will be called from the main thread
@@ -163,6 +177,22 @@ namespace JunimoServer.Services.Auth
             }
         }
 
+        /// <summary>
+        /// Clears cached Steam-lobby state on session loss so reconnect re-creates the lobby
+        /// instead of early-returning on the stale _lobbyCreationAttempted latch. Bump must come
+        /// first so an in-flight Task.Run sees the new generation. _galaxyInitComplete is left set:
+        /// the Galaxy dispatch loop is gated on it and nothing re-inits Galaxy to flip it back.
+        /// </summary>
+        private static void OnSteamServersLost()
+        {
+            _monitor.Log("Steam session lost — invalidating cached Steam lobby state", LogLevel.Warn);
+            _steamSessionGeneration++;
+            _steamLobbyId = 0;
+            _lobbyCreationAttempted = false;
+            _lastSteamLobbyPrivacy = null;
+            _pendingGalaxyLobbyUpdate = false;
+        }
+
         public GalaxyAuthService(
             IMonitor monitor,
             IModHelper helper,
@@ -181,6 +211,9 @@ namespace JunimoServer.Services.Auth
 
             // Subscribe to Steam ID assignment event to create lobby at the right time
             SteamGameServerService.OnServerSteamIdReceived += OnServerSteamIdReceived;
+
+            // Invalidate cached Steam lobby state on session loss so reconnect rebuilds it
+            SteamGameServerService.OnSteamServersLost += OnSteamServersLost;
 
             // Handle race condition: If Steam ID was already received before we subscribed,
             // manually trigger the handler. This ensures Galaxy init happens even if the
@@ -374,6 +407,7 @@ namespace JunimoServer.Services.Auth
             }
 
             _lobbyCreationAttempted = true;
+            var generation = _steamSessionGeneration;
             _monitor.Log($"Creating Steam lobby via steam-auth service, GameServer ID: {gameServerSteamId}", LogLevel.Info);
 
             // Run async to avoid blocking
@@ -402,6 +436,11 @@ namespace JunimoServer.Services.Auth
                     {
                         if (ulong.TryParse(result.lobby_id, out var lobbyId))
                         {
+                            if (generation != _steamSessionGeneration)
+                            {
+                                _monitor.Log($"Discarding Steam lobby {lobbyId} from invalidated session (gen {generation}, current {_steamSessionGeneration})", LogLevel.Warn);
+                                return;
+                            }
                             _steamLobbyId = lobbyId;
                             _monitor.Log($"Steam lobby created via HTTP: {_steamLobbyId}", LogLevel.Info);
                             Diagnostics.ModEventLog.Emit("auth_steam_lobby_created", new
@@ -495,8 +534,10 @@ namespace JunimoServer.Services.Auth
         /// Recreates the Steam lobby after it was lost (e.g., NoMatch from Steam).
         /// Uses the same parameters as the original CreateSteamLobbyViaHttpAsync.
         /// Returns true if the lobby was successfully recreated.
+        /// <paramref name="capturedGeneration"/> is captured by the caller — both already run
+        /// inside a Task.Run, so capturing here would itself race OnSteamServersLost.
         /// </summary>
-        private static bool RecreateSteamLobby()
+        private static bool RecreateSteamLobby(int capturedGeneration)
         {
             try
             {
@@ -529,6 +570,11 @@ namespace JunimoServer.Services.Auth
 
                 if (result != null && !string.IsNullOrEmpty(result.lobby_id) && ulong.TryParse(result.lobby_id, out var newLobbyId))
                 {
+                    if (capturedGeneration != _steamSessionGeneration)
+                    {
+                        _monitor.Log($"Discarding recreated Steam lobby {newLobbyId} from invalidated session", LogLevel.Warn);
+                        return false;
+                    }
                     _steamLobbyId = newLobbyId;
                     _lastSteamLobbyPrivacy = null; // Reset cached privacy; new lobby needs fresh setup
                     _monitor.Log($"Steam lobby recreated: {_steamLobbyId}", LogLevel.Info);
@@ -576,6 +622,8 @@ namespace JunimoServer.Services.Auth
             // Optimistically cache so repeated calls from the game loop don't queue redundant work
             _lastSteamLobbyPrivacy = privacy;
 
+            var generation = _steamSessionGeneration; // captured on the game thread; see field doc
+
             // Run off the game thread. HTTP calls with retries would block for 7+ seconds.
             Task.Run(() =>
             {
@@ -597,7 +645,7 @@ namespace JunimoServer.Services.Auth
                     _lastSteamLobbyPrivacy = null; // Reset cache: lobby lost, need to retry on next call
                     _monitor.Log($"Steam lobby lost (NoMatch), attempting to recreate...", LogLevel.Warn);
 
-                    if (RecreateSteamLobby())
+                    if (RecreateSteamLobby(generation))
                     {
                         // Retry with the new lobby ID
                         try
@@ -636,6 +684,8 @@ namespace JunimoServer.Services.Auth
                 return;
             }
 
+            var generation = _steamSessionGeneration; // captured on the game thread; see field doc
+
             // Run off the game thread. HTTP calls with retries would block for 7+ seconds.
             Task.Run(() =>
             {
@@ -655,7 +705,7 @@ namespace JunimoServer.Services.Auth
                 {
                     _monitor.Log($"Steam lobby lost (NoMatch) while setting '{key}', attempting to recreate...", LogLevel.Warn);
 
-                    if (RecreateSteamLobby())
+                    if (RecreateSteamLobby(generation))
                     {
                         try
                         {
@@ -871,8 +921,15 @@ namespace JunimoServer.Services.Auth
 
             Action onLost = () =>
             {
-                _monitor.Log("Galaxy auth lost", LogLevel.Error);
-                Diagnostics.ModEventLog.Emit("auth_galaxy_lost", new { mode = "gameServer" });
+                var count = ++_galaxyAuthLostCount;
+                // Warn (not Error): a re-fire here is the signal we want, and Error trips test cancellation.
+                _monitor.Log($"Galaxy auth lost (GameServer mode), invocation #{count}", LogLevel.Warn);
+                Diagnostics.ModEventLog.Emit("auth_galaxy_lost", new
+                {
+                    mode = "gameServer",
+                    invocation = count,
+                    networkingSet = steamHelper.Networking != null
+                });
                 if (steamHelper.Networking == null)
                 {
                     SetSteamNetworking(steamHelper, CreateSteamNetHelper());
@@ -893,6 +950,22 @@ namespace JunimoServer.Services.Auth
 
             var onStateChange = new Action<uint>((operationalState) =>
             {
+                // Diagnostic: log BEFORE the early-return so a recovery state-change (which arrives
+                // with Networking already set, and would otherwise be dropped silently) is still
+                // observable. networkingSet distinguishes first-login from a post-reconnect re-fire.
+                var count = ++_galaxyStateChangeCount;
+                var networkingSet = steamHelper.Networking != null;
+                _monitor.Log($"Galaxy state change (GameServer mode) #{count}: state=0x{operationalState:X}, networkingSet={networkingSet}", LogLevel.Debug);
+                Diagnostics.ModEventLog.Emit("auth_galaxy_state_change", new
+                {
+                    mode = "gameServer",
+                    invocation = count,
+                    operationalState,
+                    signedIn = (operationalState & 1) != 0,
+                    loggedOn = (operationalState & 2) != 0,
+                    networkingSet
+                });
+
                 if (steamHelper.Networking != null)
                     return;
 

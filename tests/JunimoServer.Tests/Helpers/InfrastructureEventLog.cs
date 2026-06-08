@@ -116,6 +116,9 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>auth_steam_sidecar_ready</c> · <c>auth_steam_sidecar_unreachable</c>
 /// (<c>exceptionType, message</c>) · <c>auth_galaxy_success</c> /
 /// <c>auth_galaxy_failed</c> (<c>reason</c>) / <c>auth_galaxy_lost</c>
+/// (<c>invocation, networkingSet</c>) · <c>auth_galaxy_state_change</c>
+/// (<c>invocation, operationalState, signedIn, loggedOn, networkingSet</c>;
+/// diagnostic — observes whether the Galaxy SDK re-fires after reconnect)
 /// (each optionally carries <c>mode:"gameServer"</c>).</item>
 ///
 /// <item><b>Mod role changes (RoleService)</b>:
@@ -138,7 +141,10 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>steam_p2p_connect_failed</c> (mod, SteamGameServerNetServer:
 /// <c>clientSteamId, reason?, relayedVia?, endReason?, debug?</c>) ·
 /// <c>steam_callback_error</c> (mod, throttled: <c>callback, exceptionType,
-/// message</c>) · <c>steam_account_allocated</c> / <c>steam_account_released</c> /
+/// message</c>) · <c>steam_session_lost</c> (mod, GameServer disconnect:
+/// <c>result</c>) / <c>steam_session_connected</c> (first connect + every
+/// auto-reconnect: <c>steamId, connectNumber, isReconnect</c>) ·
+/// <c>steam_account_allocated</c> / <c>steam_account_released</c> /
 /// <c>steam_account_pool_insufficient</c> (<c>kind:"server"|"client", index?,
 /// remaining?, available?, totalSize?, inUse?</c>) ·
 /// <c>steam_account_release_error</c> (ClientPool release path).</item>
