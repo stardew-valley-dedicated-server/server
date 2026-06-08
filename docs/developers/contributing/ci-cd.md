@@ -175,10 +175,12 @@ A PR sitting in the queue shows **`AWAITING_CHECKS`** while its merge-group buil
 
 ### Why Validate Merge Group is a separate workflow
 
-The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, and `Validate Line Endings` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all three under the same names. It runs the same commitlint, Docker build, and line-ending scan, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
+The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, `Validate Line Endings`, and `Validate PR Title` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all four under the same names. The first three run the same commitlint, Docker build, and line-ending scan, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
+
+`Validate PR Title` is the exception: there is nothing to re-lint in the queue. The `merge_group` payload carries no `pull_request.title`, the title is immutable once a PR is queued (it was already linted at PR time), and the queue branch holds the PR's original commits — not the squash subject — so `Validate Commits` doesn't cover it either. Its merge-group job is therefore a no-op that exists only to report the required status; without it the queue would wait on the title check forever.
 
 ::: warning
-All three required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too.
+All four required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`, `Validate PR Title`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too — even if, like the title check, the merge-group job is only a stub that satisfies the contract.
 :::
 
 ## CodeQL Pipeline
