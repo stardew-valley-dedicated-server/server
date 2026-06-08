@@ -32,6 +32,9 @@ export interface TestStore {
   selectedTest: TestSnapshot | null
   selectedStep: SetupStepSnapshot | null
   selectedError: ErrorSnapshot | null
+  /** True when the most recent selection came from a WS auto-select, not a user
+   *  action. Read+cleared by useRouteSync to choose replace over push. */
+  lastSelectionWasAuto: Ref<boolean>
   isConnected: boolean
   connectionError: string | null
   isReportMode: boolean
@@ -106,6 +109,15 @@ export function useTestStore(): TestStore {
   const state = reactive<StateSnapshot>(createEmptyState())
   const { selectedTest, selectedStep, selectedError, selectedTestVersion, selectTest, selectStep, selectError } = useSelectionState()
   const isReportMode = ref(false)
+
+  // Set when the store auto-selects a test from a WS event (not a user click), so
+  // useRouteSync can route it with replace instead of push (no history spam). The
+  // route watcher reads and clears it.
+  const lastSelectionWasAuto = ref(false)
+  function autoSelect(test: TestSnapshot) {
+    lastSelectionWasAuto.value = true
+    selectTest(test)
+  }
 
   // ── Shallow collections: the core perf optimization ──
   // The collections tree is stored in a shallowRef. Vue does NOT deep-track
@@ -268,7 +280,7 @@ export function useTestStore(): TestStore {
     // Priority: failed > running > most-recently-finished.
     if (!selectedTest.value) {
       const candidate = findInitialSelection()
-      if (candidate) selectTest(candidate)
+      if (candidate) autoSelect(candidate)
     }
 
     // Sync browser tab title with current state
@@ -453,7 +465,7 @@ export function useTestStore(): TestStore {
             for (const cls of col.classes) {
               for (const test of cls.tests) {
                 if (test.status === 'failed') {
-                  selectTest(test)
+                  autoSelect(test)
                   break outer
                 }
               }
@@ -546,7 +558,7 @@ export function useTestStore(): TestStore {
           markSelectedContentDirty(test)
           // Auto-select first running test if nothing selected
           if (!selectedTest.value) {
-            selectTest(test)
+            autoSelect(test)
           }
         }
         break
@@ -596,7 +608,7 @@ export function useTestStore(): TestStore {
           markTreeDirty()
           markSelectedContentDirty(test)
           // Auto-select failed test (but not canceled ones)
-          if (!isCanceled) selectTest(test)
+          if (!isCanceled) autoSelect(test)
         }
         break
       }
@@ -1308,6 +1320,7 @@ export function useTestStore(): TestStore {
     set selectedStep(v) { selectedStep.value = v },
     get selectedError() { return selectedError.value },
     set selectedError(v) { selectedError.value = v },
+    lastSelectionWasAuto,
     get isConnected() { return ws?.isConnected.value ?? false },
     get connectionError() { return ws?.connectionError.value ?? null },
     get isReportMode() { return isReportMode.value },

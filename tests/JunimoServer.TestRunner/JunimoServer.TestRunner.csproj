@@ -21,6 +21,10 @@
     <ProjectReference Include="..\JunimoServer.Tests\JunimoServer.Tests.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\fonts\Inter-SemiBold.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The ASP.NET Core FrameworkReference absorbs Microsoft.Extensions.* transitive
        dependencies and prevents them from being copied to output. But xUnit loads the
        test assembly without ASP.NET Core framework probing, so those DLLs must exist

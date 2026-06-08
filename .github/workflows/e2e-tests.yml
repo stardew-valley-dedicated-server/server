@@ -626,6 +626,13 @@ jobs:
           run_id=$(basename "$(dirname "$report_dir")")
           key="e2e/${branch}/${run_id}"
 
+          # Fill the report's absolute OG sentinels before upload (only this step
+          # knows the public URL). # delimiter since URLs contain /.
+          sed -i \
+            -e "s#__OG_URL__#${R2_PUBLIC_BASE_URL%/}/${key}/index.html#g" \
+            -e "s#__OG_IMAGE__#${R2_PUBLIC_BASE_URL%/}/${key}/og-image.png#g" \
+            "$report_dir/index.html"
+
           # sync sets each object's Content-Type from its extension (so index.html
           # renders rather than downloads). 30-day retention is a one-time R2 bucket
           # lifecycle rule (operator setup), not a per-run prune here.

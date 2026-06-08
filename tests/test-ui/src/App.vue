@@ -3,6 +3,7 @@ import { provide, ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { Icon } from '@iconify/vue';
 import { useTestStore } from "./composables/useTestStore";
 import { useInspectNavigation } from "./composables/useInspectNavigation";
+import { useRouteSync } from "./composables/useRouteSync";
 import TestTree from "./components/TestTree.vue";
 import StatusBar from "./components/StatusBar.vue";
 import AbortBanner from "./components/AbortBanner.vue";
@@ -110,6 +111,10 @@ const activeView = ref<"tests" | "vnc">(prefs.activeView);
 provide("activeView", activeView);
 
 watch(activeView, saveLayoutPrefs);
+
+// Two-way URL <-> state sync (deep-linking). Hosted here because store, inspect,
+// and activeView all live in this setup scope. No <router-view>; see useRouteSync.
+useRouteSync(store, inspect, activeView);
 
 // Shared filter trigger: StatusBar sets this, TestTree reacts to it
 const filterToStatus = ref<string | null>(null);
