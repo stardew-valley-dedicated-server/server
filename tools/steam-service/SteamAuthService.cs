@@ -1558,12 +1558,18 @@ public class SteamAuthService
 
         var metadata = BuildLobbyMetadata(gameServerSteamId, protocolVersion);
 
-        var createResult = await _matchmaking!.CreateLobby(
+        // CreateLobby returns AsyncJob<CreateLobbyCallback>? (nullable); guard the job
+        // before awaiting, since `await job` would NRE on null. (The SetLobbyData sites
+        // instead await first and null-check the resulting callback — both guard null,
+        // just at different points.)
+        var createJob = _matchmaking.CreateLobby(
             appId: appId,
             lobbyType: ELobbyType.Public,
             maxMembers: maxMembers,
             lobbyFlags: 0,
             metadata: metadata) ?? throw new Exception("CreateLobby returned null");
+
+        var createResult = await createJob;
 
         if (createResult.Result != EResult.OK)
             throw new Exception($"Failed to create lobby: {createResult.Result}");
