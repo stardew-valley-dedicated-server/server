@@ -180,6 +180,4 @@ jobs:
       id-token: write
       actions: read
     uses: ./.github/workflows/deploy-docs.yml
-    with:
-      version: latest
     secrets: inherit

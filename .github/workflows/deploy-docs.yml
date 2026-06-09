@@ -2,11 +2,6 @@ name: Deploy Documentation
 
 on:
   workflow_call:
-    inputs:
-      version:
-        description: 'Which version was just built (latest or preview)'
-        required: true
-        type: string
   workflow_dispatch:
     inputs:
       rebuild_latest:
@@ -132,99 +127,130 @@ jobs:
           if_no_artifact_found: warn
           allow_forks: false
 
-      - name: Check artifacts exist
+      # deploy-pages replaces the WHOLE site, so a half not rebuilt this run is restored from
+      # the currently-live site (the last github-pages artifact deploy-docs uploaded). The next
+      # step extracts the inner artifact.tar; ignore = tolerate it being absent/expired.
+      - name: Download live site snapshot
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        with:
+          workflow: deploy-docs.yml
+          # Only runs on the default branch actually deploy to live Pages — a dispatch
+          # on a feature branch can leave a github-pages artifact that was never deployed.
+          branch: ${{ github.event.repository.default_branch }}
+          name: github-pages
+          path: live
+          if_no_artifact_found: ignore
+          allow_forks: false
+
+      - name: Restore missing halves and decide deploy
         id: check
         run: |
-          VERSION="${{ inputs.version }}"
-          HAS_LATEST=false
-          HAS_PREVIEW=false
+          set -euo pipefail
 
-          # Check for latest docs
-          if [ -d "dist" ] && [ -n "$(ls -A dist 2>/dev/null | grep -v preview)" ]; then
-            echo "Latest docs: $(du -sh dist --exclude=dist/preview 2>/dev/null | cut -f1 || du -sh dist | cut -f1)"
-            HAS_LATEST=true
+          # Extract the live snapshot (upload-pages-artifact tars uncompressed: tar -cvf).
+          if [ -f live/artifact.tar ]; then
+            mkdir -p live/site && tar -xf live/artifact.tar -C live/site
           fi
 
-          # Check for preview docs
-          if [ -d "dist/preview" ] && [ -n "$(ls -A dist/preview 2>/dev/null)" ]; then
-            echo "Preview docs: $(du -sh dist/preview | cut -f1)"
-            HAS_PREVIEW=true
+          # A dir counts as having content only if it holds at least one entry.
+          has_root() { [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null | grep -v '^preview$')" ]; }
+          has_dir()  { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; }
+
+          # Latest = site root (everything except preview/); preview = dist/preview/.
+          # Each half: keep what this run built, else restore it from the live snapshot, else none.
+          if has_root; then
+            LATEST_SRC=this-run
+          elif has_dir live/site; then
+            shopt -s dotglob nullglob
+            mkdir -p dist
+            LATEST_SRC=none
+            for e in live/site/*; do
+              [ "$(basename "$e")" = preview ] && continue
+              cp -R "$e" dist/
+              LATEST_SRC=live
+            done
+          else
+            LATEST_SRC=none
           fi
 
-          echo "has_latest=$HAS_LATEST" >> $GITHUB_OUTPUT
-          echo "has_preview=$HAS_PREVIEW" >> $GITHUB_OUTPUT
-
-          # Latest docs are required for deployment (main site content)
-          if [ "$HAS_LATEST" != "true" ]; then
-            echo "::warning::No docs-latest artifact found. The artifact may have expired (14 day retention)."
-            echo "::warning::Skipping deployment. To fix: Run deploy-docs workflow manually with rebuild_latest=true, or trigger a release."
-            echo "should_deploy=false" >> $GITHUB_OUTPUT
-            exit 0
+          if has_dir dist/preview; then
+            PREVIEW_SRC=this-run
+          elif has_dir live/site/preview; then
+            mkdir -p dist/preview
+            cp -R live/site/preview/. dist/preview/
+            PREVIEW_SRC=live
+          else
+            PREVIEW_SRC=none
           fi
 
-          # Preview docs are optional but warn if missing
-          if [ "$HAS_PREVIEW" != "true" ]; then
-            echo "::warning::No preview docs artifact found. Preview docs will not be available."
-          fi
+          echo "latest=$LATEST_SRC preview=$PREVIEW_SRC"
+          echo "latest_src=$LATEST_SRC" >> "$GITHUB_OUTPUT"
+          echo "preview_src=$PREVIEW_SRC" >> "$GITHUB_OUTPUT"
 
-          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          # Latest (site root) is required: deploy-pages replaces the whole site, so deploying
+          # without it would wipe the live root. If it's neither built this run nor recoverable
+          # from the live snapshot (artifact expired after >14d quiet), fail loudly rather than
+          # publish an empty root — re-run with rebuild_latest=true to repopulate it.
+          if [ "$LATEST_SRC" = none ]; then
+            echo "::error::Latest docs missing and not recoverable from the live site (artifact likely expired)."
+            echo "::error::Refusing to deploy — that would wipe the live root. Re-run with rebuild_latest=true."
+            exit 1
+          fi
+          if [ "$PREVIEW_SRC" = none ]; then
+            echo "::warning::Deploying LATEST ONLY — dist/preview/ absent this deploy."
+          fi
 
       - name: Setup Pages
-        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      # The backfill above re-downloads this artifact, so it must outlive a deploy gap.
+      # Default 1d is too short; 14d matches the docs-latest / docs-preview window.
       - name: Upload merged artifact
-        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
+          retention-days: 14
 
       - name: Deploy to GitHub Pages
         id: deployment
-        if: steps.check.outputs.should_deploy == 'true'
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
       - name: Build summary
-        if: steps.check.outputs.should_deploy == 'true'
         run: |
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Versions deployed:**" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.check.outputs.has_latest }}" == "true" ]; then
-            echo "- Latest: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ "${{ steps.check.outputs.has_preview }}" == "true" ]; then
-            echo "- Preview: ${{ steps.deployment.outputs.page_url }}preview/" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Skipped summary
-        if: steps.check.outputs.should_deploy != 'true'
-        run: |
-          echo "### Documentation Deployment Skipped" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "No docs-latest artifact was found. This can happen when:" >> $GITHUB_STEP_SUMMARY
-          echo "- The artifact expired (14 day retention)" >> $GITHUB_STEP_SUMMARY
-          echo "- No release has been published yet" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**To fix:** Run the deploy-docs workflow manually with \`rebuild_latest=true\`, or trigger a release." >> $GITHUB_STEP_SUMMARY
+          echo "| Half | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          # *_src: this-run (built now) | live (preserved from last deploy) | none (omitted — preview only).
+          status() { case "$1" in this-run) echo "Deployed";; live) echo "Preserved from live site";; *) echo "Not included this deploy";; esac; }
+          echo "| Latest | $(status '${{ steps.check.outputs.latest_src }}') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Preview | $(status '${{ steps.check.outputs.preview_src }}') |" >> $GITHUB_STEP_SUMMARY
 
       - name: Discord notification
-        if: success() && steps.check.outputs.should_deploy == 'true'
+        if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          LATEST_STATE: ${{ steps.check.outputs.latest_src }}
+          PREVIEW_STATE: ${{ steps.check.outputs.preview_src }}
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
+            # Same mapping as the job summary's status().
+            label() { case "$1" in this-run) echo "Deployed";; live) echo "Preserved from live site";; *) echo "Not included";; esac; }
             jq -n \
               --arg url "$PAGE_URL" \
+              --arg latest "$(label "$LATEST_STATE")" \
+              --arg preview "$(label "$PREVIEW_STATE")" \
               '{
                 embeds: [{
                   title: "Documentation Updated",
                   color: 3447003,
                   fields: [
-                    {name: "View Docs", value: "[stardew-valley-dedicated-server.github.io/server](\($url))"}
+                    {name: "View Docs", value: "[stardew-valley-dedicated-server.github.io/server](\($url))"},
+                    {name: "Latest", value: $latest, inline: true},
+                    {name: "Preview", value: $preview, inline: true}
                   ]
                 }]
               }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
