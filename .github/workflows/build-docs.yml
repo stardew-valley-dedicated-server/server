@@ -31,12 +31,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # The spec is baked into the image at build time. Older images (e.g. a stale :latest
+      # from before the API feature) lack it — fall back to the placeholder so the docs still
+      # build (the API section renders empty until a release republishes the spec).
       - name: Extract OpenAPI spec from Docker image
         run: |
+          mkdir -p docs/assets
           docker pull sdvd/server:${{ inputs.image_tag }}
           CONTAINER_ID=$(docker create sdvd/server:${{ inputs.image_tag }})
-          mkdir -p docs/assets
-          docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json
+          if docker cp "$CONTAINER_ID:/data/openapi.json" docs/assets/openapi.json; then
+            echo "Extracted OpenAPI spec from sdvd/server:${{ inputs.image_tag }}"
+          else
+            echo "::warning::sdvd/server:${{ inputs.image_tag }} has no /data/openapi.json — using placeholder (API section will be empty)."
+            cp docs/assets/openapi.placeholder.json docs/assets/openapi.json
+          fi
           docker rm "$CONTAINER_ID"
 
       - name: Setup Bun

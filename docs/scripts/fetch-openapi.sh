@@ -16,9 +16,13 @@ OUTPUT="$SCRIPT_DIR/../assets/openapi.json"
 
 echo "Extracting OpenAPI spec from $IMAGE..."
 
-# Create a temporary container, copy the file, then remove container
+# Create a temporary container, copy the file, then remove container. Older images may lack
+# the spec — fall back to the placeholder so the docs still build (API section renders empty).
 CONTAINER_ID=$(docker create "$IMAGE")
-docker cp "$CONTAINER_ID:/data/openapi.json" "$OUTPUT"
+if docker cp "$CONTAINER_ID:/data/openapi.json" "$OUTPUT"; then
+    echo "OpenAPI spec saved to $OUTPUT"
+else
+    echo "WARNING: $IMAGE has no /data/openapi.json — using placeholder (API section will be empty)."
+    cp "$SCRIPT_DIR/../assets/openapi.placeholder.json" "$OUTPUT"
+fi
 docker rm "$CONTAINER_ID" > /dev/null
-
-echo "OpenAPI spec saved to $OUTPUT"

@@ -1,0 +1,9 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Stardew Dedicated Server API",
+    "description": "The API specification is generated from the server image at build time and was not available for this build. It will appear once a release republishes the spec.",
+    "version": "unavailable"
+  },
+  "paths": {}
+}
