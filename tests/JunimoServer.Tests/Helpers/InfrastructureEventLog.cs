@@ -96,7 +96,11 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>clearedUserId, ownerUniqueMultiplayerId</c>) ·
 /// <c>cabin_claims_swept_on_load</c> (save-load sweep summary, emitted only when it
 /// released at least one claim: <c>cleared</c>) · <c>cabin_strategy_migration</c>
-/// (<c>fromStrategy, toStrategy, migrated, migrateFailed</c>) ·
+/// (success path: <c>fromStrategy, toStrategy, migrated</c>) ·
+/// <c>cabin_strategy_migration_aborted</c> (Stacked→None migration pre-validation
+/// found fewer designated positions than hidden cabins; no cabin moved and strategy
+/// reverted: <c>fromStrategy, toStrategy, hiddenCabinCount, availablePositionCount,
+/// deficit, reason:"insufficient_designated_positions"</c>) ·
 /// <c>farmhand_references_cleaned</c> (save-load stale-ref cleanup:
 /// <c>orphansRemoved, homeCleared, lastSleepCleared, validCabins</c>).</item>
 ///
