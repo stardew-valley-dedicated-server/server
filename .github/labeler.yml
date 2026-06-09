@@ -17,3 +17,7 @@ ci:
 tools:
   - changed-files:
       - any-glob-to-any-file: "tools/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"

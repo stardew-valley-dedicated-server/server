@@ -7,7 +7,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 | Pipeline | Trigger | Purpose |
 |----------|---------|---------|
 | [Build Release](#build-release-pipeline) | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
-| [Build Preview](#build-preview-pipeline) | Push to `master` | Builds and publishes preview Docker images |
+| [Build Preview](#build-preview-pipeline) | Manual `workflow_dispatch`, or push to `master` when `AUTO_BUILD_PREVIEW=true` | Builds and publishes preview Docker images |
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
@@ -56,7 +56,12 @@ docker pull sdvd/server:1.5.0
 Preview builds may contain experimental features or bugs. Use stable releases for production servers.
 :::
 
-The preview build pipeline runs on every push to `master` (except docs-only or test-only changes) and creates pre-release Docker images for testing new features before they're officially released.
+The preview build pipeline creates pre-release Docker images for testing new features before they're officially released. It runs two ways:
+
+- **Manually** — a maintainer triggers it from **Actions → Build Preview → Run workflow** (`workflow_dispatch`). This always runs.
+- **Automatically on push to `master`** (except docs-only or test-only changes) — but **only when the `AUTO_BUILD_PREVIEW` repository variable is set to `true`**. It is unset by default, so merges do **not** auto-publish a preview unless a maintainer opts in. This avoids a throwaway preview image per merge.
+
+A `gate` job enforces this: a manual run skips the variable check, while a push run proceeds only if `AUTO_BUILD_PREVIEW == 'true'`. When the gate is skipped, the whole workflow is skipped (every job roots at it). Set the variable under **Settings → Secrets and variables → Actions → Variables**.
 
 ### Preview Versioning
 
@@ -86,21 +91,20 @@ services:
 
 ### Batching Features
 
-You can merge multiple features before releasing:
+You can merge multiple features before releasing. The release-please Release PR accumulates on every merge regardless of how previews are built:
 
 ```
-Day 1: Merge feat A → 1.1.0-preview.1 published
-       Release PR created (1.0.2 → 1.1.0)
+Day 1: Merge feat A → Release PR created (1.0.2 → 1.1.0)
+Day 2: Merge feat B → Release PR updated (1.0.2 → 1.2.0)
 
-Day 2: Merge feat B → 1.2.0-preview.2 published
-       Release PR updated (1.0.2 → 1.2.0)
-
-Day 3: Test preview.2 thoroughly
+Day 3: Get a preview to test — either dispatch Build Preview,
+       or (with AUTO_BUILD_PREVIEW=true) it auto-published on each merge.
+       Test 1.2.0-preview.N thoroughly.
 
 Day 4: Merge Release PR → v1.2.0 released
 ```
 
-The Release PR automatically updates as you merge more commits.
+The Release PR automatically updates as you merge more commits; the preview counter `N` increments on each preview build for the same target version, whether that build was dispatched manually or auto-triggered on push.
 
 ## Cleanup Preview Tags
 

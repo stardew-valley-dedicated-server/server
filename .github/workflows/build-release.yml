@@ -74,8 +74,8 @@ jobs:
             steam_username=${{ secrets.STEAM_USERNAME }}
             steam_password=${{ secrets.STEAM_PASSWORD }}
             steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
 
       - name: Update Docker Hub description
         uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
@@ -106,21 +106,24 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            curl -H "Content-Type: application/json" \
-              -d '{
-                "embeds": [{
-                  "title": "New Release Published",
-                  "color": 5763719,
-                  "fields": [
-                    {"name": "Version", "value": "`${{ needs.release-please.outputs.tag_name }}`"},
-                    {"name": "How to update", "value": "```docker compose pull```"},
-                    {"name": "Release Notes", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }})"}
+            jq -n \
+              --arg tag "$TAG_NAME" \
+              --arg url "$RELEASE_URL" \
+              '{
+                embeds: [{
+                  title: "New Release Published",
+                  color: 5763719,
+                  fields: [
+                    {name: "Version", value: "`\($tag)`"},
+                    {name: "How to update", value: "```docker compose pull```"},
+                    {name: "Release Notes", value: "[View Release](\($url))"}
                   ]
                 }]
-              }' \
-              "$DISCORD_WEBHOOK"
+              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
 
   build-and-publish-steam-service:

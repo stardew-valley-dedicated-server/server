@@ -9,6 +9,7 @@ on:
       - 'tests/**'
       - '*.md'
       - 'LICENSE'
+  workflow_dispatch:
 
 # Prevent multiple builds from running simultaneously
 concurrency:
@@ -18,8 +19,19 @@ concurrency:
 permissions: {}
 
 jobs:
+  # Push auto-builds only when the AUTO_BUILD_PREVIEW repo variable is 'true' (default off,
+  # to avoid a throwaway preview per merge); a manual run always proceeds. calculate-version
+  # depends on this, so a skipped gate cascades a skip to the whole workflow.
+  gate:
+    name: Check auto-preview enabled
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_BUILD_PREVIEW == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building preview (event=${{ github.event_name }})"
+
   calculate-version:
     name: Calculate Version
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -152,8 +164,8 @@ jobs:
             steam_username=${{ secrets.STEAM_USERNAME }}
             steam_password=${{ secrets.STEAM_PASSWORD }}
             steam_refresh_token=${{ secrets.STEAM_REFRESH_TOKEN }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
 
       - name: Update preview tracking tag
         run: |
