@@ -82,6 +82,11 @@ tools/discord-bot/
 └── package.json
 ```
 
+> **Related follow-up:** [`discord-bot-mcp-module.md`](./discord-bot-mcp-module.md) proposes
+> exposing the bot as a first-class MCP server (`src/mcp/`). It is **deferred** and gated on a
+> build-vs-adopt decision, but if both land it should reuse *this* restructure (shared `Client`,
+> token, and the `src/bot/` ↔ `src/api/` split) rather than re-refactoring the single file again.
+
 ### New Dependencies
 
 ```json
