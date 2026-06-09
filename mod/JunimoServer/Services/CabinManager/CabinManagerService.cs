@@ -271,7 +271,6 @@ namespace JunimoServer.Services.CabinManager
             bool toUsesHidden = (to == CabinStrategy.CabinStack || to == CabinStrategy.FarmhouseStack);
 
             int migrated = 0;
-            int migrateFailed = 0;
 
             if (fromUsesHidden && !toUsesHidden)
             {
@@ -280,20 +279,45 @@ namespace JunimoServer.Services.CabinManager
                     .Where(b => b.isCabin && b.IsInHiddenStack())
                     .ToList();
 
+                var availablePositions = FarmCabinPositions.GetAvailablePositions(farm);
+
+                if (hiddenCabins.Count > availablePositions.Count)
+                {
+                    Monitor.Log(
+                        $"CabinStrategy migration {from} → {to} aborted: {hiddenCabins.Count} hidden cabin(s) " +
+                        $"but only {availablePositions.Count} designated position(s) available on this farm map. " +
+                        $"Reverting strategy to {from}. Add cabin positions to the Paths layer or remove " +
+                        $"surplus cabins before retrying.",
+                        LogLevel.Warn);
+
+                    Diagnostics.ModEventLog.Emit("cabin_strategy_migration_aborted", new
+                    {
+                        fromStrategy = from.ToString(),
+                        toStrategy = to.ToString(),
+                        hiddenCabinCount = hiddenCabins.Count,
+                        availablePositionCount = availablePositions.Count,
+                        deficit = hiddenCabins.Count - availablePositions.Count,
+                        reason = "insufficient_designated_positions"
+                    });
+
+                    // Revert the persisted strategy so the on-disk state matches what actually
+                    // happened. RecaptureAndSync already wrote the new strategy to Data and disk
+                    // (via SyncFromSettings → Save) before OnSaveLoaded ran; without this revert,
+                    // the next load captures previous == current == new and never retries.
+                    options.Data.CabinStrategy = from;
+                    options.Save();
+                    return;
+                }
+
                 foreach (var cabin in hiddenCabins)
                 {
                     var nextPos = FarmCabinPositions.GetNextAvailablePosition(farm);
-                    if (nextPos.HasValue)
-                    {
-                        cabin.Relocate(nextPos.Value);
-                        Monitor.Log($"  Migrated cabin to ({nextPos.Value.X}, {nextPos.Value.Y})", LogLevel.Info);
-                        migrated++;
-                    }
-                    else
-                    {
-                        Monitor.Log("  No available farm position for cabin migration", LogLevel.Error);
-                        migrateFailed++;
-                    }
+                    // Pre-validation above guarantees a slot for every hidden cabin: MigrateCabins
+                    // runs synchronously on the game thread inside OnSaveLoaded, no buildStructure
+                    // call can interleave, so the count cannot shrink mid-loop. nextPos is always set.
+                    cabin.Relocate(nextPos.Value);
+                    Monitor.Log($"  Migrated cabin to ({nextPos.Value.X}, {nextPos.Value.Y})", LogLevel.Info);
+                    migrated++;
                 }
             }
             else if (!fromUsesHidden && toUsesHidden)
@@ -313,12 +337,13 @@ namespace JunimoServer.Services.CabinManager
             }
             // Stacked ↔ Stacked: no relocation needed, only warp behavior changes
 
+            // Aborts (insufficient positions) emit cabin_strategy_migration_aborted and
+            // return early, so this success event never carries a failure count.
             Diagnostics.ModEventLog.Emit("cabin_strategy_migration", new
             {
                 fromStrategy = from.ToString(),
                 toStrategy = to.ToString(),
-                migrated,
-                migrateFailed
+                migrated
             });
         }
 

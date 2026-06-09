@@ -67,22 +67,26 @@ namespace JunimoServer.Services.CabinManager
         }
 
         /// <summary>
+        /// Returns all designated cabin positions that are not currently occupied by a building.
+        /// Mirrors the resolution used by GetNextAvailablePosition: if this returns N entries,
+        /// then exactly N successive calls to GetNextAvailablePosition (with no other building
+        /// changes in between) will succeed; the (N+1)th will return null.
+        /// </summary>
+        public static List<Vector2> GetAvailablePositions(Farm farm)
+        {
+            return GetDesignatedPositions(farm)
+                .Where(p => !IsPositionOccupied(farm, p))
+                .ToList();
+        }
+
+        /// <summary>
         /// Returns the next available designated position where no building currently exists.
         /// Returns null if all designated positions are occupied.
         /// </summary>
         public static Vector2? GetNextAvailablePosition(Farm farm)
         {
-            var positions = GetDesignatedPositions(farm);
-
-            foreach (var pos in positions)
-            {
-                if (!IsPositionOccupied(farm, pos))
-                {
-                    return pos;
-                }
-            }
-
-            return null;
+            var available = GetAvailablePositions(farm);
+            return available.Count > 0 ? available[0] : null;
         }
 
         private static bool IsPositionOccupied(Farm farm, Vector2 position)
