@@ -324,12 +324,12 @@ ERROR: failed to prepare extraction snapshot "...": parent snapshot ... does not
 
 This is a known containerd snapshotter bug ([moby/buildkit#6521](https://github.com/moby/buildkit/issues/6521), [containerd/containerd#10835](https://github.com/containerd/containerd/issues/10835)) that became widespread when Docker Desktop defaulted to the containerd image store (Docker 29+). BuildKit's cache holds references to layer snapshots that containerd's GC has already removed, causing the export/unpack phase to fail even though the build itself succeeds.
 
-**Immediate fix:** Clear the stale cache:
+**Workaround:** Clear the stale cache when it bites:
 ```bash
 docker builder prune -f
 ```
 
-**Permanent fix:** Disable the containerd image store in Docker Desktop: **Settings → General → uncheck "Use containerd for pulling and storing images"**, then restart Docker Desktop. This switches back to the classic storage driver which doesn't have this sync issue. There are no practical drawbacks for local development.
+If it keeps recurring, disable the containerd image store in Docker Desktop: **Settings → General → uncheck "Use containerd for pulling and storing images"**, then restart Docker Desktop. That switches back to the classic storage driver, which lacks the sync issue and sidesteps the bug for good. The cost: if you run **multi-host** tests (a remote host in `SDVD_DOCKER_HOSTS`), the classic store makes `docker save` emit uncompressed `layer.tar` (~2.5× larger), so each fresh image transfer to a remote host roughly doubles (see [Image distribution](#image-distribution)). Single-host local runs are unaffected — nothing is saved or transferred.
 
 ### Stale test containers
 
@@ -427,6 +427,8 @@ On Apple Silicon (arm64) hosts, **enable Rosetta** in Docker Desktop → Setting
 ### Image distribution
 
 Test images are built once on the coordinator and shipped to remote hosts via `docker save | ssh docker load`, with a content-hash skip when the daemon already holds matching digests. Transfers run with a concurrency cap of 3 across hosts so a many-host fleet doesn't thrash a single upload pipe. When `docker save | ssh docker load` stops scaling for your fleet, the swap point is `ImageDistributor.cs` only — the next step is a coordinator-hosted Docker registry.
+
+Transfer size is governed by the **coordinator's** image store, not the remote's: `docker save` emits compressed OCI blobs under the containerd image store but uncompressed `layer.tar` (~2.5× larger) under the classic overlay2 store. Enabling the containerd store on the coordinator roughly halves what each host has to receive on a fresh transfer (see the trade-off under [Disable the containerd image store](#docker-build-fails-with-parent-snapshot-does-not-exist)).
 
 ### Tunneling
 
