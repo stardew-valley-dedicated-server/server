@@ -119,7 +119,7 @@ public sealed class CIRenderer : RendererBase
 
                 // Screenshot path
                 if (!string.IsNullOrEmpty(f.ScreenshotPath))
-                    _out.WriteLine($"   Screenshot: {f.ScreenshotPath}");
+                    _out.WriteLine($"   Screenshot: {PathDisplay.ScrubMessage(f.ScreenshotPath)}");
 
                 // Test output (ConnectionHelper logs, etc.), only for failures
                 if (!string.IsNullOrWhiteSpace(fOutput))
