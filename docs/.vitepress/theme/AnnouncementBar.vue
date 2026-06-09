@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { withBase } from "vitepress";
+import { ref, computed, onMounted } from "vue";
+import { withBase, useData } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import ThemeSelector from "./ThemeSelector.vue";
 import VersionSwitcher from "./VersionSwitcher.vue";
+import BuildStamp from "./BuildStamp.vue";
 
 const { Layout } = DefaultTheme;
+
+// The home page has no sidebar, so its build stamp rides under the footer instead.
+const { frontmatter } = useData();
+const isHome = computed(() => frontmatter.value.layout === "home");
 
 const announcementLink = withBase("/admins/operations/upgrading#preview-builds");
 
@@ -62,12 +67,39 @@ function closeAnnouncement() {
             <ThemeSelector :inline="true" />
             <VersionSwitcher :inline="true" />
         </template>
+        <template #sidebar-nav-after>
+            <BuildStamp class="build-stamp-sidebar" />
+        </template>
+        <template #layout-bottom>
+            <BuildStamp v-if="isHome" class="build-stamp-footer" />
+        </template>
     </Layout>
 </template>
 
 <style>
 :root {
     --announcement-height: 42px;
+}
+
+/* Build stamp pinned to the bottom of the sidebar nav.
+   Make the nav a full-height flex column so margin-top:auto pushes the stamp down;
+   the divider + padding align it with the sidebar's own 32px gutter. */
+#VPSidebarNav {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+#VPSidebarNav .build-stamp-sidebar {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--vp-c-divider);
+}
+
+/* Home page has no sidebar — center the stamp under the footer. */
+.build-stamp-footer {
+    text-align: center;
+    padding: 0 24px 32px;
 }
 
 /* Hide version switcher and theme selector in navbar on mobile - they appear in nav-screen instead */

@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import { useSidebar } from "vitepress-openapi";
@@ -13,6 +14,21 @@ const openApiSidebar = useSidebar({ spec, linkPrefix: "/developers/api/" });
 
 export default withMermaid(defineConfig({
     vite: {
+        // Bake the build time into the bundle so the sidebar can show "Last built: …"
+        define: {
+            __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+        },
+        resolve: {
+            alias: [
+                {
+                    // Swap VitePress's locale-dependent "Last updated" for our fixed DD.MM.YY HH:MM format.
+                    find: /^.*\/VPDocFooterLastUpdated\.vue$/,
+                    replacement: fileURLToPath(
+                        new URL("./theme/LastUpdated.vue", import.meta.url),
+                    ),
+                },
+            ],
+        },
         plugins: [
             groupIconVitePlugin({
                 // Add custom icons which are not available otherwise
