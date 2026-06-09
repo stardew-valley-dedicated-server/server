@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.TestRunner.Rendering.Web;
 
@@ -160,7 +161,7 @@ public sealed class ReportGenerator
         var reportPath = Path.Combine(reportDir, "index.html");
         File.WriteAllText(reportPath, html);
 
-        Console.Error.WriteLine($"[WebUI] Static report generated: {reportPath}");
+        Console.Error.WriteLine($"[WebUI] Static report generated: {PathDisplay.ScrubMessage(reportPath)}");
     }
 
     private void CopyRootStatic(string reportDir, string fileName)
@@ -288,7 +289,7 @@ public sealed class ReportGenerator
                 var resolvedPath = ResolveArtifactPath(originalPath, testResultsPath);
                 if (resolvedPath == null || !File.Exists(resolvedPath))
                 {
-                    Console.Error.WriteLine($"[WebUI] Warning: Artifact not found: {originalPath}");
+                    Console.Error.WriteLine($"[WebUI] Warning: Artifact not found: {PathDisplay.ScrubMessage(originalPath)}");
                     continue;
                 }
 
@@ -316,7 +317,7 @@ public sealed class ReportGenerator
                 snapshotJson = snapshotJson.Replace(escapedOld, escapedNew);
             }
 
-            Console.Error.WriteLine($"[WebUI] Exported {replacements.Count} artifacts to {targetDir}");
+            Console.Error.WriteLine($"[WebUI] Exported {replacements.Count} artifacts to {PathDisplay.ScrubMessage(targetDir)}");
         }
         catch (Exception ex)
         {

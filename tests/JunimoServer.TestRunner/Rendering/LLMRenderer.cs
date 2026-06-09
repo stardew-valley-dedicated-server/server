@@ -165,7 +165,7 @@ public sealed class LLMRenderer : RendererBase
             DurationMs = (long)e.Duration.TotalMilliseconds,
             Error = e.Message,
             e.ExceptionType,
-            e.StackTrace,
+            StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null,
             e.ScreenshotPath,
             e.ArtifactId
         });
@@ -206,7 +206,7 @@ public sealed class LLMRenderer : RendererBase
             Event = "error",
             e.Timestamp,
             e.Message,
-            e.StackTrace
+            StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null
         });
     }
 

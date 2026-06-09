@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 using JunimoServer.TestRunner.Rendering.Web;
 using Microsoft.AspNetCore.Builder;
@@ -492,7 +493,7 @@ public sealed class WebRenderer : RendererBase
             var snapshot = _state.ToSnapshotJson();
             snapshot = ReportGenerator.ExportMockArtifacts(snapshot, mockArtifactsDir, testResultsPath);
             File.WriteAllText(mockPath, snapshot);
-            Console.Error.WriteLine($"[WebUI] Mock data written to {mockPath}");
+            Console.Error.WriteLine($"[WebUI] Mock data written to {PathDisplay.ScrubMessage(mockPath)}");
         }
         catch (Exception ex)
         {
