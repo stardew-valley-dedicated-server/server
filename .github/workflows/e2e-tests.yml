@@ -5,7 +5,9 @@
 # set to a VPS-only fleet.
 #
 # FOUR ways in — three manual/maintainer-gated, plus one bounded nightly schedule:
-#   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch.
+#   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch; the
+#      optional `pr` input instead resolves that PR's HEAD (forks included, gated by
+#      `fork-pr`) and posts the same sticky as the comment path.
 #   2. `/run-tests-e2e [filter]` PR comment.
 #   3. the "Re-run E2E tests" checkbox in the bot's results comment (a click in the
 #      PR view; toggling it fires issue_comment: edited).
@@ -19,6 +21,8 @@
 #   - The `gate` job authorizes the commenter via the repo-permission API (write/admin
 #     required; NOT author_association, which is permission-blind). Non-maintainers are
 #     refused before any secret-bearing job runs.
+#   - The `pr`-input dispatch mode needs no explicit permission check: GitHub already gates
+#     workflow_dispatch on repo write, the same bar the commenter check enforces.
 #   - Fork PRs additionally pass through the `fork-pr` Environment approval (mirrors
 #     validate-pr.yml) before the secret-bearing `e2e` job runs — the VPS private key
 #     reaching fork code = root on the test VPS via the docker group.
@@ -44,6 +48,15 @@ on:
     inputs:
       filter:
         description: 'Test filter (xUnit class/method substring). Empty = run the full suite.'
+        required: false
+        default: ''
+      # string, not number: default: '' is invalid on a numeric input.
+      #
+      # TODO: axis-B targeting is `pr`-only today. To add branch/commit/tag targeting later,
+      # add sibling inputs and a precedence rule in the gate (resolve pr → branch → sha → tag);
+      # the e2e checkout already takes a resolved head_sha, so only the gate's resolution grows.
+      pr:
+        description: 'PR number to test (resolves its HEAD; forks require fork-pr approval). Empty = run the selected branch / master.'
         required: false
         default: ''
   # Nightly full-suite run on master so the README E2E badge reflects a real, recent
@@ -117,21 +130,95 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DISPATCH_FILTER: ${{ inputs.filter }}
+          DISPATCH_PR: ${{ inputs.pr }}
         with:
           script: |
             const helper = require('./.github/scripts/e2e-pr-sticky.js');
             const { owner, repo } = context.repo;
 
-            // ---- workflow_dispatch / schedule: trusted, no PR context ----
-            // Both run the default-branch workflow with no PR head; leaving head_sha
-            // unset makes the e2e checkout fall back to the default ref (master).
-            // dispatch may carry a filter input; the nightly schedule always runs the
-            // full suite.
-            if (context.eventName === 'workflow_dispatch' || context.eventName === 'schedule') {
+            // Shared by the issue_comment and dispatch+pr paths so there is ONE pulls.get +
+            // sticky upsert. Refuses a closed/merged PR (GitHub marks merged PRs `closed`) —
+            // returns false, caller bails. `commentId` (issue_comment only) is the comment to
+            // 👀; `requested` flips the sticky's "(requested)" suffix.
+            async function resolveAndQueue({ issueNumber, filter, requested, commentId }) {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data;
+              if (pr.state === 'closed') {
+                core.setFailed(`PR #${issueNumber} is closed/merged — refusing to run.`);
+                core.setOutput('proceed', 'false');
+                return false;
+              }
+              const headRepo = pr.head.repo ? pr.head.repo.full_name : null;
+              const isFork = headRepo !== `${owner}/${repo}`; // null head.repo (deleted fork) => treat as fork
+
+              // 👀 the triggering comment (issue_comment only), then upsert the queued sticky.
+              if (commentId) {
+                await github.rest.reactions.createForIssueComment({ owner, repo, comment_id: commentId, content: 'eyes' });
+              }
+              // Read the sticky LIVE (not from context.payload.comment) on BOTH paths: the
+              // singleton-queue means a prior run's "Update PR sticky" can append a history row
+              // between the checkbox tick and this queued gate's execution, so a payload snapshot
+              // would be stale and overwrite that row away. findSticky reads the settled comment.
+              const existing = await helper.findSticky({ github, owner, repo, issue_number: issueNumber });
+              const history = existing ? helper.readHistory(existing.body) : [];
+              await helper.upsertSticky({
+                github, owner, repo, issue_number: issueNumber, existing,
+                body: helper.renderBody({
+                  status: 'queued', statusEmoji: '🟡',
+                  headline: `Queued for \`${helper.shortSha(pr.head.sha)}\`…`,
+                  filter, history, requested,
+                }),
+              });
+
               core.setOutput('proceed', 'true');
-              core.setOutput('filter', context.eventName === 'workflow_dispatch' ? (process.env.DISPATCH_FILTER || '') : '');
-              core.setOutput('is_fork', 'false');
-              return;
+              core.setOutput('head_sha', pr.head.sha);
+              core.setOutput('head_ref', pr.head.ref);
+              core.setOutput('filter', filter);
+              core.setOutput('pr_number', String(issueNumber));
+              core.setOutput('is_fork', String(isFork));
+              return true;
+            }
+
+            // ---- workflow_dispatch / schedule (both run the trusted default-branch workflow) ----
+            if (context.eventName === 'workflow_dispatch' || context.eventName === 'schedule') {
+              const dispatchPr = (process.env.DISPATCH_PR || '').trim();
+
+              // No-PR path (schedule always; dispatch with empty pr): leaving head_sha unset
+              // makes the e2e checkout fall back to the default ref (master).
+              if (context.eventName === 'schedule' || dispatchPr === '') {
+                core.setOutput('proceed', 'true');
+                core.setOutput('filter', context.eventName === 'workflow_dispatch' ? (process.env.DISPATCH_FILTER || '') : '');
+                core.setOutput('is_fork', 'false');
+                return;
+              }
+
+              // Dispatch WITH pr. The Actions tab requires repo WRITE to fire workflow_dispatch,
+              // so the dispatcher is inherently a maintainer — no isMaintainer call (header comment).
+              if (!/^\d+$/.test(dispatchPr) || Number(dispatchPr) <= 0) {
+                core.setFailed(`Invalid \`pr\` input ${JSON.stringify(dispatchPr)} — must be a positive integer.`);
+                core.setOutput('proceed', 'false');
+                return;
+              }
+              const issueNumber = Number(dispatchPr);
+
+              // Same normalization + validation as the comment path (parseCommand).
+              const filter = (process.env.DISPATCH_FILTER || '').trim().split(/\s+/).filter(Boolean).join(' ');
+              if (!helper.isValidFilter(filter)) {
+                core.setFailed('`filter` input contains disallowed characters.');
+                core.setOutput('proceed', 'false');
+                return;
+              }
+
+              try {
+                await resolveAndQueue({ issueNumber, filter, requested: false });
+              } catch (err) {
+                if (err.status === 404) {
+                  core.setFailed(`PR #${issueNumber} not found.`);
+                  core.setOutput('proceed', 'false');
+                  return;
+                }
+                throw err; // unexpected API error: fail loudly (closed)
+              }
+              return; // resolveAndQueue returning false (closed PR) already set proceed=false
             }
 
             // ---- issue_comment (created command | edited checkbox) ----
@@ -200,40 +287,13 @@ jobs:
               return noop('filter contains disallowed characters');
             }
 
-            // Resolve PR HEAD (the comment payload has the PR number but not the head SHA).
-            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data;
-            const headRepo = pr.head.repo ? pr.head.repo.full_name : null;
-            const isFork = headRepo !== `${owner}/${repo}`; // null head.repo (deleted fork) => treat as fork
+            if (!await resolveAndQueue({
+              issueNumber, filter, requested: action === 'edited', commentId: comment.id,
+            })) return; // closed PR → resolveAndQueue already set proceed=false
 
-            // Acknowledge: 👀 on the comment + a "queued" sticky (re-run box reset; "(requested)"
-            // on the checkbox path so the click is visibly picked up). Preserve run history.
-            await github.rest.reactions.createForIssueComment({
-              owner, repo, comment_id: comment.id, content: 'eyes',
-            });
-            // Read the sticky LIVE (not from context.payload.comment) on BOTH paths: the
-            // singleton-queue means a prior run's "Update PR sticky" can append a history row
-            // between the checkbox tick and this queued gate's execution, so a payload snapshot
-            // would be stale and overwrite that row away. findSticky reads the settled comment.
-            const existing = await helper.findSticky({ github, owner, repo, issue_number: issueNumber });
-            const history = existing ? helper.readHistory(existing.body) : [];
-            await helper.upsertSticky({
-              github, owner, repo, issue_number: issueNumber, existing,
-              body: helper.renderBody({
-                status: 'queued', statusEmoji: '🟡',
-                headline: `Queued for \`${helper.shortSha(pr.head.sha)}\`…`,
-                filter, history, requested: action === 'edited',
-              }),
-            });
-
-            core.setOutput('proceed', 'true');
-            core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('head_ref', pr.head.ref);
-            core.setOutput('filter', filter);
-            core.setOutput('pr_number', String(issueNumber));
-            core.setOutput('is_fork', String(isFork));
-
-  # ── Fork-PR approval gate. Same-repo PRs and dispatch resolve the empty environment
-  # (no prompt); fork PRs resolve `fork-pr`, requiring a maintainer to approve the
+  # ── Fork-PR approval gate. Keyed only on is_fork: non-fork runs (same-repo PRs, plain
+  # dispatch, schedule) resolve the empty environment (no prompt); fork runs (a fork PR,
+  # via comment OR dispatch+pr) resolve `fork-pr`, requiring a maintainer to approve the
   # deployment before the secret-bearing e2e job runs (the VPS key reaching fork code =
   # root on the test VPS). `needs` is permitted in jobs.<id>.environment. Defense in
   # depth atop the gate's permission check.
@@ -344,10 +404,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          # On the PR-comment path, check out the PR's HEAD (resolved by the gate) so we
-          # test the proposed code, not master — a full SHA fetches a fork commit fine.
-          # On dispatch, gate.outputs.head_sha is empty → checkout's default ref (the
-          # dispatched branch). The default-branch workflow file is what runs either way.
+          # When the gate resolved a PR (comment, checkbox, or dispatch+pr), head_sha is the
+          # PR's HEAD — check it out so we test the proposed code, not master (a full SHA
+          # fetches a fork commit fine). Otherwise (plain dispatch / schedule) head_sha is
+          # empty → checkout's default ref. The default-branch workflow file runs either way.
           ref: ${{ needs.gate.outputs.head_sha }}
           # This job uploads artifacts and publishes a report to a PUBLIC bucket, and
           # no later step needs the git credential, so don't persist it in .git/config
@@ -362,7 +422,7 @@ jobs:
       # (Building/testing the PR code itself is the intended, fork-pr-gated behaviour; this
       # just avoids handing forks an extra code-execution vector through our own tooling.)
       - name: Checkout trusted sticky helper
-        if: github.event_name == 'issue_comment'
+        if: needs.gate.outputs.pr_number != ''
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -588,7 +648,7 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
-          # Prefer the PR head ref (comment path) so the object key is keyed on the PR's
+          # Prefer the gate-resolved PR head ref so the object key is keyed on the PR's
           # branch — on issue_comment, github.ref_name is the default branch (master).
           BRANCH_REF: ${{ needs.gate.outputs.head_ref || github.ref_name }}
         run: |
@@ -673,15 +733,16 @@ jobs:
           path: TestResults/runs/*/report/
           if-no-files-found: warn
 
-      # Replace the PR sticky with the final result (PR-comment path only). Reads the
-      # runner's summary.json for counts/status, resets the re-run checkbox to its idle
+      # Replace the PR sticky with the final result (any run that resolved a PR — comment,
+      # checkbox, or dispatch+pr; the `if:` keys on pr_number). Reads the runner's
+      # summary.json for counts/status, resets the re-run checkbox to its idle
       # label, and APPENDS a row to the retained run-history table (older rows kept) so
       # the PR keeps a full per-run trail for debugging. if: always() fires on pass, fail,
       # AND cancel (a maintainer preempting the run from the Actions tab) — a sibling status
       # check picks the headline so a cancelled run reports "⚪ aborted" instead of stranding
       # on "🟡 queued". The GITHUB_TOKEN edit does not retrigger the workflow (recursion guard).
       - name: Update PR sticky
-        if: always() && github.event_name == 'issue_comment'
+        if: always() && needs.gate.outputs.pr_number != ''
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:

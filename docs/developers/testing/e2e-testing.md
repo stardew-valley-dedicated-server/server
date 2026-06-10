@@ -178,7 +178,10 @@ manual and **maintainer-gated** — it is never an automatic merge gate (an exte
 VPS being down must not block the queue):
 
 - **Actions tab → "Run workflow"** (`workflow_dispatch`) — runs the full suite from a
-  trusted branch; the optional `filter` input narrows it to a class/method.
+  trusted branch; the optional `filter` input narrows it to a class/method. The optional
+  `pr` input instead resolves that PR's HEAD and tests it, posting the same sticky comment
+  as the comment path; fork PRs pause at the `fork-pr` approval (same as the comment path),
+  and an empty `pr` runs the selected branch / master exactly as before.
 - **`/run-tests-e2e [filter]` PR comment** — runs against the PR's
   HEAD commit and posts results back to the PR (see below). `filter` is an xUnit
   class/method substring; omit it for the full suite.
@@ -199,8 +202,8 @@ the **Actions tab**; the cancelled run still writes its summary and reports "⚪
 
 Results surface in several places, all produced from artifacts the runner emits:
 
-- **PR sticky comment** (comment/checkbox path only) — a single bot comment, updated
-  in place each run, with the pass/fail headline, the hosted report link, the re-run
+- **PR sticky comment** (comment/checkbox or `pr`-dispatch path) — a single bot comment,
+  updated in place each run, with the pass/fail headline, the hosted report link, the re-run
   checkbox, and a collapsed **"Run history"** table that is appended to every run
   (older rows kept) so the PR retains a full per-run trail for debugging.
 - **Job Summary tab** — the [CTRF reporter action](https://github.com/ctrf-io/github-test-reporter)
