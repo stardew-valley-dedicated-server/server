@@ -1,3 +1,7 @@
+# Truecolor SGR escapes in lefthook's banner render as literal garbage in some
+# clients (e.g. fork); plain output keeps it readable.
+colors: false
+
 commit-msg:
   commands:
     commitlint:
