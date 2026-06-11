@@ -34,7 +34,7 @@ Yes. Stand where you want your cabin, then type `!cabin` in chat.
 
 ### Is money shared or separate?
 
-Configurable by the server admin. Default is shared wallet (all players share one money pool). Admins can toggle this with `!changewallet`.
+Configurable by the server admin. Default is shared wallet (all players share one money pool). Admins can switch it with `!changewallet shared` / `!changewallet separate`; the change applies overnight.
 
 ## Technical
 
