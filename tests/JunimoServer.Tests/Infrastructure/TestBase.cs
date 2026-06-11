@@ -606,11 +606,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             var errorList = string.Join("\n", serverErrors);
             var reason = context != null ? $"Server error during: {context}" : "Server error detected";
             var message = $"{reason}\n\n{errorList}";
-            RecordTestFailure(message, context);
+            RecordTestFailure(message, context, exceptionType: typeof(ExceptionMonitorException).FullName);
             throw new ExceptionMonitorException(message, Array.Empty<CapturedException>());
         }
         EmitCancellationDiagnostic(context ?? "server-error-check");
-        RecordTestFailure(ex.Message, context);
+        RecordTestFailure(ex.Message, context, exceptionType: ex.GetType().FullName);
         throw ex;
     }
 
@@ -621,7 +621,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         if (serverErrors.Count > 0)
         {
             var errorList = string.Join("\n", serverErrors);
-            RecordTestFailure(errorList, "server_error");
+            RecordTestFailure(errorList, "server_error", exceptionType: typeof(ExceptionMonitorException).FullName);
             throw new ExceptionMonitorException($"Server errors detected:\n{errorList}", Array.Empty<CapturedException>());
         }
     }
@@ -701,8 +701,13 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     {
         _testFailed = true;
         var collectionName = _collectionName ?? _testClassName;
+        // Host-poison stamp: a failure on a host that has emitted host_disconnected
+        // is an infrastructure-cascade victim regardless of the proximate exception
+        // (usually a generic cancellation/timeout). The stamp wins over the
+        // exception-type classification in enrichment and flakiness accounting.
+        var failureCategory = Lease?.Host.IsPoisoned == true ? "infrastructure" : null;
         FailureReporter.RecordFailure(collectionName, _testClassName, error, phase, screenshotPath,
-            Lease?.ServerKey, Lease?.ServerInstanceId, exceptionType);
+            Lease?.ServerKey, Lease?.ServerInstanceId, exceptionType, failureCategory);
     }
 
     protected void RecordTestCancellation()

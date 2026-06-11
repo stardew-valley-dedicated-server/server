@@ -31,11 +31,12 @@ internal sealed class TestFailureReporter
 
     internal void RecordFailure(string collectionName, string className,
         string error, string? phase, string? screenshotPath,
-        string? serverKey, string? serverInstanceId, string? exceptionType)
+        string? serverKey, string? serverInstanceId, string? exceptionType,
+        string? failureCategory = null)
     {
         TestSummaryFixture.Instance?.MarkFailed(
             collectionName, className, _displayName, error, phase, screenshotPath,
-            serverKey, serverInstanceId, exceptionType);
+            serverKey, serverInstanceId, exceptionType, failureCategory);
         InfrastructureEventLog.Emit("test_error", new
         {
             phase,
@@ -79,8 +80,10 @@ internal sealed class TestFailureReporter
             TestSummaryFixture.TestOutcome.Canceled => "canceled",
             _ => "passed", // Running here means the dispatcher promoted to Passed via MarkCompleted
         };
+        // The record's stamped category (host-poison stamp) wins over the
+        // exception-type classification.
         var failureCategory = snap?.Outcome == TestSummaryFixture.TestOutcome.Failed
-            ? TestSummaryFixture.ClassifyFailureCategory(snap?.ExceptionType)
+            ? snap.FailureCategory ?? TestSummaryFixture.ClassifyFailureCategory(snap.ExceptionType)
             : null;
         SetupEventBus.EmitTestEnrichment(_displayName, new TestEnrichmentData(
             Outcome: outcome,

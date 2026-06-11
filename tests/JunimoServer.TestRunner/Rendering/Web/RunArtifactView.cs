@@ -61,6 +61,7 @@ public sealed record TestArtifactView(
     string Status,
     long DurationMs,
     long QueueDurationMs,
+    DateTime? FailedAt,
     string? ErrorMessage,
     string? ErrorType,
     string? FailureCategory,

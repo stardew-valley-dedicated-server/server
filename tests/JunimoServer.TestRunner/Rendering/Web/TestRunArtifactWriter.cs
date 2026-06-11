@@ -100,7 +100,14 @@ public sealed class TestRunArtifactWriter
                 ["test"] = t.DisplayName,
                 ["className"] = t.ClassName,
                 ["methodName"] = methodName,
-                ["durationMs"] = t.DurationMs,
+                // failedAt orders the rows (runbook step 1: "identify the FIRST
+                // failure"). The active/queue split mirrors the run-level totals;
+                // queueDurationMs is 0 when the queue→active transition was never
+                // observed (e.g. the test failed inside server acquisition), in
+                // which case activeDurationMs still contains the wait.
+                ["failedAt"] = t.FailedAt?.ToString("o"),
+                ["activeDurationMs"] = t.DurationMs,
+                ["queueDurationMs"] = t.QueueDurationMs,
                 ["failureCategory"] = t.FailureCategory,
                 ["errorPreview"] = t.ErrorPreview,
                 ["error"] = t.ErrorMessage,

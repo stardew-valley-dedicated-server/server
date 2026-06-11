@@ -55,6 +55,9 @@ public static class FlakinessTracker
                     // Lowercase enum name: "passed" | "failed" | "canceled" (no notDispatched —
                     // never-dispatched tests have no record).
                     result = r.Outcome.ToString().ToLowerInvariant(),
+                    // Only set for failed entries. ComputeFlakiness excludes
+                    // "infrastructure" failures from the fail rate.
+                    failureCategory = r.FailureCategory,
                     durationMs = r.DurationMs,
                     // Breakdown is null for tests that didn't go through TestBase (e.g.
                     // DownloadValidationFixture). Serializer drops nulls via JsonOptions.
@@ -85,7 +88,7 @@ public static class FlakinessTracker
         {
             var lines = File.ReadAllLines(FilePath);
 
-            var entries = new List<(string runId, string test, string result, DateTime ts)>();
+            var entries = new List<(string runId, string test, string result, string? failureCategory, DateTime ts)>();
 
             foreach (var line in lines)
             {
@@ -97,8 +100,13 @@ public static class FlakinessTracker
                     var rid = root.GetProperty("runId").GetString() ?? "";
                     var test = root.GetProperty("test").GetString() ?? "";
                     var result = root.GetProperty("result").GetString() ?? "";
+                    // Absent on passed/canceled entries and on lines written
+                    // before the field existed.
+                    var category = root.TryGetProperty("failureCategory", out var cat)
+                        ? cat.GetString()
+                        : null;
                     var ts = root.GetProperty("ts").GetDateTime();
-                    entries.Add((rid, test, result, ts));
+                    entries.Add((rid, test, result, category, ts));
                 }
                 catch { /* skip malformed lines */ }
             }
@@ -112,12 +120,15 @@ public static class FlakinessTracker
             var recentEntries = entries.Where(e => recentRuns.Contains(e.runId)).ToList();
 
             // Compute per-test failure rates. Only `passed` and `failed` entries
-            // count toward the rate; `canceled` is not flakiness evidence.
+            // count toward the rate; `canceled` is not flakiness evidence, and
+            // neither are infrastructure-classified failures (host-disconnect
+            // cascade victims would otherwise read as flaky tests).
             var testStats = recentEntries
                 .GroupBy(e => e.test)
                 .Select(g =>
                 {
-                    var dispatched = g.Where(e => e.result == "passed" || e.result == "failed").ToList();
+                    var dispatched = g.Where(e => e.result == "passed"
+                        || (e.result == "failed" && e.failureCategory != "infrastructure")).ToList();
                     if (dispatched.Count == 0) return null;
                     var failures = dispatched.Count(e => e.result == "failed");
                     var failRate = (double)failures / dispatched.Count;

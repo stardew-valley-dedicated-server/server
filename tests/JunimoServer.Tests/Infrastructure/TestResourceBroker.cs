@@ -1015,7 +1015,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // completed and none succeeded. If a sibling instance succeeded, queue.IsReady
                 // is true.
                 if (!succeeded && inFlightRemaining == 0 && !queue.IsReady)
-                    queue.ServerFailed(new InvalidOperationException(
+                    queue.ServerFailed(new ServerUnavailableException(
                         $"All server creation attempts failed for {displayLabel} on {host.Id}"));
             }
         }
@@ -1037,6 +1037,13 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var sw = Stopwatch.StartNew();
         var serverIndex = Interlocked.Increment(ref _serverIndexCounter) - 1;
         var displayLabel = requirements.GetDisplayLabel();
+
+        // Fail fast on a poisoned host: a container start against a dead daemon
+        // or tunnel burns ~12s per doomed attempt. Covers every creation seam
+        // (pre-start, on-demand, replacement, per-test) at the single chokepoint.
+        if (host.IsPoisoned)
+            throw new ServerUnavailableException(
+                $"Host {host.Id} is poisoned ({host.PoisonReason}); refusing to create {displayLabel}");
 
         var isShared = requirements.Isolation != IsolationMode.PerTest;
         TestLog.Server($"{displayLabel} starting up on {host.Id} (server-{serverIndex})...");
@@ -1290,7 +1297,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
             {
                 var inFlightRemaining = _creationsInFlight.AddOrUpdate(brokerKey, 0, (_, v) => Math.Max(0, v - 1));
                 if (!replacementSucceeded && inFlightRemaining == 0 && !queue.IsReady)
-                    queue.ServerFailed(replacementError ?? new InvalidOperationException(
+                    queue.ServerFailed(replacementError ?? new ServerUnavailableException(
                         $"Server replacement failed for {displayLabel} on {host.Id}"));
             }
         }

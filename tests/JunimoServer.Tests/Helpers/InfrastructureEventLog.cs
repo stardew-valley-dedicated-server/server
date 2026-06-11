@@ -209,6 +209,10 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>tunnel_forward_closed</c> (<c>host_id, coordinator_port,
 /// via:"dispose"|"drain", exitCode, stderr?, durationMs</c>; <c>stderr</c> only
 /// when <c>exitCode != 0</c>) ·
+/// <c>tunnel_forwards_skipped</c> (<c>host_id, reason:"control_socket_gone",
+/// controlPath, via</c>; emitted once per host when teardown finds the master's
+/// control socket already gone — the per-forward <c>-O cancel</c> calls are
+/// skipped instead of each failing with exit 255) ·
 /// <c>host_disconnected</c> (<c>host_id, reason, sshMasterLogTail?</c>; emitted by
 /// <see cref="Infrastructure.DockerHost.Poison"/> — <c>sshMasterLogTail</c> present
 /// only for transport-class poisons. <see cref="Infrastructure.HostPool.Place"/>
