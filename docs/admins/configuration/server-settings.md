@@ -171,7 +171,7 @@ Controls what happens to visible cabins already on the farm when using a stacked
 | `false` | Shared wallet: all players share one money pool |
 | `true` | Separate wallets: each player has their own money |
 
-You can toggle this in-game using the `!changewallet` admin command.
+You can switch this in-game with the `!changewallet shared` / `!changewallet separate` admin command. The change applies overnight (the game's own safe point); running the opposite command before then cancels it.
 
 ### Direct IP Connections
 

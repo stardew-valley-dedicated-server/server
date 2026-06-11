@@ -151,7 +151,7 @@ These require admin role:
 | `!unban <player>` | Remove a ban |
 | `!listadmins` | List all admins |
 | `!listbans` | List all bans |
-| `!changewallet` | Toggle shared/separate wallets |
+| `!changewallet <shared\|separate>` | Switch wallet mode at the end of the day |
 | `!event` | Start current festival event (if stuck) |
 
 ### Lobby Management (Admin)
