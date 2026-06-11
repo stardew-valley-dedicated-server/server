@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 using JunimoServer.Tests.Schema.Json;
@@ -463,6 +464,7 @@ public sealed class TestRunState
                 test.ErrorMessage = e.Message;
                 test.ErrorType = e.ExceptionType;
                 test.StackTrace = e.StackTrace;
+                test.FailedAt = e.Timestamp;
             }
             // ScreenshotPath is delivered separately via the screenshot event and
             // appended to test.Output. The xUnit-native event carries it for the
@@ -1369,12 +1371,23 @@ public sealed class TestRunState
                             Status: t.Status,
                             DurationMs: t.DurationMs ?? 0,
                             QueueDurationMs: t.QueueDurationMs ?? 0,
+                            FailedAt: t.FailedAt,
                             ErrorMessage: t.ErrorMessage,
                             ErrorType: t.ErrorType,
-                            FailureCategory: t.FailureCategory,
+                            // Broker-level failures (e.g. AcquireServerAsync queue
+                            // faults) never reach the test-side enrichment path, so
+                            // classify and build the repro here from the xUnit-native
+                            // fields. Enrichment-provided values win when present.
+                            FailureCategory: t.FailureCategory
+                                ?? (t.Status == "failed" && t.ErrorType != null
+                                    ? TestSummaryFixture.ClassifyFailureCategory(t.ErrorType)
+                                    : null),
                             ErrorPreview: t.ErrorPreview,
                             Phase: t.Phase,
-                            ReproCommand: t.ReproCommand,
+                            ReproCommand: t.ReproCommand
+                                ?? (t.Status == "failed"
+                                    ? TestSummaryFixture.BuildReproCommand(t.DisplayName)
+                                    : null),
                             ServerKey: t.ServerKey,
                             ServerInstanceId: t.ServerInstanceId,
                             ScreenshotPath: t.LatestScreenshotPath,
@@ -1745,6 +1758,13 @@ public sealed class TestRunState
         public string? ErrorMessage { get; set; }
         public string? ErrorType { get; set; }
         public string? StackTrace { get; set; }
+        /// <summary>
+        /// Timestamp of the xUnit test_failed event. Projected into
+        /// <c>summary.json.failures[].failedAt</c> so failure rows are orderable
+        /// (the runbook's "identify the FIRST failure" step). Null when the test
+        /// never produced a failed/canceled xUnit callback.
+        /// </summary>
+        public DateTime? FailedAt { get; set; }
         /// <summary>
         /// The <c>Outcome</c> string carried by the most recent <c>test_enrichment</c>
         /// event for this test (<c>"passed"</c>, <c>"failed"</c>, <c>"canceled"</c>,

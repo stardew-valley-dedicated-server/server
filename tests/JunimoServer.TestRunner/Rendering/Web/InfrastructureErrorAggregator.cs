@@ -5,9 +5,13 @@ namespace JunimoServer.TestRunner.Rendering.Web;
 
 /// <summary>
 /// Reads <c>{runDir}/diagnostics/infrastructure.jsonl</c> at end-of-run and projects
-/// <c>failure_context</c> events into a lean shape suitable for embedding in
-/// <c>summary.json.infrastructureErrors</c>. Drops the bulky <c>serverState</c> blob —
-/// triagers needing full state should read the JSONL directly.
+/// <c>failure_context</c> and <c>host_disconnected</c> events into a lean shape
+/// suitable for embedding in <c>summary.json.infrastructureErrors</c>. Each entry
+/// carries an <c>event</c> discriminator. <c>failure_context</c> entries drop the
+/// bulky <c>serverState</c> blob — triagers needing full state should read the
+/// JSONL directly. <c>host_disconnected</c> entries keep the full payload
+/// (<c>host_id, reason, sshMasterLogTail</c>) so the run summary names the host
+/// outage's cause without a trip to the JSONL.
 ///
 /// Tolerates a missing file (returns empty) and per-line parse errors (skips the line).
 /// Capped at <see cref="MaxEntries"/> most-recent entries; on overflow the writer
@@ -54,10 +58,13 @@ internal static class InfrastructureErrorAggregator
             using var doc = JsonDocument.Parse(line);
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("event", out var ev) || ev.GetString() != "failure_context")
+            if (!root.TryGetProperty("event", out var ev))
+                return null;
+            var eventName = ev.GetString();
+            if (eventName is not ("failure_context" or "host_disconnected"))
                 return null;
 
-            var entry = new Dictionary<string, object?>();
+            var entry = new Dictionary<string, object?> { ["event"] = eventName };
 
             if (root.TryGetProperty("ts", out var ts)) entry["ts"] = ts.GetString();
             if (root.TryGetProperty("runMs", out var runMs) && runMs.ValueKind == JsonValueKind.Number)
@@ -69,14 +76,24 @@ internal static class InfrastructureErrorAggregator
             {
                 if (data.TryGetProperty("reason", out var reason))
                     entry["reason"] = reason.GetString();
-                if (data.TryGetProperty("extras", out var extras) && extras.ValueKind != JsonValueKind.Null)
-                    entry["extras"] = JsonSerializer.Deserialize<Dictionary<string, object?>>(extras.GetRawText());
-                if (data.TryGetProperty("diagnosticsError", out var diag) && diag.ValueKind == JsonValueKind.String)
-                    entry["diagnosticsError"] = diag.GetString();
-                // serverState is intentionally dropped — too large for summary.json.
+                if (eventName == "host_disconnected")
+                {
+                    if (data.TryGetProperty("host_id", out var hostId))
+                        entry["hostId"] = hostId.GetString();
+                    if (data.TryGetProperty("sshMasterLogTail", out var tail) && tail.ValueKind == JsonValueKind.String)
+                        entry["sshMasterLogTail"] = tail.GetString();
+                }
+                else
+                {
+                    if (data.TryGetProperty("extras", out var extras) && extras.ValueKind != JsonValueKind.Null)
+                        entry["extras"] = JsonSerializer.Deserialize<Dictionary<string, object?>>(extras.GetRawText());
+                    if (data.TryGetProperty("diagnosticsError", out var diag) && diag.ValueKind == JsonValueKind.String)
+                        entry["diagnosticsError"] = diag.GetString();
+                    // serverState is intentionally dropped — too large for summary.json.
+                }
             }
 
-            return entry.Count > 0 ? entry : null;
+            return entry.Count > 1 ? entry : null;
         }
         catch (JsonException)
         {

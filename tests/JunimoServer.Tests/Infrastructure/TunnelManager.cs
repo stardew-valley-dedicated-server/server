@@ -546,10 +546,40 @@ public sealed class TunnelManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Hosts whose dead control socket has already been reported via
+    /// <c>tunnel_forwards_skipped</c>, so a teardown after a transport poison
+    /// emits one summary event instead of one failure per forward.
+    /// </summary>
+    private readonly HashSet<string> _deadControlSocketReported = new();
+
     private async Task CancelForwardAsync(ForwardEntry entry, TimeSpan perCancelTimeout, string via)
     {
         var startedAt = Stopwatch.GetTimestamp();
         var target = entry.RemoteSocketPath ?? $"127.0.0.1:{entry.MappedPort}";
+
+        // A dead master removes its control socket; every -O cancel against it
+        // exits 255 with "Control socket ... No such file or directory". Skip
+        // the doomed exec and report once per host.
+        if (!File.Exists(entry.ControlPath))
+        {
+            bool firstForHost;
+            lock (_deadControlSocketReported)
+            {
+                firstForHost = _deadControlSocketReported.Add(entry.HostId);
+            }
+            if (firstForHost)
+            {
+                EmitSafe("tunnel_forwards_skipped", new
+                {
+                    host_id = entry.HostId,
+                    reason = "control_socket_gone",
+                    controlPath = entry.ControlPath,
+                    via
+                });
+            }
+            return;
+        }
 
         var psi = NewSshPsi();
         psi.ArgumentList.Add("-O"); psi.ArgumentList.Add("cancel");

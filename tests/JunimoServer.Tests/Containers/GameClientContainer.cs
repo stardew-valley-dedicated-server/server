@@ -322,15 +322,25 @@ public class GameClientContainer : IAsyncDisposable
         catch (Exception ex)
         {
             // Attach container logs to any startup failure for diagnostics.
+            // Skip the attempt entirely on a poisoned host — the retrieval goes
+            // through the same dead daemon/tunnel and would only append its own
+            // multi-line failure to the start-failure message.
             string logs;
-            try
+            if (_host.IsPoisoned)
             {
-                var containerLogs = await _container.GetLogsAsync();
-                logs = $"Logs:\n{containerLogs.Stdout}\n\nErrors:\n{containerLogs.Stderr}";
+                logs = $"(container log retrieval skipped: host '{_host.Id}' is poisoned: {_host.PoisonReason})";
             }
-            catch (Exception logEx)
+            else
             {
-                logs = $"(unable to retrieve container logs: {logEx.GetType().Name}: {logEx.Message})";
+                try
+                {
+                    var containerLogs = await _container.GetLogsAsync();
+                    logs = $"Logs:\n{containerLogs.Stdout}\n\nErrors:\n{containerLogs.Stderr}";
+                }
+                catch (Exception logEx)
+                {
+                    logs = $"(unable to retrieve container logs: {logEx.GetType().Name}: {logEx.Message})";
+                }
             }
 
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_failed", new

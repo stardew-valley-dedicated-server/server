@@ -68,6 +68,12 @@ public class TestSummaryFixture : IAsyncLifetime
         public TestOutcome Outcome { get; set; } = TestOutcome.Running;
         public string? Error { get; set; }
         public string? ExceptionType { get; set; }
+        /// <summary>
+        /// Explicit category stamp (e.g. <c>"infrastructure"</c> when the lease's
+        /// host was poisoned). Wins over the exception-type classification in
+        /// enrichment and flakiness accounting; null means "classify by type".
+        /// </summary>
+        public string? FailureCategory { get; set; }
         public string? Phase { get; set; }
         public string? ScreenshotPath { get; set; }
         public string? ServerKey { get; set; }
@@ -182,7 +188,8 @@ public class TestSummaryFixture : IAsyncLifetime
     /// </summary>
     public void MarkFailed(string collectionName, string className, string? testName,
         string error, string? phase = null, string? screenshotPath = null,
-        string? serverKey = null, string? serverInstanceId = null, string? exceptionType = null)
+        string? serverKey = null, string? serverInstanceId = null, string? exceptionType = null,
+        string? failureCategory = null)
     {
         lock (_testLock)
         {
@@ -201,6 +208,7 @@ public class TestSummaryFixture : IAsyncLifetime
             record.Phase = phase;
             record.ScreenshotPath = screenshotPath;
             record.ExceptionType = exceptionType;
+            record.FailureCategory = failureCategory;
             if (serverKey != null) record.ServerKey = serverKey;
             if (serverInstanceId != null) record.ServerInstanceId = serverInstanceId;
         }
@@ -260,6 +268,7 @@ public class TestSummaryFixture : IAsyncLifetime
                 Outcome: r.Outcome,
                 Error: r.Error,
                 ExceptionType: r.ExceptionType,
+                FailureCategory: r.FailureCategory,
                 Phase: r.Phase,
                 ScreenshotPath: r.ScreenshotPath,
                 ServerKey: r.ServerKey,
@@ -274,6 +283,7 @@ public class TestSummaryFixture : IAsyncLifetime
         TestOutcome Outcome,
         string? Error,
         string? ExceptionType,
+        string? FailureCategory,
         string? Phase,
         string? ScreenshotPath,
         string? ServerKey,
@@ -454,6 +464,7 @@ public class TestSummaryFixture : IAsyncLifetime
 
         if (exceptionType.Contains("Docker") ||
             exceptionType.Contains("Testcontainers") ||
+            exceptionType.Contains("ServerUnavailableException") ||
             exceptionType.Contains("TestRunAbortedException"))
             return "infrastructure";
 
@@ -500,6 +511,11 @@ public class TestSummaryFixture : IAsyncLifetime
                             TestName: test.Name,
                             Outcome: test.Outcome,
                             DurationMs: (long)(test.Duration?.TotalMilliseconds ?? 0),
+                            // Same category the enrichment event carries: explicit
+                            // stamp first, exception-type classification otherwise.
+                            FailureCategory: test.Outcome == TestOutcome.Failed
+                                ? test.FailureCategory ?? ClassifyFailure(test.ExceptionType)
+                                : null,
                             Breakdown: test.Breakdown));
                     }
                 }
@@ -513,6 +529,7 @@ public class TestSummaryFixture : IAsyncLifetime
         string TestName,
         TestOutcome Outcome,
         long DurationMs,
+        string? FailureCategory,
         Infrastructure.TestPhaseBreakdown? Breakdown);
 
     #endregion

@@ -768,6 +768,17 @@ internal sealed class ManagedServer : IAsyncDisposable
 
                 if (ShutdownCoordinator.IsShuttingDown) break;
 
+                // A poisoned host means every probe goes through a dead daemon
+                // or tunnel. Poison the server now (accurate reason, immediate
+                // ErrorToken cascade) instead of burning maxFailures probes to
+                // reach the same verdict with a misleading "health check" reason.
+                if (Host.IsPoisoned)
+                {
+                    PoisonServer($"Host {Host.Id} poisoned: {Host.PoisonReason}",
+                        PoisonReasonCode.HostPoisoned);
+                    break;
+                }
+
                 if (_healthSuspended)
                 {
                     consecutiveFailures = 0;
@@ -891,6 +902,7 @@ internal sealed class ManagedServer : IAsyncDisposable
     {
         public const string HealthCheckTimeout = "health_check_timeout";
         public const string HealthCheckError = "health_check_error";
+        public const string HostPoisoned = "host_poisoned";
         public const string ServerLogError = "server_log_error";
         public const string FarmerRemovalTimeout = "farmer_removal_timeout";
         public const string CleanupFarmerDeleteFailed = "cleanup_farmer_delete_failed";
