@@ -138,7 +138,10 @@ public class CabinPlacementValidationTests : TestBase
 
         // Second farmer over its own lease + ConnectionHelper (LAN; Steam not needed).
         var nameB = Farmers.GenerateName("FarmerB");
-        var leaseB = await LeaseClientAsync(ct);
+        // Scope leaseB so its client disconnects before this class's DisposeAsync runs
+        // /newgame — that reset returns 409 while any client is still connected, and
+        // ResourceLease.DisposeAsync would otherwise dispose leaseB too late.
+        await using var leaseB = await LeaseClientAsync(ct);
         var connB = new ConnectionHelper(leaseB.Client, serverApi: ServerApi);
         var joinB = await connB.JoinWorldViaLanAsync(
             Lease!.ServerLanAddress, Lease.ServerLanPort, nameB, cancellationToken: ct);

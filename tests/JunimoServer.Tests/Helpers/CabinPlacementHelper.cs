@@ -27,7 +27,8 @@ public static class CabinPlacementHelper
     {
         var warp = await client.Actions.Warp("Farm", FarmerTileX, FarmerTileY);
         Assert.True(warp?.Success == true, $"Warp to Farm failed: {warp?.Error}");
-        await client.WaitForLocationAsync("^Farm$", ct: ct);
+        var arrived = await client.WaitForLocationAsync("^Farm$", ct: ct);
+        Assert.True(arrived is not null, "Warp to Farm did not complete before clearing footprint");
 
         var cleared = await client.Actions.ClearArea("Farm", FarmerTileX + 1, FarmerTileY, width: 5, height: 4);
         Assert.True(cleared?.Success == true, $"ClearArea failed: {cleared?.Error}");
