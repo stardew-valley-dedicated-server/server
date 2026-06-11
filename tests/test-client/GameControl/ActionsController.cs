@@ -156,6 +156,37 @@ public class ActionsController
     }
 
     /// <summary>
+    /// Clear objects, terrain features, bushes, and resource clumps from a tile area
+    /// on the player's current location, via the same <c>removeObjectsAndSpawned</c>
+    /// the game uses to clear under a placed building. Lets placement tests prepare a
+    /// debris-free footprint so cabin/building validation isn't tripped by spawn-time
+    /// rocks/weeds/grass.
+    /// </summary>
+    public ClearAreaResult ClearArea(string locationName, int tileX, int tileY, int width, int height)
+    {
+        if (!Context.IsWorldReady)
+            return new ClearAreaResult { Success = false, Error = "Not in a game world" };
+
+        if (Game1.player.currentLocation?.Name != locationName)
+            return new ClearAreaResult
+            {
+                Success = false,
+                Error = $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'"
+            };
+
+        Game1.player.currentLocation.removeObjectsAndSpawned(tileX, tileY, width, height);
+        return new ClearAreaResult
+        {
+            Success = true,
+            LocationName = locationName,
+            TileX = tileX,
+            TileY = tileY,
+            Width = width,
+            Height = height
+        };
+    }
+
+    /// <summary>
     /// Plant a seed via <c>HoeDirt.plant</c>. The dirt may be a terrain HoeDirt or
     /// the inner HoeDirt of a Garden Pot at the same tile. <c>plant</c> requires
     /// <c>player.currentLocation == dirt.Location</c>.
@@ -237,6 +268,26 @@ public class PlacePotParams
     /// <summary>If true, remove any existing Object or terrainFeature at the
     /// tile before placing the pot (handles spawn-time rocks/weeds/twigs).</summary>
     public bool ClearObstacles { get; set; }
+}
+
+public class ClearAreaResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string? LocationName { get; set; }
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+}
+
+public class ClearAreaParams
+{
+    public string LocationName { get; set; } = "";
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 public class PlantCropResult
