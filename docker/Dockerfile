@@ -187,8 +187,8 @@ RUN apt-get update && apt-get install -y \
 # test-recording pipeline; pinning to a date-stamped BtbN release avoids the "latest" tag drift.
 RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-11-14-22/ffmpeg-n8.1.1-12-ge0e38acd2f-linux64-gpl-8.1.tar.xz && \
     tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
-    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffmpeg /usr/local/bin/ffmpeg && \
-    install -m 0755 /tmp/ffmpeg-n8.1.1-9-g58d4114d36-linux64-gpl-8.1/bin/ffprobe /usr/local/bin/ffprobe && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-12-ge0e38acd2f-linux64-gpl-8.1/bin/ffmpeg /usr/local/bin/ffmpeg && \
+    install -m 0755 /tmp/ffmpeg-n8.1.1-12-ge0e38acd2f-linux64-gpl-8.1/bin/ffprobe /usr/local/bin/ffprobe && \
     rm -rf /tmp/ffmpeg*
 
 # Install tmux (binary download, separate layer for cacheability)
