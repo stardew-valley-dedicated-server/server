@@ -1,0 +1,8 @@
+sub_modules/
+
+# C# only — keep CSharpier's XML formatter (csproj/props/targets/xml) off
+*.csproj
+*.props
+*.targets
+*.xml
+*.config
