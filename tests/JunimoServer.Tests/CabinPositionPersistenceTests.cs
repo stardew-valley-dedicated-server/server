@@ -180,11 +180,10 @@ public class CabinPositionPersistenceTests : TestBase
     /// </summary>
     private async Task<(int X, int Y)> MoveCabinViaCommandAsync(long ownerId, CancellationToken ct)
     {
-        // !cabin requires the farmer to be on the Farm. The exact tile doesn't matter —
-        // we read the resulting cabin position back from /cabins.
-        var warp = await GameClient.Actions.Warp("Farm", 64, 15);
-        Assert.True(warp?.Success == true, $"Warp to Farm failed: {warp?.Error}");
-        await GameClient.WaitForLocationAsync("Farm", ct: ct);
+        // !cabin requires the farmer on the Farm AND a clear footprint (CabinPlacementValidator
+        // rejects the farmhouse/debris). The helper warps to a known-clear spot and clears the
+        // footprint; we read the resulting position back rather than predicting it.
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
 
         var before = await GetOurCabinAsync(ownerId, ct);
 

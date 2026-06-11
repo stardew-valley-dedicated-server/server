@@ -139,4 +139,8 @@ public enum WaitName
 
     // CropSaverTests.cs (1)
     Polling_CropSaver_AwaitWatcher,
+
+    // CabinPlacementValidationTests.cs (2)
+    Polling_CabinPlacement_Moved,
+    Polling_CabinPlacement_Rejected,
 }

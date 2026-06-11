@@ -40,24 +40,30 @@ namespace JunimoServer.Services.Commands
 
 
                     // TODO:
-                    // a) Add checks to prevent placing cabin out-of-bounds, over trees, buildings etc.
-                    // b) Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
+                    // a) Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
                     //  - 'cabin move [direction=top|right|bottom|left]': Start "ghost" mode, manipulate LocationIntroduction package to show building as ghost without updating warp targets etc?
                     //  - 'cabin cancel': Cancel the move, reset to position from before the ghost mode
                     //  - 'cabin confirm': Confirm the move, update warp targets etc
 
                     // Place cabin on the right-hand side of the farmer
-                    var newPosition = new Vector2(farmer.Tile.X + 1, farmer.Tile.Y);
+                    var topLeft = new Point((int)farmer.Tile.X + 1, (int)farmer.Tile.Y);
+
+                    if (!CabinPlacementValidator.TryValidate(Game1.getFarm(), cabin, topLeft, out var reason))
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, $"Can't move cabin: {reason}.");
+                        return;
+                    }
 
                     // Record the player's intent BEFORE relocating. The building's
                     // tileX/tileY is what persists the position to the save; this map
                     // only records that the move was intentional, so the MoveToStack /
                     // strategy-switch bulk movers don't sweep it back into the hidden
-                    // stack on the next load.
-                    cabinService.Data.PlayerCabinPositions[msg.SourceFarmer] = newPosition;
+                    // stack on the next load. Guard above precedes this write so a
+                    // rejected move records no false intent.
+                    cabinService.Data.PlayerCabinPositions[msg.SourceFarmer] = topLeft.ToVector2();
                     cabinService.Data.Write();
 
-                    cabin.Relocate(newPosition.ToPoint());
+                    cabin.Relocate(topLeft);
                 }
             );
         }

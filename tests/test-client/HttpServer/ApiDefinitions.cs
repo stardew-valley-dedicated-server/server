@@ -136,6 +136,11 @@ public class ApiDefinitions
     [ApiResponse(typeof(PlacePotResult), 200)]
     private void PlacePot() { }
 
+    [ApiEndpoint("POST", "/actions/clear_area", Summary = "Clear a tile area", Description = "Remove objects, terrain features, bushes, and resource clumps from a tile area on the player's current location.", Tag = "Actions")]
+    [ApiRequestBody(typeof(ClearAreaParams))]
+    [ApiResponse(typeof(ClearAreaResult), 200)]
+    private void ClearArea() { }
+
     [ApiEndpoint("POST", "/actions/plant_crop", Summary = "Plant a crop seed", Description = "Plant a seed in a HoeDirt or IndoorPot at the given tile.", Tag = "Actions")]
     [ApiRequestBody(typeof(PlantCropParams))]
     [ApiResponse(typeof(PlantCropResult), 200)]

@@ -486,6 +486,15 @@ public class ModEntry : Mod
             return ExecuteOnGameThread(() => _actionsController!.PlacePot(body.LocationName, body.TileX, body.TileY, body.ClearObstacles));
         });
 
+        // POST /actions/clear_area - Clear debris from a tile area (prep a building footprint)
+        _server.Post("actions/clear_area", req =>
+        {
+            var body = TestApiServer.ReadBody<ClearAreaParams>(req);
+            if (body == null) return new ClearAreaResult { Success = false, Error = "Missing body" };
+            return ExecuteOnGameThread(() =>
+                _actionsController!.ClearArea(body.LocationName, body.TileX, body.TileY, body.Width, body.Height));
+        });
+
         // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
         _server.Post("actions/plant_crop", req =>
         {

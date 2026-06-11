@@ -238,6 +238,15 @@ public class PlacePotResult
     public int? TileY { get; set; }
 }
 
+public class ClearAreaResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 public class PlantCropResult
 {
     [JsonPropertyName("success")]
@@ -561,6 +570,15 @@ public class ActionsClient
     public Task<PlacePotResult?> PlacePot(string locationName, int tileX, int tileY, bool clearObstacles = false)
         => _client.PostAsync<PlacePotResult>("/actions/place_pot",
             new { locationName, tileX, tileY, clearObstacles });
+
+    /// <summary>
+    /// Clear debris (objects, terrain features, bushes, resource clumps) from a tile
+    /// area on the player's current location. Use to prep a building footprint.
+    /// POST /actions/clear_area
+    /// </summary>
+    public Task<ClearAreaResult?> ClearArea(string locationName, int tileX, int tileY, int width, int height)
+        => _client.PostAsync<ClearAreaResult>("/actions/clear_area",
+            new { locationName, tileX, tileY, width, height });
 
     /// <summary>
     /// Plant a seed in a HoeDirt or IndoorPot at the given tile.
