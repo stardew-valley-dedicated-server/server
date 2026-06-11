@@ -87,8 +87,11 @@ internal static class InfrastructureErrorAggregator
 
             return entry.Count > 1 ? entry : null;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
+            // InvalidOperationException: an unguarded GetString() hit a non-string
+            // value on a malformed/hand-edited line. Skip the line per the
+            // class contract rather than aborting the whole ring-buffer read.
             return null;
         }
     }
