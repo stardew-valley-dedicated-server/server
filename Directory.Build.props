@@ -58,6 +58,6 @@
 
         <!-- Set GamePath with priority: command line > .env file > environment variable -->
         <GamePath Condition="'$(GamePath)' == '' AND '$(_EnvGamePath)' != ''">$(_EnvGamePath)</GamePath>
-        <GamePath Condition="'$(GAME_PATH)' != ''">$(GAME_PATH)</GamePath>
+        <GamePath Condition="'$(GamePath)' == '' AND '$(GAME_PATH)' != ''">$(GAME_PATH)</GamePath>
     </PropertyGroup>
 </Project>
