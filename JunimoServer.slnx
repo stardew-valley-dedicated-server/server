@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/mod/">
+    <Project Path="mod/JunimoServer.Shared/JunimoServer.Shared.csproj" />
+    <Project Path="mod/JunimoServer/JunimoServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj" />
+    <Project Path="tests/JunimoServer.Tests/JunimoServer.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/fixtures/">
+    <Project Path="tests/fixtures/TestFarmMod/TestFarmMod.csproj" />
+  </Folder>
+  <Folder Name="/tests/test-client/">
+    <Project Path="tests/test-client/JunimoTestClient.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/openapi-generator/openapi-generator.csproj" />
+  </Folder>
+  <Folder Name="/tools/dll-patcher/">
+    <Project Path="tools/dll-patcher/SDVPatcher.csproj" />
+  </Folder>
+  <Folder Name="/tools/netdebug/">
+    <Project Path="tools/netdebug/NetDebug.csproj" />
+  </Folder>
+  <Folder Name="/tools/steam-service/">
+    <Project Path="tools/steam-service/SteamService.csproj" />
+  </Folder>
+</Solution>

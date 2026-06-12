@@ -6,3 +6,4 @@ sub_modules/
 *.targets
 *.xml
 *.config
+*.slnx
