@@ -23,6 +23,8 @@ csharp_style_namespace_declarations = file_scoped
 dotnet_diagnostic.IDE0161.severity = error
 # Unused usings — CSharpier only sorts usings, it never removes dead ones.
 dotnet_diagnostic.IDE0005.severity = error
+csharp_using_directive_placement = outside_namespace
+dotnet_diagnostic.IDE0065.severity = error
 
 # Reference-only third-party sources — don't flag their style in the IDE.
 # Per-rule mutes: a category-level mute would lose to the per-rule severities above.
@@ -30,3 +32,4 @@ dotnet_diagnostic.IDE0005.severity = error
 dotnet_diagnostic.IDE0011.severity = none
 dotnet_diagnostic.IDE0161.severity = none
 dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0065.severity = none
