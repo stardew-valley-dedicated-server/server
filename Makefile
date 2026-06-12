@@ -254,16 +254,10 @@ test-diagnose:
 	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure log in $(LATEST_RUN)."; exit 1; fi
 	@grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5 | python3 -m json.tool --no-ensure-ascii 2>/dev/null || grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5
 
-# Auto-format all C# files using CSharpier (rewrites in place; fast, no build)
-format:
-	@dotnet csharpier format .
-
-# Verify formatting and analyzer style rules without writing. dotnet format builds
-# the solution to run the analyzers, so this needs GAME_PATH; CI runs only the
-# csharpier half (see validate-pr.yml) since runners have no game files.
+# Verify analyzer style rules and formatting without writing (builds the solution).
 lint-check:
-	@dotnet csharpier check .
 	@dotnet format style JunimoServer.slnx --severity error --verify-no-changes
+	@dotnet csharpier check .
 
 # Auto-fix analyzer style violations (braces, namespaces, usings), then re-format.
 lint-fix:
@@ -299,9 +293,8 @@ help:
 	@echo "  make build-test-client - Build test client container image (for E2E tests)"
 	@echo ""
 	@echo Formatting:
-	@echo "  make format     - Format all C# files (CSharpier, fast)"
-	@echo "  make lint-check - Verify formatting + analyzer style rules (slow, builds)"
-	@echo "  make lint-fix   - Auto-fix analyzer style violations + format (slow, builds)"
+	@echo "  make lint-check - Verify style rules + formatting (slow, builds)"
+	@echo "  make lint-fix   - Auto-fix style violations + re-format (slow, builds)"
 	@echo ""
 	@echo Test Observability:
 	@echo "  make test-summary  - Show test run summary (failures, timing)"
