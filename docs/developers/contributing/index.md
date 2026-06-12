@@ -26,7 +26,9 @@ make install
 
 This installs:
 - **commitlint** - Validates commit message format
-- **git hooks** - Automatically validates commits before push
+- **CSharpier** - C# formatter, restored as a local dotnet tool
+- **git hooks** - Auto-format staged C# files on commit, validate commit messages, block direct pushes to `master`
+- **git blame config** - Points `blame.ignoreRevsFile` at `.git-blame-ignore-revs` so bulk-reformat commits don't pollute `git blame`
 
 #### Line Endings
 
@@ -42,6 +44,23 @@ git reset --hard                       # re-checkout every tracked file as LF on
 git ls-files --eol | grep 'w/crlf'     # expect no output
 ```
 
+#### Code Formatting
+
+C# code is formatted by [CSharpier](https://csharpier.com/), and style rules (braces, file-scoped namespaces, unused usings) are enforced as build errors via `.editorconfig`. You usually don't need to do anything:
+
+- **VSCode** formats on save — `.vscode/settings.json` selects the CSharpier extension; install it when prompted by the workspace recommendations.
+- **The pre-commit hook** auto-formats staged C# files and re-stages them. Partial staging (`git add -p`) is safe: lefthook hides unstaged changes while the hook runs and restores them afterwards.
+- **CI** (`Validate Formatting`) fails any PR with formatting drift.
+
+Manual targets:
+
+```bash
+make format       # format all C# files
+make format-check # check without writing (what CI runs)
+make lint         # auto-fix analyzer style violations, then format (builds the solution, slower)
+```
+
+The bulk-reformat commits are listed in `.git-blame-ignore-revs`. GitHub's blame UI skips them automatically; `make install` configures your local `git blame` to do the same.
 
 #### Development Workflow
 
@@ -144,7 +163,7 @@ Go to **Settings → Secrets → Actions** and add:
 - Pattern: `master`
 - Enable:
   - ✅ Require pull request before merging
-  - ✅ Require status checks: `Validate Build`, `Validate Commits`, `Validate Line Endings`
+  - ✅ Require status checks: `Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate Line Endings`, `Validate PR Title`
   - ✅ Require approvals: 1
 
 #### 3. Configure Fork PR Protection
