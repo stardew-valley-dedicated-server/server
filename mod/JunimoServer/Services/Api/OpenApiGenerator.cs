@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using NJsonSchema;
-using NJsonSchema.Generation;
 using NSwag;
 
 namespace JunimoServer.Services.Api;

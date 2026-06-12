@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Galaxy.Api;
 using HarmonyLib;
@@ -9,12 +8,9 @@ using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
-using StardewValley.Menus;
 using StardewValley.Network;
 using StardewValley.SDKs;
 using StardewValley.SDKs.GogGalaxy;
-using StardewValley.SDKs.GogGalaxy.Internal;
-using StardewValley.SDKs.GogGalaxy.Listeners;
 using StardewValley.SDKs.Steam;
 using Steamworks;
 

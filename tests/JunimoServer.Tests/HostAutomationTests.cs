@@ -1,4 +1,3 @@
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;

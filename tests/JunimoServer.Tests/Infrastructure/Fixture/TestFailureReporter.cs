@@ -1,6 +1,5 @@
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Infrastructure.Fixture;
 

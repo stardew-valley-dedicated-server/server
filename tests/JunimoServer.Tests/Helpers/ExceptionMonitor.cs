@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using DotNet.Testcontainers.Containers;
 using JunimoServer.Tests.Clients;
 
 namespace JunimoServer.Tests.Helpers;

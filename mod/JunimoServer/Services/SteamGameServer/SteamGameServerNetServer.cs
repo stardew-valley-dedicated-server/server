@@ -6,7 +6,6 @@ using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Network;
 using StardewValley.Network.Compress;
-using StardewValley.SDKs.GogGalaxy;
 using Steamworks;
 
 namespace JunimoServer.Services.SteamGameServer;

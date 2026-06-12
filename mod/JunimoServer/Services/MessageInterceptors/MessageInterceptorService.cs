@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
-using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewValley;
 using StardewValley.Network;
 
 namespace JunimoServer.Services.MessageInterceptors;

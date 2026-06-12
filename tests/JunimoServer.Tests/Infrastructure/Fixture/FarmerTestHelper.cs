@@ -1,5 +1,4 @@
 using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Schema.Events;
 using Xunit;
 
 namespace JunimoServer.Tests.Infrastructure.Fixture;

@@ -1,6 +1,5 @@
 using System.IO.Pipes;
 using JunimoServer.TestRunner.Rendering;
-using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.TestRunner.IPC;
 

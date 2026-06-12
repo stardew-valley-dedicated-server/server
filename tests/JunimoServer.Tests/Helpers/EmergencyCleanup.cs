@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Docker.DotNet;
 using JunimoServer.Tests.Infrastructure;

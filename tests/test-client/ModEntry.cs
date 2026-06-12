@@ -1,5 +1,3 @@
-using System;
-using System.Threading.Tasks;
 using HarmonyLib;
 using JunimoServer.Shared;
 using JunimoTestClient.Auth;

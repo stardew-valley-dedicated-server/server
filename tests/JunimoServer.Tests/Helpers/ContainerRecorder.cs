@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using DotNet.Testcontainers.Containers;
 using JunimoServer.Tests.Infrastructure;
 

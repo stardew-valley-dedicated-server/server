@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using Xunit;
 

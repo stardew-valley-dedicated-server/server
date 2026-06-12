@@ -11,7 +11,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
-using StardewValley.Minigames;
 using StardewValley.Objects;
 
 namespace JunimoServer.Services.AlwaysOn;

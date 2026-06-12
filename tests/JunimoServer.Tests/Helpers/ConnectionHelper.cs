@@ -1,4 +1,3 @@
-using System.Net.Http;
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Schema.Events;
 

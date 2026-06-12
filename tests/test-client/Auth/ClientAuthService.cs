@@ -7,7 +7,6 @@ using StardewValley;
 using StardewValley.Network;
 using StardewValley.SDKs;
 using StardewValley.SDKs.GogGalaxy;
-using StardewValley.SDKs.GogGalaxy.Listeners;
 using StardewValley.SDKs.Steam;
 using Steamworks;
 

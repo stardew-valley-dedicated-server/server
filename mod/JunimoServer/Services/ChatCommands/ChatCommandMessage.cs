@@ -1,5 +1,3 @@
-using System;
-
 namespace JunimoServer.Services.ChatCommands;
 
 public class ChatCommandMessage

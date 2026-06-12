@@ -1,6 +1,5 @@
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Containers;
-using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure.Fixture;
 using JunimoServer.Tests.Schema.Events;
