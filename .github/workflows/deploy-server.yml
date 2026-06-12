@@ -34,6 +34,8 @@ permissions: {}
 jobs:
   prepare:
     name: Prepare deployment
+    # Skip in forks — deploys need our VPS secrets, so a fork run can only fail red.
+    if: github.repository == 'stardew-valley-dedicated-server/server'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
