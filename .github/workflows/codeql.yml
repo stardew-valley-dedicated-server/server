@@ -48,6 +48,7 @@ jobs:
               - '**/*.cs'
               - '**/*.csproj'
               - 'Directory.Build.props'
+              - '.editorconfig'
             js-ts:
               - '**/*.ts'
               - '**/*.tsx'

@@ -43,8 +43,10 @@ services:
 
   steam-auth:
     build:
-      context: ./tools/steam-service
-      dockerfile: Dockerfile
+      # Repo root, not ./tools/steam-service — the image build needs the repo-level
+      # Directory.Build.props and .editorconfig (code-style enforcement).
+      context: .
+      dockerfile: tools/steam-service/Dockerfile
     image: sdvd/steam-service:${IMAGE_VERSION:-latest}
     container_name: sdvd-steam-auth
     stdin_open: true

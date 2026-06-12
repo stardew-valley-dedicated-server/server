@@ -7,6 +7,8 @@ ARG SMAPI_VERSION=4.5.2
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS steam-service-builder
 WORKDIR /src
 
+# Repo-level build props + code-style rules apply inside the image build too
+COPY ./Directory.Build.props ./.editorconfig ./
 COPY ./tools/steam-service/*.csproj ./
 RUN dotnet restore
 

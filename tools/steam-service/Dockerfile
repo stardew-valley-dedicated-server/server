@@ -1,10 +1,13 @@
+# Built with the repo root as context (see docker-compose.yml) so the repo-level
+# build props and code-style rules apply inside the image build too.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY *.csproj ./
+COPY Directory.Build.props .editorconfig ./
+COPY tools/steam-service/*.csproj ./
 RUN dotnet restore
 
-COPY . .
+COPY tools/steam-service/ .
 RUN dotnet publish -c Release -o /app
     # -p:EnableCompressionInSingleFile=true \
     # -p:PublishSingleFile=true \
