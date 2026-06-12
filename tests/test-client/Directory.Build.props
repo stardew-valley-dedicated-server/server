@@ -11,6 +11,12 @@
     -->
 
     <PropertyGroup>
+        <!-- Surface .editorconfig code-style rules (e.g. IDE0011 braces) as build diagnostics.
+             Duplicated from the root Directory.Build.props — this file shadows it. -->
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    </PropertyGroup>
+
+    <PropertyGroup>
         <!-- Try local .env first -->
         <DotEnvPath>$(MSBuildThisFileDirectory).env</DotEnvPath>
         <DotEnvContent Condition="Exists('$(DotEnvPath)')">$([System.IO.File]::ReadAllText('$(DotEnvPath)'))</DotEnvContent>

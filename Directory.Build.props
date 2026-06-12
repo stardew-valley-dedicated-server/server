@@ -42,6 +42,11 @@
   -->
 
     <PropertyGroup>
+        <!-- Surface .editorconfig code-style rules (e.g. IDE0011 braces) as build diagnostics -->
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    </PropertyGroup>
+
+    <PropertyGroup>
         <!-- Define path to .env file -->
         <DotEnvPath>$(MSBuildThisFileDirectory).env</DotEnvPath>
 

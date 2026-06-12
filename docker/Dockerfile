@@ -58,7 +58,8 @@ ARG BUILD_CONFIGURATION=Debug
 COPY --from=game-downloader /game /game
 
 # Copy project files first for better layer caching
-COPY ./Directory.Build.props /src/
+# (.editorconfig: code-style rules enforced at build via EnforceCodeStyleInBuild)
+COPY ./Directory.Build.props ./.editorconfig /src/
 COPY ./mod/JunimoServer/JunimoServer.csproj /src/mod/JunimoServer/
 COPY ./mod/JunimoServer.Shared/JunimoServer.Shared.csproj /src/mod/JunimoServer.Shared/
 
