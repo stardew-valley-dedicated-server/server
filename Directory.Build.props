@@ -44,6 +44,7 @@
     <PropertyGroup>
         <!-- Surface .editorconfig code-style rules (e.g. IDE0011 braces) as build diagnostics -->
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
 
     <PropertyGroup>

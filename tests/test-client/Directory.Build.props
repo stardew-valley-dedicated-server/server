@@ -14,6 +14,7 @@
         <!-- Surface .editorconfig code-style rules (e.g. IDE0011 braces) as build diagnostics.
              Duplicated from the root Directory.Build.props — this file shadows it. -->
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
 
     <PropertyGroup>

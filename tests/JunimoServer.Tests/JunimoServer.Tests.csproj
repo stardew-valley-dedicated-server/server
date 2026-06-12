@@ -6,7 +6,6 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RunSettingsFilePath>$(MSBuildProjectDirectory)\JunimoServer.Tests.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
