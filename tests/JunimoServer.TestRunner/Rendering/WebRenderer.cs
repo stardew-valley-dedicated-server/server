@@ -107,20 +107,36 @@ public sealed class WebRenderer : RendererBase
         }
 
         // Serve test artifacts (screenshots, recordings, logs). PhysicalFileProvider owns
-        // path containment; its root must exist before Kestrel starts.
+        // path containment; its root must exist before Kestrel starts. MapWhen isolates
+        // /artifacts from the rest of the pipeline so a miss can't reach the SPA
+        // MapFallback below ([".mkv"]/[".log"] are absent from the provider defaults).
         var testResultsDir = Path.GetFullPath("TestResults");
         Directory.CreateDirectory(testResultsDir);
         var artifactContentTypes = new FileExtensionContentTypeProvider();
         artifactContentTypes.Mappings[".mkv"] = "video/x-matroska";
         artifactContentTypes.Mappings[".log"] = "text/plain";
-        _app.UseStaticFiles(
-            new StaticFileOptions
+        _app.MapWhen(
+            ctx => ctx.Request.Path.StartsWithSegments("/artifacts"),
+            branch =>
             {
-                RequestPath = "/artifacts",
-                FileProvider = new PhysicalFileProvider(testResultsDir),
-                ContentTypeProvider = artifactContentTypes,
-                ServeUnknownFileTypes = true,
-                DefaultContentType = "application/octet-stream",
+                branch.UseStaticFiles(
+                    new StaticFileOptions
+                    {
+                        RequestPath = "/artifacts",
+                        FileProvider = new PhysicalFileProvider(testResultsDir),
+                        ContentTypeProvider = artifactContentTypes,
+                        ServeUnknownFileTypes = true,
+                        DefaultContentType = "application/octet-stream",
+                    }
+                );
+                // Explicit terminal 404: the branch's default terminal throws on requests
+                // the routing middleware already matched to an endpoint (extensionless
+                // paths match the fallback route's :nonfile pattern).
+                branch.Run(ctx =>
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return Task.CompletedTask;
+                });
             }
         );
 
