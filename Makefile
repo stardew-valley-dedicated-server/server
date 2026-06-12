@@ -47,6 +47,7 @@ endif
 install:
 	@echo Installing development dependencies...
 	@npm ci
+	@dotnet tool restore
 	@echo Setup complete. Git hooks are now active.
 
 # Build all production docker images (server + steam-service)
@@ -253,6 +254,14 @@ test-diagnose:
 	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure log in $(LATEST_RUN)."; exit 1; fi
 	@grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5 | python3 -m json.tool --no-ensure-ascii 2>/dev/null || grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5
 
+# Auto-format all C# files using CSharpier (rewrites in place)
+format:
+	@dotnet csharpier format .
+
+# Verify all C# files are formatted (CI). Exits non-zero on diff.
+format-check:
+	@dotnet csharpier check .
+
 # Show help
 help:
 	@echo Stardew Valley Dedicated Server
@@ -280,6 +289,10 @@ help:
 	@echo "  VERBOSE=1         - Show detailed setup steps, e.g. make test VERBOSE=1"
 	@echo ""
 	@echo "  make build-test-client - Build test client container image (for E2E tests)"
+	@echo ""
+	@echo Formatting:
+	@echo "  make format       - Format all C# files (CSharpier)"
+	@echo "  make format-check - Check formatting without writing (CI)"
 	@echo ""
 	@echo Test Observability:
 	@echo "  make test-summary  - Show test run summary (failures, timing)"
