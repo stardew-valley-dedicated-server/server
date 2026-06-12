@@ -14,6 +14,9 @@ permissions: {}
 jobs:
   release-please:
     name: Create Release PR
+    # Skip in forks — release-please would otherwise open release PRs and tag releases there.
+    # Every other job chains off this one via `needs`, so the guard cascades.
+    if: github.repository == 'stardew-valley-dedicated-server/server'
     runs-on: ubuntu-latest
     permissions:
       contents: write
