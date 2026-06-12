@@ -1,4 +1,4 @@
-﻿# Dockerfile for containerized game test client
+# Dockerfile for containerized game test client
 # Used by E2E tests to run multiple game client instances
 #
 # Build: make build-test-client

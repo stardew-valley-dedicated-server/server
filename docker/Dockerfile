@@ -1,4 +1,4 @@
-﻿# Global build arguments
+# Global build arguments
 ARG SMAPI_VERSION=4.5.2
 
 # ============================================================================

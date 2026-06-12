@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # Modern server image — WIP / EXPERIMENTAL, NOT IN PRODUCTION USE
 #
 # Next-iteration attempt at the server image (Alpine/musl). Unfinished and not
