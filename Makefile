@@ -262,6 +262,12 @@ format:
 format-check:
 	@dotnet csharpier check .
 
+# Auto-fix analyzer style violations (braces, namespaces, usings), then re-format.
+# Slower than `make format` — dotnet format builds the solution to run the analyzers.
+lint:
+	@dotnet format style JunimoServer.slnx --severity error
+	@dotnet csharpier format .
+
 # Show help
 help:
 	@echo Stardew Valley Dedicated Server
@@ -293,6 +299,7 @@ help:
 	@echo Formatting:
 	@echo "  make format       - Format all C# files (CSharpier)"
 	@echo "  make format-check - Check formatting without writing (CI)"
+	@echo "  make lint         - Auto-fix analyzer style violations + format (slow, builds)"
 	@echo ""
 	@echo Test Observability:
 	@echo "  make test-summary  - Show test run summary (failures, timing)"
