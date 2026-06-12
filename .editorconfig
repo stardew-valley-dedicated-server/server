@@ -8,8 +8,18 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
-[{*.yml, *.yaml}]
+[*.{yml,yaml}]
 indent_size = 2
 
 [Makefile]
 indent_style = tab
+
+[*.cs]
+# CSharpier only rewrites whitespace and never inserts braces; IDE0011 closes that
+# gap (build-time via EnforceCodeStyleInBuild in Directory.Build.props).
+csharp_prefer_braces = true
+dotnet_diagnostic.IDE0011.severity = error
+
+# Reference-only third-party sources — don't flag their style in the IDE.
+[{decompiled,sub_modules}/**.cs]
+dotnet_diagnostic.IDE0011.severity = none
