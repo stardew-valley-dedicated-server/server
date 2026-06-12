@@ -1,2 +1,5 @@
 # Bulk csharpier reformat — do not blame on this commit
 dde8f589054a1dfe20e0668ac74ff57d9a588d46
+
+# Bulk IDE0011 brace insertion — do not blame on this commit
+446413afb84a23184d1eea1f563c564dff8035a8
