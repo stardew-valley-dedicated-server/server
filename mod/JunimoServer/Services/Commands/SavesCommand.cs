@@ -1,12 +1,12 @@
-using JunimoServer.Services.GameCreator;
-using JunimoServer.Services.GameLoader;
-using JunimoServer.Services.Settings;
-using StardewModdingAPI;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml;
+using JunimoServer.Services.GameCreator;
+using JunimoServer.Services.GameLoader;
+using JunimoServer.Services.Settings;
+using StardewModdingAPI;
 
 namespace JunimoServer.Services.Commands
 {
@@ -20,15 +20,18 @@ namespace JunimoServer.Services.Commands
             IModHelper helper,
             IMonitor monitor,
             GameLoaderService gameLoader,
-            ServerSettingsLoader settings)
+            ServerSettingsLoader settings
+        )
         {
             _monitor = monitor;
             _gameLoader = gameLoader;
             _settings = settings;
 
-            helper.ConsoleCommands.Add("saves",
+            helper.ConsoleCommands.Add(
+                "saves",
                 "Save management. Run 'saves' for list, 'saves info <name>', 'saves select <name> [--confirm]'.",
-                (cmd, args) => HandleCommand(args));
+                (cmd, args) => HandleCommand(args)
+            );
         }
 
         private static void HandleCommand(string[] args)
@@ -59,7 +62,10 @@ namespace JunimoServer.Services.Commands
                     SelectSave(args[1], confirm);
                     break;
                 default:
-                    _monitor.Log($"Unknown saves subcommand: {args[0]}. Use: saves [info|select]", LogLevel.Warn);
+                    _monitor.Log(
+                        $"Unknown saves subcommand: {args[0]}. Use: saves [info|select]",
+                        LogLevel.Warn
+                    );
                     break;
             }
         }
@@ -86,7 +92,8 @@ namespace JunimoServer.Services.Commands
                 var suffix = isActive ? "  (active - currently loaded)" : "";
 
                 var info = ReadSaveGameInfo(dir);
-                var details = info != null ? $"  {info.FarmTypeName}, {info.CabinCount} cabins" : "";
+                var details =
+                    info != null ? $"  {info.FarmTypeName}, {info.CabinCount} cabins" : "";
 
                 _monitor.Log($"{prefix}{saveName}{suffix}{details}", LogLevel.Info);
             }
@@ -136,21 +143,36 @@ namespace JunimoServer.Services.Commands
 
                 if (info != null)
                 {
-                    _monitor.Log($"  Farm Type:               {info.FarmTypeDisplay}", LogLevel.Info);
+                    _monitor.Log(
+                        $"  Farm Type:               {info.FarmTypeDisplay}",
+                        LogLevel.Info
+                    );
                     _monitor.Log($"  Existing Cabins:         {info.CabinCount}", LogLevel.Info);
                 }
 
                 _monitor.Log($"  -- Settings to apply --", LogLevel.Info);
-                _monitor.Log($"  Cabin Strategy:          {_settings.CabinStrategy}", LogLevel.Info);
-                _monitor.Log($"  Existing Cabin Behavior: {_settings.ExistingCabinBehavior}", LogLevel.Info);
+                _monitor.Log(
+                    $"  Cabin Strategy:          {_settings.CabinStrategy}",
+                    LogLevel.Info
+                );
+                _monitor.Log(
+                    $"  Existing Cabin Behavior: {_settings.ExistingCabinBehavior}",
+                    LogLevel.Info
+                );
                 _monitor.Log($"", LogLevel.Info);
-                _monitor.Log($"Run 'saves select {saveName} --confirm' to activate.", LogLevel.Info);
+                _monitor.Log(
+                    $"Run 'saves select {saveName} --confirm' to activate.",
+                    LogLevel.Info
+                );
                 _monitor.Log($"The server will load this save on next restart.", LogLevel.Info);
                 return;
             }
 
             _gameLoader.SetSaveNameToLoad(saveName);
-            _monitor.Log($"Save '{saveName}' set as active. Restart the server to load it.", LogLevel.Info);
+            _monitor.Log(
+                $"Save '{saveName}' set as active. Restart the server to load it.",
+                LogLevel.Info
+            );
         }
 
         #region Save Info Parsing
@@ -158,6 +180,7 @@ namespace JunimoServer.Services.Commands
         private class SaveInfo
         {
             public string FarmName = "Unknown";
+
             /// <summary>Raw &lt;whichFarm&gt; token: a vanilla index "0"-"6" or a modded farm Id.</summary>
             public string FarmTypeRaw = "Unknown";
             public string FarmTypeName = "Unknown";
@@ -200,20 +223,27 @@ namespace JunimoServer.Services.Commands
                     // farms, or the Data/AdditionalFarms Id for a modded farm. An int.TryParse
                     // here would return false on a modded Id and silently drop the farm type.
                     var whichFarmNode = mainDoc.SelectSingleNode("//whichFarm");
-                    if (whichFarmNode != null && !string.IsNullOrWhiteSpace(whichFarmNode.InnerText))
+                    if (
+                        whichFarmNode != null
+                        && !string.IsNullOrWhiteSpace(whichFarmNode.InnerText)
+                    )
                     {
                         info.FarmTypeRaw = whichFarmNode.InnerText;
                         // The token is a vanilla index ("0"-"6") or a Data/AdditionalFarms Id;
                         // DisplayName() turns either into the same friendly label as elsewhere.
-                        info.FarmTypeName = (int.TryParse(info.FarmTypeRaw, out var index)
-                            ? FarmTypeSetting.FromIndex(index)
-                            : FarmTypeSetting.FromId(info.FarmTypeRaw)).DisplayName();
+                        info.FarmTypeName = (
+                            int.TryParse(info.FarmTypeRaw, out var index)
+                                ? FarmTypeSetting.FromIndex(index)
+                                : FarmTypeSetting.FromId(info.FarmTypeRaw)
+                        ).DisplayName();
                     }
 
                     var buildingNodes = mainDoc.SelectNodes("//Building[buildingType='Cabin']");
                     info.CabinCount = buildingNodes?.Count ?? 0;
 
-                    var farmhandNodes = mainDoc.SelectNodes("//Building[buildingType='Cabin']/indoors/farmhand/name");
+                    var farmhandNodes = mainDoc.SelectNodes(
+                        "//Building[buildingType='Cabin']/indoors/farmhand/name"
+                    );
                     if (farmhandNodes != null)
                     {
                         foreach (XmlNode node in farmhandNodes)

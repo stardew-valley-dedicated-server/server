@@ -1,6 +1,6 @@
+using System;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Settings;
-using System;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -59,10 +59,15 @@ namespace JunimoServer.Services.GameCreator
         /// Creates a NewGameConfig from API request parameters with sensible defaults.
         /// </summary>
         public static NewGameConfig FromRequest(
-            FarmTypeSetting farmType, string farmName = "Junimo", int startingCabins = 1,
-            string cabinStrategy = "CabinStack", int maxPlayers = 10,
-            float profitMargin = 1.0f, bool? spawnMonstersAtNight = null,
-            bool separateWallets = false)
+            FarmTypeSetting farmType,
+            string farmName = "Junimo",
+            int startingCabins = 1,
+            string cabinStrategy = "CabinStack",
+            int maxPlayers = 10,
+            float profitMargin = 1.0f,
+            bool? spawnMonstersAtNight = null,
+            bool separateWallets = false
+        )
         {
             if (!Enum.TryParse<CabinStrategy>(cabinStrategy, ignoreCase: true, out var strategy))
             {
@@ -84,18 +89,18 @@ namespace JunimoServer.Services.GameCreator
 
         public override string ToString()
         {
-            return $"{nameof(FarmName)}: {FarmName}, {nameof(WhichFarm)}: {WhichFarm}, " +
-                   $"{nameof(MaxPlayers)}: {MaxPlayers}, {nameof(CabinStrategy)}: {CabinStrategy}, " +
-                   $"{nameof(UseSeparateWallets)}: {UseSeparateWallets}, " +
-                   $"{nameof(SpawnMonstersAtNight)}: {SpawnMonstersAtNight?.ToString() ?? "auto"}, " +
-                   $"{nameof(ProfitMargin)}: {ProfitMargin}, {nameof(StartingCabins)}: {StartingCabins}, " +
-                   $"{nameof(BundlesRemix)}: {BundlesRemix}, " +
-                   $"{nameof(MinesRemix)}: {MinesRemix}, " +
-                   $"{nameof(CommunityCenterYear1)}: {CommunityCenterYear1}, " +
-                   $"{nameof(CabinLayoutNearby)}: {CabinLayoutNearby}, " +
-                   $"{nameof(UseLegacyRandom)}: {UseLegacyRandom}, " +
-                   $"{nameof(RandomSeed)}: {RandomSeed}, " +
-                   $"{nameof(PetBreed)}: {PetBreed}";
+            return $"{nameof(FarmName)}: {FarmName}, {nameof(WhichFarm)}: {WhichFarm}, "
+                + $"{nameof(MaxPlayers)}: {MaxPlayers}, {nameof(CabinStrategy)}: {CabinStrategy}, "
+                + $"{nameof(UseSeparateWallets)}: {UseSeparateWallets}, "
+                + $"{nameof(SpawnMonstersAtNight)}: {SpawnMonstersAtNight?.ToString() ?? "auto"}, "
+                + $"{nameof(ProfitMargin)}: {ProfitMargin}, {nameof(StartingCabins)}: {StartingCabins}, "
+                + $"{nameof(BundlesRemix)}: {BundlesRemix}, "
+                + $"{nameof(MinesRemix)}: {MinesRemix}, "
+                + $"{nameof(CommunityCenterYear1)}: {CommunityCenterYear1}, "
+                + $"{nameof(CabinLayoutNearby)}: {CabinLayoutNearby}, "
+                + $"{nameof(UseLegacyRandom)}: {UseLegacyRandom}, "
+                + $"{nameof(RandomSeed)}: {RandomSeed}, "
+                + $"{nameof(PetBreed)}: {PetBreed}";
         }
     }
 }

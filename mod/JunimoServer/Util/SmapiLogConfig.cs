@@ -1,7 +1,7 @@
-using StardewModdingAPI;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using StardewModdingAPI;
 
 namespace JunimoServer.Util
 {
@@ -22,15 +22,22 @@ namespace JunimoServer.Util
         {
             try
             {
-                var monitorType = Type.GetType("StardewModdingAPI.Framework.Monitor, StardewModdingAPI");
+                var monitorType = Type.GetType(
+                    "StardewModdingAPI.Framework.Monitor, StardewModdingAPI"
+                );
                 if (monitorType == null)
                 {
-                    monitor.Log("Could not find SMAPI Monitor type for verbose logging config", LogLevel.Warn);
+                    monitor.Log(
+                        "Could not find SMAPI Monitor type for verbose logging config",
+                        LogLevel.Warn
+                    );
                     return false;
                 }
 
-                var property = monitorType.GetProperty("ForceVerboseLogging",
-                    BindingFlags.Public | BindingFlags.Static);
+                var property = monitorType.GetProperty(
+                    "ForceVerboseLogging",
+                    BindingFlags.Public | BindingFlags.Static
+                );
                 if (property == null)
                 {
                     monitor.Log("Could not find ForceVerboseLogging property", LogLevel.Warn);
@@ -49,7 +56,10 @@ namespace JunimoServer.Util
                 else
                     hashSet.Remove(modId);
 
-                monitor.Log($"SMAPI ForceVerboseLogging updated: {modId}={enabled}", LogLevel.Debug);
+                monitor.Log(
+                    $"SMAPI ForceVerboseLogging updated: {modId}={enabled}",
+                    LogLevel.Debug
+                );
                 return true;
             }
             catch (Exception ex)

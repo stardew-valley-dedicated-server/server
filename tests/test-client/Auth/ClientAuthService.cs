@@ -1,15 +1,15 @@
 using System.Diagnostics;
-using HarmonyLib;
 using Galaxy.Api;
+using HarmonyLib;
 using JunimoTestClient.Diagnostics;
-using Steamworks;
 using StardewModdingAPI;
 using StardewValley;
-using StardewValley.SDKs;
-using StardewValley.SDKs.Steam;
 using StardewValley.Network;
+using StardewValley.SDKs;
 using StardewValley.SDKs.GogGalaxy;
 using StardewValley.SDKs.GogGalaxy.Listeners;
+using StardewValley.SDKs.Steam;
+using Steamworks;
 
 namespace JunimoTestClient.Auth;
 
@@ -22,7 +22,8 @@ public class ClientAuthService
 {
     // Galaxy SDK credentials (same as server, embedded in all games using Galaxy SDK)
     private const string GalaxyClientId = "48767653913349277";
-    private const string GalaxyClientSecret = "58be5c2e55d7f535cf8c4b6bbc09d185de90b152c8c42703cc13502465f0d04a";
+    private const string GalaxyClientSecret =
+        "58be5c2e55d7f535cf8c4b6bbc09d185de90b152c8c42703cc13502465f0d04a";
 
     private static IMonitor _monitor = null!;
     private static IModHelper _helper = null!;
@@ -75,12 +76,18 @@ public class ClientAuthService
     {
         if (string.IsNullOrEmpty(_steamAuthUrl))
         {
-            _monitor.Log("STEAM_AUTH_URL not set, Steam/Galaxy features disabled, LAN-only mode", LogLevel.Info);
+            _monitor.Log(
+                "STEAM_AUTH_URL not set, Steam/Galaxy features disabled, LAN-only mode",
+                LogLevel.Info
+            );
             ApplyDisabledPatches();
             return;
         }
 
-        _monitor.Log($"Steam auth service: {_steamAuthUrl} (account {_accountIndex})", LogLevel.Info);
+        _monitor.Log(
+            $"Steam auth service: {_steamAuthUrl} (account {_accountIndex})",
+            LogLevel.Info
+        );
         _authClient = new SteamAuthClient(_steamAuthUrl, _accountIndex, _monitor);
         ApplyAuthPatches();
     }
@@ -90,7 +97,8 @@ public class ClientAuthService
     // ========================================================================
 
     private static void IncrementConnectionProgress(SteamHelper instance) =>
-        _helper.Reflection.GetProperty<int>(instance, "ConnectionProgress")
+        _helper
+            .Reflection.GetProperty<int>(instance, "ConnectionProgress")
             .SetValue(instance.ConnectionProgress + 1);
 
     private static void SetActive(SteamHelper instance, bool value) =>
@@ -126,15 +134,21 @@ public class ClientAuthService
         {
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Initialize)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Initialize_Disabled_Prefix)));
+                prefix: new HarmonyMethod(
+                    typeof(ClientAuthService),
+                    nameof(Initialize_Disabled_Prefix)
+                )
+            );
 
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Update)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Update_Disabled_Prefix)));
+                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Update_Disabled_Prefix))
+            );
 
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Shutdown)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Shutdown_Prefix)));
+                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Shutdown_Prefix))
+            );
 
             PatchRequestFriendLobbyData();
 
@@ -148,7 +162,10 @@ public class ClientAuthService
 
     private static bool Initialize_Disabled_Prefix(SteamHelper __instance)
     {
-        _monitor.Log("SteamHelper.Initialize skipped (no STEAM_AUTH_URL, LAN-only mode)", LogLevel.Info);
+        _monitor.Log(
+            "SteamHelper.Initialize skipped (no STEAM_AUTH_URL, LAN-only mode)",
+            LogLevel.Info
+        );
 
         // Mark connection as finished immediately so the CoopMenu doesn't get stuck
         // on "Connecting to online services...". LAN connections don't need Galaxy/Steam.
@@ -182,25 +199,42 @@ public class ClientAuthService
         {
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Initialize)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Initialize_Auth_Prefix)));
+                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Initialize_Auth_Prefix))
+            );
 
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Update)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Update_Auth_Prefix)));
+                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Update_Auth_Prefix))
+            );
 
             _harmony.Patch(
                 AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Shutdown)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Shutdown_Prefix)));
+                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(Shutdown_Prefix))
+            );
 
             // Patch SteamUser.GetSteamID to return the client's Steam ID
             _harmony.Patch(
-                AccessTools.Method(typeof(Steamworks.SteamUser), nameof(Steamworks.SteamUser.GetSteamID)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(SteamUser_GetSteamID_Prefix)));
+                AccessTools.Method(
+                    typeof(Steamworks.SteamUser),
+                    nameof(Steamworks.SteamUser.GetSteamID)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(ClientAuthService),
+                    nameof(SteamUser_GetSteamID_Prefix)
+                )
+            );
 
             // Patch SteamFriends.GetPersonaName to return "TestClient"
             _harmony.Patch(
-                AccessTools.Method(typeof(Steamworks.SteamFriends), nameof(Steamworks.SteamFriends.GetPersonaName)),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(SteamFriends_GetPersonaName_Prefix)));
+                AccessTools.Method(
+                    typeof(Steamworks.SteamFriends),
+                    nameof(Steamworks.SteamFriends.GetPersonaName)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(ClientAuthService),
+                    nameof(SteamFriends_GetPersonaName_Prefix)
+                )
+            );
 
             // Patch SteamNetHelper.CreateClient to route Hybrid lobbies through GalaxyNetClient.
             // Hybrid = Steam invite code (S-prefix) resolved via Galaxy lobby. The game normally
@@ -212,12 +246,18 @@ public class ClientAuthService
             // before the server's Steam lobby was ready, so InviteCode fell back to the
             // GOG code (G-prefix) which creates GalaxyNetClient directly. This patch makes
             // the Galaxy P2P path explicit and reliable.
-            var steamNetHelperType = AccessTools.TypeByName("StardewValley.SDKs.Steam.SteamNetHelper");
+            var steamNetHelperType = AccessTools.TypeByName(
+                "StardewValley.SDKs.Steam.SteamNetHelper"
+            );
             if (steamNetHelperType != null)
             {
                 _harmony.Patch(
                     AccessTools.Method(steamNetHelperType, "CreateClient"),
-                    prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(CreateClient_Prefix)));
+                    prefix: new HarmonyMethod(
+                        typeof(ClientAuthService),
+                        nameof(CreateClient_Prefix)
+                    )
+                );
             }
 
             PatchRequestFriendLobbyData();
@@ -299,12 +339,18 @@ public class ClientAuthService
         var readyResponse = await _authClient.WaitForReadyAsync(timeoutSeconds: 30);
         if (readyResponse == null)
         {
-            _monitor.Log("Steam auth service not ready after 30s, retrying once before falling back...", LogLevel.Warn);
+            _monitor.Log(
+                "Steam auth service not ready after 30s, retrying once before falling back...",
+                LogLevel.Warn
+            );
             readyResponse = await _authClient.WaitForReadyAsync(timeoutSeconds: 30);
         }
         if (readyResponse == null)
         {
-            _monitor.Log("Steam auth service not ready after retry, Galaxy features unavailable", LogLevel.Error);
+            _monitor.Log(
+                "Steam auth service not ready after retry, Galaxy features unavailable",
+                LogLevel.Error
+            );
             SetGalaxyReady(false, "failed");
             SetNetworking(steamHelper, CreateSteamNetHelper());
             SetConnectionFinished(steamHelper, true);
@@ -312,7 +358,10 @@ public class ClientAuthService
         }
 
         _clientSteamId = readyResponse.steam_id;
-        _monitor.Log($"Steam auth service ready (account {readyResponse.account}, SteamID: {_clientSteamId})", LogLevel.Info);
+        _monitor.Log(
+            $"Steam auth service ready (account {readyResponse.account}, SteamID: {_clientSteamId})",
+            LogLevel.Info
+        );
 
         // Step 4: Get encrypted app ticket
         var ticketResponse = await _authClient.GetAppTicketAsync();
@@ -338,7 +387,12 @@ public class ClientAuthService
         // sha8 + stopwatch closures. The closures carry per-pass identity through to
         // the Galaxy callback thread without needing AsyncLocal flow across that
         // boundary (see .claude/rules/asynclocal-pitfalls.md).
-        _authListener = CreateGalaxyAuthListener(steamHelper, accountIndex, ticketSha8, signinStopwatch);
+        _authListener = CreateGalaxyAuthListener(
+            steamHelper,
+            accountIndex,
+            ticketSha8,
+            signinStopwatch
+        );
         _stateChangeListener = CreateGalaxyStateChangeListener(steamHelper);
         IncrementConnectionProgress(steamHelper); // listeners ready
         IncrementConnectionProgress(steamHelper); // ticket received
@@ -347,12 +401,15 @@ public class ClientAuthService
         var ticketBytes = Convert.FromBase64String(ticketResponse.app_ticket);
         var ticketLength = Convert.ToUInt32(ticketBytes.Length);
 
-        ClientEventLog.Emit("auth_galaxy_signin_requested", new
-        {
-            accountIndex,
-            ticketSha8,
-            ticketSource,
-        });
+        ClientEventLog.Emit(
+            "auth_galaxy_signin_requested",
+            new
+            {
+                accountIndex,
+                ticketSha8,
+                ticketSource,
+            }
+        );
         signinStopwatch.Start();
         GalaxyInstance.User().SignInSteam(ticketBytes, ticketLength, "TestClient");
 
@@ -377,13 +434,16 @@ public class ClientAuthService
         if (!_galaxyInitComplete)
         {
             _monitor.Log("Galaxy login timed out after 30s", LogLevel.Warn);
-            ClientEventLog.Emit("auth_galaxy_auth_failed", new
-            {
-                accountIndex,
-                ticketSha8,
-                reason = "PUMP_TIMEOUT",
-                latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
-            });
+            ClientEventLog.Emit(
+                "auth_galaxy_auth_failed",
+                new
+                {
+                    accountIndex,
+                    ticketSha8,
+                    reason = "PUMP_TIMEOUT",
+                    latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
+                }
+            );
             SetGalaxyReady(false, "failed");
             // Still create networking so game doesn't crash
             SetNetworking(steamHelper, CreateSteamNetHelper());
@@ -402,7 +462,6 @@ public class ClientAuthService
         Volatile.Write(ref _galaxyReady, encoded);
         _galaxyState = state;
     }
-
 
     /// <summary>
     /// Update patch: pump Galaxy callbacks (NOT GameServer.RunCallbacks; client doesn't run a game server).
@@ -436,7 +495,11 @@ public class ClientAuthService
         {
             _harmony.Patch(
                 AccessTools.Method(steamNetHelperType, "RequestFriendLobbyData"),
-                prefix: new HarmonyMethod(typeof(ClientAuthService), nameof(RequestFriendLobbyData_Prefix)));
+                prefix: new HarmonyMethod(
+                    typeof(ClientAuthService),
+                    nameof(RequestFriendLobbyData_Prefix)
+                )
+            );
         }
     }
 
@@ -476,20 +539,27 @@ public class ClientAuthService
     /// </summary>
     private static bool CreateClient_Prefix(object lobby, ref Client __result)
     {
-        if (lobby == null) return true;
+        if (lobby == null)
+            return true;
 
         var lobbyType = lobby.GetType();
         var galaxyIdProp = lobbyType.GetProperty("GalaxyId");
         var lobbyTypeProp = lobbyType.GetProperty("LobbyType");
-        if (galaxyIdProp == null || lobbyTypeProp == null) return true;
+        if (galaxyIdProp == null || lobbyTypeProp == null)
+            return true;
 
         // LobbyConnectionType: Steam=0, Galaxy=1, Hybrid=2, Invalid=3
         var connectionType = (int)lobbyTypeProp.GetValue(lobby)!;
         if (connectionType == 2) // Hybrid
         {
             var galaxyId = (ulong)galaxyIdProp.GetValue(lobby)!;
-            _monitor.Log($"Redirecting Hybrid lobby to GalaxyNetClient (Galaxy P2P, lobbyId={galaxyId})", LogLevel.Info);
-            var multiplayer = _helper.Reflection.GetField<Multiplayer>(typeof(Game1), "multiplayer").GetValue();
+            _monitor.Log(
+                $"Redirecting Hybrid lobby to GalaxyNetClient (Galaxy P2P, lobbyId={galaxyId})",
+                LogLevel.Info
+            );
+            var multiplayer = _helper
+                .Reflection.GetField<Multiplayer>(typeof(Game1), "multiplayer")
+                .GetValue();
             __result = multiplayer.InitClient(new GalaxyNetClient(new GalaxyID(galaxyId)));
             return false;
         }
@@ -514,32 +584,41 @@ public class ClientAuthService
         SteamHelper steamHelper,
         int accountIndex,
         string ticketSha8,
-        Stopwatch signinStopwatch)
+        Stopwatch signinStopwatch
+    )
     {
-        var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener");
+        var listenerType = AccessTools.TypeByName(
+            "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener"
+        );
 
         Action onSuccess = () =>
         {
             _monitor.Log("Galaxy auth success (client mode)", LogLevel.Info);
-            ClientEventLog.Emit("auth_galaxy_auth_success", new
-            {
-                accountIndex,
-                ticketSha8,
-                latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
-            });
+            ClientEventLog.Emit(
+                "auth_galaxy_auth_success",
+                new
+                {
+                    accountIndex,
+                    ticketSha8,
+                    latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
+                }
+            );
             IncrementConnectionProgress(steamHelper);
         };
 
         Action<IAuthListener.FailureReason> onFailure = (reason) =>
         {
             _monitor.Log($"Galaxy auth failure: {reason}", LogLevel.Error);
-            ClientEventLog.Emit("auth_galaxy_auth_failed", new
-            {
-                accountIndex,
-                ticketSha8,
-                reason = reason.ToString(),
-                latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
-            });
+            ClientEventLog.Emit(
+                "auth_galaxy_auth_failed",
+                new
+                {
+                    accountIndex,
+                    ticketSha8,
+                    reason = reason.ToString(),
+                    latencyMsFromSignin = signinStopwatch.ElapsedMilliseconds,
+                }
+            );
             SetGalaxyReady(false, "failed");
             if (steamHelper.Networking == null)
                 SetNetworking(steamHelper, CreateSteamNetHelper());
@@ -550,11 +629,7 @@ public class ClientAuthService
         Action onLost = () =>
         {
             _monitor.Log("Galaxy auth lost", LogLevel.Error);
-            ClientEventLog.Emit("auth_galaxy_auth_lost", new
-            {
-                accountIndex,
-                ticketSha8,
-            });
+            ClientEventLog.Emit("auth_galaxy_auth_lost", new { accountIndex, ticketSha8 });
             SetGalaxyReady(false, "lost");
             if (steamHelper.Networking == null)
                 SetNetworking(steamHelper, CreateSteamNetHelper());
@@ -569,33 +644,40 @@ public class ClientAuthService
     /// Creates a Galaxy state change listener. Mirrors server's CreateSteamHelperGalaxyStateChangeListener.
     /// When Galaxy reports "logged on" (bit 2), creates networking and marks connection finished.
     /// </summary>
-    private static IOperationalStateChangeListener CreateGalaxyStateChangeListener(SteamHelper steamHelper)
+    private static IOperationalStateChangeListener CreateGalaxyStateChangeListener(
+        SteamHelper steamHelper
+    )
     {
-        var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener");
+        var listenerType = AccessTools.TypeByName(
+            "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener"
+        );
 
-        var onStateChange = new Action<uint>((operationalState) =>
-        {
-            if (steamHelper.Networking != null)
-                return;
-
-            if ((operationalState & 1) != 0)
+        var onStateChange = new Action<uint>(
+            (operationalState) =>
             {
-                _monitor.Log("Galaxy signed in (client mode)", LogLevel.Debug);
-                IncrementConnectionProgress(steamHelper);
-            }
+                if (steamHelper.Networking != null)
+                    return;
 
-            if ((operationalState & 2) != 0)
-            {
-                _monitor.Log("Galaxy logged on (client mode)", LogLevel.Info);
-                SetNetworking(steamHelper, CreateSteamNetHelper());
-                IncrementConnectionProgress(steamHelper);
-                SetConnectionFinished(steamHelper, true);
-                SetGalaxyConnected(steamHelper, true);
-                _galaxyInitComplete = true;
-                SetGalaxyReady(true, "signed_in");
-            }
-        });
+                if ((operationalState & 1) != 0)
+                {
+                    _monitor.Log("Galaxy signed in (client mode)", LogLevel.Debug);
+                    IncrementConnectionProgress(steamHelper);
+                }
 
-        return (IOperationalStateChangeListener)Activator.CreateInstance(listenerType, onStateChange)!;
+                if ((operationalState & 2) != 0)
+                {
+                    _monitor.Log("Galaxy logged on (client mode)", LogLevel.Info);
+                    SetNetworking(steamHelper, CreateSteamNetHelper());
+                    IncrementConnectionProgress(steamHelper);
+                    SetConnectionFinished(steamHelper, true);
+                    SetGalaxyConnected(steamHelper, true);
+                    _galaxyInitComplete = true;
+                    SetGalaxyReady(true, "signed_in");
+                }
+            }
+        );
+
+        return (IOperationalStateChangeListener)
+            Activator.CreateInstance(listenerType, onStateChange)!;
     }
 }

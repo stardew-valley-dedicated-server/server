@@ -1,3 +1,9 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -5,12 +11,6 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Services.NetworkTweaks
 {
@@ -103,16 +103,26 @@ namespace JunimoServer.Services.NetworkTweaks
                 _pendingGameThreadActions.Enqueue(() =>
                 {
                     using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
-                    if (token.IsCancellationRequested) return;
-                    if (Game1.server == null) return;
+                    if (token.IsCancellationRequested)
+                        return;
+                    if (Game1.server == null)
+                        return;
 
                     var excludedIds = _lobbyService?.GetExcludedPlayerIds() ?? new HashSet<long>();
-                    foreach (var farmer in Game1.otherFarmers.Values.ToArray().Where(farmer =>
-                        !excludedIds.Contains(farmer.UniqueMultiplayerID) &&
-                        Game1.player.team.endOfNightStatus.GetStatusText(farmer.UniqueMultiplayerID) != "ready"
-                    ))
+                    foreach (
+                        var farmer in Game1
+                            .otherFarmers.Values.ToArray()
+                            .Where(farmer =>
+                                !excludedIds.Contains(farmer.UniqueMultiplayerID)
+                                && Game1.player.team.endOfNightStatus.GetStatusText(
+                                    farmer.UniqueMultiplayerID
+                                ) != "ready"
+                            )
+                    )
                     {
-                        _monitor.Log($"Kicking {ChatRedaction.MaskValue(farmer.Name)} because they aren't ready");
+                        _monitor.Log(
+                            $"Kicking {ChatRedaction.MaskValue(farmer.Name)} because they aren't ready"
+                        );
                         Game1.server.kick(farmer.UniqueMultiplayerID);
                     }
                 });
@@ -121,7 +131,8 @@ namespace JunimoServer.Services.NetworkTweaks
 
         private void OnDayEnding(object sender, DayEndingEventArgs e)
         {
-            if (SDate.Now().IsDayZero()) return;
+            if (SDate.Now().IsDayZero())
+                return;
             _monitor.Log("DayEnding");
 
             _currentNewDayBarrierCancelToken?.Cancel();
@@ -149,10 +160,14 @@ namespace JunimoServer.Services.NetworkTweaks
                 _pendingGameThreadActions.Enqueue(() =>
                 {
                     using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
-                    if (token.IsCancellationRequested) return;
-                    if (Game1.server == null) return;
+                    if (token.IsCancellationRequested)
+                        return;
+                    if (Game1.server == null)
+                        return;
 
-                    var readyPlayers = _helper.Reflection.GetMethod(Game1.newDaySync, "barrierPlayers").Invoke<HashSet<long>>("sleep");
+                    var readyPlayers = _helper
+                        .Reflection.GetMethod(Game1.newDaySync, "barrierPlayers")
+                        .Invoke<HashSet<long>>("sleep");
                     var excludedIds = _lobbyService?.GetExcludedPlayerIds() ?? new HashSet<long>();
                     // Use ToArray() to create snapshot - avoids collection modified exception
                     // if a player disconnects during iteration

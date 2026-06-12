@@ -32,7 +32,8 @@ public sealed record RunArtifactView(
     IReadOnlyList<string>? LostWorkers = null,
     long? RendererFailures = null,
     IReadOnlyList<string>? MissingArtifacts = null,
-    IReadOnlyList<System.Text.Json.JsonElement>? WorkerRunMetadata = null);
+    IReadOnlyList<System.Text.Json.JsonElement>? WorkerRunMetadata = null
+);
 
 /// <summary>
 /// Minimal run-level view used to compose the report's link-preview meta tags
@@ -51,7 +52,8 @@ public sealed record RunSummary(
     int Canceled,
     long? DurationMs,
     string? GitBranch,
-    string? GitSha);
+    string? GitSha
+);
 
 /// <summary>Per-test view used by the artifact writer.</summary>
 public sealed record TestArtifactView(
@@ -72,7 +74,8 @@ public sealed record TestArtifactView(
     string? ServerInstanceId,
     string? ScreenshotPath,
     LifecycleView? Lifecycle,
-    string? SkipReason);
+    string? SkipReason
+);
 
 /// <summary>
 /// Lifecycle phase breakdown.
@@ -88,4 +91,5 @@ public sealed record LifecycleView(
     long CleanupMs,
     long ArtifactsMs,
     long LastKeepDisposeMs,
-    long LeaseReleaseMs);
+    long LeaseReleaseMs
+);

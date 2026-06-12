@@ -9,12 +9,22 @@ namespace JunimoServer.Tests.Infrastructure;
 /// The server key includes isolation context, not just config.
 /// </summary>
 public sealed record ResourceRequirements(
-    string? Password, FarmTypeSetting FarmType, bool WithSteam, string? SharedGroup,
-    int StartingCabins, int MaxPlayers, int Clients,
-    string CabinStrategy, bool AllowIpConnections,
-    IsolationMode Isolation, string? TestClassName, string? TestMethodName,
-    bool Exclusive = false, string ExistingCabinBehavior = "KeepExisting",
-    bool FixtureFarmMod = false)
+    string? Password,
+    FarmTypeSetting FarmType,
+    bool WithSteam,
+    string? SharedGroup,
+    int StartingCabins,
+    int MaxPlayers,
+    int Clients,
+    string CabinStrategy,
+    bool AllowIpConnections,
+    IsolationMode Isolation,
+    string? TestClassName,
+    string? TestMethodName,
+    bool Exclusive = false,
+    string ExistingCabinBehavior = "KeepExisting",
+    bool FixtureFarmMod = false
+)
 {
     private static int _perTestCounter;
 
@@ -31,7 +41,7 @@ public sealed record ResourceRequirements(
             IsolationMode.SharedClass => $"config-{configHash}",
             IsolationMode.SharedAssembly => $"config-{configHash}",
             IsolationMode.PerTest => $"test-{TestClassName}.{TestMethodName}-{NextPerTestId()}",
-            _ => throw new ArgumentOutOfRangeException()
+            _ => throw new ArgumentOutOfRangeException(),
         };
     }
 
@@ -52,32 +62,43 @@ public sealed record ResourceRequirements(
     /// </summary>
     private string ComputeConfigHash()
     {
-        var configString = $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}" +
-                          $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}" +
-                          $"|{FixtureFarmMod}";
+        var configString =
+            $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}"
+            + $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}"
+            + $"|{FixtureFarmMod}";
         var bytes = Encoding.UTF8.GetBytes(configString);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..12].ToLowerInvariant();
     }
 
-    private static string NextPerTestId() =>
-        Interlocked.Increment(ref _perTestCounter).ToString();
+    private static string NextPerTestId() => Interlocked.Increment(ref _perTestCounter).ToString();
 
     /// <summary>
     /// Creates requirements from a resolved TestServerAttribute.
     /// </summary>
-    public static ResourceRequirements FromAttribute(TestServerAttribute attr,
-        string? testClassName, string? testMethodName) => new(
-        Password: attr.Password, FarmType: attr.FarmType, WithSteam: attr.WithSteam,
-        SharedGroup: attr.SharedGroup, StartingCabins: attr.StartingCabins,
-        MaxPlayers: attr.MaxPlayers, Clients: attr.Clients,
-        CabinStrategy: attr.CabinStrategy,
-        // Without Steam there's no invite code path; force IP connections on
-        AllowIpConnections: attr.WithSteam ? attr.AllowIpConnections : true,
-        Isolation: attr.Isolation, TestClassName: testClassName,
-        TestMethodName: testMethodName,
-        Exclusive: attr.Exclusive, ExistingCabinBehavior: attr.ExistingCabinBehavior,
-        FixtureFarmMod: attr.FixtureFarmMod);
+    public static ResourceRequirements FromAttribute(
+        TestServerAttribute attr,
+        string? testClassName,
+        string? testMethodName
+    ) =>
+        new(
+            Password: attr.Password,
+            FarmType: attr.FarmType,
+            WithSteam: attr.WithSteam,
+            SharedGroup: attr.SharedGroup,
+            StartingCabins: attr.StartingCabins,
+            MaxPlayers: attr.MaxPlayers,
+            Clients: attr.Clients,
+            CabinStrategy: attr.CabinStrategy,
+            // Without Steam there's no invite code path; force IP connections on
+            AllowIpConnections: attr.WithSteam ? attr.AllowIpConnections : true,
+            Isolation: attr.Isolation,
+            TestClassName: testClassName,
+            TestMethodName: testMethodName,
+            Exclusive: attr.Exclusive,
+            ExistingCabinBehavior: attr.ExistingCabinBehavior,
+            FixtureFarmMod: attr.FixtureFarmMod
+        );
 
     /// <summary>
     /// Maps requirements to ServerContainerOptions for container creation.
@@ -93,7 +114,7 @@ public sealed record ResourceRequirements(
             ExistingCabinBehavior = ExistingCabinBehavior,
             AllowIpConnections = AllowIpConnections,
             WithSteam = WithSteam,
-            FixtureFarmMod = FixtureFarmMod
+            FixtureFarmMod = FixtureFarmMod,
         };
         return options;
     }

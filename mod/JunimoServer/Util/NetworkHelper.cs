@@ -1,7 +1,3 @@
-using JunimoServer.Services.MessageInterceptors;
-using Netcode;
-using StardewValley;
-using StardewValley.Network;
 using System;
 using System.IO;
 using System.Linq;
@@ -9,6 +5,10 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Threading.Tasks;
+using JunimoServer.Services.MessageInterceptors;
+using Netcode;
+using StardewValley;
+using StardewValley.Network;
 
 namespace JunimoServer.Util
 {
@@ -47,14 +47,14 @@ namespace JunimoServer.Util
         StartNewDaySync = Multiplayer.startNewDaySync,
         ReadySync = Multiplayer.readySync,
         ChestHitSync = Multiplayer.chestHitSync,
-        DedicatedServerSync = Multiplayer.dedicatedServerSync
+        DedicatedServerSync = Multiplayer.dedicatedServerSync,
     }
 
     public class NetworkHelper
     {
         private static readonly HttpClient _httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(5)
+            Timeout = TimeSpan.FromSeconds(5),
         };
 
         public static IPAddress GetIpAddressLocal()
@@ -66,8 +66,9 @@ namespace JunimoServer.Util
             return interfaces
                 .First()
                 .GetIPProperties()
-                .UnicastAddresses
-                .First(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                .UnicastAddresses.First(a =>
+                    a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                )
                 .Address;
         }
 
@@ -75,7 +76,9 @@ namespace JunimoServer.Util
         {
             try
             {
-                string pubIp = await _httpClient.GetStringAsync("https://api.ipify.org").ConfigureAwait(false);
+                string pubIp = await _httpClient
+                    .GetStringAsync("https://api.ipify.org")
+                    .ConfigureAwait(false);
                 return IPAddress.Parse(pubIp);
             }
             catch
@@ -104,7 +107,11 @@ namespace JunimoServer.Util
             return incMsg;
         }
 
-        public static bool IsLocationDeltaMessageForLocation<T>(MessageContext context, out T location) where T : GameLocation
+        public static bool IsLocationDeltaMessageForLocation<T>(
+            MessageContext context,
+            out T location
+        )
+            where T : GameLocation
         {
             var isStructure = context.Reader.ReadByte() > 0;
             var locationName = context.Reader.ReadString();
@@ -123,7 +130,11 @@ namespace JunimoServer.Util
             return false;
         }
 
-        public static OutgoingMessage CreateMessagePlayerIntroduction(NetRoot<Farmer> farmerRoot, Farmer otherFarmer, string farmerRootIpText)
+        public static OutgoingMessage CreateMessagePlayerIntroduction(
+            NetRoot<Farmer> farmerRoot,
+            Farmer otherFarmer,
+            string farmerRootIpText
+        )
         {
             return new OutgoingMessage(
                 Multiplayer.playerIntroduction,
@@ -144,7 +155,11 @@ namespace JunimoServer.Util
             );
         }
 
-        public static OutgoingMessage CreateMessagePlayerIntroduction(NetRoot<Farmer> farmerRoot, long peerId, string farmerIpText)
+        public static OutgoingMessage CreateMessagePlayerIntroduction(
+            NetRoot<Farmer> farmerRoot,
+            long peerId,
+            string farmerIpText
+        )
         {
             return new OutgoingMessage(
                 Multiplayer.playerIntroduction,
@@ -154,7 +169,11 @@ namespace JunimoServer.Util
             );
         }
 
-        public static OutgoingMessage CreateMessageLocationIntroduction(long peerId, NetRoot<GameLocation> location, bool forceCurrentLocation)
+        public static OutgoingMessage CreateMessageLocationIntroduction(
+            long peerId,
+            NetRoot<GameLocation> location,
+            bool forceCurrentLocation
+        )
         {
             return new OutgoingMessage(
                 Multiplayer.locationIntroduction,
@@ -201,7 +220,11 @@ namespace JunimoServer.Util
             Location = NetRoot<GameLocation>.Connect(context.IncomingMessage.Reader);
         }
 
-        public LocationIntroductionMessage(NetRoot<Farmer> farmerRoot, long peerId, IncomingMessage message)
+        public LocationIntroductionMessage(
+            NetRoot<Farmer> farmerRoot,
+            long peerId,
+            IncomingMessage message
+        )
         {
             this.farmerRoot = farmerRoot;
             PeerId = peerId;
@@ -210,7 +233,12 @@ namespace JunimoServer.Util
             Location = NetRoot<GameLocation>.Connect(message.Reader);
         }
 
-        public LocationIntroductionMessage(NetRoot<Farmer> farmerRoot, long peerId, NetRoot<GameLocation> location, bool forceCurrentLocation)
+        public LocationIntroductionMessage(
+            NetRoot<Farmer> farmerRoot,
+            long peerId,
+            NetRoot<GameLocation> location,
+            bool forceCurrentLocation
+        )
         {
             this.farmerRoot = farmerRoot;
             PeerId = peerId;

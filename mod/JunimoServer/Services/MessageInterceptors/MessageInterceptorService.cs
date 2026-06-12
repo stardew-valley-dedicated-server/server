@@ -1,10 +1,10 @@
+using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Network;
-using System;
-using System.Collections.Generic;
 
 namespace JunimoServer.Services.MessageInterceptors
 {
@@ -21,16 +21,31 @@ namespace JunimoServer.Services.MessageInterceptors
 
         private readonly Dictionary<int, List<MessageInterceptor>> _interceptorsOutgoing = new();
 
-        public MessageInterceptorsService(IMonitor monitor, Harmony harmony) : base(monitor)
+        public MessageInterceptorsService(IMonitor monitor, Harmony harmony)
+            : base(monitor)
         {
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), "processIncomingMessage", new[] { typeof(IncomingMessage) }),
-                prefix: new HarmonyMethod(typeof(MessageInterceptorsService), nameof(processIncomingMessage_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    "processIncomingMessage",
+                    new[] { typeof(IncomingMessage) }
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(MessageInterceptorsService),
+                    nameof(processIncomingMessage_Prefix)
+                )
             );
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), "sendMessage", new[] { typeof(long), typeof(OutgoingMessage) }),
-                prefix: new HarmonyMethod(typeof(MessageInterceptorsService), nameof(sendMessage_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    "sendMessage",
+                    new[] { typeof(long), typeof(OutgoingMessage) }
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(MessageInterceptorsService),
+                    nameof(sendMessage_Prefix)
+                )
             );
 
             // Internal static self-reference is used to access the instance inside harmony patches
@@ -90,7 +105,6 @@ namespace JunimoServer.Services.MessageInterceptors
             //         Monitor.Log($"OutgoingMessage {{ Type: {messageType}, To: {peerId} }}");
             //         break;
             // }
-
 
             // The actual message interceptor
             if (_interceptorsOutgoing.TryGetValue(message.MessageType, out var interceptors))

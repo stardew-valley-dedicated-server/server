@@ -9,7 +9,7 @@ namespace JunimoServer.Util
     public static class BuildingExtensions
     {
         /// <summary>
-        /// Remove all objects, bushes, resource clumps, and terrain features below this building. 
+        /// Remove all objects, bushes, resource clumps, and terrain features below this building.
         /// </summary>
         public static void ClearTerrainBelow(this Building building)
         {
@@ -19,19 +19,28 @@ namespace JunimoServer.Util
             location.removeObjectsAndSpawned(building.tileX.Value, building.tileY.Value, 5, 3);
 
             // Clear single tile one south of cabin door
-            location.removeObjectsAndSpawned(building.tileX.Value + 2, building.tileY.Value + 3, 1, 1);
+            location.removeObjectsAndSpawned(
+                building.tileX.Value + 2,
+                building.tileY.Value + 3,
+                1,
+                1
+            );
         }
 
-        public static T? GetIndoors<T>(this Building building) where T : GameLocation
+        public static T? GetIndoors<T>(this Building building)
+            where T : GameLocation
         {
             return (T)building.GetIndoors();
         }
 
-        public static CabinRole GetCabinRole(this Building building) => CabinPositions.Classify(building);
+        public static CabinRole GetCabinRole(this Building building) =>
+            CabinPositions.Classify(building);
 
-        public static bool IsLobbyOrEditing(this Building building) => CabinPositions.IsLobbyOrEditing(building);
+        public static bool IsLobbyOrEditing(this Building building) =>
+            CabinPositions.IsLobbyOrEditing(building);
 
-        public static bool IsInHiddenStack(this Building building) => CabinPositions.IsInPlayerStack(building);
+        public static bool IsInHiddenStack(this Building building) =>
+            CabinPositions.IsInPlayerStack(building);
 
         public static bool IsOwnedBy(this Building building, long ownerId)
         {
@@ -49,7 +58,6 @@ namespace JunimoServer.Util
             // Uses cabin interior owner (farmhandReference), not building.owner
             return cabin.IsOwnedBy(ownerId);
         }
-
 
         public static void Relocate(this Building cabin, float x, float y)
         {
@@ -69,7 +77,6 @@ namespace JunimoServer.Util
             // TODO: Use `cabin.GetParentLocation().OnBuildingMoved(cabin)`?
         }
 
-
         public static void SetPosition(this Building building, Vector2 position)
         {
             building.SetPosition(position.ToPoint());
@@ -80,7 +87,6 @@ namespace JunimoServer.Util
             building.tileX.Value = position.X;
             building.tileY.Value = position.Y;
         }
-
 
         public static void SetWarpsToFarm(this Building building, Point position)
         {

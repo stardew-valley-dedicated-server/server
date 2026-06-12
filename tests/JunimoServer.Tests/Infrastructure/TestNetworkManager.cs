@@ -24,7 +24,9 @@ public static class TestNetworkManager
     /// hosts use the OS-default daemon; remote hosts use <c>host.EndpointConfig</c>.
     /// </summary>
     public static async Task<INetwork> GetOrCreateNetworkAsync(
-        Infrastructure.DockerHost host, CancellationToken ct)
+        Infrastructure.DockerHost host,
+        CancellationToken ct
+    )
     {
         lock (_networks)
         {
@@ -77,7 +79,11 @@ public static class TestNetworkManager
         }
         foreach (var n in toDispose)
         {
-            try { await n.DisposeAsync(); } catch { }
+            try
+            {
+                await n.DisposeAsync();
+            }
+            catch { }
         }
     }
 }

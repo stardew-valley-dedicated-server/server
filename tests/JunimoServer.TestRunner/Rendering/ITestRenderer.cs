@@ -59,7 +59,14 @@ public interface ITestRenderer : IAsyncDisposable
     /// Populate the test tree with discovered tests (before execution starts).
     /// Tests will be shown as pending until they run.
     /// </summary>
-    void PopulateTests(IReadOnlyList<(string Collection, string ClassName, string MethodName, string DisplayName)> tests);
+    void PopulateTests(
+        IReadOnlyList<(
+            string Collection,
+            string ClassName,
+            string MethodName,
+            string DisplayName
+        )> tests
+    );
 
     /// <summary>Handle a screenshot captured for a test (may arrive after the test result event).</summary>
     void OnScreenshotCaptured(ScreenshotCapturedEvent e);

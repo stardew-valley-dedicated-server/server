@@ -5,7 +5,7 @@ namespace JunimoServer.Services.PasswordProtection
     public enum AuthState
     {
         Unauthenticated,
-        Authenticated
+        Authenticated,
     }
 
     public class PlayerAuthData

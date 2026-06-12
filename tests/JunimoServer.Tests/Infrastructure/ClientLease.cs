@@ -44,19 +44,23 @@ public sealed class ClientLease : IAsyncDisposable
     internal void EmitLeased(string testName, string? serverInstanceId = null)
     {
         SetupEventBus.EmitInstanceLeased(_instanceId, testName, serverInstanceId);
-        InfrastructureEventLog.Emit("client_acquired", new
-        {
-            clientIndex = Container.ClientIndex,
-            instanceId = _instanceId,
-            serverInstanceId,
-            serverKey = _serverKey,
-            steamAccountIndex = Container.SteamAccountIndex,
-        });
+        InfrastructureEventLog.Emit(
+            "client_acquired",
+            new
+            {
+                clientIndex = Container.ClientIndex,
+                instanceId = _instanceId,
+                serverInstanceId,
+                serverKey = _serverKey,
+                steamAccountIndex = Container.SteamAccountIndex,
+            }
+        );
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _disposed = true;
 
         SetupEventBus.EmitInstanceReturned(_instanceId);
@@ -73,7 +77,9 @@ public sealed class ClientLease : IAsyncDisposable
                 // Disconnect failed; client is likely dead. Don't return it to the pool
                 // for reuse, but keep it in _allClients so ClientPool.DisposeAsync() can
                 // still retrieve the full recording from it.
-                TestLog.Client($"client-{Container.ClientIndex} disconnect failed, marking dead: {ex.Message}");
+                TestLog.Client(
+                    $"client-{Container.ClientIndex} disconnect failed, marking dead: {ex.Message}"
+                );
                 _pool.MarkClientDead(Container);
                 return;
             }

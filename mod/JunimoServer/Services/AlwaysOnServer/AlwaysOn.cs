@@ -1,3 +1,6 @@
+using System;
+using System.Diagnostics;
+using System.Linq;
 using HarmonyLib;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.GameManager;
@@ -10,9 +13,6 @@ using StardewValley.Locations;
 using StardewValley.Menus;
 using StardewValley.Minigames;
 using StardewValley.Objects;
-using System;
-using System.Diagnostics;
-using System.Linq;
 
 namespace JunimoServer.Services.AlwaysOn
 {
@@ -44,16 +44,36 @@ namespace JunimoServer.Services.AlwaysOn
 
         private readonly AlwaysOnConfig Config;
 
-        public AlwaysOnServer(ChatCommandsService chatCommandService, AlwaysOnConfig config, IModHelper helper, IMonitor monitor, Harmony harmony) : base(helper, monitor)
+        public AlwaysOnServer(
+            ChatCommandsService chatCommandService,
+            AlwaysOnConfig config,
+            IModHelper helper,
+            IMonitor monitor,
+            Harmony harmony
+        )
+            : base(helper, monitor)
         {
             Config = config;
 
             // Register chat commands
-            helper.ConsoleCommands.Add("host-auto", "Toggles host auto mode on/off", ToggleAutoModeCommand);
-            helper.ConsoleCommands.Add("host-visibility", "Toggles host visibility on/off", ToggleVisibilityCommand);
+            helper.ConsoleCommands.Add(
+                "host-auto",
+                "Toggles host auto mode on/off",
+                ToggleAutoModeCommand
+            );
+            helper.ConsoleCommands.Add(
+                "host-visibility",
+                "Toggles host visibility on/off",
+                ToggleVisibilityCommand
+            );
 
             // Extracted festival logic
-            alwaysOnServerFestivals = new AlwaysOnServerFestivals(helper, monitor, chatCommandService, config);
+            alwaysOnServerFestivals = new AlwaysOnServerFestivals(
+                helper,
+                monitor,
+                chatCommandService,
+                config
+            );
 
             // Third-party mod compatibility workarounds (kept separate from base-game automation)
             modCompat = new AlwaysOnModCompat(helper, monitor);
@@ -63,8 +83,14 @@ namespace JunimoServer.Services.AlwaysOn
             // used to live in HandleLockPlayersChests for the inventory case.
             CabinOverrides.Initialize(config);
             harmony.Patch(
-                original: AccessTools.Method(typeof(Cabin), nameof(Cabin.updateEvenIfFarmerIsntHere)),
-                postfix: new HarmonyMethod(typeof(CabinOverrides), nameof(CabinOverrides.UpdateEvenIfFarmerIsntHere_Postfix))
+                original: AccessTools.Method(
+                    typeof(Cabin),
+                    nameof(Cabin.updateEvenIfFarmerIsntHere)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(CabinOverrides),
+                    nameof(CabinOverrides.UpdateEvenIfFarmerIsntHere_Postfix)
+                )
             );
 
             // Force-complete the Mr. Qi mystery-box overnight cutscene on the host. Its completion gate
@@ -72,8 +98,14 @@ namespace JunimoServer.Services.AlwaysOn
             // never converges and the new day never starts. See QiPlaneEventOverrides.
             QiPlaneEventOverrides.Initialize(monitor);
             harmony.Patch(
-                original: AccessTools.Method(typeof(StardewValley.Events.QiPlaneEvent), nameof(StardewValley.Events.QiPlaneEvent.tickUpdate)),
-                postfix: new HarmonyMethod(typeof(QiPlaneEventOverrides), nameof(QiPlaneEventOverrides.TickUpdate_Postfix))
+                original: AccessTools.Method(
+                    typeof(StardewValley.Events.QiPlaneEvent),
+                    nameof(StardewValley.Events.QiPlaneEvent.tickUpdate)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(QiPlaneEventOverrides),
+                    nameof(QiPlaneEventOverrides.TickUpdate_Postfix)
+                )
             );
 
             // Keep the host's main farmhouse at level 0 (internal-only). The only way to upgrade it on
@@ -81,16 +113,34 @@ namespace JunimoServer.Services.AlwaysOn
             // they target the host farmhouse. See HostFarmhouseUpgradeGuard (#346).
             HostFarmhouseUpgradeGuard.Initialize(monitor);
             harmony.Patch(
-                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.HouseUpgrade)),
-                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix))
+                original: AccessTools.Method(
+                    typeof(DebugCommands.DefaultHandlers),
+                    nameof(DebugCommands.DefaultHandlers.HouseUpgrade)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(HostFarmhouseUpgradeGuard),
+                    nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix)
+                )
             );
             harmony.Patch(
-                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.UpgradeHouse)),
-                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix))
+                original: AccessTools.Method(
+                    typeof(DebugCommands.DefaultHandlers),
+                    nameof(DebugCommands.DefaultHandlers.UpgradeHouse)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(HostFarmhouseUpgradeGuard),
+                    nameof(HostFarmhouseUpgradeGuard.BlockHostHouseUpgrade_Prefix)
+                )
             );
             harmony.Patch(
-                original: AccessTools.Method(typeof(DebugCommands.DefaultHandlers), nameof(DebugCommands.DefaultHandlers.ThisHouseUpgrade)),
-                prefix: new HarmonyMethod(typeof(HostFarmhouseUpgradeGuard), nameof(HostFarmhouseUpgradeGuard.BlockThisHouseUpgrade_Prefix))
+                original: AccessTools.Method(
+                    typeof(DebugCommands.DefaultHandlers),
+                    nameof(DebugCommands.DefaultHandlers.ThisHouseUpgrade)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(HostFarmhouseUpgradeGuard),
+                    nameof(HostFarmhouseUpgradeGuard.BlockThisHouseUpgrade_Prefix)
+                )
             );
         }
 
@@ -120,8 +170,14 @@ namespace JunimoServer.Services.AlwaysOn
             }
             else
             {
-                Monitor.Log("CRITICAL: Server unexpectedly returned to title screen. Automation disabled.", LogLevel.Error);
-                Monitor.Log("Container may need restart. Check game logs for crash details.", LogLevel.Error);
+                Monitor.Log(
+                    "CRITICAL: Server unexpectedly returned to title screen. Automation disabled.",
+                    LogLevel.Error
+                );
+                Monitor.Log(
+                    "Container may need restart. Check game logs for crash details.",
+                    LogLevel.Error
+                );
             }
 
             // Reset all automation state regardless (OnSaveLoaded re-enables automation)
@@ -151,7 +207,10 @@ namespace JunimoServer.Services.AlwaysOn
 
                 if (Game1.player != null)
                 {
-                    Game1.player.Equip(ItemRegistry.Create<Hat>($"{ItemRegistry.type_hat}JunimoHat"), Game1.player.hat);
+                    Game1.player.Equip(
+                        ItemRegistry.Create<Hat>($"{ItemRegistry.type_hat}JunimoHat"),
+                        Game1.player.hat
+                    );
                     Game1.player.ignoreCollisions = true;
 
                     PreSeedEarlyGameEvents();
@@ -197,10 +256,25 @@ namespace JunimoServer.Services.AlwaysOn
 
             // Draw server status information in the top left corner
             AlwaysOnUtil.DrawTextBox(5, 100, Game1.dialogueFont, "Auto Mode On");
-            AlwaysOnUtil.DrawTextBox(5, 180, Game1.dialogueFont, $"Press {Config.HotKeyToggleAutoMode} On/Off");
+            AlwaysOnUtil.DrawTextBox(
+                5,
+                180,
+                Game1.dialogueFont,
+                $"Press {Config.HotKeyToggleAutoMode} On/Off"
+            );
             AlwaysOnUtil.DrawTextBox(5, 300, Game1.dialogueFont, "Visibility On");
-            AlwaysOnUtil.DrawTextBox(5, 380, Game1.dialogueFont, $"Press {Config.HotKeyToggleVisibility} On/Off");
-            AlwaysOnUtil.DrawTextBox(5, 540, Game1.dialogueFont, $"{Game1.server.connectionsCount} Players Online");
+            AlwaysOnUtil.DrawTextBox(
+                5,
+                380,
+                Game1.dialogueFont,
+                $"Press {Config.HotKeyToggleVisibility} On/Off"
+            );
+            AlwaysOnUtil.DrawTextBox(
+                5,
+                540,
+                Game1.dialogueFont,
+                $"{Game1.server.connectionsCount} Players Online"
+            );
         }
 
         private void OnButtonPressed(object sender, ButtonPressedEventArgs e)
@@ -362,14 +436,17 @@ namespace JunimoServer.Services.AlwaysOn
             finally
             {
                 sw.Stop();
-                Diagnostics.ModEventLog.Emit("console_command_invoked", new
-                {
-                    command,
-                    args,
-                    result,
-                    error,
-                    durationMs = sw.ElapsedMilliseconds
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "console_command_invoked",
+                    new
+                    {
+                        command,
+                        args,
+                        result,
+                        error,
+                        durationMs = sw.ElapsedMilliseconds,
+                    }
+                );
             }
         }
 
@@ -470,7 +547,8 @@ namespace JunimoServer.Services.AlwaysOn
             // Event() + namePet() pattern which calls Game1.exitActiveMenu() and
             // would destroy any active menu (e.g. ReadyCheckDialog from sleep).
             Monitor.Log($"[Automation] Creating pet '{Config.PetName}'", LogLevel.Info);
-            Helper.Reflection.GetMethod(typeof(Event), "hostActionNamePet")
+            Helper
+                .Reflection.GetMethod(typeof(Event), "hostActionNamePet")
                 .Invoke(Game1.player, CreateBinaryReader(Config.PetName));
             _petChoiceHandled = true;
         }
@@ -496,7 +574,6 @@ namespace JunimoServer.Services.AlwaysOn
             if (!Game1.player.eventsSeen.Contains("65"))
             {
                 Game1.player.eventsSeen.Add("65");
-
 
                 if (this.Config.FarmCaveChoiceIsMushrooms)
                 {
@@ -530,7 +607,11 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private void HandleDialogueBox()
         {
-            if (!IsAutomating || Game1.activeClickableMenu == null || Game1.activeClickableMenu is not DialogueBox)
+            if (
+                !IsAutomating
+                || Game1.activeClickableMenu == null
+                || Game1.activeClickableMenu is not DialogueBox
+            )
             {
                 return;
             }
@@ -561,11 +642,16 @@ namespace JunimoServer.Services.AlwaysOn
             }
 
             bool skipped = Game1.CurrentEvent.skipped;
-            bool finished = Helper.Reflection.GetField<bool>(Game1.CurrentEvent, "eventFinished").GetValue();
+            bool finished = Helper
+                .Reflection.GetField<bool>(Game1.CurrentEvent, "eventFinished")
+                .GetValue();
 
             if (!skipped && !finished)
             {
-                Monitor.Log($"Skipping event (skippable={Game1.CurrentEvent.skippable})", LogLevel.Info);
+                Monitor.Log(
+                    $"Skipping event (skippable={Game1.CurrentEvent.skippable})",
+                    LogLevel.Info
+                );
                 Game1.CurrentEvent.skipEvent();
                 Game1.CurrentEvent.receiveMouseClick(1, 2);
             }
@@ -640,9 +726,11 @@ namespace JunimoServer.Services.AlwaysOn
             _stuckFarmEventLogged = true;
             var type = Game1.farmEvent.GetType().Name;
             Monitor.Log(
-                $"Overnight farm event '{type}' has not completed after {_farmEventActiveMs / 1000.0:0}s " +
-                "of game-time — the host may be stuck. Not force-completing it, since skipping its " +
-                "tickUpdate would bypass any makeChangesToLocation side effects.", LogLevel.Warn);
+                $"Overnight farm event '{type}' has not completed after {_farmEventActiveMs / 1000.0:0}s "
+                    + "of game-time — the host may be stuck. Not force-completing it, since skipping its "
+                    + "tickUpdate would bypass any makeChangesToLocation side effects.",
+                LogLevel.Warn
+            );
         }
 
         /// <summary>
@@ -656,7 +744,10 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            Monitor.Log($"Clearing minigame: {Game1.currentMinigame.GetType().Name}", LogLevel.Info);
+            Monitor.Log(
+                $"Clearing minigame: {Game1.currentMinigame.GetType().Name}",
+                LogLevel.Info
+            );
             Game1.currentMinigame.forceQuit();
         }
 
@@ -742,16 +833,24 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private void HandleAutoSleep()
         {
-            if (Game1.otherFarmers.Count == 0) return;
-            if (_warpingSleep) return;
-            if (!OthersReadyForSleep()) return;
+            if (Game1.otherFarmers.Count == 0)
+                return;
+            if (_warpingSleep)
+                return;
+            if (!OthersReadyForSleep())
+                return;
 
             var home = Game1.player.homeLocation.Value;
 
-            if (Game1.currentLocation is FarmHouse here
-                && string.Equals(here.NameOrUniqueName, home, StringComparison.OrdinalIgnoreCase))
+            if (
+                Game1.currentLocation is FarmHouse here
+                && string.Equals(here.NameOrUniqueName, home, StringComparison.OrdinalIgnoreCase)
+            )
             {
-                Monitor.Log($"Host is home, sleeping in place ({here.NameOrUniqueName})", LogLevel.Info);
+                Monitor.Log(
+                    $"Host is home, sleeping in place ({here.NameOrUniqueName})",
+                    LogLevel.Info
+                );
                 HostSleepInBed(here);
                 return;
             }
@@ -768,7 +867,10 @@ namespace JunimoServer.Services.AlwaysOn
                 else
                 {
                     _warpingSleep = false;
-                    Monitor.Log($"Sleep warp landed in unexpected location: {Game1.currentLocation?.NameOrUniqueName}", LogLevel.Warn);
+                    Monitor.Log(
+                        $"Sleep warp landed in unexpected location: {Game1.currentLocation?.NameOrUniqueName}",
+                        LogLevel.Warn
+                    );
                 }
             };
             // Coords are any valid tile inside the target FarmHouse; HostSleepInBed
@@ -794,8 +896,10 @@ namespace JunimoServer.Services.AlwaysOn
         private static bool OthersReadyForSleep()
         {
             int ready = Game1.netReady.GetNumberReady("sleep");
-            if (ready <= 0) return false;
-            if (Game1.netReady.IsReady("sleep")) return false;
+            if (ready <= 0)
+                return false;
+            if (Game1.netReady.IsReady("sleep"))
+                return false;
             return ready >= Game1.netReady.GetNumberRequired("sleep") - 1;
         }
 
@@ -808,12 +912,14 @@ namespace JunimoServer.Services.AlwaysOn
             // Skipping is safe: mail persists across days, no downstream logic gates
             // on "mail was collected this day", and OnTimeChanged(620) tomorrow is
             // the retry. If that day is also blocked, we defer again.
-            if (AlwaysOnUtil.IsReadyCheckActive()) return;
+            if (AlwaysOnUtil.IsReadyCheckActive())
+                return;
 
             // Nothing to collect — don't open the "mailbox is empty" dialog. It
             // briefly steals activeClickableMenu for no benefit and widens the race
             // window if a ReadyCheckDialog shows up a tick later.
-            if (Game1.mailbox.Count == 0) return;
+            if (Game1.mailbox.Count == 0)
+                return;
 
             // Checking mails once more closes the last one
             int mailboxCount = Game1.mailbox.Count + 1;
@@ -845,20 +951,22 @@ namespace JunimoServer.Services.AlwaysOn
                 return;
             }
 
-            bool hasCommunityCenterConditions = Game1.player.eventsSeen.Contains("191393") ||
-                !Game1.player.mailReceived.Contains("ccCraftsRoom") ||
-                !Game1.player.mailReceived.Contains("ccVault") ||
-                !Game1.player.mailReceived.Contains("ccFishTank") ||
-                !Game1.player.mailReceived.Contains("ccBoilerRoom") ||
-                !Game1.player.mailReceived.Contains("ccPantry") ||
-                !Game1.player.mailReceived.Contains("ccBulletin");
+            bool hasCommunityCenterConditions =
+                Game1.player.eventsSeen.Contains("191393")
+                || !Game1.player.mailReceived.Contains("ccCraftsRoom")
+                || !Game1.player.mailReceived.Contains("ccVault")
+                || !Game1.player.mailReceived.Contains("ccFishTank")
+                || !Game1.player.mailReceived.Contains("ccBoilerRoom")
+                || !Game1.player.mailReceived.Contains("ccPantry")
+                || !Game1.player.mailReceived.Contains("ccBulletin");
 
             if (hasCommunityCenterConditions)
             {
                 return;
             }
 
-            CommunityCenter communityCenter = Game1.getLocationFromName("CommunityCenter") as CommunityCenter;
+            CommunityCenter communityCenter =
+                Game1.getLocationFromName("CommunityCenter") as CommunityCenter;
             for (int index = 0; index < communityCenter.areasComplete.Count; ++index)
             {
                 communityCenter.areasComplete[index] = true;
@@ -974,7 +1082,10 @@ namespace JunimoServer.Services.AlwaysOn
             }
 
             HostFarmhouseUpgradeGuard.ResetHostFarmhouseToLevelZero();
-            Monitor.Log("Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.", LogLevel.Info);
+            Monitor.Log(
+                "Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.",
+                LogLevel.Info
+            );
         }
 
         /// <summary>
@@ -986,21 +1097,27 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private void LockOfflineFarmhandStorage()
         {
-            if (!Config.LockPlayerChests) return;
-            if (!Game1.IsMasterGame) return;
+            if (!Config.LockPlayerChests)
+                return;
+            if (!Game1.IsMasterGame)
+                return;
 
             var farm = Game1.getFarm();
-            if (farm == null) return;
+            if (farm == null)
+                return;
 
             var onlineFarmers = Game1.getOnlineFarmers();
 
             foreach (var building in farm.buildings)
             {
-                if (!building.isCabin) continue;
-                if (building.GetIndoors() is not Cabin cabin) continue;
+                if (!building.isCabin)
+                    continue;
+                if (building.GetIndoors() is not Cabin cabin)
+                    continue;
 
                 var owner = cabin.owner;
-                if (owner != null && !owner.isUnclaimedFarmhand && onlineFarmers.Contains(owner)) continue;
+                if (owner != null && !owner.isUnclaimedFarmhand && onlineFarmers.Contains(owner))
+                    continue;
 
                 if (cabin.fridge.Value is { } fridge && !fridge.mutex.IsLocked())
                 {
@@ -1008,7 +1125,8 @@ namespace JunimoServer.Services.AlwaysOn
                 }
                 foreach (var chest in cabin.objects.Values.OfType<Chest>())
                 {
-                    if (!chest.mutex.IsLocked()) chest.mutex.RequestLock();
+                    if (!chest.mutex.IsLocked())
+                        chest.mutex.RequestLock();
                 }
             }
         }
@@ -1022,24 +1140,34 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private void ReleaseOnlineFarmhandStorage(Farmer owner)
         {
-            if (!Config.LockPlayerChests) return;
-            if (!Game1.IsMasterGame) return;
-            if (owner == null) return;
+            if (!Config.LockPlayerChests)
+                return;
+            if (!Game1.IsMasterGame)
+                return;
+            if (owner == null)
+                return;
 
             var farm = Game1.getFarm();
-            if (farm == null) return;
+            if (farm == null)
+                return;
 
             foreach (var building in farm.buildings)
             {
-                if (!building.isCabin) continue;
-                if (building.GetIndoors() is not Cabin cabin) continue;
-                if (cabin.owner != owner) continue;
+                if (!building.isCabin)
+                    continue;
+                if (building.GetIndoors() is not Cabin cabin)
+                    continue;
+                if (cabin.owner != owner)
+                    continue;
 
-                if (cabin.inventoryMutex.IsLockHeld()) cabin.inventoryMutex.ReleaseLock();
-                if (cabin.fridge.Value is { } fridge && fridge.mutex.IsLockHeld()) fridge.mutex.ReleaseLock();
+                if (cabin.inventoryMutex.IsLockHeld())
+                    cabin.inventoryMutex.ReleaseLock();
+                if (cabin.fridge.Value is { } fridge && fridge.mutex.IsLockHeld())
+                    fridge.mutex.ReleaseLock();
                 foreach (var chest in cabin.objects.Values.OfType<Chest>())
                 {
-                    if (chest.mutex.IsLockHeld()) chest.mutex.ReleaseLock();
+                    if (chest.mutex.IsLockHeld())
+                        chest.mutex.ReleaseLock();
                 }
                 return;
             }
@@ -1047,11 +1175,14 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
         {
-            if (!Config.LockPlayerChests) return;
-            if (!Game1.IsMasterGame) return;
+            if (!Config.LockPlayerChests)
+                return;
+            if (!Game1.IsMasterGame)
+                return;
 
             var farmer = Game1.GetPlayer(e.Peer.PlayerID, onlyOnline: true);
-            if (farmer != null) ReleaseOnlineFarmhandStorage(farmer);
+            if (farmer != null)
+                ReleaseOnlineFarmhandStorage(farmer);
         }
 
         private void OnPeerDisconnected(object sender, PeerDisconnectedEventArgs e)
@@ -1063,15 +1194,20 @@ namespace JunimoServer.Services.AlwaysOn
 
         private void OnObjectListChanged(object sender, ObjectListChangedEventArgs e)
         {
-            if (!Config.LockPlayerChests) return;
-            if (!Game1.IsMasterGame) return;
-            if (e.Location is not Cabin cabin) return;
+            if (!Config.LockPlayerChests)
+                return;
+            if (!Game1.IsMasterGame)
+                return;
+            if (e.Location is not Cabin cabin)
+                return;
 
             var owner = cabin.owner;
-            var ownerOffline = owner == null
-                               || owner.isUnclaimedFarmhand
-                               || !Game1.getOnlineFarmers().Contains(owner);
-            if (!ownerOffline) return;
+            var ownerOffline =
+                owner == null
+                || owner.isUnclaimedFarmhand
+                || !Game1.getOnlineFarmers().Contains(owner);
+            if (!ownerOffline)
+                return;
 
             foreach (var added in e.Added)
             {

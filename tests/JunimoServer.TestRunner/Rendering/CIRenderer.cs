@@ -29,7 +29,19 @@ public sealed class CIRenderer : RendererBase
     private readonly List<(TestFailedEvent Failure, string? Output)> _failures = new();
 
     // Spinner animation (TTY only)
-    private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    private static readonly string[] SpinnerFrames =
+    [
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏",
+    ];
     private readonly object _writeLock = new();
     private Timer? _spinnerTimer;
     private int _spinnerFrame;
@@ -38,15 +50,17 @@ public sealed class CIRenderer : RendererBase
     private bool _spinnerIsSetup; // true = setup step spinner, false = test spinner
     private int _terminalWidth;
 
-    public CIRenderer(bool verbose = false) : this(Console.Out, Console.Error, verbose) { }
+    public CIRenderer(bool verbose = false)
+        : this(Console.Out, Console.Error, verbose) { }
 
-    public CIRenderer(TextWriter stdout, TextWriter stderr, bool verbose = false) : base(verbose)
+    public CIRenderer(TextWriter stdout, TextWriter stderr, bool verbose = false)
+        : base(verbose)
     {
         _out = stdout;
         _err = stderr;
         _isGitHubActions = Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true";
-        _useColor = !Console.IsOutputRedirected &&
-                     Environment.GetEnvironmentVariable("NO_COLOR") == null;
+        _useColor =
+            !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") == null;
         _isTTY = !Console.IsOutputRedirected;
         _terminalWidth = _isTTY ? GetTerminalWidth() : 0;
     }
@@ -54,12 +68,19 @@ public sealed class CIRenderer : RendererBase
     // ── ANSI helpers ──
 
     private string Green(string text) => _useColor ? $"\x1b[32m{text}\x1b[0m" : text;
+
     private string Red(string text) => _useColor ? $"\x1b[31m{text}\x1b[0m" : text;
+
     private string RedBold(string text) => _useColor ? $"\x1b[1;31m{text}\x1b[0m" : text;
+
     private string Yellow(string text) => _useColor ? $"\x1b[33m{text}\x1b[0m" : text;
+
     private string Cyan(string text) => _useColor ? $"\x1b[36m{text}\x1b[0m" : text;
+
     private string Bold(string text) => _useColor ? $"\x1b[1m{text}\x1b[0m" : text;
+
     private string Dim(string text) => _useColor ? $"\x1b[2m{text}\x1b[0m" : text;
+
     private string RedBoldInverse(string text) => _useColor ? $"\x1b[1;7;31m{text}\x1b[0m" : text;
 
     // ── Run lifecycle ──
@@ -95,7 +116,9 @@ public sealed class CIRenderer : RendererBase
                 var shortClass = GetShortClassName(f.TestClass);
                 var shortTest = GetShortTestName(f.DisplayName);
 
-                _out.WriteLine($" {RedBoldInverse(" FAIL ")} {shortClass} > {shortTest}  {Dim(FormatDuration(f.Duration))}");
+                _out.WriteLine(
+                    $" {RedBoldInverse(" FAIL ")} {shortClass} > {shortTest}  {Dim(FormatDuration(f.Duration))}"
+                );
                 _out.WriteLine();
 
                 // Exception message
@@ -286,7 +309,8 @@ public sealed class CIRenderer : RendererBase
     {
         lock (_writeLock)
         {
-            if (_spinnerLabel == null) return;
+            if (_spinnerLabel == null)
+                return;
             _spinnerFrame = (_spinnerFrame + 1) % SpinnerFrames.Length;
             _out.Write(BuildSpinnerLine(_spinnerFrame));
             _out.Flush();
@@ -313,8 +337,14 @@ public sealed class CIRenderer : RendererBase
 
     private static int GetTerminalWidth()
     {
-        try { return Console.WindowWidth; }
-        catch { return 120; }
+        try
+        {
+            return Console.WindowWidth;
+        }
+        catch
+        {
+            return 120;
+        }
     }
 
     /// <summary>
@@ -421,7 +451,9 @@ public sealed class CIRenderer : RendererBase
             if (_isTTY)
                 _out.Write("\r\x1b[2K");
 
-            _out.WriteLine($"   {RedBold("\u2717")} {shortTest}  {Dim(FormatDuration(e.Duration))}");
+            _out.WriteLine(
+                $"   {RedBold("\u2717")} {shortTest}  {Dim(FormatDuration(e.Duration))}"
+            );
 
             // Short inline error (first line only)
             _out.WriteLine($"     {Red($"\u2192 {FirstLine(e.Message)}")}");
@@ -431,7 +463,10 @@ public sealed class CIRenderer : RendererBase
             // GitHub Actions error annotation
             if (_isGitHubActions)
             {
-                var escapedMsg = e.Message.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
+                var escapedMsg = e
+                    .Message.Replace("%", "%25")
+                    .Replace("\r", "%0D")
+                    .Replace("\n", "%0A");
                 _err.WriteLine($"::error title={e.TestClass}.{e.TestMethod}::{escapedMsg}");
             }
 
@@ -472,12 +507,12 @@ public sealed class CIRenderer : RendererBase
         var (icon, colorize) = e.Level switch
         {
             AnnotationLevel.Success => ("✓", (Func<string, string>)Green),
-            AnnotationLevel.Error   => ("✗", RedBold),
-            AnnotationLevel.Warning => ("!",      Yellow),
-            AnnotationLevel.Detail  => ("→", Dim),
-            AnnotationLevel.Trace   => ("·", Dim),
-            AnnotationLevel.Section => ("",       Bold),
-            _                        => ("",       static s => s),
+            AnnotationLevel.Error => ("✗", RedBold),
+            AnnotationLevel.Warning => ("!", Yellow),
+            AnnotationLevel.Detail => ("→", Dim),
+            AnnotationLevel.Trace => ("·", Dim),
+            AnnotationLevel.Section => ("", Bold),
+            _ => ("", static s => s),
         };
 
         var sourceTag = $"[{e.Source.ToString().ToLowerInvariant()}]";
@@ -516,7 +551,7 @@ public sealed class CIRenderer : RendererBase
             LogSource.Game => "game",
             LogSource.Fixture => "setup",
             LogSource.Test => "test",
-            _ => "info"
+            _ => "info",
         };
 
         var line = $"   [{prefix}] {e.Message}";
@@ -556,7 +591,10 @@ public sealed class CIRenderer : RendererBase
 
         if (_isGitHubActions)
         {
-            var escapedMsg = e.Message.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
+            var escapedMsg = e
+                .Message.Replace("%", "%25")
+                .Replace("\r", "%0D")
+                .Replace("\n", "%0A");
             _err.WriteLine($"::error::{escapedMsg}");
         }
 
@@ -610,9 +648,9 @@ public sealed class CIRenderer : RendererBase
 
     private static string FirstLine(string text)
     {
-        if (string.IsNullOrEmpty(text)) return text;
+        if (string.IsNullOrEmpty(text))
+            return text;
         var idx = text.IndexOfAny(['\r', '\n']);
         return idx >= 0 ? text[..idx] : text;
     }
-
 }

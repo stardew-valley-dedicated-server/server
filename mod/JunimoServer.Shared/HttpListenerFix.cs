@@ -34,18 +34,29 @@ namespace JunimoServer.Shared
 
             // HttpEndPointListener is internal; find it via the assembly
             var httpListenerAssembly = typeof(HttpListener).Assembly;
-            var endPointListenerType = httpListenerAssembly.GetType("System.Net.HttpEndPointListener");
+            var endPointListenerType = httpListenerAssembly.GetType(
+                "System.Net.HttpEndPointListener"
+            );
 
             if (endPointListenerType == null)
             {
-                monitor.Log("HttpListenerFix: HttpEndPointListener type not found, patch not needed (non-Linux?)", LogLevel.Trace);
+                monitor.Log(
+                    "HttpListenerFix: HttpEndPointListener type not found, patch not needed (non-Linux?)",
+                    LogLevel.Trace
+                );
                 return;
             }
 
-            _unregisteredConnectionsField = AccessTools.Field(endPointListenerType, "_unregisteredConnections");
+            _unregisteredConnectionsField = AccessTools.Field(
+                endPointListenerType,
+                "_unregisteredConnections"
+            );
             if (_unregisteredConnectionsField == null)
             {
-                monitor.Log("HttpListenerFix: _unregisteredConnections field not found. Skipping patch.", LogLevel.Warn);
+                monitor.Log(
+                    "HttpListenerFix: _unregisteredConnections field not found. Skipping patch.",
+                    LogLevel.Warn
+                );
                 return;
             }
 
@@ -57,16 +68,22 @@ namespace JunimoServer.Shared
             // Patch the constructor. This runs before Accept() is called, so we can
             // pre-initialize _unregisteredConnections before any async callback fires.
             // We can't patch ProcessAccept because the JIT may inline it into Accept.
-            var ctor = AccessTools.Constructor(endPointListenerType, new[]
-            {
-                typeof(HttpListener),
-                typeof(System.Net.IPAddress),
-                typeof(int),
-                typeof(bool)
-            });
+            var ctor = AccessTools.Constructor(
+                endPointListenerType,
+                new[]
+                {
+                    typeof(HttpListener),
+                    typeof(System.Net.IPAddress),
+                    typeof(int),
+                    typeof(bool),
+                }
+            );
             if (ctor == null)
             {
-                monitor.Log("HttpListenerFix: constructor not found. Skipping patch.", LogLevel.Warn);
+                monitor.Log(
+                    "HttpListenerFix: constructor not found. Skipping patch.",
+                    LogLevel.Warn
+                );
                 return;
             }
 
@@ -75,7 +92,10 @@ namespace JunimoServer.Shared
                 prefix: new HarmonyMethod(typeof(HttpListenerFix), nameof(Constructor_Prefix))
             );
 
-            monitor.Log("HttpListenerFix: patched HttpEndPointListener constructor (dotnet/runtime#28658)", LogLevel.Info);
+            monitor.Log(
+                "HttpListenerFix: patched HttpEndPointListener constructor (dotnet/runtime#28658)",
+                LogLevel.Info
+            );
         }
 
         /// <summary>

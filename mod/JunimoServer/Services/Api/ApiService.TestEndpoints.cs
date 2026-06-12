@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Threading.Tasks;
 using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Util;
@@ -9,11 +14,6 @@ using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Objects;
 using StardewValley.TerrainFeatures;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Services.Api
 {
@@ -42,8 +42,11 @@ namespace JunimoServer.Services.Api
         /// unsupported method) falls through to the same generic 404 as any missing route.
         /// </summary>
         private async Task DispatchTestEndpointAsync(
-            string method, string path,
-            HttpListenerRequest request, HttpListenerResponse response)
+            string method,
+            string path,
+            HttpListenerRequest request,
+            HttpListenerResponse response
+        )
         {
             switch (method)
             {
@@ -59,16 +62,28 @@ namespace JunimoServer.Services.Api
                     switch (path)
                     {
                         case "/test/set_date":
-                            await WriteJsonAsync(response, await HandlePostTestSetDateAsync(request));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostTestSetDateAsync(request)
+                            );
                             return;
                         case "/test/farmevent":
-                            await WriteJsonAsync(response, await HandlePostTestFarmEventAsync(request));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostTestFarmEventAsync(request)
+                            );
                             return;
                         case "/test/saver_crop":
-                            await WriteJsonAsync(response, await HandlePostTestSaverCropAsync(request));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostTestSaverCropAsync(request)
+                            );
                             return;
                         case "/test/house_upgrade":
-                            await WriteJsonAsync(response, await HandlePostTestHouseUpgradeAsync(request));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostTestHouseUpgradeAsync(request)
+                            );
                             return;
                         case "/test/stamp_claim":
                             await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
@@ -80,7 +95,12 @@ namespace JunimoServer.Services.Api
             await WriteNotFoundAsync(response, path);
         }
 
-        [ApiEndpoint("GET", "/test/crops", Summary = "Enumerate every HoeDirt-with-crop in the world (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "GET",
+            "/test/crops",
+            Summary = "Enumerate every HoeDirt-with-crop in the world (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestCropsResponse), 200)]
         private async Task<TestCropsResponse> HandleGetTestCropsAsync()
         {
@@ -95,37 +115,48 @@ namespace JunimoServer.Services.Api
 
                         foreach (var feature in location.terrainFeatures.Values)
                         {
-                            if (feature is not HoeDirt dirt) continue;
+                            if (feature is not HoeDirt dirt)
+                                continue;
                             var crop = dirt.crop;
-                            if (crop == null) continue;
-                            crops.Add(new TestCrop
-                            {
-                                LocationName = locName,
-                                TileX = (int)dirt.Tile.X,
-                                TileY = (int)dirt.Tile.Y,
-                                IsAlive = !crop.dead.Value,
-                                IsInPot = false,
-                                SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile)
-                            });
+                            if (crop == null)
+                                continue;
+                            crops.Add(
+                                new TestCrop
+                                {
+                                    LocationName = locName,
+                                    TileX = (int)dirt.Tile.X,
+                                    TileY = (int)dirt.Tile.Y,
+                                    IsAlive = !crop.dead.Value,
+                                    IsInPot = false,
+                                    SeedItemId = crop.netSeedIndex.Value,
+                                    IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile),
+                                }
+                            );
                         }
 
                         foreach (var pot in location.Objects.Values.OfType<IndoorPot>())
                         {
                             var dirt = pot.hoeDirt.Value;
-                            if (dirt == null) continue;
+                            if (dirt == null)
+                                continue;
                             var crop = dirt.crop;
-                            if (crop == null) continue;
-                            crops.Add(new TestCrop
-                            {
-                                LocationName = locName,
-                                TileX = (int)pot.TileLocation.X,
-                                TileY = (int)pot.TileLocation.Y,
-                                IsAlive = !crop.dead.Value,
-                                IsInPot = true,
-                                SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, pot.TileLocation)
-                            });
+                            if (crop == null)
+                                continue;
+                            crops.Add(
+                                new TestCrop
+                                {
+                                    LocationName = locName,
+                                    TileX = (int)pot.TileLocation.X,
+                                    TileY = (int)pot.TileLocation.Y,
+                                    IsAlive = !crop.dead.Value,
+                                    IsInPot = true,
+                                    SeedItemId = crop.netSeedIndex.Value,
+                                    IsManaged = CropSaverOverrides.IsManaged(
+                                        locName,
+                                        pot.TileLocation
+                                    ),
+                                }
+                            );
                         }
 
                         return true;
@@ -140,14 +171,24 @@ namespace JunimoServer.Services.Api
             return new TestCropsResponse { Success = true, Crops = crops };
         }
 
-        [ApiEndpoint("POST", "/test/set_date", Summary = "Set season/day/year directly (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "POST",
+            "/test/set_date",
+            Summary = "Set season/day/year directly (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestSetDateResponse), 200)]
-        private async Task<TestSetDateResponse> HandlePostTestSetDateAsync(HttpListenerRequest request)
+        private async Task<TestSetDateResponse> HandlePostTestSetDateAsync(
+            HttpListenerRequest request
+        )
         {
             TestSetDateRequest? body = null;
             try
             {
-                using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
+                using var reader = new System.IO.StreamReader(
+                    request.InputStream,
+                    request.ContentEncoding
+                );
                 var json = await reader.ReadToEndAsync();
                 if (!string.IsNullOrWhiteSpace(json))
                 {
@@ -156,27 +197,47 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                return new TestSetDateResponse { Success = false, Error = $"Failed to parse body: {ex.Message}" };
+                return new TestSetDateResponse
+                {
+                    Success = false,
+                    Error = $"Failed to parse body: {ex.Message}",
+                };
             }
 
             if (body == null || string.IsNullOrEmpty(body.Season))
             {
-                return new TestSetDateResponse { Success = false, Error = "Missing 'season' in request body" };
+                return new TestSetDateResponse
+                {
+                    Success = false,
+                    Error = "Missing 'season' in request body",
+                };
             }
 
             if (!Enum.TryParse<Season>(body.Season, ignoreCase: true, out var season))
             {
-                return new TestSetDateResponse { Success = false, Error = $"Invalid season '{body.Season}' (expected spring/summer/fall/winter)" };
+                return new TestSetDateResponse
+                {
+                    Success = false,
+                    Error = $"Invalid season '{body.Season}' (expected spring/summer/fall/winter)",
+                };
             }
 
             if (body.Day < 1 || body.Day > 28)
             {
-                return new TestSetDateResponse { Success = false, Error = $"Day {body.Day} out of range (1-28)" };
+                return new TestSetDateResponse
+                {
+                    Success = false,
+                    Error = $"Day {body.Day} out of range (1-28)",
+                };
             }
 
             if (body.Year < 1)
             {
-                return new TestSetDateResponse { Success = false, Error = $"Year {body.Year} out of range (>= 1)" };
+                return new TestSetDateResponse
+                {
+                    Success = false,
+                    Error = $"Year {body.Year} out of range (>= 1)",
+                };
             }
 
             await RunOnGameThreadAsync(() =>
@@ -192,20 +253,30 @@ namespace JunimoServer.Services.Api
                 Game1.netWorldState.Value.UpdateFromGame1();
             });
 
-            Monitor.Log($"Date set to {season} {body.Day}, year {body.Year} via test API", LogLevel.Info);
+            Monitor.Log(
+                $"Date set to {season} {body.Day}, year {body.Year} via test API",
+                LogLevel.Info
+            );
 
             return new TestSetDateResponse
             {
                 Success = true,
                 Season = season.ToString().ToLowerInvariant(),
                 Day = body.Day,
-                Year = body.Year
+                Year = body.Year,
             };
         }
 
-        [ApiEndpoint("POST", "/test/farmevent", Summary = "Queue an overnight FarmEvent for the next night (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "POST",
+            "/test/farmevent",
+            Summary = "Queue an overnight FarmEvent for the next night (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestFarmEventResponse), 200)]
-        private async Task<TestFarmEventResponse> HandlePostTestFarmEventAsync(HttpListenerRequest request)
+        private async Task<TestFarmEventResponse> HandlePostTestFarmEventAsync(
+            HttpListenerRequest request
+        )
         {
             // Game1.farmEventOverride is consumed by _newDayAfterFade as the fallback when no random
             // farm event is picked (decompiled Game1.cs:8588), so this deterministically queues the
@@ -215,29 +286,46 @@ namespace JunimoServer.Services.Api
             StardewValley.Events.FarmEvent? farmEvent = type switch
             {
                 "qiplane" => new StardewValley.Events.QiPlaneEvent(),
-                _ => null
+                _ => null,
             };
 
             if (farmEvent == null)
             {
-                return new TestFarmEventResponse { Success = false, Error = $"Unknown farm event type '{type}' (supported: qiplane)" };
+                return new TestFarmEventResponse
+                {
+                    Success = false,
+                    Error = $"Unknown farm event type '{type}' (supported: qiplane)",
+                };
             }
 
             await RunOnGameThreadAsync(() => Game1.farmEventOverride = farmEvent);
 
-            Monitor.Log($"Queued overnight farm event '{type}' for the next night via test API", LogLevel.Info);
+            Monitor.Log(
+                $"Queued overnight farm event '{type}' for the next night via test API",
+                LogLevel.Info
+            );
 
             return new TestFarmEventResponse { Success = true, Type = type };
         }
 
-        [ApiEndpoint("POST", "/test/saver_crop", Summary = "Mutate a CropSaver entry (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "POST",
+            "/test/saver_crop",
+            Summary = "Mutate a CropSaver entry (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestSaverCropResponse), 200)]
-        private async Task<TestSaverCropResponse> HandlePostTestSaverCropAsync(HttpListenerRequest request)
+        private async Task<TestSaverCropResponse> HandlePostTestSaverCropAsync(
+            HttpListenerRequest request
+        )
         {
             TestSaverCropRequest? body = null;
             try
             {
-                using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
+                using var reader = new System.IO.StreamReader(
+                    request.InputStream,
+                    request.ContentEncoding
+                );
                 var json = await reader.ReadToEndAsync();
                 if (!string.IsNullOrWhiteSpace(json))
                 {
@@ -246,30 +334,48 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                return new TestSaverCropResponse { Success = false, Error = $"Failed to parse body: {ex.Message}" };
+                return new TestSaverCropResponse
+                {
+                    Success = false,
+                    Error = $"Failed to parse body: {ex.Message}",
+                };
             }
 
             if (body == null || string.IsNullOrEmpty(body.LocationName))
             {
-                return new TestSaverCropResponse { Success = false, Error = "Missing 'locationName' in request body" };
+                return new TestSaverCropResponse
+                {
+                    Success = false,
+                    Error = "Missing 'locationName' in request body",
+                };
             }
 
             var loader = JunimoServer.Services.CropSaver.CropSaver.Instance?.DataLoader;
             if (loader == null)
             {
-                return new TestSaverCropResponse { Success = false, Error = "CropSaver not initialized" };
+                return new TestSaverCropResponse
+                {
+                    Success = false,
+                    Error = "CropSaver not initialized",
+                };
             }
 
             SDate? newDatePlanted = null;
             if (body.DatePlanted != null)
             {
-                if (string.IsNullOrEmpty(body.DatePlanted.Season)
-                    || !Enum.TryParse<Season>(body.DatePlanted.Season, ignoreCase: true, out var dpSeason))
+                if (
+                    string.IsNullOrEmpty(body.DatePlanted.Season)
+                    || !Enum.TryParse<Season>(
+                        body.DatePlanted.Season,
+                        ignoreCase: true,
+                        out var dpSeason
+                    )
+                )
                 {
                     return new TestSaverCropResponse
                     {
                         Success = false,
-                        Error = $"Invalid datePlanted.season '{body.DatePlanted.Season}'"
+                        Error = $"Invalid datePlanted.season '{body.DatePlanted.Season}'",
                     };
                 }
                 if (body.DatePlanted.Day < 1 || body.DatePlanted.Day > 28)
@@ -277,7 +383,7 @@ namespace JunimoServer.Services.Api
                     return new TestSaverCropResponse
                     {
                         Success = false,
-                        Error = $"datePlanted.day {body.DatePlanted.Day} out of range (1-28)"
+                        Error = $"datePlanted.day {body.DatePlanted.Day} out of range (1-28)",
                     };
                 }
                 if (body.DatePlanted.Year < 1)
@@ -285,10 +391,14 @@ namespace JunimoServer.Services.Api
                     return new TestSaverCropResponse
                     {
                         Success = false,
-                        Error = $"datePlanted.year {body.DatePlanted.Year} out of range (>= 1)"
+                        Error = $"datePlanted.year {body.DatePlanted.Year} out of range (>= 1)",
                     };
                 }
-                newDatePlanted = new SDate(body.DatePlanted.Day, dpSeason.ToString().ToLowerInvariant(), body.DatePlanted.Year);
+                newDatePlanted = new SDate(
+                    body.DatePlanted.Day,
+                    dpSeason.ToString().ToLowerInvariant(),
+                    body.DatePlanted.Year
+                );
             }
 
             var tile = new Vector2(body.TileX, body.TileY);
@@ -302,35 +412,50 @@ namespace JunimoServer.Services.Api
                     {
                         Success = false,
                         Found = false,
-                        Error = $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY})"
+                        Error =
+                            $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY})",
                     };
                     return;
                 }
 
-                if (body.ExtraDays.HasValue) saverCrop.extraDays = body.ExtraDays.Value;
-                if (body.OwnerId.HasValue) saverCrop.ownerId = body.OwnerId.Value;
-                if (newDatePlanted != null) saverCrop.datePlanted = newDatePlanted;
+                if (body.ExtraDays.HasValue)
+                    saverCrop.extraDays = body.ExtraDays.Value;
+                if (body.OwnerId.HasValue)
+                    saverCrop.ownerId = body.OwnerId.Value;
+                if (newDatePlanted != null)
+                    saverCrop.datePlanted = newDatePlanted;
 
                 result = new TestSaverCropResponse
                 {
                     Success = true,
                     Found = true,
                     ExtraDays = saverCrop.extraDays,
-                    OwnerId = saverCrop.ownerId
+                    OwnerId = saverCrop.ownerId,
                 };
             });
 
             return result;
         }
 
-        [ApiEndpoint("POST", "/test/house_upgrade", Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "POST",
+            "/test/house_upgrade",
+            Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestHouseUpgradeResponse), 200)]
-        private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(HttpListenerRequest request)
+        private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(
+            HttpListenerRequest request
+        )
         {
             var command = request.QueryString["command"];
             if (string.IsNullOrWhiteSpace(command))
             {
-                return new TestHouseUpgradeResponse { Success = false, Error = "Missing 'command' query parameter" };
+                return new TestHouseUpgradeResponse
+                {
+                    Success = false,
+                    Error = "Missing 'command' query parameter",
+                };
             }
 
             // Route through parseDebugInput so the real vanilla handler — and thus the
@@ -358,7 +483,12 @@ namespace JunimoServer.Services.Api
             return result;
         }
 
-        [ApiEndpoint("POST", "/test/stamp_claim", Summary = "Stamp a synthetic abandoned slot claim onto an uncustomized homed farmhand (test-only)", Tag = "Test")]
+        [ApiEndpoint(
+            "POST",
+            "/test/stamp_claim",
+            Summary = "Stamp a synthetic abandoned slot claim onto an uncustomized homed farmhand (test-only)",
+            Tag = "Test"
+        )]
         [ApiResponse(typeof(TestStampClaimResponse), 200)]
         private async Task<TestStampClaimResponse> HandlePostTestStampClaimAsync()
         {
@@ -386,13 +516,17 @@ namespace JunimoServer.Services.Api
                     // so only the sweep heals it on reload.
                     foreach (var building in farm.buildings)
                     {
-                        if (!building.isCabin || LobbyService.IsLobbyCabin(building)) continue;
+                        if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+                            continue;
 
                         var cabin = building.GetIndoors<Cabin>();
                         var owner = cabin?.owner;
-                        if (owner == null) continue;
-                        if (owner.isCustomized.Value) continue;
-                        if (!string.IsNullOrEmpty(owner.userID.Value)) continue;
+                        if (owner == null)
+                            continue;
+                        if (owner.isCustomized.Value)
+                            continue;
+                        if (!string.IsNullOrEmpty(owner.userID.Value))
+                            continue;
 
                         // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
                         // (the slot's home should already be its cabin; set it to be deterministic).
@@ -406,7 +540,8 @@ namespace JunimoServer.Services.Api
                         return;
                     }
 
-                    result.Error = "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
+                    result.Error =
+                        "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
                 });
             }
             catch (Exception ex)

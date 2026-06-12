@@ -1,3 +1,13 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
 using HarmonyLib;
 using JunimoServer.Services.Settings;
 using JunimoServer.Util;
@@ -10,16 +20,6 @@ using StardewValley.Buildings;
 using StardewValley.Locations;
 using StardewValley.Network;
 using StardewValley.Objects;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
 
 namespace JunimoServer.Services.Lobby
 {
@@ -76,14 +76,18 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         public static bool IsLobbyCabin(Building building)
         {
-            if (building == null || !building.isCabin) return false;
+            if (building == null || !building.isCabin)
+                return false;
             return CabinPositions.IsLobbyOrEditing(building);
         }
 
         /// <summary>
         /// Regex for valid layout names: alphanumeric, dash, underscore only.
         /// </summary>
-        private static readonly Regex ValidLayoutNameRegex = new Regex(@"^[a-zA-Z0-9_-]+$", RegexOptions.Compiled);
+        private static readonly Regex ValidLayoutNameRegex = new Regex(
+            @"^[a-zA-Z0-9_-]+$",
+            RegexOptions.Compiled
+        );
 
         /// <summary>
         /// Maximum length for layout names.
@@ -103,7 +107,8 @@ namespace JunimoServer.Services.Lobby
         /// 3. Gzip decompress the result
         /// 4. Read the resulting JSON
         /// </summary>
-        private const string DefaultLayoutExportString = "SDVL0H4sIAAAAAAAAA62VUU+DMBDHv4rpkyaYjMGG8Dji3MyiZmDUGB86uLG60mJt1WXZd7eDxOlSjcDeetfcj+Puf9c1usI5oAClMMeKSmShEM8Ii5aEae+EZ0elrf23RSZwChN4A4qCjoWGSjAildDhj2s0lpCPUx1zPDyxHa+vI2JC4R4F3er0gAJbH6dcYkk4KxEjoOn17BkSuQ1litKN9RfKORzKbYXyHGeH6n2h3NqkS8VIzmPAMZ5R2DH9Fswox5RW4JGSO6bdgml7/Y6J1Kuf3YvCAqr0pioz6cRrWMZIYmEUS0PeAH9L76x1l28oZtIkG7vTkBhylSxMovlRQec/wFAJuooFgKnLjRPc+2WnDVFLsGtC9WuTLgReRRSgICyr8jTthfptDolIFMXCIO5ei3TLedbaTpaQnlPyQUS0ADo39b2+0m3fdo0tb0Iy79cmpJ5xTg6yF7wWPMOU+L9o+rTbeEy8WmPyZKHK86ofYm3cabUUuACh7TUaQCo4z/XXXLTRjzblfP/C8bc3UYHfWVXu8rjdIptP4YQWHCAIAAA=";
+        private const string DefaultLayoutExportString =
+            "SDVL0H4sIAAAAAAAAA62VUU+DMBDHv4rpkyaYjMGG8Dji3MyiZmDUGB86uLG60mJt1WXZd7eDxOlSjcDeetfcj+Puf9c1usI5oAClMMeKSmShEM8Ii5aEae+EZ0elrf23RSZwChN4A4qCjoWGSjAildDhj2s0lpCPUx1zPDyxHa+vI2JC4R4F3er0gAJbH6dcYkk4KxEjoOn17BkSuQ1litKN9RfKORzKbYXyHGeH6n2h3NqkS8VIzmPAMZ5R2DH9Fswox5RW4JGSO6bdgml7/Y6J1Kuf3YvCAqr0pioz6cRrWMZIYmEUS0PeAH9L76x1l28oZtIkG7vTkBhylSxMovlRQec/wFAJuooFgKnLjRPc+2WnDVFLsGtC9WuTLgReRRSgICyr8jTthfptDolIFMXCIO5ei3TLedbaTpaQnlPyQUS0ADo39b2+0m3fdo0tb0Iy79cmpJ5xTg6yF7wWPMOU+L9o+rTbeEy8WmPyZKHK86ofYm3cabUUuACh7TUaQCo4z/XXXLTRjzblfP/C8bc3UYHfWVXu8rjdIptP4YQWHCAIAAA=";
 
         /// <summary>
         /// Validates a layout name.
@@ -146,14 +151,20 @@ namespace JunimoServer.Services.Lobby
         /// Key: player ID, Value: (layout name, is new layout, editing cabin building).
         /// Thread-safe: accessed from OnUpdateTicked and OnPeerDisconnected concurrently.
         /// </summary>
-        private readonly ConcurrentDictionary<long, (string LayoutName, bool IsNew, Building Cabin)> _layoutEditingSessions = new();
+        private readonly ConcurrentDictionary<
+            long,
+            (string LayoutName, bool IsNew, Building Cabin)
+        > _layoutEditingSessions = new();
 
         /// <summary>
         /// Tracks player's previous location before entering edit mode.
         /// Key: player ID, Value: (location name, tile X, tile Y).
         /// Thread-safe: accessed from multiple event handlers.
         /// </summary>
-        private readonly ConcurrentDictionary<long, (string Location, int X, int Y)> _previousLocations = new();
+        private readonly ConcurrentDictionary<
+            long,
+            (string Location, int X, int Y)
+        > _previousLocations = new();
 
         /// <summary>
         /// Tracks whether layout editing mode is currently active.
@@ -166,7 +177,10 @@ namespace JunimoServer.Services.Lobby
         /// Key: cabin NameOrUniqueName, Value: (day color, night color).
         /// Thread-safe: accessed during lighting operations.
         /// </summary>
-        private readonly ConcurrentDictionary<string, (Color day, Color night)> _originalCabinLighting = new();
+        private readonly ConcurrentDictionary<
+            string,
+            (Color day, Color night)
+        > _originalCabinLighting = new();
 
         /// <summary>
         /// Lock object for atomic multi-dictionary operations (e.g., cleanup).
@@ -185,10 +199,19 @@ namespace JunimoServer.Services.Lobby
         public LobbyMode Mode => _settings.LobbyMode;
         public bool IsEnabled => !string.IsNullOrEmpty(Env.ServerPassword);
 
-        public LobbyService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, Harmony harmony, CabinManager.CabinManagerService cabinManager) : base(helper, monitor)
+        public LobbyService(
+            IModHelper helper,
+            IMonitor monitor,
+            ServerSettingsLoader settings,
+            Harmony harmony,
+            CabinManager.CabinManagerService cabinManager
+        )
+            : base(helper, monitor)
         {
             if (_instance != null)
-                throw new InvalidOperationException("LobbyService already initialized - only one instance allowed");
+                throw new InvalidOperationException(
+                    "LobbyService already initialized - only one instance allowed"
+                );
             _instance = this;
 
             _helper = helper;
@@ -202,8 +225,11 @@ namespace JunimoServer.Services.Lobby
             var barrierMethod = AccessTools.Method(typeof(NetSynchronizer), "barrierReady");
             if (barrierMethod == null)
             {
-                _monitor.Log("[Lobby] CRITICAL: Could not find NetSynchronizer.barrierReady method for patching. " +
-                    "Day transitions will hang when unauthenticated players are connected.", LogLevel.Error);
+                _monitor.Log(
+                    "[Lobby] CRITICAL: Could not find NetSynchronizer.barrierReady method for patching. "
+                        + "Day transitions will hang when unauthenticated players are connected.",
+                    LogLevel.Error
+                );
             }
             else
             {
@@ -211,7 +237,10 @@ namespace JunimoServer.Services.Lobby
                     original: barrierMethod,
                     postfix: new HarmonyMethod(typeof(LobbyService), nameof(BarrierReady_Postfix))
                 );
-                _monitor.Log("[Lobby] Successfully patched NetSynchronizer.barrierReady for lobby exclusion", LogLevel.Debug);
+                _monitor.Log(
+                    "[Lobby] Successfully patched NetSynchronizer.barrierReady for lobby exclusion",
+                    LogLevel.Debug
+                );
             }
 
             // Patch ServerReadyCheck.IsFarmerRequired to exclude lobby players from ready checks.
@@ -220,71 +249,114 @@ namespace JunimoServer.Services.Lobby
             // ServerReadyCheck with IncludesAll=true, and readyForSave() polls before
             // UpdateSleepReadyCheckExclusion() can re-apply the exclusion.
             var serverReadyCheckType = AccessTools.TypeByName(
-                "StardewValley.Network.NetReady.Internal.ServerReadyCheck");
+                "StardewValley.Network.NetReady.Internal.ServerReadyCheck"
+            );
             if (serverReadyCheckType == null)
             {
-                _monitor.Log("[Lobby] CRITICAL: Could not find ServerReadyCheck type for patching. " +
-                    "Day transitions may hang when unauthenticated players are connected.", LogLevel.Error);
+                _monitor.Log(
+                    "[Lobby] CRITICAL: Could not find ServerReadyCheck type for patching. "
+                        + "Day transitions may hang when unauthenticated players are connected.",
+                    LogLevel.Error
+                );
             }
             else
             {
-                var isFarmerRequiredMethod = AccessTools.Method(serverReadyCheckType, "IsFarmerRequired");
+                var isFarmerRequiredMethod = AccessTools.Method(
+                    serverReadyCheckType,
+                    "IsFarmerRequired"
+                );
                 if (isFarmerRequiredMethod == null)
                 {
-                    _monitor.Log("[Lobby] CRITICAL: Could not find ServerReadyCheck.IsFarmerRequired method. " +
-                        "Day transitions may hang when unauthenticated players are connected.", LogLevel.Error);
+                    _monitor.Log(
+                        "[Lobby] CRITICAL: Could not find ServerReadyCheck.IsFarmerRequired method. "
+                            + "Day transitions may hang when unauthenticated players are connected.",
+                        LogLevel.Error
+                    );
                 }
                 else
                 {
                     harmony.Patch(
                         original: isFarmerRequiredMethod,
-                        postfix: new HarmonyMethod(typeof(LobbyService), nameof(IsFarmerRequired_Postfix))
+                        postfix: new HarmonyMethod(
+                            typeof(LobbyService),
+                            nameof(IsFarmerRequired_Postfix)
+                        )
                     );
-                    _monitor.Log("[Lobby] Patched ServerReadyCheck.IsFarmerRequired for lobby exclusion", LogLevel.Debug);
+                    _monitor.Log(
+                        "[Lobby] Patched ServerReadyCheck.IsFarmerRequired for lobby exclusion",
+                        LogLevel.Debug
+                    );
                 }
             }
 
             // Patch broadcastWorldStateDeltas to send frozen time to editing clients.
             // This prevents the editing client from seeing timeOfDay >= 2600 and triggering passout.
-            var originalMethod = AccessTools.Method(typeof(Multiplayer), nameof(Multiplayer.broadcastWorldStateDeltas));
+            var originalMethod = AccessTools.Method(
+                typeof(Multiplayer),
+                nameof(Multiplayer.broadcastWorldStateDeltas)
+            );
             if (originalMethod == null)
             {
-                _monitor.Log("[Lobby] CRITICAL: Could not find Multiplayer.broadcastWorldStateDeltas method for patching. " +
-                    "Time isolation for layout editors will NOT work - editors may experience passout at 2AM.", LogLevel.Error);
+                _monitor.Log(
+                    "[Lobby] CRITICAL: Could not find Multiplayer.broadcastWorldStateDeltas method for patching. "
+                        + "Time isolation for layout editors will NOT work - editors may experience passout at 2AM.",
+                    LogLevel.Error
+                );
             }
             else
             {
                 var patchResult = harmony.Patch(
                     original: originalMethod,
-                    prefix: new HarmonyMethod(typeof(LobbyService), nameof(BroadcastWorldStateDeltas_Prefix))
+                    prefix: new HarmonyMethod(
+                        typeof(LobbyService),
+                        nameof(BroadcastWorldStateDeltas_Prefix)
+                    )
                 );
 
                 if (patchResult == null)
                 {
-                    _monitor.Log("[Lobby] CRITICAL: Failed to apply Harmony patch for broadcastWorldStateDeltas. " +
-                        "Time isolation for layout editors will NOT work - editors may experience passout at 2AM.", LogLevel.Error);
+                    _monitor.Log(
+                        "[Lobby] CRITICAL: Failed to apply Harmony patch for broadcastWorldStateDeltas. "
+                            + "Time isolation for layout editors will NOT work - editors may experience passout at 2AM.",
+                        LogLevel.Error
+                    );
                 }
                 else
                 {
-                    _monitor.Log("[Lobby] Successfully patched Multiplayer.broadcastWorldStateDeltas for time isolation", LogLevel.Debug);
+                    _monitor.Log(
+                        "[Lobby] Successfully patched Multiplayer.broadcastWorldStateDeltas for time isolation",
+                        LogLevel.Debug
+                    );
                 }
             }
 
             // Prevent lobby players from having their cabin assignment corrupted during saveFarmhands().
             // See ResetFarmhandState_Prefix for full explanation of the flushLocationLookup() cache bug.
-            var resetFarmhandStateMethod = AccessTools.Method(typeof(NetWorldState), nameof(NetWorldState.ResetFarmhandState));
+            var resetFarmhandStateMethod = AccessTools.Method(
+                typeof(NetWorldState),
+                nameof(NetWorldState.ResetFarmhandState)
+            );
             if (resetFarmhandStateMethod == null)
             {
-                _monitor.Log("[Lobby] WARNING: Could not find NetWorldState.ResetFarmhandState for patching. " +
-                    "Lobby players may get reassigned to lobby cabin during day transitions.", LogLevel.Warn);
+                _monitor.Log(
+                    "[Lobby] WARNING: Could not find NetWorldState.ResetFarmhandState for patching. "
+                        + "Lobby players may get reassigned to lobby cabin during day transitions.",
+                    LogLevel.Warn
+                );
             }
             else
             {
                 harmony.Patch(
                     original: resetFarmhandStateMethod,
-                    prefix: new HarmonyMethod(typeof(LobbyService), nameof(ResetFarmhandState_Prefix))
+                    prefix: new HarmonyMethod(
+                        typeof(LobbyService),
+                        nameof(ResetFarmhandState_Prefix)
+                    )
                 );
-                _monitor.Log("[Lobby] Patched NetWorldState.ResetFarmhandState for lobby player protection", LogLevel.Debug);
+                _monitor.Log(
+                    "[Lobby] Patched NetWorldState.ResetFarmhandState for lobby player protection",
+                    LogLevel.Debug
+                );
             }
 
             // Prevent lobby cabins from ever being assigned to players via TryAssignFarmhandHome
@@ -297,7 +369,10 @@ namespace JunimoServer.Services.Lobby
                     original: canAssignMethod,
                     postfix: new HarmonyMethod(typeof(LobbyService), nameof(CanAssignTo_Postfix))
                 );
-                _monitor.Log("[Lobby] Patched Cabin.CanAssignTo to protect lobby cabins", LogLevel.Debug);
+                _monitor.Log(
+                    "[Lobby] Patched Cabin.CanAssignTo to protect lobby cabins",
+                    LogLevel.Debug
+                );
             }
 
             _helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -416,7 +491,11 @@ namespace JunimoServer.Services.Lobby
         /// This postfix overrides the result to skip excluded players (editors + unauthenticated)
         /// when checking barrier readiness, matching the ready-check exclusion behavior.
         /// </summary>
-        private static void BarrierReady_Postfix(string name, ref bool __result, Dictionary<string, HashSet<long>> ___barriers)
+        private static void BarrierReady_Postfix(
+            string name,
+            ref bool __result,
+            Dictionary<string, HashSet<long>> ___barriers
+        )
         {
             // Only act when the original returned false (some player hasn't reached the barrier)
             if (__result)
@@ -469,11 +548,15 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private static void IsFarmerRequired_Postfix(long uid, ref bool __result)
         {
-            if (!__result) return;
-            if (_instance == null) return;
+            if (!__result)
+                return;
+            if (_instance == null)
+                return;
 
-            if (_instance._unauthenticatedPlayers.ContainsKey(uid) ||
-                _instance._layoutEditingSessions.ContainsKey(uid))
+            if (
+                _instance._unauthenticatedPlayers.ContainsKey(uid)
+                || _instance._layoutEditingSessions.ContainsKey(uid)
+            )
             {
                 __result = false;
             }
@@ -502,13 +585,17 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private static bool ResetFarmhandState_Prefix(Farmer farmhand)
         {
-            if (_instance == null) return true; // Not initialized; run original (safe default)
+            if (_instance == null)
+                return true; // Not initialized; run original (safe default)
             if (!_instance._unauthenticatedPlayers.ContainsKey(farmhand.UniqueMultiplayerID))
                 return true; // Not a lobby player, run original
 
             // Still clear transient state (buffs, mount, events), same as line 775 of original
             farmhand.resetState();
-            _instance._monitor.Log($"[Lobby] Skipped ResetFarmhandState for lobby player {farmhand.UniqueMultiplayerID}", LogLevel.Debug);
+            _instance._monitor.Log(
+                $"[Lobby] Skipped ResetFarmhandState for lobby player {farmhand.UniqueMultiplayerID}",
+                LogLevel.Debug
+            );
             return false; // Skip original: prevents TryAssignFarmhandHome from corrupting cabin assignment
         }
 
@@ -531,18 +618,24 @@ namespace JunimoServer.Services.Lobby
         ///
         /// Logged at Trace because this is expected during normal recovery flows.
         /// </summary>
-        private static void CanAssignTo_Postfix(Cabin __instance, Farmer farmhand, ref bool __result)
+        private static void CanAssignTo_Postfix(
+            Cabin __instance,
+            Farmer farmhand,
+            ref bool __result
+        )
         {
-            if (!__result) return; // Already rejected, nothing to do
+            if (!__result)
+                return; // Already rejected, nothing to do
 
             var building = __instance.ParentBuilding;
             if (building != null && IsLobbyCabin(building))
             {
                 __result = false;
                 _instance?._monitor.Log(
-                    $"[Lobby] Blocked CanAssignTo for lobby cabin {__instance.NameOrUniqueName} " +
-                    $"(player {farmhand?.UniqueMultiplayerID})",
-                    LogLevel.Trace);
+                    $"[Lobby] Blocked CanAssignTo for lobby cabin {__instance.NameOrUniqueName} "
+                        + $"(player {farmhand?.UniqueMultiplayerID})",
+                    LogLevel.Trace
+                );
             }
         }
 
@@ -552,7 +645,10 @@ namespace JunimoServer.Services.Lobby
 
         private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
         {
-            _monitor.Log($"[Lobby] OnSaveLoaded triggered, IsEnabled={IsEnabled}, ServerPassword={(string.IsNullOrEmpty(Env.ServerPassword) ? "(empty)" : "(set)")}", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] OnSaveLoaded triggered, IsEnabled={IsEnabled}, ServerPassword={(string.IsNullOrEmpty(Env.ServerPassword) ? "(empty)" : "(set)")}",
+                LogLevel.Info
+            );
 
             LoadData();
 
@@ -564,7 +660,10 @@ namespace JunimoServer.Services.Lobby
 
             if (!IsEnabled)
             {
-                _monitor.Log("[Lobby] Password protection disabled, skipping lobby setup", LogLevel.Debug);
+                _monitor.Log(
+                    "[Lobby] Password protection disabled, skipping lobby setup",
+                    LogLevel.Debug
+                );
                 return;
             }
 
@@ -572,7 +671,10 @@ namespace JunimoServer.Services.Lobby
             SyncActiveLayoutFromSettings();
             // Lobby cabins are created lazily on first player join via GetOrCreateLobbyForPlayer
 
-            _monitor.Log($"[Lobby] Initialized (mode={Mode}, activeLayout={_data.ActiveLayoutName})", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Initialized (mode={Mode}, activeLayout={_data.ActiveLayoutName})",
+                LogLevel.Info
+            );
         }
 
         /// <summary>
@@ -584,12 +686,18 @@ namespace JunimoServer.Services.Lobby
             if (_data.EditingSessionBackups == null || _data.EditingSessionBackups.Count == 0)
                 return;
 
-            _monitor.Log($"[Lobby] Found {_data.EditingSessionBackups.Count} interrupted editing session(s) to recover", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Found {_data.EditingSessionBackups.Count} interrupted editing session(s) to recover",
+                LogLevel.Info
+            );
 
             foreach (var kvp in _data.EditingSessionBackups.ToList())
             {
                 var backup = kvp.Value;
-                _monitor.Log($"[Lobby] Recovering editing session for player {backup.PlayerId} (layout: {backup.LayoutName})", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Recovering editing session for player {backup.PlayerId} (layout: {backup.LayoutName})",
+                    LogLevel.Info
+                );
 
                 // Schedule inventory restoration when the player reconnects
                 // For now, we'll restore immediately if they're online, otherwise keep the backup
@@ -597,20 +705,32 @@ namespace JunimoServer.Services.Lobby
                 if (TryRestoreInventoryFromBackup(backup))
                 {
                     _data.EditingSessionBackups.Remove(kvp.Key);
-                    _monitor.Log($"[Lobby] Restored inventory for player {backup.PlayerId}", LogLevel.Info);
+                    _monitor.Log(
+                        $"[Lobby] Restored inventory for player {backup.PlayerId}",
+                        LogLevel.Info
+                    );
                 }
                 else
                 {
-                    _monitor.Log($"[Lobby] Player {backup.PlayerId} not online - inventory backup retained for reconnection", LogLevel.Info);
+                    _monitor.Log(
+                        $"[Lobby] Player {backup.PlayerId} not online - inventory backup retained for reconnection",
+                        LogLevel.Info
+                    );
                 }
 
                 // Clean up any unsaved new layouts
-                if (backup.IsNewLayout && _data.Layouts.TryGetValue(backup.LayoutName, out var layout))
+                if (
+                    backup.IsNewLayout
+                    && _data.Layouts.TryGetValue(backup.LayoutName, out var layout)
+                )
                 {
                     if (layout.Furniture.Count == 0 && layout.Objects.Count == 0)
                     {
                         _data.Layouts.Remove(backup.LayoutName);
-                        _monitor.Log($"[Lobby] Removed unsaved new layout '{backup.LayoutName}'", LogLevel.Debug);
+                        _monitor.Log(
+                            $"[Lobby] Removed unsaved new layout '{backup.LayoutName}'",
+                            LogLevel.Debug
+                        );
                     }
                 }
             }
@@ -647,12 +767,19 @@ namespace JunimoServer.Services.Lobby
 
                 try
                 {
-                    var item = ItemRegistry.Create(serialized.ItemId, serialized.Stack, serialized.Quality);
+                    var item = ItemRegistry.Create(
+                        serialized.ItemId,
+                        serialized.Stack,
+                        serialized.Quality
+                    );
                     player.Items.Add(item);
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"[Lobby] Failed to restore item {serialized.ItemId}: {ex.Message}", LogLevel.Warn);
+                    _monitor.Log(
+                        $"[Lobby] Failed to restore item {serialized.ItemId}: {ex.Message}",
+                        LogLevel.Warn
+                    );
                     player.Items.Add(null);
                 }
             }
@@ -660,10 +787,18 @@ namespace JunimoServer.Services.Lobby
             // Warp player back to their previous location
             if (!string.IsNullOrEmpty(backup.PreviousLocation))
             {
-                Game1.server.sendMessage(backup.PlayerId, Multiplayer.passout, Game1.player, new object[]
-                {
-                    backup.PreviousLocation, backup.PreviousX, backup.PreviousY, false
-                });
+                Game1.server.sendMessage(
+                    backup.PlayerId,
+                    Multiplayer.passout,
+                    Game1.player,
+                    new object[]
+                    {
+                        backup.PreviousLocation,
+                        backup.PreviousX,
+                        backup.PreviousY,
+                        false,
+                    }
+                );
             }
 
             return true;
@@ -677,15 +812,19 @@ namespace JunimoServer.Services.Lobby
         private void CleanupOrphanedIndividualLobbies()
         {
             var farm = Game1.getFarm();
-            if (farm == null) return;
+            if (farm == null)
+                return;
 
-            var orphanedLobbies = farm.buildings
-                .Where(b => b.isCabin &&
-                           b.tileY.Value == HiddenLobbyLocation.Y &&
-                           b.tileX.Value < HiddenLobbyLocation.X) // Individual lobbies are at X < -21
+            var orphanedLobbies = farm
+                .buildings.Where(b =>
+                    b.isCabin
+                    && b.tileY.Value == HiddenLobbyLocation.Y
+                    && b.tileX.Value < HiddenLobbyLocation.X
+                ) // Individual lobbies are at X < -21
                 .ToList();
 
-            if (orphanedLobbies.Count == 0) return;
+            if (orphanedLobbies.Count == 0)
+                return;
 
             foreach (var cabin in orphanedLobbies)
             {
@@ -696,7 +835,10 @@ namespace JunimoServer.Services.Lobby
                 _cabinManager.DestroyCabin(cabin);
             }
 
-            _monitor.Log($"[Lobby] Cleaned up {orphanedLobbies.Count} orphaned individual lobby cabin(s) from previous session", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Cleaned up {orphanedLobbies.Count} orphaned individual lobby cabin(s) from previous session",
+                LogLevel.Info
+            );
         }
 
         /// <summary>
@@ -711,14 +853,20 @@ namespace JunimoServer.Services.Lobby
             {
                 if (_data.ActiveLayoutName != configuredLayout)
                 {
-                    _monitor.Log($"[Lobby] Setting active layout from config: '{configuredLayout}'", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Lobby] Setting active layout from config: '{configuredLayout}'",
+                        LogLevel.Debug
+                    );
                     _data.ActiveLayoutName = configuredLayout;
                     SaveData();
                 }
             }
             else if (configuredLayout != "default")
             {
-                _monitor.Log($"[Lobby] Configured layout '{configuredLayout}' not found, using 'default'", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Configured layout '{configuredLayout}' not found, using 'default'",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -762,9 +910,11 @@ namespace JunimoServer.Services.Lobby
 
                 // Only apply immunity if editor is inside their editing cabin
                 var editingCabinIndoors = session.Cabin?.GetIndoors<Cabin>();
-                bool isInEditingCabin = editor.currentLocation != null &&
-                                        editingCabinIndoors != null &&
-                                        editor.currentLocation.NameOrUniqueName == editingCabinIndoors.NameOrUniqueName;
+                bool isInEditingCabin =
+                    editor.currentLocation != null
+                    && editingCabinIndoors != null
+                    && editor.currentLocation.NameOrUniqueName
+                        == editingCabinIndoors.NameOrUniqueName;
 
                 if (isInEditingCabin)
                 {
@@ -847,12 +997,18 @@ namespace JunimoServer.Services.Lobby
                 Game1.netReady.SetLocalRequiredFarmers("ready_for_save", requiredFarmers);
                 Game1.netReady.SetLocalRequiredFarmers("wakeup", requiredFarmers);
 
-                _monitor.Log($"[Lobby] Ready-check: {requiredFarmers.Count} required, {excludedPlayerIds.Count} excluded", LogLevel.Trace);
+                _monitor.Log(
+                    $"[Lobby] Ready-check: {requiredFarmers.Count} required, {excludedPlayerIds.Count} excluded",
+                    LogLevel.Trace
+                );
             }
             catch (Exception ex)
             {
                 // This is an operational failure - lobby players may not be excluded from day transition
-                _monitor.Log($"[Lobby] Failed to update sleep ready-check exclusion: {ex.Message}", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Failed to update sleep ready-check exclusion: {ex.Message}",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -876,7 +1032,10 @@ namespace JunimoServer.Services.Lobby
             catch (Exception ex)
             {
                 // This is an operational failure - day transition may be blocked
-                _monitor.Log($"[Lobby] Failed to clear sleep ready-check exclusion: {ex.Message}", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Failed to clear sleep ready-check exclusion: {ex.Message}",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -901,7 +1060,10 @@ namespace JunimoServer.Services.Lobby
             // Re-apply daylight to editing cabins (editor-specific)
             if (_isEditingModeActive && !_layoutEditingSessions.IsEmpty)
             {
-                _monitor.Log("[Lobby] New day started - editors still active, re-applying protections", LogLevel.Info);
+                _monitor.Log(
+                    "[Lobby] New day started - editors still active, re-applying protections",
+                    LogLevel.Info
+                );
                 foreach (var kvp in _layoutEditingSessions)
                 {
                     var cabinIndoors = kvp.Value.Cabin?.GetIndoors<Cabin>();
@@ -933,16 +1095,18 @@ namespace JunimoServer.Services.Lobby
             // otherFarmers.Roots — so a "player never appeared in /players"
             // failure can be distinguished from "peer never connected at all"
             // by whether this event fired.
-            JunimoServer.Services.Diagnostics.ModEventLog.Emit("peer_connected", new
-            {
-                id = connectedPlayerId,
-                source = "smapi"
-            });
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                "peer_connected",
+                new { id = connectedPlayerId, source = "smapi" }
+            );
 
             // Check if this player has a pending inventory backup from an interrupted editing session
             if (_data.EditingSessionBackups.TryGetValue(connectedPlayerId, out var backup))
             {
-                _monitor.Log($"[Lobby] Player {connectedPlayerId} reconnected with pending editing session backup", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Player {connectedPlayerId} reconnected with pending editing session backup",
+                    LogLevel.Info
+                );
 
                 // Delay restoration slightly to ensure player is fully connected
                 // Use DelayedAction or schedule for next tick
@@ -956,7 +1120,10 @@ namespace JunimoServer.Services.Lobby
                     {
                         _data.EditingSessionBackups.Remove(connectedPlayerId);
                         SaveData();
-                        _monitor.Log($"[Lobby] Restored inventory for reconnected player {connectedPlayerId}", LogLevel.Info);
+                        _monitor.Log(
+                            $"[Lobby] Restored inventory for reconnected player {connectedPlayerId}",
+                            LogLevel.Info
+                        );
                     }
                 }
             }
@@ -977,10 +1144,10 @@ namespace JunimoServer.Services.Lobby
         {
             long disconnectedPlayerId = e.Peer.PlayerID;
 
-            JunimoServer.Services.Diagnostics.ModEventLog.Emit("peer_disconnected", new
-            {
-                id = disconnectedPlayerId
-            });
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                "peer_disconnected",
+                new { id = disconnectedPlayerId }
+            );
 
             // Use lock for atomic cleanup across multiple dictionaries
             lock (_stateLock)
@@ -988,7 +1155,10 @@ namespace JunimoServer.Services.Lobby
                 // Try to remove from editing sessions atomically
                 if (_layoutEditingSessions.TryRemove(disconnectedPlayerId, out var session))
                 {
-                    _monitor.Log($"[Lobby] Editor disconnected (ID: {disconnectedPlayerId}), cleaning up session", LogLevel.Info);
+                    _monitor.Log(
+                        $"[Lobby] Editor disconnected (ID: {disconnectedPlayerId}), cleaning up session",
+                        LogLevel.Info
+                    );
 
                     // Restore cabin lighting if it exists
                     var cabinIndoors = session.Cabin?.GetIndoors<Cabin>();
@@ -1032,7 +1202,10 @@ namespace JunimoServer.Services.Lobby
             // Set up ready-check exclusion immediately
             UpdateSleepReadyCheckExclusion();
 
-            _monitor.Log("[Lobby] Editing mode enabled - editor fully decoupled from time/sleep", LogLevel.Info);
+            _monitor.Log(
+                "[Lobby] Editing mode enabled - editor fully decoupled from time/sleep",
+                LogLevel.Info
+            );
         }
 
         /// <summary>
@@ -1072,7 +1245,10 @@ namespace JunimoServer.Services.Lobby
 
             if (player == null)
             {
-                _monitor.Log($"[Lobby] Cannot backup inventory - player {playerId} not found", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Cannot backup inventory - player {playerId} not found",
+                    LogLevel.Warn
+                );
                 return;
             }
 
@@ -1085,12 +1261,14 @@ namespace JunimoServer.Services.Lobby
                 var item = player.Items[i];
                 if (item != null)
                 {
-                    serializedBackup.Add(new SerializedItem
-                    {
-                        ItemId = item.QualifiedItemId,
-                        Stack = item.Stack,
-                        Quality = (item as StardewValley.Object)?.Quality ?? 0
-                    });
+                    serializedBackup.Add(
+                        new SerializedItem
+                        {
+                            ItemId = item.QualifiedItemId,
+                            Stack = item.Stack,
+                            Quality = (item as StardewValley.Object)?.Quality ?? 0,
+                        }
+                    );
                     itemCount++;
                 }
                 else
@@ -1100,7 +1278,9 @@ namespace JunimoServer.Services.Lobby
             }
 
             // Persist backup for crash recovery (single source of truth)
-            var prevLoc = _previousLocations.TryGetValue(playerId, out var loc) ? loc : (null, 0, 0);
+            var prevLoc = _previousLocations.TryGetValue(playerId, out var loc)
+                ? loc
+                : (null, 0, 0);
             _data.EditingSessionBackups[playerId] = new EditingSessionBackup
             {
                 PlayerId = playerId,
@@ -1109,7 +1289,7 @@ namespace JunimoServer.Services.Lobby
                 InventoryBackup = serializedBackup,
                 PreviousLocation = prevLoc.Location,
                 PreviousX = prevLoc.X,
-                PreviousY = prevLoc.Y
+                PreviousY = prevLoc.Y,
             };
             SaveData();
 
@@ -1120,7 +1300,10 @@ namespace JunimoServer.Services.Lobby
                 player.Items.Add(null);
             }
 
-            _monitor.Log($"[Lobby] Backed up {itemCount} items from player {playerId} (persisted for crash recovery)", LogLevel.Debug);
+            _monitor.Log(
+                $"[Lobby] Backed up {itemCount} items from player {playerId} (persisted for crash recovery)",
+                LogLevel.Debug
+            );
         }
 
         /// <summary>
@@ -1131,7 +1314,10 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_data.EditingSessionBackups.TryGetValue(playerId, out var backup))
             {
-                _monitor.Log($"[Lobby] No inventory backup found for player {playerId}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] No inventory backup found for player {playerId}",
+                    LogLevel.Debug
+                );
                 return;
             }
 
@@ -1143,7 +1329,10 @@ namespace JunimoServer.Services.Lobby
 
             if (player == null)
             {
-                _monitor.Log($"[Lobby] Cannot restore inventory - player {playerId} not found (they may have disconnected)", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Cannot restore inventory - player {playerId} not found (they may have disconnected)",
+                    LogLevel.Warn
+                );
                 // Keep the backup - player might reconnect later
                 return;
             }
@@ -1163,13 +1352,20 @@ namespace JunimoServer.Services.Lobby
 
                 try
                 {
-                    var item = ItemRegistry.Create(serialized.ItemId, serialized.Stack, serialized.Quality);
+                    var item = ItemRegistry.Create(
+                        serialized.ItemId,
+                        serialized.Stack,
+                        serialized.Quality
+                    );
                     player.Items.Add(item);
                     restoredCount++;
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"[Lobby] Failed to restore item {serialized.ItemId}: {ex.Message}", LogLevel.Warn);
+                    _monitor.Log(
+                        $"[Lobby] Failed to restore item {serialized.ItemId}: {ex.Message}",
+                        LogLevel.Warn
+                    );
                     player.Items.Add(null);
                 }
             }
@@ -1178,7 +1374,10 @@ namespace JunimoServer.Services.Lobby
             _data.EditingSessionBackups.Remove(playerId);
             SaveData();
 
-            _monitor.Log($"[Lobby] Restored {restoredCount} items to player {playerId}", LogLevel.Debug);
+            _monitor.Log(
+                $"[Lobby] Restored {restoredCount} items to player {playerId}",
+                LogLevel.Debug
+            );
         }
 
         /// <summary>
@@ -1200,7 +1399,10 @@ namespace JunimoServer.Services.Lobby
                     (int)(player.Position.Y / 64f)
                 );
                 _previousLocations[playerId] = location;
-                _monitor.Log($"[Lobby] Saved location for player {playerId}: {location}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] Saved location for player {playerId}: {location}",
+                    LogLevel.Debug
+                );
             }
         }
 
@@ -1211,19 +1413,27 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_previousLocations.TryRemove(playerId, out var prevLoc))
             {
-                _monitor.Log($"[Lobby] No previous location saved for player {playerId}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] No previous location saved for player {playerId}",
+                    LogLevel.Debug
+                );
                 return;
             }
 
             // Send warp message to the player
-            Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
-            {
-                prevLoc.Location, prevLoc.X, prevLoc.Y, false
-            });
+            Game1.server.sendMessage(
+                playerId,
+                Multiplayer.passout,
+                Game1.player,
+                new object[] { prevLoc.Location, prevLoc.X, prevLoc.Y, false }
+            );
 
             UpdateFarmerLocation(playerId, prevLoc.Location, prevLoc.X, prevLoc.Y);
 
-            _monitor.Log($"[Lobby] Teleported player {playerId} back to {prevLoc.Location} ({prevLoc.X}, {prevLoc.Y})", LogLevel.Debug);
+            _monitor.Log(
+                $"[Lobby] Teleported player {playerId} back to {prevLoc.Location} ({prevLoc.X}, {prevLoc.Y})",
+                LogLevel.Debug
+            );
         }
 
         /// <summary>
@@ -1232,7 +1442,8 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         public void UpdateFarmerLocation(long playerId, string locationName, int tileX, int tileY)
         {
-            var location = Game1.getLocationFromName(locationName)
+            var location =
+                Game1.getLocationFromName(locationName)
                 ?? Game1.getLocationFromName(locationName, isStructure: true);
             if (location != null && Game1.otherFarmers.TryGetValue(playerId, out var farmer))
             {
@@ -1268,12 +1479,15 @@ namespace JunimoServer.Services.Lobby
                 else
                 {
                     // Fallback to empty cabin if import fails
-                    _monitor.Log($"[Lobby] Failed to import default layout ({message}), using empty cabin", LogLevel.Warn);
+                    _monitor.Log(
+                        $"[Lobby] Failed to import default layout ({message}), using empty cabin",
+                        LogLevel.Warn
+                    );
                     _data.Layouts["default"] = new LobbyLayout
                     {
                         Name = "default",
                         CabinSkin = "Log Cabin",
-                        UpgradeLevel = 0
+                        UpgradeLevel = 0,
                     };
                     SaveData();
                 }
@@ -1283,24 +1497,34 @@ namespace JunimoServer.Services.Lobby
         private Building FindOrCreateLobbyCabin(string identifier)
         {
             var farm = Game1.getFarm();
-            _monitor.Log($"[Lobby] FindOrCreateLobbyCabin called, identifier={identifier}, farm buildings count={farm?.buildings?.Count ?? 0}", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] FindOrCreateLobbyCabin called, identifier={identifier}, farm buildings count={farm?.buildings?.Count ?? 0}",
+                LogLevel.Info
+            );
 
             // Look for existing lobby cabin by checking if it's at hidden location
             // and has our special naming convention
             var existing = farm.buildings.FirstOrDefault(b =>
-                b.isCabin &&
-                b.tileX.Value == HiddenLobbyLocation.X &&
-                b.tileY.Value == HiddenLobbyLocation.Y);
+                b.isCabin
+                && b.tileX.Value == HiddenLobbyLocation.X
+                && b.tileY.Value == HiddenLobbyLocation.Y
+            );
 
             if (existing != null)
             {
-                _monitor.Log($"[Lobby] Found existing lobby cabin at ({existing.tileX.Value}, {existing.tileY.Value})", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Found existing lobby cabin at ({existing.tileX.Value}, {existing.tileY.Value})",
+                    LogLevel.Info
+                );
 
                 // Ensure existing lobby cabin is properly configured
                 var cabinIndoors = existing.GetIndoors<Cabin>();
                 if (cabinIndoors == null)
                 {
-                    _monitor.Log("[Lobby] Existing lobby cabin has no interior; lobby may not function correctly", LogLevel.Error);
+                    _monitor.Log(
+                        "[Lobby] Existing lobby cabin has no interior; lobby may not function correctly",
+                        LogLevel.Error
+                    );
                 }
                 CleanupLobbyCabinInterior(cabinIndoors);
 
@@ -1325,13 +1549,19 @@ namespace JunimoServer.Services.Lobby
             // Defensive: verify interior was created (see CabinManagerService.CreateCabinBuilding)
             if (cabin.GetIndoors() == null)
             {
-                _monitor.Log("[Lobby] Cabin interior was not created by load(), retrying via ReloadBuildingData", LogLevel.Warn);
+                _monitor.Log(
+                    "[Lobby] Cabin interior was not created by load(), retrying via ReloadBuildingData",
+                    LogLevel.Warn
+                );
                 cabin.ReloadBuildingData();
             }
 
             if (location.buildStructure(cabin, position.ToVector2(), Game1.player, true))
             {
-                _monitor.Log($"[Lobby] Created lobby cabin at ({position.X}, {position.Y})", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Created lobby cabin at ({position.X}, {position.Y})",
+                    LogLevel.Info
+                );
 
                 // Clean up the lobby cabin - remove farmhand, warps, and starter gift box
                 var cabinIndoors = cabin.GetIndoors<Cabin>();
@@ -1343,7 +1573,10 @@ namespace JunimoServer.Services.Lobby
                 return cabin;
             }
 
-            _monitor.Log($"[Lobby] Failed to create lobby cabin at ({position.X}, {position.Y})", LogLevel.Error);
+            _monitor.Log(
+                $"[Lobby] Failed to create lobby cabin at ({position.X}, {position.Y})",
+                LogLevel.Error
+            );
             return null;
         }
 
@@ -1352,9 +1585,13 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         private void CleanupLobbyCabinInterior(Cabin cabin)
         {
-            _monitor.Log($"[Lobby] CleanupLobbyCabinInterior called, cabin={cabin?.NameOrUniqueName ?? "null"}", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] CleanupLobbyCabinInterior called, cabin={cabin?.NameOrUniqueName ?? "null"}",
+                LogLevel.Info
+            );
 
-            if (cabin == null) return;
+            if (cabin == null)
+                return;
 
             // Master runs performActionOnConstruction for every buildStructure call,
             // which calls CreateFarmhand on ownerless cabins. Lobby cabins must remain
@@ -1363,7 +1600,10 @@ namespace JunimoServer.Services.Lobby
             if (cabin.HasOwner)
             {
                 cabin.DeleteFarmhand();
-                _monitor.Log($"[Lobby] Deleted master-created farmhand from lobby cabin", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] Deleted master-created farmhand from lobby cabin",
+                    LogLevel.Debug
+                );
             }
 
             // Remove warps to Farm - players shouldn't be able to leave without authenticating
@@ -1374,13 +1614,18 @@ namespace JunimoServer.Services.Lobby
             }
             if (warpsToRemove.Count > 0)
             {
-                _monitor.Log($"[Lobby] Removed {warpsToRemove.Count} warps from lobby cabin", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] Removed {warpsToRemove.Count} warps from lobby cabin",
+                    LogLevel.Debug
+                );
             }
 
             // Remove the starter gift box (the small box with parsnip seeds)
             // It's a Chest object with giftboxIsStarterGift = true
-            var giftBoxesToRemove = cabin.objects.Pairs
-                .Where(kvp => kvp.Value is Chest chest && chest.giftboxIsStarterGift.Value)
+            var giftBoxesToRemove = cabin
+                .objects.Pairs.Where(kvp =>
+                    kvp.Value is Chest chest && chest.giftboxIsStarterGift.Value
+                )
                 .Select(kvp => kvp.Key)
                 .ToList();
 
@@ -1390,7 +1635,10 @@ namespace JunimoServer.Services.Lobby
             }
             if (giftBoxesToRemove.Count > 0)
             {
-                _monitor.Log($"[Lobby] Removed {giftBoxesToRemove.Count} starter gift box(es) from lobby cabin", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] Removed {giftBoxesToRemove.Count} starter gift box(es) from lobby cabin",
+                    LogLevel.Debug
+                );
             }
 
             // Note: Door blocker is placed by ApplyActiveLayout AFTER the layout is applied
@@ -1421,7 +1669,10 @@ namespace JunimoServer.Services.Lobby
             }
             catch (Exception ex)
             {
-                _monitor.Log($"[Lobby] Failed to place door blocker at {tile}: {ex.Message}", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Failed to place door blocker at {tile}: {ex.Message}",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -1443,14 +1694,19 @@ namespace JunimoServer.Services.Lobby
             {
                 var indoorLightingColorField = typeof(GameLocation).GetField(
                     "indoorLightingColor",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
                 var indoorLightingNightColorField = typeof(GameLocation).GetField(
                     "indoorLightingNightColor",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
 
                 if (indoorLightingColorField == null || indoorLightingNightColorField == null)
                 {
-                    _monitor.Log("[Lobby] Could not find lighting color fields via reflection", LogLevel.Warn);
+                    _monitor.Log(
+                        "[Lobby] Could not find lighting color fields via reflection",
+                        LogLevel.Warn
+                    );
                     return;
                 }
 
@@ -1463,7 +1719,10 @@ namespace JunimoServer.Services.Lobby
                     var originalNight = (Color)indoorLightingNightColorField.GetValue(cabin);
                     if (_originalCabinLighting.TryAdd(cabinKey, (originalDay, originalNight)))
                     {
-                        _monitor.Log($"[Lobby] Cached original lighting for {cabinKey}", LogLevel.Debug);
+                        _monitor.Log(
+                            $"[Lobby] Cached original lighting for {cabinKey}",
+                            LogLevel.Debug
+                        );
                     }
 
                     // Override to white for permanent daylight
@@ -1481,7 +1740,10 @@ namespace JunimoServer.Services.Lobby
                     {
                         dayColor = cached.day;
                         nightColor = cached.night;
-                        _monitor.Log($"[Lobby] Restoring cached lighting for {cabinKey}", LogLevel.Debug);
+                        _monitor.Log(
+                            $"[Lobby] Restoring cached lighting for {cabinKey}",
+                            LogLevel.Debug
+                        );
                     }
 
                     indoorLightingColorField.SetValue(cabin, dayColor);
@@ -1508,11 +1770,10 @@ namespace JunimoServer.Services.Lobby
         {
             _unauthenticatedPlayers[playerId] = true;
             _monitor.Log($"[Lobby] Registered unauthenticated player {playerId}", LogLevel.Debug);
-            JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_unauthenticated_registered", new
-            {
-                playerId,
-                totalUnauthenticated = _unauthenticatedPlayers.Count
-            });
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                "lobby_unauthenticated_registered",
+                new { playerId, totalUnauthenticated = _unauthenticatedPlayers.Count }
+            );
 
             // Update ready-check exclusion immediately
             UpdateSleepReadyCheckExclusion();
@@ -1526,12 +1787,14 @@ namespace JunimoServer.Services.Lobby
         {
             if (_unauthenticatedPlayers.TryRemove(playerId, out _))
             {
-                _monitor.Log($"[Lobby] Unregistered unauthenticated player {playerId}", LogLevel.Debug);
-                JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_unauthenticated_unregistered", new
-                {
-                    playerId,
-                    remainingUnauthenticated = _unauthenticatedPlayers.Count
-                });
+                _monitor.Log(
+                    $"[Lobby] Unregistered unauthenticated player {playerId}",
+                    LogLevel.Debug
+                );
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                    "lobby_unauthenticated_unregistered",
+                    new { playerId, remainingUnauthenticated = _unauthenticatedPlayers.Count }
+                );
 
                 // Update ready-check exclusion immediately
                 if (_unauthenticatedPlayers.IsEmpty && _layoutEditingSessions.IsEmpty)
@@ -1595,7 +1858,10 @@ namespace JunimoServer.Services.Lobby
                     if (_sharedLobbyCabin == null)
                     {
                         _sharedLobbyCabin = FindOrCreateLobbyCabin("Lobby_Shared");
-                        _monitor.Log($"[Lobby] Shared lobby cabin created lazily at {HiddenLobbyLocation}", LogLevel.Debug);
+                        _monitor.Log(
+                            $"[Lobby] Shared lobby cabin created lazily at {HiddenLobbyLocation}",
+                            LogLevel.Debug
+                        );
                     }
                     return _sharedLobbyCabin;
                 }
@@ -1679,16 +1945,24 @@ namespace JunimoServer.Services.Lobby
 
             if (string.IsNullOrEmpty(locationName))
             {
-                _monitor.Log($"[Lobby] Cannot warp player {playerId} - no lobby location", LogLevel.Error);
+                _monitor.Log(
+                    $"[Lobby] Cannot warp player {playerId} - no lobby location",
+                    LogLevel.Error
+                );
                 return;
             }
 
-            _monitor.Log($"[Lobby] Warping player {playerId} to lobby {locationName} at ({entry.X}, {entry.Y})", LogLevel.Debug);
+            _monitor.Log(
+                $"[Lobby] Warping player {playerId} to lobby {locationName} at ({entry.X}, {entry.Y})",
+                LogLevel.Debug
+            );
 
-            Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
-            {
-                locationName, entry.X, entry.Y, false
-            });
+            Game1.server.sendMessage(
+                playerId,
+                Multiplayer.passout,
+                Game1.player,
+                new object[] { locationName, entry.X, entry.Y, false }
+            );
 
             UpdateFarmerLocation(playerId, locationName, entry.X, entry.Y);
         }
@@ -1704,19 +1978,27 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         public void WarpFromLobby(long playerId, string targetLocation, int tileX, int tileY)
         {
-            _monitor.Log($"[Lobby] Warping player {playerId} from lobby to {targetLocation} at ({tileX}, {tileY})", LogLevel.Info);
-            JunimoServer.Services.Diagnostics.ModEventLog.Emit("lobby_warp_sent", new
-            {
-                playerId,
-                targetLocation,
-                tileX,
-                tileY
-            });
+            _monitor.Log(
+                $"[Lobby] Warping player {playerId} from lobby to {targetLocation} at ({tileX}, {tileY})",
+                LogLevel.Info
+            );
+            JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                "lobby_warp_sent",
+                new
+                {
+                    playerId,
+                    targetLocation,
+                    tileX,
+                    tileY,
+                }
+            );
 
-            Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
-            {
-                targetLocation, tileX, tileY, false
-            });
+            Game1.server.sendMessage(
+                playerId,
+                Multiplayer.passout,
+                Game1.player,
+                new object[] { targetLocation, tileX, tileY, false }
+            );
 
             UpdateFarmerLocation(playerId, targetLocation, tileX, tileY);
 
@@ -1737,7 +2019,10 @@ namespace JunimoServer.Services.Lobby
                 // Clean up any active editing session for this player
                 if (_layoutEditingSessions.TryRemove(playerId, out var session))
                 {
-                    _monitor.Log($"[Lobby] Cleaned up editing session for player {playerId}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Lobby] Cleaned up editing session for player {playerId}",
+                        LogLevel.Debug
+                    );
 
                     // Restore cabin lighting before cleanup
                     var cabinIndoors = session.Cabin?.GetIndoors<Cabin>();
@@ -1756,14 +2041,20 @@ namespace JunimoServer.Services.Lobby
                     RestoreInventory(playerId);
 
                     // If this was a new layout that was never saved, remove the empty layout entry
-                    if (session.IsNew && _data.Layouts.TryGetValue(session.LayoutName, out var layout))
+                    if (
+                        session.IsNew
+                        && _data.Layouts.TryGetValue(session.LayoutName, out var layout)
+                    )
                     {
                         // Only remove if it's still empty (no furniture saved)
                         if (layout.Furniture.Count == 0 && layout.Objects.Count == 0)
                         {
                             _data.Layouts.Remove(session.LayoutName);
                             SaveData();
-                            _monitor.Log($"[Lobby] Removed unsaved new layout '{session.LayoutName}'", LogLevel.Debug);
+                            _monitor.Log(
+                                $"[Lobby] Removed unsaved new layout '{session.LayoutName}'",
+                                LogLevel.Debug
+                            );
                         }
                     }
 
@@ -1788,7 +2079,10 @@ namespace JunimoServer.Services.Lobby
                     // stale homeLocation references in surviving farmhandData entries.
                     _cabinManager.DestroyCabin(cabin);
 
-                    _monitor.Log($"[Lobby] Cleaned up individual lobby for player {playerId}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Lobby] Cleaned up individual lobby for player {playerId}",
+                        LogLevel.Debug
+                    );
                 }
             }
         }
@@ -1913,13 +2207,16 @@ namespace JunimoServer.Services.Lobby
             {
                 Name = name,
                 CabinSkin = "Log Cabin",
-                UpgradeLevel = 0
+                UpgradeLevel = 0,
             };
 
             // Backup and clear the admin's inventory for free space (persisted for crash recovery)
             BackupAndClearInventory(adminPlayerId, name, isNewLayout: true);
 
-            _monitor.Log($"[Lobby] Created layout '{name}' for editing by admin {adminPlayerId}", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Created layout '{name}' for editing by admin {adminPlayerId}",
+                LogLevel.Info
+            );
             return cabin;
         }
 
@@ -1965,7 +2262,10 @@ namespace JunimoServer.Services.Lobby
             // Backup and clear the admin's inventory for free space (persisted for crash recovery)
             BackupAndClearInventory(adminPlayerId, name, isNewLayout: false);
 
-            _monitor.Log($"[Lobby] Opened layout '{name}' for editing by admin {adminPlayerId}", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Opened layout '{name}' for editing by admin {adminPlayerId}",
+                LogLevel.Info
+            );
             return cabin;
         }
 
@@ -1984,11 +2284,16 @@ namespace JunimoServer.Services.Lobby
                 return safePoint;
 
             // Try alternative positions in the center area
-            var alternatives = new[] {
-                new Point(4, 6), new Point(6, 6),
-                new Point(5, 5), new Point(5, 7),
-                new Point(4, 5), new Point(6, 5),
-                new Point(3, 6), new Point(7, 6)
+            var alternatives = new[]
+            {
+                new Point(4, 6),
+                new Point(6, 6),
+                new Point(5, 5),
+                new Point(5, 7),
+                new Point(4, 5),
+                new Point(6, 5),
+                new Point(3, 6),
+                new Point(7, 6),
             };
 
             foreach (var alt in alternatives)
@@ -2008,7 +2313,10 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_layoutEditingSessions.TryGetValue(adminPlayerId, out var session))
             {
-                _monitor.Log($"[Lobby] Admin {adminPlayerId} has no active editing session", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Admin {adminPlayerId} has no active editing session",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2018,7 +2326,10 @@ namespace JunimoServer.Services.Lobby
             var cabin = session.Cabin?.GetIndoors<Cabin>();
             if (cabin == null)
             {
-                _monitor.Log($"[Lobby] Editing session for admin {adminPlayerId} has no valid cabin", LogLevel.Error);
+                _monitor.Log(
+                    $"[Lobby] Editing session for admin {adminPlayerId} has no valid cabin",
+                    LogLevel.Error
+                );
                 return false;
             }
 
@@ -2071,7 +2382,10 @@ namespace JunimoServer.Services.Lobby
                 _monitor.Log($"[Lobby] Re-applied updated layout to shared lobby", LogLevel.Debug);
             }
 
-            _monitor.Log($"[Lobby] Saved layout '{session.LayoutName}' (furniture={layout.Furniture.Count}, objects={layout.Objects.Count})", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Saved layout '{session.LayoutName}' (furniture={layout.Furniture.Count}, objects={layout.Objects.Count})",
+                LogLevel.Info
+            );
             return true;
         }
 
@@ -2095,7 +2409,10 @@ namespace JunimoServer.Services.Lobby
             // Check if anyone is currently editing this layout
             if (_layoutEditingSessions.Values.Any(s => s.LayoutName == name))
             {
-                _monitor.Log($"[Lobby] Cannot delete '{name}' - it is currently being edited", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Cannot delete '{name}' - it is currently being edited",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2135,7 +2452,10 @@ namespace JunimoServer.Services.Lobby
             // Check if anyone is currently editing this layout
             if (_layoutEditingSessions.Values.Any(s => s.LayoutName == oldName))
             {
-                _monitor.Log($"[Lobby] Cannot rename '{oldName}' - it is currently being edited", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Cannot rename '{oldName}' - it is currently being edited",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2168,7 +2488,10 @@ namespace JunimoServer.Services.Lobby
 
             if (_data.Layouts.ContainsKey(destName))
             {
-                _monitor.Log($"[Lobby] Destination layout '{destName}' already exists", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Destination layout '{destName}' already exists",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2213,7 +2536,9 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         public string GetEditingLayoutName(long adminPlayerId)
         {
-            return _layoutEditingSessions.TryGetValue(adminPlayerId, out var session) ? session.LayoutName : null;
+            return _layoutEditingSessions.TryGetValue(adminPlayerId, out var session)
+                ? session.LayoutName
+                : null;
         }
 
         /// <summary>
@@ -2221,7 +2546,8 @@ namespace JunimoServer.Services.Lobby
         /// </summary>
         public bool IsEditingNewLayout(long adminPlayerId)
         {
-            return _layoutEditingSessions.TryGetValue(adminPlayerId, out var session) && session.IsNew;
+            return _layoutEditingSessions.TryGetValue(adminPlayerId, out var session)
+                && session.IsNew;
         }
 
         /// <summary>
@@ -2231,7 +2557,10 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_layoutEditingSessions.TryGetValue(adminPlayerId, out var session))
             {
-                _monitor.Log($"[Lobby] Admin {adminPlayerId} has no active editing session", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Admin {adminPlayerId} has no active editing session",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2258,7 +2587,10 @@ namespace JunimoServer.Services.Lobby
                 layout.SpawnY = tileY;
                 SaveData();
 
-                _monitor.Log($"[Lobby] Set spawn point for '{session.LayoutName}' to ({tileX}, {tileY})", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Set spawn point for '{session.LayoutName}' to ({tileX}, {tileY})",
+                    LogLevel.Info
+                );
                 return true;
             }
 
@@ -2272,7 +2604,10 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_layoutEditingSessions.TryGetValue(adminPlayerId, out var session))
             {
-                _monitor.Log($"[Lobby] Admin {adminPlayerId} has no active editing session", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Admin {adminPlayerId} has no active editing session",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2302,7 +2637,10 @@ namespace JunimoServer.Services.Lobby
                 cabin.SetFloor("0", key);
             }
 
-            _monitor.Log($"[Lobby] Reset editing cabin for layout '{session.LayoutName}'", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Reset editing cabin for layout '{session.LayoutName}'",
+                LogLevel.Info
+            );
             return true;
         }
 
@@ -2313,7 +2651,10 @@ namespace JunimoServer.Services.Lobby
         {
             if (!_layoutEditingSessions.TryGetValue(adminPlayerId, out var session))
             {
-                _monitor.Log($"[Lobby] Admin {adminPlayerId} has no active editing session", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Lobby] Admin {adminPlayerId} has no active editing session",
+                    LogLevel.Warn
+                );
                 return false;
             }
 
@@ -2333,7 +2674,10 @@ namespace JunimoServer.Services.Lobby
             {
                 _data.Layouts.Remove(session.LayoutName);
                 SaveData();
-                _monitor.Log($"[Lobby] Removed cancelled new layout '{session.LayoutName}'", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Lobby] Removed cancelled new layout '{session.LayoutName}'",
+                    LogLevel.Debug
+                );
             }
 
             // Restore the admin's inventory
@@ -2353,7 +2697,10 @@ namespace JunimoServer.Services.Lobby
                 UpdateSleepReadyCheckExclusion();
             }
 
-            _monitor.Log($"[Lobby] Cancelled editing session for layout '{session.LayoutName}'", LogLevel.Info);
+            _monitor.Log(
+                $"[Lobby] Cancelled editing session for layout '{session.LayoutName}'",
+                LogLevel.Info
+            );
             return true;
         }
 
@@ -2386,12 +2733,18 @@ namespace JunimoServer.Services.Lobby
                 var base64 = Convert.ToBase64String(outputStream.ToArray());
                 var exportString = LayoutExportPrefix + LayoutExportVersion + base64;
 
-                _monitor.Log($"[Lobby] Exported layout '{name}' ({exportString.Length} chars)", LogLevel.Info);
+                _monitor.Log(
+                    $"[Lobby] Exported layout '{name}' ({exportString.Length} chars)",
+                    LogLevel.Info
+                );
                 return exportString;
             }
             catch (Exception ex)
             {
-                _monitor.Log($"[Lobby] Failed to export layout '{name}': {ex.Message}", LogLevel.Error);
+                _monitor.Log(
+                    $"[Lobby] Failed to export layout '{name}': {ex.Message}",
+                    LogLevel.Error
+                );
                 return null;
             }
         }
@@ -2444,7 +2797,10 @@ namespace JunimoServer.Services.Lobby
                     totalRead += read;
                     if (totalRead > MaxLayoutDecompressedSize)
                     {
-                        return (false, $"Layout data too large (max {MaxLayoutDecompressedSize / 1024}KB decompressed)");
+                        return (
+                            false,
+                            $"Layout data too large (max {MaxLayoutDecompressedSize / 1024}KB decompressed)"
+                        );
                     }
                     outputStream.Write(buffer, 0, read);
                 }
@@ -2465,8 +2821,14 @@ namespace JunimoServer.Services.Lobby
                 _data.Layouts[name] = layout;
                 SaveData();
 
-                _monitor.Log($"[Lobby] Imported layout '{name}' (furniture={layout.Furniture.Count}, objects={layout.Objects.Count})", LogLevel.Info);
-                return (true, $"Imported layout '{name}' with {layout.Furniture.Count} furniture and {layout.Objects.Count} objects");
+                _monitor.Log(
+                    $"[Lobby] Imported layout '{name}' (furniture={layout.Furniture.Count}, objects={layout.Objects.Count})",
+                    LogLevel.Info
+                );
+                return (
+                    true,
+                    $"Imported layout '{name}' with {layout.Furniture.Count} furniture and {layout.Objects.Count} objects"
+                );
             }
             catch (FormatException)
             {
@@ -2518,7 +2880,7 @@ namespace JunimoServer.Services.Lobby
             var layout = new LobbyLayout
             {
                 CabinSkin = cabin.ParentBuilding?.skinId.Value ?? "Log Cabin",
-                UpgradeLevel = cabin.upgradeLevel
+                UpgradeLevel = cabin.upgradeLevel,
             };
 
             // Serialize furniture
@@ -2529,7 +2891,7 @@ namespace JunimoServer.Services.Lobby
                     ItemId = furniture.QualifiedItemId,
                     TileX = (int)furniture.TileLocation.X,
                     TileY = (int)furniture.TileLocation.Y,
-                    Rotation = furniture.currentRotation.Value
+                    Rotation = furniture.currentRotation.Value,
                 };
 
                 // Check for held object (e.g., items on tables)
@@ -2545,12 +2907,14 @@ namespace JunimoServer.Services.Lobby
             foreach (var kvp in cabin.objects.Pairs)
             {
                 var obj = kvp.Value;
-                layout.Objects.Add(new SerializedObject
-                {
-                    ItemId = obj.QualifiedItemId,
-                    TileX = (int)kvp.Key.X,
-                    TileY = (int)kvp.Key.Y
-                });
+                layout.Objects.Add(
+                    new SerializedObject
+                    {
+                        ItemId = obj.QualifiedItemId,
+                        TileX = (int)kvp.Key.X,
+                        TileY = (int)kvp.Key.Y,
+                    }
+                );
             }
 
             // Serialize wallpaper per room
@@ -2604,7 +2968,10 @@ namespace JunimoServer.Services.Lobby
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"[Lobby] Failed to restore furniture {serialized.ItemId}: {ex.Message}", LogLevel.Warn);
+                    _monitor.Log(
+                        $"[Lobby] Failed to restore furniture {serialized.ItemId}: {ex.Message}",
+                        LogLevel.Warn
+                    );
                 }
             }
 
@@ -2622,7 +2989,10 @@ namespace JunimoServer.Services.Lobby
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"[Lobby] Failed to restore object {serialized.ItemId}: {ex.Message}", LogLevel.Warn);
+                    _monitor.Log(
+                        $"[Lobby] Failed to restore object {serialized.ItemId}: {ex.Message}",
+                        LogLevel.Warn
+                    );
                 }
             }
 
@@ -2638,7 +3008,10 @@ namespace JunimoServer.Services.Lobby
                 cabin.SetFloor(kvp.Value, kvp.Key);
             }
 
-            _monitor.Log($"[Lobby] Applied layout (furniture={layout.Furniture.Count}, objects={layout.Objects.Count}, wallpapers={layout.Wallpapers.Count}, floors={layout.Floors.Count})", LogLevel.Debug);
+            _monitor.Log(
+                $"[Lobby] Applied layout (furniture={layout.Furniture.Count}, objects={layout.Objects.Count}, wallpapers={layout.Wallpapers.Count}, floors={layout.Floors.Count})",
+                LogLevel.Debug
+            );
         }
 
         #endregion

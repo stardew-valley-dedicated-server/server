@@ -1,9 +1,9 @@
+using System;
+using System.IO;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameCreator;
 using Newtonsoft.Json;
 using StardewModdingAPI;
-using System;
-using System.IO;
 
 namespace JunimoServer.Services.Settings
 {
@@ -43,7 +43,6 @@ namespace JunimoServer.Services.Settings
         public string PetName => _settings.Game.PetName;
         public bool MushroomCave => _settings.Game.MushroomCave;
         public bool BuyJoja => _settings.Game.BuyJoja;
-
 
         /// <summary>
         /// Nullable bool: null means "auto" (true only for Wilderness farm type 4).
@@ -86,7 +85,8 @@ namespace JunimoServer.Services.Settings
         /// Broadcast period (in ticks) for farmer/location/world-state deltas.
         /// Out-of-range values clamp into [1, 60] with a warning.
         /// </summary>
-        public int NetworkBroadcastPeriod => ClampBroadcastPeriod(_settings.Server.NetworkBroadcastPeriod);
+        public int NetworkBroadcastPeriod =>
+            ClampBroadcastPeriod(_settings.Server.NetworkBroadcastPeriod);
 
         #endregion
 
@@ -148,13 +148,19 @@ namespace JunimoServer.Services.Settings
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"Failed to read settings file ({_settingsPath}): {ex.Message}", LogLevel.Error);
+                    _monitor.Log(
+                        $"Failed to read settings file ({_settingsPath}): {ex.Message}",
+                        LogLevel.Error
+                    );
                     _monitor.Log("Using default settings.", LogLevel.Warn);
                 }
             }
             else
             {
-                _monitor.Log($"Settings file not found at {_settingsPath}, creating defaults.", LogLevel.Info);
+                _monitor.Log(
+                    $"Settings file not found at {_settingsPath}, creating defaults.",
+                    LogLevel.Info
+                );
             }
 
             var defaults = new ServerSettings();
@@ -235,7 +241,8 @@ namespace JunimoServer.Services.Settings
                 var clamped = Math.Clamp(value, min, max);
                 _monitor.Log(
                     $"NetworkBroadcastPeriod={value} out of range [{min},{max}]; clamped to {clamped}.",
-                    LogLevel.Warn);
+                    LogLevel.Warn
+                );
                 return clamped;
             }
             return value;

@@ -8,6 +8,7 @@ namespace JunimoServer.Services.PersistentOption
 
         public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
 
-        public ExistingCabinBehavior ExistingCabinBehavior { get; set; } = ExistingCabinBehavior.KeepExisting;
+        public ExistingCabinBehavior ExistingCabinBehavior { get; set; } =
+            ExistingCabinBehavior.KeepExisting;
     }
 }

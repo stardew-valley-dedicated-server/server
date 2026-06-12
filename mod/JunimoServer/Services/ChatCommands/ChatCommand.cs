@@ -10,13 +10,14 @@ namespace JunimoServer.Services.ChatCommands
 
         public string CommandUsage
         {
-            get
-            {
-                return $"!{Name}: {Description}";
-            }
+            get { return $"!{Name}: {Description}"; }
         }
 
-        public ChatCommand(string name, string description, Action<string[], ReceivedMessage> action)
+        public ChatCommand(
+            string name,
+            string description,
+            Action<string[], ReceivedMessage> action
+        )
         {
             Name = name;
             Description = description;

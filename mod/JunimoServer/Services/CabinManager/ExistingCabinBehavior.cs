@@ -19,6 +19,6 @@ namespace JunimoServer.Services.CabinManager
         /// Use this when switching to CabinStack/FarmhouseStack and you want
         /// all cabins managed uniformly.
         /// </summary>
-        MoveToStack
+        MoveToStack,
     }
 }

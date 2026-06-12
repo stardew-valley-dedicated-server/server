@@ -31,7 +31,12 @@ public class ErrorCapture
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
-        CaptureError("UnhandledException", ex?.Message ?? "Unknown error", ex?.StackTrace, ex?.GetType().Name);
+        CaptureError(
+            "UnhandledException",
+            ex?.Message ?? "Unknown error",
+            ex?.StackTrace,
+            ex?.GetType().Name
+        );
     }
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
@@ -47,18 +52,27 @@ public class ErrorCapture
 
         // Something slipped past the cancellation filter; log the full exception tree
         // so we can diagnose what's actually in the AggregateException.
-        _monitor.Log($"UnobservedTaskException captured ({innerExceptions.Count} inner):", LogLevel.Warn);
+        _monitor.Log(
+            $"UnobservedTaskException captured ({innerExceptions.Count} inner):",
+            LogLevel.Warn
+        );
         foreach (var inner in innerExceptions)
         {
             var chain = (inner.GetType().FullName ?? inner.GetType().Name) + ": " + inner.Message;
             for (var cause = inner.InnerException; cause != null; cause = cause.InnerException)
-                chain += $"\n    → {(cause.GetType().FullName ?? cause.GetType().Name)}: {cause.Message}";
+                chain +=
+                    $"\n    → {(cause.GetType().FullName ?? cause.GetType().Name)}: {cause.Message}";
             _monitor.Log($"  - {chain}", LogLevel.Warn);
             if (inner.StackTrace != null)
                 _monitor.Log($"    StackTrace: {inner.StackTrace}", LogLevel.Debug);
         }
 
-        CaptureError("UnobservedTaskException", e.Exception.Message, e.Exception.StackTrace, e.Exception.GetType().Name);
+        CaptureError(
+            "UnobservedTaskException",
+            e.Exception.Message,
+            e.Exception.StackTrace,
+            e.Exception.GetType().Name
+        );
     }
 
     /// <summary>
@@ -84,7 +98,12 @@ public class ErrorCapture
     /// <summary>
     /// Manually capture an error (can be called from catch blocks).
     /// </summary>
-    public void CaptureError(string source, string message, string? stackTrace = null, string? exceptionType = null)
+    public void CaptureError(
+        string source,
+        string message,
+        string? stackTrace = null,
+        string? exceptionType = null
+    )
     {
         lock (_lock)
         {
@@ -95,7 +114,7 @@ public class ErrorCapture
                 Source = source,
                 Message = message,
                 StackTrace = stackTrace,
-                ExceptionType = exceptionType
+                ExceptionType = exceptionType,
             };
 
             _errors.Add(error);
@@ -125,15 +144,9 @@ public class ErrorCapture
     {
         lock (_lock)
         {
-            var errors = limit.HasValue
-                ? _errors.TakeLast(limit.Value).ToList()
-                : _errors.ToList();
+            var errors = limit.HasValue ? _errors.TakeLast(limit.Value).ToList() : _errors.ToList();
 
-            var response = new ErrorsResponse
-            {
-                TotalCount = _errors.Count,
-                Errors = errors
-            };
+            var response = new ErrorsResponse { TotalCount = _errors.Count, Errors = errors };
 
             if (clear == true)
             {
@@ -173,7 +186,8 @@ public class ErrorCapture
     {
         get
         {
-            lock (_lock) return _errors.Count;
+            lock (_lock)
+                return _errors.Count;
         }
     }
 

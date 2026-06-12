@@ -24,8 +24,7 @@ namespace JunimoServer.Services.AlwaysOn
         /// is "don't clobber a handshake menu", not "don't clobber sleep
         /// specifically".
         /// </summary>
-        public static bool IsReadyCheckActive()
-            => Game1.activeClickableMenu is ReadyCheckDialog;
+        public static bool IsReadyCheckActive() => Game1.activeClickableMenu is ReadyCheckDialog;
 
         /// <summary>
         /// Warps the host to the Farm map's default entry tile. Used to park the
@@ -33,7 +32,8 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         public static void WarpToFarmDefaultSpawn()
         {
-            int x = 0, y = 0;
+            int x = 0,
+                y = 0;
             Utility.getDefaultWarpLocation("Farm", ref x, ref y);
             Game1.warpFarmer("Farm", x, y, false);
         }
@@ -47,7 +47,14 @@ namespace JunimoServer.Services.AlwaysOn
         /// <param name="message"></param>
         /// <param name="align"></param>
         /// <param name="colorIntensity"></param>
-        public static void DrawTextBox(int x, int y, SpriteFont font, string message, int align = 0, float colorIntensity = 1f)
+        public static void DrawTextBox(
+            int x,
+            int y,
+            SpriteFont font,
+            string message,
+            int align = 0,
+            float colorIntensity = 1f
+        )
         {
             SpriteBatch spriteBatch = Game1.spriteBatch;
             int width = (int)font.MeasureString(message).X + 32;
@@ -74,9 +81,23 @@ namespace JunimoServer.Services.AlwaysOn
                     return;
             }
 
-
-            IClickableMenu.drawTextureBox(spriteBatch, Game1.menuTexture, new Rectangle(0, 256, 60, 60), xPosTextureBox, y, width, num + 4, Color.White * colorIntensity);
-            Utility.drawTextWithShadow(spriteBatch, message, font, new Vector2(xPosText, y + 16), Game1.textColor);
+            IClickableMenu.drawTextureBox(
+                spriteBatch,
+                Game1.menuTexture,
+                new Rectangle(0, 256, 60, 60),
+                xPosTextureBox,
+                y,
+                width,
+                num + 4,
+                Color.White * colorIntensity
+            );
+            Utility.drawTextWithShadow(
+                spriteBatch,
+                message,
+                font,
+                new Vector2(xPosText, y + 16),
+                Game1.textColor
+            );
         }
     }
 }

@@ -35,7 +35,9 @@ namespace JunimoServer.Tests.Helpers;
 /// </summary>
 public static class TestArtifacts
 {
-    private static readonly string RepoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    private static readonly string RepoRoot = Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")
+    );
 
     /// <summary>
     /// Stable root directory for all test results. Does not change between runs.
@@ -91,5 +93,4 @@ public static class TestArtifacts
         Directory.CreateDirectory(dir);
         return dir;
     }
-
 }

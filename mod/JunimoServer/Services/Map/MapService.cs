@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using JunimoServer.Util;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -6,10 +9,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.GameData.WorldMaps;
 using StardewValley.WorldMaps;
-using System;
-using System.Collections.Generic;
-using System.IO;
-
 
 namespace JunimoServer.Services.Map
 {
@@ -66,7 +65,6 @@ namespace JunimoServer.Services.Map
             SyncMapTextures();
         }
 
-
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
             // Send roughly every 116ms (~8.5x/sec, equivalent to every 7 ticks at 60 TPS)
@@ -76,9 +74,12 @@ namespace JunimoServer.Services.Map
                 _syncData.players = new List<MapSyncPlayerData>();
                 SyncFarmerPositions();
 
-                _ws.Send(Newtonsoft.Json.JsonConvert.SerializeObject(new MapMessage() { data = _syncData }));
+                _ws.Send(
+                    Newtonsoft.Json.JsonConvert.SerializeObject(
+                        new MapMessage() { data = _syncData }
+                    )
+                );
             }
-
         }
 
         private void OnOneSecondUpdateTick(object sender, OneSecondUpdateTickedEventArgs args)
@@ -103,7 +104,10 @@ namespace JunimoServer.Services.Map
             foreach (Farmer player in Game1.getOnlineFarmers())
             {
                 Point tile = MapUtil.GetNormalizedPlayerTile(player);
-                MapAreaPositionWithContext? positionDataContext = WorldMapManager.GetPositionData(player.currentLocation, tile);
+                MapAreaPositionWithContext? positionDataContext = WorldMapManager.GetPositionData(
+                    player.currentLocation,
+                    tile
+                );
 
                 // Skip if farmer is not visible on a map
                 if (!positionDataContext.HasValue)
@@ -122,7 +126,10 @@ namespace JunimoServer.Services.Map
                     }
 
                     Rectangle mapBounds = region.GetMapPixelBounds();
-                    Vector2? mapPixelPos = positionData.GetMapPixelPosition(player.currentLocation, tile);
+                    Vector2? mapPixelPos = positionData.GetMapPixelPosition(
+                        player.currentLocation,
+                        tile
+                    );
 
                     if (mapPixelPos == null || !mapPixelPos.HasValue)
                     {
@@ -142,14 +149,16 @@ namespace JunimoServer.Services.Map
                     }
 
                     // Add processed data for player
-                    _syncData.players.Add(new MapSyncPlayerData()
-                    {
-                        uniqueMultiplayerID = player.UniqueMultiplayerID.ToString(),
-                        name = player.Name,
-                        position = pos.Value,
-                        hairColor = GetHairColor(player),
-                        hairOffset = GetHairOffset(player)
-                    });
+                    _syncData.players.Add(
+                        new MapSyncPlayerData()
+                        {
+                            uniqueMultiplayerID = player.UniqueMultiplayerID.ToString(),
+                            name = player.Name,
+                            position = pos.Value,
+                            hairColor = GetHairColor(player),
+                            hairOffset = GetHairOffset(player),
+                        }
+                    );
 
                     // Player can probably only be visible on one region, so bailing here
                     if (positionData.Region.Id == region.Id)
@@ -177,21 +186,33 @@ namespace JunimoServer.Services.Map
         private void SaveFarmerPortrait(Farmer farmer)
         {
             // Make sure that correct colors are applied to textures
-            _helper.Reflection.GetMethod(farmer.FarmerRenderer, "executeRecolorActions").Invoke(farmer);
+            _helper
+                .Reflection.GetMethod(farmer.FarmerRenderer, "executeRecolorActions")
+                .Invoke(farmer);
 
             TextureData baseTexture = GetFarmerBaseTexture(farmer);
-            SaveTexture($"portrait_{farmer.UniqueMultiplayerID}_base.png", baseTexture.texture, baseTexture.rect);
+            SaveTexture(
+                $"portrait_{farmer.UniqueMultiplayerID}_base.png",
+                baseTexture.texture,
+                baseTexture.rect
+            );
 
             TextureData hairTexture = GetFarmerHairTexture(farmer);
-            SaveTexture($"portrait_{farmer.UniqueMultiplayerID}_hair.png", hairTexture.texture, hairTexture.rect);
+            SaveTexture(
+                $"portrait_{farmer.UniqueMultiplayerID}_hair.png",
+                hairTexture.texture,
+                hairTexture.rect
+            );
         }
 
         private TextureData GetFarmerBaseTexture(Farmer farmer)
         {
             return new TextureData()
             {
-                texture = _helper.Reflection.GetField<Texture2D>(farmer.FarmerRenderer, "baseTexture").GetValue(),
-                rect = new Rectangle(0, 0, 16, farmer.IsMale ? 15 : 16)
+                texture = _helper
+                    .Reflection.GetField<Texture2D>(farmer.FarmerRenderer, "baseTexture")
+                    .GetValue(),
+                rect = new Rectangle(0, 0, 16, farmer.IsMale ? 15 : 16),
             };
         }
 
@@ -200,30 +221,41 @@ namespace JunimoServer.Services.Map
             int hairStyleIndex = farmer.getHair(ignore_hat: true);
             HairStyleMetadata hairMetadata = Farmer.GetHairStyleMetadata(hairStyleIndex);
 
-            Texture2D texture = hairMetadata != null
-                ? hairMetadata.texture
-                : FarmerRenderer.hairStylesTexture;
+            Texture2D texture =
+                hairMetadata != null ? hairMetadata.texture : FarmerRenderer.hairStylesTexture;
 
-            Rectangle rect = hairMetadata != null
-                ? new Rectangle(hairMetadata.tileX * 16, hairMetadata.tileY * 16, 16, 15)
-                : new Rectangle(hairStyleIndex * 16 % FarmerRenderer.hairStylesTexture.Width, hairStyleIndex * 16 / FarmerRenderer.hairStylesTexture.Width * 96, 16, 15);
+            Rectangle rect =
+                hairMetadata != null
+                    ? new Rectangle(hairMetadata.tileX * 16, hairMetadata.tileY * 16, 16, 15)
+                    : new Rectangle(
+                        hairStyleIndex * 16 % FarmerRenderer.hairStylesTexture.Width,
+                        hairStyleIndex * 16 / FarmerRenderer.hairStylesTexture.Width * 96,
+                        16,
+                        15
+                    );
 
-            return new TextureData()
-            {
-                texture = texture,
-                rect = rect
-            };
+            return new TextureData() { texture = texture, rect = rect };
         }
 
         private Color GetHairColor(Farmer player)
         {
-            return (bool)player.prismaticHair.Value ? Utility.GetPrismaticColor() : player.hairstyleColor.Value;
+            return (bool)player.prismaticHair.Value
+                ? Utility.GetPrismaticColor()
+                : player.hairstyleColor.Value;
         }
 
         private Vector2 GetHairOffset(Farmer farmer)
         {
             int hairStyleIndex = farmer.getHair(ignore_hat: true);
-            return new Vector2(0f, FarmerRenderer.featureYOffsetPerFrame[0] * 4 + ((farmer.IsMale && hairStyleIndex >= 16) ? (-4) : ((!farmer.IsMale && hairStyleIndex < 16) ? 4 : 0)));
+            return new Vector2(
+                0f,
+                FarmerRenderer.featureYOffsetPerFrame[0] * 4
+                    + (
+                        (farmer.IsMale && hairStyleIndex >= 16)
+                            ? (-4)
+                            : ((!farmer.IsMale && hairStyleIndex < 16) ? 4 : 0)
+                    )
+            );
         }
         #endregion
 
@@ -257,19 +289,32 @@ namespace JunimoServer.Services.Map
             foreach (WorldMapTextureData worldMapTextureData in region.Data.BaseTexture)
             {
                 // Save default variant
-                _monitor.Log($"Processing region base texture - Name: {worldMapTextureData.Texture}, Season: none", LogLevel.Info);
-                SaveTextureData($"region_{regionIndex}.png", MapUtil.GetMapAreaTexture(worldMapTextureData.Texture, worldMapTextureData));
+                _monitor.Log(
+                    $"Processing region base texture - Name: {worldMapTextureData.Texture}, Season: none",
+                    LogLevel.Info
+                );
+                SaveTextureData(
+                    $"region_{regionIndex}.png",
+                    MapUtil.GetMapAreaTexture(worldMapTextureData.Texture, worldMapTextureData)
+                );
 
                 // Save seasonal variants
                 foreach (string season in _seasons)
                 {
-                    string textureNameSeasonal = worldMapTextureData.Texture + "_" + season.ToLower();
-                    _monitor.Log($"Processing region base texture - Name: {worldMapTextureData.Texture}, Season: {season}", LogLevel.Info);
+                    string textureNameSeasonal =
+                        worldMapTextureData.Texture + "_" + season.ToLower();
+                    _monitor.Log(
+                        $"Processing region base texture - Name: {worldMapTextureData.Texture}, Season: {season}",
+                        LogLevel.Info
+                    );
 
                     // Check if the seasonal texture exists, not all maps have them (e.g. island)
                     if (MapUtil.TextureExists(textureNameSeasonal))
                     {
-                        SaveTextureData($"region_{regionIndex}_{season.ToLower()}.png", MapUtil.GetMapAreaTexture(textureNameSeasonal, worldMapTextureData));
+                        SaveTextureData(
+                            $"region_{regionIndex}_{season.ToLower()}.png",
+                            MapUtil.GetMapAreaTexture(textureNameSeasonal, worldMapTextureData)
+                        );
                     }
                 }
             }
@@ -286,7 +331,10 @@ namespace JunimoServer.Services.Map
         private void SaveTexture(string filename, Texture2D texture, Rectangle rect)
         {
             // _monitor.Log($"Saving map region base texture ({filename})", LogLevel.Info);
-            _helper.Data.WriteServerTextureFile($"{Path.Combine("Images", filename)}", MapUtil.CropFromTexture(texture, rect));
+            _helper.Data.WriteServerTextureFile(
+                $"{Path.Combine("Images", filename)}",
+                MapUtil.CropFromTexture(texture, rect)
+            );
         }
 
         private void SaveTextureData(string filename, TextureData textureData)

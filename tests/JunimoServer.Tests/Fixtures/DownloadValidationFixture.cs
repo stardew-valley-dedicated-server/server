@@ -23,6 +23,7 @@ public class DownloadValidationFixture : IAsyncLifetime
 
     private IContainer? _steamAuthContainer;
     private INetwork? _network;
+
     /// <summary>
     /// Tracks whether we have acquired a server-slot reservation against the
     /// coordinator host (released in <see cref="DisposeAsync"/>). The fixture
@@ -33,15 +34,20 @@ public class DownloadValidationFixture : IAsyncLifetime
     private DockerHost CoordinatorHost => HostPool.Instance.First;
 
     // Use shared volumes (game already downloaded) to avoid session conflicts
-    private static readonly string VolumePrefix = Environment.GetEnvironmentVariable("SDVD_VOLUME_PREFIX") ?? "server";
+    private static readonly string VolumePrefix =
+        Environment.GetEnvironmentVariable("SDVD_VOLUME_PREFIX") ?? "server";
     private string GameDataVolume => $"{VolumePrefix}_game-data";
     private string SteamSessionVolume => $"{VolumePrefix}_steam-session";
 
     // Image configuration
-    private static readonly string ImageTag = Environment.GetEnvironmentVariable("SDVD_IMAGE_TAG") ?? "local";
+    private static readonly string ImageTag =
+        Environment.GetEnvironmentVariable("SDVD_IMAGE_TAG") ?? "local";
     private static readonly bool UseLocalImages = ImageTag == "local";
     private static readonly bool SkipBuild = string.Equals(
-        Environment.GetEnvironmentVariable("SDVD_SKIP_BUILD"), "true", StringComparison.OrdinalIgnoreCase);
+        Environment.GetEnvironmentVariable("SDVD_SKIP_BUILD"),
+        "true",
+        StringComparison.OrdinalIgnoreCase
+    );
 
     // Ports
     private const int SteamAuthPort = 3001;
@@ -86,7 +92,8 @@ public class DownloadValidationFixture : IAsyncLifetime
     {
         lock (_abortLock)
         {
-            if (_testRunAborted) return;
+            if (_testRunAborted)
+                return;
             _testRunAborted = true;
             _abortReason = reason;
             Log("", LogLevel.Info);
@@ -139,10 +146,22 @@ public class DownloadValidationFixture : IAsyncLifetime
     /// <summary>
     /// Marks a test as failed with optional details for the failure summary.
     /// </summary>
-    public void MarkFailed(string className, string? testName, string error,
-        string? phase = null, string? screenshotPath = null)
+    public void MarkFailed(
+        string className,
+        string? testName,
+        string error,
+        string? phase = null,
+        string? screenshotPath = null
+    )
     {
-        TestSummaryFixture.Instance?.MarkFailed(CollectionName, className, testName, error, phase, screenshotPath);
+        TestSummaryFixture.Instance?.MarkFailed(
+            CollectionName,
+            className,
+            testName,
+            error,
+            phase,
+            screenshotPath
+        );
     }
 
     /// <summary>
@@ -159,11 +178,20 @@ public class DownloadValidationFixture : IAsyncLifetime
         }
     }
 
-    private enum LogLevel { Header, Info, Success, Warn, Error, Detail }
+    private enum LogLevel
+    {
+        Header,
+        Info,
+        Success,
+        Warn,
+        Error,
+        Detail,
+    }
 
     private static void Log(string message, LogLevel level = LogLevel.Info)
     {
-        if (string.IsNullOrEmpty(message)) return;
+        if (string.IsNullOrEmpty(message))
+            return;
         var status = level switch
         {
             LogLevel.Success => SetupStepStatus.Completed,
@@ -193,7 +221,8 @@ public class DownloadValidationFixture : IAsyncLifetime
             // Build images if needed (reuses shared build-once logic)
             await DockerImageBuilder.EnsureImagesExistAsync(
                 includeTestClient: false,
-                new SetupEventBusBuildProgressSink("Setup", CollectionName));
+                new SetupEventBusBuildProgressSink("Setup", CollectionName)
+            );
 
             Log("Setting up download validation test environment...");
             Log($"Using shared volumes: {GameDataVolume}, {SteamSessionVolume}", LogLevel.Detail);
@@ -230,22 +259,40 @@ public class DownloadValidationFixture : IAsyncLifetime
                     p.Labels["sdvd.test"] = "true";
                     p.Labels["sdvd.run-id"] = Guid.NewGuid().ToString("N")[..8];
                 })
-                .WithWaitStrategy(Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(r => r
-                        .ForPort(SteamAuthPort)
-                        .ForPath("/health")
-                        .ForStatusCode(System.Net.HttpStatusCode.OK)))
+                .WithWaitStrategy(
+                    Wait.ForUnixContainer()
+                        .UntilHttpRequestIsSucceeded(r =>
+                            r.ForPort(SteamAuthPort)
+                                .ForPath("/health")
+                                .ForStatusCode(System.Net.HttpStatusCode.OK)
+                        )
+                )
                 .Build();
 
             Log("Starting steam-auth container...");
-            SetupEventBus.EmitStep("Setup", "Starting steam-auth container", SetupStepStatus.Started, collectionName: CollectionName);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting steam-auth container",
+                SetupStepStatus.Started,
+                collectionName: CollectionName
+            );
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             await _steamAuthContainer.StartAsync(cts.Token);
             Log("Steam-auth container started", LogLevel.Success);
-            SetupEventBus.EmitStep("Setup", "Starting steam-auth container", SetupStepStatus.Completed, collectionName: CollectionName);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting steam-auth container",
+                SetupStepStatus.Completed,
+                collectionName: CollectionName
+            );
 
             LogStepDuration(stepStart);
-            SetupEventBus.EmitPhaseCompleted("Setup", "Download Validation", true, collectionName: CollectionName);
+            SetupEventBus.EmitPhaseCompleted(
+                "Setup",
+                "Download Validation",
+                true,
+                collectionName: CollectionName
+            );
         }
         catch
         {
@@ -316,7 +363,6 @@ public class DownloadValidationFixture : IAsyncLifetime
             TestSummaryFixture.Instance?.SetAborted(_abortReason ?? "Unknown abort");
         }
     }
-
 }
 
 /// <summary>
@@ -326,6 +372,4 @@ public class DownloadValidationFixture : IAsyncLifetime
 /// </summary>
 [CollectionDefinition("DownloadValidation")]
 [CollectionPriority(100)] // Must run last: Steam session invalidation
-public class DownloadValidationTestCollection : ICollectionFixture<DownloadValidationFixture>
-{
-}
+public class DownloadValidationTestCollection : ICollectionFixture<DownloadValidationFixture> { }

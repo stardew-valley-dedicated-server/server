@@ -44,10 +44,7 @@ namespace JunimoServer.Services.SteamGameServer
         /// </summary>
         public static CSteamID ServerSteamId => _serverSteamId;
 
-        public SteamGameServerService(
-            Harmony harmony,
-            IMonitor monitor,
-            IModHelper helper)
+        public SteamGameServerService(Harmony harmony, IMonitor monitor, IModHelper helper)
         {
             _monitor = monitor;
 
@@ -81,12 +78,15 @@ namespace JunimoServer.Services.SteamGameServer
                 if (e.IsMultipleOf((uint)SteamConstants.CallbackErrorLogIntervalFrames)) // Every 5 seconds
                 {
                     _monitor.Log($"GameServer callback error: {ex.Message}", LogLevel.Trace);
-                    Diagnostics.ModEventLog.Emit("steam_callback_error", new
-                    {
-                        callback = "RunCallbacks",
-                        exceptionType = ex.GetType().Name,
-                        message = ex.Message
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "steam_callback_error",
+                        new
+                        {
+                            callback = "RunCallbacks",
+                            exceptionType = ex.GetType().Name,
+                            message = ex.Message,
+                        }
+                    );
                 }
             }
         }
@@ -104,13 +104,21 @@ namespace JunimoServer.Services.SteamGameServer
             try
             {
                 // Set up callbacks before init
-                _steamServersConnectedCallback = Callback<SteamServersConnected_t>.CreateGameServer(OnSteamServersConnected);
-                _steamServersConnectFailureCallback = Callback<SteamServerConnectFailure_t>.CreateGameServer(OnSteamServersConnectFailure);
-                _steamServersDisconnectedCallback = Callback<SteamServersDisconnected_t>.CreateGameServer(OnSteamServersDisconnected);
+                _steamServersConnectedCallback = Callback<SteamServersConnected_t>.CreateGameServer(
+                    OnSteamServersConnected
+                );
+                _steamServersConnectFailureCallback =
+                    Callback<SteamServerConnectFailure_t>.CreateGameServer(
+                        OnSteamServersConnectFailure
+                    );
+                _steamServersDisconnectedCallback =
+                    Callback<SteamServersDisconnected_t>.CreateGameServer(
+                        OnSteamServersDisconnected
+                    );
 
                 // Initialize GameServer (older Steamworks.NET API - returns bool)
                 bool initResult = GameServer.Init(
-                    unIP: 0,                                    // Auto-select IP (0 = INADDR_ANY)
+                    unIP: 0, // Auto-select IP (0 = INADDR_ANY)
                     usGamePort: SteamConstants.DefaultGamePort,
                     usQueryPort: SteamConstants.DefaultQueryPort,
                     eServerMode: EServerMode.eServerModeAuthenticationAndSecure,
@@ -145,7 +153,10 @@ namespace JunimoServer.Services.SteamGameServer
             catch (DllNotFoundException ex)
             {
                 _monitor.Log($"Steam SDK DLLs not found: {ex.Message}", LogLevel.Error);
-                _monitor.Log("Make sure Steamworks SDK redistributables are installed", LogLevel.Error);
+                _monitor.Log(
+                    "Make sure Steamworks SDK redistributables are installed",
+                    LogLevel.Error
+                );
                 return false;
             }
             catch (Exception ex)
@@ -184,7 +195,10 @@ namespace JunimoServer.Services.SteamGameServer
             var publicIp = Steamworks.SteamGameServer.GetPublicIP();
             if (publicIp.IsSet())
             {
-                _monitor.Log($"Server public IP: {ChatRedaction.MaskIp(publicIp.ToString())}", LogLevel.Info);
+                _monitor.Log(
+                    $"Server public IP: {ChatRedaction.MaskIp(publicIp.ToString())}",
+                    LogLevel.Info
+                );
             }
 
             // Check relay network status
@@ -193,12 +207,15 @@ namespace JunimoServer.Services.SteamGameServer
 
             // Note: fires on the first connect too, not just reconnects — isReconnect disambiguates.
             var connectNumber = ++_connectCount;
-            Diagnostics.ModEventLog.Emit("steam_session_connected", new
-            {
-                steamId = _serverSteamId.m_SteamID.ToString(),
-                connectNumber,
-                isReconnect = connectNumber > 1
-            });
+            Diagnostics.ModEventLog.Emit(
+                "steam_session_connected",
+                new
+                {
+                    steamId = _serverSteamId.m_SteamID.ToString(),
+                    connectNumber,
+                    isReconnect = connectNumber > 1,
+                }
+            );
 
             // Notify subscribers that the Steam ID is now available
             OnServerSteamIdReceived?.Invoke(_serverSteamId.m_SteamID);
@@ -206,7 +223,10 @@ namespace JunimoServer.Services.SteamGameServer
 
         private static void OnSteamServersConnectFailure(SteamServerConnectFailure_t callback)
         {
-            _monitor.Log($"Failed to connect to Steam servers: {callback.m_eResult}", LogLevel.Error);
+            _monitor.Log(
+                $"Failed to connect to Steam servers: {callback.m_eResult}",
+                LogLevel.Error
+            );
             if (callback.m_bStillRetrying)
             {
                 _monitor.Log("Still retrying connection...", LogLevel.Info);
@@ -219,7 +239,10 @@ namespace JunimoServer.Services.SteamGameServer
             _monitor.Log("SDR connections may be affected until reconnected", LogLevel.Warn);
 
             // Structured emit so the reconnect repro can grep infrastructure.jsonl, not just the text log.
-            Diagnostics.ModEventLog.Emit("steam_session_lost", new { result = callback.m_eResult.ToString() });
+            Diagnostics.ModEventLog.Emit(
+                "steam_session_lost",
+                new { result = callback.m_eResult.ToString() }
+            );
 
             OnSteamServersLost?.Invoke();
         }

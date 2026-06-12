@@ -1,5 +1,5 @@
-using StardewValley;
 using StardewModdingAPI.Utilities;
+using StardewValley;
 
 namespace JunimoServer.Util
 {

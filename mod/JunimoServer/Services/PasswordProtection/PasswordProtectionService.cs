@@ -1,3 +1,11 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
 using HarmonyLib;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Shared;
@@ -8,14 +16,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Network;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
 
 namespace JunimoServer.Services.PasswordProtection
 {
@@ -55,10 +55,18 @@ namespace JunimoServer.Services.PasswordProtection
         /// </summary>
         public int ReminderIntervalSeconds { get; } = 30;
 
-        public PasswordProtectionService(IModHelper helper, IMonitor monitor, Harmony harmony, LobbyService lobbyService) : base(helper, monitor)
+        public PasswordProtectionService(
+            IModHelper helper,
+            IMonitor monitor,
+            Harmony harmony,
+            LobbyService lobbyService
+        )
+            : base(helper, monitor)
         {
             if (_instance != null)
-                throw new InvalidOperationException("PasswordProtectionService already initialized - only one instance allowed");
+                throw new InvalidOperationException(
+                    "PasswordProtectionService already initialized - only one instance allowed"
+                );
 
             // Set instance variable for use in static Harmony patches
             _instance = this;
@@ -77,46 +85,88 @@ namespace JunimoServer.Services.PasswordProtection
                 return;
             }
 
-            _monitor.Log($"[Auth] Password protection ENABLED (maxAttempts={MaxFailedAttempts}, timeout={AuthTimeoutSeconds}s)", LogLevel.Info);
+            _monitor.Log(
+                $"[Auth] Password protection ENABLED (maxAttempts={MaxFailedAttempts}, timeout={AuthTimeoutSeconds}s)",
+                LogLevel.Info
+            );
 
             // KEY PATCH: Intercept farmhand request to capture original spawn info
             // and log client-sent spawn fields for lobby redirect diagnostics.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.checkFarmhandRequest)),
-                prefix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(CheckFarmhandRequest_Prefix)),
-                postfix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(CheckFarmhandRequest_Postfix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.checkFarmhandRequest)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(CheckFarmhandRequest_Prefix)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(CheckFarmhandRequest_Postfix)
+                )
             );
 
             // Explicitly send the lobby cabin location before sendServerIntroduction.
             // Vanilla checkFarmhandRequest skips sendLocation for the lobby cabin because
             // isAlwaysActiveLocation() returns true for building interiors nested in the
             // always-active Farm. Without this, ApplyWakeUpPosition crashes on the client.
-            _sendLocationMethod = AccessTools.Method(typeof(GameServer), "sendLocation",
-                new[] { typeof(long), typeof(GameLocation), typeof(bool) });
+            _sendLocationMethod = AccessTools.Method(
+                typeof(GameServer),
+                "sendLocation",
+                new[] { typeof(long), typeof(GameLocation), typeof(bool) }
+            );
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
-                prefix: new HarmonyMethod(typeof(PasswordProtectionService),
-                    nameof(SendServerIntroduction_SendLobbyLocation_Prefix))
-                    { priority = Priority.First }
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.sendServerIntroduction)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(SendServerIntroduction_SendLobbyLocation_Prefix)
+                )
+                {
+                    priority = Priority.First,
+                }
             );
 
             // Filter messages from unauthenticated players
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), "processIncomingMessage", new[] { typeof(IncomingMessage) }),
-                prefix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(ProcessIncomingMessage_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    "processIncomingMessage",
+                    new[] { typeof(IncomingMessage) }
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(ProcessIncomingMessage_Prefix)
+                )
             );
 
             // Cleanup on disconnect
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.playerDisconnected)),
-                postfix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(PlayerDisconnected_Postfix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.playerDisconnected)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(PlayerDisconnected_Postfix)
+                )
             );
 
             // Filter outgoing messages TO unauthenticated players (e.g., newDaySync messages)
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendMessage), new[] { typeof(long), typeof(OutgoingMessage) }),
-                prefix: new HarmonyMethod(typeof(PasswordProtectionService), nameof(SendMessage_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.sendMessage),
+                    new[] { typeof(long), typeof(OutgoingMessage) }
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(PasswordProtectionService),
+                    nameof(SendMessage_Prefix)
+                )
             );
 
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
@@ -130,7 +180,11 @@ namespace JunimoServer.Services.PasswordProtection
         /// PREFIX on checkFarmhandRequest - captures original spawn info before player joins.
         /// Signature: checkFarmhandRequest(string userId, string connectionId, NetFarmerRoot farmer, Action sendMessage, Action approve)
         /// </summary>
-        private static void CheckFarmhandRequest_Prefix(string userId, string connectionId, NetFarmerRoot farmer)
+        private static void CheckFarmhandRequest_Prefix(
+            string userId,
+            string connectionId,
+            NetFarmerRoot farmer
+        )
         {
             _instance?.OnFarmhandRequest(farmer);
         }
@@ -142,13 +196,15 @@ namespace JunimoServer.Services.PasswordProtection
         /// </summary>
         private static void CheckFarmhandRequest_Postfix(NetFarmerRoot farmer)
         {
-            if (_instance == null || !_instance.IsEnabled || farmer?.Value == null) return;
+            if (_instance == null || !_instance.IsEnabled || farmer?.Value == null)
+                return;
 
             var f = farmer.Value;
             var farmerId = f.UniqueMultiplayerID;
             var approved = Game1.otherFarmers.ContainsKey(farmerId);
 
-            if (!approved) return;
+            if (!approved)
+                return;
 
             var daysPlayed = (int)Game1.MasterPlayer.stats.DaysPlayed;
             var disconnectMatch = f.disconnectDay.Value == daysPlayed;
@@ -156,13 +212,14 @@ namespace JunimoServer.Services.PasswordProtection
             var disconnectIsLobby = f.disconnectLocation.Value == lobbyName;
 
             _instance._monitor.Log(
-                $"[Auth] checkFarmhandRequest postfix for {farmerId}:\n" +
-                $"  client-sent disconnectDay={f.disconnectDay.Value} (server DaysPlayed={daysPlayed}, match={disconnectMatch})\n" +
-                $"  client-sent disconnectLocation={f.disconnectLocation.Value ?? "(null)"} (isLobby={disconnectIsLobby})\n" +
-                $"  client-sent homeLocation={f.homeLocation.Value ?? "(null)"}\n" +
-                $"  client-sent lastSleepLocation={f.lastSleepLocation.Value ?? "(null)"}\n" +
-                $"  lobby={lobbyName ?? "(null)"}",
-                LogLevel.Info);
+                $"[Auth] checkFarmhandRequest postfix for {farmerId}:\n"
+                    + $"  client-sent disconnectDay={f.disconnectDay.Value} (server DaysPlayed={daysPlayed}, match={disconnectMatch})\n"
+                    + $"  client-sent disconnectLocation={f.disconnectLocation.Value ?? "(null)"} (isLobby={disconnectIsLobby})\n"
+                    + $"  client-sent homeLocation={f.homeLocation.Value ?? "(null)"}\n"
+                    + $"  client-sent lastSleepLocation={f.lastSleepLocation.Value ?? "(null)"}\n"
+                    + $"  lobby={lobbyName ?? "(null)"}",
+                LogLevel.Info
+            );
 
             EnsureRealCabinAssignment(f);
         }
@@ -174,7 +231,10 @@ namespace JunimoServer.Services.PasswordProtection
         /// isAlwaysActiveLocation() returns true for Farm-nested building interiors.
         /// Returns true so SecurityService's prefix still runs.
         /// </summary>
-        private static bool SendServerIntroduction_SendLobbyLocation_Prefix(GameServer __instance, long peer)
+        private static bool SendServerIntroduction_SendLobbyLocation_Prefix(
+            GameServer __instance,
+            long peer
+        )
         {
             if (_instance == null || !_instance.IsEnabled || _sendLocationMethod == null)
                 return true;
@@ -195,13 +255,15 @@ namespace JunimoServer.Services.PasswordProtection
             {
                 _instance._monitor.Log(
                     $"[Auth] Lobby location '{disconnectLocation}' not found for peer {peer}",
-                    LogLevel.Warn);
+                    LogLevel.Warn
+                );
                 return true;
             }
 
             _instance._monitor.Log(
                 $"[Auth] Sending lobby location '{disconnectLocation}' to peer {peer}",
-                LogLevel.Debug);
+                LogLevel.Debug
+            );
 
             _sendLocationMethod.Invoke(__instance, new object[] { peer, lobbyGameLocation, true });
             return true;
@@ -234,7 +296,10 @@ namespace JunimoServer.Services.PasswordProtection
                 {
                     reason = "stale/missing cabin";
                 }
-                else if (homeCabin.ParentBuilding != null && LobbyService.IsLobbyCabin(homeCabin.ParentBuilding))
+                else if (
+                    homeCabin.ParentBuilding != null
+                    && LobbyService.IsLobbyCabin(homeCabin.ParentBuilding)
+                )
                 {
                     reason = "lobby cabin";
                 }
@@ -246,20 +311,23 @@ namespace JunimoServer.Services.PasswordProtection
 
             _instance._monitor.Log(
                 $"[Auth] Clearing homeLocation '{home}' ({reason}) for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID})",
-                LogLevel.Info);
+                LogLevel.Info
+            );
             farmer.homeLocation.Value = "";
 
             if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
             {
                 _instance._monitor.Log(
                     $"[Auth] Reassigned '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) to real cabin: homeLocation='{farmer.homeLocation.Value}'",
-                    LogLevel.Info);
+                    LogLevel.Info
+                );
             }
             else
             {
                 _instance._monitor.Log(
                     $"[Auth] TryAssignFarmhandHome failed for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) - no available cabin",
-                    LogLevel.Warn);
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -289,7 +357,8 @@ namespace JunimoServer.Services.PasswordProtection
 
         private void OnFarmhandRequest(NetFarmerRoot farmer)
         {
-            if (!IsEnabled || farmer?.Value == null) return;
+            if (!IsEnabled || farmer?.Value == null)
+                return;
 
             // Unpause the game before sendServerIntroduction runs.
             // When no players are connected, the server is paused. If we don't unpause here,
@@ -303,17 +372,18 @@ namespace JunimoServer.Services.PasswordProtection
             var farmerId = farmer.Value.UniqueMultiplayerID;
 
             // Skip host
-            if (farmerId == Game1.player.UniqueMultiplayerID) return;
+            if (farmerId == Game1.player.UniqueMultiplayerID)
+                return;
 
             var isNewPlayer = !farmer.Value.isCustomized.Value;
             var playerType = isNewPlayer ? "new" : "returning";
-            _monitor.Log($"[Auth] {ChatRedaction.MaskValue(farmer.Value.Name)} ({playerType}) connecting", LogLevel.Debug);
+            _monitor.Log(
+                $"[Auth] {ChatRedaction.MaskValue(farmer.Value.Name)} ({playerType}) connecting",
+                LogLevel.Debug
+            );
 
             // Create auth tracking
-            var authData = new PlayerAuthData(farmerId)
-            {
-                IsNewPlayer = isNewPlayer
-            };
+            var authData = new PlayerAuthData(farmerId) { IsNewPlayer = isNewPlayer };
             _playerAuthData[farmerId] = authData;
 
             // Register with LobbyService to exclude from sleep ready-checks
@@ -322,8 +392,10 @@ namespace JunimoServer.Services.PasswordProtection
 
         private bool ShouldProcessMessage(IncomingMessage message)
         {
-            if (!IsEnabled) return true;
-            if (message.FarmerID == Game1.player.UniqueMultiplayerID) return true; // Host
+            if (!IsEnabled)
+                return true;
+            if (message.FarmerID == Game1.player.UniqueMultiplayerID)
+                return true; // Host
 
             var authData = GetAuthData(message.FarmerID);
             if (authData == null)
@@ -342,10 +414,16 @@ namespace JunimoServer.Services.PasswordProtection
                 case Multiplayer.chatMessage: // 10
                     // Only allow !login and !help commands
                     var isAllowed = IsAllowedChatCommand(message);
-                    _monitor.Log($"[Auth] Chat message from {message.FarmerID}, isAllowed={isAllowed}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Auth] Chat message from {message.FarmerID}, isAllowed={isAllowed}",
+                        LogLevel.Debug
+                    );
                     if (!isAllowed)
                     {
-                        _helper.SendPrivateMessage(message.FarmerID, "Please authenticate first: !login <password>");
+                        _helper.SendPrivateMessage(
+                            message.FarmerID,
+                            "Please authenticate first: !login <password>"
+                        );
                         return false;
                     }
                     return true;
@@ -374,8 +452,10 @@ namespace JunimoServer.Services.PasswordProtection
         /// </summary>
         private bool ShouldSendMessage(long peerId, OutgoingMessage message)
         {
-            if (!IsEnabled) return true;
-            if (peerId == Game1.player.UniqueMultiplayerID) return true; // Host
+            if (!IsEnabled)
+                return true;
+            if (peerId == Game1.player.UniqueMultiplayerID)
+                return true; // Host
 
             // Check if this player is authenticated
             if (!_playerAuthData.TryGetValue(peerId, out var authData))
@@ -383,7 +463,10 @@ namespace JunimoServer.Services.PasswordProtection
                 // Peer has no auth data. Either disconnected (cleanup already ran) or
                 // hasn't completed checkFarmhandRequest yet. Either way, allow the message
                 // through; blocking would cause hangs, and the message is harmless.
-                _monitor.Log($"[Auth] No auth data for peer {peerId} in ShouldSendMessage - allowing (likely disconnected)", LogLevel.Trace);
+                _monitor.Log(
+                    $"[Auth] No auth data for peer {peerId} in ShouldSendMessage - allowing (likely disconnected)",
+                    LogLevel.Trace
+                );
                 return true;
             }
 
@@ -396,12 +479,18 @@ namespace JunimoServer.Services.PasswordProtection
                 case Multiplayer.newDaySync: // 14
                     // BLOCK - this triggers Game1.NewDay() which calls exitActiveMenu()
                     // and would close the CharacterCustomization menu
-                    _monitor.Log($"[Auth] Blocked newDaySync to unauthenticated player {peerId}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Auth] Blocked newDaySync to unauthenticated player {peerId}",
+                        LogLevel.Debug
+                    );
                     return false;
 
                 case Multiplayer.startNewDaySync: // 30
                     // BLOCK - this signals the start of day transition
-                    _monitor.Log($"[Auth] Blocked startNewDaySync to unauthenticated player {peerId}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Auth] Blocked startNewDaySync to unauthenticated player {peerId}",
+                        LogLevel.Debug
+                    );
                     return false;
 
                 default:
@@ -422,7 +511,10 @@ namespace JunimoServer.Services.PasswordProtection
 
             // This should never happen - processIncomingMessage only runs for players
             // who have already been approved via checkFarmhandRequest, which creates auth data.
-            _monitor.Log($"[Auth] BUG: No auth data for farmer {farmerId} - this should not happen", LogLevel.Error);
+            _monitor.Log(
+                $"[Auth] BUG: No auth data for farmer {farmerId} - this should not happen",
+                LogLevel.Error
+            );
             return null;
         }
 
@@ -454,7 +546,10 @@ namespace JunimoServer.Services.PasswordProtection
                     return true;
                 }
 
-                _monitor.Log($"[Auth] Blocking chat from {message.FarmerID}: '{ChatRedaction.MaskSecrets(chatText)}'", LogLevel.Debug);
+                _monitor.Log(
+                    $"[Auth] Blocking chat from {message.FarmerID}: '{ChatRedaction.MaskSecrets(chatText)}'",
+                    LogLevel.Debug
+                );
                 return false;
             }
             catch (Exception ex)
@@ -489,19 +584,24 @@ namespace JunimoServer.Services.PasswordProtection
                 if (_pendingPostTransitionAuth.TryRemove(playerId, out _))
                 {
                     _lobbyService.UnregisterUnauthenticatedPlayer(playerId);
-                    _monitor.Log($"[Auth] Completed deferred barrier unregister for {playerId} after day transition", LogLevel.Info);
+                    _monitor.Log(
+                        $"[Auth] Completed deferred barrier unregister for {playerId} after day transition",
+                        LogLevel.Info
+                    );
                 }
             }
         }
 
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
-            if (!IsEnabled || !Game1.hasLoadedGame) return;
+            if (!IsEnabled || !Game1.hasLoadedGame)
+                return;
 
             foreach (var kvp in _playerAuthData.ToList())
             {
                 var authData = kvp.Value;
-                if (authData.State != AuthState.Unauthenticated) continue;
+                if (authData.State != AuthState.Unauthenticated)
+                    continue;
 
                 // Don't process players who haven't fully connected yet.
                 // JoinTime is set during checkFarmhandRequest (before connection completes),
@@ -522,7 +622,10 @@ namespace JunimoServer.Services.PasswordProtection
 
                     // Player just finished customization - record the time
                     authData.CustomizationCompleteTime = DateTime.UtcNow;
-                    _monitor.Log($"[Auth] Player {authData.PlayerId} finished character customization", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Auth] Player {authData.PlayerId} finished character customization",
+                        LogLevel.Debug
+                    );
                 }
 
                 // Start the reference clock from when the player is actually ready:
@@ -542,14 +645,23 @@ namespace JunimoServer.Services.PasswordProtection
                 {
                     SendWelcomeMessage(authData);
                     authData.WelcomeMessageSent = true;
-                    _monitor.Log($"[Auth] Sent welcome message to {authData.PlayerId}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"[Auth] Sent welcome message to {authData.PlayerId}",
+                        LogLevel.Debug
+                    );
                 }
 
                 // Timeout
                 if (AuthTimeoutSeconds > 0 && elapsed > AuthTimeoutSeconds)
                 {
-                    _monitor.Log($"[Auth] Player {authData.PlayerId} timed out after {AuthTimeoutSeconds}s - kicking", LogLevel.Warn);
-                    _helper.SendPrivateMessage(authData.PlayerId, "Authentication timeout. Disconnecting...");
+                    _monitor.Log(
+                        $"[Auth] Player {authData.PlayerId} timed out after {AuthTimeoutSeconds}s - kicking",
+                        LogLevel.Warn
+                    );
+                    _helper.SendPrivateMessage(
+                        authData.PlayerId,
+                        "Authentication timeout. Disconnecting..."
+                    );
                     // Remove auth data immediately to prevent repeated kick attempts on subsequent ticks
                     _playerAuthData.TryRemove(authData.PlayerId, out _);
                     // Also unregister from lobby exclusions
@@ -564,7 +676,10 @@ namespace JunimoServer.Services.PasswordProtection
                     var sinceReminder = (DateTime.UtcNow - authData.LastReminderTime).TotalSeconds;
                     if (sinceReminder > ReminderIntervalSeconds)
                     {
-                        _helper.SendPrivateMessage(authData.PlayerId, "Type !login YOUR_PASSWORD to play");
+                        _helper.SendPrivateMessage(
+                            authData.PlayerId,
+                            "Type !login YOUR_PASSWORD to play"
+                        );
                         authData.LastReminderTime = DateTime.UtcNow;
                     }
                 }
@@ -582,12 +697,15 @@ namespace JunimoServer.Services.PasswordProtection
 
             if (!_playerAuthData.TryGetValue(playerId, out var authData))
             {
-                Diagnostics.ModEventLog.Emit("auth_login_attempted", new
-                {
-                    playerId,
-                    result = "no_auth_data",
-                    failedAttempts = 0
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "auth_login_attempted",
+                    new
+                    {
+                        playerId,
+                        result = "no_auth_data",
+                        failedAttempts = 0,
+                    }
+                );
                 return new AuthenticationResult(true, "Already authenticated.");
             }
 
@@ -596,12 +714,15 @@ namespace JunimoServer.Services.PasswordProtection
             {
                 if (authData.State == AuthState.Authenticated)
                 {
-                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
-                    {
-                        playerId,
-                        result = "already_authenticated",
-                        failedAttempts = authData.FailedAttempts
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_login_attempted",
+                        new
+                        {
+                            playerId,
+                            result = "already_authenticated",
+                            failedAttempts = authData.FailedAttempts,
+                        }
+                    );
                     return new AuthenticationResult(true, "Already authenticated.");
                 }
 
@@ -609,12 +730,15 @@ namespace JunimoServer.Services.PasswordProtection
                 {
                     authData.State = AuthState.Authenticated;
                     _monitor.Log($"[Auth] {playerId} authenticated!", LogLevel.Info);
-                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
-                    {
-                        playerId,
-                        result = "success",
-                        failedAttempts = authData.FailedAttempts
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_login_attempted",
+                        new
+                        {
+                            playerId,
+                            result = "success",
+                            failedAttempts = authData.FailedAttempts,
+                        }
+                    );
 
                     // Warp from lobby to destination (also handles barrier exclusion removal)
                     WarpToDestination(authData);
@@ -624,40 +748,63 @@ namespace JunimoServer.Services.PasswordProtection
 
                 authData.FailedAttempts++;
                 var failedAttempts = authData.FailedAttempts;
-                _monitor.Log($"[Auth] Player {playerId} failed authentication ({failedAttempts}/{MaxFailedAttempts})", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Auth] Player {playerId} failed authentication ({failedAttempts}/{MaxFailedAttempts})",
+                    LogLevel.Warn
+                );
 
                 if (failedAttempts >= MaxFailedAttempts)
                 {
-                    _monitor.Log($"[Auth] Player {playerId} exceeded max attempts - kicking", LogLevel.Warn);
-                    Diagnostics.ModEventLog.Emit("auth_login_attempted", new
-                    {
-                        playerId,
-                        result = "kicked_max_attempts",
-                        failedAttempts
-                    });
+                    _monitor.Log(
+                        $"[Auth] Player {playerId} exceeded max attempts - kicking",
+                        LogLevel.Warn
+                    );
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_login_attempted",
+                        new
+                        {
+                            playerId,
+                            result = "kicked_max_attempts",
+                            failedAttempts,
+                        }
+                    );
                     Game1.server.kick(playerId);
-                    return new AuthenticationResult(false, "Too many attempts. Disconnected.", true);
+                    return new AuthenticationResult(
+                        false,
+                        "Too many attempts. Disconnected.",
+                        true
+                    );
                 }
 
-                Diagnostics.ModEventLog.Emit("auth_login_attempted", new
-                {
-                    playerId,
-                    result = "wrong_password",
-                    failedAttempts
-                });
-                return new AuthenticationResult(false, $"Wrong password. {MaxFailedAttempts - failedAttempts} tries left.");
+                Diagnostics.ModEventLog.Emit(
+                    "auth_login_attempted",
+                    new
+                    {
+                        playerId,
+                        result = "wrong_password",
+                        failedAttempts,
+                    }
+                );
+                return new AuthenticationResult(
+                    false,
+                    $"Wrong password. {MaxFailedAttempts - failedAttempts} tries left."
+                );
             }
         }
 
         public bool IsPlayerAuthenticated(long playerId)
         {
-            if (!IsEnabled) return true;
-            if (playerId == Game1.player.UniqueMultiplayerID) return true; // Host
-            if (!_playerAuthData.TryGetValue(playerId, out var auth)) return false; // No data = not authenticated
+            if (!IsEnabled)
+                return true;
+            if (playerId == Game1.player.UniqueMultiplayerID)
+                return true; // Host
+            if (!_playerAuthData.TryGetValue(playerId, out var auth))
+                return false; // No data = not authenticated
             return auth.State == AuthState.Authenticated;
         }
 
-        public bool RequiresAuthentication(long playerId) => IsEnabled && !IsPlayerAuthenticated(playerId);
+        public bool RequiresAuthentication(long playerId) =>
+            IsEnabled && !IsPlayerAuthenticated(playerId);
 
         #endregion
 
@@ -670,14 +817,17 @@ namespace JunimoServer.Services.PasswordProtection
             // IMPORTANT: Keep the player excluded from barriers until DayStarted fires.
             // Removing the exclusion now would make the barrier wait for a player who can't
             // participate (game thread is blocked by save), causing an infinite hang.
-            if (Game1.newDaySync != null && Game1.newDaySync.hasInstance() && !Game1.newDaySync.hasFinished())
+            if (
+                Game1.newDaySync != null
+                && Game1.newDaySync.hasInstance()
+                && !Game1.newDaySync.hasFinished()
+            )
             {
                 _pendingPostTransitionAuth[authData.PlayerId] = true;
-                Diagnostics.ModEventLog.Emit("auth_warp_deferred", new
-                {
-                    playerId = authData.PlayerId,
-                    reason = "newDaySync_active"
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "auth_warp_deferred",
+                    new { playerId = authData.PlayerId, reason = "newDaySync_active" }
+                );
                 SendPassoutToPlayer(authData);
                 return;
             }
@@ -689,11 +839,10 @@ namespace JunimoServer.Services.PasswordProtection
             var cabinIndoors = FindPlayerCabin(authData.PlayerId);
             if (cabinIndoors == null)
             {
-                Diagnostics.ModEventLog.Emit("auth_warp_failed", new
-                {
-                    playerId = authData.PlayerId,
-                    reason = "no_cabin_found"
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "auth_warp_failed",
+                    new { playerId = authData.PlayerId, reason = "no_cabin_found" }
+                );
                 KickPlayerMissingCabin(authData.PlayerId, "warp destination");
                 return;
             }
@@ -702,14 +851,20 @@ namespace JunimoServer.Services.PasswordProtection
             var tileX = entry.X;
             var tileY = entry.Y;
 
-            _monitor.Log($"[Auth] Warping {authData.PlayerId} to {location} @ ({tileX},{tileY})", LogLevel.Info);
-            Diagnostics.ModEventLog.Emit("auth_warped", new
-            {
-                playerId = authData.PlayerId,
-                location,
-                tileX,
-                tileY
-            });
+            _monitor.Log(
+                $"[Auth] Warping {authData.PlayerId} to {location} @ ({tileX},{tileY})",
+                LogLevel.Info
+            );
+            Diagnostics.ModEventLog.Emit(
+                "auth_warped",
+                new
+                {
+                    playerId = authData.PlayerId,
+                    location,
+                    tileX,
+                    tileY,
+                }
+            );
 
             _lobbyService.WarpFromLobby(authData.PlayerId, location, tileX, tileY);
         }
@@ -733,17 +888,28 @@ namespace JunimoServer.Services.PasswordProtection
             var hasBed = cabinIndoors.GetPlayerBed() != null;
             var locationName = cabinIndoors.NameOrUniqueName;
 
-            _monitor.Log($"[Auth] Day transition in progress - sending passout to {authData.PlayerId} (bed at {locationName} @ {bedSpot})", LogLevel.Info);
+            _monitor.Log(
+                $"[Auth] Day transition in progress - sending passout to {authData.PlayerId} (bed at {locationName} @ {bedSpot})",
+                LogLevel.Info
+            );
 
             // Send passout message (message type 29) to warp the client to bed
             // This triggers Farmer.performPassoutWarp on the client, which handles the sleep animation
             object[] passoutData = new object[] { locationName, bedSpot.X, bedSpot.Y, hasBed };
-            Game1.server.sendMessage(authData.PlayerId, Multiplayer.passout, Game1.player, passoutData);
+            Game1.server.sendMessage(
+                authData.PlayerId,
+                Multiplayer.passout,
+                Game1.player,
+                passoutData
+            );
 
             if (Game1.otherFarmers.TryGetValue(authData.PlayerId, out var farmer))
             {
                 farmer.currentLocation = cabinIndoors;
-                farmer.Position = new Microsoft.Xna.Framework.Vector2(bedSpot.X * 64f, bedSpot.Y * 64f);
+                farmer.Position = new Microsoft.Xna.Framework.Vector2(
+                    bedSpot.X * 64f,
+                    bedSpot.Y * 64f
+                );
             }
         }
 
@@ -756,22 +922,28 @@ namespace JunimoServer.Services.PasswordProtection
         private Cabin FindPlayerCabin(long playerId)
         {
             var farm = Game1.getFarm();
-            if (farm == null) return null;
+            if (farm == null)
+                return null;
 
             // Primary lookup: match by farmhandReference (owner ID or uid)
             foreach (var building in farm.buildings)
             {
-                if (!building.isCabin) continue;
-                if (LobbyService.IsLobbyCabin(building)) continue;
+                if (!building.isCabin)
+                    continue;
+                if (LobbyService.IsLobbyCabin(building))
+                    continue;
 
                 var cabin = building.GetIndoors<Cabin>();
-                if (cabin == null) continue;
+                if (cabin == null)
+                    continue;
 
                 if (cabin.owner?.UniqueMultiplayerID == playerId)
                     return cabin;
 
-                if (cabin.farmhandReference.defined.Value
-                    && cabin.farmhandReference.uid.Value == playerId)
+                if (
+                    cabin.farmhandReference.defined.Value
+                    && cabin.farmhandReference.uid.Value == playerId
+                )
                     return cabin;
             }
 
@@ -788,13 +960,18 @@ namespace JunimoServer.Services.PasswordProtection
                 {
                     foreach (var building in farm.buildings)
                     {
-                        if (!building.isCabin) continue;
-                        if (LobbyService.IsLobbyCabin(building)) continue;
+                        if (!building.isCabin)
+                            continue;
+                        if (LobbyService.IsLobbyCabin(building))
+                            continue;
                         var cabin = building.GetIndoors<Cabin>();
                         if (cabin != null && cabin.NameOrUniqueName == homeLocation)
                         {
-                            _monitor.Log($"[Auth] FindPlayerCabin: primary lookup failed for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), " +
-                                $"found via homeLocation fallback: {homeLocation}", LogLevel.Warn);
+                            _monitor.Log(
+                                $"[Auth] FindPlayerCabin: primary lookup failed for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), "
+                                    + $"found via homeLocation fallback: {homeLocation}",
+                                LogLevel.Warn
+                            );
                             return cabin;
                         }
                     }
@@ -807,20 +984,28 @@ namespace JunimoServer.Services.PasswordProtection
             // lookup so we return the freshly-assigned cabin.
             if (player != null && Game1.netWorldState.Value.TryAssignFarmhandHome(player))
             {
-                _monitor.Log($"[Auth] FindPlayerCabin: recovered via TryAssignFarmhandHome " +
-                    $"for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), homeLocation now '{player.homeLocation.Value}'", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Auth] FindPlayerCabin: recovered via TryAssignFarmhandHome "
+                        + $"for '{ChatRedaction.MaskValue(player.Name)}' (id={playerId}), homeLocation now '{player.homeLocation.Value}'",
+                    LogLevel.Warn
+                );
 
                 foreach (var building in farm.buildings)
                 {
-                    if (!building.isCabin) continue;
-                    if (LobbyService.IsLobbyCabin(building)) continue;
+                    if (!building.isCabin)
+                        continue;
+                    if (LobbyService.IsLobbyCabin(building))
+                        continue;
                     var cabin = building.GetIndoors<Cabin>();
-                    if (cabin == null) continue;
+                    if (cabin == null)
+                        continue;
 
                     if (cabin.owner?.UniqueMultiplayerID == playerId)
                         return cabin;
-                    if (cabin.farmhandReference.defined.Value
-                        && cabin.farmhandReference.uid.Value == playerId)
+                    if (
+                        cabin.farmhandReference.defined.Value
+                        && cabin.farmhandReference.uid.Value == playerId
+                    )
                         return cabin;
                     if (cabin.NameOrUniqueName == player.homeLocation.Value)
                         return cabin;
@@ -835,7 +1020,10 @@ namespace JunimoServer.Services.PasswordProtection
         {
             var farm = Game1.getFarm();
             var cabins = farm?.buildings.Where(b => b.isCabin).ToList() ?? new();
-            _monitor.Log($"[Auth] Cabin lookup failed for {playerId}. Farm has {cabins.Count} cabin(s):", LogLevel.Error);
+            _monitor.Log(
+                $"[Auth] Cabin lookup failed for {playerId}. Farm has {cabins.Count} cabin(s):",
+                LogLevel.Error
+            );
             foreach (var c in cabins)
             {
                 var ind = c.GetIndoors<Cabin>();
@@ -844,15 +1032,29 @@ namespace JunimoServer.Services.PasswordProtection
                 var ownerName = ind?.owner?.Name;
                 var ownerId = ind?.owner?.UniqueMultiplayerID;
                 var isLobby = LobbyService.IsLobbyCabin(c);
-                _monitor.Log($"[Auth]   Cabin '{ind?.NameOrUniqueName}': refDefined={refDefined}, refUid={refUid}, owner='{ChatRedaction.MaskValue(ownerName)}' (id={ownerId}), isLobby={isLobby}", LogLevel.Error);
+                _monitor.Log(
+                    $"[Auth]   Cabin '{ind?.NameOrUniqueName}': refDefined={refDefined}, refUid={refUid}, owner='{ChatRedaction.MaskValue(ownerName)}' (id={ownerId}), isLobby={isLobby}",
+                    LogLevel.Error
+                );
             }
-            var inFarmhandData = Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(playerId);
+            var inFarmhandData = Game1.netWorldState.Value.farmhandData.FieldDict.ContainsKey(
+                playerId
+            );
             var inOtherFarmers = Game1.otherFarmers.ContainsKey(playerId);
             Farmer diagFarmer = inOtherFarmers ? Game1.otherFarmers[playerId] : null;
-            if (diagFarmer == null && Game1.netWorldState.Value.farmhandData.FieldDict.TryGetValue(playerId, out var diagRef))
+            if (
+                diagFarmer == null
+                && Game1.netWorldState.Value.farmhandData.FieldDict.TryGetValue(
+                    playerId,
+                    out var diagRef
+                )
+            )
                 diagFarmer = diagRef.Value;
-            _monitor.Log($"[Auth]   Player {playerId}: inFarmhandData={inFarmhandData}, inOtherFarmers={inOtherFarmers}, " +
-                $"homeLocation='{diagFarmer?.homeLocation.Value}', currentLocation='{diagFarmer?.currentLocation?.NameOrUniqueName}'", LogLevel.Error);
+            _monitor.Log(
+                $"[Auth]   Player {playerId}: inFarmhandData={inFarmhandData}, inOtherFarmers={inOtherFarmers}, "
+                    + $"homeLocation='{diagFarmer?.homeLocation.Value}', currentLocation='{diagFarmer?.currentLocation?.NameOrUniqueName}'",
+                LogLevel.Error
+            );
         }
 
         /// <summary>
@@ -862,8 +1064,14 @@ namespace JunimoServer.Services.PasswordProtection
         /// </summary>
         private void KickPlayerMissingCabin(long playerId, string playerType)
         {
-            _monitor.Log($"[Auth] Cannot find cabin for {playerType} {playerId} - kicking player", LogLevel.Error);
-            _helper.SendPrivateMessage(playerId, "Error: Your cabin could not be found. Please reconnect to the server.");
+            _monitor.Log(
+                $"[Auth] Cannot find cabin for {playerType} {playerId} - kicking player",
+                LogLevel.Error
+            );
+            _helper.SendPrivateMessage(
+                playerId,
+                "Error: Your cabin could not be found. Please reconnect to the server."
+            );
             Game1.server.kick(playerId);
         }
 
@@ -873,7 +1081,7 @@ namespace JunimoServer.Services.PasswordProtection
             {
                 "[aqua]Welcome! This server is password protected.",
                 "[yellow]You're in the lobby until you authenticate.",
-                "[red]DO NOT drop items here - they will be deleted!"
+                "[red]DO NOT drop items here - they will be deleted!",
             };
 
             foreach (var line in lines)

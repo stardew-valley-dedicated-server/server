@@ -21,4 +21,5 @@ public record TestPhaseBreakdown(
     long ArtifactsMs,
     long CleanupMs,
     long LastKeepDisposeMs,
-    long LeaseReleaseMs);
+    long LeaseReleaseMs
+);

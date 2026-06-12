@@ -27,6 +27,7 @@ namespace JunimoServer.Shared
     public static class TestOverlay
     {
         private const int BorderWidth = 3;
+
         // Panel anchor. The white panel starts here; (0,0) lands in the top row's white fill
         // — sampled by RenderingTests.PanelOrigin to detect the overlay; keep in sync.
         private const int PanelOrigin = 0;
@@ -54,7 +55,7 @@ namespace JunimoServer.Shared
         // ContainerRecorder.cs and the test-overlay-pixel-contract rule
         // — this is a cross-process/cross-TFM pixel contract with no shared symbol, so these
         // comments are the only drift detector.
-        private const int ReservedPtsWidth = 340;     // measured: "TIME {10-digit epoch}.{6dp}" ends ~x=322 at fontsize=24, +margin
+        private const int ReservedPtsWidth = 340; // measured: "TIME {10-digit epoch}.{6dp}" ends ~x=322 at fontsize=24, +margin
 
         /// <summary>
         /// Registers the test overlay as a Harmony postfix on Game1.Draw(GameTime).
@@ -131,7 +132,14 @@ namespace JunimoServer.Shared
         /// even vertical rhythm regardless of font). <paramref name="textHeight"/> is the
         /// pre-measured glyph height, used only to center the text.
         /// </summary>
-        private static void DrawLabelRow(SpriteBatch spriteBatch, SpriteFont font, string text, float textHeight, int y, int panelWidth)
+        private static void DrawLabelRow(
+            SpriteBatch spriteBatch,
+            SpriteFont font,
+            string text,
+            float textHeight,
+            int y,
+            int panelWidth
+        )
         {
             DrawRow(spriteBatch, panelWidth, y);
             int textY = y + (int)Math.Round((RowHeight - textHeight) / 2f);
@@ -159,18 +167,9 @@ namespace JunimoServer.Shared
 
             var pos = player.getLocalPosition(Game1.viewport);
 
-            var rect = new Rectangle(
-                (int)pos.X,
-                (int)pos.Y - Game1.tileSize,
-                width,
-                height);
+            var rect = new Rectangle((int)pos.X, (int)pos.Y - Game1.tileSize, width, height);
 
-            DrawRectangleOutline(
-                spriteBatch,
-                Game1.staminaRect,
-                rect,
-                BorderWidth,
-                Color.Red);
+            DrawRectangleOutline(spriteBatch, Game1.staminaRect, rect, BorderWidth, Color.Red);
         }
 
         ///<summary>
@@ -182,19 +181,36 @@ namespace JunimoServer.Shared
             Texture2D texture,
             Rectangle rect,
             int thickness,
-            Color color)
+            Color color
+        )
         {
             // Top
-            spriteBatch.Draw(texture, new Rectangle(rect.Left, rect.Top, rect.Width, thickness), color);
+            spriteBatch.Draw(
+                texture,
+                new Rectangle(rect.Left, rect.Top, rect.Width, thickness),
+                color
+            );
 
             // Bottom
-            spriteBatch.Draw(texture, new Rectangle(rect.Left, rect.Bottom - thickness, rect.Width, thickness), color);
+            spriteBatch.Draw(
+                texture,
+                new Rectangle(rect.Left, rect.Bottom - thickness, rect.Width, thickness),
+                color
+            );
 
             // Left
-            spriteBatch.Draw(texture, new Rectangle(rect.Left, rect.Top, thickness, rect.Height), color);
+            spriteBatch.Draw(
+                texture,
+                new Rectangle(rect.Left, rect.Top, thickness, rect.Height),
+                color
+            );
 
             // Right
-            spriteBatch.Draw(texture, new Rectangle(rect.Right - thickness, rect.Top, thickness, rect.Height), color);
+            spriteBatch.Draw(
+                texture,
+                new Rectangle(rect.Right - thickness, rect.Top, thickness, rect.Height),
+                color
+            );
         }
     }
 }

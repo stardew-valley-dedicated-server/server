@@ -6,7 +6,11 @@ namespace JunimoServer.Services.Commands
 {
     public static class ConsoleCommand
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
+        public static void Register(
+            IModHelper helper,
+            ChatCommandsService chatCommandsService,
+            RoleService roleService
+        )
         {
             //chatCommandsService.RegisterCommand("console",
             //    "forwards the proceeding command to be run on the server.",

@@ -32,6 +32,7 @@ public static class EmergencyCleanup
     private static readonly Dictionary<string, Action> Actions = new();
     private static readonly Dictionary<string, Func<ValueTask>> Drainables = new();
     private static bool _registered;
+
     // Hold a reference so the signal registration isn't garbage collected
     private static PosixSignalRegistration? _sighupRegistration;
 
@@ -62,18 +63,22 @@ public static class EmergencyCleanup
     {
         lock (Lock)
         {
-            if (_registered) return;
+            if (_registered)
+                return;
             _registered = true;
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
             // .NET 10 does not register a default handler for SIGHUP (CTRL_CLOSE_EVENT on Windows).
             // Without this, closing the terminal window kills the process immediately with no cleanup.
-            _sighupRegistration = PosixSignalRegistration.Create(PosixSignal.SIGHUP, ctx =>
-            {
-                ctx.Cancel = true; // Prevent immediate termination
-                RunAll();
-                Environment.Exit(130);
-            });
+            _sighupRegistration = PosixSignalRegistration.Create(
+                PosixSignal.SIGHUP,
+                ctx =>
+                {
+                    ctx.Cancel = true; // Prevent immediate termination
+                    RunAll();
+                    Environment.Exit(130);
+                }
+            );
         }
     }
 
@@ -201,15 +206,26 @@ public static class EmergencyCleanup
                 var perCallTimeout = isRemote ? TimeSpan.FromSeconds(3) : (TimeSpan?)null;
                 BulkRemoveOnHost(client, labelKey, labelValue, perCallTimeout);
             }
-            catch { /* best effort */ }
+            catch
+            { /* best effort */
+            }
             finally
             {
-                if (dispose) try { client.Dispose(); } catch { }
+                if (dispose)
+                    try
+                    {
+                        client.Dispose();
+                    }
+                    catch { }
             }
         }
     }
 
-    private static IEnumerable<(DockerClient Client, bool IsRemote, bool Dispose)> EnumerateHostClientsForCleanup()
+    private static IEnumerable<(
+        DockerClient Client,
+        bool IsRemote,
+        bool Dispose
+    )> EnumerateHostClientsForCleanup()
     {
         var hosts = HostPoolAccessor.GetHostsForCleanup();
         if (hosts != null && hosts.Count > 0)
@@ -222,31 +238,46 @@ public static class EmergencyCleanup
         // Fallback: HostPool not initialized yet (early exit). Use the local
         // default daemon so cleanup still runs in single-host scenarios.
         DockerClient? local = null;
-        try { local = DockerEndpointConfig.Instance.CreateDockerClient(); } catch { }
-        if (local != null) yield return (local, false, true);
+        try
+        {
+            local = DockerEndpointConfig.Instance.CreateDockerClient();
+        }
+        catch { }
+        if (local != null)
+            yield return (local, false, true);
     }
 
     private static void BulkRemoveOnHost(
-        DockerClient client, string labelKey, string labelValue, TimeSpan? perCallTimeout)
+        DockerClient client,
+        string labelKey,
+        string labelValue,
+        TimeSpan? perCallTimeout
+    )
     {
         // Containers first (they hold references to networks/volumes), then
         // networks, then volumes. Each call swallows per-resource errors.
         try
         {
-            DockerOps.BulkForceRemoveContainersByLabelAsync(client, labelKey, labelValue, perCallTimeout)
-                .GetAwaiter().GetResult();
+            DockerOps
+                .BulkForceRemoveContainersByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .GetAwaiter()
+                .GetResult();
         }
         catch { }
         try
         {
-            DockerOps.BulkRemoveNetworksByLabelAsync(client, labelKey, labelValue, perCallTimeout)
-                .GetAwaiter().GetResult();
+            DockerOps
+                .BulkRemoveNetworksByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .GetAwaiter()
+                .GetResult();
         }
         catch { }
         try
         {
-            DockerOps.BulkRemoveVolumesByLabelAsync(client, labelKey, labelValue, perCallTimeout)
-                .GetAwaiter().GetResult();
+            DockerOps
+                .BulkRemoveVolumesByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .GetAwaiter()
+                .GetResult();
         }
         catch { }
     }
@@ -260,7 +291,8 @@ public static class EmergencyCleanup
         int ContainersRemoved,
         int NetworksRemoved,
         int VolumesRemoved,
-        Exception? Error)
+        Exception? Error
+    )
     {
         public int TotalRemoved => ContainersRemoved + NetworksRemoved + VolumesRemoved;
     }
@@ -279,7 +311,8 @@ public static class EmergencyCleanup
     /// </summary>
     public static async IAsyncEnumerable<HostSweepResult> SweepStaleResourcesAsync(
         IReadOnlyList<DockerHost> hosts,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         foreach (var host in hosts)
         {
@@ -288,14 +321,34 @@ public static class EmergencyCleanup
                 ? (TimeSpan?)null
                 : TimeSpan.FromSeconds(5);
 
-            int containers = 0, networks = 0, volumes = 0;
+            int containers = 0,
+                networks = 0,
+                volumes = 0;
             Exception? error = null;
             try
             {
                 var client = host.ApiClient;
-                containers = await DockerOps.BulkForceRemoveContainersByLabelAsync(client, "sdvd.test", "true", perCallTimeout, ct);
-                networks = await DockerOps.BulkRemoveNetworksByLabelAsync(client, "sdvd.test", "true", perCallTimeout, ct);
-                volumes = await DockerOps.BulkRemoveVolumesByLabelAsync(client, "sdvd.test", "true", perCallTimeout, ct);
+                containers = await DockerOps.BulkForceRemoveContainersByLabelAsync(
+                    client,
+                    "sdvd.test",
+                    "true",
+                    perCallTimeout,
+                    ct
+                );
+                networks = await DockerOps.BulkRemoveNetworksByLabelAsync(
+                    client,
+                    "sdvd.test",
+                    "true",
+                    perCallTimeout,
+                    ct
+                );
+                volumes = await DockerOps.BulkRemoveVolumesByLabelAsync(
+                    client,
+                    "sdvd.test",
+                    "true",
+                    perCallTimeout,
+                    ct
+                );
             }
             catch (Exception ex)
             {

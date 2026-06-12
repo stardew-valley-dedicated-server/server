@@ -18,13 +18,9 @@ namespace JunimoServer.Util
             // TODO: Do we need secure protocol wss://?
             Uri uri = new Uri(url);
 
-            var factory = new Func<ClientWebSocket>(() => new ClientWebSocket
-            {
-                Options =
-                {
-                    KeepAliveInterval = TimeSpan.FromSeconds(5),
-                }
-            });
+            var factory = new Func<ClientWebSocket>(() =>
+                new ClientWebSocket { Options = { KeepAliveInterval = TimeSpan.FromSeconds(5) } }
+            );
 
             // Log("Setting up WS");
             _ws = new WebsocketClient(uri, factory);
@@ -97,7 +93,10 @@ namespace JunimoServer.Util
 
         private string Serialize(object data)
         {
-            return Newtonsoft.Json.JsonConvert.SerializeObject(data, Newtonsoft.Json.Formatting.Indented);
+            return Newtonsoft.Json.JsonConvert.SerializeObject(
+                data,
+                Newtonsoft.Json.Formatting.Indented
+            );
         }
 
         private T Deserialize<T>(string data)

@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
@@ -6,8 +8,6 @@ using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.GameData;
-using System;
-using System.Linq;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -22,7 +22,14 @@ namespace JunimoServer.Services.GameCreator
 
         public bool GameIsCreating { get; private set; }
 
-        public GameCreatorService(IModHelper helper, IMonitor monitor, GameLoaderService gameLoader, CabinManagerService cabinManagerService, PersistentOptions options, ServerSettingsLoader settings)
+        public GameCreatorService(
+            IModHelper helper,
+            IMonitor monitor,
+            GameLoaderService gameLoader,
+            CabinManagerService cabinManagerService,
+            PersistentOptions options,
+            ServerSettingsLoader settings
+        )
         {
             _options = options;
             _settings = settings;
@@ -58,18 +65,25 @@ namespace JunimoServer.Services.GameCreator
         {
             GameIsCreating = true;
 
-            _options.SetPersistentOptions(new PersistentOptionsSaveData
-            {
-                MaxPlayers = config.MaxPlayers,
-                CabinStrategy = config.CabinStrategy,
-                ExistingCabinBehavior = _settings.ExistingCabinBehavior,
-            });
+            _options.SetPersistentOptions(
+                new PersistentOptionsSaveData
+                {
+                    MaxPlayers = config.MaxPlayers,
+                    CabinStrategy = config.CabinStrategy,
+                    ExistingCabinBehavior = _settings.ExistingCabinBehavior,
+                }
+            );
 
             Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
 
             Game1.cabinsSeparate = !config.CabinLayoutNearby;
-            Game1.bundleType = config.BundlesRemix ? Game1.BundleType.Remixed : Game1.BundleType.Default;
-            Game1.game1.SetNewGameOption("MineChests",  config.MinesRemix ? Game1.MineChestType.Remixed : Game1.MineChestType.Default);
+            Game1.bundleType = config.BundlesRemix
+                ? Game1.BundleType.Remixed
+                : Game1.BundleType.Default;
+            Game1.game1.SetNewGameOption(
+                "MineChests",
+                config.MinesRemix ? Game1.MineChestType.Remixed : Game1.MineChestType.Default
+            );
             Game1.game1.SetNewGameOption("YearOneCompletable", config.CommunityCenterYear1);
             Game1.startingGameSeed = config.RandomSeed;
             Game1.UseLegacyRandom = config.UseLegacyRandom;
@@ -95,7 +109,8 @@ namespace JunimoServer.Services.GameCreator
             // map-designated positions by the unpatched BuildStartingCabins.
             Game1.startingCabins = config.StartingCabins;
 
-            var isUltimateFarmModLoaded = _helper.ModRegistry.GetAll()
+            var isUltimateFarmModLoaded = _helper
+                .ModRegistry.GetAll()
                 .Any(mod => mod.Manifest.Name == "Ultimate Farm CP");
 
             // Resolve the user's requested farm to (whichFarm bucket, modFarm data). The
@@ -106,8 +121,8 @@ namespace JunimoServer.Services.GameCreator
             // Monster spawning: explicit override, else the requested farm's default — vanilla
             // Wilderness (4) or the modded farm's SpawnMonstersByDefault (matches the new-game
             // UI at CharacterCustomization.optionButtonClick).
-            Game1.spawnMonstersAtNight = config.SpawnMonstersAtNight
-                ?? (modFarm?.SpawnMonstersByDefault ?? whichFarm == 4);
+            Game1.spawnMonstersAtNight =
+                config.SpawnMonstersAtNight ?? (modFarm?.SpawnMonstersByDefault ?? whichFarm == 4);
 
             // Ultimate Farm CP compat: the mod expects whichFarm = Riverland (1) to apply its
             // custom farm map, overriding the requested map (but not the monster default above).
@@ -148,9 +163,15 @@ namespace JunimoServer.Services.GameCreator
             Game1.player.currentLocation = Utility.getHomeOfFarmer(Game1.player);
             Game1.player.Position = new Vector2(9f, 9f) * 64f;
             Game1.player.isInBed.Value = true;
-            _monitor.Log($"[GameCreator] Before NewDay(0f): otherFarmers={Game1.otherFarmers.Count}, gameMode={Game1.gameMode}, newDay={Game1.newDay}", LogLevel.Debug);
+            _monitor.Log(
+                $"[GameCreator] Before NewDay(0f): otherFarmers={Game1.otherFarmers.Count}, gameMode={Game1.gameMode}, newDay={Game1.newDay}",
+                LogLevel.Debug
+            );
             Game1.NewDay(0f);
-            _monitor.Log($"[GameCreator] After NewDay(0f): newDay={Game1.newDay}, fadeToBlack={Game1.fadeToBlack}, showingEndOfNightStuff={Game1.showingEndOfNightStuff}", LogLevel.Debug);
+            _monitor.Log(
+                $"[GameCreator] After NewDay(0f): newDay={Game1.newDay}, fadeToBlack={Game1.fadeToBlack}, showingEndOfNightStuff={Game1.showingEndOfNightStuff}",
+                LogLevel.Debug
+            );
             Game1.exitActiveMenu();
             Game1.setGameMode(3);
 
@@ -210,9 +231,10 @@ namespace JunimoServer.Services.GameCreator
                 else
                 {
                     _monitor.Log(
-                        $"Farm type index {index} is not a vanilla farm (0-{FarmTypeSetting.MeadowlandsIndex}); " +
-                        "falling back to Standard. Use a Data/AdditionalFarms Id string to select a mod farm.",
-                        LogLevel.Warn);
+                        $"Farm type index {index} is not a vanilla farm (0-{FarmTypeSetting.MeadowlandsIndex}); "
+                            + "falling back to Standard. Use a Data/AdditionalFarms Id string to select a mod farm.",
+                        LogLevel.Warn
+                    );
                     return (0, null);
                 }
             }
@@ -226,8 +248,10 @@ namespace JunimoServer.Services.GameCreator
             }
 
             _monitor.Log(
-                $"Farm type '{lookupId}' not found in Data/AdditionalFarms; falling back to Standard farm. " +
-                "Check the Id matches the mod's AdditionalFarms entry.", LogLevel.Warn);
+                $"Farm type '{lookupId}' not found in Data/AdditionalFarms; falling back to Standard farm. "
+                    + "Check the Id matches the mod's AdditionalFarms entry.",
+                LogLevel.Warn
+            );
             return (0, null);
         }
 
@@ -239,17 +263,23 @@ namespace JunimoServer.Services.GameCreator
         private (int whichFarm, ModFarmType? modFarm) ResolveFirstModFarm()
         {
             var additionalFarms = DataLoader.AdditionalFarms(Game1.content);
-            var modFarm = additionalFarms?.FirstOrDefault(f => f.Id != FarmTypeSetting.MeadowlandsFarmId);
+            var modFarm = additionalFarms?.FirstOrDefault(f =>
+                f.Id != FarmTypeSetting.MeadowlandsFarmId
+            );
             if (modFarm != null)
             {
-                _monitor.Log($"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' resolved to mod farm '{modFarm.Id}'.", LogLevel.Info);
+                _monitor.Log(
+                    $"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' resolved to mod farm '{modFarm.Id}'.",
+                    LogLevel.Info
+                );
                 return (FarmTypeSetting.FirstModdedIndex, modFarm);
             }
 
             _monitor.Log(
-                $"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' was requested but no mod farm is installed " +
-                "(Data/AdditionalFarms has only the base-game Meadowlands); falling back to Standard farm.",
-                LogLevel.Warn);
+                $"Farm type '{FarmTypeSetting.FirstModFarmKeyword}' was requested but no mod farm is installed "
+                    + "(Data/AdditionalFarms has only the base-game Meadowlands); falling back to Standard farm.",
+                LogLevel.Warn
+            );
             return (0, null);
         }
     }

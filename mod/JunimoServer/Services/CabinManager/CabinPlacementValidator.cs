@@ -19,7 +19,12 @@ namespace JunimoServer.Services.CabinManager
     /// </summary>
     public static class CabinPlacementValidator
     {
-        public static bool TryValidate(Farm farm, Building cabin, Point topLeft, out string failureReason)
+        public static bool TryValidate(
+            Farm farm,
+            Building cabin,
+            Point topLeft,
+            out string failureReason
+        )
         {
             var buildableRect = farm.GetBuildableRectangle();
 
@@ -51,7 +56,13 @@ namespace JunimoServer.Services.CabinManager
                             continue;
                         }
 
-                        if (farmer.GetBoundingBox().Intersects(new Rectangle((int)tile.X * 64, (int)tile.Y * 64, 64, 64)))
+                        if (
+                            farmer
+                                .GetBoundingBox()
+                                .Intersects(
+                                    new Rectangle((int)tile.X * 64, (int)tile.Y * 64, 64, 64)
+                                )
+                        )
                         {
                             failureReason = "another player is standing there";
                             return false;
@@ -63,10 +74,16 @@ namespace JunimoServer.Services.CabinManager
             // Door-front tile (one south of the human door) must be buildable or a path.
             if (cabin.humanDoor.Value != new Point(-1, -1))
             {
-                var doorFront = new Vector2(topLeft.X + cabin.humanDoor.X, topLeft.Y + cabin.humanDoor.Y + 1);
+                var doorFront = new Vector2(
+                    topLeft.X + cabin.humanDoor.X,
+                    topLeft.Y + cabin.humanDoor.Y + 1
+                );
                 bool selfOverlap = farm.buildings.Contains(cabin) && cabin.occupiesTile(doorFront);
-                if (!selfOverlap && !farm.isPath(doorFront)
-                    && !IsTileBuildable(farm, cabin, doorFront, buildableRect, out failureReason))
+                if (
+                    !selfOverlap
+                    && !farm.isPath(doorFront)
+                    && !IsTileBuildable(farm, cabin, doorFront, buildableRect, out failureReason)
+                )
                 {
                     return false;
                 }
@@ -84,9 +101,18 @@ namespace JunimoServer.Services.CabinManager
         }
 
         /// <summary>One tile of <c>isBuildable</c>'s non-passable branch (:17111-17131).</summary>
-        private static bool IsTileBuildable(Farm farm, Building cabin, Vector2 tile, Rectangle buildableRect, out string failureReason)
+        private static bool IsTileBuildable(
+            Farm farm,
+            Building cabin,
+            Vector2 tile,
+            Rectangle buildableRect,
+            out string failureReason
+        )
         {
-            if (buildableRect != Rectangle.Empty && !buildableRect.Contains((int)tile.X, (int)tile.Y))
+            if (
+                buildableRect != Rectangle.Empty
+                && !buildableRect.Contains((int)tile.X, (int)tile.Y)
+            )
             {
                 failureReason = "out of bounds";
                 return false;
@@ -101,7 +127,14 @@ namespace JunimoServer.Services.CabinManager
 
             // (O)590 is the artifact spot, which buildStructure permits building over
             // (isBuildable:17116) — there is no isArtifactSpot helper.
-            bool placeable = farm.CanItemBePlacedHere(tile, itemIsPassable: false, CollisionMask.All, ~CollisionMask.Objects, useFarmerTile: true)
+            bool placeable =
+                farm.CanItemBePlacedHere(
+                    tile,
+                    itemIsPassable: false,
+                    CollisionMask.All,
+                    ~CollisionMask.Objects,
+                    useFarmerTile: true
+                )
                 || farm.getObjectAtTile((int)tile.X, (int)tile.Y)?.QualifiedItemId == "(O)590";
             if (!placeable)
             {
@@ -113,15 +146,22 @@ namespace JunimoServer.Services.CabinManager
             // LooserBuildRestrictions branch (:17118) is omitted: it's an opt-in map
             // property, and omitting it only makes us stricter (reject a buildable tile),
             // never laxer — a safe direction for a placement guard.
-            var buildableProp = farm.doesTileHavePropertyNoNull((int)tile.X, (int)tile.Y, "Buildable", "Back");
+            var buildableProp = farm.doesTileHavePropertyNoNull(
+                (int)tile.X,
+                (int)tile.Y,
+                "Buildable",
+                "Back"
+            );
             if (buildableProp.Equals("f", StringComparison.OrdinalIgnoreCase))
             {
                 failureReason = "blocked by terrain or object";
                 return false;
             }
-            bool buildableYes = buildableProp.Equals("t", StringComparison.OrdinalIgnoreCase)
+            bool buildableYes =
+                buildableProp.Equals("t", StringComparison.OrdinalIgnoreCase)
                 || buildableProp.Equals("true", StringComparison.OrdinalIgnoreCase);
-            bool diggable = farm.doesTileHaveProperty((int)tile.X, (int)tile.Y, "Diggable", "Back") != null;
+            bool diggable =
+                farm.doesTileHaveProperty((int)tile.X, (int)tile.Y, "Diggable", "Back") != null;
             if (!buildableYes && !diggable)
             {
                 failureReason = "blocked by terrain or object";

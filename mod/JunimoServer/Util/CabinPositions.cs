@@ -3,7 +3,13 @@ using StardewValley.Buildings;
 
 namespace JunimoServer.Util
 {
-    public enum CabinRole { Player, SharedLobby, IndividualLobby, Editing }
+    public enum CabinRole
+    {
+        Player,
+        SharedLobby,
+        IndividualLobby,
+        Editing,
+    }
 
     /// <summary>
     /// Single source of truth for cabin position constants and classification.
@@ -52,8 +58,7 @@ namespace JunimoServer.Util
 
         public static bool IsInPlayerStack(Building building)
         {
-            return building.tileX.Value == PlayerStack.X
-                && building.tileY.Value == PlayerStack.Y;
+            return building.tileX.Value == PlayerStack.X && building.tileY.Value == PlayerStack.Y;
         }
     }
 }

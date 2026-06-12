@@ -26,7 +26,10 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby create {layoutName}",
-            "Created", layoutName, "Editing mode");
+            "Created",
+            layoutName,
+            "Editing mode"
+        );
 
         Assert.True(hasResponse, "Should see layout created message");
 
@@ -43,9 +46,7 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
     {
         await EnsureAdminSessionAsync();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            "Lobby Layouts");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby list", "Lobby Layouts");
 
         Assert.True(hasResponse, "Should see layouts header");
 
@@ -62,7 +63,9 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             "!lobby set default",
-            "Active layout set", "default");
+            "Active layout set",
+            "default"
+        );
 
         Assert.True(hasResponse, "Should see layout activated message");
 
@@ -79,7 +82,8 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             "!lobby set nonexistent-layout-12345",
-            "not found");
+            "not found"
+        );
 
         Assert.True(hasResponse, "Should see not found error");
 
@@ -96,7 +100,9 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             "!lobby delete default",
-            "Cannot delete", "default");
+            "Cannot delete",
+            "default"
+        );
 
         Assert.True(hasResponse, "Should see cannot delete default message");
 
@@ -117,7 +123,8 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             "!lobby create test@layout!",
-            "only contain");
+            "only contain"
+        );
 
         Assert.True(hasResponse, "Should see validation error about characters");
 
@@ -132,9 +139,7 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
     {
         await EnsureAdminSessionAsync();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby create",
-            "Usage", "create");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby create", "Usage", "create");
 
         Assert.True(hasResponse, "Should see usage message");
 
@@ -158,14 +163,20 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
         var layoutName = GenerateLayoutName("immunity");
         var createResult = await Chat.AssertResponseAsync(
             $"!lobby create {layoutName}",
-            "daylight", "exhaustion", "sleep");
+            "daylight",
+            "exhaustion",
+            "sleep"
+        );
         Assert.True(createResult, "Create should show immunity notices");
         await CancelEditingIfActive();
 
         // Via edit
         var editResult = await Chat.AssertResponseAsync(
             "!lobby edit default",
-            "daylight", "exhaustion", "sleep");
+            "daylight",
+            "exhaustion",
+            "sleep"
+        );
         Assert.True(editResult, "Edit should show immunity notices");
         await CancelEditingIfActive();
 
@@ -184,15 +195,11 @@ public class LobbyCommandsCRUDTests : LobbyCommandsTestBase
 
         await Chat.SendAndWaitAsync("!lobby edit default", "Editing layout", "default");
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby cancel",
-            "Cancelled", "discarded");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby cancel", "Cancelled", "discarded");
 
         Assert.True(hasResponse, "Should see cancel message");
 
-        var listResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            "default");
+        var listResponse = await Chat.AssertResponseAsync("!lobby list", "default");
 
         Assert.True(listResponse, "Default layout should still exist after cancel");
 

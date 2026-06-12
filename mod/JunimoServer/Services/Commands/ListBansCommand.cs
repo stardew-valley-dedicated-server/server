@@ -8,30 +8,37 @@ namespace JunimoServer.Services.Commands
 {
     public class ListBansCommand
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
+        public static void Register(
+            IModHelper helper,
+            ChatCommandsService chatCommandsService,
+            RoleService roleService
+        )
         {
-            chatCommandsService.RegisterCommand("listbans", "list bans", (args, msg) =>
-            {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
+            chatCommandsService.RegisterCommand(
+                "listbans",
+                "list bans",
+                (args, msg) =>
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
+                    if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
+                        return;
+                    }
 
-                if (Game1.bannedUsers.Count == 0)
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "There are 0 banned users.");
-                    return;
-                }
+                    if (Game1.bannedUsers.Count == 0)
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, "There are 0 banned users.");
+                        return;
+                    }
 
-                helper.SendPrivateMessage(msg.SourceFarmer, "Banned users:");
+                    helper.SendPrivateMessage(msg.SourceFarmer, "Banned users:");
 
-                foreach (var (k, v) in Game1.bannedUsers)
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, $"{k} | {v} ");
+                    foreach (var (k, v) in Game1.bannedUsers)
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, $"{k} | {v} ");
+                    }
                 }
-            });
+            );
         }
-
     }
 }

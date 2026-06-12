@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
@@ -5,10 +7,8 @@ using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Settings;
 using JunimoServer.Util;
 using StardewModdingAPI;
-using SmapiLogConfig = JunimoServer.Util.SmapiLogConfig;
 using StardewValley;
-using System;
-using System.Linq;
+using SmapiLogConfig = JunimoServer.Util.SmapiLogConfig;
 
 namespace JunimoServer.Services.Commands
 {
@@ -24,16 +24,19 @@ namespace JunimoServer.Services.Commands
             IMonitor monitor,
             GameLoaderService gameLoader,
             PersistentOptions options,
-            ServerSettingsLoader settings)
+            ServerSettingsLoader settings
+        )
         {
             _monitor = monitor;
             _gameLoader = gameLoader;
             _options = options;
             _settings = settings;
 
-            helper.ConsoleCommands.Add("settings",
+            helper.ConsoleCommands.Add(
+                "settings",
                 "Server settings and game creation. Run 'settings' for subcommands.",
-                (cmd, args) => HandleCommand(args));
+                (cmd, args) => HandleCommand(args)
+            );
         }
 
         private static void HandleCommand(string[] args)
@@ -59,7 +62,10 @@ namespace JunimoServer.Services.Commands
                     HandleVerbose(args.Skip(1).ToArray());
                     break;
                 default:
-                    _monitor.Log($"Unknown subcommand: {args[0]}. Run 'settings' for help.", LogLevel.Warn);
+                    _monitor.Log(
+                        $"Unknown subcommand: {args[0]}. Run 'settings' for help.",
+                        LogLevel.Warn
+                    );
                     break;
             }
         }
@@ -67,10 +73,19 @@ namespace JunimoServer.Services.Commands
         private static void ShowHelp()
         {
             _monitor.Log("Available subcommands:", LogLevel.Info);
-            _monitor.Log("  settings show       -- Show current configuration from server-settings.json", LogLevel.Info);
+            _monitor.Log(
+                "  settings show       -- Show current configuration from server-settings.json",
+                LogLevel.Info
+            );
             _monitor.Log("  settings newgame    -- Create a new game", LogLevel.Info);
-            _monitor.Log("  settings validate   -- Run configuration and state validation", LogLevel.Info);
-            _monitor.Log("  settings verbose    -- Show or set verbose logging [on|off]", LogLevel.Info);
+            _monitor.Log(
+                "  settings validate   -- Run configuration and state validation",
+                LogLevel.Info
+            );
+            _monitor.Log(
+                "  settings verbose    -- Show or set verbose logging [on|off]",
+                LogLevel.Info
+            );
         }
 
         #region Show Config
@@ -88,10 +103,16 @@ namespace JunimoServer.Services.Commands
         {
             _monitor.Log("Current Configuration (server-settings.json)", LogLevel.Info);
 
-            _monitor.Log("  -- Game creation settings (immutable after game created) --", LogLevel.Info);
+            _monitor.Log(
+                "  -- Game creation settings (immutable after game created) --",
+                LogLevel.Info
+            );
             _monitor.Log($"  FarmName             = {_settings.FarmName}", LogLevel.Info);
 
-            _monitor.Log($"  FarmType             = {FarmTypeLabel(_settings.FarmType)}", LogLevel.Info);
+            _monitor.Log(
+                $"  FarmType             = {FarmTypeLabel(_settings.FarmType)}",
+                LogLevel.Info
+            );
             _monitor.Log($"  ProfitMargin         = {_settings.ProfitMargin}", LogLevel.Info);
             _monitor.Log($"  StartingCabins       = {_settings.StartingCabins}", LogLevel.Info);
 
@@ -101,7 +122,10 @@ namespace JunimoServer.Services.Commands
             _monitor.Log($"  SpawnMonstersAtNight = {monstersLabel}", LogLevel.Info);
             _monitor.Log($"  RemixBundles = {_settings.RemixBundles}", LogLevel.Info);
             _monitor.Log($"  RemixMines = {_settings.RemixMines}", LogLevel.Info);
-            _monitor.Log($"  CommunityCenterYear1 = {_settings.CommunityCenterYear1}", LogLevel.Info);
+            _monitor.Log(
+                $"  CommunityCenterYear1 = {_settings.CommunityCenterYear1}",
+                LogLevel.Info
+            );
             _monitor.Log($"  CabinLayoutNearby = {_settings.CabinLayoutNearby}", LogLevel.Info);
             _monitor.Log($"  UseLegacyRandom = {_settings.UseLegacyRandom}", LogLevel.Info);
             _monitor.Log($"  RandomSeed = {_settings.RandomSeed}", LogLevel.Info);
@@ -113,12 +137,19 @@ namespace JunimoServer.Services.Commands
             _monitor.Log("  -- Runtime settings (applied on every startup) --", LogLevel.Info);
             _monitor.Log($"  MaxPlayers           = {_settings.MaxPlayers}", LogLevel.Info);
 
-            var strategyMatch = _options.PreviousCabinStrategy == _settings.CabinStrategy
-                ? ", matches persisted"
-                : $", was {_options.PreviousCabinStrategy}";
-            _monitor.Log($"  CabinStrategy        = {_settings.CabinStrategy}{strategyMatch}", LogLevel.Info);
+            var strategyMatch =
+                _options.PreviousCabinStrategy == _settings.CabinStrategy
+                    ? ", matches persisted"
+                    : $", was {_options.PreviousCabinStrategy}";
+            _monitor.Log(
+                $"  CabinStrategy        = {_settings.CabinStrategy}{strategyMatch}",
+                LogLevel.Info
+            );
             _monitor.Log($"  SeparateWallets      = {_settings.SeparateWallets}", LogLevel.Info);
-            _monitor.Log($"  ExistingCabinBehavior = {_settings.ExistingCabinBehavior}", LogLevel.Info);
+            _monitor.Log(
+                $"  ExistingCabinBehavior = {_settings.ExistingCabinBehavior}",
+                LogLevel.Info
+            );
             _monitor.Log($"  VerboseLogging       = {_settings.VerboseLogging}", LogLevel.Info);
         }
 
@@ -136,21 +167,30 @@ namespace JunimoServer.Services.Commands
 
                 _monitor.Log("New Game Preview (from server-settings.json):", LogLevel.Info);
                 _monitor.Log($"  Farm Name:        {config.FarmName}", LogLevel.Info);
-                _monitor.Log($"  Farm Type:        {FarmTypeLabel(config.WhichFarm)}", LogLevel.Info);
+                _monitor.Log(
+                    $"  Farm Type:        {FarmTypeLabel(config.WhichFarm)}",
+                    LogLevel.Info
+                );
                 _monitor.Log($"  Max Players:      {config.MaxPlayers}", LogLevel.Info);
                 _monitor.Log($"  Cabin Strategy:   {config.CabinStrategy}", LogLevel.Info);
                 _monitor.Log($"  Separate Wallets: {config.UseSeparateWallets}", LogLevel.Info);
                 _monitor.Log($"  Profit Margin:    {config.ProfitMargin}", LogLevel.Info);
                 _monitor.Log($"  Starting Cabins:  {config.StartingCabins}", LogLevel.Info);
                 _monitor.Log($"", LogLevel.Info);
-                _monitor.Log("  WARNING: This will replace the current active save reference!", LogLevel.Warn);
+                _monitor.Log(
+                    "  WARNING: This will replace the current active save reference!",
+                    LogLevel.Warn
+                );
                 _monitor.Log("  Run 'settings newgame --confirm' to proceed.", LogLevel.Info);
                 return;
             }
 
             // Clear active save so next restart creates a new game
             _gameLoader.SetSaveNameToLoad(null);
-            _monitor.Log("Active save cleared. A new game will be created on next restart.", LogLevel.Info);
+            _monitor.Log(
+                "Active save cleared. A new game will be created on next restart.",
+                LogLevel.Info
+            );
         }
 
         #endregion
@@ -171,7 +211,10 @@ namespace JunimoServer.Services.Commands
             // Data/AdditionalFarms at game creation, with a Standard fallback if missing).
             if (farmType.Index is { } idx && (idx < 0 || idx > FarmTypeSetting.MeadowlandsIndex))
             {
-                _monitor.Log($"  [WARN] FarmType={idx} is not a built-in farm (0-{FarmTypeSetting.MeadowlandsIndex}); will use Standard. Use a mod farm's Id string instead.", LogLevel.Warn);
+                _monitor.Log(
+                    $"  [WARN] FarmType={idx} is not a built-in farm (0-{FarmTypeSetting.MeadowlandsIndex}); will use Standard. Use a mod farm's Id string instead.",
+                    LogLevel.Warn
+                );
                 passed++;
             }
             else
@@ -184,48 +227,72 @@ namespace JunimoServer.Services.Commands
             total++;
             if (_settings.MaxPlayers >= 1 && _settings.MaxPlayers <= 100)
             {
-                _monitor.Log($"  [PASS] MaxPlayers={_settings.MaxPlayers} in range [1..100]", LogLevel.Info);
+                _monitor.Log(
+                    $"  [PASS] MaxPlayers={_settings.MaxPlayers} in range [1..100]",
+                    LogLevel.Info
+                );
                 passed++;
             }
             else
             {
-                _monitor.Log($"  [FAIL] MaxPlayers={_settings.MaxPlayers} out of range [1..100]", LogLevel.Error);
+                _monitor.Log(
+                    $"  [FAIL] MaxPlayers={_settings.MaxPlayers} out of range [1..100]",
+                    LogLevel.Error
+                );
             }
 
             // CabinStrategy valid
             total++;
             if (Enum.IsDefined(typeof(CabinStrategy), _settings.CabinStrategy))
             {
-                _monitor.Log($"  [PASS] CabinStrategy={_settings.CabinStrategy} is valid", LogLevel.Info);
+                _monitor.Log(
+                    $"  [PASS] CabinStrategy={_settings.CabinStrategy} is valid",
+                    LogLevel.Info
+                );
                 passed++;
             }
             else
             {
-                _monitor.Log($"  [FAIL] CabinStrategy={_settings.CabinStrategy} is invalid", LogLevel.Error);
+                _monitor.Log(
+                    $"  [FAIL] CabinStrategy={_settings.CabinStrategy} is invalid",
+                    LogLevel.Error
+                );
             }
 
             // ExistingCabinBehavior valid
             total++;
             if (Enum.IsDefined(typeof(ExistingCabinBehavior), _settings.ExistingCabinBehavior))
             {
-                _monitor.Log($"  [PASS] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is valid", LogLevel.Info);
+                _monitor.Log(
+                    $"  [PASS] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is valid",
+                    LogLevel.Info
+                );
                 passed++;
             }
             else
             {
-                _monitor.Log($"  [FAIL] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is invalid", LogLevel.Error);
+                _monitor.Log(
+                    $"  [FAIL] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is invalid",
+                    LogLevel.Error
+                );
             }
 
             // ProfitMargin range
             total++;
             if (_settings.ProfitMargin >= 0.25f && _settings.ProfitMargin <= 1.0f)
             {
-                _monitor.Log($"  [PASS] ProfitMargin={_settings.ProfitMargin} in range [0.25..1.0]", LogLevel.Info);
+                _monitor.Log(
+                    $"  [PASS] ProfitMargin={_settings.ProfitMargin} in range [0.25..1.0]",
+                    LogLevel.Info
+                );
                 passed++;
             }
             else
             {
-                _monitor.Log($"  [FAIL] ProfitMargin={_settings.ProfitMargin} out of range [0.25..1.0]", LogLevel.Error);
+                _monitor.Log(
+                    $"  [FAIL] ProfitMargin={_settings.ProfitMargin} out of range [0.25..1.0]",
+                    LogLevel.Error
+                );
             }
 
             // Active save exists
@@ -249,18 +316,27 @@ namespace JunimoServer.Services.Commands
                     if (_options.IsNone && hiddenCount == 0)
                     {
                         var lobbyNote = lobbyCount > 0 ? $", {lobbyCount} lobby/editing" : "";
-                        _monitor.Log($"  [PASS] {cabinCount} cabins, {visibleCount} visible{lobbyNote} (consistent with None strategy)", LogLevel.Info);
+                        _monitor.Log(
+                            $"  [PASS] {cabinCount} cabins, {visibleCount} visible{lobbyNote} (consistent with None strategy)",
+                            LogLevel.Info
+                        );
                         passed++;
                     }
                     else if (_options.UsesHiddenCabins)
                     {
                         var lobbyNote = lobbyCount > 0 ? $", {lobbyCount} lobby/editing" : "";
-                        _monitor.Log($"  [PASS] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible{lobbyNote}, strategy: {_options.Data.CabinStrategy})", LogLevel.Info);
+                        _monitor.Log(
+                            $"  [PASS] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible{lobbyNote}, strategy: {_options.Data.CabinStrategy})",
+                            LogLevel.Info
+                        );
                         passed++;
                     }
                     else
                     {
-                        _monitor.Log($"  [WARN] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible), may need migration", LogLevel.Warn);
+                        _monitor.Log(
+                            $"  [WARN] {cabinCount} cabins ({hiddenCount} hidden, {visibleCount} visible), may need migration",
+                            LogLevel.Warn
+                        );
                         passed++;
                     }
                 }
@@ -295,7 +371,7 @@ namespace JunimoServer.Services.Commands
             {
                 "on" or "true" or "1" => true,
                 "off" or "false" or "0" => false,
-                _ => null
+                _ => null,
             };
 
             if (newValue == null)
@@ -310,7 +386,10 @@ namespace JunimoServer.Services.Commands
             // Apply to SMAPI immediately
             SmapiLogConfig.SetVerboseLogging("JunimoHost.Server", newValue.Value, _monitor);
 
-            _monitor.Log($"VerboseLogging set to {newValue.Value} (saved to config)", LogLevel.Info);
+            _monitor.Log(
+                $"VerboseLogging set to {newValue.Value} (saved to config)",
+                LogLevel.Info
+            );
         }
 
         #endregion

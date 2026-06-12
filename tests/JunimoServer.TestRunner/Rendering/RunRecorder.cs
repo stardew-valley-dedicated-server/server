@@ -42,8 +42,8 @@ public sealed class RunRecorder
 
     public bool IsRunFinished => _isRunFinished;
 
-    public void SeedRunIdentity(string runDir, string runId)
-        => _writer.OnRunMetadata(runDir, runId);
+    public void SeedRunIdentity(string runDir, string runId) =>
+        _writer.OnRunMetadata(runDir, runId);
 
     public void SetAbortReason(string reason) => _externalAbortReason = reason;
 
@@ -61,7 +61,8 @@ public sealed class RunRecorder
         var aborted = !IsRunFinished;
         var view = State.GetArtifactView(
             aborted: aborted,
-            abortReason: aborted ? (_externalAbortReason ?? "child_process_terminated") : null);
+            abortReason: aborted ? (_externalAbortReason ?? "child_process_terminated") : null
+        );
         _writer.WriteIfNotWritten(view);
     }
 }

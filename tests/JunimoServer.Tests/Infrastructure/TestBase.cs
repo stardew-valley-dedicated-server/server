@@ -16,7 +16,7 @@ public enum TestScreenshotMode
 {
     None,
     Done,
-    All
+    All,
 }
 
 /// <summary>
@@ -25,10 +25,16 @@ public enum TestScreenshotMode
 public abstract class TestBase : IAsyncLifetime, IDisposable
 {
     protected internal ResourceLease? Lease { get; private set; }
-    protected ServerContainer Server => Lease?.Server
-        ?? throw new InvalidOperationException("Server not acquired. Call AcquireServerAsync() first.");
-    protected internal ServerApiClient ServerApi => Lease?.Api
-        ?? throw new InvalidOperationException("Server not acquired. Call AcquireServerAsync() first.");
+    protected ServerContainer Server =>
+        Lease?.Server
+        ?? throw new InvalidOperationException(
+            "Server not acquired. Call AcquireServerAsync() first."
+        );
+    protected internal ServerApiClient ServerApi =>
+        Lease?.Api
+        ?? throw new InvalidOperationException(
+            "Server not acquired. Call AcquireServerAsync() first."
+        );
     protected ServerStatus? ServerStatus { get; private set; }
 
     /// <summary>
@@ -42,17 +48,19 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// <summary>
     /// Gets the primary game client. Throws if no client has been leased yet.
     /// </summary>
-    protected internal GameTestClient GameClient => _primaryClientLease?.Client
+    protected internal GameTestClient GameClient =>
+        _primaryClientLease?.Client
         ?? throw new InvalidOperationException(
-            "No client leased. Call GetClientAsync() before using GameClient.");
+            "No client leased. Call GetClientAsync() before using GameClient."
+        );
 
     // Connection infrastructure (created lazily with first client)
     private ConnectionHelper? _connection;
     private ExceptionMonitor? _exceptions;
-    protected ConnectionHelper Connection => _connection
-        ?? throw new InvalidOperationException("Call GetClientAsync() first.");
-    protected ExceptionMonitor Exceptions => _exceptions
-        ?? throw new InvalidOperationException("Call GetClientAsync() first.");
+    protected ConnectionHelper Connection =>
+        _connection ?? throw new InvalidOperationException("Call GetClientAsync() first.");
+    protected ExceptionMonitor Exceptions =>
+        _exceptions ?? throw new InvalidOperationException("Call GetClientAsync() first.");
 
     // Per-concern Fixture/ helpers, eagerly constructed by TestLifecycle.InitializeAsync
     // before any test body runs. Null between construction and InitializeAsync —
@@ -89,7 +97,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             "none" or "off" or "false" or "0" => TestScreenshotMode.None,
             "done" or "finish" => TestScreenshotMode.Done,
             "all" or "true" or "1" => TestScreenshotMode.All,
-            _ => TestScreenshotMode.Done
+            _ => TestScreenshotMode.Done,
         };
     }
 
@@ -153,13 +161,17 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// </summary>
     private void MarkActiveAndArmBudget()
     {
-        if (_budgetArmed) return;
+        if (_budgetArmed)
+            return;
         _budgetArmed = true;
 
         _activeStartTime = DateTime.UtcNow;
-        SetupEventBus.EmitTestRunning(_testClassName, _testClassName,
+        SetupEventBus.EmitTestRunning(
+            _testClassName,
+            _testClassName,
             ExtractMethodName(_testDisplayName) ?? "unknown",
-            _testDisplayName ?? $"{_testClassName}.unknown");
+            _testDisplayName ?? $"{_testClassName}.unknown"
+        );
 
         // Register this test as currently executing on the leased server so
         // broker-side annotations (server_poisoned, server_disposed,
@@ -177,8 +189,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// Acquire a server with the given requirements. Called automatically by
     /// InitializeAsync (default mode), or manually by the test method (deferred mode).
     /// </summary>
-    protected async Task AcquireServerAsync(ResourceRequirements requirements,
-        CancellationToken ct = default, int priority = 50)
+    protected async Task AcquireServerAsync(
+        ResourceRequirements requirements,
+        CancellationToken ct = default,
+        int priority = 50
+    )
     {
         if (Lease != null)
             throw new InvalidOperationException("Server already acquired.");
@@ -190,7 +205,12 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // The gate is inside the broker (after the server is ready but before AddRef),
         // so deferred server creation/eviction proceeds unblocked while waiting tests
         // don't inflate the refcount.
-        Lease = await TestResourceBroker.Instance.AcquireAsync(requirements, testName, ct, priority);
+        Lease = await TestResourceBroker.Instance.AcquireAsync(
+            requirements,
+            testName,
+            ct,
+            priority
+        );
         PersistentSession.RecordCapacityAcquired(requirements.Clients);
         acquireSw.Stop();
 
@@ -199,12 +219,15 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // The follow-on Polling_TestBase_ServerReady poll counts as test body.
         MarkActiveAndArmBudget();
 
-        InfrastructureEventLog.Emit("server_acquired", new
-        {
-            serverKey = Lease.ServerKey,
-            serverInstanceId = Lease.ServerInstanceId,
-            durationMs = acquireSw.ElapsedMilliseconds
-        });
+        InfrastructureEventLog.Emit(
+            "server_acquired",
+            new
+            {
+                serverKey = Lease.ServerKey,
+                serverInstanceId = Lease.ServerInstanceId,
+                durationMs = acquireSw.ElapsedMilliseconds,
+            }
+        );
 
         // Mark server container for video recording clip extraction
         if (RecordingPolicy.IsEnabled && _collectArtifacts)
@@ -231,14 +254,23 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             WaitName.Polling_TestBase_ServerReady,
             async (since, remaining) =>
             {
-                var status = await Lease.Api.WaitForStatusAsync(since: since, isReady: true, timeout: remaining, ct: ct);
-                if (status == null) return new PollingHelper.LongPollResult(false, since);
+                var status = await Lease.Api.WaitForStatusAsync(
+                    since: since,
+                    isReady: true,
+                    timeout: remaining,
+                    ct: ct
+                );
+                if (status == null)
+                    return new PollingHelper.LongPollResult(false, since);
                 if (!string.IsNullOrEmpty(status.FarmName))
                     return new PollingHelper.LongPollResult(true, status.Version);
                 // IsReady matched but FarmName empty (degraded snapshot) — advance
                 // cursor and wait for the next snapshot.
                 return new PollingHelper.LongPollResult(false, status.Version);
-            }, TestTimings.ServerReadyBetweenTests, cancellationToken: ct);
+            },
+            TestTimings.ServerReadyBetweenTests,
+            cancellationToken: ct
+        );
         LogTrace($"ServerReady wait: {SetupEventBus.FormatDuration(readySw.Elapsed)}");
 
         ServerStatus = await Lease.Api.GetStatus();
@@ -252,16 +284,24 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     {
         // Copy nullable fields into non-null locals so nullable flow analysis
         // survives the awaits below (field state resets across awaits).
-        var serverLease = Lease
-            ?? throw new InvalidOperationException("Server not acquired. Call AcquireServerAsync() first.");
-        if (_primaryClientLease != null) return _primaryClientLease.Client;
+        var serverLease =
+            Lease
+            ?? throw new InvalidOperationException(
+                "Server not acquired. Call AcquireServerAsync() first."
+            );
+        if (_primaryClientLease != null)
+            return _primaryClientLease.Client;
 
         var lease = _primaryClientLease = await serverLease.LeaseClientAsync(ct);
 
         // LeaseClientAsync emits instance_leased with the lease's original testName.
         // Re-emit with the current test's name so UsedInstances is correct after BreakSessionAsync.
         if (_testDisplayName != null)
-            SetupEventBus.EmitInstanceLeased(lease.InstanceId, _testDisplayName, serverLease.Managed?.InstanceId);
+            SetupEventBus.EmitInstanceLeased(
+                lease.InstanceId,
+                _testDisplayName,
+                serverLease.Managed?.InstanceId
+            );
 
         // Mark client container for video recording clip extraction
         if (RecordingPolicy.IsEnabled)
@@ -277,10 +317,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             MaxAttempts = serverLease.RequiresSteamConnection ? 4 : 2,
         };
 
-        _connection = new ConnectionHelper(
-            lease.Client,
-            connectionOptions,
-            ServerApi);
+        _connection = new ConnectionHelper(lease.Client, connectionOptions, ServerApi);
 
         _connection.OnCheckpointScreenshot = async (label) =>
         {
@@ -294,7 +331,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         _exceptions = new ExceptionMonitor(
             lease.Client,
             ExceptionMonitorOptions.Default,
-            msg => Log(msg));
+            msg => Log(msg)
+        );
         WireExceptionMonitorContext(_exceptions);
 
         lease.Client.CancellationToken = serverLease.ErrorToken;
@@ -310,7 +348,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     {
         monitor.SetTestContext(
             serverErrorsGetter: () => Lease?.Server?.Errors ?? Array.Empty<string>(),
-            recordFailure: (error, phase) => RecordTestFailure(error, phase));
+            recordFailure: (error, phase) => RecordTestFailure(error, phase)
+        );
     }
 
     /// <summary>
@@ -340,8 +379,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected Task EnsureConnectedAsync(
         string farmerPrefix = "Test",
         SessionJoinMode joinMode = SessionJoinMode.Authenticated,
-        CancellationToken ct = default)
-        => PersistentSession.EnsureConnectedAsync(farmerPrefix, joinMode, ct);
+        CancellationToken ct = default
+    ) => PersistentSession.EnsureConnectedAsync(farmerPrefix, joinMode, ct);
 
     #endregion
 
@@ -387,8 +426,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     internal double TestTimeoutSecondsInternal => TestTimeout.TotalSeconds;
 
     internal void SetTestStartTimeInternal(DateTime t) => _testStartTime = t;
+
     internal void SetTestDisplayNameInternal(string? name) => _testDisplayName = name;
+
     internal void SetCollectArtifactsInternal(bool value) => _collectArtifacts = value;
+
     internal void SetCollectionNameInternal(string? name) => _collectionName = name;
 
     internal void DisposeRunningTestTokenInternal()
@@ -421,28 +463,39 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     {
         var xunitCt = TestContext.Current?.CancellationToken ?? CancellationToken.None;
         _budgetCts = new CancellationTokenSource();
-        _testTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(xunitCt, _budgetCts.Token);
+        _testTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
+            xunitCt,
+            _budgetCts.Token
+        );
     }
 
-    internal Task<GameTestClient> GetClientAsyncInternal(CancellationToken ct = default)
-        => GetClientAsync(ct);
+    internal Task<GameTestClient> GetClientAsyncInternal(CancellationToken ct = default) =>
+        GetClientAsync(ct);
 
-    internal Task AcquireServerAsyncInternal(ResourceRequirements requirements,
-        CancellationToken ct = default, int priority = 50)
-        => AcquireServerAsync(requirements, ct, priority);
+    internal Task AcquireServerAsyncInternal(
+        ResourceRequirements requirements,
+        CancellationToken ct = default,
+        int priority = 50
+    ) => AcquireServerAsync(requirements, ct, priority);
 
     internal void MarkActiveAndArmBudgetInternal() => MarkActiveAndArmBudget();
 
-    internal static string? ExtractMethodNameInternal(string? fullName) => ExtractMethodName(fullName);
+    internal static string? ExtractMethodNameInternal(string? fullName) =>
+        ExtractMethodName(fullName);
 
     internal static string? ParamsHashInternal(string? displayName) => ParamsHash(displayName);
 
-    internal void ThrowIfServerErrorInternal(OperationCanceledException ex, string? context = null)
-        => ThrowIfServerError(ex, context);
+    internal void ThrowIfServerErrorInternal(
+        OperationCanceledException ex,
+        string? context = null
+    ) => ThrowIfServerError(ex, context);
 
-    internal void RecordTestFailureInternal(string error, string? phase = null,
-        string? screenshotPath = null, string? exceptionType = null)
-        => RecordTestFailure(error, phase, screenshotPath, exceptionType);
+    internal void RecordTestFailureInternal(
+        string error,
+        string? phase = null,
+        string? screenshotPath = null,
+        string? exceptionType = null
+    ) => RecordTestFailure(error, phase, screenshotPath, exceptionType);
 
     internal void RecordTestCancellationInternal() => RecordTestCancellation();
 
@@ -459,8 +512,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// instance. Called by <see cref="PersistentSessionCoordinator.WireUpPersistentSession"/>.
     /// </summary>
     internal void AdoptSessionResources(
-        ResourceLease lease, ClientLease clientLease,
-        ConnectionHelper connection, ExceptionMonitor exceptions)
+        ResourceLease lease,
+        ClientLease clientLease,
+        ConnectionHelper connection,
+        ExceptionMonitor exceptions
+    )
     {
         Lease = lease;
         _primaryClientLease = clientLease;
@@ -521,11 +577,17 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// Suspends health checks during the transition and waits for the server to come back online.
     /// Only valid when the test has an active server lease.
     /// </summary>
-    protected async Task CreateNewGameOnServerAsync(FarmTypeSetting farmType, string farmName = "Junimo",
-        int startingCabins = 1, string cabinStrategy = "CabinStack")
+    protected async Task CreateNewGameOnServerAsync(
+        FarmTypeSetting farmType,
+        string farmName = "Junimo",
+        int startingCabins = 1,
+        string cabinStrategy = "CabinStack"
+    )
     {
         if (Lease == null)
-            throw new InvalidOperationException("No server lease. Call AcquireServerAsync() first.");
+            throw new InvalidOperationException(
+                "No server lease. Call AcquireServerAsync() first."
+            );
 
         await Lease.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, TestCt);
 
@@ -542,7 +604,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected async Task ReloadServerAsync()
     {
         if (Lease == null)
-            throw new InvalidOperationException("No server lease. Call AcquireServerAsync() first.");
+            throw new InvalidOperationException(
+                "No server lease. Call AcquireServerAsync() first."
+            );
 
         await Lease.ReloadAsync(TestCt);
 
@@ -565,7 +629,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         Assert.True(sleep?.Success == true, $"Sleep failed: {sleep?.Error}");
 
         var dayChanged = await DayChange.WaitAsync(
-            statusBefore.Day, statusBefore.Season, statusBefore.Year, ct);
+            statusBefore.Day,
+            statusBefore.Season,
+            statusBefore.Year,
+            ct
+        );
         Assert.True(dayChanged, "Day did not advance; save was not written");
     }
 
@@ -581,32 +649,42 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// </summary>
     private void EmitCancellationDiagnostic(string context)
     {
-        InfrastructureEventLog.Emit("cancellation_detected", new
-        {
-            test = _testDisplayName,
-            context,
-            // xUnit cancellation (stopOnFail / Ctrl-C) vs the per-test wall-clock
-            // timeout. The linked TestCt is true if either fires; the budget-only
-            // field is what tells us "this was a timeout" even when Ctrl-C arrived
-            // during the unwind.
-            budgetCtsCancelled = _budgetCts?.IsCancellationRequested == true,
-            xunitCtCancelled = TestContext.Current?.CancellationToken.IsCancellationRequested == true,
-            testCtCancelled = TestCt.IsCancellationRequested,
-            errorTokenCancelled = Lease?.ErrorToken.IsCancellationRequested == true,
-            leasePoisoned = Lease?.IsPoisoned == true
-        });
+        InfrastructureEventLog.Emit(
+            "cancellation_detected",
+            new
+            {
+                test = _testDisplayName,
+                context,
+                // xUnit cancellation (stopOnFail / Ctrl-C) vs the per-test wall-clock
+                // timeout. The linked TestCt is true if either fires; the budget-only
+                // field is what tells us "this was a timeout" even when Ctrl-C arrived
+                // during the unwind.
+                budgetCtsCancelled = _budgetCts?.IsCancellationRequested == true,
+                xunitCtCancelled = TestContext.Current?.CancellationToken.IsCancellationRequested
+                    == true,
+                testCtCancelled = TestCt.IsCancellationRequested,
+                errorTokenCancelled = Lease?.ErrorToken.IsCancellationRequested == true,
+                leasePoisoned = Lease?.IsPoisoned == true,
+            }
+        );
     }
 
     protected void ThrowIfServerError(OperationCanceledException ex, string? context = null)
     {
-        if (Lease?.Server == null) throw ex;
+        if (Lease?.Server == null)
+            throw ex;
         var serverErrors = Lease.Server.Errors;
         if (serverErrors.Count > 0)
         {
             var errorList = string.Join("\n", serverErrors);
-            var reason = context != null ? $"Server error during: {context}" : "Server error detected";
+            var reason =
+                context != null ? $"Server error during: {context}" : "Server error detected";
             var message = $"{reason}\n\n{errorList}";
-            RecordTestFailure(message, context, exceptionType: typeof(ExceptionMonitorException).FullName);
+            RecordTestFailure(
+                message,
+                context,
+                exceptionType: typeof(ExceptionMonitorException).FullName
+            );
             throw new ExceptionMonitorException(message, Array.Empty<CapturedException>());
         }
         EmitCancellationDiagnostic(context ?? "server-error-check");
@@ -616,13 +694,21 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
 
     protected void ThrowIfServerError()
     {
-        if (Lease?.Server == null) return;
+        if (Lease?.Server == null)
+            return;
         var serverErrors = Lease.Server.Errors;
         if (serverErrors.Count > 0)
         {
             var errorList = string.Join("\n", serverErrors);
-            RecordTestFailure(errorList, "server_error", exceptionType: typeof(ExceptionMonitorException).FullName);
-            throw new ExceptionMonitorException($"Server errors detected:\n{errorList}", Array.Empty<CapturedException>());
+            RecordTestFailure(
+                errorList,
+                "server_error",
+                exceptionType: typeof(ExceptionMonitorException).FullName
+            );
+            throw new ExceptionMonitorException(
+                $"Server errors detected:\n{errorList}",
+                Array.Empty<CapturedException>()
+            );
         }
     }
 
@@ -638,7 +724,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// On timeout dumps <see cref="FailureContext"/>.
     /// </summary>
     protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
-        long playerId, CancellationToken ct = default)
+        long playerId,
+        CancellationToken ct = default
+    )
     {
         CabinInfoResponse? result = null;
         CabinsResponse? lastCabins = null;
@@ -649,15 +737,20 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
                 lastCabins = await ServerApi.GetCabins(ct);
                 result = lastCabins?.Cabins.FirstOrDefault(c => c.OwnerId == playerId);
                 return result != null;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct,
-           onTimeoutAsync: async () => await FailureContext.DumpAsync(
-               ServerApi,
-               reason: "WaitForCabinAssignedAsync_timeout",
-               extras: new Dictionary<string, object?>
-               {
-                   ["playerId"] = playerId,
-                   ["lastCabinsSnapshot"] = lastCabins?.Cabins
-               }));
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct,
+            onTimeoutAsync: async () =>
+                await FailureContext.DumpAsync(
+                    ServerApi,
+                    reason: "WaitForCabinAssignedAsync_timeout",
+                    extras: new Dictionary<string, object?>
+                    {
+                        ["playerId"] = playerId,
+                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
+                    }
+                )
+        );
         return result;
     }
 
@@ -668,7 +761,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// On timeout dumps <see cref="FailureContext"/>.
     /// </summary>
     protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
-        string farmerName, CancellationToken ct = default)
+        string farmerName,
+        CancellationToken ct = default
+    )
     {
         CabinInfoResponse? result = null;
         CabinsResponse? lastCabins = null;
@@ -678,17 +773,24 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             {
                 lastCabins = await ServerApi.GetCabins(ct);
                 result = lastCabins?.Cabins.FirstOrDefault(c =>
-                    c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned);
+                    c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
+                    && c.IsAssigned
+                );
                 return result != null;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct,
-           onTimeoutAsync: async () => await FailureContext.DumpAsync(
-               ServerApi,
-               reason: "WaitForCabinAssignedAsync_timeout",
-               extras: new Dictionary<string, object?>
-               {
-                   ["farmerName"] = farmerName,
-                   ["lastCabinsSnapshot"] = lastCabins?.Cabins
-               }));
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct,
+            onTimeoutAsync: async () =>
+                await FailureContext.DumpAsync(
+                    ServerApi,
+                    reason: "WaitForCabinAssignedAsync_timeout",
+                    extras: new Dictionary<string, object?>
+                    {
+                        ["farmerName"] = farmerName,
+                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
+                    }
+                )
+        );
         return result;
     }
 
@@ -696,8 +798,12 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
 
     #region Test Failure Recording
 
-    protected void RecordTestFailure(string error, string? phase = null, string? screenshotPath = null,
-        string? exceptionType = null)
+    protected void RecordTestFailure(
+        string error,
+        string? phase = null,
+        string? screenshotPath = null,
+        string? exceptionType = null
+    )
     {
         _testFailed = true;
         var collectionName = _collectionName ?? _testClassName;
@@ -706,8 +812,17 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // (usually a generic cancellation/timeout). The stamp wins over the
         // exception-type classification in enrichment and flakiness accounting.
         var failureCategory = Lease?.Host.IsPoisoned == true ? "infrastructure" : null;
-        FailureReporter.RecordFailure(collectionName, _testClassName, error, phase, screenshotPath,
-            Lease?.ServerKey, Lease?.ServerInstanceId, exceptionType, failureCategory);
+        FailureReporter.RecordFailure(
+            collectionName,
+            _testClassName,
+            error,
+            phase,
+            screenshotPath,
+            Lease?.ServerKey,
+            Lease?.ServerInstanceId,
+            exceptionType,
+            failureCategory
+        );
     }
 
     protected void RecordTestCancellation()
@@ -720,37 +835,66 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
 
     #region Logging
 
-    protected void Log(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Info, AnnotationSource.Body, message);
+    protected void Log(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Info,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogSuccess(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Success, AnnotationSource.Body, message);
+    protected void LogSuccess(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Success,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogWarning(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Warning, AnnotationSource.Body, message);
+    protected void LogWarning(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Warning,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogError(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Error, AnnotationSource.Body, message);
+    protected void LogError(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Error,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogDetail(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Detail, AnnotationSource.Body, message);
+    protected void LogDetail(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Detail,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogTrace(string message)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Trace, AnnotationSource.Body, message);
+    protected void LogTrace(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Trace,
+            AnnotationSource.Body,
+            message
+        );
 
-    protected void LogSection(string title)
-        => SetupEventBus.EmitTestAnnotation(_testDisplayName ?? _testClassName,
-            AnnotationLevel.Section, AnnotationSource.Body, title);
+    protected void LogSection(string title) =>
+        SetupEventBus.EmitTestAnnotation(
+            _testDisplayName ?? _testClassName,
+            AnnotationLevel.Section,
+            AnnotationSource.Body,
+            title
+        );
 
     internal static string? ExtractMethodName(string? fullName)
     {
-        if (string.IsNullOrEmpty(fullName)) return null;
+        if (string.IsNullOrEmpty(fullName))
+            return null;
 
         // Strip parameters first. Dots inside parameter values (e.g. "Game.SpawnMonstersAtNight")
         // would otherwise be matched by LastIndexOf('.') instead of the namespace separator.
@@ -763,9 +907,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
 
     private static string? ParamsHash(string? displayName)
     {
-        if (displayName == null) return null;
+        if (displayName == null)
+            return null;
         var paren = displayName.IndexOf('(');
-        if (paren < 0) return null;
+        if (paren < 0)
+            return null;
         var bytes = System.Text.Encoding.UTF8.GetBytes(displayName[paren..]);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..8];
     }

@@ -27,20 +27,25 @@ public readonly struct FarmTypeSetting
     }
 
     public static FarmTypeSetting FromIndex(int index) => new(index, null);
+
     public static FarmTypeSetting FromId(string id) => new(null, id);
 
     /// <summary>
     /// Builds a selector from a boxed <c>[InlineData]</c> argument (an <see cref="int"/> index
     /// or a <see cref="string"/> Id), since theory arguments can't be a custom struct.
     /// </summary>
-    public static FarmTypeSetting FromObject(object value) => value switch
-    {
-        int index => FromIndex(index),
-        string id => FromId(id),
-        _ => throw new ArgumentException($"Farm type must be an int index or string Id, got {value?.GetType().Name ?? "null"}.")
-    };
+    public static FarmTypeSetting FromObject(object value) =>
+        value switch
+        {
+            int index => FromIndex(index),
+            string id => FromId(id),
+            _ => throw new ArgumentException(
+                $"Farm type must be an int index or string Id, got {value?.GetType().Name ?? "null"}."
+            ),
+        };
 
     public static implicit operator FarmTypeSetting(int index) => FromIndex(index);
+
     public static implicit operator FarmTypeSetting(string id) => FromId(id);
 
     /// <summary>
@@ -60,15 +65,25 @@ public readonly struct FarmTypeSetting
 /// </summary>
 public class FarmTypeSettingJsonConverter : JsonConverter<FarmTypeSetting>
 {
-    public override FarmTypeSetting Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => reader.TokenType switch
+    public override FarmTypeSetting Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) =>
+        reader.TokenType switch
         {
             JsonTokenType.Number => FarmTypeSetting.FromIndex(reader.GetInt32()),
             JsonTokenType.String => FarmTypeSetting.FromId(reader.GetString()!),
-            _ => throw new JsonException($"FarmType must be a number or string, got {reader.TokenType}.")
+            _ => throw new JsonException(
+                $"FarmType must be a number or string, got {reader.TokenType}."
+            ),
         };
 
-    public override void Write(Utf8JsonWriter writer, FarmTypeSetting value, JsonSerializerOptions options)
+    public override void Write(
+        Utf8JsonWriter writer,
+        FarmTypeSetting value,
+        JsonSerializerOptions options
+    )
     {
         if (value.Id != null)
             writer.WriteStringValue(value.Id);

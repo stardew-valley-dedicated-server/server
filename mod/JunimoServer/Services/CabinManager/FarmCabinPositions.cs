@@ -1,7 +1,7 @@
-using Microsoft.Xna.Framework;
-using StardewValley;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Xna.Framework;
+using StardewValley;
 using xTile.Tiles;
 
 namespace JunimoServer.Services.CabinManager
@@ -42,18 +42,17 @@ namespace JunimoServer.Services.CabinManager
                         continue;
                     }
 
-                    if (tile.Properties.TryGetValue("Order", out var orderValue) &&
-                        int.TryParse(orderValue?.ToString(), out int order))
+                    if (
+                        tile.Properties.TryGetValue("Order", out var orderValue)
+                        && int.TryParse(orderValue?.ToString(), out int order)
+                    )
                     {
                         positions.Add((order, new Vector2(x, y)));
                     }
                 }
             }
 
-            return positions
-                .OrderBy(p => p.order)
-                .Select(p => p.position)
-                .ToList();
+            return positions.OrderBy(p => p.order).Select(p => p.position).ToList();
         }
 
         /// <summary>
@@ -74,9 +73,7 @@ namespace JunimoServer.Services.CabinManager
         /// </summary>
         public static List<Vector2> GetAvailablePositions(Farm farm)
         {
-            return GetDesignatedPositions(farm)
-                .Where(p => !IsPositionOccupied(farm, p))
-                .ToList();
+            return GetDesignatedPositions(farm).Where(p => !IsPositionOccupied(farm, p)).ToList();
         }
 
         /// <summary>

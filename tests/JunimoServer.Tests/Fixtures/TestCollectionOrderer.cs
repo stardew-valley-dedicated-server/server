@@ -74,7 +74,11 @@ public class TestCollectionOrderer : ITestCollectionOrderer
             }
 
             // Compute server config key for grouping
-            var requirements = ResourceRequirements.FromAttribute(attr, type.Name, testMethodName: null);
+            var requirements = ResourceRequirements.FromAttribute(
+                attr,
+                type.Name,
+                testMethodName: null
+            );
             var key = requirements.GetServerKey();
 
             if (!configGroups.TryGetValue(key, out var group))
@@ -114,8 +118,9 @@ public class TestCollectionOrderer : ITestCollectionOrderer
         {
             var shortName = entry.Key;
             var lastDot = shortName.LastIndexOf('.');
-            if (lastDot >= 0) shortName = shortName[(lastDot + 1)..];
-            Log($"  {entry.Value,3} -> {shortName}");
+            if (lastDot >= 0)
+                shortName = shortName[(lastDot + 1)..];
+            Log($"  {entry.Value, 3} -> {shortName}");
         }
 
         return map;
@@ -154,7 +159,8 @@ public class TestCollectionOrderer : ITestCollectionOrderer
     }
 
     IReadOnlyCollection<TTestCollection> ITestCollectionOrderer.OrderTestCollections<TTestCollection>(
-        IReadOnlyCollection<TTestCollection> testCollections)
+        IReadOnlyCollection<TTestCollection> testCollections
+    )
     {
         var ordered = testCollections
             .OrderBy(c => GetPriority((c as IXunitTestCollection)?.TestCollectionDisplayName))
@@ -166,7 +172,7 @@ public class TestCollectionOrderer : ITestCollectionOrderer
             var name = (c as IXunitTestCollection)?.TestCollectionDisplayName ?? "(null)";
             var p = GetPriority(name);
             var matched = p != UnknownPriority ? "" : " [UNMATCHED]";
-            Log($"  {p,3} -> {name}{matched}");
+            Log($"  {p, 3} -> {name}{matched}");
         }
 
         return ordered;

@@ -1,5 +1,7 @@
+using System;
+using System.Linq;
+using System.Reflection;
 using HarmonyLib;
-using JunimoServer.Shared;
 using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
@@ -10,15 +12,13 @@ using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.Settings;
+using JunimoServer.Shared;
 using JunimoServer.Util;
 using Microsoft.Extensions.DependencyInjection;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Audio;
-using System;
-using System.Linq;
-using System.Reflection;
 
 namespace JunimoServer
 {
@@ -38,16 +38,20 @@ namespace JunimoServer
 
         private void EmitModPhase(string phase)
         {
-            if (_bootStopwatch == null) return;
+            if (_bootStopwatch == null)
+                return;
             var bootMs = _bootStopwatch.ElapsedMilliseconds;
             var phaseMs = bootMs - _previousPhaseMs;
             _previousPhaseMs = bootMs;
-            Services.Diagnostics.ModEventLog.Emit("mod_phase", new
-            {
-                phase,
-                phaseMs,
-                bootMs,
-            });
+            Services.Diagnostics.ModEventLog.Emit(
+                "mod_phase",
+                new
+                {
+                    phase,
+                    phaseMs,
+                    bootMs,
+                }
+            );
         }
 
         public override void Entry(IModHelper helper)
@@ -58,11 +62,15 @@ namespace JunimoServer
             _failFastEnabled = string.Equals(
                 Environment.GetEnvironmentVariable("TEST_FAIL_FAST"),
                 "true",
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase
+            );
 
             if (_failFastEnabled)
             {
-                Monitor.Log("TEST_FAIL_FAST mode enabled - will exit on unhandled exceptions", LogLevel.Warn);
+                Monitor.Log(
+                    "TEST_FAIL_FAST mode enabled - will exit on unhandled exceptions",
+                    LogLevel.Warn
+                );
                 AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             }
 
@@ -84,16 +92,21 @@ namespace JunimoServer
         }
 
         private bool _firstDayStartedEmitted;
+
         private void OnFirstDayStarted(object sender, DayStartedEventArgs e)
         {
-            if (_firstDayStartedEmitted) return;
+            if (_firstDayStartedEmitted)
+                return;
             _firstDayStartedEmitted = true;
             EmitModPhase("world_ready");
         }
 
         private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            Monitor.Log($"FAIL_FAST: Unhandled exception detected - {e.ExceptionObject}", LogLevel.Error);
+            Monitor.Log(
+                $"FAIL_FAST: Unhandled exception detected - {e.ExceptionObject}",
+                LogLevel.Error
+            );
             Monitor.Log("Exiting due to TEST_FAIL_FAST mode", LogLevel.Error);
             Environment.Exit(1);
         }
@@ -143,8 +156,15 @@ namespace JunimoServer
             // Fix vanilla NRE: GameLocation.UpdateWhenCurrentLocation accesses
             // Game1.player.currentLocation without null check during warps/day transitions.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.UpdateWhenCurrentLocation)),
-                prefix: new HarmonyMethod(typeof(ModEntry), nameof(UpdateWhenCurrentLocation_Prefix)));
+                original: AccessTools.Method(
+                    typeof(GameLocation),
+                    nameof(GameLocation.UpdateWhenCurrentLocation)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(ModEntry),
+                    nameof(UpdateWhenCurrentLocation_Prefix)
+                )
+            );
             Monitor.Log("Patched UpdateWhenCurrentLocation with null-safety guard", LogLevel.Trace);
 
             // Server throws out audio (Wave Bank stripped; DummySoundBank in use). Disable
@@ -152,8 +172,12 @@ namespace JunimoServer
             // (no game-state effect). On the silent host a null ICue can get cached in its
             // playingCues dict and NRE on .Stop() every frame, locking the server (issue #249).
             harmony.Patch(
-                original: AccessTools.Method(typeof(LoopingCueManager), nameof(LoopingCueManager.Update)),
-                prefix: new HarmonyMethod(typeof(ModEntry), nameof(LoopingCueManager_Update_Prefix)));
+                original: AccessTools.Method(
+                    typeof(LoopingCueManager),
+                    nameof(LoopingCueManager.Update)
+                ),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(LoopingCueManager_Update_Prefix))
+            );
             Monitor.Log("Disabled LoopingCueManager.Update (server audio is off)", LogLevel.Trace);
 
             // Keep the display zoom/UI scale pinned in every game mode (the actual resize
@@ -173,7 +197,10 @@ namespace JunimoServer
 
             // Apply verbose logging setting (env var overrides config file)
             var verboseLogging = Env.VerboseLogging ?? settingsLoader.VerboseLogging;
-            Monitor.Log($"Applying VerboseLogging={verboseLogging} (env={Env.VerboseLogging}, config={settingsLoader.VerboseLogging})", LogLevel.Info);
+            Monitor.Log(
+                $"Applying VerboseLogging={verboseLogging} (env={Env.VerboseLogging}, config={settingsLoader.VerboseLogging})",
+                LogLevel.Info
+            );
             SmapiLogConfig.SetVerboseLogging(ModManifest.UniqueID, verboseLogging, Monitor);
 
             services.AddSingleton<PersistentOptions>();
@@ -183,7 +210,9 @@ namespace JunimoServer
 
         private void LoadServices(ServiceCollection services)
         {
-            var serviceTypes = Assembly.GetExecutingAssembly().GetTypesWithInterface(modServiceBaseType);
+            var serviceTypes = Assembly
+                .GetExecutingAssembly()
+                .GetTypesWithInterface(modServiceBaseType);
 
             foreach (var serviceType in serviceTypes)
             {
@@ -227,7 +256,10 @@ namespace JunimoServer
                     // To run without password protection, leave SERVER_PASSWORD unset; the
                     // service short-circuits before installing any patches.
                     Monitor.Log($"   {serviceName} ({serviceType}) FAILED: {e}", LogLevel.Error);
-                    Monitor.Log("Service initialization failed — exiting to avoid partial-enforcement state", LogLevel.Error);
+                    Monitor.Log(
+                        "Service initialization failed — exiting to avoid partial-enforcement state",
+                        LogLevel.Error
+                    );
                     Environment.Exit(1);
                 }
 
@@ -235,7 +267,9 @@ namespace JunimoServer
             }
 
             // Filter out services which don't use ModService yet
-            var servicesWithBaseType = servicesAll.Where(s => HasModServiceBaseType(s.ImplementationType));
+            var servicesWithBaseType = servicesAll.Where(s =>
+                HasModServiceBaseType(s.ImplementationType)
+            );
 
             // Print loaded services
             Monitor.Log($"Loaded {servicesWithBaseType.Count()} services:", LogLevel.Info);
@@ -270,7 +304,8 @@ namespace JunimoServer
             var roleService = _services.GetRequiredService<RoleService>();
             var alwaysOnConfig = _services.GetRequiredService<AlwaysOnConfig>();
             var persistentOptions = _services.GetRequiredService<PersistentOptions>();
-            var passwordProtectionService = _services.GetRequiredService<PasswordProtectionService>();
+            var passwordProtectionService =
+                _services.GetRequiredService<PasswordProtectionService>();
             var lobbyService = _services.GetRequiredService<LobbyService>();
 
             CabinCommand.Register(Helper, chatCommandsService, cabinService, persistentOptions);
@@ -288,7 +323,13 @@ namespace JunimoServer
 
             // Password protection commands
             LoginCommand.Register(Helper, Monitor, chatCommandsService, passwordProtectionService);
-            AuthStatusCommand.Register(Helper, Monitor, chatCommandsService, roleService, passwordProtectionService);
+            AuthStatusCommand.Register(
+                Helper,
+                Monitor,
+                chatCommandsService,
+                roleService,
+                passwordProtectionService
+            );
             LobbyCommands.Register(Helper, Monitor, chatCommandsService, roleService, lobbyService);
         }
 
@@ -308,6 +349,5 @@ namespace JunimoServer
         /// on .Stop() in the host update loop.
         /// </summary>
         private static bool LoopingCueManager_Update_Prefix() => false;
-
     }
 }

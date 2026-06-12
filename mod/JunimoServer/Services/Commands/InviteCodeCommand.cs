@@ -10,33 +10,45 @@ namespace JunimoServer.Services.Commands
         private static IModHelper _helper;
         private static IMonitor _monitor;
 
-        public static void Register(IModHelper helper, IMonitor monitor, ChatCommandsService chatCommandsService)
+        public static void Register(
+            IModHelper helper,
+            IMonitor monitor,
+            ChatCommandsService chatCommandsService
+        )
         {
             _helper = helper;
             _monitor = monitor;
 
             // Register chat command
-            chatCommandsService.RegisterCommand("invitecode", "Displays the current server invite code.", (args, msg) =>
-            {
-                if (Game1.server == null)
+            chatCommandsService.RegisterCommand(
+                "invitecode",
+                "Displays the current server invite code.",
+                (args, msg) =>
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Server is not running.");
-                    return;
+                    if (Game1.server == null)
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, "Server is not running.");
+                        return;
+                    }
+
+                    var inviteCode = Game1.server.getInviteCode();
+
+                    if (inviteCode == null)
+                    {
+                        helper.SendPrivateMessage(msg.SourceFarmer, "No invite code available.");
+                        return;
+                    }
+
+                    helper.SendPrivateMessage(msg.SourceFarmer, $"Invite code: {inviteCode}");
                 }
-
-                var inviteCode = Game1.server.getInviteCode();
-
-                if (inviteCode == null)
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "No invite code available.");
-                    return;
-                }
-
-                helper.SendPrivateMessage(msg.SourceFarmer, $"Invite code: {inviteCode}");
-            });
+            );
 
             // Register console command
-            helper.ConsoleCommands.Add("invitecode", "Displays the current server invite code.", InviteCodeConsoleCommand);
+            helper.ConsoleCommands.Add(
+                "invitecode",
+                "Displays the current server invite code.",
+                InviteCodeConsoleCommand
+            );
         }
 
         private static void InviteCodeConsoleCommand(string command, string[] args)

@@ -32,7 +32,8 @@ internal static class SimpleContainerLogStreamer
     public static bool TryForwardSdvdEvent(string line, string forwardedVia)
     {
         const string prefix = "SDVD_EVENT ";
-        if (line.Length <= prefix.Length || !line.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        if (line.Length <= prefix.Length || !line.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
         var jsonTail = line.Substring(prefix.Length);
         InfrastructureEventLog.ForwardRaw(jsonTail, forwardedVia);
         TryAnnotateModPhase(jsonTail, forwardedVia);
@@ -49,13 +50,17 @@ internal static class SimpleContainerLogStreamer
     /// </summary>
     private static void TryAnnotateModPhase(string jsonTail, string forwardedVia)
     {
-        if (!jsonTail.Contains("\"mod_phase\"", StringComparison.Ordinal)) return;
+        if (!jsonTail.Contains("\"mod_phase\"", StringComparison.Ordinal))
+            return;
         try
         {
-            if (JsonNode.Parse(jsonTail) is not JsonObject obj) return;
-            if (obj["event"]?.GetValue<string>() != "mod_phase") return;
+            if (JsonNode.Parse(jsonTail) is not JsonObject obj)
+                return;
+            if (obj["event"]?.GetValue<string>() != "mod_phase")
+                return;
             var phase = obj["data"]?["phase"]?.GetValue<string>();
-            if (string.IsNullOrEmpty(phase)) return;
+            if (string.IsNullOrEmpty(phase))
+                return;
             TestResourceBroker.Instance.EmitModPhaseAnnotation(forwardedVia, phase);
         }
         catch

@@ -31,12 +31,18 @@ public sealed class SetupEventBusBuildProgressSink : IBuildProgressSink
         _collectionName = collectionName;
     }
 
-    public void PhaseStarted(string phaseName)
-        => SetupEventBus.EmitPhaseStarted(_category, phaseName, _collectionName);
+    public void PhaseStarted(string phaseName) =>
+        SetupEventBus.EmitPhaseStarted(_category, phaseName, _collectionName);
 
-    public void Step(string stepName, SetupStepStatus status, string? details = null)
-        => SetupEventBus.EmitStep(_category, stepName, status, details, _collectionName);
+    public void Step(string stepName, SetupStepStatus status, string? details = null) =>
+        SetupEventBus.EmitStep(_category, stepName, status, details, _collectionName);
 
-    public void PhaseCompleted(string phaseName, bool success, string? errorMessage = null)
-        => SetupEventBus.EmitPhaseCompleted(_category, phaseName, success, errorMessage, _collectionName);
+    public void PhaseCompleted(string phaseName, bool success, string? errorMessage = null) =>
+        SetupEventBus.EmitPhaseCompleted(
+            _category,
+            phaseName,
+            success,
+            errorMessage,
+            _collectionName
+        );
 }

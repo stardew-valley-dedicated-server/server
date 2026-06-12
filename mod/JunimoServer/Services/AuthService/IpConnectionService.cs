@@ -15,7 +15,11 @@ namespace JunimoServer.Services.Auth
         private readonly IModHelper _helper;
         private readonly ServerSettingsLoader _settings;
 
-        public IpConnectionService(IMonitor monitor, IModHelper helper, ServerSettingsLoader settings)
+        public IpConnectionService(
+            IMonitor monitor,
+            IModHelper helper,
+            ServerSettingsLoader settings
+        )
             : base(monitor)
         {
             _helper = helper;
@@ -36,11 +40,17 @@ namespace JunimoServer.Services.Auth
             if (_settings.AllowIpConnections)
             {
                 Monitor.Log("IP connections enabled (AllowIpConnections=true)", LogLevel.Info);
-                Monitor.Log("Warning: IP clients don't provide user IDs - farmhand ownership may not work correctly.", LogLevel.Warn);
+                Monitor.Log(
+                    "Warning: IP clients don't provide user IDs - farmhand ownership may not work correctly.",
+                    LogLevel.Warn
+                );
             }
             else
             {
-                Monitor.Log("IP connections disabled (default). Players must use invite codes to join.", LogLevel.Debug);
+                Monitor.Log(
+                    "IP connections disabled (default). Players must use invite codes to join.",
+                    LogLevel.Debug
+                );
             }
         }
     }

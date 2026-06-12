@@ -31,25 +31,36 @@ internal static class BackgroundTaskRunner
     public static Task RunLongLived(
         Func<CancellationToken, Task> work,
         string label,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         using (ExecutionContext.SuppressFlow())
         {
-            return Task.Run(async () =>
-            {
-                try { await work(ct); }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* expected */ }
-                catch (Exception ex)
+            return Task.Run(
+                async () =>
                 {
                     try
                     {
-                        Console.Error.WriteLine(
-                            $"[BackgroundTaskRunner:{label}] FAILED ({ex.GetType().Name}: {ex.Message})");
+                        await work(ct);
                     }
-                    catch { /* stderr unavailable */ }
-                }
-            }, ct);
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    { /* expected */
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            Console.Error.WriteLine(
+                                $"[BackgroundTaskRunner:{label}] FAILED ({ex.GetType().Name}: {ex.Message})"
+                            );
+                        }
+                        catch
+                        { /* stderr unavailable */
+                        }
+                    }
+                },
+                ct
+            );
         }
     }
-
 }

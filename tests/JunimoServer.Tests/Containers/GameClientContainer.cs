@@ -126,7 +126,8 @@ public class GameClientContainer : IAsyncDisposable
         string containerName,
         GameClientOptions options,
         Action<string>? logCallback,
-        Infrastructure.DockerHost host)
+        Infrastructure.DockerHost host
+    )
     {
         _container = container;
         _clientIndex = clientIndex;
@@ -153,11 +154,17 @@ public class GameClientContainer : IAsyncDisposable
         Action<string>? logCallback,
         CancellationToken ct,
         Infrastructure.DockerHost host,
-        bool requireGalaxyResolved = false)
+        bool requireGalaxyResolved = false
+    )
     {
         var collectionName = $"client-{clientIndex}";
-        SetupEventBus.EmitStep("Setup", "Creating client container", SetupStepStatus.Started,
-            $"image: sdvd/test-client:{options.ImageTag}", collectionName: collectionName);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Creating client container",
+            SetupStepStatus.Started,
+            $"image: sdvd/test-client:{options.ImageTag}",
+            collectionName: collectionName
+        );
 
         var containerName = $"sdvd-test-client-{clientIndex}-{Guid.NewGuid():N}";
 
@@ -171,7 +178,9 @@ public class GameClientContainer : IAsyncDisposable
         var builder = new ContainerBuilder($"sdvd/test-client:{options.ImageTag}")
             .WithDockerEndpoint(host.EndpointConfig)
             .WithLogger(NullLogger.Instance)
-            .WithImagePullPolicy(options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
+            .WithImagePullPolicy(
+                options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing
+            )
             .WithName(containerName)
             .WithPortBinding(ContainerApiPort, true) // Dynamic host port
             .WithVolumeMount(options.GameDataVolume, "/data/game")
@@ -193,10 +202,12 @@ public class GameClientContainer : IAsyncDisposable
             // on every VNC disconnect. Connections stays at default verbosity so
             // accept/error events still surface. Read by the base image's
             // /etc/services.d/xvnc/params script.
-            .WithEnvironment("XVNC_SERVER_CUSTOM_PARAMS",
-                "-Log EncodeManager:stderr:0,VNCSConnST:stderr:0,ComparingUpdateTracker:stderr:0")
+            .WithEnvironment(
+                "XVNC_SERVER_CUSTOM_PARAMS",
+                "-Log EncodeManager:stderr:0,VNCSConnST:stderr:0,ComparingUpdateTracker:stderr:0"
+            )
             .WithTmpfsMount("/config") // Override base image's VOLUME /config to prevent orphaned anonymous volumes
-                                       // GPU passthrough — per-host, no-op on hosts without GPU
+            // GPU passthrough — per-host, no-op on hosts without GPU
             .WithGpuIfEnabled(host)
             .WithCreateParameterModifier(p =>
             {
@@ -212,15 +223,21 @@ public class GameClientContainer : IAsyncDisposable
             // previous /ping pre-check halved the docker-exec rate but added
             // latency to every starting client; WaitUntilGameReadyInContainer
             // alone is correct.
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .AddCustomWaitStrategy(new WaitUntilGameReadyInContainer(
-                    ContainerApiPort,
-                    label: $"client-{clientIndex}",
-                    requireGalaxyResolved: requireGalaxyResolved,
-                    onGalaxyStateResolved: state =>
-                    {
-                        if (selfRef != null) selfRef.GalaxyState = state;
-                    })));
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .AddCustomWaitStrategy(
+                        new WaitUntilGameReadyInContainer(
+                            ContainerApiPort,
+                            label: $"client-{clientIndex}",
+                            requireGalaxyResolved: requireGalaxyResolved,
+                            onGalaxyStateResolved: state =>
+                            {
+                                if (selfRef != null)
+                                    selfRef.GalaxyState = state;
+                            }
+                        )
+                    )
+            );
 
         // Conditionally expose VNC port for visual observation
         if (options.ExposeVnc)
@@ -230,17 +247,28 @@ public class GameClientContainer : IAsyncDisposable
 
         if (network != null)
         {
-            builder = builder
-                .WithNetwork(network)
-                .WithNetworkAliases($"test-client-{clientIndex}");
+            builder = builder.WithNetwork(network).WithNetworkAliases($"test-client-{clientIndex}");
         }
 
         var container = builder.Build();
 
-        SetupEventBus.EmitStep("Setup", "Creating client container", SetupStepStatus.Completed,
-            $"container: {containerName}", collectionName: collectionName);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Creating client container",
+            SetupStepStatus.Completed,
+            $"container: {containerName}",
+            collectionName: collectionName
+        );
 
-        var instance = new GameClientContainer(container, clientIndex, runId, containerName, options, logCallback, host);
+        var instance = new GameClientContainer(
+            container,
+            clientIndex,
+            runId,
+            containerName,
+            options,
+            logCallback,
+            host
+        );
         selfRef = instance;
         return instance;
     }
@@ -250,8 +278,12 @@ public class GameClientContainer : IAsyncDisposable
     /// </summary>
     public async Task StartAsync(CancellationToken ct = default)
     {
-        SetupEventBus.EmitStep("Setup", "Starting client container", SetupStepStatus.Started,
-            collectionName: InstanceId);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting client container",
+            SetupStepStatus.Started,
+            collectionName: InstanceId
+        );
 
         var _startSw = Stopwatch.StartNew();
 
@@ -261,8 +293,14 @@ public class GameClientContainer : IAsyncDisposable
         // Start log streaming before container start (same pattern as ServerContainer).
         // Emits each log line to UI via _startupLogCallback during startup phases.
         _containerExitDetected = false;
-        _startupLogCallback = detail => SetupEventBus.EmitStep("Setup", "Starting client container",
-            SetupStepStatus.InProgress, detail, collectionName: InstanceId);
+        _startupLogCallback = detail =>
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting client container",
+                SetupStepStatus.InProgress,
+                detail,
+                collectionName: InstanceId
+            );
         _containerLog = new ContainerLogFile($"client-{_clientIndex}");
         _logStreamCts = new CancellationTokenSource();
         // SuppressFlow: log-streaming outlives the test that started this container
@@ -282,13 +320,16 @@ public class GameClientContainer : IAsyncDisposable
             // to localize slow phases — a long elapsedMs here with a fast wait-
             // strategy log means daemon contention; the inverse means cont-init.d
             // or game launch is the bottleneck.
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_invoked", new
-            {
-                role = "client",
-                name = _containerName,
-                index = _clientIndex,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_start_invoked",
+                new
+                {
+                    role = "client",
+                    name = _containerName,
+                    index = _clientIndex,
+                    host_id = HostId,
+                }
+            );
 
             // WaitAsync(ct) makes cancellation prompt: when the CT fires we throw
             // OperationCanceledException within milliseconds, even if Testcontainers'
@@ -299,15 +340,18 @@ public class GameClientContainer : IAsyncDisposable
             // unblock the test body, starving the per-host client-capacity gate.
             await _container.StartAsync(timeoutCts.Token).WaitAsync(timeoutCts.Token);
 
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_started", new
-            {
-                role = "client",
-                name = _containerName,
-                image = $"sdvd/test-client:{_options.ImageTag}",
-                index = _clientIndex,
-                startupMs = _startSw.ElapsedMilliseconds,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_started",
+                new
+                {
+                    role = "client",
+                    name = _containerName,
+                    image = $"sdvd/test-client:{_options.ImageTag}",
+                    index = _clientIndex,
+                    startupMs = _startSw.ElapsedMilliseconds,
+                    host_id = HostId,
+                }
+            );
         }
         catch (Exception) when (ct.IsCancellationRequested)
         {
@@ -317,7 +361,9 @@ public class GameClientContainer : IAsyncDisposable
             // which disguises cancellation as a timeout and produces misleading error
             // messages like "failed to start within 120s" after only 2 seconds.
             throw new OperationCanceledException(
-                $"client-{_clientIndex} startup cancelled (caller CT fired)", ct);
+                $"client-{_clientIndex} startup cancelled (caller CT fired)",
+                ct
+            );
         }
         catch (Exception ex)
         {
@@ -328,7 +374,8 @@ public class GameClientContainer : IAsyncDisposable
             string logs;
             if (_host.IsPoisoned)
             {
-                logs = $"(container log retrieval skipped: host '{_host.Id}' is poisoned: {_host.PoisonReason})";
+                logs =
+                    $"(container log retrieval skipped: host '{_host.Id}' is poisoned: {_host.PoisonReason})";
             }
             else
             {
@@ -339,51 +386,65 @@ public class GameClientContainer : IAsyncDisposable
                 }
                 catch (Exception logEx)
                 {
-                    logs = $"(unable to retrieve container logs: {logEx.GetType().Name}: {logEx.Message})";
+                    logs =
+                        $"(unable to retrieve container logs: {logEx.GetType().Name}: {logEx.Message})";
                 }
             }
 
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_failed", new
-            {
-                role = "client",
-                name = _containerName,
-                image = $"sdvd/test-client:{_options.ImageTag}",
-                index = _clientIndex,
-                elapsedMs = _startSw.ElapsedMilliseconds,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message,
-                containerExitDetected = _containerExitDetected,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_start_failed",
+                new
+                {
+                    role = "client",
+                    name = _containerName,
+                    image = $"sdvd/test-client:{_options.ImageTag}",
+                    index = _clientIndex,
+                    elapsedMs = _startSw.ElapsedMilliseconds,
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                    containerExitDetected = _containerExitDetected,
+                    host_id = HostId,
+                }
+            );
 
             if (_containerExitDetected)
             {
                 throw new InvalidOperationException(
-                    $"Game client {_clientIndex} container exited unexpectedly during startup.\n" +
-                    $"The container process crashed before becoming healthy.\n\n" +
-                    logs, ex);
+                    $"Game client {_clientIndex} container exited unexpectedly during startup.\n"
+                        + $"The container process crashed before becoming healthy.\n\n"
+                        + logs,
+                    ex
+                );
             }
 
             if (ex is TimeoutException or OperationCanceledException)
             {
                 throw new TimeoutException(
-                    $"Game client {_clientIndex} failed to start within {_options.StartupTimeout.TotalSeconds}s.\n" +
-                    $"Common causes:\n" +
-                    $"  - game-data volume not populated (run 'make up' first to download game files)\n" +
-                    $"  - SMAPI initialization stuck (check logs below for errors)\n" +
-                    $"  - test-client mod failed to load\n\n" +
-                    logs, ex);
+                    $"Game client {_clientIndex} failed to start within {_options.StartupTimeout.TotalSeconds}s.\n"
+                        + $"Common causes:\n"
+                        + $"  - game-data volume not populated (run 'make up' first to download game files)\n"
+                        + $"  - SMAPI initialization stuck (check logs below for errors)\n"
+                        + $"  - test-client mod failed to load\n\n"
+                        + logs,
+                    ex
+                );
             }
 
             throw new InvalidOperationException(
-                $"Game client {_clientIndex} failed to start: {ex.Message}\n\n{logs}", ex);
+                $"Game client {_clientIndex} failed to start: {ex.Message}\n\n{logs}",
+                ex
+            );
         }
 
         // Stop emitting log lines to UI (log streaming continues for collection)
         _startupLogCallback = null;
 
-        SetupEventBus.EmitStep("Setup", "Starting client container", SetupStepStatus.Completed,
-            collectionName: InstanceId);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting client container",
+            SetupStepStatus.Completed,
+            collectionName: InstanceId
+        );
 
         // Resolve coordinator-visible ports through TunnelManager so callers
         // never see a remote daemon's 127.0.0.1 directly. Local hosts: no-op.
@@ -394,7 +455,13 @@ public class GameClientContainer : IAsyncDisposable
         if (_options.ExposeVnc)
         {
             var vncMapped = _container.GetMappedPublicPort(ContainerVncPort);
-            _vncForward = await _tunnels.OpenAsync(HostId, SshDestination, SshKeyPath, vncMapped, ct);
+            _vncForward = await _tunnels.OpenAsync(
+                HostId,
+                SshDestination,
+                SshKeyPath,
+                vncMapped,
+                ct
+            );
             VncPort = _vncForward.CoordinatorPort;
         }
 
@@ -403,19 +470,35 @@ public class GameClientContainer : IAsyncDisposable
         var newClient = new GameTestClient(BaseUrl);
         // Copy the client reference (GameTestClient is a wrapper, we need to update the internal HttpClient)
         typeof(GameTestClient)
-            .GetField("_httpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            ?.SetValue(_apiClient, typeof(GameTestClient)
-                .GetField("_httpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                ?.GetValue(newClient));
+            .GetField(
+                "_httpClient",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            )
+            ?.SetValue(
+                _apiClient,
+                typeof(GameTestClient)
+                    .GetField(
+                        "_httpClient",
+                        System.Reflection.BindingFlags.NonPublic
+                            | System.Reflection.BindingFlags.Instance
+                    )
+                    ?.GetValue(newClient)
+            );
 
         // Register emergency cleanup so container is force-removed even if DisposeAsync never runs
         var host = _host;
         var name = _containerName;
-        EmergencyCleanup.Register($"GameClient-{_runId}", () =>
-        {
-            try { DockerOps.ForceRemoveContainerSync(host.ApiClient, name); }
-            catch { }
-        });
+        EmergencyCleanup.Register(
+            $"GameClient-{_runId}",
+            () =>
+            {
+                try
+                {
+                    DockerOps.ForceRemoveContainerSync(host.ApiClient, name);
+                }
+                catch { }
+            }
+        );
     }
 
     /// <summary>
@@ -427,14 +510,24 @@ public class GameClientContainer : IAsyncDisposable
     /// </summary>
     public async Task StartRecordingAsync(CancellationToken ct = default)
     {
-        if (!RecordingPolicy.RecordClientEnabled) return;
+        if (!RecordingPolicy.RecordClientEnabled)
+            return;
 
-        SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Started,
-            collectionName: InstanceId);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting video recording",
+            SetupStepStatus.Started,
+            collectionName: InstanceId
+        );
         _recorder = new ContainerRecorder(
-            _container, _host, $"client-{_clientIndex}", RecordingPolicy.ClientFps,
-            msg => _logCallback?.Invoke(msg), useGpu: _host.HasGpu,
-            extractLimiter: _host.ExtractLimiter);
+            _container,
+            _host,
+            $"client-{_clientIndex}",
+            RecordingPolicy.ClientFps,
+            msg => _logCallback?.Invoke(msg),
+            useGpu: _host.HasGpu,
+            extractLimiter: _host.ExtractLimiter
+        );
         if (await _recorder.StartAsync(ct))
         {
             // Keys the recorder by Testcontainers' daemon-prefixed name ("/sdvd-…")
@@ -442,13 +535,23 @@ public class GameClientContainer : IAsyncDisposable
             // lease.Container.Container.Name. Reachable only after a successful
             // StartAsync, so the read does not throw ResourceNotFound.
             RecordingOrchestrator.RegisterRecorder(_container.Name, _recorder);
-            SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Completed,
-                $"recording segments to /recordings/seg_*.ts", collectionName: InstanceId);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting video recording",
+                SetupStepStatus.Completed,
+                $"recording segments to /recordings/seg_*.ts",
+                collectionName: InstanceId
+            );
         }
         else
         {
-            SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Failed,
-                "ffmpeg failed to start", collectionName: InstanceId);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting video recording",
+                SetupStepStatus.Failed,
+                "ffmpeg failed to start",
+                collectionName: InstanceId
+            );
             _recorder = null;
         }
     }
@@ -458,13 +561,17 @@ public class GameClientContainer : IAsyncDisposable
     /// </summary>
     public async Task<ConnectionResult> ConnectViaInviteCodeAsync(
         string inviteCode,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var helper = new ConnectionHelper(_apiClient, new ConnectionOptions
-        {
-            MaxAttempts = 3,
-            FarmhandMenuTimeout = _options.ConnectionTimeout
-        });
+        var helper = new ConnectionHelper(
+            _apiClient,
+            new ConnectionOptions
+            {
+                MaxAttempts = 3,
+                FarmhandMenuTimeout = _options.ConnectionTimeout,
+            }
+        );
 
         return await helper.ConnectToServerAsync(inviteCode, ct);
     }
@@ -478,13 +585,17 @@ public class GameClientContainer : IAsyncDisposable
     public async Task<ConnectionResult> ConnectViaLanAsync(
         string address,
         int port = 24642,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var helper = new ConnectionHelper(_apiClient, new ConnectionOptions
-        {
-            MaxAttempts = 3,
-            FarmhandMenuTimeout = _options.ConnectionTimeout
-        });
+        var helper = new ConnectionHelper(
+            _apiClient,
+            new ConnectionOptions
+            {
+                MaxAttempts = 3,
+                FarmhandMenuTimeout = _options.ConnectionTimeout,
+            }
+        );
 
         return await helper.ConnectViaLanAsync(address, port, ct);
     }
@@ -510,7 +621,8 @@ public class GameClientContainer : IAsyncDisposable
             _container,
             $"client-{_clientIndex}",
             HandleLine,
-            msg => _logCallback?.Invoke($"client-{_clientIndex} {msg}"));
+            msg => _logCallback?.Invoke($"client-{_clientIndex} {msg}")
+        );
 
         await _logStreamReader.RunAsync(ct);
     }
@@ -523,19 +635,40 @@ public class GameClientContainer : IAsyncDisposable
         // transport from the test-client mod) to infrastructure.jsonl. Once
         // forwarded, the line is a spent machine envelope — keep it off the
         // human-facing sinks (UI ticker, operator terminal/CI log) below.
-        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"client-{_clientIndex}");
+        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(
+            line,
+            $"client-{_clientIndex}"
+        );
 
         // Emit to UI during startup phases (callback is null post-startup)
-        if (!isEvent) _startupLogCallback?.Invoke(line);
+        if (!isEvent)
+            _startupLogCallback?.Invoke(line);
 
-        if (!isEvent) _logCallback?.Invoke(line);
+        if (!isEvent)
+            _logCallback?.Invoke(line);
     }
 
     public async ValueTask DisposeAsync()
     {
         // Close any open forwards immediately. Local hosts treat this as a no-op.
-        if (_apiForward != null) { try { await _apiForward.DisposeAsync(); } catch { } _apiForward = null; }
-        if (_vncForward != null) { try { await _vncForward.DisposeAsync(); } catch { } _vncForward = null; }
+        if (_apiForward != null)
+        {
+            try
+            {
+                await _apiForward.DisposeAsync();
+            }
+            catch { }
+            _apiForward = null;
+        }
+        if (_vncForward != null)
+        {
+            try
+            {
+                await _vncForward.DisposeAsync();
+            }
+            catch { }
+            _vncForward = null;
+        }
 
         // Drain the log-stream reader before closing the file sink so any
         // fully-formed lines already split out of the in-flight chunk land in
@@ -544,12 +677,24 @@ public class GameClientContainer : IAsyncDisposable
         // only releases the CTS.
         if (_logStreamReader != null)
         {
-            try { await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2)); } catch { }
-            try { await _logStreamReader.DisposeAsync(); } catch { }
+            try
+            {
+                await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2));
+            }
+            catch { }
+            try
+            {
+                await _logStreamReader.DisposeAsync();
+            }
+            catch { }
         }
         if (_logStreamCts != null)
         {
-            try { _logStreamCts.Cancel(); } catch { }
+            try
+            {
+                _logStreamCts.Cancel();
+            }
+            catch { }
             if (_logStreamTask != null)
             {
                 try
@@ -561,22 +706,29 @@ public class GameClientContainer : IAsyncDisposable
             _logStreamCts.Dispose();
         }
 
-        if (_containerLog != null) await _containerLog.DisposeAsync();
+        if (_containerLog != null)
+            await _containerLog.DisposeAsync();
 
         // Pass ShutdownCoordinator.Token so recording extraction aborts immediately on Ctrl+C
         // instead of hanging the shutdown chain on slow Docker I/O.
         var ct = ShutdownCoordinator.Token;
-        _logCallback?.Invoke($"[Recording] client-{_clientIndex} disposal: recorder={(_recorder != null ? _recorder.State : "null")}, container={_containerName}");
+        _logCallback?.Invoke(
+            $"[Recording] client-{_clientIndex} disposal: recorder={(_recorder != null ? _recorder.State : "null")}, container={_containerName}"
+        );
         if (_recorder != null)
         {
             try
             {
-                _logCallback?.Invoke($"[Recording] client-{_clientIndex}: stopping ffmpeg (IsRecording={_recorder.IsRecording})");
+                _logCallback?.Invoke(
+                    $"[Recording] client-{_clientIndex}: stopping ffmpeg (IsRecording={_recorder.IsRecording})"
+                );
                 if (_recorder.IsRecording)
                     await _recorder.StopAsync(ct);
 
                 var destPath = Path.Combine(
-                    TestArtifacts.GetContainerDir($"client-{_clientIndex}"), "full_recording.mp4");
+                    TestArtifacts.GetContainerDir($"client-{_clientIndex}"),
+                    "full_recording.mp4"
+                );
 
                 // Heavy I/O (in-container ffmpeg concat + tar pull) is gated by the
                 // host's ExtractLimiter so N clients tearing down in parallel don't
@@ -588,13 +740,20 @@ public class GameClientContainer : IAsyncDisposable
                 {
                     _logCallback?.Invoke($"[Recording] client-{_clientIndex}: converting TS->MP4");
                     await _recorder.ConvertToMp4Async(ct);
-                    _logCallback?.Invoke($"[Recording] client-{_clientIndex}: retrieving to {destPath}");
+                    _logCallback?.Invoke(
+                        $"[Recording] client-{_clientIndex}: retrieving to {destPath}"
+                    );
                     await _recorder.RetrieveFullRecordingAsync(destPath, ct);
                 }
-                finally { _host.ExtractLimiter.Release(); }
+                finally
+                {
+                    _host.ExtractLimiter.Release();
+                }
                 if (File.Exists(destPath))
                 {
-                    _logCallback?.Invoke($"[Recording] client-{_clientIndex}: full recording saved ({new FileInfo(destPath).Length / 1024}KB)");
+                    _logCallback?.Invoke(
+                        $"[Recording] client-{_clientIndex}: full recording saved ({new FileInfo(destPath).Length / 1024}KB)"
+                    );
                     // Announce to the UI immediately — right where the file becomes available.
                     // Wrapped so any event-bus failure can't skip the container-teardown steps below.
                     try
@@ -603,21 +762,29 @@ public class GameClientContainer : IAsyncDisposable
                     }
                     catch (Exception ex)
                     {
-                        _logCallback?.Invoke($"[Recording] client-{_clientIndex} emit failed: {ex.Message}");
+                        _logCallback?.Invoke(
+                            $"[Recording] client-{_clientIndex} emit failed: {ex.Message}"
+                        );
                     }
                 }
                 else
                 {
-                    _logCallback?.Invoke($"[Recording] client-{_clientIndex}: full recording NOT found at {destPath}");
+                    _logCallback?.Invoke(
+                        $"[Recording] client-{_clientIndex}: full recording NOT found at {destPath}"
+                    );
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _logCallback?.Invoke($"[Recording] client-{_clientIndex} recording extraction cancelled (shutdown)");
+                _logCallback?.Invoke(
+                    $"[Recording] client-{_clientIndex} recording extraction cancelled (shutdown)"
+                );
             }
             catch (Exception ex)
             {
-                _logCallback?.Invoke($"[Recording] WARNING: client-{_clientIndex} recording retrieval error: {ex.Message}");
+                _logCallback?.Invoke(
+                    $"[Recording] WARNING: client-{_clientIndex} recording retrieval error: {ex.Message}"
+                );
             }
             RecordingOrchestrator.UnregisterRecorder(_container.Name);
             await _recorder.DisposeAsync();
@@ -625,13 +792,19 @@ public class GameClientContainer : IAsyncDisposable
         }
         else
         {
-            _logCallback?.Invoke($"[Recording] client-{_clientIndex}: no recorder (recording was never started or already disposed)");
+            _logCallback?.Invoke(
+                $"[Recording] client-{_clientIndex}: no recorder (recording was never started or already disposed)"
+            );
         }
 
         _apiClient.Dispose();
 
         string? preDisposeState = null;
-        try { preDisposeState = _container.State.ToString(); } catch { }
+        try
+        {
+            preDisposeState = _container.State.ToString();
+        }
+        catch { }
 
         long? exitCode = null;
         try
@@ -639,7 +812,9 @@ public class GameClientContainer : IAsyncDisposable
             using var ecCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             exitCode = await _container.GetExitCodeAsync(ecCts.Token);
         }
-        catch { /* exit code is advisory */ }
+        catch
+        { /* exit code is advisory */
+        }
 
         var stopSw = Stopwatch.StartNew();
         try
@@ -649,32 +824,43 @@ public class GameClientContainer : IAsyncDisposable
         catch (Exception ex)
         {
             // Fallback: force remove via Docker.DotNet against the host's daemon
-            Infrastructure.TestLog.Client($"Container dispose failed, falling back to Docker.DotNet RemoveContainer: {ex.Message}");
-            try { await DockerOps.ForceRemoveContainerAsync(_host.ApiClient, _containerName); }
+            Infrastructure.TestLog.Client(
+                $"Container dispose failed, falling back to Docker.DotNet RemoveContainer: {ex.Message}"
+            );
+            try
+            {
+                await DockerOps.ForceRemoveContainerAsync(_host.ApiClient, _containerName);
+            }
             catch { }
         }
 
         stopSw.Stop();
-        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_stopped", new
-        {
-            role = "client",
-            name = _containerName,
-            index = _clientIndex,
-            preDisposeState,
-            exitCode,
-            disposeDurationMs = stopSw.ElapsedMilliseconds,
-            host_id = HostId
-        });
-
-        if (exitCode == DockerExitCodes.SigKill)
-        {
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+            "container_stopped",
+            new
             {
                 role = "client",
                 name = _containerName,
                 index = _clientIndex,
-                host_id = HostId
-            });
+                preDisposeState,
+                exitCode,
+                disposeDurationMs = stopSw.ElapsedMilliseconds,
+                host_id = HostId,
+            }
+        );
+
+        if (exitCode == DockerExitCodes.SigKill)
+        {
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_oom_killed",
+                new
+                {
+                    role = "client",
+                    name = _containerName,
+                    index = _clientIndex,
+                    host_id = HostId,
+                }
+            );
         }
 
         // Normal cleanup succeeded; remove emergency fallback
@@ -683,5 +869,4 @@ public class GameClientContainer : IAsyncDisposable
         // Unregister run ID after all resources are cleaned up
         TestRunRegistry.Unregister(_runId);
     }
-
 }

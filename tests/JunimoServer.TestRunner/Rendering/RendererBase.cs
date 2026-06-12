@@ -33,6 +33,7 @@ public abstract class RendererBase : ITestRenderer
     /// when the run finished early (e.g., StopOnFail).
     /// </summary>
     protected int ImplicitlySkippedCount => _implicitlySkipped;
+
     protected void IncrementImplicitlySkipped() => Interlocked.Increment(ref _implicitlySkipped);
 
     /// <summary>
@@ -58,24 +59,41 @@ public abstract class RendererBase : ITestRenderer
     public abstract void OnRunStarted(RunStartedEvent e);
     public abstract void OnRunFinished(RunFinishedEvent e);
     public abstract void OnTestStarted(TestStartedEvent e);
+
     public virtual void OnTestRunning(TestRunningEvent e) { }
+
     public virtual void OnTestEnrichment(TestEnrichmentEvent e) { }
+
     public virtual void OnRunMetadata(RunMetadataEvent e) { }
+
     public virtual void OnFlakyTests(FlakyTestsEvent e) { }
+
     public virtual void OnTestOutput(TestOutputEvent e)
     {
         _testOutputBuffers.AddOrUpdate(
             e.DisplayName,
             _ => new StringBuilder(e.Line),
-            (_, sb) => { lock (sb) { sb.AppendLine().Append(e.Line); } return sb; });
+            (_, sb) =>
+            {
+                lock (sb)
+                {
+                    sb.AppendLine().Append(e.Line);
+                }
+                return sb;
+            }
+        );
     }
+
     public virtual void OnTestAnnotation(TestAnnotationEvent e) { }
+
     public abstract void OnDiagnostic(DiagnosticEvent e);
     public abstract void OnError(ErrorEvent e);
 
     // Setup phase events - default implementations do nothing
     public virtual void OnSetupPhaseStarted(SetupPhaseStartedEvent e) { }
+
     public virtual void OnSetupPhaseCompleted(SetupPhaseCompletedEvent e) { }
+
     public virtual void OnSetupStep(SetupStepEvent e) { }
 
     // Screenshot events - default implementation does nothing
@@ -83,6 +101,7 @@ public abstract class RendererBase : ITestRenderer
 
     // Recording events - default implementation does nothing
     public virtual void OnRecordingCaptured(RecordingCapturedEvent e) { }
+
     public virtual void OnRecordingSkipped(RecordingSkippedEvent e) { }
 
     // VNC URL events - default implementation does nothing
@@ -90,14 +109,23 @@ public abstract class RendererBase : ITestRenderer
 
     // Instance lifecycle events - default implementations do nothing
     public virtual void OnInstanceCreated(InstanceCreatedEvent e) { }
+
     public virtual void OnInstanceLeased(InstanceLeasedEvent e) { }
+
     public virtual void OnInstanceClientAttached(InstanceClientAttachedEvent e) { }
+
     public virtual void OnInstanceReturned(InstanceReturnedEvent e) { }
+
     public virtual void OnInstanceDisposed(InstanceDisposedEvent e) { }
+
     public virtual void OnInstanceRecording(InstanceRecordingEvent e) { }
+
     public virtual void OnInstancePoisoned(InstancePoisonedEvent e) { }
+
     public virtual void OnInstanceConnected(InstanceConnectedEvent e) { }
+
     public virtual void OnInstanceDisconnected(InstanceDisconnectedEvent e) { }
+
     public virtual void OnInstanceStats(InstanceStatsEvent e) { }
 
     public virtual void OnTestPassed(TestPassedEvent e)
@@ -120,8 +148,10 @@ public abstract class RendererBase : ITestRenderer
 
     public virtual void OnTestFailed(TestFailedEvent e)
     {
-        var isCanceled = e.ExceptionType is "System.OperationCanceledException"
-            or "System.Threading.Tasks.TaskCanceledException";
+        var isCanceled =
+            e.ExceptionType
+            is "System.OperationCanceledException"
+                or "System.Threading.Tasks.TaskCanceledException";
         if (isCanceled)
         {
             Interlocked.Increment(ref _canceled);
@@ -146,7 +176,8 @@ public abstract class RendererBase : ITestRenderer
     /// </summary>
     protected bool ReclassifyCanceledAsFailed(string displayName)
     {
-        if (!_classifiedAsCanceled.TryRemove(displayName, out _)) return false;
+        if (!_classifiedAsCanceled.TryRemove(displayName, out _))
+            return false;
         Interlocked.Decrement(ref _canceled);
         Interlocked.Increment(ref _failed);
         return true;
@@ -175,7 +206,14 @@ public abstract class RendererBase : ITestRenderer
     /// <summary>
     /// Populate the test tree with discovered tests. Base implementation tracks TotalDiscovered.
     /// </summary>
-    public virtual void PopulateTests(IReadOnlyList<(string Collection, string ClassName, string MethodName, string DisplayName)> tests)
+    public virtual void PopulateTests(
+        IReadOnlyList<(
+            string Collection,
+            string ClassName,
+            string MethodName,
+            string DisplayName
+        )> tests
+    )
     {
         TotalDiscovered = tests.Count;
     }
@@ -190,7 +228,8 @@ public abstract class RendererBase : ITestRenderer
     /// Format a duration for display.
     /// Delegates to <see cref="SetupEventBus.FormatDuration"/> (single source of truth).
     /// </summary>
-    protected static string FormatDuration(TimeSpan duration) => SetupEventBus.FormatDuration(duration);
+    protected static string FormatDuration(TimeSpan duration) =>
+        SetupEventBus.FormatDuration(duration);
 
     /// <summary>
     /// Extract short class name from full type name.
@@ -229,7 +268,8 @@ public abstract class RendererBase : ITestRenderer
     /// </summary>
     protected static string SanitizeDisplayName(string name)
     {
-        if (string.IsNullOrEmpty(name)) return name;
+        if (string.IsNullOrEmpty(name))
+            return name;
         var result = name.Replace("\r\n", " ").Replace("\n", " ");
         return MultipleSpaces.Replace(result, " ");
     }
@@ -239,14 +279,17 @@ public abstract class RendererBase : ITestRenderer
 
     // Regex to detect project source paths (frames we want to keep file info for)
     private static readonly Regex ProjectFramePattern = new(
-        @"(tests[/\\]|mod[/\\])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        @"(tests[/\\]|mod[/\\])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase
+    );
 
     // Stack frame pattern: "   at Namespace.Class.Method(...) in path/file.cs:line N"
     private static readonly Regex FramePattern = new(
-        @"^(?<indent>\s*)at (?<method>.+?)(?<source> in (?<path>.+))?$", RegexOptions.Compiled);
+        @"^(?<indent>\s*)at (?<method>.+?)(?<source> in (?<path>.+))?$",
+        RegexOptions.Compiled
+    );
 
-    private static readonly Regex FilePathPattern = new(
-        @"[^\n]+?\.cs:", RegexOptions.Compiled);
+    private static readonly Regex FilePathPattern = new(@"[^\n]+?\.cs:", RegexOptions.Compiled);
 
     private static readonly string? s_projectDir = DetectProjectDir();
 
@@ -256,7 +299,8 @@ public abstract class RendererBase : ITestRenderer
     /// </summary>
     public static string SanitizeStackTrace(string stackTrace)
     {
-        if (string.IsNullOrEmpty(stackTrace)) return stackTrace;
+        if (string.IsNullOrEmpty(stackTrace))
+            return stackTrace;
 
         var lines = stackTrace.Split('\n');
         var filtered = new List<string>(lines.Length);
@@ -264,7 +308,8 @@ public abstract class RendererBase : ITestRenderer
         foreach (var rawLine in lines)
         {
             var line = rawLine.TrimEnd();
-            if (string.IsNullOrEmpty(line)) continue;
+            if (string.IsNullOrEmpty(line))
+                continue;
 
             // Keep "--- End of stack trace ---" markers
             if (line.TrimStart().StartsWith("---"))
@@ -295,7 +340,9 @@ public abstract class RendererBase : ITestRenderer
 
             var path = match.Groups["path"].Value;
             if (ProjectFramePattern.IsMatch(path))
-                filtered.Add($"{match.Groups["indent"].Value}at {method} in {CleanProjectPath(path)}");
+                filtered.Add(
+                    $"{match.Groups["indent"].Value}at {method} in {CleanProjectPath(path)}"
+                );
             else
                 filtered.Add($"{match.Groups["indent"].Value}at {method}");
         }

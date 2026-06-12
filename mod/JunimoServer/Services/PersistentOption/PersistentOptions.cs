@@ -1,7 +1,7 @@
+using System.Xml.Serialization;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Settings;
 using StardewModdingAPI;
-using System.Xml.Serialization;
 
 namespace JunimoServer.Services.PersistentOption
 {
@@ -22,7 +22,9 @@ namespace JunimoServer.Services.PersistentOption
         public PersistentOptions(IModHelper helper, ServerSettingsLoader settings)
         {
             _helper = helper;
-            Data = helper.Data.ReadGlobalData<PersistentOptionsSaveData>(SaveKey) ?? new PersistentOptionsSaveData();
+            Data =
+                helper.Data.ReadGlobalData<PersistentOptionsSaveData>(SaveKey)
+                ?? new PersistentOptionsSaveData();
             RecaptureAndSync(settings);
         }
 

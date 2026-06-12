@@ -15,6 +15,7 @@ internal sealed class ManagedServer : IAsyncDisposable
 {
     public string Key { get; }
     public ServerContainer Server { get; }
+
     /// <summary>The Docker host this server runs on. The slot was acquired against
     /// <c>Host.ServerCapacity</c> and is released by this class's disposal path.</summary>
     public DockerHost Host { get; }
@@ -83,14 +84,17 @@ internal sealed class ManagedServer : IAsyncDisposable
         if (InstanceId != null)
         {
             SetupEventBus.EmitInstanceLeased(InstanceId, testName ?? "");
-            InfrastructureEventLog.Emit("server_acquired", new
-            {
-                server = Key,
-                instanceId = InstanceId,
-                host_id = Host.Id,
-                refCount = _refCount,
-                exclusive = HasExclusiveGate,
-            });
+            InfrastructureEventLog.Emit(
+                "server_acquired",
+                new
+                {
+                    server = Key,
+                    instanceId = InstanceId,
+                    host_id = Host.Id,
+                    refCount = _refCount,
+                    exclusive = HasExclusiveGate,
+                }
+            );
         }
     }
 
@@ -156,7 +160,8 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
             _server._runningTests.TryRemove(_displayName, out _);
         }
     }
@@ -169,12 +174,15 @@ internal sealed class ManagedServer : IAsyncDisposable
     private string? _abortReason;
     private CancellationTokenSource _errorCts = new();
     private volatile bool _poisoned;
+
     // Signaled by Release() when _refCount drops to <=1, waking the exclusive drain waiter.
     private volatile TaskCompletionSource? _drainSignal;
+
     // Signaled by Release() when _refCount drops to 0, waking the poison-drain
     // waiter in DisposeAfterDrainAsync. Distinct from _drainSignal (exclusive
     // access) because that one fires at <=1, not <=0.
     private volatile TaskCompletionSource? _poisonDrainSignal;
+
     // Exclusive access: non-blocking drain pattern with class-scoped retention.
     //
     // When an exclusive test starts:
@@ -221,7 +229,8 @@ internal sealed class ManagedServer : IAsyncDisposable
             WaitName.ManagedServer_JoinGate,
             () => _joinGate.WaitAsync(ct),
             ct,
-            snapshot: () => new { server = Key });
+            snapshot: () => new { server = Key }
+        );
 
     /// <summary>Releases the join gate after a farmer join completes or fails.</summary>
     public void ReleaseJoinGate() => _joinGate.Release();
@@ -238,7 +247,8 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// </summary>
     internal static string? ExtractClassName(string? testName)
     {
-        if (testName == null) return null;
+        if (testName == null)
+            return null;
         // Strip method name (and any Theory args in parens)
         var parenIdx = testName.IndexOf('(');
         var name = parenIdx >= 0 ? testName[..parenIdx] : testName;
@@ -251,10 +261,12 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// active (pending or running), blocks until it finishes.
     /// </summary>
     public async Task AddRefExclusiveAwareAsync(
-        string? testName, CancellationToken ct,
+        string? testName,
+        CancellationToken ct,
         Func<Task>? releaseCapacity = null,
         Func<Task>? reacquireCapacity = null,
-        bool consumeReservation = false)
+        bool consumeReservation = false
+    )
     {
         // Loop: after waiting for exclusive to finish, re-check under lock.
         // another exclusive test may have started in the meantime.
@@ -266,7 +278,9 @@ internal sealed class ManagedServer : IAsyncDisposable
             // sees our ref and waits for it to drain, but we need capacity to proceed.
             if (capacityReleased && reacquireCapacity != null)
             {
-                TestLog.Server($"{_displayLabel} non-exclusive test reacquiring capacity before AddRef");
+                TestLog.Server(
+                    $"{_displayLabel} non-exclusive test reacquiring capacity before AddRef"
+                );
                 await reacquireCapacity();
                 capacityReleased = false;
             }
@@ -289,12 +303,16 @@ internal sealed class ManagedServer : IAsyncDisposable
             // (bringing the class closer to completion and eventual ref release).
             if (!capacityReleased && releaseCapacity != null)
             {
-                TestLog.Server($"{_displayLabel} non-exclusive test releasing capacity while waiting for exclusive");
+                TestLog.Server(
+                    $"{_displayLabel} non-exclusive test releasing capacity while waiting for exclusive"
+                );
                 await releaseCapacity();
                 capacityReleased = true;
             }
 
-            TestLog.Server($"{_displayLabel} non-exclusive test waiting for exclusive to finish...");
+            TestLog.Server(
+                $"{_displayLabel} non-exclusive test waiting for exclusive to finish..."
+            );
             await WaitForExclusiveAsync(done, ct);
             TestLog.Server($"{_displayLabel} exclusive test finished, proceeding");
         }
@@ -313,9 +331,11 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// serialize via the drain-to-1 wait.
     /// </summary>
     public async Task AddRefAndAcquireExclusiveAsync(
-        string? testName, CancellationToken ct,
+        string? testName,
+        CancellationToken ct,
         Func<Task>? releaseAndReacquireCapacity = null,
-        bool consumeReservation = false)
+        bool consumeReservation = false
+    )
     {
         var callerClass = ExtractClassName(testName);
         var inheritedFromClass = false;
@@ -327,13 +347,15 @@ internal sealed class ManagedServer : IAsyncDisposable
             lock (_exclusiveLock)
             {
                 prior = _exclusiveDone;
-                var sameClass = prior != null && callerClass != null
-                    && _exclusiveOwnerClass == callerClass;
+                var sameClass =
+                    prior != null && callerClass != null && _exclusiveOwnerClass == callerClass;
 
                 if (prior == null)
                 {
                     // No prior exclusive; claim the slot atomically.
-                    _exclusiveDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _exclusiveDone = new TaskCompletionSource(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
                     _exclusiveOwnerClass = callerClass;
                     // Drain any stale semaphore permits from a prior cancelled session.
                     while (_exclusiveClassTurn.CurrentCount > 0)
@@ -356,7 +378,9 @@ internal sealed class ManagedServer : IAsyncDisposable
             }
 
             // Different class holds the gate; wait for it to finish.
-            TestLog.Server($"{_displayLabel} exclusive test waiting for prior exclusive to finish...");
+            TestLog.Server(
+                $"{_displayLabel} exclusive test waiting for prior exclusive to finish..."
+            );
             await WaitForExclusiveAsync(prior, ct);
         }
 
@@ -366,19 +390,23 @@ internal sealed class ManagedServer : IAsyncDisposable
             // (or the prior inherited method's cleanup) one-at-a-time, serializing
             // same-class methods. The TCS stays held + _exclusiveClassWaiters > 0,
             // so non-class tests can't sneak in.
-            TestLog.Server($"{_displayLabel} same-class exclusive queued, waiting for turn (refs={_refCount}, waiters={_exclusiveClassWaiters})");
+            TestLog.Server(
+                $"{_displayLabel} same-class exclusive queued, waiting for turn (refs={_refCount}, waiters={_exclusiveClassWaiters})"
+            );
             try
             {
                 await WaitTrace.RunAsync(
                     WaitName.ManagedServer_ExclusiveClassTurn,
                     () => _exclusiveClassTurn.WaitAsync(ct),
                     ct,
-                    snapshot: () => new
-                    {
-                        server = Key,
-                        refCount = _refCount,
-                        classWaiters = _exclusiveClassWaiters
-                    });
+                    snapshot: () =>
+                        new
+                        {
+                            server = Key,
+                            refCount = _refCount,
+                            classWaiters = _exclusiveClassWaiters,
+                        }
+                );
             }
             catch
             {
@@ -406,8 +434,21 @@ internal sealed class ManagedServer : IAsyncDisposable
             }
             AddRef(testName, consumeReservation);
             reservationConsumed = consumeReservation;
-            TestLog.Server($"{_displayLabel} exclusive access granted (inherited from class '{callerClass}', refs={_refCount})");
-            InfrastructureEventLog.Emit("exclusive_acquired", new { server = Key, instanceId = InstanceId, test = testName, refCount = _refCount, kind = "with_ref", inheritedFromClass = true });
+            TestLog.Server(
+                $"{_displayLabel} exclusive access granted (inherited from class '{callerClass}', refs={_refCount})"
+            );
+            InfrastructureEventLog.Emit(
+                "exclusive_acquired",
+                new
+                {
+                    server = Key,
+                    instanceId = InstanceId,
+                    test = testName,
+                    refCount = _refCount,
+                    kind = "with_ref",
+                    inheritedFromClass = true,
+                }
+            );
             return;
         }
 
@@ -422,13 +463,17 @@ internal sealed class ManagedServer : IAsyncDisposable
             // THEN releases, so the drain serves us before other waiters.
             if (_refCount > 1 && releaseAndReacquireCapacity != null)
             {
-                TestLog.Server($"{_displayLabel} releasing capacity during drain wait (atomic reacquire enqueued)");
+                TestLog.Server(
+                    $"{_displayLabel} releasing capacity during drain wait (atomic reacquire enqueued)"
+                );
                 await releaseAndReacquireCapacity();
             }
 
             // Wait for all other tests to finish (their refs to drain to just us).
             // Release() signals _drainSignal when _refCount drops to <=1.
-            var drainSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var drainSignal = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             _drainSignal = drainSignal;
 
             // Fast path: Release() may have already fired between AddRef and here.
@@ -442,12 +487,14 @@ internal sealed class ManagedServer : IAsyncDisposable
                     WaitName.ManagedServer_RefDrain,
                     () => drainSignal.Task.WaitAsync(ct),
                     ct,
-                    snapshot: () => new
-                    {
-                        server = Key,
-                        refCount = _refCount,
-                        displayLabel = _displayLabel
-                    });
+                    snapshot: () =>
+                        new
+                        {
+                            server = Key,
+                            refCount = _refCount,
+                            displayLabel = _displayLabel,
+                        }
+                );
             }
         }
         catch
@@ -470,7 +517,18 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         _drainSignal = null;
         TestLog.Server($"{_displayLabel} exclusive access granted (refs={_refCount})");
-        InfrastructureEventLog.Emit("exclusive_acquired", new { server = Key, instanceId = InstanceId, test = testName, refCount = _refCount, kind = "with_ref", inheritedFromClass = false });
+        InfrastructureEventLog.Emit(
+            "exclusive_acquired",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                test = testName,
+                refCount = _refCount,
+                kind = "with_ref",
+                inheritedFromClass = false,
+            }
+        );
     }
 
     /// <summary>
@@ -483,14 +541,27 @@ internal sealed class ManagedServer : IAsyncDisposable
         TaskCompletionSource? done;
         lock (_exclusiveLock)
         {
-            if (_exclusiveDone == null) return;
+            if (_exclusiveDone == null)
+                return;
 
             // Same-class methods are waiting; signal the next one via semaphore.
             // The TCS stays held so non-class tests remain blocked.
             if (_exclusiveClassWaiters > 0)
             {
-                TestLog.Server($"{_displayLabel} exclusive access passing to next same-class method ({_exclusiveClassWaiters} waiter(s))");
-                InfrastructureEventLog.Emit("exclusive_released", new { server = Key, instanceId = InstanceId, kind = "passed_to_same_class", ownerClass = _exclusiveOwnerClass, waiters = _exclusiveClassWaiters });
+                TestLog.Server(
+                    $"{_displayLabel} exclusive access passing to next same-class method ({_exclusiveClassWaiters} waiter(s))"
+                );
+                InfrastructureEventLog.Emit(
+                    "exclusive_released",
+                    new
+                    {
+                        server = Key,
+                        instanceId = InstanceId,
+                        kind = "passed_to_same_class",
+                        ownerClass = _exclusiveOwnerClass,
+                        waiters = _exclusiveClassWaiters,
+                    }
+                );
                 _exclusiveClassTurn.Release();
                 return;
             }
@@ -501,7 +572,15 @@ internal sealed class ManagedServer : IAsyncDisposable
         }
         done.TrySetResult();
         TestLog.Server($"{_displayLabel} exclusive access released");
-        InfrastructureEventLog.Emit("exclusive_released", new { server = Key, instanceId = InstanceId, kind = "ended" });
+        InfrastructureEventLog.Emit(
+            "exclusive_released",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                kind = "ended",
+            }
+        );
     }
 
     /// <summary>
@@ -530,7 +609,9 @@ internal sealed class ManagedServer : IAsyncDisposable
                 if (prior == null)
                 {
                     // No prior exclusive; claim the slot.
-                    _exclusiveDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _exclusiveDone = new TaskCompletionSource(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
                     _exclusiveOwnerClass = callerClass;
                     break;
                 }
@@ -545,14 +626,18 @@ internal sealed class ManagedServer : IAsyncDisposable
             }
 
             // Different class holds the gate; wait for it to finish.
-            TestLog.Server($"{_displayLabel} exclusive gate-only waiting for prior exclusive to finish...");
+            TestLog.Server(
+                $"{_displayLabel} exclusive gate-only waiting for prior exclusive to finish..."
+            );
             await WaitForExclusiveAsync(prior, ct);
         }
 
         // Wait for other refs to drain. KeepConnected sessions hold their refs until
         // the last test in the class finishes and DisposeAsync releases them.
         // Non-KeepConnected tests block at AddRefExclusiveAwareAsync during acquisition.
-        TestLog.Server($"{_displayLabel} exclusive gate set, waiting for other refs to drain (current={_refCount})");
+        TestLog.Server(
+            $"{_displayLabel} exclusive gate set, waiting for other refs to drain (current={_refCount})"
+        );
         await WaitTrace.RunAsync(
             WaitName.ManagedServer_GateOnlyRefPoll,
             async () =>
@@ -562,10 +647,24 @@ internal sealed class ManagedServer : IAsyncDisposable
                 ct.ThrowIfCancellationRequested();
             },
             ct,
-            snapshot: () => new { server = Key, refCount = _refCount });
+            snapshot: () => new { server = Key, refCount = _refCount }
+        );
 
-        TestLog.Server($"{_displayLabel} exclusive gate-only acquired by '{testName}' (refs={_refCount})");
-        InfrastructureEventLog.Emit("exclusive_acquired", new { server = Key, instanceId = InstanceId, test = testName, refCount = _refCount, kind = "gate_only", inheritedFromClass = false });
+        TestLog.Server(
+            $"{_displayLabel} exclusive gate-only acquired by '{testName}' (refs={_refCount})"
+        );
+        InfrastructureEventLog.Emit(
+            "exclusive_acquired",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                test = testName,
+                refCount = _refCount,
+                kind = "gate_only",
+                inheritedFromClass = false,
+            }
+        );
     }
 
     public bool IsAborted => _aborted;
@@ -590,8 +689,12 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// </summary>
     public void SetPoisonCallback(Action<ManagedServer> callback) => _onPoisoned = callback;
 
-    public ManagedServer(string key, ServerContainer server, DockerHost host,
-        ResourceRequirements requirements)
+    public ManagedServer(
+        string key,
+        ServerContainer server,
+        DockerHost host,
+        ResourceRequirements requirements
+    )
     {
         Key = key;
         Server = server;
@@ -627,7 +730,8 @@ internal sealed class ManagedServer : IAsyncDisposable
             WaitName.ManagedServer_EnsureInitialized,
             () => _initTask.Value,
             ct,
-            snapshot: () => new { server = Key, alreadyComplete = _initialized });
+            snapshot: () => new { server = Key, alreadyComplete = _initialized }
+        );
     }
 
     private async Task InitializeCoreAsync(CancellationToken ct)
@@ -641,17 +745,39 @@ internal sealed class ManagedServer : IAsyncDisposable
         SetupEventBus.EmitInstanceCreated(InstanceId, "server", Key, null, _displayLabel, Host.Id);
 
         SetupEventBus.EmitPhaseStarted("Setup", _displayLabel, Key);
-        SetupEventBus.EmitStep("Setup", "Creating server container", SetupStepStatus.Started, collectionName: Key);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Creating server container",
+            SetupStepStatus.Started,
+            collectionName: Key
+        );
 
         await Host.StartLimiter.WaitAsync(StartPriority.High, ct);
 
-        SetupEventBus.EmitStep("Setup", "Creating server container", SetupStepStatus.Completed, collectionName: Key);
-        SetupEventBus.EmitStep("Setup", "Starting server container", SetupStepStatus.Started, collectionName: Key);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Creating server container",
+            SetupStepStatus.Completed,
+            collectionName: Key
+        );
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting server container",
+            SetupStepStatus.Started,
+            collectionName: Key
+        );
         var startedSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             await Server.StartAsync(onProgress: detail =>
-                SetupEventBus.EmitStep("Setup", "Starting server container", SetupStepStatus.InProgress, detail, Key));
+                SetupEventBus.EmitStep(
+                    "Setup",
+                    "Starting server container",
+                    SetupStepStatus.InProgress,
+                    detail,
+                    Key
+                )
+            );
         }
         finally
         {
@@ -659,9 +785,21 @@ internal sealed class ManagedServer : IAsyncDisposable
         }
         // Cold-start phase split: container-up. Failures before here go through
         // the existing server_creation_failed path (TestResourceBroker.cs:580).
-        InfrastructureEventLog.Emit("server_started",
-            new { server = Key, instanceId = InstanceId, durationMs = startedSw.ElapsedMilliseconds });
-        SetupEventBus.EmitStep("Setup", "Starting server container", SetupStepStatus.Completed, collectionName: Key);
+        InfrastructureEventLog.Emit(
+            "server_started",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                durationMs = startedSw.ElapsedMilliseconds,
+            }
+        );
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting server container",
+            SetupStepStatus.Completed,
+            collectionName: Key
+        );
 
         // Start recording AFTER releasing the start-limiter slot: recording is exec-only
         // against the already-running container, so holding a create+start slot during it
@@ -670,36 +808,97 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         // Show video recording status in container setup steps
         if (Server.IsRecording)
-            SetupEventBus.EmitStep("Setup", "Video recording", SetupStepStatus.Completed,
-                "recording active", collectionName: Key);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Video recording",
+                SetupStepStatus.Completed,
+                "recording active",
+                collectionName: Key
+            );
 
         // Update UI with VNC URL now that ports are published
-        SetupEventBus.EmitInstanceCreated(InstanceId, "server", Key, Server.VncUrl, _displayLabel, Host.Id);
+        SetupEventBus.EmitInstanceCreated(
+            InstanceId,
+            "server",
+            Key,
+            Server.VncUrl,
+            _displayLabel,
+            Host.Id
+        );
 
         // Register for stats tracking now that the container is running
-        ContainerStatsCollector.Register(InstanceId, Server.Container.Id, Server.Container.Name, Host, Server.BaseUrl);
+        ContainerStatsCollector.Register(
+            InstanceId,
+            Server.Container.Id,
+            Server.Container.Name,
+            Host,
+            Server.BaseUrl
+        );
 
-        SetupEventBus.EmitStep("Setup", "Waiting for server ready", SetupStepStatus.Started, collectionName: Key);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Waiting for server ready",
+            SetupStepStatus.Started,
+            collectionName: Key
+        );
         // Switch log callback to target the "Waiting for server ready" step
         Server.SetStartupLogCallback(detail =>
-            SetupEventBus.EmitStep("Setup", "Waiting for server ready", SetupStepStatus.InProgress, detail, Key));
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Waiting for server ready",
+                SetupStepStatus.InProgress,
+                detail,
+                Key
+            )
+        );
         var readySw = System.Diagnostics.Stopwatch.StartNew();
         var ready = await Server.WaitForReadyAsync(onProgress: detail =>
-            SetupEventBus.EmitStep("Setup", "Waiting for server ready", SetupStepStatus.InProgress, detail, Key));
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Waiting for server ready",
+                SetupStepStatus.InProgress,
+                detail,
+                Key
+            )
+        );
         // Stop emitting log lines to UI (log streaming continues for error detection)
         Server.SetStartupLogCallback(null);
         // Cold-start phase split: game-ready. Emitted before the !ready throw
         // so slow-failure cases (e.g. cold-start hitting the WaitForReady timeout)
         // are visible in infrastructure.jsonl.
-        InfrastructureEventLog.Emit("server_ready",
-            new { server = Key, instanceId = InstanceId, durationMs = readySw.ElapsedMilliseconds, success = ready });
+        InfrastructureEventLog.Emit(
+            "server_ready",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                durationMs = readySw.ElapsedMilliseconds,
+                success = ready,
+            }
+        );
         if (!ready)
         {
-            SetupEventBus.EmitStep("Setup", "Waiting for server ready", SetupStepStatus.Failed, collectionName: Key);
-            SetupEventBus.EmitPhaseCompleted("Setup", _displayLabel, false, "Server failed to become ready", Key);
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Waiting for server ready",
+                SetupStepStatus.Failed,
+                collectionName: Key
+            );
+            SetupEventBus.EmitPhaseCompleted(
+                "Setup",
+                _displayLabel,
+                false,
+                "Server failed to become ready",
+                Key
+            );
             throw new TimeoutException($"Server {_displayLabel} failed to become ready");
         }
-        SetupEventBus.EmitStep("Setup", "Waiting for server ready", SetupStepStatus.Completed, collectionName: Key);
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Waiting for server ready",
+            SetupStepStatus.Completed,
+            collectionName: Key
+        );
 
         SetupEventBus.EmitPhaseCompleted("Setup", _displayLabel, true, collectionName: Key);
         _initialized = true;
@@ -707,15 +906,18 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         // Wire ServerContainer's error detection (SMAPI ERROR/FATAL, Docker API failures)
         // to ManagedServer's poison mechanism so tests abort immediately.
-        Server.GetErrorCancellationToken().Register(() =>
-        {
-            if (!_poisoned && !ShutdownCoordinator.IsShuttingDown)
+        Server
+            .GetErrorCancellationToken()
+            .Register(() =>
             {
-                var errors = Server.Errors;
-                var reason = errors.Count > 0 ? errors[0] : "Server error detected via log stream";
-                PoisonServer(reason, PoisonReasonCode.ServerLogError);
-            }
-        });
+                if (!_poisoned && !ShutdownCoordinator.IsShuttingDown)
+                {
+                    var errors = Server.Errors;
+                    var reason =
+                        errors.Count > 0 ? errors[0] : "Server error detected via log stream";
+                    PoisonServer(reason, PoisonReasonCode.ServerLogError);
+                }
+            });
     }
 
     /// <summary>
@@ -766,7 +968,8 @@ internal sealed class ManagedServer : IAsyncDisposable
             {
                 await Task.Delay(intervalMs, ct);
 
-                if (ShutdownCoordinator.IsShuttingDown) break;
+                if (ShutdownCoordinator.IsShuttingDown)
+                    break;
 
                 // A poisoned host means every probe goes through a dead daemon
                 // or tunnel. Poison the server now (accurate reason, immediate
@@ -774,8 +977,10 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // reach the same verdict with a misleading "health check" reason.
                 if (Host.IsPoisoned)
                 {
-                    PoisonServer($"Host {Host.Id} poisoned: {Host.PoisonReason}",
-                        PoisonReasonCode.HostPoisoned);
+                    PoisonServer(
+                        $"Host {Host.Id} poisoned: {Host.PoisonReason}",
+                        PoisonReasonCode.HostPoisoned
+                    );
                     break;
                 }
 
@@ -795,17 +1000,22 @@ internal sealed class ManagedServer : IAsyncDisposable
                     consecutiveFailures++;
                     lastFailureCode = PoisonReasonCode.HealthCheckTimeout;
                     lastFailureReason = "Health check failed, server returned null";
-                    InfrastructureEventLog.Emit("health.check_failed", new
-                    {
-                        server = Key,
-                        instanceId = InstanceId,
-                        responseMs = sw.ElapsedMilliseconds,
-                        consecutiveFailures,
-                        maxFailures,
-                        reason = "null response"
-                    });
-                    TestLog.Server($"{_displayLabel} health check failed (null response, " +
-                                   $"{consecutiveFailures}/{maxFailures}, {sw.ElapsedMilliseconds}ms)");
+                    InfrastructureEventLog.Emit(
+                        "health.check_failed",
+                        new
+                        {
+                            server = Key,
+                            instanceId = InstanceId,
+                            responseMs = sw.ElapsedMilliseconds,
+                            consecutiveFailures,
+                            maxFailures,
+                            reason = "null response",
+                        }
+                    );
+                    TestLog.Server(
+                        $"{_displayLabel} health check failed (null response, "
+                            + $"{consecutiveFailures}/{maxFailures}, {sw.ElapsedMilliseconds}ms)"
+                    );
                 }
                 else if (health.LastTickMs == null)
                 {
@@ -817,18 +1027,23 @@ internal sealed class ManagedServer : IAsyncDisposable
                     // Game thread ticked within 30s. Healthy (even if degraded).
                     if (health.LastTickMs > 5000)
                     {
-                        InfrastructureEventLog.Emit("health.slow_tick", new
-                        {
-                            server = Key,
-                            instanceId = InstanceId,
-                            responseMs = sw.ElapsedMilliseconds,
-                            lastTickMs = health.LastTickMs,
-                            pendingActions = health.PendingActions,
-                            gameAvailable = health.GameAvailable,
-                            healthStatus = health.Status
-                        });
-                        TestLog.Server($"{_displayLabel} slow tick ({health.LastTickMs}ms): " +
-                                       $"pending={health.PendingActions}, gameAvailable={health.GameAvailable}");
+                        InfrastructureEventLog.Emit(
+                            "health.slow_tick",
+                            new
+                            {
+                                server = Key,
+                                instanceId = InstanceId,
+                                responseMs = sw.ElapsedMilliseconds,
+                                lastTickMs = health.LastTickMs,
+                                pendingActions = health.PendingActions,
+                                gameAvailable = health.GameAvailable,
+                                healthStatus = health.Status,
+                            }
+                        );
+                        TestLog.Server(
+                            $"{_displayLabel} slow tick ({health.LastTickMs}ms): "
+                                + $"pending={health.PendingActions}, gameAvailable={health.GameAvailable}"
+                        );
                     }
 
                     consecutiveFailures = 0;
@@ -839,22 +1054,30 @@ internal sealed class ManagedServer : IAsyncDisposable
                     consecutiveFailures++;
                     lastFailureCode = PoisonReasonCode.HealthCheckTimeout;
                     lastFailureReason = $"Game thread stalled (lastTickMs={health.LastTickMs})";
-                    InfrastructureEventLog.Emit("health.check_failed", new
-                    {
-                        server = Key,
-                        instanceId = InstanceId,
-                        responseMs = sw.ElapsedMilliseconds,
-                        lastTickMs = health.LastTickMs,
-                        pendingActions = health.PendingActions,
-                        consecutiveFailures,
-                        maxFailures,
-                        healthStatus = health.Status
-                    });
-                    TestLog.Server($"{_displayLabel} health check failed (lastTickMs={health.LastTickMs}, " +
-                                   $"{consecutiveFailures}/{maxFailures})");
+                    InfrastructureEventLog.Emit(
+                        "health.check_failed",
+                        new
+                        {
+                            server = Key,
+                            instanceId = InstanceId,
+                            responseMs = sw.ElapsedMilliseconds,
+                            lastTickMs = health.LastTickMs,
+                            pendingActions = health.PendingActions,
+                            consecutiveFailures,
+                            maxFailures,
+                            healthStatus = health.Status,
+                        }
+                    );
+                    TestLog.Server(
+                        $"{_displayLabel} health check failed (lastTickMs={health.LastTickMs}, "
+                            + $"{consecutiveFailures}/{maxFailures})"
+                    );
                 }
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 if (_healthSuspended)
@@ -865,28 +1088,36 @@ internal sealed class ManagedServer : IAsyncDisposable
                 consecutiveFailures++;
                 lastFailureCode = PoisonReasonCode.HealthCheckError;
                 lastFailureReason = $"Health check threw {ex.GetType().Name}: {ex.Message}";
-                InfrastructureEventLog.Emit("health.check_error", new
-                {
-                    server = Key,
-                    instanceId = InstanceId,
-                    error = $"{ex.GetType().Name}: {ex.Message}",
-                    consecutiveFailures,
-                    maxFailures
-                });
-                TestLog.Server($"{_displayLabel} health check error ({ex.GetType().Name}: {ex.Message}, " +
-                               $"{consecutiveFailures}/{maxFailures})");
+                InfrastructureEventLog.Emit(
+                    "health.check_error",
+                    new
+                    {
+                        server = Key,
+                        instanceId = InstanceId,
+                        error = $"{ex.GetType().Name}: {ex.Message}",
+                        consecutiveFailures,
+                        maxFailures,
+                    }
+                );
+                TestLog.Server(
+                    $"{_displayLabel} health check error ({ex.GetType().Name}: {ex.Message}, "
+                        + $"{consecutiveFailures}/{maxFailures})"
+                );
             }
 
             if (consecutiveFailures >= maxFailures)
             {
-                InfrastructureEventLog.Emit("health.poison", new
-                {
-                    server = Key,
-                    instanceId = InstanceId,
-                    reason = lastFailureReason,
-                    reasonCode = lastFailureCode,
-                    consecutiveFailures
-                });
+                InfrastructureEventLog.Emit(
+                    "health.poison",
+                    new
+                    {
+                        server = Key,
+                        instanceId = InstanceId,
+                        reason = lastFailureReason,
+                        reasonCode = lastFailureCode,
+                        consecutiveFailures,
+                    }
+                );
                 PoisonServer(lastFailureReason, lastFailureCode);
                 break;
             }
@@ -919,19 +1150,35 @@ internal sealed class ManagedServer : IAsyncDisposable
         _aborted = true;
         _abortReason = reason;
         TestLog.Server($"{_displayLabel} POISONED [{reasonCode}]: {reason}");
-        SetupEventBus.EmitInstancePoisoned(InstanceId ?? $"server-{Key}-{Server.ServerIndex}", reason);
-        InfrastructureEventLog.Emit("server_poisoned", new
-        {
-            server = Key,
-            instanceId = InstanceId,
-            reason,
-            reasonCode,
-            refCount = _refCount
-        });
+        SetupEventBus.EmitInstancePoisoned(
+            InstanceId ?? $"server-{Key}-{Server.ServerIndex}",
+            reason
+        );
+        InfrastructureEventLog.Emit(
+            "server_poisoned",
+            new
+            {
+                server = Key,
+                instanceId = InstanceId,
+                reason,
+                reasonCode,
+                refCount = _refCount,
+            }
+        );
         EmitAnnotationToRunningTests(AnnotationLevel.Warning, $"Server poisoned: {reasonCode}");
-        try { _errorCts.Cancel(); } catch { }
-        try { _onPoisoned?.Invoke(this); }
-        catch (Exception ex) { TestLog.Server($"{_displayLabel} poison callback failed: {ex.Message}"); }
+        try
+        {
+            _errorCts.Cancel();
+        }
+        catch { }
+        try
+        {
+            _onPoisoned?.Invoke(this);
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"{_displayLabel} poison callback failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -951,41 +1198,58 @@ internal sealed class ManagedServer : IAsyncDisposable
                 ct.ThrowIfCancellationRequested();
             },
             ct,
-            snapshot: () => new
-            {
-                server = Key,
-                ownerClass = _exclusiveOwnerClass,
-                refCount = _refCount,
-                classWaiters = _exclusiveClassWaiters
-            });
+            snapshot: () =>
+                new
+                {
+                    server = Key,
+                    ownerClass = _exclusiveOwnerClass,
+                    refCount = _refCount,
+                    classWaiters = _exclusiveClassWaiters,
+                }
+        );
 
     /// <summary>
     /// Requests a new game creation via the API, suspending health checks during the transition.
     /// </summary>
-    public async Task CreateNewGameAsync(FarmTypeSetting farmType, string farmName = "Junimo",
-        int startingCabins = 1, string cabinStrategy = "CabinStack",
-        CancellationToken ct = default)
+    public async Task CreateNewGameAsync(
+        FarmTypeSetting farmType,
+        string farmName = "Junimo",
+        int startingCabins = 1,
+        string cabinStrategy = "CabinStack",
+        CancellationToken ct = default
+    )
     {
         SuspendHealthChecks();
         try
         {
             using var api = Server.CreateApiClient();
 
-            var result = await api.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, ct: ct);
+            var result = await api.CreateNewGameAsync(
+                farmType,
+                farmName,
+                startingCabins,
+                cabinStrategy,
+                ct: ct
+            );
             if (result?.Success != true)
-                throw new InvalidOperationException($"New game creation failed: {result?.Error ?? "unknown"}");
+                throw new InvalidOperationException(
+                    $"New game creation failed: {result?.Error ?? "unknown"}"
+                );
 
             // Verify the server is actually back online
             var status = await api.WaitForServerOnline(
                 timeout: TimeSpan.FromSeconds(120),
                 pollInterval: TimeSpan.FromSeconds(2),
                 cancellationToken: ct,
-                requireInviteCode: Server.Options.WithSteam);
+                requireInviteCode: Server.Options.WithSteam
+            );
 
             if (status == null)
             {
                 ct.ThrowIfCancellationRequested();
-                throw new TimeoutException("Server did not come back online after new game creation");
+                throw new TimeoutException(
+                    "Server did not come back online after new game creation"
+                );
             }
 
             Server.ClearErrors();
@@ -1018,7 +1282,8 @@ internal sealed class ManagedServer : IAsyncDisposable
                 timeout: TimeSpan.FromSeconds(120),
                 pollInterval: TimeSpan.FromSeconds(2),
                 cancellationToken: ct,
-                requireInviteCode: Server.Options.WithSteam);
+                requireInviteCode: Server.Options.WithSteam
+            );
 
             if (status == null)
             {
@@ -1046,8 +1311,14 @@ internal sealed class ManagedServer : IAsyncDisposable
         // Release the server slot now so ReplaceServerInBackgroundAsync can create
         // its replacement without waiting for the leasing test to finish.
         // ReleaseSlotEarly is idempotent (guards via _slotReleased flag).
-        try { ReleaseSlotEarly(); }
-        catch (Exception ex) { TestLog.Server($"{_displayLabel} early slot release failed: {ex.Message}"); }
+        try
+        {
+            ReleaseSlotEarly();
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"{_displayLabel} early slot release failed: {ex.Message}");
+        }
 
         if (Interlocked.CompareExchange(ref _refCount, 0, 0) > 0)
         {
@@ -1065,8 +1336,11 @@ internal sealed class ManagedServer : IAsyncDisposable
                 }
                 catch (OperationCanceledException)
                 {
-                    TestLog.Server(FormattableString.Invariant(
-                        $"{_displayLabel} poison drain timed out after {drainTimeout.TotalSeconds:F0}s (refs={_refCount}); disposing anyway"));
+                    TestLog.Server(
+                        FormattableString.Invariant(
+                            $"{_displayLabel} poison drain timed out after {drainTimeout.TotalSeconds:F0}s (refs={_refCount}); disposing anyway"
+                        )
+                    );
                 }
             }
             _poisonDrainSignal = null;
@@ -1083,7 +1357,12 @@ internal sealed class ManagedServer : IAsyncDisposable
         // Order matters: cancel health first, then dispose server.
         // Use shutdown token so we don't block if the health loop is stuck.
         _healthCts?.Cancel();
-        if (_healthTask != null) try { await _healthTask.WaitAsync(ShutdownCoordinator.Token); } catch { }
+        if (_healthTask != null)
+            try
+            {
+                await _healthTask.WaitAsync(ShutdownCoordinator.Token);
+            }
+            catch { }
 
         // Unregister from stats tracking before disposal
         ContainerStatsCollector.Unregister(InstanceId ?? "");
@@ -1095,11 +1374,23 @@ internal sealed class ManagedServer : IAsyncDisposable
         // point where FullRecordingPath is written). Wrap the dispose calls so a
         // failure in one doesn't skip the other; order matters — inner container
         // first, then host server-slot release.
-        try { await Server.DisposeAsync(); }
-        catch (Exception ex) { TestLog.Server($"{_displayLabel} Server dispose failed: {ex.Message}"); }
+        try
+        {
+            await Server.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"{_displayLabel} Server dispose failed: {ex.Message}");
+        }
 
-        try { ReleaseSlotEarly(); }
-        catch (Exception ex) { TestLog.Server($"{_displayLabel} slot release failed: {ex.Message}"); }
+        try
+        {
+            ReleaseSlotEarly();
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"{_displayLabel} slot release failed: {ex.Message}");
+        }
     }
 
     private static int ParseEnvInt(string name, int defaultValue)

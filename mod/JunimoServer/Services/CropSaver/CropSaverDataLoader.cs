@@ -17,7 +17,6 @@ namespace JunimoServer.Services.CropSaver
             _helper = helper;
         }
 
-
         public void AddCrop(SaverCrop crop)
         {
             _data.Crops.Add(crop);
@@ -50,7 +49,8 @@ namespace JunimoServer.Services.CropSaver
 
         public void LoadDataFromDisk()
         {
-            _data = _helper.Data.ReadSaveData<CropSaverData>(CropSaverDataKey) ?? new CropSaverData();
+            _data =
+                _helper.Data.ReadSaveData<CropSaverData>(CropSaverDataKey) ?? new CropSaverData();
         }
 
         public void SaveDataToDisk()

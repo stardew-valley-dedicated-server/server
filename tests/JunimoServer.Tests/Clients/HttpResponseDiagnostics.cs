@@ -64,7 +64,11 @@ internal static class HttpResponseDiagnostics
     public static long? LastPredicateChangedMsAgo
     {
         get => _slot.Value?.Value;
-        set { if (_slot.Value is { } s) s.Value = value; }
+        set
+        {
+            if (_slot.Value is { } s)
+                s.Value = value;
+        }
     }
 
     /// <summary>
@@ -90,10 +94,16 @@ internal static class HttpResponseDiagnostics
     {
         private readonly Slot? _prior;
         private bool _disposed;
-        public ScopeRestorer(Slot? prior) { _prior = prior; }
+
+        public ScopeRestorer(Slot? prior)
+        {
+            _prior = prior;
+        }
+
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+                return;
             _disposed = true;
             _slot.Value = _prior;
         }

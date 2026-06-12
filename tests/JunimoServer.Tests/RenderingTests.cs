@@ -1,6 +1,5 @@
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
-
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -59,7 +58,10 @@ public class RenderingTests : TestBase
         try
         {
             await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
-            await Task.Delay(TestTimings.RenderingToggleDelay, TestContext.Current.CancellationToken);
+            await Task.Delay(
+                TestTimings.RenderingToggleDelay,
+                TestContext.Current.CancellationToken
+            );
         }
         catch (Exception ex)
         {
@@ -76,7 +78,10 @@ public class RenderingTests : TestBase
         Assert.Equal(0, initialStatus.Fps);
 
         // Enable at a positive rate
-        var enableResponse = await ServerApi.SetServerFps(EnabledFps, TestContext.Current.CancellationToken);
+        var enableResponse = await ServerApi.SetServerFps(
+            EnabledFps,
+            TestContext.Current.CancellationToken
+        );
         Assert.NotNull(enableResponse);
         Assert.True(enableResponse.Success, enableResponse.Error ?? "Enable failed");
         Assert.Equal(EnabledFps, enableResponse.Fps);
@@ -88,7 +93,10 @@ public class RenderingTests : TestBase
         Assert.Equal(EnabledFps, enabledStatus.Fps);
 
         // Disable again (fps 0)
-        var disableResponse = await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
+        var disableResponse = await ServerApi.SetServerFps(
+            0,
+            TestContext.Current.CancellationToken
+        );
         Assert.NotNull(disableResponse);
         Assert.True(disableResponse.Success, disableResponse.Error ?? "Disable failed");
         Assert.Equal(0, disableResponse.Fps);
@@ -115,25 +123,31 @@ public class RenderingTests : TestBase
         var isDark = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Rendering_OverlayDark,
             async () =>
-        {
-            var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
-            disabledBrightness = brightness;
-            Log($"Disabled poll: test overlay brightness={brightness}");
-
-            if (brightness < TestOverlayBrightThreshold && pngBytes != null)
             {
-                await SaveScreenshotAsync(pngBytes,
-                    nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
-                    "01_rendering-disabled");
-                return true;
-            }
-            return false;
-        }, TimeSpan.FromSeconds(5),
-           pollInterval: TimeSpan.FromMilliseconds(500),
-           cancellationToken: TestContext.Current.CancellationToken);
+                var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
+                disabledBrightness = brightness;
+                Log($"Disabled poll: test overlay brightness={brightness}");
 
-        Assert.True(isDark,
-            $"Test overlay should be absent when rendering is disabled, but brightness was {disabledBrightness}");
+                if (brightness < TestOverlayBrightThreshold && pngBytes != null)
+                {
+                    await SaveScreenshotAsync(
+                        pngBytes,
+                        nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
+                        "01_rendering-disabled"
+                    );
+                    return true;
+                }
+                return false;
+            },
+            TimeSpan.FromSeconds(5),
+            pollInterval: TimeSpan.FromMilliseconds(500),
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+
+        Assert.True(
+            isDark,
+            $"Test overlay should be absent when rendering is disabled, but brightness was {disabledBrightness}"
+        );
 
         // Step 2: Enable rendering, poll until the test overlay appears.
         await ServerApi.SetServerFps(EnabledFps, TestContext.Current.CancellationToken);
@@ -142,25 +156,31 @@ public class RenderingTests : TestBase
         var overlayVisible = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Rendering_OverlayVisible,
             async () =>
-        {
-            var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
-            enabledBrightness = brightness;
-            Log($"Enabled poll: test overlay brightness={brightness}");
-
-            if (brightness >= TestOverlayBrightThreshold && pngBytes != null)
             {
-                await SaveScreenshotAsync(pngBytes,
-                    nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
-                    "02_rendering-enabled");
-                return true;
-            }
-            return false;
-        }, TimeSpan.FromSeconds(10),
-           pollInterval: TimeSpan.FromMilliseconds(500),
-           cancellationToken: TestContext.Current.CancellationToken);
+                var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
+                enabledBrightness = brightness;
+                Log($"Enabled poll: test overlay brightness={brightness}");
 
-        Assert.True(overlayVisible,
-            $"Test overlay should be visible when rendering is enabled, but brightness was {enabledBrightness}");
+                if (brightness >= TestOverlayBrightThreshold && pngBytes != null)
+                {
+                    await SaveScreenshotAsync(
+                        pngBytes,
+                        nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
+                        "02_rendering-enabled"
+                    );
+                    return true;
+                }
+                return false;
+            },
+            TimeSpan.FromSeconds(10),
+            pollInterval: TimeSpan.FromMilliseconds(500),
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+
+        Assert.True(
+            overlayVisible,
+            $"Test overlay should be visible when rendering is enabled, but brightness was {enabledBrightness}"
+        );
 
         // Step 3: Disable rendering again and poll until the test overlay disappears.
         await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
@@ -169,32 +189,42 @@ public class RenderingTests : TestBase
         var wentDark = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Rendering_OverlayWentDarkAgain,
             async () =>
-        {
-            var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
-            reDisabledBrightness = brightness;
-            Log($"Re-disabled poll: test overlay brightness={brightness}");
-
-            if (brightness < TestOverlayBrightThreshold && pngBytes != null)
             {
-                await SaveScreenshotAsync(pngBytes,
-                    nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
-                    "03_rendering-re-disabled");
-                return true;
-            }
-            return false;
-        }, TimeSpan.FromSeconds(5),
-           pollInterval: TimeSpan.FromMilliseconds(500),
-           cancellationToken: TestContext.Current.CancellationToken);
+                var (brightness, pngBytes) = await CaptureTestOverlayBrightnessAsync();
+                reDisabledBrightness = brightness;
+                Log($"Re-disabled poll: test overlay brightness={brightness}");
 
-        Assert.True(wentDark,
-            $"Test overlay should disappear after re-disabling rendering, but brightness was {reDisabledBrightness}");
+                if (brightness < TestOverlayBrightThreshold && pngBytes != null)
+                {
+                    await SaveScreenshotAsync(
+                        pngBytes,
+                        nameof(ServerApi_SetServerFps_Enable_ScreenShouldHaveContent),
+                        "03_rendering-re-disabled"
+                    );
+                    return true;
+                }
+                return false;
+            },
+            TimeSpan.FromSeconds(5),
+            pollInterval: TimeSpan.FromMilliseconds(500),
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+
+        Assert.True(
+            wentDark,
+            $"Test overlay should disappear after re-disabling rendering, but brightness was {reDisabledBrightness}"
+        );
     }
 
     public override async ValueTask DisposeAsync()
     {
         // Restore a positive render rate so other tests on the shared server are
         // unaffected by whatever state this test left.
-        try { await ServerApi.SetServerFps(EnabledFps); } catch { }
+        try
+        {
+            await ServerApi.SetServerFps(EnabledFps);
+        }
+        catch { }
 
         await base.DisposeAsync();
     }
@@ -229,10 +259,15 @@ public class RenderingTests : TestBase
         var path = Path.Combine(dir, $"{label}.png");
         await File.WriteAllBytesAsync(path, pngBytes);
 
-        var displayName = TestContext.Current?.Test?.TestDisplayName
-            ?? $"{nameof(RenderingTests)}.{testMethod}";
+        var displayName =
+            TestContext.Current?.Test?.TestDisplayName ?? $"{nameof(RenderingTests)}.{testMethod}";
         SetupEventBus.EmitScreenshot(
-            nameof(RenderingTests), nameof(RenderingTests), displayName, path, "server");
+            nameof(RenderingTests),
+            nameof(RenderingTests),
+            displayName,
+            path,
+            "server"
+        );
     }
 
     /// <summary>

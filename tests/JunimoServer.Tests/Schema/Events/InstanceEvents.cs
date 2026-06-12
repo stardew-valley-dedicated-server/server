@@ -13,7 +13,8 @@ public sealed record InstanceCreatedEvent(
     string ServerKey,
     string? VncUrl,
     string? Label,
-    string HostId) : IRendererEvent
+    string HostId
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstanceCreated;
@@ -27,7 +28,8 @@ public sealed record InstanceCreatedEvent(
 public sealed record InstanceLeasedEvent(
     string InstanceId,
     string TestName,
-    string? ServerInstanceId = null) : IRendererEvent
+    string? ServerInstanceId = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstanceLeased;
@@ -42,7 +44,8 @@ public sealed record InstanceLeasedEvent(
 /// </summary>
 public sealed record InstanceClientAttachedEvent(
     [property: JsonPropertyName("instanceId")] string ServerInstanceId,
-    string ClientInstanceId) : IRendererEvent
+    string ClientInstanceId
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstanceClientAttached;
@@ -75,9 +78,8 @@ public sealed record InstanceDisposedEvent(string InstanceId) : IRendererEvent
 /// <summary>
 /// A container's full recording is available on the host.
 /// </summary>
-public sealed record InstanceRecordingEvent(
-    string InstanceId,
-    string RecordingPath) : IRendererEvent
+public sealed record InstanceRecordingEvent(string InstanceId, string RecordingPath)
+    : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstanceRecording;
@@ -88,9 +90,7 @@ public sealed record InstanceRecordingEvent(
 /// <summary>
 /// A server was poisoned due to health-check failures.
 /// </summary>
-public sealed record InstancePoisonedEvent(
-    string InstanceId,
-    string Reason) : IRendererEvent
+public sealed record InstancePoisonedEvent(string InstanceId, string Reason) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstancePoisoned;
@@ -128,10 +128,8 @@ public sealed record InstanceDisconnectedEvent(string InstanceId) : IRendererEve
 /// <c>{ event, timestamp, instanceId, hostId, cpuPercent, memoryMb, … }</c>.
 /// </summary>
 [JsonConverter(typeof(InstanceStatsEventConverter))]
-public sealed record InstanceStatsEvent(
-    string InstanceId,
-    string HostId,
-    InstanceStatsData Data) : IRendererEvent
+public sealed record InstanceStatsEvent(string InstanceId, string HostId, InstanceStatsData Data)
+    : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.InstanceStats;
@@ -146,17 +144,24 @@ public sealed record InstanceStatsEvent(
 /// </summary>
 public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEvent>
 {
-    public override InstanceStatsEvent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override InstanceStatsEvent Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
     {
         using var doc = JsonDocument.ParseValue(ref reader);
         var root = doc.RootElement;
 
-        string instanceId = "", hostId = "";
+        string instanceId = "",
+            hostId = "";
         var data = new InstanceStatsData();
         DateTime timestamp = DateTime.UtcNow;
 
-        if (root.TryGetProperty("instanceId", out var iid)) instanceId = iid.GetString() ?? "";
-        if (root.TryGetProperty("hostId", out var hid)) hostId = hid.GetString() ?? "";
+        if (root.TryGetProperty("instanceId", out var iid))
+            instanceId = iid.GetString() ?? "";
+        if (root.TryGetProperty("hostId", out var hid))
+            hostId = hid.GetString() ?? "";
         if (root.TryGetProperty("timestamp", out var ts) && ts.ValueKind == JsonValueKind.String)
             timestamp = ts.GetDateTime();
 
@@ -187,7 +192,11 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
         return new InstanceStatsEvent(instanceId, hostId, data) { Timestamp = timestamp };
     }
 
-    public override void Write(Utf8JsonWriter writer, InstanceStatsEvent value, JsonSerializerOptions options)
+    public override void Write(
+        Utf8JsonWriter writer,
+        InstanceStatsEvent value,
+        JsonSerializerOptions options
+    )
     {
         writer.WriteStartObject();
         writer.WriteString("event", EventNames.InstanceStats);
@@ -221,23 +230,29 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
 
     private static void WriteOptDouble(Utf8JsonWriter w, string name, double? v)
     {
-        if (v.HasValue) w.WriteNumber(name, v.Value);
+        if (v.HasValue)
+            w.WriteNumber(name, v.Value);
     }
 
     private static void WriteOptInt(Utf8JsonWriter w, string name, int? v)
     {
-        if (v.HasValue) w.WriteNumber(name, v.Value);
+        if (v.HasValue)
+            w.WriteNumber(name, v.Value);
     }
 
-    private static double GetDouble(JsonElement el, string p)
-        => el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+    private static double GetDouble(JsonElement el, string p) =>
+        el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
 
-    private static int GetInt(JsonElement el, string p)
-        => el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
+    private static int GetInt(JsonElement el, string p) =>
+        el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
 
-    private static double? GetOptDouble(JsonElement el, string p)
-        => el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+    private static double? GetOptDouble(JsonElement el, string p) =>
+        el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number
+            ? v.GetDouble()
+            : null;
 
-    private static int? GetOptInt(JsonElement el, string p)
-        => el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+    private static int? GetOptInt(JsonElement el, string p) =>
+        el.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number
+            ? v.GetInt32()
+            : null;
 }

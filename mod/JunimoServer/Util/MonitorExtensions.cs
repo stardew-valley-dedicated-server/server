@@ -1,6 +1,6 @@
-using StardewModdingAPI;
-using System.Reflection;
 using System.Linq;
+using System.Reflection;
+using StardewModdingAPI;
 
 namespace JunimoServer.Util
 {
@@ -8,15 +8,22 @@ namespace JunimoServer.Util
     {
         public static string Dump(this IMonitor monitor, object obj)
         {
-            var data = string.Join("\n",
+            var data = string.Join(
+                "\n",
                 obj.GetType()
-                   .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                   .Select(p => $"\t{p.Name}: {p.GetValue(obj)}"));
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Select(p => $"\t{p.Name}: {p.GetValue(obj)}")
+            );
 
             return $"{{\n{data}\n}}";
         }
 
-        public static void LogBanner(this IMonitor monitor, string[] lines, int pad = 4, bool centered = false)
+        public static void LogBanner(
+            this IMonitor monitor,
+            string[] lines,
+            int pad = 4,
+            bool centered = false
+        )
         {
             // Calculate banner width based on longest line
             int longestLine = 0;
@@ -25,7 +32,6 @@ namespace JunimoServer.Util
                 if (line.Length > longestLine)
                 {
                     longestLine = line.Length;
-
                 }
             }
 
@@ -52,7 +58,14 @@ namespace JunimoServer.Util
                     int leftPadding = totalPadding / 2;
                     int rightPadding = totalPadding - leftPadding;
 
-                    monitor.Log("*" + new string(' ', leftPadding) + line + new string(' ', rightPadding) + "*", LogLevel.Info);
+                    monitor.Log(
+                        "*"
+                            + new string(' ', leftPadding)
+                            + line
+                            + new string(' ', rightPadding)
+                            + "*",
+                        LogLevel.Info
+                    );
                 }
                 else
                 {
@@ -60,7 +73,14 @@ namespace JunimoServer.Util
                     int leftPadding = pad;
                     int rightPadding = totalPadding - leftPadding;
 
-                    monitor.Log("*" + new string(' ', leftPadding) + line + new string(' ', rightPadding) + "*", LogLevel.Info);
+                    monitor.Log(
+                        "*"
+                            + new string(' ', leftPadding)
+                            + line
+                            + new string(' ', rightPadding)
+                            + "*",
+                        LogLevel.Info
+                    );
                 }
             }
 

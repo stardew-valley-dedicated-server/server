@@ -1,6 +1,6 @@
 using System.IO.Pipes;
-using JunimoServer.Tests.Helpers;
 using JunimoServer.TestRunner.Rendering;
+using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.TestRunner.IPC;
 
@@ -31,7 +31,8 @@ public sealed class SetupPipeServer : IAsyncDisposable
             PipeDirection.In,
             maxNumberOfServerInstances: 1,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous);
+            PipeOptions.Asynchronous
+        );
 
         using (ExecutionContext.SuppressFlow())
         {
@@ -73,11 +74,13 @@ public sealed class SetupPipeServer : IAsyncDisposable
                     // Emit a diagnostic and keep looping — next line may recover.
                     JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
                         "setup_ipc_read_deadline",
-                        new { deadlineMs = (long)ReadDeadline.TotalMilliseconds });
+                        new { deadlineMs = (long)ReadDeadline.TotalMilliseconds }
+                    );
                     continue;
                 }
 
-                if (line == null) break; // Client disconnected
+                if (line == null)
+                    break; // Client disconnected
 
                 // Oversize lines indicate the child wrote something weird
                 // (raw stacktrace, corrupted framing). Drop with a diagnostic;
@@ -87,7 +90,8 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 {
                     JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
                         "setup_ipc_oversized_line",
-                        new { bytes = line.Length, limit = MaxLineBytes });
+                        new { bytes = line.Length, limit = MaxLineBytes }
+                    );
                     continue;
                 }
 
@@ -119,7 +123,9 @@ public sealed class SetupPipeServer : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[SetupPipeServer] dispatch threw ({ex.GetType().Name}): {ex.Message}");
+            Console.Error.WriteLine(
+                $"[SetupPipeServer] dispatch threw ({ex.GetType().Name}): {ex.Message}"
+            );
         }
     }
 
@@ -139,8 +145,13 @@ public sealed class SetupPipeServer : IAsyncDisposable
         var completed = await Task.WhenAny(_readTask, Task.Delay(timeout)) == _readTask;
         if (completed)
         {
-            try { await _readTask; }
-            catch { /* swallow; ReadLoop handles its own errors */ }
+            try
+            {
+                await _readTask;
+            }
+            catch
+            { /* swallow; ReadLoop handles its own errors */
+            }
         }
         return completed;
     }
@@ -148,8 +159,13 @@ public sealed class SetupPipeServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync();
-        try { await _readTask; }
-        catch { /* swallow; ReadLoop handles its own errors */ }
+        try
+        {
+            await _readTask;
+        }
+        catch
+        { /* swallow; ReadLoop handles its own errors */
+        }
         await _pipe.DisposeAsync();
         _cts.Dispose();
     }

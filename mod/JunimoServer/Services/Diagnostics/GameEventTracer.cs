@@ -49,9 +49,13 @@ namespace JunimoServer.Services.Diagnostics
         // and it's also the only correctness guarantee if the Reset patch fails
         // to apply.
         private static readonly object _lastReadyStateLock = new();
-        private static readonly Dictionary<string, (int InstanceId, int Ready, int Required, bool IsReady)> _lastReadyState = new();
+        private static readonly Dictionary<
+            string,
+            (int InstanceId, int Ready, int Required, bool IsReady)
+        > _lastReadyState = new();
 
-        public GameEventTracer(Harmony harmony, IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public GameEventTracer(Harmony harmony, IModHelper helper, IMonitor monitor)
+            : base(helper, monitor)
         {
             _harmony = harmony;
         }
@@ -61,40 +65,52 @@ namespace JunimoServer.Services.Diagnostics
             TryPatch(
                 AccessTools.Method(typeof(Multiplayer), nameof(Multiplayer.addPlayer)),
                 postfix: nameof(AddPlayer_Postfix),
-                label: "Multiplayer.addPlayer");
+                label: "Multiplayer.addPlayer"
+            );
 
             TryPatch(
                 AccessTools.Method(typeof(GameServer), "rejectFarmhandRequest"),
                 postfix: nameof(RejectFarmhandRequest_Postfix),
-                label: "GameServer.rejectFarmhandRequest");
+                label: "GameServer.rejectFarmhandRequest"
+            );
 
             TryPatch(
                 AccessTools.Method(typeof(Multiplayer), nameof(Multiplayer.playerDisconnected)),
                 postfix: nameof(PlayerDisconnected_Postfix),
-                label: "Multiplayer.playerDisconnected");
+                label: "Multiplayer.playerDisconnected"
+            );
 
             // ReadySynchronizer.Reset — clear our dedup dict so it doesn't grow
             // across days / session resets. The identity-hash guard in the Update
             // postfix handles correctness if this patch fails for some reason;
             // this is purely a memory-hygiene hook.
             TryPatch(
-                AccessTools.Method(typeof(StardewValley.Network.NetReady.ReadySynchronizer), "Reset"),
+                AccessTools.Method(
+                    typeof(StardewValley.Network.NetReady.ReadySynchronizer),
+                    "Reset"
+                ),
                 postfix: nameof(ReadySynchronizer_Reset_Postfix),
-                label: "ReadySynchronizer.Reset");
+                label: "ReadySynchronizer.Reset"
+            );
 
             // ServerReadyCheck is internal sealed — look up by name.
             var serverReadyCheckType = AccessTools.TypeByName(
-                "StardewValley.Network.NetReady.Internal.ServerReadyCheck");
+                "StardewValley.Network.NetReady.Internal.ServerReadyCheck"
+            );
             if (serverReadyCheckType != null)
             {
                 TryPatch(
                     AccessTools.Method(serverReadyCheckType, "Update"),
                     postfix: nameof(ServerReadyCheck_Update_Postfix),
-                    label: "ServerReadyCheck.Update");
+                    label: "ServerReadyCheck.Update"
+                );
             }
             else
             {
-                Monitor.Log("[GameEventTracer] ServerReadyCheck type not found; ready_check_transition events disabled", LogLevel.Warn);
+                Monitor.Log(
+                    "[GameEventTracer] ServerReadyCheck type not found; ready_check_transition events disabled",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -109,34 +125,45 @@ namespace JunimoServer.Services.Diagnostics
             {
                 _harmony.Patch(
                     original: target,
-                    postfix: new HarmonyMethod(typeof(GameEventTracer), postfix));
+                    postfix: new HarmonyMethod(typeof(GameEventTracer), postfix)
+                );
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[GameEventTracer] Failed to patch {label}: {ex.GetType().Name}: {ex.Message}", LogLevel.Warn);
+                Monitor.Log(
+                    $"[GameEventTracer] Failed to patch {label}: {ex.GetType().Name}: {ex.Message}",
+                    LogLevel.Warn
+                );
             }
         }
 
         public static void AddPlayer_Postfix(NetFarmerRoot f)
         {
-            if (f?.Value == null) return;
-            ModEventLog.Emit("farmhand_request", new
-            {
-                approved = true,
-                sourceFarmerId = f.Value.UniqueMultiplayerID
-            });
+            if (f?.Value == null)
+                return;
+            ModEventLog.Emit(
+                "farmhand_request",
+                new { approved = true, sourceFarmerId = f.Value.UniqueMultiplayerID }
+            );
         }
 
-        public static void RejectFarmhandRequest_Postfix(string userId, string connectionId, NetFarmerRoot farmer)
+        public static void RejectFarmhandRequest_Postfix(
+            string userId,
+            string connectionId,
+            NetFarmerRoot farmer
+        )
         {
             long? sourceFarmerId = farmer?.Value?.UniqueMultiplayerID;
-            ModEventLog.Emit("farmhand_request", new
-            {
-                approved = false,
-                userId,
-                connectionId,
-                sourceFarmerId
-            });
+            ModEventLog.Emit(
+                "farmhand_request",
+                new
+                {
+                    approved = false,
+                    userId,
+                    connectionId,
+                    sourceFarmerId,
+                }
+            );
         }
 
         public static void PlayerDisconnected_Postfix(long id)
@@ -160,7 +187,8 @@ namespace JunimoServer.Services.Diagnostics
         /// </summary>
         public static void ServerReadyCheck_Update_Postfix(object __instance)
         {
-            if (__instance == null) return;
+            if (__instance == null)
+                return;
             try
             {
                 // All of Id/NumberReady/NumberRequired/IsReady live on the abstract
@@ -171,28 +199,35 @@ namespace JunimoServer.Services.Diagnostics
                 int numberReady = (int)(GetBaseMember(__instance, "NumberReady") ?? 0);
                 int numberRequired = (int)(GetBaseMember(__instance, "NumberRequired") ?? 0);
                 bool isReady = (bool)(GetBaseMember(__instance, "IsReady") ?? false);
-                int instanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(__instance);
+                int instanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(
+                    __instance
+                );
 
                 lock (_lastReadyStateLock)
                 {
-                    if (_lastReadyState.TryGetValue(id, out var prev)
+                    if (
+                        _lastReadyState.TryGetValue(id, out var prev)
                         && prev.InstanceId == instanceId
                         && prev.Ready == numberReady
                         && prev.Required == numberRequired
-                        && prev.IsReady == isReady)
+                        && prev.IsReady == isReady
+                    )
                     {
                         return;
                     }
                     _lastReadyState[id] = (instanceId, numberReady, numberRequired, isReady);
                 }
 
-                ModEventLog.Emit("ready_check_transition", new
-                {
-                    checkId = id,
-                    numberReady,
-                    numberRequired,
-                    isReady
-                });
+                ModEventLog.Emit(
+                    "ready_check_transition",
+                    new
+                    {
+                        checkId = id,
+                        numberReady,
+                        numberRequired,
+                        isReady,
+                    }
+                );
             }
             catch
             {
@@ -205,10 +240,18 @@ namespace JunimoServer.Services.Diagnostics
             var t = instance.GetType();
             while (t != null)
             {
-                var prop = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (prop != null) return prop.GetValue(instance);
-                var field = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (field != null) return field.GetValue(instance);
+                var prop = t.GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                if (prop != null)
+                    return prop.GetValue(instance);
+                var field = t.GetField(
+                    name,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                );
+                if (field != null)
+                    return field.GetValue(instance);
                 t = t.BaseType;
             }
             return null;

@@ -16,7 +16,9 @@ namespace JunimoServer.Services.Auth
         private const string HeaderName = "X-Request-Id";
 
         protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
         {
             var requestId = ModRequestContext.RequestId;
             if (!string.IsNullOrEmpty(requestId))

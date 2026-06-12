@@ -1,3 +1,4 @@
+using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Services.Roles;
@@ -5,7 +6,6 @@ using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
-using System.Linq;
 
 namespace JunimoServer.Services.Commands
 {
@@ -14,75 +14,91 @@ namespace JunimoServer.Services.Commands
     /// </summary>
     public static class LobbyCommands
     {
-        public static void Register(IModHelper helper, IMonitor monitor, ChatCommandsService chatCommandsService, RoleService roleService, LobbyService lobbyService)
+        public static void Register(
+            IModHelper helper,
+            IMonitor monitor,
+            ChatCommandsService chatCommandsService,
+            RoleService roleService,
+            LobbyService lobbyService
+        )
         {
             // !lobby - Show help
-            chatCommandsService.RegisterCommand("lobby", "(Admin) Manage lobby layouts. Use !lobby help for details.", (args, msg) =>
-            {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
+            chatCommandsService.RegisterCommand(
+                "lobby",
+                "(Admin) Manage lobby layouts. Use !lobby help for details.",
+                (args, msg) =>
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You must be an admin to use lobby commands.");
-                    return;
-                }
+                    if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
+                    {
+                        helper.SendPrivateMessage(
+                            msg.SourceFarmer,
+                            "You must be an admin to use lobby commands."
+                        );
+                        return;
+                    }
 
-                if (args.Length == 0 || args[0].ToLower() == "help")
-                {
-                    ShowHelp(helper, msg.SourceFarmer);
-                    return;
-                }
+                    if (args.Length == 0 || args[0].ToLower() == "help")
+                    {
+                        ShowHelp(helper, msg.SourceFarmer);
+                        return;
+                    }
 
-                var subCommand = args[0].ToLower();
-                var subArgs = args.Skip(1).ToArray();
+                    var subCommand = args[0].ToLower();
+                    var subArgs = args.Skip(1).ToArray();
 
-                switch (subCommand)
-                {
-                    case "create":
-                        HandleCreate(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "edit":
-                        HandleEdit(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "save":
-                        HandleSave(helper, monitor, lobbyService, msg.SourceFarmer);
-                        break;
-                    case "cancel":
-                        HandleCancel(helper, monitor, lobbyService, msg.SourceFarmer);
-                        break;
-                    case "list":
-                        HandleList(helper, lobbyService, msg.SourceFarmer);
-                        break;
-                    case "info":
-                        HandleInfo(helper, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "set":
-                        HandleSet(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "rename":
-                        HandleRename(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "copy":
-                        HandleCopy(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "delete":
-                        HandleDelete(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "export":
-                        HandleExport(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "import":
-                        HandleImport(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
-                        break;
-                    case "spawn":
-                        HandleSpawn(helper, monitor, lobbyService, msg.SourceFarmer);
-                        break;
-                    case "reset":
-                        HandleReset(helper, monitor, lobbyService, msg.SourceFarmer);
-                        break;
-                    default:
-                        helper.SendPrivateMessage(msg.SourceFarmer, $"Unknown subcommand: {subCommand}. Use !lobby help.");
-                        break;
+                    switch (subCommand)
+                    {
+                        case "create":
+                            HandleCreate(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "edit":
+                            HandleEdit(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "save":
+                            HandleSave(helper, monitor, lobbyService, msg.SourceFarmer);
+                            break;
+                        case "cancel":
+                            HandleCancel(helper, monitor, lobbyService, msg.SourceFarmer);
+                            break;
+                        case "list":
+                            HandleList(helper, lobbyService, msg.SourceFarmer);
+                            break;
+                        case "info":
+                            HandleInfo(helper, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "set":
+                            HandleSet(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "rename":
+                            HandleRename(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "copy":
+                            HandleCopy(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "delete":
+                            HandleDelete(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "export":
+                            HandleExport(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "import":
+                            HandleImport(helper, monitor, lobbyService, msg.SourceFarmer, subArgs);
+                            break;
+                        case "spawn":
+                            HandleSpawn(helper, monitor, lobbyService, msg.SourceFarmer);
+                            break;
+                        case "reset":
+                            HandleReset(helper, monitor, lobbyService, msg.SourceFarmer);
+                            break;
+                        default:
+                            helper.SendPrivateMessage(
+                                msg.SourceFarmer,
+                                $"Unknown subcommand: {subCommand}. Use !lobby help."
+                            );
+                            break;
+                    }
                 }
-            });
+            );
 
             monitor.Log("[LobbyCommands] Registered !lobby command", LogLevel.Trace);
         }
@@ -107,14 +123,20 @@ namespace JunimoServer.Services.Commands
                 "!lobby export <name> - Export as string",
                 "!lobby import <name> <str> - Import from string",
                 "",
-                "Workflow: create/edit -> decorate -> spawn -> save -> set"
+                "Workflow: create/edit -> decorate -> spawn -> save -> set",
             };
 
             foreach (var line in lines)
                 helper.SendPrivateMessage(playerId, line);
         }
 
-        private static void HandleCreate(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleCreate(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -129,7 +151,10 @@ namespace JunimoServer.Services.Commands
             if (validationError != null)
             {
                 helper.SendPrivateMessage(playerId, validationError);
-                helper.SendPrivateMessage(playerId, "Use letters, numbers, dash (-), underscore (_) only.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Use letters, numbers, dash (-), underscore (_) only."
+                );
                 return;
             }
 
@@ -137,8 +162,14 @@ namespace JunimoServer.Services.Commands
             if (lobbyService.IsEditingLayout(playerId))
             {
                 var currentLayout = lobbyService.GetEditingLayoutName(playerId);
-                helper.SendPrivateMessage(playerId, $"You are already editing layout '{currentLayout}'.");
-                helper.SendPrivateMessage(playerId, "Use !lobby save to finish, or !lobby cancel to discard.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"You are already editing layout '{currentLayout}'."
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Use !lobby save to finish, or !lobby cancel to discard."
+                );
                 return;
             }
 
@@ -146,7 +177,10 @@ namespace JunimoServer.Services.Commands
             var cabin = lobbyService.CreateLayoutForEditing(layoutName, playerId);
             if (cabin == null)
             {
-                helper.SendPrivateMessage(playerId, $"Layout '{layoutName}' already exists or could not be created.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Layout '{layoutName}' already exists or could not be created."
+                );
                 return;
             }
 
@@ -155,16 +189,32 @@ namespace JunimoServer.Services.Commands
             if (indoors != null)
             {
                 var entry = lobbyService.GetSafeEntryPoint(indoors);
-                Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
-                {
-                    indoors.NameOrUniqueName, entry.X, entry.Y, false
-                });
-                lobbyService.UpdateFarmerLocation(playerId, indoors.NameOrUniqueName, entry.X, entry.Y);
+                Game1.server.sendMessage(
+                    playerId,
+                    Multiplayer.passout,
+                    Game1.player,
+                    new object[] { indoors.NameOrUniqueName, entry.X, entry.Y, false }
+                );
+                lobbyService.UpdateFarmerLocation(
+                    playerId,
+                    indoors.NameOrUniqueName,
+                    entry.X,
+                    entry.Y
+                );
 
                 helper.SendPrivateMessage(playerId, $"Created layout '{layoutName}'!");
-                helper.SendPrivateMessage(playerId, "Editing mode: Permanent daylight, immune to exhaustion/sleep.");
-                helper.SendPrivateMessage(playerId, "Other players can sleep - you'll keep editing!");
-                helper.SendPrivateMessage(playerId, "Commands: !lobby spawn, !lobby reset, !lobby save, !lobby cancel");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Editing mode: Permanent daylight, immune to exhaustion/sleep."
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Other players can sleep - you'll keep editing!"
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Commands: !lobby spawn, !lobby reset, !lobby save, !lobby cancel"
+                );
             }
             else
             {
@@ -172,7 +222,13 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleEdit(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleEdit(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -186,8 +242,14 @@ namespace JunimoServer.Services.Commands
             if (lobbyService.IsEditingLayout(playerId))
             {
                 var currentLayout = lobbyService.GetEditingLayoutName(playerId);
-                helper.SendPrivateMessage(playerId, $"You are already editing layout '{currentLayout}'.");
-                helper.SendPrivateMessage(playerId, "Use !lobby save to finish, or !lobby cancel to discard.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"You are already editing layout '{currentLayout}'."
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Use !lobby save to finish, or !lobby cancel to discard."
+                );
                 return;
             }
 
@@ -205,16 +267,32 @@ namespace JunimoServer.Services.Commands
             if (indoors != null)
             {
                 var entry = lobbyService.GetSafeEntryPoint(indoors);
-                Game1.server.sendMessage(playerId, Multiplayer.passout, Game1.player, new object[]
-                {
-                    indoors.NameOrUniqueName, entry.X, entry.Y, false
-                });
-                lobbyService.UpdateFarmerLocation(playerId, indoors.NameOrUniqueName, entry.X, entry.Y);
+                Game1.server.sendMessage(
+                    playerId,
+                    Multiplayer.passout,
+                    Game1.player,
+                    new object[] { indoors.NameOrUniqueName, entry.X, entry.Y, false }
+                );
+                lobbyService.UpdateFarmerLocation(
+                    playerId,
+                    indoors.NameOrUniqueName,
+                    entry.X,
+                    entry.Y
+                );
 
                 helper.SendPrivateMessage(playerId, $"Editing layout '{layoutName}'");
-                helper.SendPrivateMessage(playerId, "Editing mode: Permanent daylight, immune to exhaustion/sleep.");
-                helper.SendPrivateMessage(playerId, "Other players can sleep - you'll keep editing!");
-                helper.SendPrivateMessage(playerId, "Commands: !lobby spawn, !lobby reset, !lobby save, !lobby cancel");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Editing mode: Permanent daylight, immune to exhaustion/sleep."
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Other players can sleep - you'll keep editing!"
+                );
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Commands: !lobby spawn, !lobby reset, !lobby save, !lobby cancel"
+                );
             }
             else
             {
@@ -222,12 +300,20 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleSave(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId)
+        private static void HandleSave(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId
+        )
         {
             if (!lobbyService.IsEditingLayout(playerId))
             {
                 helper.SendPrivateMessage(playerId, "You are not editing any layout.");
-                helper.SendPrivateMessage(playerId, "Use !lobby create <name> or !lobby edit <name> to start.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Use !lobby create <name> or !lobby edit <name> to start."
+                );
                 return;
             }
 
@@ -236,15 +322,26 @@ namespace JunimoServer.Services.Commands
             if (lobbyService.SaveCurrentLayout(playerId))
             {
                 helper.SendPrivateMessage(playerId, $"Saved layout '{layoutName}' successfully!");
-                helper.SendPrivateMessage(playerId, $"Use '!lobby set {layoutName}' to make it active.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Use '!lobby set {layoutName}' to make it active."
+                );
             }
             else
             {
-                helper.SendPrivateMessage(playerId, "Failed to save layout. Make sure you are inside the editing cabin.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Failed to save layout. Make sure you are inside the editing cabin."
+                );
             }
         }
 
-        private static void HandleCancel(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId)
+        private static void HandleCancel(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId
+        )
         {
             if (!lobbyService.IsEditingLayout(playerId))
             {
@@ -259,11 +356,17 @@ namespace JunimoServer.Services.Commands
             {
                 if (isNew)
                 {
-                    helper.SendPrivateMessage(playerId, $"Cancelled. New layout '{layoutName}' was discarded.");
+                    helper.SendPrivateMessage(
+                        playerId,
+                        $"Cancelled. New layout '{layoutName}' was discarded."
+                    );
                 }
                 else
                 {
-                    helper.SendPrivateMessage(playerId, $"Cancelled. Changes to '{layoutName}' were discarded.");
+                    helper.SendPrivateMessage(
+                        playerId,
+                        $"Cancelled. Changes to '{layoutName}' were discarded."
+                    );
                 }
             }
             else
@@ -294,7 +397,13 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleSet(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleSet(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -307,7 +416,10 @@ namespace JunimoServer.Services.Commands
             if (lobbyService.SetActiveLayout(layoutName))
             {
                 helper.SendPrivateMessage(playerId, $"Active layout set to '{layoutName}'.");
-                helper.SendPrivateMessage(playerId, "New players will now see this layout in the lobby.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "New players will now see this layout in the lobby."
+                );
             }
             else
             {
@@ -316,7 +428,12 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleInfo(IModHelper helper, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleInfo(
+            IModHelper helper,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -337,7 +454,10 @@ namespace JunimoServer.Services.Commands
 
             helper.SendPrivateMessage(playerId, $"=== Layout: {layoutName} ===");
             helper.SendPrivateMessage(playerId, $"Status: {(isActive ? "ACTIVE" : "inactive")}");
-            helper.SendPrivateMessage(playerId, $"Cabin: {layout.CabinSkin} (level {layout.UpgradeLevel})");
+            helper.SendPrivateMessage(
+                playerId,
+                $"Cabin: {layout.CabinSkin} (level {layout.UpgradeLevel})"
+            );
             helper.SendPrivateMessage(playerId, $"Furniture: {layout.Furniture.Count}");
             helper.SendPrivateMessage(playerId, $"Objects: {layout.Objects.Count}");
             helper.SendPrivateMessage(playerId, $"Wallpapers: {layout.Wallpapers.Count}");
@@ -353,7 +473,13 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleRename(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleRename(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length < 2)
             {
@@ -380,7 +506,10 @@ namespace JunimoServer.Services.Commands
 
             if (lobbyService.IsLayoutBeingEdited(oldName))
             {
-                helper.SendPrivateMessage(playerId, $"Cannot rename '{oldName}' - it is currently being edited.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Cannot rename '{oldName}' - it is currently being edited."
+                );
                 return;
             }
 
@@ -391,11 +520,20 @@ namespace JunimoServer.Services.Commands
             else
             {
                 helper.SendPrivateMessage(playerId, $"Cannot rename '{oldName}'.");
-                helper.SendPrivateMessage(playerId, "Check that it exists and the new name is available.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Check that it exists and the new name is available."
+                );
             }
         }
 
-        private static void HandleCopy(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleCopy(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length < 2)
             {
@@ -417,16 +555,28 @@ namespace JunimoServer.Services.Commands
             if (lobbyService.CopyLayout(sourceName, destName))
             {
                 helper.SendPrivateMessage(playerId, $"Copied '{sourceName}' to '{destName}'.");
-                helper.SendPrivateMessage(playerId, $"Use '!lobby edit {destName}' to modify the copy.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Use '!lobby edit {destName}' to modify the copy."
+                );
             }
             else
             {
                 helper.SendPrivateMessage(playerId, $"Cannot copy '{sourceName}' to '{destName}'.");
-                helper.SendPrivateMessage(playerId, "Check that source exists and destination is available.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Check that source exists and destination is available."
+                );
             }
         }
 
-        private static void HandleDelete(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleDelete(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -444,7 +594,10 @@ namespace JunimoServer.Services.Commands
 
             if (lobbyService.IsLayoutBeingEdited(layoutName))
             {
-                helper.SendPrivateMessage(playerId, $"Cannot delete '{layoutName}' - it is currently being edited.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Cannot delete '{layoutName}' - it is currently being edited."
+                );
                 return;
             }
 
@@ -455,11 +608,20 @@ namespace JunimoServer.Services.Commands
             else
             {
                 helper.SendPrivateMessage(playerId, $"Cannot delete '{layoutName}'.");
-                helper.SendPrivateMessage(playerId, "Make sure it exists and is not the active layout.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Make sure it exists and is not the active layout."
+                );
             }
         }
 
-        private static void HandleExport(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleExport(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length == 0)
             {
@@ -476,7 +638,10 @@ namespace JunimoServer.Services.Commands
                 return;
             }
 
-            helper.SendPrivateMessage(playerId, $"Exported layout '{layoutName}' ({exportString.Length} chars).");
+            helper.SendPrivateMessage(
+                playerId,
+                $"Exported layout '{layoutName}' ({exportString.Length} chars)."
+            );
             helper.SendPrivateMessage(playerId, "Check the server logs for the export string.");
 
             // Log to server console for copying
@@ -484,7 +649,13 @@ namespace JunimoServer.Services.Commands
             monitor.Log(exportString, LogLevel.Info);
         }
 
-        private static void HandleImport(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId, string[] args)
+        private static void HandleImport(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId,
+            string[] args
+        )
         {
             if (args.Length < 2)
             {
@@ -509,9 +680,15 @@ namespace JunimoServer.Services.Commands
 
             if (success)
             {
-                helper.SendPrivateMessage(playerId, $"Successfully imported layout '{layoutName}'!");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Successfully imported layout '{layoutName}'!"
+                );
                 helper.SendPrivateMessage(playerId, message);
-                helper.SendPrivateMessage(playerId, $"Use '!lobby set {layoutName}' to make it active.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    $"Use '!lobby set {layoutName}' to make it active."
+                );
             }
             else
             {
@@ -519,11 +696,19 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleSpawn(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId)
+        private static void HandleSpawn(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId
+        )
         {
             if (!lobbyService.IsEditingLayout(playerId))
             {
-                helper.SendPrivateMessage(playerId, "You must be editing a layout to set spawn point.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "You must be editing a layout to set spawn point."
+                );
                 helper.SendPrivateMessage(playerId, "Use !lobby create <name> to start editing.");
                 return;
             }
@@ -539,7 +724,12 @@ namespace JunimoServer.Services.Commands
             }
         }
 
-        private static void HandleReset(IModHelper helper, IMonitor monitor, LobbyService lobbyService, long playerId)
+        private static void HandleReset(
+            IModHelper helper,
+            IMonitor monitor,
+            LobbyService lobbyService,
+            long playerId
+        )
         {
             if (!lobbyService.IsEditingLayout(playerId))
             {
@@ -550,11 +740,17 @@ namespace JunimoServer.Services.Commands
 
             if (lobbyService.ResetEditingCabin(playerId))
             {
-                helper.SendPrivateMessage(playerId, "Cabin reset! All furniture and decorations cleared.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Cabin reset! All furniture and decorations cleared."
+                );
             }
             else
             {
-                helper.SendPrivateMessage(playerId, "Failed to reset cabin. Make sure you are inside it.");
+                helper.SendPrivateMessage(
+                    playerId,
+                    "Failed to reset cabin. Make sure you are inside it."
+                );
             }
         }
     }

@@ -27,17 +27,19 @@ namespace TestFarmMod
             e.Edit(asset =>
             {
                 var farms = asset.GetData<List<ModFarmType>>();
-                farms.Add(new ModFarmType
-                {
-                    // Kept in sync by hand with ModFarmDisambiguationTests.FixtureFarmId — the
-                    // test selects this Id over /newgame (separate assembly, can't share a const).
-                    Id = "JunimoTest.SecondFarm",
-                    // Reuse the vanilla Standard map; the by-Id test only needs the entry to be
-                    // selectable, not to render a distinct map.
-                    MapName = "Farm",
-                    TooltipStringPath = "Strings/1_6_Strings:Farm_Standard_Description",
-                    SpawnMonstersByDefault = false,
-                });
+                farms.Add(
+                    new ModFarmType
+                    {
+                        // Kept in sync by hand with ModFarmDisambiguationTests.FixtureFarmId — the
+                        // test selects this Id over /newgame (separate assembly, can't share a const).
+                        Id = "JunimoTest.SecondFarm",
+                        // Reuse the vanilla Standard map; the by-Id test only needs the entry to be
+                        // selectable, not to render a distinct map.
+                        MapName = "Farm",
+                        TooltipStringPath = "Strings/1_6_Strings:Farm_Standard_Description",
+                        SpawnMonstersByDefault = false,
+                    }
+                );
             });
         }
     }

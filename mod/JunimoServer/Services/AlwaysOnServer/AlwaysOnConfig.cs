@@ -15,6 +15,7 @@ namespace JunimoServer.Services.AlwaysOn
                 ShouldCreatePet = settings.PetBreed is >= 0 and <= 9,
             };
         }
+
         public SButton HotKeyToggleAutoMode { get; set; } = SButton.F9;
         public SButton HotKeyToggleVisibility { get; set; } = SButton.F10;
 
@@ -44,6 +45,5 @@ namespace JunimoServer.Services.AlwaysOn
         public int LuauTimeOut { get; set; } = 120000;
         public int DanceOfJelliesTimeOut { get; set; } = 120000;
         public int FestivalOfIceTimeOut { get; set; } = 120000;
-
     }
 }

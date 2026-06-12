@@ -18,7 +18,12 @@ internal sealed class DayChangeWaiter
     /// Polls GET /status until the day/season/year changes from the given values,
     /// then waits for IsReady to confirm the visual transition is complete.
     /// </summary>
-    public async Task<bool> WaitAsync(int day, string season, int year, CancellationToken ct = default)
+    public async Task<bool> WaitAsync(
+        int day,
+        string season,
+        int year,
+        CancellationToken ct = default
+    )
     {
         var (dayChanged, _) = await WaitAsync(day, season, year, checkConnection: false, ct);
         return dayChanged;
@@ -30,7 +35,12 @@ internal sealed class DayChangeWaiter
     /// to ensure the visual transition (newDaySync, save, map loading) is complete.
     /// </summary>
     public async Task<(bool DayChanged, bool Disconnected)> WaitAsync(
-        int day, string season, int year, bool checkConnection, CancellationToken ct = default)
+        int day,
+        string season,
+        int year,
+        bool checkConnection,
+        CancellationToken ct = default
+    )
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var deadline = DateTime.UtcNow + TestTimings.DayChangeTimeout;
@@ -54,22 +64,33 @@ internal sealed class DayChangeWaiter
                     var gameState = await _testBase.GameClient.GetState();
                     if (gameState?.IsConnected != true)
                     {
-                        LogWarning($"Farmhand disconnected during day change wait (attempt {attempt})");
+                        LogWarning(
+                            $"Farmhand disconnected during day change wait (attempt {attempt})"
+                        );
                         return (false, true);
                     }
                 }
 
                 var outerRemaining = deadline - DateTime.UtcNow;
-                if (outerRemaining <= TimeSpan.Zero) break;
-                var status = await _testBase.ServerApi.WaitForStatusAsync(since: since, timeout: outerRemaining, ct: ct);
-                if (status == null) continue; // 408 — re-issue under our deadline
+                if (outerRemaining <= TimeSpan.Zero)
+                    break;
+                var status = await _testBase.ServerApi.WaitForStatusAsync(
+                    since: since,
+                    timeout: outerRemaining,
+                    ct: ct
+                );
+                if (status == null)
+                    continue; // 408 — re-issue under our deadline
 
                 since = status.Version;
 
                 if (status.Day != day || status.Season != season || status.Year != year)
                 {
-                    Log(FormattableString.Invariant($"Day changed after {sw.Elapsed.TotalSeconds:F1}s: ") +
-                        $"{season} {day} Y{year} -> {status.Season} {status.Day} Y{status.Year}");
+                    Log(
+                        FormattableString.Invariant(
+                            $"Day changed after {sw.Elapsed.TotalSeconds:F1}s: "
+                        ) + $"{season} {day} Y{year} -> {status.Season} {status.Day} Y{status.Year}"
+                    );
 
                     if (checkConnection)
                     {
@@ -86,26 +107,46 @@ internal sealed class DayChangeWaiter
                         WaitName.Polling_TestBase_PostTransitionSettle,
                         async (settleSince, settleRemaining) =>
                         {
-                            var s = await _testBase.ServerApi.WaitForStatusAsync(since: settleSince, isReady: true, timeout: settleRemaining, ct: ct);
-                            return new PollingHelper.LongPollResult(s != null, s?.Version ?? settleSince);
-                        }, TestTimings.DayTransitionSettleTimeout, cancellationToken: ct);
-                    Log($"Post-transition settle: {readySw.ElapsedMilliseconds}ms" +
-                        $"{(settled ? "" : " (timed out)")}");
+                            var s = await _testBase.ServerApi.WaitForStatusAsync(
+                                since: settleSince,
+                                isReady: true,
+                                timeout: settleRemaining,
+                                ct: ct
+                            );
+                            return new PollingHelper.LongPollResult(
+                                s != null,
+                                s?.Version ?? settleSince
+                            );
+                        },
+                        TestTimings.DayTransitionSettleTimeout,
+                        cancellationToken: ct
+                    );
+                    Log(
+                        $"Post-transition settle: {readySw.ElapsedMilliseconds}ms"
+                            + $"{(settled ? "" : " (timed out)")}"
+                    );
 
                     return (true, false);
                 }
 
                 if (attempt % 5 == 0)
-                    LogDetail($"Still waiting for day change... (time={status.TimeOfDay}, attempt {attempt})");
+                    LogDetail(
+                        $"Still waiting for day change... (time={status.TimeOfDay}, attempt {attempt})"
+                    );
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 LogWarning($"Status poll error: {ex.Message}");
             }
         }
 
-        LogWarning($"Timed out waiting for day change after {TestTimings.DayChangeTimeout.TotalSeconds}s");
+        LogWarning(
+            $"Timed out waiting for day change after {TestTimings.DayChangeTimeout.TotalSeconds}s"
+        );
         try
         {
             await FailureContext.DumpAsync(
@@ -117,19 +158,37 @@ internal sealed class DayChangeWaiter
                     ["expectedSeason"] = season,
                     ["expectedYear"] = year,
                     ["attempts"] = attempt,
-                    ["checkConnection"] = checkConnection
-                });
+                    ["checkConnection"] = checkConnection,
+                }
+            );
         }
-        catch { /* diagnostic dump is best-effort; don't mask the test's real failure */ }
+        catch
+        { /* diagnostic dump is best-effort; don't mask the test's real failure */
+        }
         return (false, false);
     }
 
     private void Log(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Info, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Info,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogDetail(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Detail, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Detail,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogWarning(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Warning, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Warning,
+            AnnotationSource.Body,
+            message
+        );
 }

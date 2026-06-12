@@ -33,26 +33,38 @@ public class ChatController
     /// </summary>
     public void InstallPatches()
     {
-        var receiveChatMessage = AccessTools.Method(typeof(ChatBox), nameof(ChatBox.receiveChatMessage));
+        var receiveChatMessage = AccessTools.Method(
+            typeof(ChatBox),
+            nameof(ChatBox.receiveChatMessage)
+        );
         if (receiveChatMessage != null)
         {
-            _harmony.Patch(receiveChatMessage,
-                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix)));
+            _harmony.Patch(
+                receiveChatMessage,
+                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix))
+            );
         }
 
-        var addMessage = AccessTools.Method(typeof(ChatBox), nameof(ChatBox.addMessage),
-            new[] { typeof(string), typeof(Color) });
+        var addMessage = AccessTools.Method(
+            typeof(ChatBox),
+            nameof(ChatBox.addMessage),
+            new[] { typeof(string), typeof(Color) }
+        );
         if (addMessage != null)
         {
-            _harmony.Patch(addMessage,
-                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix)));
+            _harmony.Patch(
+                addMessage,
+                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix))
+            );
         }
 
         var addInfoMessage = AccessTools.Method(typeof(ChatBox), nameof(ChatBox.addInfoMessage));
         if (addInfoMessage != null)
         {
-            _harmony.Patch(addInfoMessage,
-                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix)));
+            _harmony.Patch(
+                addInfoMessage,
+                postfix: new HarmonyMethod(typeof(ChatController), nameof(ChatMessage_Postfix))
+            );
         }
 
         _monitor.Log("Chat tracking patches installed", LogLevel.Trace);
@@ -92,18 +104,16 @@ public class ChatController
             // This handles both regular messages and commands (starting with /)
             Game1.chatBox.textBoxEnter(message);
 
-            _monitor.Log($"Sent chat message: {ChatRedaction.MaskSecrets(message)}", LogLevel.Trace);
-            ClientEventLog.Emit("client_chat_sent", new
-            {
-                message = ChatRedaction.MaskSecrets(message),
-                length = message.Length
-            });
+            _monitor.Log(
+                $"Sent chat message: {ChatRedaction.MaskSecrets(message)}",
+                LogLevel.Trace
+            );
+            ClientEventLog.Emit(
+                "client_chat_sent",
+                new { message = ChatRedaction.MaskSecrets(message), length = message.Length }
+            );
 
-            return new ChatResult
-            {
-                Success = true,
-                Message = "Message sent"
-            };
+            return new ChatResult { Success = true, Message = "Message sent" };
         }
         catch (Exception ex)
         {
@@ -131,11 +141,7 @@ public class ChatController
 
             Game1.chatBox.addInfoMessage(message);
 
-            return new ChatResult
-            {
-                Success = true,
-                Message = "Info message added"
-            };
+            return new ChatResult { Success = true, Message = "Info message added" };
         }
         catch (Exception ex)
         {
@@ -164,11 +170,7 @@ public class ChatController
             var color = ParseColor(colorHex) ?? Color.White;
             Game1.chatBox.addMessage(message, color);
 
-            return new ChatResult
-            {
-                Success = true,
-                Message = "Colored message added"
-            };
+            return new ChatResult { Success = true, Message = "Colored message added" };
         }
         catch (Exception ex)
         {
@@ -201,21 +203,23 @@ public class ChatController
                 // Assign sequence numbers: most recent message gets Seq = total,
                 // earlier messages count down from there
                 var offset = chatMessages.Count - 1 - i;
-                messages.Add(new ChatMessageInfo
-                {
-                    // ChatMessage stores parsed emoji segments, we need to reconstruct text
-                    Text = GetMessageText(msg),
-                    ColorHex = ColorToHex(msg.color),
-                    Alpha = msg.alpha,
-                    Seq = total - offset
-                });
+                messages.Add(
+                    new ChatMessageInfo
+                    {
+                        // ChatMessage stores parsed emoji segments, we need to reconstruct text
+                        Text = GetMessageText(msg),
+                        ColorHex = ColorToHex(msg.color),
+                        Alpha = msg.alpha,
+                        Seq = total - offset,
+                    }
+                );
             }
 
             return new ChatHistoryResult
             {
                 Success = true,
                 Messages = messages,
-                TotalReceived = total
+                TotalReceived = total,
             };
         }
         catch (Exception ex)

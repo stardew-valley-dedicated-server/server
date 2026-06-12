@@ -1,5 +1,5 @@
-using JunimoServer.Services.GameCreator;
 using System;
+using JunimoServer.Services.GameCreator;
 
 namespace JunimoServer.Services.Settings
 {
@@ -10,8 +10,9 @@ namespace JunimoServer.Services.Settings
     {
         /// <summary>All unauthenticated players wait in the same lobby cabin.</summary>
         Shared,
+
         /// <summary>Each player gets their own isolated lobby cabin.</summary>
-        Individual
+        Individual,
     }
 
     public class ServerSettings
@@ -27,6 +28,7 @@ namespace JunimoServer.Services.Settings
         public float ProfitMargin { get; set; } = 1.0f;
         public int StartingCabins { get; set; } = 1;
         public string SpawnMonstersAtNight { get; set; } = "auto";
+
         // advanced creation options
         public bool RemixBundles { get; set; } = false;
         public bool RemixMines { get; set; } = false;

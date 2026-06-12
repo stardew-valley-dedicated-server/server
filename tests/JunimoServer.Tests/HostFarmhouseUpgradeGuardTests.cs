@@ -1,5 +1,4 @@
 using JunimoServer.Tests.Infrastructure;
-
 using Xunit;
 
 namespace JunimoServer.Tests;
@@ -16,7 +15,7 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
 {
     [Theory]
     [InlineData("houseupgrade 2")] // DebugCommands.HouseUpgrade (targets the host's home)
-    [InlineData("upgradehouse")]   // DebugCommands.UpgradeHouse (+1 to the host's level)
+    [InlineData("upgradehouse")] // DebugCommands.UpgradeHouse (+1 to the host's level)
     [InlineData("thishouseupgrade 2")] // DebugCommands.ThisHouseUpgrade (the FarmHouse the host stands in)
     [TestServer(Clients = 0, Exclusive = true)]
     public async Task DebugHouseUpgradeCommand_OnHost_IsBlocked(string command)
@@ -28,6 +27,8 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
         Assert.True(response.Success, $"command failed: {response.Error}");
 
         Assert.Equal(0, response.HostHouseUpgradeLevel);
-        LogSuccess($"'{command}' was blocked — host farmhouse stayed at level {response.HostHouseUpgradeLevel}");
+        LogSuccess(
+            $"'{command}' was blocked — host farmhouse stayed at level {response.HostHouseUpgradeLevel}"
+        );
     }
 }

@@ -2,8 +2,8 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
-using StardewValley.WorldMaps;
 using StardewValley.GameData.WorldMaps;
+using StardewValley.WorldMaps;
 
 namespace JunimoServer.Services.Map
 {
@@ -14,7 +14,10 @@ namespace JunimoServer.Services.Map
             return Game1.content.DoesAssetExist<Texture2D>(assetName);
         }
 
-        public static MapAreaTexture GetMapAreaTexture(string assetName, WorldMapTextureData worldMapTextureData)
+        public static MapAreaTexture GetMapAreaTexture(
+            string assetName,
+            WorldMapTextureData worldMapTextureData
+        )
         {
             Texture2D texture = Game1.content.Load<Texture2D>(assetName);
 
@@ -30,12 +33,25 @@ namespace JunimoServer.Services.Map
                 mapPixelArea = sourceRect;
             }
 
-            return new MapAreaTexture(mapPixelArea: new Rectangle(mapPixelArea.X * 4, mapPixelArea.Y * 4, mapPixelArea.Width * 4, mapPixelArea.Height * 4), texture: texture, sourceRect: sourceRect);
+            return new MapAreaTexture(
+                mapPixelArea: new Rectangle(
+                    mapPixelArea.X * 4,
+                    mapPixelArea.Y * 4,
+                    mapPixelArea.Width * 4,
+                    mapPixelArea.Height * 4
+                ),
+                texture: texture,
+                sourceRect: sourceRect
+            );
         }
 
         public static Texture2D CropFromTexture(Texture2D texture, Rectangle rect)
         {
-            Texture2D destinationTexture = new Texture2D(Game1.graphics.GraphicsDevice, rect.Width, rect.Height);
+            Texture2D destinationTexture = new Texture2D(
+                Game1.graphics.GraphicsDevice,
+                rect.Width,
+                rect.Height
+            );
             Color[] data = new Color[rect.Width * rect.Height];
             texture.GetData(0, rect, data, 0, rect.Width * rect.Height);
             destinationTexture.SetData(data);
@@ -46,7 +62,6 @@ namespace JunimoServer.Services.Map
         {
             return CropFromTexture(mapAreaTexture.Texture, mapAreaTexture.SourceRect);
         }
-
 
         public static Point GetNormalizedPlayerTile(Farmer player)
         {
@@ -66,7 +81,10 @@ namespace JunimoServer.Services.Map
             return Game1.content.DoesAssetExist<Texture2D>(assetName);
         }
 
-        public static MapAreaTexture GetMapAreaTexture(string assetName, WorldMapTextureData worldMapTextureData)
+        public static MapAreaTexture GetMapAreaTexture(
+            string assetName,
+            WorldMapTextureData worldMapTextureData
+        )
         {
             Texture2D texture = Game1.content.Load<Texture2D>(assetName);
 
@@ -82,12 +100,25 @@ namespace JunimoServer.Services.Map
                 mapPixelArea = sourceRect;
             }
 
-            return new MapAreaTexture(mapPixelArea: new Rectangle(mapPixelArea.X * 4, mapPixelArea.Y * 4, mapPixelArea.Width * 4, mapPixelArea.Height * 4), texture: texture, sourceRect: sourceRect);
+            return new MapAreaTexture(
+                mapPixelArea: new Rectangle(
+                    mapPixelArea.X * 4,
+                    mapPixelArea.Y * 4,
+                    mapPixelArea.Width * 4,
+                    mapPixelArea.Height * 4
+                ),
+                texture: texture,
+                sourceRect: sourceRect
+            );
         }
 
         public static Texture2D CropFromTexture(Texture2D texture, Rectangle rect)
         {
-            Texture2D destinationTexture = new Texture2D(Game1.graphics.GraphicsDevice, rect.Width, rect.Height);
+            Texture2D destinationTexture = new Texture2D(
+                Game1.graphics.GraphicsDevice,
+                rect.Width,
+                rect.Height
+            );
             Color[] data = new Color[rect.Width * rect.Height];
             texture.GetData(0, rect, data, 0, rect.Width * rect.Height);
             destinationTexture.SetData(data);
@@ -98,7 +129,6 @@ namespace JunimoServer.Services.Map
         {
             return CropFromTexture(mapAreaTexture.Texture, mapAreaTexture.SourceRect);
         }
-
 
         public static Point GetNormalizedPlayerTile(Farmer player)
         {

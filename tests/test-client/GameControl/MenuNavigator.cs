@@ -1,6 +1,6 @@
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
-using StardewModdingAPI;
 
 namespace JunimoTestClient.GameControl;
 
@@ -26,7 +26,7 @@ public class MenuNavigator
             "title" or "titlemenu" => NavigateToTitle(),
             "coop" or "coopmenu" => NavigateToCoop(),
             "exit" => ExitToTitle(),
-            _ => new NavigationResult { Success = false, Error = $"Unknown target: {target}" }
+            _ => new NavigationResult { Success = false, Error = $"Unknown target: {target}" },
         };
     }
 
@@ -40,11 +40,7 @@ public class MenuNavigator
             // If already at title menu with no submenu, we're done
             if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu == null)
             {
-                return new NavigationResult
-                {
-                    Success = true,
-                    Message = "Already at title menu"
-                };
+                return new NavigationResult { Success = true, Message = "Already at title menu" };
             }
 
             // If we're in a game, exit to title
@@ -61,17 +57,13 @@ public class MenuNavigator
                 return new NavigationResult
                 {
                     Success = true,
-                    Message = "Closed submenu, now at title"
+                    Message = "Closed submenu, now at title",
                 };
             }
 
             // Otherwise, create a new title menu
             Game1.activeClickableMenu = new TitleMenu();
-            return new NavigationResult
-            {
-                Success = true,
-                Message = "Navigated to title menu"
-            };
+            return new NavigationResult { Success = true, Message = "Navigated to title menu" };
         }
         catch (Exception ex)
         {
@@ -96,28 +88,24 @@ public class MenuNavigator
 
                 if (Game1.activeClickableMenu is not TitleMenu)
                 {
-                    return new NavigationResult { Success = false, Error = "Failed to get title menu" };
+                    return new NavigationResult
+                    {
+                        Success = false,
+                        Error = "Failed to get title menu",
+                    };
                 }
             }
 
             // Check if already at coop menu
             if (TitleMenu.subMenu is CoopMenu)
             {
-                return new NavigationResult
-                {
-                    Success = true,
-                    Message = "Already at coop menu"
-                };
+                return new NavigationResult { Success = true, Message = "Already at coop menu" };
             }
 
             // Open the coop menu
             TitleMenu.subMenu = new CoopMenu(tooManyFarms: false);
 
-            return new NavigationResult
-            {
-                Success = true,
-                Message = "Navigated to coop menu"
-            };
+            return new NavigationResult { Success = true, Message = "Navigated to coop menu" };
         }
         catch (Exception ex)
         {
@@ -135,20 +123,12 @@ public class MenuNavigator
         {
             if (!Context.IsWorldReady && Game1.activeClickableMenu is TitleMenu)
             {
-                return new NavigationResult
-                {
-                    Success = true,
-                    Message = "Already at title menu"
-                };
+                return new NavigationResult { Success = true, Message = "Already at title menu" };
             }
 
             Game1.ExitToTitle();
 
-            return new NavigationResult
-            {
-                Success = true,
-                Message = "Exiting to title"
-            };
+            return new NavigationResult { Success = true, Message = "Exiting to title" };
         }
         catch (Exception ex)
         {
@@ -178,11 +158,7 @@ public class MenuNavigator
 
             _monitor.Log($"Switched to tab {tab}", LogLevel.Trace);
 
-            return new NavigationResult
-            {
-                Success = true,
-                Message = $"Switched to tab {tab}"
-            };
+            return new NavigationResult { Success = true, Message = $"Switched to tab {tab}" };
         }
         catch (Exception ex)
         {

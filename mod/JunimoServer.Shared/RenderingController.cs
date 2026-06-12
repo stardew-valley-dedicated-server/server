@@ -17,8 +17,8 @@ namespace JunimoServer.Shared
     public class RenderingController
     {
         private readonly IMonitor _monitor;
-        private readonly string _side;            // "Server" / "Client" — log prefix only
-        private int _currentFps;                  // 0 = disabled, N > 0 = throttled at N
+        private readonly string _side; // "Server" / "Client" — log prefix only
+        private int _currentFps; // 0 = disabled, N > 0 = throttled at N
         private bool _shouldDrawFrame = true;
         private bool _renderDisabledNoticeNeeded;
         private IDisplayDevice? _originalDisplayDevice;
@@ -49,7 +49,8 @@ namespace JunimoServer.Shared
         /// </summary>
         public void SetFps(int fps)
         {
-            if (fps < 0) fps = 0;
+            if (fps < 0)
+                fps = 0;
             var previous = _currentFps;
             _currentFps = fps;
 
@@ -67,13 +68,17 @@ namespace JunimoServer.Shared
                     Game1.mapDisplayDevice = _originalDisplayDevice;
                 _renderDisabledNoticeNeeded = false;
                 _shouldDrawFrame = true;
-                _monitor.Log($"{_side} rendering enabled at {fps} fps (was {previous})", LogLevel.Info);
+                _monitor.Log(
+                    $"{_side} rendering enabled at {fps} fps (was {previous})",
+                    LogLevel.Info
+                );
             }
         }
 
         // Save-window helpers — only the server uses these (OnDayEnding/OnDayStarted),
         // but they live here so the one ShouldBeginDraw body below is identical for both.
         public void EnableDrawing() => _shouldDrawFrame = true;
+
         public void DisableDrawing() => _shouldDrawFrame = false;
 
         /// <summary>
@@ -85,12 +90,15 @@ namespace JunimoServer.Shared
         {
             if (!_shouldDrawFrame)
             {
-                if (_renderDisabledNoticeNeeded) return true;          // PASSTHROUGH 1 — notice frame
-                if (Game1.showingEndOfNightStuff) return true;         // PASSTHROUGH 2 — save window
+                if (_renderDisabledNoticeNeeded)
+                    return true; // PASSTHROUGH 1 — notice frame
+                if (Game1.showingEndOfNightStuff)
+                    return true; // PASSTHROUGH 2 — save window
                 return false;
             }
-            if (_currentFps == 0) return true;                         // save forced a draw; skip throttle
-            return FpsThrottle.ShouldDraw(_currentFps);                // _currentFps >= 1 here
+            if (_currentFps == 0)
+                return true; // save forced a draw; skip throttle
+            return FpsThrottle.ShouldDraw(_currentFps); // _currentFps >= 1 here
         }
 
         /// <summary>
@@ -100,7 +108,8 @@ namespace JunimoServer.Shared
         /// </summary>
         public bool ShouldGameDraw(Game game)
         {
-            if (!_renderDisabledNoticeNeeded) return true;
+            if (!_renderDisabledNoticeNeeded)
+                return true;
             _renderDisabledNoticeNeeded = false;
             try
             {
@@ -113,13 +122,21 @@ namespace JunimoServer.Shared
                     sb.Begin();
                     var text = "Rendering Disabled";
                     var size = font.MeasureString(text);
-                    sb.DrawString(font, text,
-                        new Vector2((gd.Viewport.Width - size.X) / 2f, (gd.Viewport.Height - size.Y) / 2f),
-                        Color.Gray);
+                    sb.DrawString(
+                        font,
+                        text,
+                        new Vector2(
+                            (gd.Viewport.Width - size.X) / 2f,
+                            (gd.Viewport.Height - size.Y) / 2f
+                        ),
+                        Color.Gray
+                    );
                     sb.End();
                 }
             }
-            catch { /* notice paint is best-effort */ }
+            catch
+            { /* notice paint is best-effort */
+            }
             return false;
         }
     }

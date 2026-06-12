@@ -30,7 +30,7 @@ public static class ClientEventLog
     {
         WriteIndented = false,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     /// <summary>Exception types already reported on stderr. Used to emit
@@ -53,7 +53,7 @@ public static class ClientEventLog
                 service = "test-client",
                 tickMs,
                 @event = eventType,
-                data
+                data,
             };
             var json = JsonSerializer.Serialize(entry, _jsonOptions);
 
@@ -79,8 +79,9 @@ public static class ClientEventLog
             if (_reportedFailures.TryAdd(ex.GetType(), 0))
             {
                 Console.Error.WriteLine(
-                    $"[ClientEventLog] emit failed ({ex.GetType().Name}: {ex.Message}) " +
-                    $"while emitting '{eventType}'. Further '{ex.GetType().Name}' failures will be silent.");
+                    $"[ClientEventLog] emit failed ({ex.GetType().Name}: {ex.Message}) "
+                        + $"while emitting '{eventType}'. Further '{ex.GetType().Name}' failures will be silent."
+                );
             }
         }
         catch

@@ -1,3 +1,6 @@
+using System;
+using System.Diagnostics;
+using System.IO;
 using HarmonyLib;
 using JunimoServer.Services.AlwaysOn;
 using Microsoft.Xna.Framework;
@@ -5,9 +8,6 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.SDKs.GogGalaxy;
-using System;
-using System.Diagnostics;
-using System.IO;
 
 namespace JunimoServer.Services.ServerOptim
 {
@@ -30,17 +30,26 @@ namespace JunimoServer.Services.ServerOptim
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(Game), "BeginDraw"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Draw_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Draw_Prefix)
+                )
             );
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(Game), "Draw", new[] { typeof(GameTime) }),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.GameDraw_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.GameDraw_Prefix)
+                )
             );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.Game1:updateMusic"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Disable_Prefix)
+                )
             );
 
             // harmony.Patch(
@@ -50,12 +59,18 @@ namespace JunimoServer.Services.ServerOptim
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.Game1:initializeVolumeLevels"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Disable_Prefix)
+                )
             );
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.Audio.SoundsHelper:PlayLocal"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Disable_Prefix)
+                )
             );
 
             // harmony.Patch(
@@ -75,22 +90,36 @@ namespace JunimoServer.Services.ServerOptim
 
             harmony.Patch(
                 original: AccessTools.Method("StardewValley.BellsAndWhistles.Butterfly:update"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Disable_Prefix)
+                )
             );
 
             harmony.Patch(
-                original: AccessTools.Method("StardewValley.BellsAndWhistles.AmbientLocationSounds:update"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                original: AccessTools.Method(
+                    "StardewValley.BellsAndWhistles.AmbientLocationSounds:update"
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.Disable_Prefix)
+                )
             );
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(GalaxySocket), "CreateLobby"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.CreateLobby_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.CreateLobby_Prefix)
+                )
             );
 
             harmony.Patch(
                 original: AccessTools.Method(typeof(GalaxySocket), "onGalaxyLobbyCreated"),
-                prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.OnGalaxyLobbyCreated_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.OnGalaxyLobbyCreated_Prefix)
+                )
             );
 
             // Keyboard/Mouse PlatformGetState is the single source feeding every input
@@ -101,13 +130,23 @@ namespace JunimoServer.Services.ServerOptim
             // toggle restores input without a restart. No game-side UpdateControlInput patch
             // is needed — when the device returns empty state, every consumer sees nothing.
             harmony.Patch(
-                original: AccessTools.Method("Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"),
-                postfix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.KeyboardState_Postfix))
+                original: AccessTools.Method(
+                    "Microsoft.Xna.Framework.Input.Keyboard:PlatformGetState"
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.KeyboardState_Postfix)
+                )
             );
 
             harmony.Patch(
-                original: AccessTools.Method("Microsoft.Xna.Framework.Input.Mouse:PlatformGetState"),
-                postfix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.MouseState_Postfix))
+                original: AccessTools.Method(
+                    "Microsoft.Xna.Framework.Input.Mouse:PlatformGetState"
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(ServerOptimizerOverrides),
+                    nameof(ServerOptimizerOverrides.MouseState_Postfix)
+                )
             );
 
             // musl/.NET 6 fix: SMAPI's SModHooks.StartTask uses RunSynchronously() which
@@ -124,12 +163,19 @@ namespace JunimoServer.Services.ServerOptim
                 foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
                 {
                     var smodHooksType = asm.GetType("StardewModdingAPI.Framework.SModHooks");
-                    if (smodHooksType == null) continue;
-                    smodHooksStartTask = AccessTools.Method(smodHooksType, "StartTask",
-                        new[] { typeof(System.Threading.Tasks.Task), typeof(string) });
+                    if (smodHooksType == null)
+                        continue;
+                    smodHooksStartTask = AccessTools.Method(
+                        smodHooksType,
+                        "StartTask",
+                        new[] { typeof(System.Threading.Tasks.Task), typeof(string) }
+                    );
                     if (smodHooksStartTask != null)
                     {
-                        monitor.Log($"[ServerOptimizer] Found SModHooks.StartTask in {asm.GetName().Name}", LogLevel.Debug);
+                        monitor.Log(
+                            $"[ServerOptimizer] Found SModHooks.StartTask in {asm.GetName().Name}",
+                            LogLevel.Debug
+                        );
                         break;
                     }
                 }
@@ -138,42 +184,76 @@ namespace JunimoServer.Services.ServerOptim
                 {
                     harmony.Patch(
                         original: smodHooksStartTask,
-                        prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.StartTask_Prefix))
+                        prefix: new HarmonyMethod(
+                            typeof(ServerOptimizerOverrides),
+                            nameof(ServerOptimizerOverrides.StartTask_Prefix)
+                        )
                     );
-                    monitor.Log("[ServerOptimizer] musl detected, patched SModHooks.StartTask for content-loading tasks (deadlock prevention)", LogLevel.Info);
+                    monitor.Log(
+                        "[ServerOptimizer] musl detected, patched SModHooks.StartTask for content-loading tasks (deadlock prevention)",
+                        LogLevel.Info
+                    );
                 }
                 else
                 {
-                    monitor.Log("[ServerOptimizer] musl detected but could not find SModHooks.StartTask. Deadlock may occur.", LogLevel.Warn);
+                    monitor.Log(
+                        "[ServerOptimizer] musl detected but could not find SModHooks.StartTask. Deadlock may occur.",
+                        LogLevel.Warn
+                    );
                 }
             }
 
             if (Env.EnableModIncompatibleOptimizations)
             {
                 harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.Snapshots.PlayerSnapshot:Update"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    original: AccessTools.Method(
+                        "StardewModdingAPI.Framework.StateTracking.Snapshots.PlayerSnapshot:Update"
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
+                );
 
                 harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.Snapshots.WorldLocationsSnapshot:Update"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    original: AccessTools.Method(
+                        "StardewModdingAPI.Framework.StateTracking.Snapshots.WorldLocationsSnapshot:Update"
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
+                );
 
                 harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.PlayerTracker:Update"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    original: AccessTools.Method(
+                        "StardewModdingAPI.Framework.StateTracking.PlayerTracker:Update"
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
+                );
 
                 harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.WorldLocationsTracker:Update"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    original: AccessTools.Method(
+                        "StardewModdingAPI.Framework.StateTracking.WorldLocationsTracker:Update"
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
+                );
 
                 harmony.Patch(
-                    original: AccessTools.Method("StardewModdingAPI.Framework.StateTracking.WorldLocationsTracker:Reset"),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides),
-                        nameof(ServerOptimizerOverrides.Disable_Prefix)));
+                    original: AccessTools.Method(
+                        "StardewModdingAPI.Framework.StateTracking.WorldLocationsTracker:Reset"
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
+                );
             }
 
             helper.Events.GameLoop.GameLaunched += OnGameLaunched;
@@ -205,7 +285,10 @@ namespace JunimoServer.Services.ServerOptim
             // TargetElapsedTime to the 60 FPS default after our handler runs.
             _helper.Events.GameLoop.UpdateTicked -= OnFirstTick;
             Game1.game1.TargetElapsedTime = TimeSpan.FromMilliseconds(1000.0 / Env.ServerTps);
-            _monitor.Log($"Server TPS set to {Env.ServerTps} (tick interval: {Game1.game1.TargetElapsedTime.TotalMilliseconds:F1}ms)", LogLevel.Info);
+            _monitor.Log(
+                $"Server TPS set to {Env.ServerTps} (tick interval: {Game1.game1.TargetElapsedTime.TotalMilliseconds:F1}ms)",
+                LogLevel.Info
+            );
 
             // Test mode: cap MaxElapsedTime to one tick. MonoGame's default is 500ms,
             // which at low test TPS (15 → 66.7ms/tick) allows up to ~7 catch-up
@@ -228,9 +311,10 @@ namespace JunimoServer.Services.ServerOptim
                 // InstanceGame which only proxies TargetElapsedTime / IsFixedTimeStep.
                 StardewValley.GameRunner.instance.MaxElapsedTime = Game1.game1.TargetElapsedTime;
                 _monitor.Log(
-                    $"Test mode: MaxElapsedTime capped to TargetElapsedTime " +
-                    $"({StardewValley.GameRunner.instance.MaxElapsedTime.TotalMilliseconds:F1}ms) — no MonoGame catch-up bursts.",
-                    LogLevel.Info);
+                    $"Test mode: MaxElapsedTime capped to TargetElapsedTime "
+                        + $"({StardewValley.GameRunner.instance.MaxElapsedTime.TotalMilliseconds:F1}ms) — no MonoGame catch-up bursts.",
+                    LogLevel.Info
+                );
             }
         }
 
@@ -243,21 +327,34 @@ namespace JunimoServer.Services.ServerOptim
             // ensures draw() can run. OnDayStarted re-disables drawing afterward.
             if (ServerOptimizerOverrides.GetCurrentServerFps() == 0)
             {
-                _monitor.Log($"[ServerOptimizer] OnDayEnding: enabling drawing for save phase", LogLevel.Debug);
+                _monitor.Log(
+                    $"[ServerOptimizer] OnDayEnding: enabling drawing for save phase",
+                    LogLevel.Debug
+                );
                 ServerOptimizerOverrides.EnableDrawing();
             }
             else
             {
-                _monitor.Log($"[ServerOptimizer] OnDayEnding: drawing already enabled", LogLevel.Debug);
+                _monitor.Log(
+                    $"[ServerOptimizer] OnDayEnding: drawing already enabled",
+                    LogLevel.Debug
+                );
             }
 
             _monitor.Log($"[ServerOptimizer] Running garbage collection...", LogLevel.Debug);
-            var before = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
+            var before = checked(
+                (long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0)
+            );
             GC.Collect(generation: 2, GCCollectionMode.Optimized, blocking: true);
-            var after = checked((long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0));
+            var after = checked(
+                (long)Math.Round(Process.GetCurrentProcess().PrivateMemorySize64 / 1024.0 / 1024.0)
+            );
             var beforeFormatted = (before / 1024.0).ToString("F2") + " GB";
             var afterFormatted = (after / 1024.0).ToString("F2") + " GB";
-            _monitor.Log($"[ServerOptimizer] Garbage collection complete. Before: {beforeFormatted} After: {afterFormatted}", LogLevel.Debug);
+            _monitor.Log(
+                $"[ServerOptimizer] Garbage collection complete. Before: {beforeFormatted} After: {afterFormatted}",
+                LogLevel.Debug
+            );
         }
 
         private void OnDayStarted(object sender, DayStartedEventArgs e)
@@ -279,6 +376,5 @@ namespace JunimoServer.Services.ServerOptim
                 ServerOptimizerOverrides.EnableDrawing();
             }
         }
-
     }
 }

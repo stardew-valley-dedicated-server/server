@@ -8,7 +8,7 @@ public enum TestRecordingMode
 {
     None,
     Failure,
-    All
+    All,
 }
 
 /// <summary>
@@ -53,7 +53,7 @@ public static class RecordingPolicy
             "none" or "off" or "false" or "0" => TestRecordingMode.None,
             "failure" => TestRecordingMode.Failure,
             "all" or "true" or "1" => TestRecordingMode.All,
-            _ => TestRecordingMode.None
+            _ => TestRecordingMode.None,
         };
     }
 
@@ -88,7 +88,7 @@ public static class RecordingPolicy
         {
             "true" or "1" or "yes" => true,
             "false" or "0" or "no" => false,
-            _ => defaultValue
+            _ => defaultValue,
         };
     }
 }

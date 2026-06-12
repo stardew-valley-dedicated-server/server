@@ -75,7 +75,8 @@ namespace JunimoServer.Services.SteamGameServer
 
         public override int connectionsCount => _connectionDataMap?.Count ?? 0;
 
-        public SteamGameServerNetServer(IGameServer gameServer, IMonitor monitor, IModHelper helper) : base(gameServer)
+        public SteamGameServerNetServer(IGameServer gameServer, IMonitor monitor, IModHelper helper)
+            : base(gameServer)
         {
             _gameServer = gameServer;
             _monitor = monitor;
@@ -84,7 +85,9 @@ namespace JunimoServer.Services.SteamGameServer
             // Get netCompression via reflection (it's internal)
             if (_netCompression == null)
             {
-                _netCompression = _helper.Reflection.GetField<INetCompression>(typeof(Program), "netCompression").GetValue();
+                _netCompression = _helper
+                    .Reflection.GetField<INetCompression>(typeof(Program), "netCompression")
+                    .GetValue();
             }
         }
 
@@ -92,14 +95,20 @@ namespace JunimoServer.Services.SteamGameServer
         {
             if (!SteamGameServerService.IsInitialized)
             {
-                _monitor.Log("Cannot initialize SteamGameServerNetServer: GameServer not initialized", LogLevel.Error);
+                _monitor.Log(
+                    "Cannot initialize SteamGameServerNetServer: GameServer not initialized",
+                    LogLevel.Error
+                );
                 return;
             }
 
             _monitor.Log("Starting Steam GameServer networking", LogLevel.Info);
 
             // Set up callbacks (GameServer version)
-            _connectionStatusChangedCallback = Callback<SteamNetConnectionStatusChangedCallback_t>.CreateGameServer(OnConnectionStatusChanged);
+            _connectionStatusChangedCallback =
+                Callback<SteamNetConnectionStatusChangedCallback_t>.CreateGameServer(
+                    OnConnectionStatusChanged
+                );
 
             // Initialize data structures
             _connectionDataMap = new Dictionary<HSteamNetConnection, ConnectionData>();
@@ -113,7 +122,11 @@ namespace JunimoServer.Services.SteamGameServer
 
             // Create P2P listen socket using GameServer networking sockets
             var options = GetNetworkingOptions();
-            _listenSocket = SteamGameServerNetworkingSockets.CreateListenSocketP2P(0, options.Length, options);
+            _listenSocket = SteamGameServerNetworkingSockets.CreateListenSocketP2P(
+                0,
+                options.Length,
+                options
+            );
 
             if (_listenSocket == HSteamListenSocket.Invalid)
             {
@@ -125,7 +138,10 @@ namespace JunimoServer.Services.SteamGameServer
             _joiningGroup = SteamGameServerNetworkingSockets.CreatePollGroup();
             _farmhandGroup = SteamGameServerNetworkingSockets.CreatePollGroup();
 
-            _monitor.Log($"Steam GameServer P2P listen socket created, Server Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}", LogLevel.Info);
+            _monitor.Log(
+                $"Steam GameServer P2P listen socket created, Server Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}",
+                LogLevel.Info
+            );
         }
 
         public override void stopServer()
@@ -167,9 +183,9 @@ namespace JunimoServer.Services.SteamGameServer
 
         public override bool connected()
         {
-            return _listenSocket != HSteamListenSocket.Invalid &&
-                   _joiningGroup != HSteamNetPollGroup.Invalid &&
-                   _farmhandGroup != HSteamNetPollGroup.Invalid;
+            return _listenSocket != HSteamListenSocket.Invalid
+                && _joiningGroup != HSteamNetPollGroup.Invalid
+                && _farmhandGroup != HSteamNetPollGroup.Invalid;
         }
 
         public override void receiveMessages()
@@ -190,7 +206,11 @@ namespace JunimoServer.Services.SteamGameServer
         private void PollJoiningMessages()
         {
             _recentlyJoined.Clear();
-            int numMessages = SteamGameServerNetworkingSockets.ReceiveMessagesOnPollGroup(_joiningGroup, _messages, ServerBufferSize);
+            int numMessages = SteamGameServerNetworkingSockets.ReceiveMessagesOnPollGroup(
+                _joiningGroup,
+                _messages,
+                ServerBufferSize
+            );
 
             for (int i = 0; i < numMessages; i++)
             {
@@ -207,12 +227,16 @@ namespace JunimoServer.Services.SteamGameServer
                 bool isRecentlyJoined = _recentlyJoined.Contains(messageConnection);
                 if (connectionData.Online && !isRecentlyJoined)
                 {
-                    _monitor.Log($"Online farmhand {connectionData.FarmerId} in wrong poll group", LogLevel.Warn);
+                    _monitor.Log(
+                        $"Online farmhand {connectionData.FarmerId} in wrong poll group",
+                        LogLevel.Warn
+                    );
                     ShutdownConnection(messageConnection);
                     continue;
                 }
 
-                base.OnProcessingMessage(message,
+                base.OnProcessingMessage(
+                    message,
                     (outgoing) => SendMessageToConnection(messageConnection, outgoing),
                     () =>
                     {
@@ -224,13 +248,18 @@ namespace JunimoServer.Services.SteamGameServer
                         {
                             HandleFarmhandRequest(message, connectionData);
                         }
-                    });
+                    }
+                );
             }
         }
 
         private void PollFarmhandMessages()
         {
-            int numMessages = SteamGameServerNetworkingSockets.ReceiveMessagesOnPollGroup(_farmhandGroup, _messages, ServerBufferSize);
+            int numMessages = SteamGameServerNetworkingSockets.ReceiveMessagesOnPollGroup(
+                _farmhandGroup,
+                _messages,
+                ServerBufferSize
+            );
 
             for (int i = 0; i < numMessages; i++)
             {
@@ -258,44 +287,71 @@ namespace JunimoServer.Services.SteamGameServer
                     continue;
                 }
 
-                base.OnProcessingMessage(message,
+                base.OnProcessingMessage(
+                    message,
                     (outgoing) => SendMessageToConnection(messageConnection, outgoing),
-                    () => _gameServer.processIncomingMessage(message));
+                    () => _gameServer.processIncomingMessage(message)
+                );
             }
         }
 
         private void HandleFarmhandRequest(IncomingMessage message, ConnectionData connectionData)
         {
-            var multiplayer = _helper.Reflection.GetField<Multiplayer>(typeof(Game1), "multiplayer").GetValue();
+            var multiplayer = _helper
+                .Reflection.GetField<Multiplayer>(typeof(Game1), "multiplayer")
+                .GetValue();
             NetFarmerRoot netFarmerRoot = multiplayer.readFarmer(message.Reader);
             long farmerId = netFarmerRoot.Value.UniqueMultiplayerID;
 
-            _monitor.Log($"Farmhand request from {connectionData.SteamId.m_SteamID} for {farmerId}", LogLevel.Debug);
+            _monitor.Log(
+                $"Farmhand request from {connectionData.SteamId.m_SteamID} for {farmerId}",
+                LogLevel.Debug
+            );
 
-            _gameServer.checkFarmhandRequest("", ConnectionDataToId(connectionData), netFarmerRoot,
+            _gameServer.checkFarmhandRequest(
+                "",
+                ConnectionDataToId(connectionData),
+                netFarmerRoot,
                 (outgoing) => SendMessageToConnection(connectionData.Connection, outgoing),
                 () =>
                 {
-                    _monitor.Log($"Accepted {connectionData.SteamId.m_SteamID} as farmhand {farmerId}", LogLevel.Info);
-                    SteamGameServerNetworkingSockets.SetConnectionUserData(connectionData.Connection, farmerId);
-                    SteamGameServerNetworkingSockets.SetConnectionPollGroup(connectionData.Connection, _farmhandGroup);
+                    _monitor.Log(
+                        $"Accepted {connectionData.SteamId.m_SteamID} as farmhand {farmerId}",
+                        LogLevel.Info
+                    );
+                    SteamGameServerNetworkingSockets.SetConnectionUserData(
+                        connectionData.Connection,
+                        farmerId
+                    );
+                    SteamGameServerNetworkingSockets.SetConnectionPollGroup(
+                        connectionData.Connection,
+                        _farmhandGroup
+                    );
                     _recentlyJoined.Add(connectionData.Connection);
                     connectionData.FarmerId = farmerId;
                     connectionData.Online = true;
                     _farmerConnectionMap[farmerId] = connectionData;
                     FarmhandAccepted?.Invoke(farmerId, connectionData.SteamId.m_SteamID.ToString());
-                });
+                }
+            );
         }
 
         public override void sendMessage(long peerId, OutgoingMessage message)
         {
-            if (connected() && _farmerConnectionMap.TryGetValue(peerId, out var value) && value.Connection != HSteamNetConnection.Invalid)
+            if (
+                connected()
+                && _farmerConnectionMap.TryGetValue(peerId, out var value)
+                && value.Connection != HSteamNetConnection.Invalid
+            )
             {
                 SendMessageToConnection(value.Connection, message);
             }
         }
 
-        private unsafe void SendMessageToConnection(HSteamNetConnection connection, OutgoingMessage message)
+        private unsafe void SendMessageToConnection(
+            HSteamNetConnection connection,
+            OutgoingMessage message
+        )
         {
             byte[] data;
             using (var stream = new MemoryStream())
@@ -306,7 +362,10 @@ namespace JunimoServer.Services.SteamGameServer
                 data = stream.ToArray();
             }
 
-            byte[] compressed = _netCompression.CompressAbove(data, SteamConstants.CompressionThreshold);
+            byte[] compressed = _netCompression.CompressAbove(
+                data,
+                SteamConstants.CompressionThreshold
+            );
 
             if (compressed == null || compressed.Length == 0)
             {
@@ -322,7 +381,8 @@ namespace JunimoServer.Services.SteamGameServer
                     (IntPtr)ptr,
                     (uint)compressed.Length,
                     Steamworks.Constants.k_nSteamNetworkingSend_Reliable,
-                    out _);
+                    out _
+                );
             }
 
             if (result != EResult.k_EResultOK)
@@ -336,9 +396,14 @@ namespace JunimoServer.Services.SteamGameServer
             }
         }
 
-        private void ProcessSteamMessage(IntPtr messagePtr, IncomingMessage message, out HSteamNetConnection messageConnection)
+        private void ProcessSteamMessage(
+            IntPtr messagePtr,
+            IncomingMessage message,
+            out HSteamNetConnection messageConnection
+        )
         {
-            var steamMessage = (SteamNetworkingMessage_t)Marshal.PtrToStructure(messagePtr, typeof(SteamNetworkingMessage_t));
+            var steamMessage = (SteamNetworkingMessage_t)
+                Marshal.PtrToStructure(messagePtr, typeof(SteamNetworkingMessage_t));
             messageConnection = steamMessage.m_conn;
 
             byte[] data = null;
@@ -385,22 +450,24 @@ namespace JunimoServer.Services.SteamGameServer
             }
         }
 
-        private void OnConnecting(SteamNetConnectionStatusChangedCallback_t callback, CSteamID steamId)
+        private void OnConnecting(
+            SteamNetConnectionStatusChangedCallback_t callback,
+            CSteamID steamId
+        )
         {
             _monitor.Log($"{steamId.m_SteamID} connecting via SDR", LogLevel.Debug);
-            Diagnostics.ModEventLog.Emit("steam_p2p_connect_started", new
-            {
-                clientSteamId = steamId.m_SteamID.ToString()
-            });
+            Diagnostics.ModEventLog.Emit(
+                "steam_p2p_connect_started",
+                new { clientSteamId = steamId.m_SteamID.ToString() }
+            );
 
             if (_gameServer.isUserBanned(steamId.m_SteamID.ToString()))
             {
                 _monitor.Log($"{steamId.m_SteamID} is banned", LogLevel.Info);
-                Diagnostics.ModEventLog.Emit("steam_p2p_connect_failed", new
-                {
-                    clientSteamId = steamId.m_SteamID.ToString(),
-                    reason = "banned"
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "steam_p2p_connect_failed",
+                    new { clientSteamId = steamId.m_SteamID.ToString(), reason = "banned" }
+                );
                 ShutdownConnection(callback.m_hConn);
                 return;
             }
@@ -410,28 +477,40 @@ namespace JunimoServer.Services.SteamGameServer
             SteamGameServerNetworkingSockets.AcceptConnection(callback.m_hConn);
         }
 
-        private void OnConnected(SteamNetConnectionStatusChangedCallback_t callback, CSteamID steamId)
+        private void OnConnected(
+            SteamNetConnectionStatusChangedCallback_t callback,
+            CSteamID steamId
+        )
         {
             _monitor.Log($"{steamId.m_SteamID} connected via SDR", LogLevel.Info);
-            Diagnostics.ModEventLog.Emit("steam_p2p_connected", new
-            {
-                clientSteamId = steamId.m_SteamID.ToString(),
-                relayedVia = "sdr"
-            });
+            Diagnostics.ModEventLog.Emit(
+                "steam_p2p_connected",
+                new { clientSteamId = steamId.m_SteamID.ToString(), relayedVia = "sdr" }
+            );
 
             var connectionData = new ConnectionData(callback.m_hConn, steamId, "");
             _connectionDataMap[callback.m_hConn] = connectionData;
             _steamIdConnectionMap[steamId.m_SteamID] = connectionData;
-            SteamGameServerNetworkingSockets.SetConnectionPollGroup(callback.m_hConn, _joiningGroup);
+            SteamGameServerNetworkingSockets.SetConnectionPollGroup(
+                callback.m_hConn,
+                _joiningGroup
+            );
 
             string connectionId = ConnectionDataToId(connectionData);
             onConnect(connectionId);
             // Pass Steam ID as userId so farmhand ownership can be verified on reconnect
             string odId = steamId.m_SteamID.ToString();
-            _gameServer.sendAvailableFarmhands(odId, connectionId, (outgoing) => SendMessageToConnection(callback.m_hConn, outgoing));
+            _gameServer.sendAvailableFarmhands(
+                odId,
+                connectionId,
+                (outgoing) => SendMessageToConnection(callback.m_hConn, outgoing)
+            );
         }
 
-        private void OnDisconnected(SteamNetConnectionStatusChangedCallback_t callback, CSteamID steamId)
+        private void OnDisconnected(
+            SteamNetConnectionStatusChangedCallback_t callback,
+            CSteamID steamId
+        )
         {
             if (!steamId.IsValid())
                 return;
@@ -452,15 +531,21 @@ namespace JunimoServer.Services.SteamGameServer
             // state, and only for known connections — the banned pre-accept rejection above
             // is already accounted for at OnConnecting.
             var state = callback.m_info.m_eState;
-            if (state == ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
+            if (
+                state
+                == ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally
+            )
             {
-                Diagnostics.ModEventLog.Emit("steam_p2p_connect_failed", new
-                {
-                    clientSteamId = steamId.m_SteamID.ToString(),
-                    reason = "problem_detected_locally",
-                    endReason = callback.m_info.m_eEndReason,
-                    debug = callback.m_info.m_szEndDebug
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "steam_p2p_connect_failed",
+                    new
+                    {
+                        clientSteamId = steamId.m_SteamID.ToString(),
+                        reason = "problem_detected_locally",
+                        endReason = callback.m_info.m_eEndReason,
+                        debug = callback.m_info.m_szEndDebug,
+                    }
+                );
             }
 
             onDisconnect(ConnectionDataToId(value));
@@ -482,7 +567,11 @@ namespace JunimoServer.Services.SteamGameServer
         private ConnectionData IdToConnectionData(string connectionId)
         {
             // Validate input format: must be "SN_{steamId}_{connectionHandle}"
-            if (string.IsNullOrEmpty(connectionId) || connectionId.Length <= 3 || !connectionId.StartsWith("SN_"))
+            if (
+                string.IsNullOrEmpty(connectionId)
+                || connectionId.Length <= 3
+                || !connectionId.StartsWith("SN_")
+            )
                 return null;
 
             string text = connectionId.Substring(3);
@@ -496,13 +585,19 @@ namespace JunimoServer.Services.SteamGameServer
 
             if (!ulong.TryParse(steamIdPart, out ulong steamId))
             {
-                _monitor.Log($"[IdToConnectionData] Invalid Steam ID format: {steamIdPart}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[IdToConnectionData] Invalid Steam ID format: {steamIdPart}",
+                    LogLevel.Debug
+                );
                 return null;
             }
 
             if (!uint.TryParse(connHandlePart, out uint connHandle))
             {
-                _monitor.Log($"[IdToConnectionData] Invalid connection handle format: {connHandlePart}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[IdToConnectionData] Invalid connection handle format: {connHandlePart}",
+                    LogLevel.Debug
+                );
                 return null;
             }
 
@@ -564,7 +659,10 @@ namespace JunimoServer.Services.SteamGameServer
             }
             catch (Exception ex)
             {
-                _monitor.Log($"[getUserName] Error getting connection info: {ex.Message}", LogLevel.Debug);
+                _monitor.Log(
+                    $"[getUserName] Error getting connection info: {ex.Message}",
+                    LogLevel.Debug
+                );
             }
 
             return value.DisplayName ?? "";
@@ -585,7 +683,10 @@ namespace JunimoServer.Services.SteamGameServer
         public override void kick(long disconnectee)
         {
             base.kick(disconnectee);
-            sendMessage(disconnectee, new OutgoingMessage(MessageType_ForceKick, Game1.player.UniqueMultiplayerID));
+            sendMessage(
+                disconnectee,
+                new OutgoingMessage(MessageType_ForceKick, Game1.player.UniqueMultiplayerID)
+            );
             if (_farmerConnectionMap.TryGetValue(disconnectee, out var value))
             {
                 ShutdownConnection(value.Connection);
@@ -606,7 +707,10 @@ namespace JunimoServer.Services.SteamGameServer
             if (!_farmerConnectionMap.TryGetValue(farmerId, out var value))
                 return -1f;
 
-            SteamGameServerNetworkingSockets.GetQuickConnectionStatus(value.Connection, out var stats);
+            SteamGameServerNetworkingSockets.GetQuickConnectionStatus(
+                value.Connection,
+                out var stats
+            );
             return stats.m_nPing;
         }
 
@@ -623,19 +727,22 @@ namespace JunimoServer.Services.SteamGameServer
 
         private void ShutdownConnection(HSteamNetConnection connection)
         {
-            CloseConnection(connection, () =>
-            {
-                if (_connectionDataMap.TryGetValue(connection, out var data))
+            CloseConnection(
+                connection,
+                () =>
                 {
-                    onDisconnect(ConnectionDataToId(data));
-                    if (data.Online)
+                    if (_connectionDataMap.TryGetValue(connection, out var data))
                     {
-                        playerDisconnected(data.FarmerId);
+                        onDisconnect(ConnectionDataToId(data));
+                        if (data.Online)
+                        {
+                            playerDisconnected(data.FarmerId);
+                        }
+                        _connectionDataMap.Remove(connection);
+                        _steamIdConnectionMap.Remove(data.SteamId.m_SteamID);
                     }
-                    _connectionDataMap.Remove(connection);
-                    _steamIdConnectionMap.Remove(data.SteamId.m_SteamID);
                 }
-            });
+            );
         }
 
         private void CloseConnection(HSteamNetConnection connection, Action beforeClose = null)
@@ -643,7 +750,10 @@ namespace JunimoServer.Services.SteamGameServer
             if (connection == HSteamNetConnection.Invalid)
                 return;
 
-            SteamGameServerNetworkingSockets.SetConnectionPollGroup(connection, HSteamNetPollGroup.Invalid);
+            SteamGameServerNetworkingSockets.SetConnectionPollGroup(
+                connection,
+                HSteamNetPollGroup.Invalid
+            );
             beforeClose?.Invoke();
             SteamGameServerNetworkingSockets.CloseConnection(connection, 1000, null, true);
         }
@@ -656,8 +766,11 @@ namespace JunimoServer.Services.SteamGameServer
                 {
                     m_eValue = ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize,
                     m_eDataType = ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32,
-                    m_val = new SteamNetworkingConfigValue_t.OptionValue { m_int32 = SteamConstants.SendBufferSize } // 1MB
-                }
+                    m_val = new SteamNetworkingConfigValue_t.OptionValue
+                    {
+                        m_int32 = SteamConstants.SendBufferSize,
+                    }, // 1MB
+                },
             };
         }
 
@@ -672,7 +785,11 @@ namespace JunimoServer.Services.SteamGameServer
             public long FarmerId { get; set; }
             public bool Online { get; set; }
 
-            public ConnectionData(HSteamNetConnection connection, CSteamID steamId, string displayName)
+            public ConnectionData(
+                HSteamNetConnection connection,
+                CSteamID steamId,
+                string displayName
+            )
             {
                 Connection = connection;
                 SteamId = steamId;

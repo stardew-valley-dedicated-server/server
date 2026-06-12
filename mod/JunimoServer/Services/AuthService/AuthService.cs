@@ -3,20 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using HarmonyLib;
 using Galaxy.Api;
-using Steamworks;
+using HarmonyLib;
+using JunimoServer.Services.SteamGameServer;
+using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Menus;
 using StardewValley.Network;
 using StardewValley.SDKs;
-using StardewValley.SDKs.Steam;
 using StardewValley.SDKs.GogGalaxy;
 using StardewValley.SDKs.GogGalaxy.Internal;
-using StardewValley.Menus;
 using StardewValley.SDKs.GogGalaxy.Listeners;
-using JunimoServer.Util;
-using JunimoServer.Services.SteamGameServer;
+using StardewValley.SDKs.Steam;
+using Steamworks;
 
 namespace JunimoServer.Services.Auth
 {
@@ -120,10 +120,15 @@ namespace JunimoServer.Services.Auth
             }
 
             // Validate URL format
-            if (!Uri.TryCreate(steamAuthUrl, UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            if (
+                !Uri.TryCreate(steamAuthUrl, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            )
             {
-                _monitor.Log($"STEAM_AUTH_URL is not a valid HTTP/HTTPS URL: {steamAuthUrl}", LogLevel.Error);
+                _monitor.Log(
+                    $"STEAM_AUTH_URL is not a valid HTTP/HTTPS URL: {steamAuthUrl}",
+                    LogLevel.Error
+                );
                 return null;
             }
 
@@ -158,15 +163,18 @@ namespace JunimoServer.Services.Auth
         private static void OnServerSteamIdReceived(ulong steamId)
         {
             _monitor.Log($"Received GameServer Steam ID: {steamId}", LogLevel.Info);
-            Diagnostics.ModEventLog.Emit("auth_server_steamid_received", new
-            {
-                steamId = steamId.ToString()
-            });
+            Diagnostics.ModEventLog.Emit(
+                "auth_server_steamid_received",
+                new { steamId = steamId.ToString() }
+            );
 
             // Complete deferred Galaxy initialization if we were waiting for GameServer
             if (_pendingSteamHelper != null && !_galaxyInitComplete)
             {
-                _monitor.Log("GameServer now ready, completing deferred Galaxy initialization...", LogLevel.Info);
+                _monitor.Log(
+                    "GameServer now ready, completing deferred Galaxy initialization...",
+                    LogLevel.Info
+                );
                 PerformDeferredInitialization(_pendingSteamHelper);
                 _pendingSteamHelper = null;
             }
@@ -185,7 +193,10 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private static void OnSteamServersLost()
         {
-            _monitor.Log("Steam session lost — invalidating cached Steam lobby state", LogLevel.Warn);
+            _monitor.Log(
+                "Steam session lost — invalidating cached Steam lobby state",
+                LogLevel.Warn
+            );
             _steamSessionGeneration++;
             _steamLobbyId = 0;
             _lobbyCreationAttempted = false;
@@ -197,10 +208,13 @@ namespace JunimoServer.Services.Auth
             IMonitor monitor,
             IModHelper helper,
             Harmony harmony,
-            SteamGameServerService steamGameServerService)  // Dependency ensures correct init order
+            SteamGameServerService steamGameServerService
+        ) // Dependency ensures correct init order
         {
             if (_instance != null)
-                throw new InvalidOperationException("AuthService already initialized - only one instance allowed");
+                throw new InvalidOperationException(
+                    "AuthService already initialized - only one instance allowed"
+                );
 
             // Set instance variables for use in static harmony patches
             _instance = this;
@@ -218,40 +232,64 @@ namespace JunimoServer.Services.Auth
             // Handle race condition: If Steam ID was already received before we subscribed,
             // manually trigger the handler. This ensures Galaxy init happens even if the
             // SteamGameServerService initialized faster than expected.
-            if (SteamGameServerService.IsInitialized && SteamGameServerService.ServerSteamId.IsValid())
+            if (
+                SteamGameServerService.IsInitialized
+                && SteamGameServerService.ServerSteamId.IsValid()
+            )
             {
-                _monitor.Log("Steam ID already available at subscription time, triggering handler", LogLevel.Debug);
+                _monitor.Log(
+                    "Steam ID already available at subscription time, triggering handler",
+                    LogLevel.Debug
+                );
                 OnServerSteamIdReceived(SteamGameServerService.ServerSteamId.m_SteamID);
             }
 
             // Steam GameServer mode: Patch SteamHelper to use GameServer APIs instead of Client APIs
-            _monitor.Log("Registering Steam GameServer API patches for SteamHelper", LogLevel.Debug);
+            _monitor.Log(
+                "Registering Steam GameServer API patches for SteamHelper",
+                LogLevel.Debug
+            );
 
             // Patch SteamHelper.Initialize to use GameServer.Init() instead of SteamAPI.Init()
             harmony.Patch(
                 original: AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Initialize)),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamHelperInitialize_Prefix)));
+                prefix: new HarmonyMethod(
+                    galaxyAuthServiceType,
+                    nameof(SteamHelperInitialize_Prefix)
+                )
+            );
 
             // Patch SteamHelper.Update to use GameServer.RunCallbacks() instead of SteamAPI.RunCallbacks()
             harmony.Patch(
                 original: AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Update)),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamHelperUpdate_Prefix)));
+                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamHelperUpdate_Prefix))
+            );
 
             // Patch SteamHelper.Shutdown to use GameServer.Shutdown() instead of SteamAPI.Shutdown()
             harmony.Patch(
                 original: AccessTools.Method(typeof(SteamHelper), nameof(SteamHelper.Shutdown)),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamHelperShutdown_Prefix)));
+                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamHelperShutdown_Prefix))
+            );
 
             // Patch SteamNetServer.initialize to skip - it uses Steam Client API (SteamMatchmaking.CreateLobby)
             // which isn't available in GameServer mode. We use SteamKit2 for lobby creation instead.
             // See decompiled: StardewValley.SDKs.Steam.SteamNetServer.initialize()
-            var steamNetServerType = AccessTools.TypeByName("StardewValley.SDKs.Steam.SteamNetServer");
+            var steamNetServerType = AccessTools.TypeByName(
+                "StardewValley.SDKs.Steam.SteamNetServer"
+            );
             if (steamNetServerType != null)
             {
                 harmony.Patch(
                     original: AccessTools.Method(steamNetServerType, "initialize"),
-                    prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamNetServer_Initialize_Prefix)));
-                _monitor.Log("Patched SteamNetServer.initialize to skip (using SteamKit2 for lobbies)", LogLevel.Debug);
+                    prefix: new HarmonyMethod(
+                        galaxyAuthServiceType,
+                        nameof(SteamNetServer_Initialize_Prefix)
+                    )
+                );
+                _monitor.Log(
+                    "Patched SteamNetServer.initialize to skip (using SteamKit2 for lobbies)",
+                    LogLevel.Debug
+                );
             }
 
             // Downgrade Galaxy lobby creation failure from ERROR to WARN.
@@ -261,30 +299,66 @@ namespace JunimoServer.Services.Auth
             // the lobby will be created.
             harmony.Patch(
                 original: AccessTools.Method(typeof(GalaxySocket), "onGalaxyLobbyCreated"),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(GalaxySocket_OnLobbyCreated_Prefix)));
+                prefix: new HarmonyMethod(
+                    galaxyAuthServiceType,
+                    nameof(GalaxySocket_OnLobbyCreated_Prefix)
+                )
+            );
 
             // Postfix on GetInviteCode to capture invite code for file/banner
             // (More reliable than patching the private onGalaxyLobbyEnter callback)
             harmony.Patch(
-                original: AccessTools.Method(typeof(GalaxySocket), nameof(GalaxySocket.GetInviteCode)),
-                postfix: new HarmonyMethod(galaxyAuthServiceType, nameof(GalaxySocket_GetInviteCode_Postfix)));
+                original: AccessTools.Method(
+                    typeof(GalaxySocket),
+                    nameof(GalaxySocket.GetInviteCode)
+                ),
+                postfix: new HarmonyMethod(
+                    galaxyAuthServiceType,
+                    nameof(GalaxySocket_GetInviteCode_Postfix)
+                )
+            );
 
             // These patches apply to both modes - provide fake Steam IDs when Client API is unavailable
             harmony.Patch(
-                original: AccessTools.Method(typeof(Steamworks.SteamUser), nameof(Steamworks.SteamUser.GetSteamID)),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamUser_GetSteamID_Prefix)));
+                original: AccessTools.Method(
+                    typeof(Steamworks.SteamUser),
+                    nameof(Steamworks.SteamUser.GetSteamID)
+                ),
+                prefix: new HarmonyMethod(
+                    galaxyAuthServiceType,
+                    nameof(SteamUser_GetSteamID_Prefix)
+                )
+            );
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(Steamworks.SteamFriends), nameof(Steamworks.SteamFriends.GetPersonaName)),
-                prefix: new HarmonyMethod(galaxyAuthServiceType, nameof(SteamFriends_GetPersonaName_Prefix)));
+                original: AccessTools.Method(
+                    typeof(Steamworks.SteamFriends),
+                    nameof(Steamworks.SteamFriends.GetPersonaName)
+                ),
+                prefix: new HarmonyMethod(
+                    galaxyAuthServiceType,
+                    nameof(SteamFriends_GetPersonaName_Prefix)
+                )
+            );
         }
 
         // SteamHelper reflection helpers
-        private static void IncrementSteamConnectionProgress(SteamHelper instance) => _helper.Reflection.GetProperty<int>(instance, "ConnectionProgress").SetValue(instance.ConnectionProgress + 1);
-        private static void SetSteamActive(SteamHelper instance, bool value) => _helper.Reflection.GetField<bool>(instance, "active").SetValue(value);
-        private static void SetSteamConnectionFinished(SteamHelper instance, bool value) => _helper.Reflection.GetProperty<bool>(instance, "ConnectionFinished").SetValue(value);
-        private static void SetSteamGalaxyConnected(SteamHelper instance, bool value) => _helper.Reflection.GetProperty<bool>(instance, "GalaxyConnected").SetValue(value);
-        private static void SetSteamNetworking(SteamHelper instance, SDKNetHelper networking) => _helper.Reflection.GetField<SDKNetHelper>(instance, "networking").SetValue(networking);
+        private static void IncrementSteamConnectionProgress(SteamHelper instance) =>
+            _helper
+                .Reflection.GetProperty<int>(instance, "ConnectionProgress")
+                .SetValue(instance.ConnectionProgress + 1);
+
+        private static void SetSteamActive(SteamHelper instance, bool value) =>
+            _helper.Reflection.GetField<bool>(instance, "active").SetValue(value);
+
+        private static void SetSteamConnectionFinished(SteamHelper instance, bool value) =>
+            _helper.Reflection.GetProperty<bool>(instance, "ConnectionFinished").SetValue(value);
+
+        private static void SetSteamGalaxyConnected(SteamHelper instance, bool value) =>
+            _helper.Reflection.GetProperty<bool>(instance, "GalaxyConnected").SetValue(value);
+
+        private static void SetSteamNetworking(SteamHelper instance, SDKNetHelper networking) =>
+            _helper.Reflection.GetField<SDKNetHelper>(instance, "networking").SetValue(networking);
 
         /// <summary>
         /// Gets the current SDK via reflection (Program.sdk is internal).
@@ -308,40 +382,61 @@ namespace JunimoServer.Services.Auth
                 // Check if server exists and Networking is available
                 if (Game1.server == null || sdk?.Networking == null)
                 {
-                    _monitor.Log("Cannot late-add Galaxy server: server or networking not ready", LogLevel.Debug);
+                    _monitor.Log(
+                        "Cannot late-add Galaxy server: server or networking not ready",
+                        LogLevel.Debug
+                    );
                     return;
                 }
 
                 // Access the internal 'servers' list via reflection
-                var serversField = _helper.Reflection.GetField<List<Server>>(Game1.server, "servers");
+                var serversField = _helper.Reflection.GetField<List<Server>>(
+                    Game1.server,
+                    "servers"
+                );
                 var servers = serversField.GetValue();
 
                 // Check if a GalaxyNetServer already exists
                 if (servers.Any(s => s.GetType().Name == "GalaxyNetServer"))
                 {
-                    _monitor.Log("GalaxyNetServer already exists, skipping late-add", LogLevel.Debug);
+                    _monitor.Log(
+                        "GalaxyNetServer already exists, skipping late-add",
+                        LogLevel.Debug
+                    );
                     return;
                 }
 
                 // Late-add the Galaxy server
-                _monitor.Log("Late-adding Galaxy server (race condition recovery)...", LogLevel.Info);
+                _monitor.Log(
+                    "Late-adding Galaxy server (race condition recovery)...",
+                    LogLevel.Info
+                );
                 var galaxyServer = sdk.Networking.CreateServer(Game1.server);
                 if (galaxyServer != null)
                 {
                     servers.Add(galaxyServer);
                     galaxyServer.initialize();
-                    _monitor.Log("Galaxy server added successfully, invite codes should now work.", LogLevel.Info);
+                    _monitor.Log(
+                        "Galaxy server added successfully, invite codes should now work.",
+                        LogLevel.Info
+                    );
 
                     // Now that Galaxy server exists, update it with Steam lobby ID if available
                     if (_steamLobbyId != 0)
                     {
-                        _monitor.Log("Updating Galaxy lobby with Steam lobby ID after late-add...", LogLevel.Debug);
+                        _monitor.Log(
+                            "Updating Galaxy lobby with Steam lobby ID after late-add...",
+                            LogLevel.Debug
+                        );
                         UpdateGalaxyLobbyWithSteamLobbyId();
                     }
                 }
                 else
                 {
-                    _monitor.Log("CreateServer returned null - Galaxy may not be fully connected yet", LogLevel.Warn);
+                    _monitor.Log(
+                        "CreateServer returned null - Galaxy may not be fully connected yet",
+                        LogLevel.Warn
+                    );
                 }
             }
             catch (Exception ex)
@@ -365,16 +460,25 @@ namespace JunimoServer.Services.Auth
             SetSteamActive(__instance, true);
 
             // Check if GameServer is already ready with a valid Steam ID
-            if (SteamGameServerService.IsInitialized && SteamGameServerService.ServerSteamId.IsValid())
+            if (
+                SteamGameServerService.IsInitialized
+                && SteamGameServerService.ServerSteamId.IsValid()
+            )
             {
                 // GameServer ready with Steam ID - do full init now
-                _monitor.Log("GameServer already ready, initializing Galaxy immediately", LogLevel.Debug);
+                _monitor.Log(
+                    "GameServer already ready, initializing Galaxy immediately",
+                    LogLevel.Debug
+                );
                 PerformDeferredInitialization(__instance);
             }
             else
             {
                 // GameServer not ready yet - store instance for OnServerSteamIdReceived callback
-                _monitor.Log("GameServer not yet ready, deferring Galaxy init to OnServerSteamIdReceived", LogLevel.Debug);
+                _monitor.Log(
+                    "GameServer not yet ready, deferring Galaxy init to OnServerSteamIdReceived",
+                    LogLevel.Debug
+                );
                 _pendingSteamHelper = __instance;
             }
 
@@ -395,20 +499,29 @@ namespace JunimoServer.Services.Auth
 
             if (!SteamGameServerService.IsInitialized)
             {
-                _monitor.Log("Cannot create Steam lobby: GameServer not initialized", LogLevel.Warn);
+                _monitor.Log(
+                    "Cannot create Steam lobby: GameServer not initialized",
+                    LogLevel.Warn
+                );
                 return;
             }
 
             var gameServerSteamId = SteamGameServerService.ServerSteamId.m_SteamID;
             if (gameServerSteamId == 0)
             {
-                _monitor.Log("Cannot create Steam lobby: GameServer Steam ID not yet assigned (waiting for OnSteamServersConnected)", LogLevel.Debug);
+                _monitor.Log(
+                    "Cannot create Steam lobby: GameServer Steam ID not yet assigned (waiting for OnSteamServersConnected)",
+                    LogLevel.Debug
+                );
                 return;
             }
 
             _lobbyCreationAttempted = true;
             var generation = _steamSessionGeneration;
-            _monitor.Log($"Creating Steam lobby via steam-auth service, GameServer ID: {gameServerSteamId}", LogLevel.Info);
+            _monitor.Log(
+                $"Creating Steam lobby via steam-auth service, GameServer ID: {gameServerSteamId}",
+                LogLevel.Info
+            );
 
             // Run async to avoid blocking
             Task.Run(() =>
@@ -418,19 +531,27 @@ namespace JunimoServer.Services.Auth
                     var apiClient = GetOrCreateApiClient();
                     if (apiClient == null)
                     {
-                        _monitor.Log("STEAM_AUTH_URL not set or invalid - Steam lobby creation disabled. Only Galaxy invites will work.", LogLevel.Warn);
+                        _monitor.Log(
+                            "STEAM_AUTH_URL not set or invalid - Steam lobby creation disabled. Only Galaxy invites will work.",
+                            LogLevel.Warn
+                        );
                         return;
                     }
 
                     // CurrentPlayerLimit can be -1 (not initialized) or 0 (invalid)
                     // Use default lobby size in those cases
                     var currentLimit = Game1.netWorldState.Value?.CurrentPlayerLimit ?? -1;
-                    var maxLobbyMembers = currentLimit > 0 ? currentLimit : SteamConstants.DefaultMaxLobbyMembers;
-                    _monitor.Log($"Creating Steam lobby with maxMembers={maxLobbyMembers} (CurrentPlayerLimit={currentLimit})", LogLevel.Info);
+                    var maxLobbyMembers =
+                        currentLimit > 0 ? currentLimit : SteamConstants.DefaultMaxLobbyMembers;
+                    _monitor.Log(
+                        $"Creating Steam lobby with maxMembers={maxLobbyMembers} (CurrentPlayerLimit={currentLimit})",
+                        LogLevel.Info
+                    );
                     var result = apiClient.CreateLobby(
                         gameServerSteamId: gameServerSteamId,
                         protocolVersion: Multiplayer.protocolVersion,
-                        maxMembers: maxLobbyMembers);
+                        maxMembers: maxLobbyMembers
+                    );
 
                     if (result != null && !string.IsNullOrEmpty(result.lobby_id))
                     {
@@ -438,49 +559,69 @@ namespace JunimoServer.Services.Auth
                         {
                             if (generation != _steamSessionGeneration)
                             {
-                                _monitor.Log($"Discarding Steam lobby {lobbyId} from invalidated session (gen {generation}, current {_steamSessionGeneration})", LogLevel.Warn);
+                                _monitor.Log(
+                                    $"Discarding Steam lobby {lobbyId} from invalidated session (gen {generation}, current {_steamSessionGeneration})",
+                                    LogLevel.Warn
+                                );
                                 return;
                             }
                             _steamLobbyId = lobbyId;
-                            _monitor.Log($"Steam lobby created via HTTP: {_steamLobbyId}", LogLevel.Info);
-                            Diagnostics.ModEventLog.Emit("auth_steam_lobby_created", new
-                            {
-                                lobbyId = _steamLobbyId.ToString(),
-                                maxMembers = maxLobbyMembers
-                            });
+                            _monitor.Log(
+                                $"Steam lobby created via HTTP: {_steamLobbyId}",
+                                LogLevel.Info
+                            );
+                            Diagnostics.ModEventLog.Emit(
+                                "auth_steam_lobby_created",
+                                new
+                                {
+                                    lobbyId = _steamLobbyId.ToString(),
+                                    maxMembers = maxLobbyMembers,
+                                }
+                            );
 
                             // Schedule Galaxy lobby update for next game tick (Galaxy SDK is not thread-safe)
                             _pendingGalaxyLobbyUpdate = true;
                         }
                         else
                         {
-                            _monitor.Log($"Failed to parse Steam lobby ID: {result.lobby_id}", LogLevel.Error);
-                            Diagnostics.ModEventLog.Emit("auth_steam_lobby_create_failed", new
-                            {
-                                reason = "parse_failed",
-                                rawLobbyId = result.lobby_id
-                            });
+                            _monitor.Log(
+                                $"Failed to parse Steam lobby ID: {result.lobby_id}",
+                                LogLevel.Error
+                            );
+                            Diagnostics.ModEventLog.Emit(
+                                "auth_steam_lobby_create_failed",
+                                new { reason = "parse_failed", rawLobbyId = result.lobby_id }
+                            );
                         }
                     }
                     else
                     {
-                        _monitor.Log("Failed to create Steam lobby: empty response", LogLevel.Error);
-                        Diagnostics.ModEventLog.Emit("auth_steam_lobby_create_failed", new
-                        {
-                            reason = "empty_response"
-                        });
+                        _monitor.Log(
+                            "Failed to create Steam lobby: empty response",
+                            LogLevel.Error
+                        );
+                        Diagnostics.ModEventLog.Emit(
+                            "auth_steam_lobby_create_failed",
+                            new { reason = "empty_response" }
+                        );
                     }
                 }
                 catch (Exception ex)
                 {
-                    _monitor.Log($"Failed to create Steam lobby via HTTP: {ex.Message}", LogLevel.Error);
+                    _monitor.Log(
+                        $"Failed to create Steam lobby via HTTP: {ex.Message}",
+                        LogLevel.Error
+                    );
                     _monitor.Log(ex.ToString(), LogLevel.Debug);
-                    Diagnostics.ModEventLog.Emit("auth_steam_lobby_create_failed", new
-                    {
-                        reason = "http_error",
-                        exceptionType = ex.GetType().Name,
-                        message = ex.Message
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_steam_lobby_create_failed",
+                        new
+                        {
+                            reason = "http_error",
+                            exceptionType = ex.GetType().Name,
+                            message = ex.Message,
+                        }
+                    );
                 }
             });
         }
@@ -501,7 +642,9 @@ namespace JunimoServer.Services.Auth
                 // Find the GalaxyNetServer and set lobby data
                 if (Game1.server is StardewValley.Network.GameServer gameServer)
                 {
-                    var servers = _helper.Reflection.GetField<List<Server>>(gameServer, "servers").GetValue();
+                    var servers = _helper
+                        .Reflection.GetField<List<Server>>(gameServer, "servers")
+                        .GetValue();
                     foreach (var server in servers)
                     {
                         if (server is GalaxyNetServer galaxyServer)
@@ -509,12 +652,18 @@ namespace JunimoServer.Services.Auth
                             // Set the SteamLobbyId in Galaxy lobby metadata
                             // This is what vanilla SteamNetClient reads to join the Steam lobby
                             galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
-                            _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);
+                            _monitor.Log(
+                                $"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}",
+                                LogLevel.Info
+                            );
                             return;
                         }
                     }
 
-                    _monitor.Log("Could not find GalaxyNetServer to update lobby data", LogLevel.Warn);
+                    _monitor.Log(
+                        "Could not find GalaxyNetServer to update lobby data",
+                        LogLevel.Warn
+                    );
                 }
                 else
                 {
@@ -547,32 +696,50 @@ namespace JunimoServer.Services.Auth
 
                 if (!SteamGameServerService.IsInitialized)
                 {
-                    _monitor.Log("Cannot recreate Steam lobby: GameServer not initialized", LogLevel.Warn);
+                    _monitor.Log(
+                        "Cannot recreate Steam lobby: GameServer not initialized",
+                        LogLevel.Warn
+                    );
                     return false;
                 }
 
                 var gameServerSteamId = SteamGameServerService.ServerSteamId.m_SteamID;
                 if (gameServerSteamId == 0)
                 {
-                    _monitor.Log("Cannot recreate Steam lobby: GameServer Steam ID not assigned", LogLevel.Warn);
+                    _monitor.Log(
+                        "Cannot recreate Steam lobby: GameServer Steam ID not assigned",
+                        LogLevel.Warn
+                    );
                     return false;
                 }
 
                 var currentLimit = Game1.netWorldState.Value?.CurrentPlayerLimit ?? -1;
-                var maxLobbyMembers = currentLimit > 0 ? currentLimit : SteamConstants.DefaultMaxLobbyMembers;
+                var maxLobbyMembers =
+                    currentLimit > 0 ? currentLimit : SteamConstants.DefaultMaxLobbyMembers;
 
-                _monitor.Log($"Recreating Steam lobby (previous lobby lost), GameServer ID: {gameServerSteamId}, maxMembers: {maxLobbyMembers}", LogLevel.Warn);
+                _monitor.Log(
+                    $"Recreating Steam lobby (previous lobby lost), GameServer ID: {gameServerSteamId}, maxMembers: {maxLobbyMembers}",
+                    LogLevel.Warn
+                );
 
                 var result = apiClient.CreateLobby(
                     gameServerSteamId: gameServerSteamId,
                     protocolVersion: Multiplayer.protocolVersion,
-                    maxMembers: maxLobbyMembers);
+                    maxMembers: maxLobbyMembers
+                );
 
-                if (result != null && !string.IsNullOrEmpty(result.lobby_id) && ulong.TryParse(result.lobby_id, out var newLobbyId))
+                if (
+                    result != null
+                    && !string.IsNullOrEmpty(result.lobby_id)
+                    && ulong.TryParse(result.lobby_id, out var newLobbyId)
+                )
                 {
                     if (capturedGeneration != _steamSessionGeneration)
                     {
-                        _monitor.Log($"Discarding recreated Steam lobby {newLobbyId} from invalidated session", LogLevel.Warn);
+                        _monitor.Log(
+                            $"Discarding recreated Steam lobby {newLobbyId} from invalidated session",
+                            LogLevel.Warn
+                        );
                         return false;
                     }
                     _steamLobbyId = newLobbyId;
@@ -582,7 +749,10 @@ namespace JunimoServer.Services.Auth
                     return true;
                 }
 
-                _monitor.Log("Failed to recreate Steam lobby: empty or invalid response", LogLevel.Error);
+                _monitor.Log(
+                    "Failed to recreate Steam lobby: empty or invalid response",
+                    LogLevel.Error
+                );
                 return false;
             }
             catch (Exception ex)
@@ -634,16 +804,20 @@ namespace JunimoServer.Services.Auth
                         return;
 
                     // Force Public for dedicated server - invite codes need joinable lobbies
-                    apiClient.SetLobbyPrivacy(
-                        lobbyId: _steamLobbyId,
-                        privacy: "public");
+                    apiClient.SetLobbyPrivacy(lobbyId: _steamLobbyId, privacy: "public");
 
-                    _monitor.Log($"Steam lobby privacy set to Public (game requested: {privacy})", LogLevel.Debug);
+                    _monitor.Log(
+                        $"Steam lobby privacy set to Public (game requested: {privacy})",
+                        LogLevel.Debug
+                    );
                 }
                 catch (Exception ex) when (IsLobbyLostError(ex))
                 {
                     _lastSteamLobbyPrivacy = null; // Reset cache: lobby lost, need to retry on next call
-                    _monitor.Log($"Steam lobby lost (NoMatch), attempting to recreate...", LogLevel.Warn);
+                    _monitor.Log(
+                        $"Steam lobby lost (NoMatch), attempting to recreate...",
+                        LogLevel.Warn
+                    );
 
                     if (RecreateSteamLobby(generation))
                     {
@@ -653,12 +827,18 @@ namespace JunimoServer.Services.Auth
                             var apiClient = GetOrCreateApiClient();
                             apiClient?.SetLobbyPrivacy(lobbyId: _steamLobbyId, privacy: "public");
                             _lastSteamLobbyPrivacy = privacy;
-                            _monitor.Log($"Steam lobby privacy set after recreation", LogLevel.Info);
+                            _monitor.Log(
+                                $"Steam lobby privacy set after recreation",
+                                LogLevel.Info
+                            );
                         }
                         catch (Exception retryEx)
                         {
                             _lastSteamLobbyPrivacy = null;
-                            _monitor.Log($"Failed to set lobby privacy after recreation: {retryEx.Message}", LogLevel.Warn);
+                            _monitor.Log(
+                                $"Failed to set lobby privacy after recreation: {retryEx.Message}",
+                                LogLevel.Warn
+                            );
                             _monitor.Log(retryEx.ToString(), LogLevel.Debug);
                         }
                     }
@@ -680,7 +860,10 @@ namespace JunimoServer.Services.Auth
         {
             if (_steamLobbyId == 0)
             {
-                _monitor.Log($"Cannot set Steam lobby data '{key}': lobby not ready", LogLevel.Debug);
+                _monitor.Log(
+                    $"Cannot set Steam lobby data '{key}': lobby not ready",
+                    LogLevel.Debug
+                );
                 return;
             }
 
@@ -697,13 +880,17 @@ namespace JunimoServer.Services.Auth
 
                     apiClient.SetLobbyData(
                         lobbyId: _steamLobbyId,
-                        metadata: new Dictionary<string, string> { [key] = value });
+                        metadata: new Dictionary<string, string> { [key] = value }
+                    );
 
                     _monitor.Log($"Steam lobby data set: {key}={value}", LogLevel.Debug);
                 }
                 catch (Exception ex) when (IsLobbyLostError(ex))
                 {
-                    _monitor.Log($"Steam lobby lost (NoMatch) while setting '{key}', attempting to recreate...", LogLevel.Warn);
+                    _monitor.Log(
+                        $"Steam lobby lost (NoMatch) while setting '{key}', attempting to recreate...",
+                        LogLevel.Warn
+                    );
 
                     if (RecreateSteamLobby(generation))
                     {
@@ -712,12 +899,19 @@ namespace JunimoServer.Services.Auth
                             var apiClient = GetOrCreateApiClient();
                             apiClient?.SetLobbyData(
                                 lobbyId: _steamLobbyId,
-                                metadata: new Dictionary<string, string> { [key] = value });
-                            _monitor.Log($"Steam lobby data set after recreation: {key}={value}", LogLevel.Info);
+                                metadata: new Dictionary<string, string> { [key] = value }
+                            );
+                            _monitor.Log(
+                                $"Steam lobby data set after recreation: {key}={value}",
+                                LogLevel.Info
+                            );
                         }
                         catch (Exception retryEx)
                         {
-                            _monitor.Log($"Failed to set lobby data after recreation: {retryEx.Message}", LogLevel.Warn);
+                            _monitor.Log(
+                                $"Failed to set lobby data after recreation: {retryEx.Message}",
+                                LogLevel.Warn
+                            );
                             _monitor.Log(retryEx.ToString(), LogLevel.Debug);
                         }
                     }
@@ -759,7 +953,10 @@ namespace JunimoServer.Services.Auth
                     catch (Exception ex)
                     {
                         // Galaxy may have disconnected - only log at Trace level to avoid spam
-                        _monitor.Log($"GalaxyInstance.ProcessData() failed: {ex.Message}", LogLevel.Trace);
+                        _monitor.Log(
+                            $"GalaxyInstance.ProcessData() failed: {ex.Message}",
+                            LogLevel.Trace
+                        );
                     }
 
                     // Process deferred Galaxy lobby update (set by background Task.Run)
@@ -790,7 +987,10 @@ namespace JunimoServer.Services.Auth
 
             try
             {
-                _monitor.Log($"GameServer active with Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}", LogLevel.Info);
+                _monitor.Log(
+                    $"GameServer active with Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}",
+                    LogLevel.Info
+                );
 
                 // Check if steam-auth service is configured before initializing Galaxy.
                 // Without STEAM_AUTH_URL there is no way to authenticate with Galaxy, so
@@ -806,7 +1006,10 @@ namespace JunimoServer.Services.Auth
                     // Only Lidgren (LAN/IP) transport will be available.
                     // Compare: the auth-failure path below DOES set networking so Steam
                     // SDR still works even when Galaxy auth fails.
-                    _monitor.Log("No STEAM_AUTH_URL; skipping Galaxy init (LAN/IP connections only)", LogLevel.Info);
+                    _monitor.Log(
+                        "No STEAM_AUTH_URL; skipping Galaxy init (LAN/IP connections only)",
+                        LogLevel.Info
+                    );
                     SetSteamConnectionFinished(steamHelper, true);
                     return;
                 }
@@ -817,7 +1020,9 @@ namespace JunimoServer.Services.Auth
 
                 // Create Galaxy auth listener
                 authListener = _instance.CreateSteamHelperGalaxyAuthListener(steamHelper);
-                stateChangeListener = _instance.CreateSteamHelperGalaxyStateChangeListener(steamHelper);
+                stateChangeListener = _instance.CreateSteamHelperGalaxyStateChangeListener(
+                    steamHelper
+                );
 
                 // Sign into Galaxy using our Steam auth service
                 IncrementSteamConnectionProgress(steamHelper);
@@ -826,7 +1031,10 @@ namespace JunimoServer.Services.Auth
 
                 if (!isAuthenticated)
                 {
-                    _monitor.Log("Steam-auth service not ready, Galaxy features unavailable", LogLevel.Warn);
+                    _monitor.Log(
+                        "Steam-auth service not ready, Galaxy features unavailable",
+                        LogLevel.Warn
+                    );
                     SetSteamNetworking(steamHelper, CreateSteamNetHelper());
                     SetSteamConnectionFinished(steamHelper, true);
                     return;
@@ -875,7 +1083,10 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private static bool SteamNetServer_Initialize_Prefix()
         {
-            _monitor.Log("Skipping SteamNetServer.initialize() - using SteamKit2 for lobby creation", LogLevel.Debug);
+            _monitor.Log(
+                "Skipping SteamNetServer.initialize() - using SteamKit2 for lobby creation",
+                LogLevel.Debug
+            );
             return false; // Skip original - don't try to use Steam Client API
         }
 
@@ -893,7 +1104,9 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private IAuthListener CreateSteamHelperGalaxyAuthListener(SteamHelper steamHelper)
         {
-            var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener");
+            var listenerType = AccessTools.TypeByName(
+                "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener"
+            );
 
             Action onSuccess = () =>
             {
@@ -905,11 +1118,10 @@ namespace JunimoServer.Services.Auth
             Action<IAuthListener.FailureReason> onFailure = (reason) =>
             {
                 _monitor.Log($"Galaxy auth failure: {reason}", LogLevel.Error);
-                Diagnostics.ModEventLog.Emit("auth_galaxy_failed", new
-                {
-                    mode = "gameServer",
-                    reason = reason.ToString()
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "auth_galaxy_failed",
+                    new { mode = "gameServer", reason = reason.ToString() }
+                );
                 // Still create networking even on Galaxy failure
                 if (steamHelper.Networking == null)
                 {
@@ -923,13 +1135,19 @@ namespace JunimoServer.Services.Auth
             {
                 var count = ++_galaxyAuthLostCount;
                 // Warn (not Error): a re-fire here is the signal we want, and Error trips test cancellation.
-                _monitor.Log($"Galaxy auth lost (GameServer mode), invocation #{count}", LogLevel.Warn);
-                Diagnostics.ModEventLog.Emit("auth_galaxy_lost", new
-                {
-                    mode = "gameServer",
-                    invocation = count,
-                    networkingSet = steamHelper.Networking != null
-                });
+                _monitor.Log(
+                    $"Galaxy auth lost (GameServer mode), invocation #{count}",
+                    LogLevel.Warn
+                );
+                Diagnostics.ModEventLog.Emit(
+                    "auth_galaxy_lost",
+                    new
+                    {
+                        mode = "gameServer",
+                        invocation = count,
+                        networkingSet = steamHelper.Networking != null,
+                    }
+                );
                 if (steamHelper.Networking == null)
                 {
                     SetSteamNetworking(steamHelper, CreateSteamNetHelper());
@@ -938,57 +1156,71 @@ namespace JunimoServer.Services.Auth
                 SetSteamGalaxyConnected(steamHelper, false);
             };
 
-            return (IAuthListener)Activator.CreateInstance(listenerType, onSuccess, onFailure, onLost);
+            return (IAuthListener)
+                Activator.CreateInstance(listenerType, onSuccess, onFailure, onLost);
         }
 
         /// <summary>
         /// Creates a Galaxy state change listener for SteamHelper mode.
         /// </summary>
-        private IOperationalStateChangeListener CreateSteamHelperGalaxyStateChangeListener(SteamHelper steamHelper)
+        private IOperationalStateChangeListener CreateSteamHelperGalaxyStateChangeListener(
+            SteamHelper steamHelper
+        )
         {
-            var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener");
+            var listenerType = AccessTools.TypeByName(
+                "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener"
+            );
 
-            var onStateChange = new Action<uint>((operationalState) =>
-            {
-                // Diagnostic: log BEFORE the early-return so a recovery state-change (which arrives
-                // with Networking already set, and would otherwise be dropped silently) is still
-                // observable. networkingSet distinguishes first-login from a post-reconnect re-fire.
-                var count = ++_galaxyStateChangeCount;
-                var networkingSet = steamHelper.Networking != null;
-                _monitor.Log($"Galaxy state change (GameServer mode) #{count}: state=0x{operationalState:X}, networkingSet={networkingSet}", LogLevel.Debug);
-                Diagnostics.ModEventLog.Emit("auth_galaxy_state_change", new
+            var onStateChange = new Action<uint>(
+                (operationalState) =>
                 {
-                    mode = "gameServer",
-                    invocation = count,
-                    operationalState,
-                    signedIn = (operationalState & 1) != 0,
-                    loggedOn = (operationalState & 2) != 0,
-                    networkingSet
-                });
+                    // Diagnostic: log BEFORE the early-return so a recovery state-change (which arrives
+                    // with Networking already set, and would otherwise be dropped silently) is still
+                    // observable. networkingSet distinguishes first-login from a post-reconnect re-fire.
+                    var count = ++_galaxyStateChangeCount;
+                    var networkingSet = steamHelper.Networking != null;
+                    _monitor.Log(
+                        $"Galaxy state change (GameServer mode) #{count}: state=0x{operationalState:X}, networkingSet={networkingSet}",
+                        LogLevel.Debug
+                    );
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_galaxy_state_change",
+                        new
+                        {
+                            mode = "gameServer",
+                            invocation = count,
+                            operationalState,
+                            signedIn = (operationalState & 1) != 0,
+                            loggedOn = (operationalState & 2) != 0,
+                            networkingSet,
+                        }
+                    );
 
-                if (steamHelper.Networking != null)
-                    return;
+                    if (steamHelper.Networking != null)
+                        return;
 
-                if ((operationalState & 1) != 0)
-                {
-                    _monitor.Log("Galaxy signed in (GameServer mode)", LogLevel.Debug);
-                    IncrementSteamConnectionProgress(steamHelper);
+                    if ((operationalState & 1) != 0)
+                    {
+                        _monitor.Log("Galaxy signed in (GameServer mode)", LogLevel.Debug);
+                        IncrementSteamConnectionProgress(steamHelper);
+                    }
+
+                    if ((operationalState & 2) != 0)
+                    {
+                        _monitor.Log("Galaxy logged on (GameServer mode)", LogLevel.Debug);
+                        SetSteamNetworking(steamHelper, CreateSteamNetHelper());
+                        IncrementSteamConnectionProgress(steamHelper);
+                        SetSteamConnectionFinished(steamHelper, true);
+                        SetSteamGalaxyConnected(steamHelper, true);
+
+                        // Late-add Galaxy server if GameServer was created before Galaxy connected
+                        TryLateAddGalaxyServer();
+                    }
                 }
+            );
 
-                if ((operationalState & 2) != 0)
-                {
-                    _monitor.Log("Galaxy logged on (GameServer mode)", LogLevel.Debug);
-                    SetSteamNetworking(steamHelper, CreateSteamNetHelper());
-                    IncrementSteamConnectionProgress(steamHelper);
-                    SetSteamConnectionFinished(steamHelper, true);
-                    SetSteamGalaxyConnected(steamHelper, true);
-
-                    // Late-add Galaxy server if GameServer was created before Galaxy connected
-                    TryLateAddGalaxyServer();
-                }
-            });
-
-            return (IOperationalStateChangeListener)Activator.CreateInstance(listenerType, onStateChange);
+            return (IOperationalStateChangeListener)
+                Activator.CreateInstance(listenerType, onStateChange);
         }
 
         /// <summary>
@@ -1003,18 +1235,25 @@ namespace JunimoServer.Services.Auth
         /// OnLobbyCreateFailed() still runs for retry logic.
         /// </summary>
         private static bool GalaxySocket_OnLobbyCreated_Prefix(
-            GalaxySocket __instance, GalaxyID lobbyID, LobbyCreateResult result)
+            GalaxySocket __instance,
+            GalaxyID lobbyID,
+            LobbyCreateResult result
+        )
         {
             if (result == LobbyCreateResult.LOBBY_CREATE_RESULT_ERROR)
             {
-                _monitor.Log("Failed to create Galaxy lobby (matchmaking unavailable).", LogLevel.Warn);
-                AccessTools.Method(typeof(GalaxySocket), "OnLobbyCreateFailed")?.Invoke(__instance, null);
+                _monitor.Log(
+                    "Failed to create Galaxy lobby (matchmaking unavailable).",
+                    LogLevel.Warn
+                );
+                AccessTools
+                    .Method(typeof(GalaxySocket), "OnLobbyCreateFailed")
+                    ?.Invoke(__instance, null);
                 return false; // Skip original (which logs at ERROR)
             }
 
             return true; // Success path: let original handle it
         }
-
 
         private static void GalaxySocket_GetInviteCode_Postfix(string __result)
         {
@@ -1030,7 +1269,10 @@ namespace JunimoServer.Services.Auth
                 // If Steam lobby was already created, update Galaxy lobby with Steam lobby ID
                 if (_steamLobbyId != 0)
                 {
-                    _monitor.Log("Steam lobby already exists, updating Galaxy lobby now...", LogLevel.Debug);
+                    _monitor.Log(
+                        "Steam lobby already exists, updating Galaxy lobby now...",
+                        LogLevel.Debug
+                    );
                     UpdateGalaxyLobbyWithSteamLobbyId();
                 }
             }
@@ -1051,7 +1293,10 @@ namespace JunimoServer.Services.Auth
         private static bool SteamUser_GetSteamID_Prefix(ref CSteamID __result)
         {
             // Use real GameServer Steam ID if available, otherwise use fallback
-            if (SteamGameServerService.IsInitialized && SteamGameServerService.ServerSteamId.IsValid())
+            if (
+                SteamGameServerService.IsInitialized
+                && SteamGameServerService.ServerSteamId.IsValid()
+            )
             {
                 __result = SteamGameServerService.ServerSteamId;
                 _monitor.Log($"Using GameServer Steam ID: {__result.m_SteamID}", LogLevel.Trace);
@@ -1063,7 +1308,10 @@ namespace JunimoServer.Services.Auth
                     _instance.ServerCSteamId = new CSteamID((ulong)FallbackSteamId);
                 }
                 __result = _instance.ServerCSteamId;
-                _monitor.Log($"Using fallback Steam ID: {FallbackSteamId} (GameServer not ready)", LogLevel.Trace);
+                _monitor.Log(
+                    $"Using fallback Steam ID: {FallbackSteamId} (GameServer not ready)",
+                    LogLevel.Trace
+                );
             }
 
             return false;
@@ -1090,9 +1338,17 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private IAuthListener CreateGalaxyAuthListener(GalaxyHelper galaxyHelper)
         {
-            var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener");
-            var onGalaxyAuthSuccessOriginal = _helper.Reflection.GetMethod(galaxyHelper, "onGalaxyAuthSuccess");
-            var onGalaxyAuthFailureOriginal = _helper.Reflection.GetMethod(galaxyHelper, "onGalaxyAuthFailure");
+            var listenerType = AccessTools.TypeByName(
+                "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyAuthListener"
+            );
+            var onGalaxyAuthSuccessOriginal = _helper.Reflection.GetMethod(
+                galaxyHelper,
+                "onGalaxyAuthSuccess"
+            );
+            var onGalaxyAuthFailureOriginal = _helper.Reflection.GetMethod(
+                galaxyHelper,
+                "onGalaxyAuthFailure"
+            );
 
             var onGalaxyAuthSuccess = new Action(() =>
             {
@@ -1101,15 +1357,17 @@ namespace JunimoServer.Services.Auth
                 onGalaxyAuthSuccessOriginal.Invoke();
             });
 
-            var onGalaxyAuthFailure = new Action<IAuthListener.FailureReason>((reason) =>
-            {
-                _monitor.Log($"GalaxySDK auth failed: {reason}", LogLevel.Error);
-                Diagnostics.ModEventLog.Emit("auth_galaxy_failed", new
+            var onGalaxyAuthFailure = new Action<IAuthListener.FailureReason>(
+                (reason) =>
                 {
-                    reason = reason.ToString()
-                });
-                onGalaxyAuthFailureOriginal.Invoke(reason);
-            });
+                    _monitor.Log($"GalaxySDK auth failed: {reason}", LogLevel.Error);
+                    Diagnostics.ModEventLog.Emit(
+                        "auth_galaxy_failed",
+                        new { reason = reason.ToString() }
+                    );
+                    onGalaxyAuthFailureOriginal.Invoke(reason);
+                }
+            );
 
             var onGalaxyAuthLost = new Action(() =>
             {
@@ -1130,50 +1388,66 @@ namespace JunimoServer.Services.Auth
                 _instance?.SignIntoGalaxy();
             });
 
-            return (IAuthListener)Activator.CreateInstance(listenerType, onGalaxyAuthSuccess, onGalaxyAuthFailure, onGalaxyAuthLost);
+            return (IAuthListener)
+                Activator.CreateInstance(
+                    listenerType,
+                    onGalaxyAuthSuccess,
+                    onGalaxyAuthFailure,
+                    onGalaxyAuthLost
+                );
         }
 
         /// <summary>
         /// Replicate original code for `GalaxyHelper.Initialize`, with modification for `StardewDisplayName`.
         /// </summary>
-        private IOperationalStateChangeListener CreateGalaxyStateChangeListener(GalaxyHelper galaxyHelper)
+        private IOperationalStateChangeListener CreateGalaxyStateChangeListener(
+            GalaxyHelper galaxyHelper
+        )
         {
-            var listenerType = AccessTools.TypeByName("StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener");
-            var onGalaxyStateChangeOriginal = _helper.Reflection.GetMethod(galaxyHelper, "onGalaxyStateChange");
+            var listenerType = AccessTools.TypeByName(
+                "StardewValley.SDKs.GogGalaxy.Listeners.GalaxyOperationalStateChangeListener"
+            );
+            var onGalaxyStateChangeOriginal = _helper.Reflection.GetMethod(
+                galaxyHelper,
+                "onGalaxyStateChange"
+            );
 
-            var onGalaxyStateChange = new Action<uint>((num) =>
-            {
-                _monitor.Log($"GalaxySDK auth state changed to '{num}'", LogLevel.Info);
-                onGalaxyStateChangeOriginal.Invoke(num);
-
-                // Fix for race condition: If "Galaxy logged on" (bit 2) fires after the server
-                // already started, the GameServer constructor would have skipped adding a Galaxy
-                // server because Networking was null at that time. Late-add it now.
-                if ((num & 2u) != 0)
+            var onGalaxyStateChange = new Action<uint>(
+                (num) =>
                 {
-                    TryLateAddGalaxyServer();
+                    _monitor.Log($"GalaxySDK auth state changed to '{num}'", LogLevel.Info);
+                    onGalaxyStateChangeOriginal.Invoke(num);
+
+                    // Fix for race condition: If "Galaxy logged on" (bit 2) fires after the server
+                    // already started, the GameServer constructor would have skipped adding a Galaxy
+                    // server because Networking was null at that time. Late-add it now.
+                    if ((num & 2u) != 0)
+                    {
+                        TryLateAddGalaxyServer();
+                    }
+
+                    // TODO: Come back to this, should have low priority
+                    // By default, `StardewDisplayName` is set in `SteamHelper` but not in `GalaxyHelper`.
+                    // We do so here to ensure that clients skip `GalaxyInstance.Friends().GetFriendPersonaName`,
+                    // which would fail because the server is usually not a friend of the client.
+                    // try
+                    // {
+                    //     var key = "StardewDisplayName";
+                    //     var value = ServerName;
+                    //     _monitor.Log("Setting user data: 'StardewDisplayName'.", LogLevel.Error);
+                    //     _monitor.Log(_monitor.Dump(new { key, value }), LogLevel.Error);
+                    //     GalaxyInstance.User().SetUserData(key, value);
+                    // }
+                    // catch (Exception exception)
+                    // {
+                    //     _monitor.Log("Failed to set 'StardewDisplayName'.", LogLevel.Error);
+                    //     _monitor.Log(exception.ToString(), LogLevel.Error);
+                    // }
                 }
+            );
 
-                // TODO: Come back to this, should have low priority
-                // By default, `StardewDisplayName` is set in `SteamHelper` but not in `GalaxyHelper`.
-                // We do so here to ensure that clients skip `GalaxyInstance.Friends().GetFriendPersonaName`,
-                // which would fail because the server is usually not a friend of the client.
-                // try
-                // {
-                //     var key = "StardewDisplayName";
-                //     var value = ServerName;
-                //     _monitor.Log("Setting user data: 'StardewDisplayName'.", LogLevel.Error);
-                //     _monitor.Log(_monitor.Dump(new { key, value }), LogLevel.Error);
-                //     GalaxyInstance.User().SetUserData(key, value);
-                // }
-                // catch (Exception exception)
-                // {
-                //     _monitor.Log("Failed to set 'StardewDisplayName'.", LogLevel.Error);
-                //     _monitor.Log(exception.ToString(), LogLevel.Error);
-                // }
-            });
-
-            return (IOperationalStateChangeListener)Activator.CreateInstance(listenerType, onGalaxyStateChange);
+            return (IOperationalStateChangeListener)
+                Activator.CreateInstance(listenerType, onGalaxyStateChange);
         }
 
         /// <summary>
@@ -1185,7 +1459,9 @@ namespace JunimoServer.Services.Auth
 
             if (_steamAppTicketFetcher == null)
             {
-                throw new InvalidOperationException("Steam authentication was not completed. Is STEAM_AUTH_URL set?");
+                throw new InvalidOperationException(
+                    "Steam authentication was not completed. Is STEAM_AUTH_URL set?"
+                );
             }
 
             // Get the encrypted app ticket
@@ -1229,12 +1505,14 @@ namespace JunimoServer.Services.Auth
             catch (Exception ex)
             {
                 _monitor.Log($"Steam-auth service not ready: {ex.Message}", LogLevel.Error);
-                _monitor.Log("Make sure you ran: docker compose run -it steam-auth setup", LogLevel.Error);
-                Diagnostics.ModEventLog.Emit("auth_steam_sidecar_unreachable", new
-                {
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message
-                });
+                _monitor.Log(
+                    "Make sure you ran: docker compose run -it steam-auth setup",
+                    LogLevel.Error
+                );
+                Diagnostics.ModEventLog.Emit(
+                    "auth_steam_sidecar_unreachable",
+                    new { exceptionType = ex.GetType().Name, message = ex.Message }
+                );
                 return false;
             }
         }

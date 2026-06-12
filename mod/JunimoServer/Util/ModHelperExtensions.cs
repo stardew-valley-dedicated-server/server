@@ -1,14 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Utilities;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.SDKs;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
 
 namespace JunimoServer.Util
 {
@@ -24,7 +24,8 @@ namespace JunimoServer.Util
             return Game1
                 .getAllFarmers()
                 .FirstOrDefault(farmer =>
-                    farmer.Name == name || helper.GetFarmerUserNameById(farmer.UniqueMultiplayerID) == name
+                    farmer.Name == name
+                    || helper.GetFarmerUserNameById(farmer.UniqueMultiplayerID) == name
                 );
         }
 
@@ -37,25 +38,43 @@ namespace JunimoServer.Util
         {
             return Game1
                 .getAllFarmers()
-                .FirstOrDefault(farmer => farmer.UniqueMultiplayerID == id)?.Name;
+                .FirstOrDefault(farmer => farmer.UniqueMultiplayerID == id)
+                ?.Name;
         }
 
         public static void SendPublicMessage(this IModHelper helper, string msg)
         {
-            helper.GetMultiplayer()
-                .sendChatMessage(ChatLanguageDetector.DetectLanguage(msg), msg, Multiplayer.AllPlayers);
+            helper
+                .GetMultiplayer()
+                .sendChatMessage(
+                    ChatLanguageDetector.DetectLanguage(msg),
+                    msg,
+                    Multiplayer.AllPlayers
+                );
         }
 
-        public static void SendPrivateMessage(this IModHelper helper, long uniqueMultiplayerId, string msg)
+        public static void SendPrivateMessage(
+            this IModHelper helper,
+            long uniqueMultiplayerId,
+            string msg
+        )
         {
-            helper.GetMultiplayer()
-                .sendChatMessage(ChatLanguageDetector.DetectLanguage(msg), msg, uniqueMultiplayerId);
+            helper
+                .GetMultiplayer()
+                .sendChatMessage(
+                    ChatLanguageDetector.DetectLanguage(msg),
+                    msg,
+                    uniqueMultiplayerId
+                );
         }
 
         public static int GetCurrentNumCabins(this IModHelper helper)
         {
-            return helper.Reflection.GetMethod(Game1.server, "cabins")
-                .Invoke<IEnumerable<Cabin>>().ToList().Count;
+            return helper
+                .Reflection.GetMethod(Game1.server, "cabins")
+                .Invoke<IEnumerable<Cabin>>()
+                .ToList()
+                .Count;
         }
 
         public static bool IsNetworkingReady(this IModHelper helper)
@@ -73,14 +92,25 @@ namespace JunimoServer.Util
             return Game1.player.UniqueMultiplayerID;
         }
 
-        public static void WriteServerJsonFile(this IDataHelper dataHelper, string path, object data)
+        public static void WriteServerJsonFile(
+            this IDataHelper dataHelper,
+            string path,
+            object data
+        )
         {
             path = GetServerDataPath(path);
 
             if (data != null)
             {
                 Stream stream = File.Create(path);
-                stream.Write(new UTF8Encoding(true).GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(data, Newtonsoft.Json.Formatting.Indented)));
+                stream.Write(
+                    new UTF8Encoding(true).GetBytes(
+                        Newtonsoft.Json.JsonConvert.SerializeObject(
+                            data,
+                            Newtonsoft.Json.Formatting.Indented
+                        )
+                    )
+                );
                 stream.Dispose();
             }
             else
@@ -89,7 +119,11 @@ namespace JunimoServer.Util
             }
         }
 
-        public static void WriteServerTextureFile(this IDataHelper dataHelper, string path, Texture2D texture)
+        public static void WriteServerTextureFile(
+            this IDataHelper dataHelper,
+            string path,
+            Texture2D texture
+        )
         {
             path = GetServerDataPath(path);
 
@@ -112,7 +146,9 @@ namespace JunimoServer.Util
         {
             if (!PathUtilities.IsSafeRelativePath(path))
             {
-                throw new InvalidOperationException("You must call the function with a relative path (without directory climbing).");
+                throw new InvalidOperationException(
+                    "You must call the function with a relative path (without directory climbing)."
+                );
             }
 
             path = Path.Combine(Program.GetAppDataFolder("Server"), path);

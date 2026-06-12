@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
+using JunimoServer.TestRunner.Rendering;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
-using JunimoServer.TestRunner.Rendering;
 using Xunit.SimpleRunner;
 
 namespace JunimoServer.TestRunner.Sinks;
@@ -35,19 +35,22 @@ public sealed class RunnerCallbacks
     public void OnDiscoveryComplete(DiscoveryCompleteInfo info)
     {
         // xUnit v3 exposes only `TestCasesToRun` (post-filter); pass it as both the discovered and to-run count.
-        _renderer.OnDiscoveryComplete(new DiscoveryCompleteEvent(
-            info.TestCasesToRun,
-            info.TestCasesToRun));
+        _renderer.OnDiscoveryComplete(
+            new DiscoveryCompleteEvent(info.TestCasesToRun, info.TestCasesToRun)
+        );
     }
 
     public void OnExecutionComplete(ExecutionCompleteInfo info)
     {
-        _renderer.OnRunFinished(new RunFinishedEvent(
-            info.TestsTotal,
-            info.TestsPassed,
-            info.TestsFailed,
-            info.TestsSkipped,
-            TimeSpan.FromSeconds((double)info.ExecutionTime)));
+        _renderer.OnRunFinished(
+            new RunFinishedEvent(
+                info.TestsTotal,
+                info.TestsPassed,
+                info.TestsFailed,
+                info.TestsSkipped,
+                TimeSpan.FromSeconds((double)info.ExecutionTime)
+            )
+        );
     }
 
     public void OnTestStarting(TestStartingInfo info)
@@ -55,29 +58,37 @@ public sealed class RunnerCallbacks
         // Parse class and method from display name
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
-        _renderer.OnTestStarted(new TestStartedEvent(
-            info.TestCollectionDisplayName,
-            className,
-            methodName,
-            info.TestDisplayName));
+        _renderer.OnTestStarted(
+            new TestStartedEvent(
+                info.TestCollectionDisplayName,
+                className,
+                methodName,
+                info.TestDisplayName
+            )
+        );
     }
 
     public void OnTestPassed(TestPassedInfo info)
     {
-        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0)) return;
+        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+            return;
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
-        _renderer.OnTestPassed(new TestPassedEvent(
-            info.TestCollectionDisplayName,
-            className,
-            methodName,
-            info.TestDisplayName,
-            TimeSpan.FromSeconds((double)info.ExecutionTime)));
+        _renderer.OnTestPassed(
+            new TestPassedEvent(
+                info.TestCollectionDisplayName,
+                className,
+                methodName,
+                info.TestDisplayName,
+                TimeSpan.FromSeconds((double)info.ExecutionTime)
+            )
+        );
     }
 
     public void OnTestFailed(TestFailedInfo info)
     {
-        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0)) return;
+        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+            return;
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
         // Extract exception info from ExceptionInfo structure.
@@ -91,28 +102,35 @@ public sealed class RunnerCallbacks
         var exceptionMessage = BuildExceptionMessage(exception, deepest);
         var stackTrace = deepest?.StackTrace ?? exception?.StackTrace;
 
-        _renderer.OnTestFailed(new TestFailedEvent(
-            info.TestCollectionDisplayName,
-            className,
-            methodName,
-            info.TestDisplayName,
-            TimeSpan.FromSeconds((double)info.ExecutionTime),
-            exceptionType,
-            exceptionMessage,
-            stackTrace));
+        _renderer.OnTestFailed(
+            new TestFailedEvent(
+                info.TestCollectionDisplayName,
+                className,
+                methodName,
+                info.TestDisplayName,
+                TimeSpan.FromSeconds((double)info.ExecutionTime),
+                exceptionType,
+                exceptionMessage,
+                stackTrace
+            )
+        );
     }
 
     public void OnTestSkipped(TestSkippedInfo info)
     {
-        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0)) return;
+        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+            return;
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
-        _renderer.OnTestSkipped(new TestSkippedEvent(
-            info.TestCollectionDisplayName,
-            className,
-            methodName,
-            info.TestDisplayName,
-            info.SkipReason));
+        _renderer.OnTestSkipped(
+            new TestSkippedEvent(
+                info.TestCollectionDisplayName,
+                className,
+                methodName,
+                info.TestDisplayName,
+                info.SkipReason
+            )
+        );
     }
 
     /// <summary>
@@ -124,15 +142,19 @@ public sealed class RunnerCallbacks
     /// </summary>
     public void OnTestNotRun(TestNotRunInfo info)
     {
-        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0)) return;
+        if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+            return;
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
-        _renderer.OnTestSkipped(new TestSkippedEvent(
-            info.TestCollectionDisplayName,
-            className,
-            methodName,
-            info.TestDisplayName,
-            "Test not run (filter mismatch)"));
+        _renderer.OnTestSkipped(
+            new TestSkippedEvent(
+                info.TestCollectionDisplayName,
+                className,
+                methodName,
+                info.TestDisplayName,
+                "Test not run (filter mismatch)"
+            )
+        );
     }
 
     /// <summary>
@@ -149,25 +171,37 @@ public sealed class RunnerCallbacks
     /// </summary>
     public void OnTestFinished(TestFinishedInfo info)
     {
-        if (_alreadyDispatched.ContainsKey(info.TestDisplayName)) return;
+        if (_alreadyDispatched.ContainsKey(info.TestDisplayName))
+            return;
 
         switch (info)
         {
-            case TestPassedInfo p: OnTestPassed(p); break;
-            case TestFailedInfo f: OnTestFailed(f); break;
-            case TestSkippedInfo s: OnTestSkipped(s); break;
-            case TestNotRunInfo nr: OnTestNotRun(nr); break;
+            case TestPassedInfo p:
+                OnTestPassed(p);
+                break;
+            case TestFailedInfo f:
+                OnTestFailed(f);
+                break;
+            case TestSkippedInfo s:
+                OnTestSkipped(s);
+                break;
+            case TestNotRunInfo nr:
+                OnTestNotRun(nr);
+                break;
             default:
                 // Truly unclassified — TestFinishedInfo with no recognized
                 // subtype. Indicates either an xUnit version mismatch (new
                 // outcome type added) or a deeper internal gating bug. Surface
                 // explicitly so TestRunState can fall back to enrichment via
                 // ApplyRunFinished's sweep reading EnrichmentOutcome.
-                InfrastructureEventLog.Emit("test_unclassified_finish", new
-                {
-                    testDisplayName = info.TestDisplayName,
-                    runtimeType = info.GetType().FullName,
-                });
+                InfrastructureEventLog.Emit(
+                    "test_unclassified_finish",
+                    new
+                    {
+                        testDisplayName = info.TestDisplayName,
+                        runtimeType = info.GetType().FullName,
+                    }
+                );
                 // No renderer dispatch — the test stays "running" in
                 // TestRunState until ApplyRunFinished's sweep, at which point
                 // EnrichmentOutcome (if set) determines the outcome.
@@ -180,10 +214,7 @@ public sealed class RunnerCallbacks
         // Parse source from message if prefixed, otherwise assume framework
         var (source, message) = ParseDiagnosticMessage(info.Message);
 
-        _renderer.OnDiagnostic(new DiagnosticEvent(
-            source,
-            LogLevel.Info,
-            message));
+        _renderer.OnDiagnostic(new DiagnosticEvent(source, LogLevel.Info, message));
     }
 
     public void OnErrorMessage(ErrorMessageInfo info)
@@ -196,19 +227,26 @@ public sealed class RunnerCallbacks
         // xUnit wraps fixture failures in TestPipelineException, which hides the real error.
         // ExceptionInfo uses InnerExceptions (List<ExceptionInfo>), not InnerException.
         var innerException = info.Exception?.InnerExceptions?.FirstOrDefault();
-        var rootCause = innerException != null
-            ? $"{exceptionMessage}\n  -> {innerException.FullType}: {innerException.Message}"
-            : exceptionMessage;
-        var fullStackTrace = innerException != null
-            ? $"{innerException.StackTrace}\n--- Outer exception ---\n{stackTrace}"
-            : stackTrace;
+        var rootCause =
+            innerException != null
+                ? $"{exceptionMessage}\n  -> {innerException.FullType}: {innerException.Message}"
+                : exceptionMessage;
+        var fullStackTrace =
+            innerException != null
+                ? $"{innerException.StackTrace}\n--- Outer exception ---\n{stackTrace}"
+                : stackTrace;
 
         // Check if this is a fixture initialization error
-        if (exceptionMessage.Contains("fixture type") && exceptionMessage.Contains("InitializeAsync"))
+        if (
+            exceptionMessage.Contains("fixture type")
+            && exceptionMessage.Contains("InitializeAsync")
+        )
         {
             // Extract fixture name from message like "Collection fixture type 'X' threw in InitializeAsync"
             var match = System.Text.RegularExpressions.Regex.Match(
-                exceptionMessage, @"fixture type '([^']+)'");
+                exceptionMessage,
+                @"fixture type '([^']+)'"
+            );
             var fixtureName = match.Success ? match.Groups[1].Value : "Unknown Fixture";
 
             // Short name for display
@@ -217,14 +255,18 @@ public sealed class RunnerCallbacks
                 : fixtureName;
 
             // Emit setup phase events
-            _renderer.OnSetupPhaseStarted(new SetupPhaseStartedEvent("Setup", $"Fixture: {shortName}"));
-            _renderer.OnSetupStep(new SetupStepEvent("Setup", "InitializeAsync", SetupStepStatus.Failed, rootCause));
-            _renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent("Setup", $"Fixture: {shortName}", false, rootCause));
+            _renderer.OnSetupPhaseStarted(
+                new SetupPhaseStartedEvent("Setup", $"Fixture: {shortName}")
+            );
+            _renderer.OnSetupStep(
+                new SetupStepEvent("Setup", "InitializeAsync", SetupStepStatus.Failed, rootCause)
+            );
+            _renderer.OnSetupPhaseCompleted(
+                new SetupPhaseCompletedEvent("Setup", $"Fixture: {shortName}", false, rootCause)
+            );
         }
 
-        _renderer.OnError(new ErrorEvent(
-            $"{errorType}: {rootCause}",
-            fullStackTrace));
+        _renderer.OnError(new ErrorEvent($"{errorType}: {rootCause}", fullStackTrace));
     }
 
     /// <summary>
@@ -257,7 +299,9 @@ public sealed class RunnerCallbacks
     /// Recursively unwrap InnerExceptions to find the deepest root cause.
     /// Returns null if the exception has no inner exceptions (i.e. it IS the root).
     /// </summary>
-    private static Xunit.SimpleRunner.ExceptionInfo? UnwrapException(Xunit.SimpleRunner.ExceptionInfo? exception)
+    private static Xunit.SimpleRunner.ExceptionInfo? UnwrapException(
+        Xunit.SimpleRunner.ExceptionInfo? exception
+    )
     {
         if (exception?.InnerExceptions == null || exception.InnerExceptions.Count == 0)
             return null;
@@ -272,10 +316,13 @@ public sealed class RunnerCallbacks
     /// </summary>
     private static string BuildExceptionMessage(
         Xunit.SimpleRunner.ExceptionInfo? outer,
-        Xunit.SimpleRunner.ExceptionInfo? root)
+        Xunit.SimpleRunner.ExceptionInfo? root
+    )
     {
-        if (outer == null) return "Unknown error";
-        if (root == null) return outer.Message ?? "Unknown error";
+        if (outer == null)
+            return "Unknown error";
+        if (root == null)
+            return outer.Message ?? "Unknown error";
 
         // Walk the chain to show each level
         var parts = new System.Collections.Generic.List<string>();

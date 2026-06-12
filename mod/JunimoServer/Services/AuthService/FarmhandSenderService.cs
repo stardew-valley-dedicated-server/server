@@ -1,19 +1,19 @@
+using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Collections.Generic;
-using StardewValley;
-using StardewValley.Network;
-using StardewModdingAPI;
-using System;
-using Netcode;
 using System.Xml.Serialization;
-using StardewValley.SaveSerialization;
 using HarmonyLib;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Util;
 using Microsoft.Xna.Framework;
+using Netcode;
+using StardewModdingAPI;
+using StardewValley;
+using StardewValley.Network;
+using StardewValley.SaveSerialization;
 
 namespace JunimoServer.Services.Auth
 {
@@ -45,7 +45,10 @@ namespace JunimoServer.Services.Auth
         /// rejection round-trips. Key = connectionId, Value = (reserved farmhand IDs, timestamp).
         /// All access is on the game thread, so no locks are needed.
         /// </summary>
-        private static readonly Dictionary<string, (HashSet<long> FarmhandIds, DateTime ReservedAt)> _reservedFarmhands = new();
+        private static readonly Dictionary<
+            string,
+            (HashSet<long> FarmhandIds, DateTime ReservedAt)
+        > _reservedFarmhands = new();
 
         /// <summary>
         /// Reservations older than this are pruned. The full connect -> select -> join flow
@@ -53,10 +56,18 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         private static readonly TimeSpan ReservationExpiry = TimeSpan.FromSeconds(30);
 
-        public FarmhandSenderService(IMonitor monitor, IModHelper helper, Harmony harmony, LobbyService lobbyService, CabinManagerService cabinManager)
+        public FarmhandSenderService(
+            IMonitor monitor,
+            IModHelper helper,
+            Harmony harmony,
+            LobbyService lobbyService,
+            CabinManagerService cabinManager
+        )
         {
             if (_instance != null)
-                throw new InvalidOperationException("FarmhandSenderService already initialized - only one instance allowed");
+                throw new InvalidOperationException(
+                    "FarmhandSenderService already initialized - only one instance allowed"
+                );
 
             // Assign instance first to avoid race conditions with Harmony patches
             // that may fire before constructor completes
@@ -67,8 +78,15 @@ namespace JunimoServer.Services.Auth
             _cabinManager = cabinManager;
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendAvailableFarmhands)),
-                prefix: new HarmonyMethod(typeof(FarmhandSenderService), nameof(SendAvailableFarmhands_Prefix)));
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.sendAvailableFarmhands)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(FarmhandSenderService),
+                    nameof(SendAvailableFarmhands_Prefix)
+                )
+            );
         }
 
         /// <summary>
@@ -95,7 +113,12 @@ namespace JunimoServer.Services.Auth
         /// farmhand reservation (prevents concurrent clients claiming the same slot),
         /// single unclaimed slot limiting, and lobby cabin filtering.
         /// </summary>
-        public static bool SendAvailableFarmhands_Prefix(GameServer __instance, string userId, string connectionId, Action<OutgoingMessage> sendMessage)
+        public static bool SendAvailableFarmhands_Prefix(
+            GameServer __instance,
+            string userId,
+            string connectionId,
+            Action<OutgoingMessage> sendMessage
+        )
         {
             var isGameAvailable = __instance.isGameAvailable;
             var whenGameAvailable = __instance.whenGameAvailable;
@@ -103,7 +126,14 @@ namespace JunimoServer.Services.Auth
             var IsFarmhandAvailable = __instance.IsFarmhandAvailable;
 
             var transport = GetTransportName(connectionId);
-            var connectionInfoDump = _monitor.Dump(new { userId, connectionId, transport });
+            var connectionInfoDump = _monitor.Dump(
+                new
+                {
+                    userId,
+                    connectionId,
+                    transport,
+                }
+            );
 
             // Log the incoming connection with transport info
             _monitor.Log($"Client connected via {transport}", LogLevel.Info);
@@ -111,15 +141,27 @@ namespace JunimoServer.Services.Auth
             // Queue the request until the game is ready
             if (!isGameAvailable())
             {
-                sendMessage(new OutgoingMessage(11, Game1.player, "Strings\\UI:Client_WaitForHostAvailability"));
+                sendMessage(
+                    new OutgoingMessage(
+                        11,
+                        Game1.player,
+                        "Strings\\UI:Client_WaitForHostAvailability"
+                    )
+                );
 
                 if (pendingAvailableFarmhands.Contains(connectionId))
                 {
-                    _monitor.Log($"Connection is already waiting for available farmhands\n{connectionInfoDump}", LogLevel.Debug);
+                    _monitor.Log(
+                        $"Connection is already waiting for available farmhands\n{connectionInfoDump}",
+                        LogLevel.Debug
+                    );
                     return false;
                 }
 
-                _monitor.Log($"Postponing sending available farmhands\n{connectionInfoDump}", LogLevel.Debug);
+                _monitor.Log(
+                    $"Postponing sending available farmhands\n{connectionInfoDump}",
+                    LogLevel.Debug
+                );
                 pendingAvailableFarmhands.Add(connectionId);
 
                 whenGameAvailable(() =>
@@ -127,11 +169,19 @@ namespace JunimoServer.Services.Auth
                     pendingAvailableFarmhands.Remove(connectionId);
                     if (isConnectionActive(connectionId))
                     {
-                        SendAvailableFarmhands_Prefix(__instance, userId, connectionId, sendMessage);
+                        SendAvailableFarmhands_Prefix(
+                            __instance,
+                            userId,
+                            connectionId,
+                            sendMessage
+                        );
                     }
                     else
                     {
-                        _monitor.Log($"Failed to send available farmhands: Connection not active.\n{connectionInfoDump}", LogLevel.Debug);
+                        _monitor.Log(
+                            $"Failed to send available farmhands: Connection not active.\n{connectionInfoDump}",
+                            LogLevel.Debug
+                        );
                     }
                 });
 
@@ -174,8 +224,8 @@ namespace JunimoServer.Services.Auth
                 var allClaimed = true;
                 foreach (var fhId in kvp.Value.FarmhandIds)
                 {
-                    var fh = Game1.netWorldState.Value.farmhandData.FieldDict.Values
-                        .Select(r => r.Value)
+                    var fh = Game1
+                        .netWorldState.Value.farmhandData.FieldDict.Values.Select(r => r.Value)
                         .FirstOrDefault(f => f.UniqueMultiplayerID == fhId);
                     if (fh != null && !fh.isActive() && !fh.isCustomized.Value)
                     {
@@ -192,25 +242,39 @@ namespace JunimoServer.Services.Auth
             // Collect all currently reserved farmhand IDs (from OTHER pending clients)
             var reservedIds = new HashSet<long>();
             foreach (var kvp in _reservedFarmhands)
-                foreach (var fhId in kvp.Value.FarmhandIds)
-                    reservedIds.Add(fhId);
+            foreach (var fhId in kvp.Value.FarmhandIds)
+                reservedIds.Add(fhId);
 
             // Ensure enough cabins exist for pending clients + 1 for this connection
             _cabinManager?.EnsureAtLeastXCabins(reservedIds.Count + 1);
 
-            IEnumerable<NetRef<Farmer>> farmhandRefsAll = Game1.netWorldState.Value.farmhandData.FieldDict.Values;
+            IEnumerable<NetRef<Farmer>> farmhandRefsAll = Game1
+                .netWorldState
+                .Value
+                .farmhandData
+                .FieldDict
+                .Values;
 
             List<NetRef<Farmer>> availableFarmers = new List<NetRef<Farmer>>();
             foreach (var farmhandRef in farmhandRefsAll)
             {
                 var farmhand = farmhandRef.Value;
 
-                var isOffline = !farmhand.isActive() || Game1.Multiplayer.isDisconnecting(farmhand.UniqueMultiplayerID);
+                var isOffline =
+                    !farmhand.isActive()
+                    || Game1.Multiplayer.isDisconnecting(farmhand.UniqueMultiplayerID);
                 var isWithCabinAndInventoryUnlocked = IsFarmhandAvailable(farmhand);
                 var isSelectable = IsFarmhandSelectableByUserId(farmhand, userId);
                 var isLobbyCabin = IsLobbyCabinFarmhand(farmhand);
-                var isReservedByOther = !farmhand.isCustomized.Value && reservedIds.Contains(farmhand.UniqueMultiplayerID);
-                var isValid = isOffline && isWithCabinAndInventoryUnlocked && isSelectable && !isLobbyCabin && !isReservedByOther;
+                var isReservedByOther =
+                    !farmhand.isCustomized.Value
+                    && reservedIds.Contains(farmhand.UniqueMultiplayerID);
+                var isValid =
+                    isOffline
+                    && isWithCabinAndInventoryUnlocked
+                    && isSelectable
+                    && !isLobbyCabin
+                    && !isReservedByOther;
 
                 if (isValid)
                 {
@@ -245,7 +309,10 @@ namespace JunimoServer.Services.Auth
             if (unclaimedIds.Count > 0)
                 _reservedFarmhands[connectionId] = (unclaimedIds, DateTime.UtcNow);
 
-            _monitor.Log($"Sending {availableFarmers.Count}/{farmhandRefsAll.Count()} farmhands to {transport} (reserved={reservedIds.Count})", LogLevel.Debug);
+            _monitor.Log(
+                $"Sending {availableFarmers.Count}/{farmhandRefsAll.Count()} farmhands to {transport} (reserved={reservedIds.Count})",
+                LogLevel.Debug
+            );
 
             // Prepare outgoing message
             using var memoryStream = new MemoryStream();
@@ -327,7 +394,7 @@ namespace JunimoServer.Services.Auth
                 LastSleepLocation = farmhand.lastSleepLocation.Value,
                 LastSleepPoint = farmhand.lastSleepPoint.Value,
                 SleptInTemporaryBed = farmhand.sleptInTemporaryBed.Value,
-                HomeLocation = farmhand.homeLocation.Value
+                HomeLocation = farmhand.homeLocation.Value,
             };
         }
 
@@ -362,18 +429,27 @@ namespace JunimoServer.Services.Auth
 
             if (string.IsNullOrEmpty(lobbyLocation))
             {
-                _monitor.Log($"[Auth] Cannot apply lobby redirect to {farmerId} - no lobby location", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Auth] Cannot apply lobby redirect to {farmerId} - no lobby location",
+                    LogLevel.Warn
+                );
                 return;
             }
 
             var lobbyGameLocation = Game1.getLocationFromName(lobbyLocation);
             if (lobbyGameLocation == null)
             {
-                _monitor.Log($"[Auth] Cannot find lobby GameLocation: {lobbyLocation}", LogLevel.Warn);
+                _monitor.Log(
+                    $"[Auth] Cannot find lobby GameLocation: {lobbyLocation}",
+                    LogLevel.Warn
+                );
                 return;
             }
 
-            _monitor.Log($"[Auth] Applying lobby redirect to farmhand {farmerId}: {lobbyLocation} @ ({lobbyEntry.X}, {lobbyEntry.Y})", LogLevel.Debug);
+            _monitor.Log(
+                $"[Auth] Applying lobby redirect to farmhand {farmerId}: {lobbyLocation} @ ({lobbyEntry.X}, {lobbyEntry.Y})",
+                LogLevel.Debug
+            );
 
             // Set spawn position and location to the lobby cabin
             farmhand.Position = new Vector2(lobbyEntry.X * 64f, lobbyEntry.Y * 64f);
@@ -420,7 +496,8 @@ namespace JunimoServer.Services.Auth
         private static bool IsLobbyCabinFarmhand(Farmer farmhand)
         {
             var cabin = Game1.getFarm()?.GetCabin(farmhand.UniqueMultiplayerID);
-            if (cabin == null) return false;
+            if (cabin == null)
+                return false;
             return LobbyService.IsLobbyCabin(cabin);
         }
     }

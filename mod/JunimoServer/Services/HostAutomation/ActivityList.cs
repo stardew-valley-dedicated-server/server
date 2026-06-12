@@ -1,6 +1,6 @@
+using System.Collections.Generic;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
-using System.Collections.Generic;
 
 namespace JunimoServer.Services.HostAutomation
 {

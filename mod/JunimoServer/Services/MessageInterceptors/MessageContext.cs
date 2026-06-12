@@ -1,7 +1,7 @@
-using JunimoServer.Util;
-using StardewValley.Network;
 using System;
 using System.IO;
+using JunimoServer.Util;
+using StardewValley.Network;
 
 namespace JunimoServer.Services.MessageInterceptors
 {
@@ -31,7 +31,9 @@ namespace JunimoServer.Services.MessageInterceptors
 
             // Parse the outgoing message into an incoming message so we can read its content.
             //IncomingMessage = NetworkHelper.ParseOutgoingMessage(message);
-            _incomingMessageLazy = new Lazy<IncomingMessage>(() => NetworkHelper.ParseOutgoingMessage(message));
+            _incomingMessageLazy = new Lazy<IncomingMessage>(() =>
+                NetworkHelper.ParseOutgoingMessage(message)
+            );
         }
 
         public void Dispose()

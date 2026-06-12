@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using JunimoServer.Services.Settings;
 using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Util;
@@ -5,10 +9,6 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Network;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
 
 namespace JunimoServer.Services.Roles
 {
@@ -65,11 +65,10 @@ namespace JunimoServer.Services.Roles
             SaveData();
             if (!wasAdmin)
             {
-                JunimoServer.Services.Diagnostics.ModEventLog.Emit("role_assigned", new
-                {
-                    playerId,
-                    role = "Admin"
-                });
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                    "role_assigned",
+                    new { playerId, role = "Admin" }
+                );
             }
         }
 
@@ -86,11 +85,10 @@ namespace JunimoServer.Services.Roles
             SaveData();
             if (wasAdmin)
             {
-                JunimoServer.Services.Diagnostics.ModEventLog.Emit("role_unassigned", new
-                {
-                    playerId,
-                    role = "Admin"
-                });
+                JunimoServer.Services.Diagnostics.ModEventLog.Emit(
+                    "role_unassigned",
+                    new { playerId, role = "Admin" }
+                );
             }
         }
 
@@ -167,7 +165,10 @@ namespace JunimoServer.Services.Roles
             if (Array.Exists(adminSteamIds, id => id == steamId))
             {
                 AssignAdmin(playerId);
-                _monitor.Log($"[Roles] Auto-promoted player {playerId} (Steam ID: {steamId}) to admin", LogLevel.Info);
+                _monitor.Log(
+                    $"[Roles] Auto-promoted player {playerId} (Steam ID: {steamId}) to admin",
+                    LogLevel.Info
+                );
             }
         }
 
@@ -180,7 +181,10 @@ namespace JunimoServer.Services.Roles
                 return null;
 
             // Access internal 'servers' field via reflection
-            var serversField = typeof(GameServer).GetField("servers", BindingFlags.NonPublic | BindingFlags.Instance);
+            var serversField = typeof(GameServer).GetField(
+                "servers",
+                BindingFlags.NonPublic | BindingFlags.Instance
+            );
             if (serversField?.GetValue(gameServer) is not List<Server> servers)
                 return null;
 

@@ -29,14 +29,19 @@ namespace JunimoServer.Tests.Helpers;
 /// </summary>
 public sealed class DockerEndpointConfig : IDockerEndpointAuthenticationConfiguration
 {
-    private static readonly TimeSpan NamedPipeConnectTimeout =
-        TimeSpan.FromSeconds(ParseSeconds("SDVD_NAMED_PIPE_CONNECT_TIMEOUT_SEC", 5));
+    private static readonly TimeSpan NamedPipeConnectTimeout = TimeSpan.FromSeconds(
+        ParseSeconds("SDVD_NAMED_PIPE_CONNECT_TIMEOUT_SEC", 5)
+    );
 
     private static readonly string TestcontainersUserAgent =
-        "tc-dotnet/" + (typeof(TestcontainersSettings).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        "tc-dotnet/"
+        + (
+            typeof(TestcontainersSettings)
+                .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion
             ?? typeof(TestcontainersSettings).Assembly.GetName().Version?.ToString()
-            ?? "unknown");
+            ?? "unknown"
+        );
 
     private readonly IDockerEndpointAuthenticationConfiguration _inner;
 
@@ -95,7 +100,8 @@ public sealed class DockerEndpointConfig : IDockerEndpointAuthenticationConfigur
         if (string.Equals(Endpoint.Scheme, "npipe", StringComparison.OrdinalIgnoreCase))
         {
             return builder.WithTransportOptions(
-                new NPipeTransportOptions { ConnectTimeout = NamedPipeConnectTimeout });
+                new NPipeTransportOptions { ConnectTimeout = NamedPipeConnectTimeout }
+            );
         }
 
         return builder;
@@ -107,8 +113,7 @@ public sealed class DockerEndpointConfig : IDockerEndpointAuthenticationConfigur
     /// (e.g. ContainerStatsCollector, EmergencyCleanup, ManagedServer) so they
     /// inherit the same fix.
     /// </summary>
-    public DockerClient CreateDockerClient() =>
-        GetDockerClientBuilder().Build();
+    public DockerClient CreateDockerClient() => GetDockerClientBuilder().Build();
 
     private static int ParseSeconds(string envVar, int defaultValue)
     {

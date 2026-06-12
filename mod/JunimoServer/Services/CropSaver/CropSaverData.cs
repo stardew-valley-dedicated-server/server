@@ -22,9 +22,13 @@ namespace JunimoServer.Services.CropSaver
 
         public int extraDays;
 
-
-        public SaverCrop(string cropLocationName, Vector2 cropLocationTile, long ownerId, SDate datePlanted,
-            int extraDays = 0)
+        public SaverCrop(
+            string cropLocationName,
+            Vector2 cropLocationTile,
+            long ownerId,
+            SDate datePlanted,
+            int extraDays = 0
+        )
         {
             this.cropLocationName = cropLocationName;
             this.cropLocationTile = cropLocationTile;
@@ -32,7 +36,6 @@ namespace JunimoServer.Services.CropSaver
             this.datePlanted = datePlanted;
             this.extraDays = extraDays;
         }
-
 
         public void IncrementExtraDays()
         {
@@ -47,9 +50,13 @@ namespace JunimoServer.Services.CropSaver
         public HoeDirt TryGetCoorespondingDirt()
         {
             var location = Game1.getLocationFromName(cropLocationName);
-            if (location == null) return null;
+            if (location == null)
+                return null;
 
-            if (location.terrainFeatures.TryGetValue(cropLocationTile, out var tf) && tf is HoeDirt dirt)
+            if (
+                location.terrainFeatures.TryGetValue(cropLocationTile, out var tf)
+                && tf is HoeDirt dirt
+            )
                 return dirt;
 
             if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
@@ -66,15 +73,20 @@ namespace JunimoServer.Services.CropSaver
 
         protected bool Equals(SaverCrop other)
         {
-            return cropLocationName == other.cropLocationName && cropLocationTile.Equals(other.cropLocationTile) &&
-                   ownerId == other.ownerId && Equals(datePlanted, other.datePlanted);
+            return cropLocationName == other.cropLocationName
+                && cropLocationTile.Equals(other.cropLocationTile)
+                && ownerId == other.ownerId
+                && Equals(datePlanted, other.datePlanted);
         }
 
         public override bool Equals(object obj)
         {
-            if (ReferenceEquals(null, obj)) return false;
-            if (ReferenceEquals(this, obj)) return true;
-            if (obj.GetType() != this.GetType()) return false;
+            if (ReferenceEquals(null, obj))
+                return false;
+            if (ReferenceEquals(this, obj))
+                return true;
+            if (obj.GetType() != this.GetType())
+                return false;
             return Equals((SaverCrop)obj);
         }
 

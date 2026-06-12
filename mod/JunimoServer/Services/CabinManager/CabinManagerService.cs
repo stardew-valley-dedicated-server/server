@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
@@ -14,9 +17,6 @@ using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
 using StardewValley.Network;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace JunimoServer.Services.CabinManager
 {
@@ -39,10 +39,7 @@ namespace JunimoServer.Services.CabinManager
         public CabinManagerData Data
         {
             get => _cabinManagerData;
-            set
-            {
-                _cabinManagerData = value;
-            }
+            set { _cabinManagerData = value; }
         }
 
         public static readonly Point HiddenCabinLocation = CabinPositions.PlayerStack;
@@ -61,10 +58,20 @@ namespace JunimoServer.Services.CabinManager
         // Instance data - NOT static
         private CabinManagerData _cabinManagerData;
 
-        public CabinManagerService(IModHelper helper, IMonitor monitor, Harmony harmony, RoleService roleService, MessageInterceptorsService messageInterceptorsService, PersistentOptions options) : base(helper, monitor)
+        public CabinManagerService(
+            IModHelper helper,
+            IMonitor monitor,
+            Harmony harmony,
+            RoleService roleService,
+            MessageInterceptorsService messageInterceptorsService,
+            PersistentOptions options
+        )
+            : base(helper, monitor)
         {
             if (_instance != null)
-                throw new InvalidOperationException("CabinManagerService already initialized - only one instance allowed");
+                throw new InvalidOperationException(
+                    "CabinManagerService already initialized - only one instance allowed"
+                );
 
             _instance = this;
 
@@ -81,8 +88,14 @@ namespace JunimoServer.Services.CabinManager
             {
                 // Disable default starting cabin logic, we handle it
                 harmony.Patch(
-                    original: AccessTools.Method(typeof(GameLocation), nameof(GameLocation.BuildStartingCabins)),
-                    prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
+                    original: AccessTools.Method(
+                        typeof(GameLocation),
+                        nameof(GameLocation.BuildStartingCabins)
+                    ),
+                    prefix: new HarmonyMethod(
+                        typeof(ServerOptimizerOverrides),
+                        nameof(ServerOptimizerOverrides.Disable_Prefix)
+                    )
                 );
 
                 // Hijack outgoing messages for cabin warp manipulation
@@ -96,8 +109,14 @@ namespace JunimoServer.Services.CabinManager
 
             // Always hook player join. Needed for peer tracking and auto-cabin creation.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
-                postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnServerJoined_Postfix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.sendServerIntroduction)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(CabinManagerService),
+                    nameof(OnServerJoined_Postfix)
+                )
             );
 
             // Always hook player disconnect to release abandoned slot claims, on ALL transports.
@@ -107,8 +126,14 @@ namespace JunimoServer.Services.CabinManager
             // servers (its constructor returns early when !IsEnabled), which would leave the heal
             // dead for the common no-password case.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.playerDisconnected)),
-                postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnPlayerDisconnected_Postfix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.playerDisconnected)
+                ),
+                postfix: new HarmonyMethod(
+                    typeof(CabinManagerService),
+                    nameof(OnPlayerDisconnected_Postfix)
+                )
             );
 
             // Defensive: make Utility.getHomeOfFarmer null-safe.
@@ -119,7 +144,10 @@ namespace JunimoServer.Services.CabinManager
             // of other callers go through getHomeOfFarmer without protection.
             harmony.Patch(
                 original: AccessTools.Method(typeof(Utility), nameof(Utility.getHomeOfFarmer)),
-                prefix: new HarmonyMethod(typeof(CabinManagerService), nameof(GetHomeOfFarmer_Prefix))
+                prefix: new HarmonyMethod(
+                    typeof(CabinManagerService),
+                    nameof(GetHomeOfFarmer_Prefix)
+                )
             );
         }
 
@@ -157,12 +185,14 @@ namespace JunimoServer.Services.CabinManager
         private void ClearStaleFarmhandReferences()
         {
             var farm = Game1.getFarm();
-            if (farm == null) return;
+            if (farm == null)
+                return;
 
             var validCabinNames = new HashSet<string>();
             foreach (var building in farm.buildings)
             {
-                if (!building.isCabin) continue;
+                if (!building.isCabin)
+                    continue;
                 var name = building.GetIndoors<Cabin>()?.NameOrUniqueName;
                 if (!string.IsNullOrEmpty(name))
                     validCabinNames.Add(name);
@@ -175,34 +205,44 @@ namespace JunimoServer.Services.CabinManager
             foreach (var kvp in farmhandData.FieldDict)
             {
                 var f = kvp.Value.Value;
-                if (f == null) continue;
+                if (f == null)
+                    continue;
 
                 var home = f.homeLocation.Value;
                 var lastSleep = f.lastSleepLocation.Value;
                 var homeStale = !string.IsNullOrEmpty(home) && !validCabinNames.Contains(home);
-                var lastSleepStale = !string.IsNullOrEmpty(lastSleep) && !validCabinNames.Contains(lastSleep);
-                if (!homeStale && !lastSleepStale) continue;
+                var lastSleepStale =
+                    !string.IsNullOrEmpty(lastSleep) && !validCabinNames.Contains(lastSleep);
+                if (!homeStale && !lastSleepStale)
+                    continue;
 
                 if (!f.isCustomized.Value)
                 {
                     // Slot placeholder whose cabin vanished across sessions. Purge.
                     Monitor.Log(
-                        $"Removing orphan uncustomized farmhand (dictKey={kvp.Key}) at save load: " +
-                        $"home='{home ?? "(null)"}' (stale={homeStale}) lastSleep='{lastSleep ?? "(null)"}' (stale={lastSleepStale})",
-                        LogLevel.Debug);
+                        $"Removing orphan uncustomized farmhand (dictKey={kvp.Key}) at save load: "
+                            + $"home='{home ?? "(null)"}' (stale={homeStale}) lastSleep='{lastSleep ?? "(null)"}' (stale={lastSleepStale})",
+                        LogLevel.Debug
+                    );
                     toRemove.Add(kvp.Key);
                 }
                 else
                 {
                     if (homeStale)
                     {
-                        Monitor.Log($"Cleared stale homeLocation '{home}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
+                        Monitor.Log(
+                            $"Cleared stale homeLocation '{home}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load",
+                            LogLevel.Debug
+                        );
                         f.homeLocation.Value = "";
                         homeCleared++;
                     }
                     if (lastSleepStale)
                     {
-                        Monitor.Log($"Cleared stale lastSleepLocation '{lastSleep}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load", LogLevel.Debug);
+                        Monitor.Log(
+                            $"Cleared stale lastSleepLocation '{lastSleep}' from farmhand '{ChatRedaction.MaskValue(f.Name)}' (id={f.UniqueMultiplayerID}) at save load",
+                            LogLevel.Debug
+                        );
                         f.lastSleepLocation.Value = null;
                         lastSleepCleared++;
                     }
@@ -213,13 +253,16 @@ namespace JunimoServer.Services.CabinManager
 
             if (toRemove.Count > 0 || homeCleared > 0 || lastSleepCleared > 0)
             {
-                Diagnostics.ModEventLog.Emit("farmhand_references_cleaned", new
-                {
-                    orphansRemoved = toRemove.Count,
-                    homeCleared,
-                    lastSleepCleared,
-                    validCabins = validCabinNames.Count
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "farmhand_references_cleaned",
+                    new
+                    {
+                        orphansRemoved = toRemove.Count,
+                        homeCleared,
+                        lastSleepCleared,
+                        validCabins = validCabinNames.Count,
+                    }
+                );
             }
         }
 
@@ -260,23 +303,30 @@ namespace JunimoServer.Services.CabinManager
                 return;
             }
 
-            Monitor.Log($"CabinStrategy changed from {previousStrategy} to {currentStrategy}, migrating cabins...", LogLevel.Warn);
+            Monitor.Log(
+                $"CabinStrategy changed from {previousStrategy} to {currentStrategy}, migrating cabins...",
+                LogLevel.Warn
+            );
             MigrateCabins(previousStrategy, currentStrategy);
         }
 
         private void MigrateCabins(CabinStrategy from, CabinStrategy to)
         {
             var farm = Game1.getFarm();
-            bool fromUsesHidden = (from == CabinStrategy.CabinStack || from == CabinStrategy.FarmhouseStack);
-            bool toUsesHidden = (to == CabinStrategy.CabinStack || to == CabinStrategy.FarmhouseStack);
+            bool fromUsesHidden = (
+                from == CabinStrategy.CabinStack || from == CabinStrategy.FarmhouseStack
+            );
+            bool toUsesHidden = (
+                to == CabinStrategy.CabinStack || to == CabinStrategy.FarmhouseStack
+            );
 
             int migrated = 0;
 
             if (fromUsesHidden && !toUsesHidden)
             {
                 // Stacked → None: move hidden cabins to visible farm positions
-                var hiddenCabins = farm.buildings
-                    .Where(b => b.isCabin && b.IsInHiddenStack())
+                var hiddenCabins = farm
+                    .buildings.Where(b => b.isCabin && b.IsInHiddenStack())
                     .ToList();
 
                 var availablePositions = FarmCabinPositions.GetAvailablePositions(farm);
@@ -284,21 +334,25 @@ namespace JunimoServer.Services.CabinManager
                 if (hiddenCabins.Count > availablePositions.Count)
                 {
                     Monitor.Log(
-                        $"CabinStrategy migration {from} → {to} aborted: {hiddenCabins.Count} hidden cabin(s) " +
-                        $"but only {availablePositions.Count} designated position(s) available on this farm map. " +
-                        $"Reverting strategy to {from}. Add cabin positions to the Paths layer or remove " +
-                        $"surplus cabins before retrying.",
-                        LogLevel.Warn);
+                        $"CabinStrategy migration {from} → {to} aborted: {hiddenCabins.Count} hidden cabin(s) "
+                            + $"but only {availablePositions.Count} designated position(s) available on this farm map. "
+                            + $"Reverting strategy to {from}. Add cabin positions to the Paths layer or remove "
+                            + $"surplus cabins before retrying.",
+                        LogLevel.Warn
+                    );
 
-                    Diagnostics.ModEventLog.Emit("cabin_strategy_migration_aborted", new
-                    {
-                        fromStrategy = from.ToString(),
-                        toStrategy = to.ToString(),
-                        hiddenCabinCount = hiddenCabins.Count,
-                        availablePositionCount = availablePositions.Count,
-                        deficit = hiddenCabins.Count - availablePositions.Count,
-                        reason = "insufficient_designated_positions"
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "cabin_strategy_migration_aborted",
+                        new
+                        {
+                            fromStrategy = from.ToString(),
+                            toStrategy = to.ToString(),
+                            hiddenCabinCount = hiddenCabins.Count,
+                            availablePositionCount = availablePositions.Count,
+                            deficit = hiddenCabins.Count - availablePositions.Count,
+                            reason = "insufficient_designated_positions",
+                        }
+                    );
 
                     // Revert the persisted strategy so the on-disk state matches what actually
                     // happened. RecaptureAndSync already wrote the new strategy to Data and disk
@@ -316,7 +370,10 @@ namespace JunimoServer.Services.CabinManager
                     // runs synchronously on the game thread inside OnSaveLoaded, no buildStructure
                     // call can interleave, so the count cannot shrink mid-loop. nextPos is always set.
                     cabin.Relocate(nextPos.Value);
-                    Monitor.Log($"  Migrated cabin to ({nextPos.Value.X}, {nextPos.Value.Y})", LogLevel.Info);
+                    Monitor.Log(
+                        $"  Migrated cabin to ({nextPos.Value.X}, {nextPos.Value.Y})",
+                        LogLevel.Info
+                    );
                     migrated++;
                 }
             }
@@ -324,8 +381,13 @@ namespace JunimoServer.Services.CabinManager
             {
                 // None → Stacked: move visible cabins to hidden stack (exclude lobby/editing
                 // cabins and any cabin a player explicitly placed via /cabin)
-                var visibleCabins = farm.buildings
-                    .Where(b => b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing() && !HasSavedPosition(b))
+                var visibleCabins = farm
+                    .buildings.Where(b =>
+                        b.isCabin
+                        && !b.IsInHiddenStack()
+                        && !b.IsLobbyOrEditing()
+                        && !HasSavedPosition(b)
+                    )
                     .ToList();
 
                 foreach (var cabin in visibleCabins)
@@ -339,12 +401,15 @@ namespace JunimoServer.Services.CabinManager
 
             // Aborts (insufficient positions) emit cabin_strategy_migration_aborted and
             // return early, so this success event never carries a failure count.
-            Diagnostics.ModEventLog.Emit("cabin_strategy_migration", new
-            {
-                fromStrategy = from.ToString(),
-                toStrategy = to.ToString(),
-                migrated
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_strategy_migration",
+                new
+                {
+                    fromStrategy = from.ToString(),
+                    toStrategy = to.ToString(),
+                    migrated,
+                }
+            );
         }
 
         #endregion
@@ -381,32 +446,52 @@ namespace JunimoServer.Services.CabinManager
                 // Unassigned cabins have auto-generated UniqueMultiplayerIDs but empty userIDs.
                 var owner = indoors.owner;
                 var ownerId = owner.UniqueMultiplayerID;
-                if (ownerId != 0 && !string.IsNullOrEmpty(owner.userID.Value) && Data.AllPlayerIdsEverJoined.Add(ownerId))
+                if (
+                    ownerId != 0
+                    && !string.IsNullOrEmpty(owner.userID.Value)
+                    && Data.AllPlayerIdsEverJoined.Add(ownerId)
+                )
                 {
                     syncedCount++;
                 }
             }
 
-            Diagnostics.ModEventLog.Emit("cabin_sync", new
-            {
-                syncedCount,
-                totalCabins = allCabins.Count,
-                strategy = options.Data.CabinStrategy.ToString()
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_sync",
+                new
+                {
+                    syncedCount,
+                    totalCabins = allCabins.Count,
+                    strategy = options.Data.CabinStrategy.ToString(),
+                }
+            );
 
             if (syncedCount > 0)
             {
-                Monitor.Log($"Synced {syncedCount} existing cabin owner(s) from save", LogLevel.Info);
+                Monitor.Log(
+                    $"Synced {syncedCount} existing cabin owner(s) from save",
+                    LogLevel.Info
+                );
                 Data.Write();
             }
 
             // Handle ExistingCabinBehavior for stacked strategies
-            if (options.UsesHiddenCabins && options.Data.ExistingCabinBehavior == ExistingCabinBehavior.MoveToStack)
+            if (
+                options.UsesHiddenCabins
+                && options.Data.ExistingCabinBehavior == ExistingCabinBehavior.MoveToStack
+            )
             {
-                var visibleCabins = allCabins.Where(b => !b.IsInHiddenStack() && !b.IsLobbyOrEditing() && !HasSavedPosition(b)).ToList();
+                var visibleCabins = allCabins
+                    .Where(b =>
+                        !b.IsInHiddenStack() && !b.IsLobbyOrEditing() && !HasSavedPosition(b)
+                    )
+                    .ToList();
                 if (visibleCabins.Count > 0)
                 {
-                    Monitor.Log($"MoveToStack: relocating {visibleCabins.Count} visible cabin(s) to hidden stack", LogLevel.Info);
+                    Monitor.Log(
+                        $"MoveToStack: relocating {visibleCabins.Count} visible cabin(s) to hidden stack",
+                        LogLevel.Info
+                    );
                     foreach (var cabin in visibleCabins)
                     {
                         cabin.SetPosition(HiddenCabinLocation);
@@ -447,7 +532,10 @@ namespace JunimoServer.Services.CabinManager
                 }
                 else
                 {
-                    Monitor.Log($"FarmhouseStack: cabin not found for peer {context.PeerId} during location introduction (cabin ownership may not be linked yet)", LogLevel.Warn);
+                    Monitor.Log(
+                        $"FarmhouseStack: cabin not found for peer {context.PeerId} during location introduction (cabin ownership may not be linked yet)",
+                        LogLevel.Warn
+                    );
                 }
             }
             else
@@ -465,7 +553,11 @@ namespace JunimoServer.Services.CabinManager
             }
 
             // Update the outgoing message
-            context.ModifiedMessage = NetworkHelper.CreateMessageLocationIntroduction(context.PeerId, farm.Root, forceCurrentLocation);
+            context.ModifiedMessage = NetworkHelper.CreateMessageLocationIntroduction(
+                context.PeerId,
+                farm.Root,
+                forceCurrentLocation
+            );
         }
 
         private void OnLocationDeltaMessage(MessageContext context)
@@ -492,12 +584,15 @@ namespace JunimoServer.Services.CabinManager
             Monitor.Log($"Adding peer '{peerId}'", LogLevel.Debug);
             var added = Data.AllPlayerIdsEverJoined.Add(peerId);
             Data.Write();
-            Diagnostics.ModEventLog.Emit("cabin_peer_added", new
-            {
-                playerId = peerId,
-                firstTime = added,
-                totalEverJoined = Data.AllPlayerIdsEverJoined.Count
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_peer_added",
+                new
+                {
+                    playerId = peerId,
+                    firstTime = added,
+                    totalEverJoined = Data.AllPlayerIdsEverJoined.Count,
+                }
+            );
         }
 
         #endregion
@@ -538,7 +633,9 @@ namespace JunimoServer.Services.CabinManager
                 }
             }
 
-            farmersInFarmhouse.RemoveWhere(farmerId => !farmersInFarmHouseCurrent.Contains(farmerId));
+            farmersInFarmhouse.RemoveWhere(farmerId =>
+                !farmersInFarmHouseCurrent.Contains(farmerId)
+            );
         }
 
         #endregion
@@ -552,17 +649,21 @@ namespace JunimoServer.Services.CabinManager
             var effectiveMin = Math.Max(minEmptyCabins, minRequired);
             var cabinsMissingCount = effectiveMin - availableCount;
 
-            Monitor.Log($"Cabin check: {availableCount}/{effectiveMin} available, building {Math.Max(0, cabinsMissingCount)}", LogLevel.Debug);
+            Monitor.Log(
+                $"Cabin check: {availableCount}/{effectiveMin} available, building {Math.Max(0, cabinsMissingCount)}",
+                LogLevel.Debug
+            );
 
             int built = 0;
             int failed = 0;
             for (var i = 0; i < cabinsMissingCount; i++)
             {
-                Monitor.Log($"Cabin check: building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Trace);
+                Monitor.Log(
+                    $"Cabin check: building cabin {i + 1}/{cabinsMissingCount}",
+                    LogLevel.Trace
+                );
 
-                bool success = options.IsNone
-                    ? BuildNewCabinVisible(farm)
-                    : BuildNewCabin(farm);
+                bool success = options.IsNone ? BuildNewCabinVisible(farm) : BuildNewCabin(farm);
 
                 if (success)
                     built++;
@@ -573,19 +674,25 @@ namespace JunimoServer.Services.CabinManager
                     // failure is also surfaced via cabin_build_failed and the cabinsFailed
                     // field below). LogLevel.Error trips ServerContainer's ERROR/FATAL test
                     // poison. For None this is the expected "ran out of map positions" cap.
-                    Monitor.Log($"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}", LogLevel.Warn);
+                    Monitor.Log(
+                        $"Cabin check: failed building cabin {i + 1}/{cabinsMissingCount}",
+                        LogLevel.Warn
+                    );
                 }
             }
 
-            Diagnostics.ModEventLog.Emit("cabin_ensure_checked", new
-            {
-                minRequired = effectiveMin,
-                availableCount,
-                cabinsBuilt = built,
-                cabinsFailed = failed,
-                excludePeer,
-                strategy = options.Data.CabinStrategy.ToString()
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_ensure_checked",
+                new
+                {
+                    minRequired = effectiveMin,
+                    availableCount,
+                    cabinsBuilt = built,
+                    cabinsFailed = failed,
+                    excludePeer,
+                    strategy = options.Data.CabinStrategy.ToString(),
+                }
+            );
         }
 
         /// <summary>
@@ -596,8 +703,8 @@ namespace JunimoServer.Services.CabinManager
         /// </summary>
         private int GetAvailableCabinCount(GameLocation farm, long excludePeer = 0)
         {
-            return farm.buildings
-                .Where(b => b.isCabin && !LobbyService.IsLobbyCabin(b))
+            return farm
+                .buildings.Where(b => b.isCabin && !LobbyService.IsLobbyCabin(b))
                 .Count(b => IsCabinAvailable(b, excludePeer));
         }
 
@@ -673,12 +780,16 @@ namespace JunimoServer.Services.CabinManager
 
             Monitor.Log(
                 $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', slot was claimed but not customized)",
-                LogLevel.Info);
-            Diagnostics.ModEventLog.Emit("cabin_claim_abandoned", new
-            {
-                clearedUserId = farmhand.userID.Value,
-                ownerUniqueMultiplayerId = farmhand.UniqueMultiplayerID
-            });
+                LogLevel.Info
+            );
+            Diagnostics.ModEventLog.Emit(
+                "cabin_claim_abandoned",
+                new
+                {
+                    clearedUserId = farmhand.userID.Value,
+                    ownerUniqueMultiplayerId = farmhand.UniqueMultiplayerID,
+                }
+            );
             farmhand.userID.Value = "";
             return true;
         }
@@ -702,11 +813,18 @@ namespace JunimoServer.Services.CabinManager
 
             // TryGetValue, not the indexer: NetLongDictionary's indexer throws KeyNotFoundException
             // on a missing key (see NetworkTweaker's checkFarmhandRequest safe-lookup patch).
-            if (!Game1.netWorldState.Value.farmhandData.TryGetValue(disconnecteeId, out var farmhand))
+            if (
+                !Game1.netWorldState.Value.farmhandData.TryGetValue(
+                    disconnecteeId,
+                    out var farmhand
+                )
+            )
                 return;
 
-            if (_instance.TryClearAbandonedClaim(farmhand)
-                && Game1.otherFarmers.TryGetValue(disconnecteeId, out var liveFarmhand))
+            if (
+                _instance.TryClearAbandonedClaim(farmhand)
+                && Game1.otherFarmers.TryGetValue(disconnecteeId, out var liveFarmhand)
+            )
             {
                 liveFarmhand.userID.Value = "";
             }
@@ -739,10 +857,7 @@ namespace JunimoServer.Services.CabinManager
 
             if (cleared > 0)
             {
-                Diagnostics.ModEventLog.Emit("cabin_claims_swept_on_load", new
-                {
-                    cleared
-                });
+                Diagnostics.ModEventLog.Emit("cabin_claims_swept_on_load", new { cleared });
             }
         }
 
@@ -761,27 +876,36 @@ namespace JunimoServer.Services.CabinManager
                 var indoors = cabin.GetIndoors<Cabin>();
                 if (indoors == null)
                 {
-                    Monitor.Log("Hidden cabin was built but has no interior; farmhand not created", LogLevel.Error);
-                    Diagnostics.ModEventLog.Emit("cabin_build_failed", new
-                    {
-                        hidden = true,
-                        tileX = (int)cabinTilePosition.X,
-                        tileY = (int)cabinTilePosition.Y,
-                        reason = "no_interior_after_buildStructure"
-                    });
+                    Monitor.Log(
+                        "Hidden cabin was built but has no interior; farmhand not created",
+                        LogLevel.Error
+                    );
+                    Diagnostics.ModEventLog.Emit(
+                        "cabin_build_failed",
+                        new
+                        {
+                            hidden = true,
+                            tileX = (int)cabinTilePosition.X,
+                            tileY = (int)cabinTilePosition.Y,
+                            reason = "no_interior_after_buildStructure",
+                        }
+                    );
                     return false;
                 }
 
                 return true;
             }
 
-            Diagnostics.ModEventLog.Emit("cabin_build_failed", new
-            {
-                hidden = true,
-                tileX = (int)cabinTilePosition.X,
-                tileY = (int)cabinTilePosition.Y,
-                reason = "buildStructure_returned_false"
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_build_failed",
+                new
+                {
+                    hidden = true,
+                    tileX = (int)cabinTilePosition.X,
+                    tileY = (int)cabinTilePosition.Y,
+                    reason = "buildStructure_returned_false",
+                }
+            );
             return false;
         }
 
@@ -797,11 +921,10 @@ namespace JunimoServer.Services.CabinManager
             if (!position.HasValue)
             {
                 Monitor.Log("No available designated cabin position on farm map", LogLevel.Warn);
-                Diagnostics.ModEventLog.Emit("cabin_build_failed", new
-                {
-                    hidden = false,
-                    reason = "no_available_map_position"
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "cabin_build_failed",
+                    new { hidden = false, reason = "no_available_map_position" }
+                );
                 return false;
             }
 
@@ -814,28 +937,40 @@ namespace JunimoServer.Services.CabinManager
                 var indoors = cabin.GetIndoors<Cabin>();
                 if (indoors == null)
                 {
-                    Monitor.Log($"Visible cabin at ({position.Value.X}, {position.Value.Y}) was built but has no interior; farmhand not created", LogLevel.Error);
-                    Diagnostics.ModEventLog.Emit("cabin_build_failed", new
-                    {
-                        hidden = false,
-                        tileX = (int)position.Value.X,
-                        tileY = (int)position.Value.Y,
-                        reason = "no_interior_after_buildStructure"
-                    });
+                    Monitor.Log(
+                        $"Visible cabin at ({position.Value.X}, {position.Value.Y}) was built but has no interior; farmhand not created",
+                        LogLevel.Error
+                    );
+                    Diagnostics.ModEventLog.Emit(
+                        "cabin_build_failed",
+                        new
+                        {
+                            hidden = false,
+                            tileX = (int)position.Value.X,
+                            tileY = (int)position.Value.Y,
+                            reason = "no_interior_after_buildStructure",
+                        }
+                    );
                     return false;
                 }
 
-                Monitor.Log($"Built visible cabin at ({position.Value.X}, {position.Value.Y})", LogLevel.Info);
+                Monitor.Log(
+                    $"Built visible cabin at ({position.Value.X}, {position.Value.Y})",
+                    LogLevel.Info
+                );
                 return true;
             }
 
-            Diagnostics.ModEventLog.Emit("cabin_build_failed", new
-            {
-                hidden = false,
-                tileX = (int)position.Value.X,
-                tileY = (int)position.Value.Y,
-                reason = "buildStructure_returned_false"
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_build_failed",
+                new
+                {
+                    hidden = false,
+                    tileX = (int)position.Value.X,
+                    tileY = (int)position.Value.Y,
+                    reason = "buildStructure_returned_false",
+                }
+            );
             return false;
         }
 
@@ -851,9 +986,11 @@ namespace JunimoServer.Services.CabinManager
         /// </summary>
         public void DestroyCabin(Building cabinBuilding)
         {
-            if (cabinBuilding == null) return;
+            if (cabinBuilding == null)
+                return;
             var farm = Game1.getFarm();
-            if (farm == null || !farm.buildings.Contains(cabinBuilding)) return;
+            if (farm == null || !farm.buildings.Contains(cabinBuilding))
+                return;
 
             var indoors = cabinBuilding.GetIndoors<Cabin>();
             var deletedName = indoors?.NameOrUniqueName;
@@ -865,14 +1002,17 @@ namespace JunimoServer.Services.CabinManager
 
             farm.buildings.Remove(cabinBuilding);
 
-            Diagnostics.ModEventLog.Emit("cabin_destroyed", new
-            {
-                tileX = cabinBuilding.tileX.Value,
-                tileY = cabinBuilding.tileY.Value,
-                indoorsName = deletedName ?? "",
-                ownerId,
-                ownerName
-            });
+            Diagnostics.ModEventLog.Emit(
+                "cabin_destroyed",
+                new
+                {
+                    tileX = cabinBuilding.tileX.Value,
+                    tileY = cabinBuilding.tileY.Value,
+                    indoorsName = deletedName ?? "",
+                    ownerId,
+                    ownerName,
+                }
+            );
 
             if (indoors == null || string.IsNullOrEmpty(deletedName))
                 return;
@@ -892,28 +1032,35 @@ namespace JunimoServer.Services.CabinManager
             if (ownerId != 0 && farmhandData.FieldDict.ContainsKey(ownerId))
             {
                 Monitor.Log(
-                    $"Cabin owner {ownerId} ('{ChatRedaction.MaskValue(ownerName)}') still in farmhandData after Cabin.DeleteFarmhand; " +
-                    $"not removing to preserve investigability",
-                    LogLevel.Warn);
+                    $"Cabin owner {ownerId} ('{ChatRedaction.MaskValue(ownerName)}') still in farmhandData after Cabin.DeleteFarmhand; "
+                        + $"not removing to preserve investigability",
+                    LogLevel.Warn
+                );
             }
 
             foreach (var kvp in farmhandData.FieldDict)
             {
                 var f = kvp.Value.Value;
-                if (f == null) continue;
+                if (f == null)
+                    continue;
 
                 var homeMatch = f.homeLocation.Value == deletedName;
                 var currentMatch = ReferenceEquals(f.currentLocation, indoors);
                 var lastSleepMatch = f.lastSleepLocation.Value == deletedName;
-                if (!homeMatch && !currentMatch && !lastSleepMatch) continue;
+                if (!homeMatch && !currentMatch && !lastSleepMatch)
+                    continue;
 
                 Monitor.Log(
-                    $"Clearing stale cabin refs from farmhand '{f.Name}' (dictKey={kvp.Key}, isCustomized={f.isCustomized.Value}): " +
-                    $"home={homeMatch} current={currentMatch} lastSleep={lastSleepMatch}",
-                    LogLevel.Warn);
-                if (homeMatch) f.homeLocation.Value = "";
-                if (currentMatch) f.currentLocation = null;
-                if (lastSleepMatch) f.lastSleepLocation.Value = null;
+                    $"Clearing stale cabin refs from farmhand '{f.Name}' (dictKey={kvp.Key}, isCustomized={f.isCustomized.Value}): "
+                        + $"home={homeMatch} current={currentMatch} lastSleep={lastSleepMatch}",
+                    LogLevel.Warn
+                );
+                if (homeMatch)
+                    f.homeLocation.Value = "";
+                if (currentMatch)
+                    f.currentLocation = null;
+                if (lastSleepMatch)
+                    f.lastSleepLocation.Value = null;
             }
         }
 
@@ -934,13 +1081,19 @@ namespace JunimoServer.Services.CabinManager
             // engine version and initialization order. Verify and fall back if needed.
             if (cabin.GetIndoors() == null)
             {
-                Monitor.Log("Cabin interior was not created by load(), retrying via ReloadBuildingData", LogLevel.Warn);
+                Monitor.Log(
+                    "Cabin interior was not created by load(), retrying via ReloadBuildingData",
+                    LogLevel.Warn
+                );
                 cabin.ReloadBuildingData();
             }
 
             if (cabin.GetIndoors() == null)
             {
-                Monitor.Log("Cabin interior creation failed. Cabin will have no interior!", LogLevel.Error);
+                Monitor.Log(
+                    "Cabin interior creation failed. Cabin will have no interior!",
+                    LogLevel.Error
+                );
             }
 
             return cabin;
@@ -983,7 +1136,8 @@ namespace JunimoServer.Services.CabinManager
                 {
                     _instance?.Monitor.Log(
                         $"Recovered home for '{who.Name}' via TryAssignFarmhandHome → {who.homeLocation.Value}",
-                        LogLevel.Warn);
+                        LogLevel.Warn
+                    );
                     __result = home;
                     return false;
                 }
@@ -992,7 +1146,8 @@ namespace JunimoServer.Services.CabinManager
             // Last resort: return main FarmHouse instead of throwing
             _instance?.Monitor.Log(
                 $"Cannot find home '{who.homeLocation.Value}' for '{who.Name}', falling back to FarmHouse",
-                LogLevel.Warn);
+                LogLevel.Warn
+            );
             __result = Game1.getLocationFromName("FarmHouse") as FarmHouse;
             return false;
         }

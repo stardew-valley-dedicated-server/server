@@ -29,8 +29,13 @@ namespace JunimoServer.Services.Diagnostics
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
             WriteIndented = false,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            DefaultIgnoreCondition = System
+                .Text
+                .Json
+                .Serialization
+                .JsonIgnoreCondition
+                .WhenWritingNull,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         };
 
         /// <summary>Exception types already reported on stderr. Used to emit
@@ -53,7 +58,7 @@ namespace JunimoServer.Services.Diagnostics
                     service = "server",
                     tickMs,
                     @event = eventType,
-                    data
+                    data,
                 };
                 var json = JsonSerializer.Serialize(entry, _jsonOptions);
 
@@ -79,8 +84,9 @@ namespace JunimoServer.Services.Diagnostics
                 if (_reportedFailures.TryAdd(ex.GetType(), 0))
                 {
                     Console.Error.WriteLine(
-                        $"[ModEventLog] emit failed ({ex.GetType().Name}: {ex.Message}) " +
-                        $"while emitting '{eventType}'. Further '{ex.GetType().Name}' failures will be silent.");
+                        $"[ModEventLog] emit failed ({ex.GetType().Name}: {ex.Message}) "
+                            + $"while emitting '{eventType}'. Further '{ex.GetType().Name}' failures will be silent."
+                    );
                 }
             }
             catch

@@ -23,7 +23,8 @@ namespace JunimoServer.Shared
         /// </summary>
         public static string MaskIp(string ip)
         {
-            if (string.IsNullOrEmpty(ip)) return ip;
+            if (string.IsNullOrEmpty(ip))
+                return ip;
             switch (ip)
             {
                 case "127.0.0.1":
@@ -40,7 +41,11 @@ namespace JunimoServer.Shared
                 var last = "";
                 for (var i = parts.Length - 1; i >= 0; i--)
                 {
-                    if (parts[i].Length > 0) { last = parts[i]; break; }
+                    if (parts[i].Length > 0)
+                    {
+                        last = parts[i];
+                        break;
+                    }
                 }
                 return last.Length > 0 ? "***:***:…:" + last : ip;
             }
@@ -59,8 +64,10 @@ namespace JunimoServer.Shared
         /// </summary>
         public static string MaskValue(string value)
         {
-            if (string.IsNullOrEmpty(value)) return value;
-            if (value.Length <= 2) return "***";
+            if (string.IsNullOrEmpty(value))
+                return value;
+            if (value.Length <= 2)
+                return "***";
             return $"{value[0]}***{value[value.Length - 1]}";
         }
 
@@ -70,19 +77,23 @@ namespace JunimoServer.Shared
         /// </summary>
         public static string MaskSecrets(string message)
         {
-            if (string.IsNullOrEmpty(message)) return message;
+            if (string.IsNullOrEmpty(message))
+                return message;
             var trimmed = message.TrimStart();
             const string prefix = "!login";
-            if (trimmed.Length < prefix.Length
+            if (
+                trimmed.Length < prefix.Length
                 || !trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                || (trimmed.Length > prefix.Length && !char.IsWhiteSpace(trimmed[prefix.Length])))
+                || (trimmed.Length > prefix.Length && !char.IsWhiteSpace(trimmed[prefix.Length]))
+            )
             {
                 return message;
             }
 
-            var password = trimmed.Length > prefix.Length
-                ? trimmed[(prefix.Length + 1)..].Trim()
-                : string.Empty;
+            var password =
+                trimmed.Length > prefix.Length
+                    ? trimmed[(prefix.Length + 1)..].Trim()
+                    : string.Empty;
             const string stars = "******";
             if (password.Length == 0)
             {

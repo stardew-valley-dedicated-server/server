@@ -29,11 +29,11 @@ namespace JunimoServer.Services.Auth
             // ambient ModRequestContext, then the default handler sends.
             var correlationHandler = new SteamAuthCorrelationHandler
             {
-                InnerHandler = new HttpClientHandler()
+                InnerHandler = new HttpClientHandler(),
             };
             _httpClient = new HttpClient(correlationHandler)
             {
-                Timeout = TimeSpan.FromMilliseconds(timeoutMs)
+                Timeout = TimeSpan.FromMilliseconds(timeoutMs),
             };
 
             // Read Steam account index from environment (set by test infrastructure)
@@ -43,7 +43,8 @@ namespace JunimoServer.Services.Auth
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+                return;
             _httpClient.Dispose();
             _disposed = true;
         }
@@ -118,13 +119,17 @@ namespace JunimoServer.Services.Auth
         /// <summary>
         /// Create a Steam lobby via the steam-auth service
         /// </summary>
-        public CreateLobbyResponse CreateLobby(ulong gameServerSteamId, string protocolVersion, int maxMembers)
+        public CreateLobbyResponse CreateLobby(
+            ulong gameServerSteamId,
+            string protocolVersion,
+            int maxMembers
+        )
         {
             var request = new
             {
                 game_server_steam_id = gameServerSteamId,
                 protocol_version = protocolVersion,
-                max_members = maxMembers
+                max_members = maxMembers,
             };
             return Post<CreateLobbyResponse>("/steam/lobby/create", request);
         }
@@ -132,13 +137,12 @@ namespace JunimoServer.Services.Auth
         /// <summary>
         /// Set metadata on a Steam lobby (uses stored gameServerSteamId/protocolVersion from CreateLobby)
         /// </summary>
-        public SetLobbyDataResponse SetLobbyData(ulong lobbyId, System.Collections.Generic.Dictionary<string, string> metadata = null)
+        public SetLobbyDataResponse SetLobbyData(
+            ulong lobbyId,
+            System.Collections.Generic.Dictionary<string, string> metadata = null
+        )
         {
-            var request = new
-            {
-                lobby_id = lobbyId,
-                metadata
-            };
+            var request = new { lobby_id = lobbyId, metadata };
             return Post<SetLobbyDataResponse>("/steam/lobby/set-data", request);
         }
 
@@ -147,11 +151,7 @@ namespace JunimoServer.Services.Auth
         /// </summary>
         public SetLobbyPrivacyResponse SetLobbyPrivacy(ulong lobbyId, string privacy = "public")
         {
-            var request = new
-            {
-                lobby_id = lobbyId,
-                privacy
-            };
+            var request = new { lobby_id = lobbyId, privacy };
             return Post<SetLobbyPrivacyResponse>("/steam/lobby/set-privacy", request);
         }
 
@@ -190,7 +190,9 @@ namespace JunimoServer.Services.Auth
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = response.Content.ReadAsStringAsync().Result;
-                    throw new HttpRequestException($"Steam auth service returned error {response.StatusCode}: {errorContent}");
+                    throw new HttpRequestException(
+                        $"Steam auth service returned error {response.StatusCode}: {errorContent}"
+                    );
                 }
 
                 var json = response.Content.ReadAsStringAsync().Result;
@@ -207,9 +209,7 @@ namespace JunimoServer.Services.Auth
             {
                 var url = BuildUrl(path);
 
-                var jsonBody = body != null
-                    ? JsonSerializer.Serialize(body)
-                    : "";
+                var jsonBody = body != null ? JsonSerializer.Serialize(body) : "";
 
                 var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
                 var response = _httpClient.PostAsync(url, content).Result;
@@ -217,7 +217,9 @@ namespace JunimoServer.Services.Auth
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = response.Content.ReadAsStringAsync().Result;
-                    throw new HttpRequestException($"Steam auth service returned error {response.StatusCode}: {errorContent}");
+                    throw new HttpRequestException(
+                        $"Steam auth service returned error {response.StatusCode}: {errorContent}"
+                    );
                 }
 
                 var json = response.Content.ReadAsStringAsync().Result;
@@ -247,7 +249,10 @@ namespace JunimoServer.Services.Auth
                         Thread.Sleep(RetryDelaysMs[attempt]);
                     }
                 }
-                catch (AggregateException ex) when (ex.InnerException is HttpRequestException httpEx && IsTransientError(httpEx))
+                catch (AggregateException ex)
+                    when (ex.InnerException is HttpRequestException httpEx
+                        && IsTransientError(httpEx)
+                    )
                 {
                     lastException = ex.InnerException;
                     if (attempt < MaxRetries)
@@ -265,7 +270,10 @@ namespace JunimoServer.Services.Auth
                 }
             }
 
-            throw new HttpRequestException($"Steam auth service request failed after {MaxRetries + 1} attempts", lastException);
+            throw new HttpRequestException(
+                $"Steam auth service request failed after {MaxRetries + 1} attempts",
+                lastException
+            );
         }
 
         /// <summary>
@@ -276,16 +284,16 @@ namespace JunimoServer.Services.Auth
             // Retry on connection failures, timeouts, and 5xx server errors.
             // StatusCode renders as enum name (e.g. "InternalServerError") not numeric.
             var message = ex.Message.ToLowerInvariant();
-            return message.Contains("connection") ||
-                   message.Contains("timeout") ||
-                   message.Contains("internalservererror") ||
-                   message.Contains("serviceunavailable") ||
-                   message.Contains("badgateway") ||
-                   message.Contains("gatewaytimeout") ||
-                   message.Contains("500") ||
-                   message.Contains("502") ||
-                   message.Contains("503") ||
-                   message.Contains("504");
+            return message.Contains("connection")
+                || message.Contains("timeout")
+                || message.Contains("internalservererror")
+                || message.Contains("serviceunavailable")
+                || message.Contains("badgateway")
+                || message.Contains("gatewaytimeout")
+                || message.Contains("500")
+                || message.Contains("502")
+                || message.Contains("503")
+                || message.Contains("504");
         }
 
         /// <summary>
@@ -294,9 +302,9 @@ namespace JunimoServer.Services.Auth
         private static bool IsTransientException(Exception ex)
         {
             // Retry on task cancellation (timeout) and socket errors
-            return ex is TaskCanceledException ||
-                   ex is System.Net.Sockets.SocketException ||
-                   (ex is AggregateException agg && agg.InnerException is TaskCanceledException);
+            return ex is TaskCanceledException
+                || ex is System.Net.Sockets.SocketException
+                || (ex is AggregateException agg && agg.InnerException is TaskCanceledException);
         }
     }
 

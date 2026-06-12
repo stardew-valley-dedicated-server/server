@@ -31,7 +31,11 @@ namespace JunimoServer.Services.Auth
         /// <param name="monitor">SMAPI monitor for logging</param>
         /// <param name="steamAuthUrl">URL of the steam-auth service</param>
         /// <param name="timeoutMs">Timeout for HTTP requests</param>
-        public SteamAppTicketFetcherHttp(IMonitor monitor, string steamAuthUrl = "http://localhost:3001", int timeoutMs = 60000)
+        public SteamAppTicketFetcherHttp(
+            IMonitor monitor,
+            string steamAuthUrl = "http://localhost:3001",
+            int timeoutMs = 60000
+        )
         {
             _monitor = monitor;
             _api = new SteamAuthApiClient(steamAuthUrl, timeoutMs);
@@ -60,34 +64,46 @@ namespace JunimoServer.Services.Auth
                         return;
                     }
                 }
-                catch (Exception ex) { lastEx = ex; }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                }
 
                 Thread.Sleep(TimeSpan.FromSeconds(pollSec));
             }
 
             if (last == null)
-                throw new Exception($"Could not reach steam-auth service within {budgetSec}s" +
-                    (lastEx != null ? $": {lastEx.Message}" : ""));
+                throw new Exception(
+                    $"Could not reach steam-auth service within {budgetSec}s"
+                        + (lastEx != null ? $": {lastEx.Message}" : "")
+                );
             if (last.status != "ok")
-                throw new Exception($"Steam-auth service unhealthy after {budgetSec}s: status={last.status}");
+                throw new Exception(
+                    $"Steam-auth service unhealthy after {budgetSec}s: status={last.status}"
+                );
 
             var anyEverLoggedIn = last.accounts != null && last.accounts.Any(a => a.logged_in);
             if (!anyEverLoggedIn)
                 throw new Exception(
-                    "Steam-auth service has no logged-in accounts. " +
-                    "If this is a fresh install, run 'docker compose run -it steam-auth setup'. " +
-                    $"Account snapshot: {SummarizeAccounts(last.accounts)}");
+                    "Steam-auth service has no logged-in accounts. "
+                        + "If this is a fresh install, run 'docker compose run -it steam-auth setup'. "
+                        + $"Account snapshot: {SummarizeAccounts(last.accounts)}"
+                );
 
             throw new Exception(
-                $"Steam-auth account currently disconnected after {budgetSec}s of waiting " +
-                $"(sidecar may be mid-reconnect; check its logs for account_reconnect_* events). " +
-                $"Account snapshot: {SummarizeAccounts(last.accounts)}");
+                $"Steam-auth account currently disconnected after {budgetSec}s of waiting "
+                    + $"(sidecar may be mid-reconnect; check its logs for account_reconnect_* events). "
+                    + $"Account snapshot: {SummarizeAccounts(last.accounts)}"
+            );
         }
 
         private static string SummarizeAccounts(HealthAccount[] accounts) =>
             accounts == null
                 ? "(none reported)"
-                : string.Join(", ", accounts.Select(a => $"A{a.index}={(a.logged_in ? "ok" : "disconnected")}"));
+                : string.Join(
+                    ", ",
+                    accounts.Select(a => $"A{a.index}={(a.logged_in ? "ok" : "disconnected")}")
+                );
 
         private void TryFetchRefreshToken()
         {
@@ -97,12 +113,18 @@ namespace JunimoServer.Services.Auth
                 if (!string.IsNullOrEmpty(t?.refresh_token))
                 {
                     _refreshToken = t.refresh_token;
-                    _monitor.Log("Steam refresh token fetched from steam-auth service ✓", LogLevel.Debug);
+                    _monitor.Log(
+                        "Steam refresh token fetched from steam-auth service ✓",
+                        LogLevel.Debug
+                    );
                 }
             }
             catch (Exception ex)
             {
-                _monitor.Log($"Warning: Could not fetch refresh token for SteamKit2: {ex.Message}", LogLevel.Warn);
+                _monitor.Log(
+                    $"Warning: Could not fetch refresh token for SteamKit2: {ex.Message}",
+                    LogLevel.Warn
+                );
             }
         }
 
@@ -114,16 +136,24 @@ namespace JunimoServer.Services.Auth
         {
             try
             {
-                _monitor.Log("Requesting Steam app ticket from steam-auth service...", LogLevel.Debug);
+                _monitor.Log(
+                    "Requesting Steam app ticket from steam-auth service...",
+                    LogLevel.Debug
+                );
 
                 var response = _api.GetAppTicket();
 
                 if (string.IsNullOrEmpty(response?.app_ticket))
                 {
-                    throw new InvalidOperationException("Steam auth service returned empty app ticket");
+                    throw new InvalidOperationException(
+                        "Steam auth service returned empty app ticket"
+                    );
                 }
 
-                _monitor.Log("Steam encrypted app ticket received from steam-auth service ✓", LogLevel.Info);
+                _monitor.Log(
+                    "Steam encrypted app ticket received from steam-auth service ✓",
+                    LogLevel.Info
+                );
 
                 // Convert steam-auth response to the expected format
                 return new SteamEncryptedAppTicket
@@ -132,12 +162,15 @@ namespace JunimoServer.Services.Auth
                     Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                     Expiry = string.IsNullOrEmpty(response.expires_at)
                         ? DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds()
-                        : DateTimeOffset.Parse(response.expires_at).ToUnixTimeSeconds()
+                        : DateTimeOffset.Parse(response.expires_at).ToUnixTimeSeconds(),
                 };
             }
             catch (Exception ex)
             {
-                _monitor.Log($"Failed to get app ticket from steam-auth service: {ex.Message}", LogLevel.Error);
+                _monitor.Log(
+                    $"Failed to get app ticket from steam-auth service: {ex.Message}",
+                    LogLevel.Error
+                );
                 throw;
             }
         }

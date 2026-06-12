@@ -35,7 +35,13 @@ internal static class HostPoolAccessor
     /// </summary>
     public static IReadOnlyList<(DockerClient Client, bool IsRemote)>? GetHostsForCleanup()
     {
-        try { return _provider?.Invoke(); }
-        catch { return null; }
+        try
+        {
+            return _provider?.Invoke();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

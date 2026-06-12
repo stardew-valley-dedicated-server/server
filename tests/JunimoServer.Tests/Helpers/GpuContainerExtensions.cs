@@ -17,8 +17,10 @@ public static class GpuContainerExtensions
     /// run side-by-side: the workstation's containers get NVENC, the VPS's fall back
     /// to libx264.
     /// </summary>
-    public static ContainerBuilder WithGpuIfEnabled(this ContainerBuilder builder,
-        Infrastructure.DockerHost host)
+    public static ContainerBuilder WithGpuIfEnabled(
+        this ContainerBuilder builder,
+        Infrastructure.DockerHost host
+    )
     {
         if (!host.HasGpu)
             return builder;
@@ -31,14 +33,13 @@ public static class GpuContainerExtensions
                 // Request all available GPUs, equivalent to `docker run --gpus all`
                 p.HostConfig ??= new HostConfig();
                 p.HostConfig.DeviceRequests ??= new List<DeviceRequest>();
-                p.HostConfig.DeviceRequests.Add(new DeviceRequest
-                {
-                    Count = -1,
-                    Capabilities = new List<IList<string>>
+                p.HostConfig.DeviceRequests.Add(
+                    new DeviceRequest
                     {
-                        new List<string> { "gpu" }
+                        Count = -1,
+                        Capabilities = new List<IList<string>> { new List<string> { "gpu" } },
                     }
-                });
+                );
             });
     }
 }

@@ -1,5 +1,5 @@
-using StardewValley;
 using System;
+using StardewValley;
 
 namespace JunimoServer.Services.ChatCommands
 {
@@ -10,7 +10,7 @@ namespace JunimoServer.Services.ChatCommands
             ChatMessage,
             ErrorMessage,
             UserNotification,
-            PrivateMessage
+            PrivateMessage,
         }
 
         public long SourceFarmer { get; set; }

@@ -23,7 +23,8 @@ namespace JunimoServer.Services.SteamGameServer
             Harmony harmony,
             IMonitor monitor,
             IModHelper helper,
-            SteamGameServerService steamGameServerService)  // Dependency ensures correct init order
+            SteamGameServerService steamGameServerService
+        ) // Dependency ensures correct init order
         {
             _monitor = monitor;
             _helper = helper;
@@ -57,7 +58,10 @@ namespace JunimoServer.Services.SteamGameServer
 
             if (!SteamGameServerService.IsInitialized)
             {
-                _monitor.Log("GameServer not yet initialized, deferring network server addition", LogLevel.Debug);
+                _monitor.Log(
+                    "GameServer not yet initialized, deferring network server addition",
+                    LogLevel.Debug
+                );
                 return;
             }
 
@@ -66,12 +70,18 @@ namespace JunimoServer.Services.SteamGameServer
                 // Check if game server exists
                 if (Game1.server == null)
                 {
-                    _monitor.Log("Game1.server is null, waiting for server creation", LogLevel.Debug);
+                    _monitor.Log(
+                        "Game1.server is null, waiting for server creation",
+                        LogLevel.Debug
+                    );
                     return;
                 }
 
                 // Access the internal 'servers' list via reflection
-                var serversField = _helper.Reflection.GetField<List<Server>>(Game1.server, "servers");
+                var serversField = _helper.Reflection.GetField<List<Server>>(
+                    Game1.server,
+                    "servers"
+                );
                 var servers = serversField.GetValue();
 
                 // Check if SteamGameServerNetServer already exists
@@ -84,11 +94,16 @@ namespace JunimoServer.Services.SteamGameServer
 
                 // Remove any existing SteamNetServer - it's not properly initialized in GameServer mode
                 // and will crash when trying to check connection IDs
-                var existingSteamServer = servers.FirstOrDefault(s => s.GetType().Name == "SteamNetServer");
+                var existingSteamServer = servers.FirstOrDefault(s =>
+                    s.GetType().Name == "SteamNetServer"
+                );
                 if (existingSteamServer != null)
                 {
                     servers.Remove(existingSteamServer);
-                    _monitor.Log("Removed vanilla SteamNetServer (not compatible with GameServer mode)", LogLevel.Info);
+                    _monitor.Log(
+                        "Removed vanilla SteamNetServer (not compatible with GameServer mode)",
+                        LogLevel.Info
+                    );
                 }
 
                 // Create and add our GameServer-based network server
@@ -99,12 +114,21 @@ namespace JunimoServer.Services.SteamGameServer
 
                 _serverAdded = true;
                 _monitor.Log("SteamGameServerNetServer added successfully!", LogLevel.Info);
-                _monitor.Log($"Server Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}", LogLevel.Info);
-                _monitor.Log("Steam clients can now connect via SDR using this Steam ID", LogLevel.Info);
+                _monitor.Log(
+                    $"Server Steam ID: {SteamGameServerService.ServerSteamId.m_SteamID}",
+                    LogLevel.Info
+                );
+                _monitor.Log(
+                    "Steam clients can now connect via SDR using this Steam ID",
+                    LogLevel.Info
+                );
             }
             catch (Exception ex)
             {
-                _monitor.Log($"Failed to add SteamGameServerNetServer: {ex.Message}", LogLevel.Error);
+                _monitor.Log(
+                    $"Failed to add SteamGameServerNetServer: {ex.Message}",
+                    LogLevel.Error
+                );
                 _monitor.Log(ex.ToString(), LogLevel.Debug);
             }
         }

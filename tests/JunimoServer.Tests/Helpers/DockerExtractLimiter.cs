@@ -61,7 +61,8 @@ internal sealed class DockerExtractLimiter : IDisposable
                 }
             },
             ct,
-            snapshot: () => new { host_id = _hostId, maxConcurrent = _maxConcurrent });
+            snapshot: () => new { host_id = _hostId, maxConcurrent = _maxConcurrent }
+        );
     }
 
     public void Release() => _semaphore.Release();
@@ -72,14 +73,25 @@ internal sealed class DockerExtractLimiter : IDisposable
     /// </summary>
     public void CancelPending()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
     }
 
     public void Dispose()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
         _poisonCts.Dispose();
         _semaphore.Dispose();
     }
-
 }

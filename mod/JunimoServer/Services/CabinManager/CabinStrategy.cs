@@ -31,6 +31,6 @@ namespace JunimoServer.Services.CabinManager
         /// since there is no human host to visit Robin on a dedicated server.
         /// No message interception or farmhouse access restriction is applied.
         /// </summary>
-        None
+        None,
     }
 }

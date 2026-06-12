@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using DotNet.Testcontainers.Networks;
 using JunimoServer.Tests.Containers;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 using JunimoServer.Tests.Schema.Json;
-using DotNet.Testcontainers.Networks;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -20,6 +20,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
     public static TestResourceBroker Instance { get; private set; } = new();
 
     private readonly ServerPool _servers = new();
+
     // Per-host queues / locks / counters: keyed by $"{key}@{hostId}". Two waiters
     // for the same config on different hosts must drive independent deferred
     // creations — without per-host keying, one would block on a queue resolved
@@ -28,6 +29,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ServerQueue> _queues = new();
     private readonly ConcurrentDictionary<string, int> _creationsInFlight = new();
     private readonly ConcurrentDictionary<string, object> _creationLocks = new();
+
     // Pending and remaining demand stay keyed by config (test-level concept; not host-scoped).
     private readonly ConcurrentDictionary<string, int> _pendingDemand = new();
     private readonly ConcurrentDictionary<string, int> _remainingDemand = new();
@@ -39,6 +41,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// broker bucket so reuse never crosses hosts.
     /// </summary>
     private static string BrokerKeyFor(string key, DockerHost host) => $"{key}@{host.Id}";
+
     // Server.DisposeAsync tasks kicked off in the background by
     // TryEvictIdleServerForAsync so the waiting test can proceed without
     // blocking on Docker stop-grace + recording extraction. Also receives
@@ -61,15 +64,22 @@ public sealed class TestResourceBroker : IAsyncDisposable
     {
         using (ExecutionContext.SuppressFlow())
         {
-            _backgroundDisposeTasks.Enqueue(Task.Run(async () =>
-            {
-                try { await work(); }
-                catch (Exception ex)
+            _backgroundDisposeTasks.Enqueue(
+                Task.Run(async () =>
                 {
-                    InfrastructureEventLog.Emit("background_task_failed",
-                        new { source = "broker_background", error = ex.Message });
-                }
-            }));
+                    try
+                    {
+                        await work();
+                    }
+                    catch (Exception ex)
+                    {
+                        InfrastructureEventLog.Emit(
+                            "background_task_failed",
+                            new { source = "broker_background", error = ex.Message }
+                        );
+                    }
+                })
+            );
         }
     }
 
@@ -86,21 +96,26 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// </summary>
     internal void EmitModPhaseAnnotation(string forwardedVia, string phase)
     {
-        if (!forwardedVia.StartsWith("server-", StringComparison.Ordinal)) return;
-        if (!int.TryParse(forwardedVia.AsSpan("server-".Length), out var serverIndex)) return;
+        if (!forwardedVia.StartsWith("server-", StringComparison.Ordinal))
+            return;
+        if (!int.TryParse(forwardedVia.AsSpan("server-".Length), out var serverIndex))
+            return;
 
         foreach (var (_, managed) in _servers.GetAll())
         {
-            if (managed.Server.ServerIndex != serverIndex) continue;
+            if (managed.Server.ServerIndex != serverIndex)
+                continue;
             managed.EmitAnnotationToRunningTests(AnnotationLevel.Info, $"mod_phase: {phase}");
             return;
         }
     }
+
     private IReadOnlyList<ServerDemand> _discoveredDemands = Array.Empty<ServerDemand>();
     private readonly Lazy<Task> _imagesBuildTask;
 
     private int _serverIndexCounter;
     private CancellationTokenSource? _prestartCts;
+
     /// <summary>
     /// Per-host client pools keyed by <see cref="DockerHost.Id"/>. Eagerly populated
     /// for hosts that have at least one pre-start placement (so pre-warm can run
@@ -115,11 +130,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
     // each host serves a slice of STEAM_ACCOUNTS so SteamKit's single-session
     // rule isn't violated. Hosts that aren't Steam-capable have no entry.
     private readonly ConcurrentDictionary<string, SharedSteamAuth> _steamAuthByHost = new();
+
     // Per-host Steam-account allocators, parallel to _steamAuthByHost. Each
     // allocator's index space is slice-local (0..k-1). The broker routes
     // allocate/release calls via host.Id so a server bound to host H only
     // ever touches H's allocator.
-    private readonly ConcurrentDictionary<string, ISteamAccountAllocator> _accountAllocatorByHost = new();
+    private readonly ConcurrentDictionary<string, ISteamAccountAllocator> _accountAllocatorByHost =
+        new();
+
     // Slicer output cached for the run. Populated once in StartPrestart so the
     // placement pass and PrestartAsync's bring-up see the same slicing decision.
     // ServerConfigDiscovery.ValidateRequirements re-runs the (pure) slicer for
@@ -154,7 +172,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         _imagesBuildTask = new Lazy<Task>(() =>
             DockerImageBuilder.EnsureImagesExistAsync(
                 includeTestClient: true,
-                new SetupEventBusBuildProgressSink("Setup", collectionName: null)));
+                new SetupEventBusBuildProgressSink("Setup", collectionName: null)
+            )
+        );
 
         // SuppressFlow before Task.Run so prestart and its descendants don't inherit
         // the constructing test's TestContext.Current. Without this, every
@@ -184,7 +204,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // below allocates servers for tests that won't run.
             var methodFilter = Environment.GetEnvironmentVariable("SDVD_TEST_FILTER");
             var demands = ServerConfigDiscovery.DiscoverRequiredConfigs(
-                skipValidation: false, methodFilter: methodFilter);
+                skipValidation: false,
+                methodFilter: methodFilter
+            );
             _discoveredDemands = demands;
             if (demands.Count == 0)
             {
@@ -203,11 +225,18 @@ public sealed class TestResourceBroker : IAsyncDisposable
             var minHostClientCap = HostPool.Instance.Hosts.Min(h => h.ClientCapacity.Capacity);
             var totalDemandNeed = demands.Sum(d =>
             {
-                var clientsPerInstance = Math.Max(1, minHostClientCap / Math.Max(1, d.Requirements.Clients));
+                var clientsPerInstance = Math.Max(
+                    1,
+                    minHostClientCap / Math.Max(1, d.Requirements.Clients)
+                );
                 var nonExclusive = Math.Max(d.NonExclusiveTestCount, 1);
                 return Math.Max(1, (int)Math.Ceiling((double)nonExclusive / clientsPerInstance));
             });
-            var instancePlan = AllocateInstances(demands, Math.Min(totalSlots, totalDemandNeed), minHostClientCap);
+            var instancePlan = AllocateInstances(
+                demands,
+                Math.Min(totalSlots, totalDemandNeed),
+                minHostClientCap
+            );
 
             RunMetadata.WriteRunMetadata(demands, instancePlan);
             InfrastructureEventLog.Initialize();
@@ -219,12 +248,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
             EmergencyCleanup.EnsureRegistered();
             EmergencyCleanup.RegisterDrainable(
                 "infrastructure-event-log",
-                () => new ValueTask(InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2))));
+                () => new ValueTask(InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2)))
+            );
 
             TestLog.Server($"Discovered {demands.Count} unique server config(s) for pre-start:");
             foreach (var d in demands)
             {
-                TestLog.Server($"  {d.Requirements.GetDisplayLabel()}: {d.ClassCount} class(es), {d.TestCount} test(s):");
+                TestLog.Server(
+                    $"  {d.Requirements.GetDisplayLabel()}: {d.ClassCount} class(es), {d.TestCount} test(s):"
+                );
                 foreach (var name in d.ClassNames)
                     TestLog.Server($"    · {name}");
             }
@@ -241,9 +273,13 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // truth for capability prediction). Cached on _slices for PrestartAsync to reuse
             // without re-parsing STEAM_ACCOUNTS.
             _slices = SteamAccountSlicer.Slice(
-                TestEnvLoader.Get("STEAM_ACCOUNTS"), HostPool.Instance.Hosts);
+                TestEnvLoader.Get("STEAM_ACCOUNTS"),
+                HostPool.Instance.Hosts
+            );
             var capableIds = new HashSet<string>(
-                _slices.Where(s => s.IsSteamCapable).Select(s => s.HostId), StringComparer.Ordinal);
+                _slices.Where(s => s.IsSteamCapable).Select(s => s.HostId),
+                StringComparer.Ordinal
+            );
 
             // Distribute pre-start instances in two passes:
             //  (1) Steam tokens go to Steam-capable hosts only — predicted by slicing,
@@ -270,11 +306,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
             if (steamTokens.Count > 0)
             {
-                var capableHosts = HostPool.Instance.Hosts.Where(h => capableIds.Contains(h.Id)).ToList();
+                var capableHosts = HostPool
+                    .Instance.Hosts.Where(h => capableIds.Contains(h.Id))
+                    .ToList();
                 if (capableHosts.Count == 0)
                     throw new InvalidOperationException(
-                        "Pre-start: configs require Steam but no host's slice is Steam-capable. " +
-                        "ServerConfigDiscovery should have caught this — check STEAM_ACCOUNTS sizing.");
+                        "Pre-start: configs require Steam but no host's slice is Steam-capable. "
+                            + "ServerConfigDiscovery should have caught this — check STEAM_ACCOUNTS sizing."
+                    );
                 DistributeAndAppend(capableHosts, budgets, steamTokens, placements);
             }
 
@@ -295,7 +334,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // See .claude/rules/asynclocal-pitfalls.md.
             using (ExecutionContext.SuppressFlow())
             {
-                return Task.Run(() => PrestartAsync(demands, instancePlan, placements, _prestartCts.Token));
+                return Task.Run(() =>
+                    PrestartAsync(demands, instancePlan, placements, _prestartCts.Token)
+                );
             }
         }
         catch (Exception ex)
@@ -335,18 +376,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// see the same allocation. <paramref name="placements"/> expands the plan into
     /// per-instance (demand, host) pairs based on per-host ServerSlots.
     /// </summary>
-    private async Task PrestartAsync(List<ServerDemand> demands,
+    private async Task PrestartAsync(
+        List<ServerDemand> demands,
         List<(ServerDemand Demand, int Count)> instancePlan,
         List<(ServerDemand Demand, DockerHost Host)> placements,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         try
         {
             var sw = Stopwatch.StartNew();
             TestLog.Server("Building Docker images...");
             await _imagesBuildTask.Value;
-            TestLog.Server(FormattableString.Invariant(
-                $"Docker images ready ({sw.Elapsed.TotalSeconds:F1}s)"));
+            TestLog.Server(
+                FormattableString.Invariant($"Docker images ready ({sw.Elapsed.TotalSeconds:F1}s)")
+            );
 
             // One steam-auth container per Steam-capable host. Each host's bridge
             // resolves the alias "steam-auth" to its own container, so the
@@ -361,54 +405,87 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // outputs); reuse it here to avoid double-emitting
                 // steam_account_slicing events. Defensive fallback if a future
                 // refactor inlines this method into a path that skips StartPrestart.
-                var slices = _slices ?? SteamAccountSlicer.Slice(
-                    TestEnvLoader.Get("STEAM_ACCOUNTS"), HostPool.Instance.Hosts);
+                var slices =
+                    _slices
+                    ?? SteamAccountSlicer.Slice(
+                        TestEnvLoader.Get("STEAM_ACCOUNTS"),
+                        HostPool.Instance.Hosts
+                    );
                 _slices = slices;
                 var capablePairs = slices
                     .Where(s => s.IsSteamCapable)
-                    .Select(s => (Slice: s, Host: HostPool.Instance.Hosts.First(h => h.Id == s.HostId)))
+                    .Select(s =>
+                        (Slice: s, Host: HostPool.Instance.Hosts.First(h => h.Id == s.HostId))
+                    )
                     .ToList();
 
-                TestLog.Server($"Initializing per-host steam-auth: " +
-                    $"{capablePairs.Count} capable host(s) " +
-                    $"[{string.Join(", ", capablePairs.Select(p => $"{p.Host.Id}={p.Slice.SliceSize}"))}]");
+                TestLog.Server(
+                    $"Initializing per-host steam-auth: "
+                        + $"{capablePairs.Count} capable host(s) "
+                        + $"[{string.Join(", ", capablePairs.Select(p => $"{p.Host.Id}={p.Slice.SliceSize}"))}]"
+                );
 
                 var steamAuthOptions = new ServerContainerOptions();
-                await Task.WhenAll(capablePairs.Select(async pair =>
-                {
-                    var (slice, host) = pair;
-                    SharedSteamAuth? created = null;
-                    try
+                await Task.WhenAll(
+                    capablePairs.Select(async pair =>
                     {
-                        var network = await TestNetworkManager.GetOrCreateNetworkAsync(host, ct);
-                        created = await SharedSteamAuth.CreateAndStartAsync(
-                            network, steamAuthOptions.ImageTag, steamAuthOptions.GameDataVolume,
-                            steamAuthOptions.SteamSessionVolume, ct, host, slice.SliceJson);
-                        TestLog.Server($"steam-auth ready on {host.Id}");
-
-                        await created.WaitForAccountsLoggedInAsync(slice.SliceSize, ct);
-                        TestLog.Server($"All {slice.SliceSize} Steam account(s) ready on {host.Id}");
-
-                        _steamAuthByHost[host.Id] = created;
-                        _accountAllocatorByHost[host.Id] = new SteamAccountAllocator(slice.SliceSize,
-                            readinessProbe: (idx, c) => created.IsAccountHealthyAsync(idx, c));
-                        host.MarkSteamCapable();
-                    }
-                    catch (Exception ex)
-                    {
-                        TestLog.Server($"steam-auth init failed on {host.Id}: {ex.GetType().Name}: {ex.Message}");
-                        // Preserve the full failure message — a downstream aggregate throw
-                        // surfaces this verbatim to the test UI / per-test error.
-                        host.Poison(ex.Message);
-                        // Best-effort cleanup of any partially-created container so
-                        // we don't leak across the run.
-                        if (created != null)
+                        var (slice, host) = pair;
+                        SharedSteamAuth? created = null;
+                        try
                         {
-                            try { await created.DisposeAsync(); }
-                            catch (Exception dispEx) { TestLog.Server($"steam-auth cleanup failed on {host.Id}: {dispEx.Message}"); }
+                            var network = await TestNetworkManager.GetOrCreateNetworkAsync(
+                                host,
+                                ct
+                            );
+                            created = await SharedSteamAuth.CreateAndStartAsync(
+                                network,
+                                steamAuthOptions.ImageTag,
+                                steamAuthOptions.GameDataVolume,
+                                steamAuthOptions.SteamSessionVolume,
+                                ct,
+                                host,
+                                slice.SliceJson
+                            );
+                            TestLog.Server($"steam-auth ready on {host.Id}");
+
+                            await created.WaitForAccountsLoggedInAsync(slice.SliceSize, ct);
+                            TestLog.Server(
+                                $"All {slice.SliceSize} Steam account(s) ready on {host.Id}"
+                            );
+
+                            _steamAuthByHost[host.Id] = created;
+                            _accountAllocatorByHost[host.Id] = new SteamAccountAllocator(
+                                slice.SliceSize,
+                                readinessProbe: (idx, c) => created.IsAccountHealthyAsync(idx, c)
+                            );
+                            host.MarkSteamCapable();
                         }
-                    }
-                }));
+                        catch (Exception ex)
+                        {
+                            TestLog.Server(
+                                $"steam-auth init failed on {host.Id}: {ex.GetType().Name}: {ex.Message}"
+                            );
+                            // Preserve the full failure message — a downstream aggregate throw
+                            // surfaces this verbatim to the test UI / per-test error.
+                            host.Poison(ex.Message);
+                            // Best-effort cleanup of any partially-created container so
+                            // we don't leak across the run.
+                            if (created != null)
+                            {
+                                try
+                                {
+                                    await created.DisposeAsync();
+                                }
+                                catch (Exception dispEx)
+                                {
+                                    TestLog.Server(
+                                        $"steam-auth cleanup failed on {host.Id}: {dispEx.Message}"
+                                    );
+                                }
+                            }
+                        }
+                    })
+                );
 
                 if (_steamAuthByHost.IsEmpty && demands.Any(d => d.Requirements.WithSteam))
                 {
@@ -418,13 +495,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         .Select(t => $"  [{t.host.Id}] {t.reason}")
                         .ToList();
 
-                    var detail = perHost.Count > 0
-                        ? "Per-host failure:\n" + string.Join("\n", perHost)
-                        : "No per-host failure was recorded.";
+                    var detail =
+                        perHost.Count > 0
+                            ? "Per-host failure:\n" + string.Join("\n", perHost)
+                            : "No per-host failure was recorded.";
 
                     throw new InvalidOperationException(
-                        "Steam-capable hosts failed steam-auth bring-up; aborting run before any tests dispatch.\n" +
-                        detail);
+                        "Steam-capable hosts failed steam-auth bring-up; aborting run before any tests dispatch.\n"
+                            + detail
+                    );
                 }
             }
 
@@ -437,10 +516,17 @@ public sealed class TestResourceBroker : IAsyncDisposable
             if (deferred.Count > 0 || instancePlan.Any(p => p.Count > 1))
             {
                 var labels = instancePlan.Select(p =>
-                    p.Count > 1 ? $"{p.Demand.Requirements.GetDisplayLabel()} x{p.Count}" : p.Demand.Requirements.GetDisplayLabel());
-                var hostSummary = string.Join(", ", placements.GroupBy(p => p.Host.Id)
-                    .Select(g => $"{g.Key}={g.Count()}"));
-                TestLog.Server($"Pre-starting {totalInstances} server instance(s) across {instancePlan.Count} config(s) on hosts [{hostSummary}]: {string.Join(", ", labels)}");
+                    p.Count > 1
+                        ? $"{p.Demand.Requirements.GetDisplayLabel()} x{p.Count}"
+                        : p.Demand.Requirements.GetDisplayLabel()
+                );
+                var hostSummary = string.Join(
+                    ", ",
+                    placements.GroupBy(p => p.Host.Id).Select(g => $"{g.Key}={g.Count()}")
+                );
+                TestLog.Server(
+                    $"Pre-starting {totalInstances} server instance(s) across {instancePlan.Count} config(s) on hosts [{hostSummary}]: {string.Join(", ", labels)}"
+                );
                 foreach (var d in deferred)
                     TestLog.Server($"  deferred: {d.Requirements.GetDisplayLabel()}");
             }
@@ -468,9 +554,16 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // there, so a null URL is correct) and its host's allocator.
                 var hostAllocator = _accountAllocatorByHost.GetValueOrDefault(host.Id);
                 var hostSteamAuthUrl = _steamAuthByHost.TryGetValue(host.Id, out var sa)
-                    ? sa.GetUrlForServer() : null;
-                var pool = new ClientPool(host, hostNetwork, defaults.ImageTag, defaults.GameDataVolume,
-                    hostSteamAuthUrl, hostAllocator);
+                    ? sa.GetUrlForServer()
+                    : null;
+                var pool = new ClientPool(
+                    host,
+                    hostNetwork,
+                    defaults.ImageTag,
+                    defaults.GameDataVolume,
+                    hostSteamAuthUrl,
+                    hostAllocator
+                );
                 _clientPools[host.Id] = pool;
             }
 
@@ -495,19 +588,25 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 var maxDemandClients = demands.Max(d => Math.Max(1, d.Requirements.Clients));
                 var prewarmCount = Math.Min(
                     Math.Min(host.ClientCapacity.Capacity, localCap),
-                    maxDemandClients);
+                    maxDemandClients
+                );
                 if (prewarmCount > 0)
                 {
                     var capDescription = localCap == int.MaxValue ? "n/a" : localCap.ToString();
-                    TestLog.Server($"Pre-warming {prewarmCount} client(s) on {host.Id} (host cap {host.ClientCapacity.Capacity}, slice cap {capDescription}, demand cap {maxDemandClients})");
+                    TestLog.Server(
+                        $"Pre-warming {prewarmCount} client(s) on {host.Id} (host cap {host.ClientCapacity.Capacity}, slice cap {capDescription}, demand cap {maxDemandClients})"
+                    );
                     allTasks.Add(pool.PreWarmAsync(prewarmCount, ct));
                 }
             }
 
             await Task.WhenAll(allTasks);
 
-            TestLog.Server(FormattableString.Invariant(
-                $"Pre-start complete: {totalInstances} server instance(s) ready ({sw.Elapsed.TotalSeconds:F1}s)"));
+            TestLog.Server(
+                FormattableString.Invariant(
+                    $"Pre-start complete: {totalInstances} server instance(s) ready ({sw.Elapsed.TotalSeconds:F1}s)"
+                )
+            );
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -540,7 +639,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
         }
     }
 
-    private async Task PrestartServerAsync(ServerDemand demand, DockerHost host, CancellationToken ct)
+    private async Task PrestartServerAsync(
+        ServerDemand demand,
+        DockerHost host,
+        CancellationToken ct
+    )
     {
         var brokerKey = BrokerKeyFor(demand.Key, host);
         var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
@@ -575,10 +678,17 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // nulls — correct because Steam tests are filtered out by
         // Place(requireSteam:true) before they reach here.
         var hostSteamAuthUrl = _steamAuthByHost.TryGetValue(host.Id, out var sa)
-            ? sa.GetUrlForServer() : null;
+            ? sa.GetUrlForServer()
+            : null;
         var hostAllocator = _accountAllocatorByHost.GetValueOrDefault(host.Id);
-        var pool = new ClientPool(host, network, defaults.ImageTag, defaults.GameDataVolume,
-            hostSteamAuthUrl, hostAllocator);
+        var pool = new ClientPool(
+            host,
+            network,
+            defaults.ImageTag,
+            defaults.GameDataVolume,
+            hostSteamAuthUrl,
+            hostAllocator
+        );
         // Race-safe: if another thread won, return the winner and drop ours.
         return _clientPools.GetOrAdd(host.Id, pool);
     }
@@ -588,14 +698,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// reuses existing or waits for server readiness. For PerTest, creates fresh.
     /// </summary>
     public async Task<ResourceLease> AcquireAsync(
-        ResourceRequirements requirements, string testName, CancellationToken ct = default, int priority = 50)
+        ResourceRequirements requirements,
+        string testName,
+        CancellationToken ct = default,
+        int priority = 50
+    )
     {
         // Await pre-start completion: ensures pre-start servers acquire their server
         // slots before any on-demand/deferred creation can compete. Without this, a test
         // for a deferred config can race at host.ServerCapacity.AcquireAsync and steal the
         // slot from a higher-priority pre-start server (especially when ServerSlots=1).
         // The readonly field guarantees all callers see the same Task instance.
-        try { await _prestartTask; }
+        try
+        {
+            await _prestartTask;
+        }
         catch
         {
             // Swallow here; the captured exception is rethrown below as a clean
@@ -640,8 +757,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // Each host runs its own steam-auth on its own bridge with the alias
             // "steam-auth", so any Steam-capable host can serve a Steam test —
             // no coordinator pin needed.
-            host = HostPool.Instance.Place(1, requirements.Clients,
-                requireSteam: requirements.WithSteam);
+            host = HostPool.Instance.Place(
+                1,
+                requirements.Clients,
+                requireSteam: requirements.WithSteam
+            );
         }
 
         // For shared servers: if no instance exists on the placed host AND that host's
@@ -682,7 +802,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// scoped: a host0-placed test doesn't wait for host1's slots to free.
     /// </summary>
     private async Task WaitForServerAvailableAsync(
-        string key, ResourceRequirements requirements, DockerHost host, CancellationToken ct)
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        CancellationToken ct
+    )
     {
         var displayLabel = requirements.GetDisplayLabel();
 
@@ -695,8 +819,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // (eviction on this host frees a slot).
         if (host.ServerCapacity.Available <= 0)
         {
-            TestLog.Test($"Waiting: server {displayLabel} not running on {host.Id}, " +
-                         $"all {host.ServerCapacity.Capacity} slot(s) busy on host");
+            TestLog.Test(
+                $"Waiting: server {displayLabel} not running on {host.Id}, "
+                    + $"all {host.ServerCapacity.Capacity} slot(s) busy on host"
+            );
 
             var brokerKey = BrokerKeyFor(key, host);
             var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
@@ -708,7 +834,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
             var deferredLock = _creationLocks.GetOrAdd(brokerKey, _ => new object());
             lock (deferredLock)
             {
-                if (!queue.IsReady && !queue.IsFaulted && _creationsInFlight.GetOrAdd(brokerKey, 0) == 0)
+                if (
+                    !queue.IsReady
+                    && !queue.IsFaulted
+                    && _creationsInFlight.GetOrAdd(brokerKey, 0) == 0
+                )
                 {
                     TestLog.Server($"Starting deferred server {displayLabel} on {host.Id}...");
                     _creationsInFlight[brokerKey] = 1;
@@ -725,7 +855,13 @@ public sealed class TestResourceBroker : IAsyncDisposable
     }
 
     private async Task<ResourceLease> AcquireSharedAsync(
-        string key, ResourceRequirements requirements, DockerHost host, string testName, int priority, CancellationToken ct)
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        string testName,
+        int priority,
+        CancellationToken ct
+    )
     {
         // Track that this test is waiting for a server with this key.
         // ReleaseAsync checks this counter to avoid evicting servers that still
@@ -776,7 +912,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // instance under ServerPool._lock so concurrent acquirers see climbing
                 // load and fan out across siblings.
                 var server = requirements.Exclusive
-                    ? _servers.TryReserveBestForExclusive(key, ManagedServer.ExtractClassName(testName), host.Id)
+                    ? _servers.TryReserveBestForExclusive(
+                        key,
+                        ManagedServer.ExtractClassName(testName),
+                        host.Id
+                    )
                     : _servers.TryReserveBest(key, host.Id);
                 reservedServer = server;
 
@@ -797,11 +937,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     var onDemandLock = _creationLocks.GetOrAdd(brokerKey, _ => new object());
                     lock (onDemandLock)
                     {
-                        if (!queue.IsReady && !queue.IsFaulted && _creationsInFlight.GetOrAdd(brokerKey, 0) == 0)
+                        if (
+                            !queue.IsReady
+                            && !queue.IsFaulted
+                            && _creationsInFlight.GetOrAdd(brokerKey, 0) == 0
+                        )
                         {
                             TestLog.Server($"Creating server {displayLabel} on {host.Id}...");
                             _creationsInFlight[brokerKey] = 1;
-                            _ = CreateAndResolveAsync(key, requirements, host, queue, _runCts.Token);
+                            _ = CreateAndResolveAsync(
+                                key,
+                                requirements,
+                                host,
+                                queue,
+                                _runCts.Token
+                            );
                         }
                     }
 
@@ -813,7 +963,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     // so other hosts' tests aren't affected.
                     if (!queue.IsReady)
                     {
-                        TestLog.Test($"{shortTest} waiting, server {displayLabel} starting on {host.Id}, releasing client meanwhile");
+                        TestLog.Test(
+                            $"{shortTest} waiting, server {displayLabel} starting on {host.Id}, releasing client meanwhile"
+                        );
                         host.ClientCapacity.Release(requirements.Clients);
                         ownsCapacity = false;
                         _pendingDemand.AddOrUpdate(key, 0, (_, v) => v - 1);
@@ -821,7 +973,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         await queue.WaitUntilReadyAsync(ct);
 
                         _pendingDemand.AddOrUpdate(key, 1, (_, v) => v + 1);
-                        await host.ClientCapacity.AcquireAsync(requirements.Clients, testName, priority, ct);
+                        await host.ClientCapacity.AcquireAsync(
+                            requirements.Clients,
+                            testName,
+                            priority,
+                            ct
+                        );
                         ownsCapacity = true;
                     }
 
@@ -839,15 +996,22 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         // Uses ReleaseAndReacquireAsync to atomically enqueue a reacquire
                         // waiter (int.MinValue priority) THEN release slots, so the drain
                         // serves us before other waiters that would block on our gate.
-                        await server.AddRefAndAcquireExclusiveAsync(testName, ct,
+                        await server.AddRefAndAcquireExclusiveAsync(
+                            testName,
+                            ct,
                             releaseAndReacquireCapacity: async () =>
                             {
                                 ownsCapacity = false;
                                 await host.ClientCapacity.ReleaseAndReacquireAsync(
-                                    requirements.Clients, testName, int.MinValue, ct);
+                                    requirements.Clients,
+                                    testName,
+                                    int.MinValue,
+                                    ct
+                                );
                                 ownsCapacity = true;
                             },
-                            consumeReservation: true);
+                            consumeReservation: true
+                        );
                     }
                     else
                     {
@@ -863,11 +1027,17 @@ public sealed class TestResourceBroker : IAsyncDisposable
                             {
                                 await Task.Delay(TestTimings.FastPollInterval, ct);
                                 var better = _servers.TryGetBest(key, host.Id);
-                                if (better != null && better != server
-                                    && !better.HasExclusiveGate && !better.IsPoisoned
-                                    && _servers.Contains(key, better))
+                                if (
+                                    better != null
+                                    && better != server
+                                    && !better.HasExclusiveGate
+                                    && !better.IsPoisoned
+                                    && _servers.Contains(key, better)
+                                )
                                 {
-                                    TestLog.Test($"{shortTest} found ungated instance on {host.Id}, re-evaluating");
+                                    TestLog.Test(
+                                        $"{shortTest} found ungated instance on {host.Id}, re-evaluating"
+                                    );
                                     foundUngated = true;
                                     break;
                                 }
@@ -887,7 +1057,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         // Release/reacquire per-host capacity while waiting so the exclusive
                         // test's ReleaseAndReacquireAsync can complete (it needs freed
                         // capacity on the same host to atomically reclaim its slot).
-                        await server.AddRefExclusiveAwareAsync(testName, ct,
+                        await server.AddRefExclusiveAwareAsync(
+                            testName,
+                            ct,
                             releaseCapacity: () =>
                             {
                                 host.ClientCapacity.Release(requirements.Clients);
@@ -896,10 +1068,16 @@ public sealed class TestResourceBroker : IAsyncDisposable
                             },
                             reacquireCapacity: async () =>
                             {
-                                await host.ClientCapacity.AcquireAsync(requirements.Clients, testName, priority, ct);
+                                await host.ClientCapacity.AcquireAsync(
+                                    requirements.Clients,
+                                    testName,
+                                    priority,
+                                    ct
+                                );
                                 ownsCapacity = true;
                             },
-                            consumeReservation: true);
+                            consumeReservation: true
+                        );
                     }
 
                     // AddRef consumed the reservation on its success path; clear the
@@ -915,12 +1093,16 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         server.Release();
                         if (requirements.Exclusive)
                             server.ReleaseExclusive();
-                        TestLog.Test($"{shortTest} server {displayLabel} was evicted after AddRef, retrying");
+                        TestLog.Test(
+                            $"{shortTest} server {displayLabel} was evicted after AddRef, retrying"
+                        );
                         continue;
                     }
 
                     var clientPool = await EnsureClientPoolAsync(host, ct);
-                    TestLog.Test($"{shortTest} got server {displayLabel} on {host.Id} ({server.RefCount} active tests)");
+                    TestLog.Test(
+                        $"{shortTest} got server {displayLabel} on {host.Id} ({server.RefCount} active tests)"
+                    );
                     return new ResourceLease(server, requirements, testName, clientPool);
                 }
 
@@ -949,7 +1131,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// <see cref="_creationsInFlight"/> deduplication.
     /// </summary>
     private async Task<ManagedServer> CreateAndResolveAsync(
-        string key, ResourceRequirements requirements, DockerHost host, ServerQueue queue, CancellationToken ct)
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        ServerQueue queue,
+        CancellationToken ct
+    )
     {
         var displayLabel = requirements.GetDisplayLabel();
         var brokerKey = BrokerKeyFor(key, host);
@@ -969,16 +1156,31 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // ClientCapacity and will arrive shortly. Without this check, we'd
             // create-then-immediately-destroy the server.
             var remaining = _remainingDemand.TryGetValue(key, out var rd) ? rd : 0;
-            if (managed.RefCount <= 0 && GetPendingDemand(key) <= 0
-                && remaining <= 0 && host.ServerCapacity.WaitingCount > 0)
+            if (
+                managed.RefCount <= 0
+                && GetPendingDemand(key) <= 0
+                && remaining <= 0
+                && host.ServerCapacity.WaitingCount > 0
+            )
             {
-                TestLog.Server($"{displayLabel} created on {host.Id} but no remaining demand with " +
-                              $"{host.ServerCapacity.WaitingCount} waiter(s) on host, disposing to free slot");
+                TestLog.Server(
+                    $"{displayLabel} created on {host.Id} but no remaining demand with "
+                        + $"{host.ServerCapacity.WaitingCount} waiter(s) on host, disposing to free slot"
+                );
                 _servers.TryRemove(key, managed);
                 ReleaseSteamAccount(managed);
                 if (_servers.TryGetBest(key, host.Id) == null)
                     queue.Reset();
-                InfrastructureEventLog.Emit("server_disposed", new { server = key, instanceId = managed.InstanceId, reason = "no_demand_on_ready", host_id = host.Id });
+                InfrastructureEventLog.Emit(
+                    "server_disposed",
+                    new
+                    {
+                        server = key,
+                        instanceId = managed.InstanceId,
+                        reason = "no_demand_on_ready",
+                        host_id = host.Id,
+                    }
+                );
                 await managed.DisposeAsync();
             }
             else
@@ -990,11 +1192,22 @@ public sealed class TestResourceBroker : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            TestLog.Server($"{displayLabel} creation FAILED on {host.Id}: {ex.GetType().Name}: {ex.Message}");
+            TestLog.Server(
+                $"{displayLabel} creation FAILED on {host.Id}: {ex.GetType().Name}: {ex.Message}"
+            );
             TestLog.Server($"  {ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}");
             var serverIndex = ex.Data["serverIndex"] as int?;
-            InfrastructureEventLog.Emit("server_creation_failed",
-                new { server = key, displayLabel, serverIndex, error = ex.Message, host_id = host.Id });
+            InfrastructureEventLog.Emit(
+                "server_creation_failed",
+                new
+                {
+                    server = key,
+                    displayLabel,
+                    serverIndex,
+                    error = ex.Message,
+                    host_id = host.Id,
+                }
+            );
             // Poison the host on a transport fault. This catch runs under the
             // triggering test's EC (fire-and-forget, no SuppressFlow), so
             // host_disconnected is attributed to the test that hit the dead host.
@@ -1010,19 +1223,31 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // faulting waiters even though a successor is already underway.
             lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
             {
-                var inFlightRemaining = _creationsInFlight.AddOrUpdate(brokerKey, 0, (_, v) => Math.Max(0, v - 1));
+                var inFlightRemaining = _creationsInFlight.AddOrUpdate(
+                    brokerKey,
+                    0,
+                    (_, v) => Math.Max(0, v - 1)
+                );
                 // Only fault the queue if ALL in-flight creations for this (key, host) have
                 // completed and none succeeded. If a sibling instance succeeded, queue.IsReady
                 // is true.
                 if (!succeeded && inFlightRemaining == 0 && !queue.IsReady)
-                    queue.ServerFailed(new ServerUnavailableException(
-                        $"All server creation attempts failed for {displayLabel} on {host.Id}"));
+                    queue.ServerFailed(
+                        new ServerUnavailableException(
+                            $"All server creation attempts failed for {displayLabel} on {host.Id}"
+                        )
+                    );
             }
         }
     }
 
     private async Task<ResourceLease> AcquirePerTestAsync(
-        string key, ResourceRequirements requirements, DockerHost host, string testName, CancellationToken ct)
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        string testName,
+        CancellationToken ct
+    )
     {
         // Per-host client capacity is already held (acquired in AcquireAsync before entering here).
         var managed = await CreateServerAsync(key, requirements, host, ct);
@@ -1032,7 +1257,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
     }
 
     private async Task<ManagedServer> CreateServerAsync(
-        string key, ResourceRequirements requirements, DockerHost host, CancellationToken ct)
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        CancellationToken ct
+    )
     {
         var sw = Stopwatch.StartNew();
         var serverIndex = Interlocked.Increment(ref _serverIndexCounter) - 1;
@@ -1043,7 +1272,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // (pre-start, on-demand, replacement, per-test) at the single chokepoint.
         if (host.IsPoisoned)
             throw new ServerUnavailableException(
-                $"Host {host.Id} is poisoned ({host.PoisonReason}); refusing to create {displayLabel}");
+                $"Host {host.Id} is poisoned ({host.PoisonReason}); refusing to create {displayLabel}"
+            );
 
         var isShared = requirements.Isolation != IsolationMode.PerTest;
         TestLog.Server($"{displayLabel} starting up on {host.Id} (server-{serverIndex})...");
@@ -1081,7 +1311,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // host placement (Place(requireSteam:true)) guarantees this host is
             // Steam-capable; the per-host allocator was set in PrestartAsync.
             int? steamAccountIndex = null;
-            if (requirements.WithSteam && _accountAllocatorByHost.TryGetValue(host.Id, out var hostAllocator))
+            if (
+                requirements.WithSteam
+                && _accountAllocatorByHost.TryGetValue(host.Id, out var hostAllocator)
+            )
             {
                 steamAccountIndex = await hostAllocator.AllocateServerAsync(ct);
             }
@@ -1097,7 +1330,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 ct: ct,
                 sharedSteamAuth: hostSteamAuth,
                 steamAccountIndex: steamAccountIndex,
-                instanceId: $"server-{key}-{serverIndex}");
+                instanceId: $"server-{key}-{serverIndex}"
+            );
 
             managed = new ManagedServer(key, server, host, requirements);
             // The slot is now owned by the ManagedServer; its DisposeAsync releases it.
@@ -1112,9 +1346,23 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // Ensure this host's client pool exists (lazily for hosts with no pre-start).
             await EnsureClientPoolAsync(host, ct);
 
-            TestLog.Server(FormattableString.Invariant(
-                $"{displayLabel} ready on {host.Id} ({sw.Elapsed.TotalSeconds:F1}s total, waited {slotWait.TotalSeconds:F1}s for server slot)"));
-            InfrastructureEventLog.Emit("server_created", new { server = key, instanceId = managed.InstanceId, totalMs = sw.ElapsedMilliseconds, slotWaitMs = (long)slotWait.TotalMilliseconds, serverIndex, host_id = host.Id });
+            TestLog.Server(
+                FormattableString.Invariant(
+                    $"{displayLabel} ready on {host.Id} ({sw.Elapsed.TotalSeconds:F1}s total, waited {slotWait.TotalSeconds:F1}s for server slot)"
+                )
+            );
+            InfrastructureEventLog.Emit(
+                "server_created",
+                new
+                {
+                    server = key,
+                    instanceId = managed.InstanceId,
+                    totalMs = sw.ElapsedMilliseconds,
+                    slotWaitMs = (long)slotWait.TotalMilliseconds,
+                    serverIndex,
+                    host_id = host.Id,
+                }
+            );
 
             return managed;
         }
@@ -1140,14 +1388,18 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     exceptionType = ex.GetType().FullName,
                     message = ex.Message,
                     stackTrace = ex.StackTrace,
-                    timestamp = DateTime.UtcNow.ToString("o")
+                    timestamp = DateTime.UtcNow.ToString("o"),
                 };
                 await ArtifactPrettyJson.WriteAsync(
-                    Path.Combine(failureDir, "failure.json"), failure);
+                    Path.Combine(failureDir, "failure.json"),
+                    failure
+                );
             }
             catch (Exception artifactEx)
             {
-                TestLog.Server($"{displayLabel} artifact save failed (original error preserved): {artifactEx.GetType().Name}: {artifactEx.Message}");
+                TestLog.Server(
+                    $"{displayLabel} artifact save failed (original error preserved): {artifactEx.GetType().Name}: {artifactEx.Message}"
+                );
             }
 
             // Clean up on failure to prevent server-slot leaks.
@@ -1157,13 +1409,29 @@ public sealed class TestResourceBroker : IAsyncDisposable
             {
                 _servers.TryRemove(key, managed);
                 ReleaseSteamAccount(managed);
-                try { await managed.DisposeAsync(); }
-                catch (Exception cleanupEx) { TestLog.Server($"{displayLabel} cleanup after failed init: {cleanupEx.Message}"); }
+                try
+                {
+                    await managed.DisposeAsync();
+                }
+                catch (Exception cleanupEx)
+                {
+                    TestLog.Server(
+                        $"{displayLabel} cleanup after failed init: {cleanupEx.Message}"
+                    );
+                }
             }
             else if (slotHeldOutsideManaged)
             {
-                try { host.ServerCapacity.Release(1); }
-                catch (Exception cleanupEx) { TestLog.Server($"{displayLabel} slot release after failed create: {cleanupEx.Message}"); }
+                try
+                {
+                    host.ServerCapacity.Release(1);
+                }
+                catch (Exception cleanupEx)
+                {
+                    TestLog.Server(
+                        $"{displayLabel} slot release after failed create: {cleanupEx.Message}"
+                    );
+                }
             }
             throw;
         }
@@ -1186,7 +1454,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // During shutdown, don't attempt replacement; just clean up
         if (ShutdownCoordinator.IsShuttingDown || _runCts.IsCancellationRequested)
         {
-            TestLog.Server($"{displayLabel} poisoned during shutdown, disposing without replacement");
+            TestLog.Server(
+                $"{displayLabel} poisoned during shutdown, disposing without replacement"
+            );
             _ = DisposeWithoutReplacementAsync(displayLabel, managed);
             return;
         }
@@ -1196,23 +1466,33 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // Only replace if tests are actively using or waiting for this server.
         if (managed.RefCount > 0 || pending > 0)
         {
-            TestLog.Server($"{displayLabel} on {host.Id} poisoned, scheduling replacement (refs={managed.RefCount}, pending={pending})");
+            TestLog.Server(
+                $"{displayLabel} on {host.Id} poisoned, scheduling replacement (refs={managed.RefCount}, pending={pending})"
+            );
 
             // Only reset the per-host queue if no other healthy instances remain on
             // this host for this key.
-            if (_servers.TryGetBest(key, host.Id) == null && _queues.TryGetValue(brokerKey, out var queue))
+            if (
+                _servers.TryGetBest(key, host.Id) == null
+                && _queues.TryGetValue(brokerKey, out var queue)
+            )
                 queue.Reset();
 
             _ = ReplaceServerInBackgroundAsync(key, managed.Requirements, host, managed);
         }
         else
         {
-            TestLog.Server($"{displayLabel} on {host.Id} poisoned, no active or pending demand, disposing without replacement");
+            TestLog.Server(
+                $"{displayLabel} on {host.Id} poisoned, no active or pending demand, disposing without replacement"
+            );
 
             // Clear remaining demand and reset queue only if no other instances exist anywhere
             if (!_servers.HasHealthy(key))
                 _remainingDemand.TryRemove(key, out _);
-            if (_servers.TryGetBest(key, host.Id) == null && _queues.TryGetValue(brokerKey, out var queue))
+            if (
+                _servers.TryGetBest(key, host.Id) == null
+                && _queues.TryGetValue(brokerKey, out var queue)
+            )
                 queue.Reset();
 
             _ = DisposeWithoutReplacementAsync(displayLabel, managed);
@@ -1225,7 +1505,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
         {
             ReleaseSteamAccount(poisoned);
             TestLog.Server($"{displayLabel} disposing (no replacement)...");
-            InfrastructureEventLog.Emit("server_disposed", new { server = poisoned.Key, instanceId = poisoned.InstanceId, reason = "poisoned_no_replacement" });
+            InfrastructureEventLog.Emit(
+                "server_disposed",
+                new
+                {
+                    server = poisoned.Key,
+                    instanceId = poisoned.InstanceId,
+                    reason = "poisoned_no_replacement",
+                }
+            );
             await poisoned.DisposeAfterDrainAsync(PoisonDrainTimeout);
             TestLog.Server($"{displayLabel} disposed, server limit freed");
         }
@@ -1235,8 +1523,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
         }
     }
 
-    private async Task ReplaceServerInBackgroundAsync(string key, ResourceRequirements requirements,
-        DockerHost host, ManagedServer? poisoned = null)
+    private async Task ReplaceServerInBackgroundAsync(
+        string key,
+        ResourceRequirements requirements,
+        DockerHost host,
+        ManagedServer? poisoned = null
+    )
     {
         var displayLabel = requirements.GetDisplayLabel();
         var brokerKey = BrokerKeyFor(key, host);
@@ -1250,8 +1542,19 @@ public sealed class TestResourceBroker : IAsyncDisposable
             ReleaseSteamAccount(poisoned);
             try
             {
-                TestLog.Server($"{displayLabel} disposing poisoned server on {host.Id} to free slot...");
-                InfrastructureEventLog.Emit("server_disposed", new { server = poisoned.Key, instanceId = poisoned.InstanceId, reason = "poisoned_replacing", host_id = host.Id });
+                TestLog.Server(
+                    $"{displayLabel} disposing poisoned server on {host.Id} to free slot..."
+                );
+                InfrastructureEventLog.Emit(
+                    "server_disposed",
+                    new
+                    {
+                        server = poisoned.Key,
+                        instanceId = poisoned.InstanceId,
+                        reason = "poisoned_replacing",
+                        host_id = host.Id,
+                    }
+                );
                 await poisoned.DisposeAfterDrainAsync(PoisonDrainTimeout);
                 TestLog.Server($"{displayLabel} poisoned server disposed");
             }
@@ -1278,13 +1581,29 @@ public sealed class TestResourceBroker : IAsyncDisposable
             queue.ServerReady();
             replacementSucceeded = true;
             TestLog.Server($"{displayLabel} replacement ready on {host.Id}");
-            InfrastructureEventLog.Emit("server_replaced", new { server = key, instanceId = managed.InstanceId, host_id = host.Id });
+            InfrastructureEventLog.Emit(
+                "server_replaced",
+                new
+                {
+                    server = key,
+                    instanceId = managed.InstanceId,
+                    host_id = host.Id,
+                }
+            );
         }
         catch (Exception ex)
         {
             replacementError = ex;
             TestLog.Server($"{displayLabel} replacement FAILED on {host.Id}: {ex.Message}");
-            InfrastructureEventLog.Emit("server_replacement_failed", new { server = key, error = ex.Message, host_id = host.Id });
+            InfrastructureEventLog.Emit(
+                "server_replacement_failed",
+                new
+                {
+                    server = key,
+                    error = ex.Message,
+                    host_id = host.Id,
+                }
+            );
         }
         finally
         {
@@ -1295,10 +1614,18 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // succeed — same race shape as the on-demand path.
             lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
             {
-                var inFlightRemaining = _creationsInFlight.AddOrUpdate(brokerKey, 0, (_, v) => Math.Max(0, v - 1));
+                var inFlightRemaining = _creationsInFlight.AddOrUpdate(
+                    brokerKey,
+                    0,
+                    (_, v) => Math.Max(0, v - 1)
+                );
                 if (!replacementSucceeded && inFlightRemaining == 0 && !queue.IsReady)
-                    queue.ServerFailed(replacementError ?? new ServerUnavailableException(
-                        $"Server replacement failed for {displayLabel} on {host.Id}"));
+                    queue.ServerFailed(
+                        replacementError
+                            ?? new ServerUnavailableException(
+                                $"Server replacement failed for {displayLabel} on {host.Id}"
+                            )
+                    );
             }
         }
     }
@@ -1318,30 +1645,47 @@ public sealed class TestResourceBroker : IAsyncDisposable
     {
         foreach (var (key, server) in _servers.GetAll())
         {
-            if (key == requestingKey) continue;
-            if (server.Host.Id != requestingHost.Id) continue;
-            if (server.IsPoisoned) continue;
-            if (!server.IsInitialized) continue;
-            if (server.RefCount > 0) continue;
-            if (GetPendingDemand(key) > 0) continue;
+            if (key == requestingKey)
+                continue;
+            if (server.Host.Id != requestingHost.Id)
+                continue;
+            if (server.IsPoisoned)
+                continue;
+            if (!server.IsInitialized)
+                continue;
+            if (server.RefCount > 0)
+                continue;
+            if (GetPendingDemand(key) > 0)
+                continue;
 
             // Don't evict servers that still have remaining tests. They were
             // pre-started for a reason and evicting them causes wasteful create/destroy
             // cycles. Tests for the requesting key will wait at WaitForServerAvailableAsync
             // until a server finishes naturally.
             var remaining = _remainingDemand.TryGetValue(key, out var r) ? r : 0;
-            if (remaining > 0) continue;
+            if (remaining > 0)
+                continue;
 
             var evictLabel = server.Requirements.GetDisplayLabel();
             var evictBrokerKey = BrokerKeyFor(key, requestingHost);
             TestLog.Server($"{evictLabel} idle on {requestingHost.Id}, swapping out");
-            InfrastructureEventLog.Emit("server_evicted", new { server = key, requestingKey, host_id = requestingHost.Id });
+            InfrastructureEventLog.Emit(
+                "server_evicted",
+                new
+                {
+                    server = key,
+                    requestingKey,
+                    host_id = requestingHost.Id,
+                }
+            );
 
             _servers.TryRemove(key, server);
             ReleaseSteamAccount(server);
 
-            if (_servers.TryGetBest(key, requestingHost.Id) == null
-                && _queues.TryGetValue(evictBrokerKey, out var queue))
+            if (
+                _servers.TryGetBest(key, requestingHost.Id) == null
+                && _queues.TryGetValue(evictBrokerKey, out var queue)
+            )
                 queue.Reset();
 
             // Broker-shutdown short-circuit. _runCts is cancelled only in
@@ -1359,8 +1703,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // host.ServerCapacity.AcquireAsync unblocks immediately. The later
             // ManagedServer.DisposeAsync will see _slotReleased=1 and skip
             // the second release.
-            try { server.ReleaseSlotEarly(); }
-            catch (Exception ex) { TestLog.Server($"{evictLabel} early slot release failed: {ex.Message}"); }
+            try
+            {
+                server.ReleaseSlotEarly();
+            }
+            catch (Exception ex)
+            {
+                TestLog.Server($"{evictLabel} early slot release failed: {ex.Message}");
+            }
 
             // Container teardown (Docker stop-grace + recording extraction)
             // runs in the background. Eviction guards above guarantee
@@ -1374,15 +1724,27 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // See .claude/rules/asynclocal-pitfalls.md.
             using (ExecutionContext.SuppressFlow())
             {
-                _backgroundDisposeTasks.Enqueue(Task.Run(async () =>
-                {
-                    try { await capturedServer.DisposeAsync(); }
-                    catch (Exception ex)
+                _backgroundDisposeTasks.Enqueue(
+                    Task.Run(async () =>
                     {
-                        InfrastructureEventLog.Emit("server_dispose_background_failed",
-                            new { server = capturedKey, instanceId = capturedServer.InstanceId, error = ex.Message });
-                    }
-                }));
+                        try
+                        {
+                            await capturedServer.DisposeAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            InfrastructureEventLog.Emit(
+                                "server_dispose_background_failed",
+                                new
+                                {
+                                    server = capturedKey,
+                                    instanceId = capturedServer.InstanceId,
+                                    error = ex.Message,
+                                }
+                            );
+                        }
+                    })
+                );
             }
             return; // Only need to free one slot on this host
         }
@@ -1410,19 +1772,23 @@ public sealed class TestResourceBroker : IAsyncDisposable
         foreach (var demand in _discoveredDemands)
         {
             var remaining = _remainingDemand.TryGetValue(demand.Key, out var r) ? r : 0;
-            if (remaining <= 0) continue;
-            if (_creationsInFlight.GetOrAdd(BrokerKeyFor(demand.Key, freedHost), 0) > 0) continue;
+            if (remaining <= 0)
+                continue;
+            if (_creationsInFlight.GetOrAdd(BrokerKeyFor(demand.Key, freedHost), 0) > 0)
+                continue;
 
             // Only expand if remaining tests exceed current cluster-wide instance throughput.
             // Sum each existing instance's per-host client cap so a config served by
             // hosts with different caps gets correctly-sized expansion decisions.
             var instances = _servers.GetAll(demand.Key);
             var clusterClientThroughput = instances.Sum(i => i.Host.ClientCapacity.Capacity);
-            if (remaining <= clusterClientThroughput) continue;
+            if (remaining <= clusterClientThroughput)
+                continue;
 
             // Score by non-exclusive demand (exclusive tests serialize, extra instances don't help)
             var score = Math.Max(remaining - demand.ExclusiveTestCount, 0);
-            if (score <= 0) continue;
+            if (score <= 0)
+                continue;
 
             if (score > bestScore)
             {
@@ -1432,7 +1798,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
             }
         }
 
-        if (bestKey == null || bestDemand == null) return;
+        if (bestKey == null || bestDemand == null)
+            return;
 
         var brokerKey = BrokerKeyFor(bestKey, freedHost);
         var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
@@ -1446,16 +1813,33 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // a sibling is in flight.
         lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
         {
-            if (_creationsInFlight.GetOrAdd(brokerKey, 0) > 0) return;
+            if (_creationsInFlight.GetOrAdd(brokerKey, 0) > 0)
+                return;
             _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
         }
 
-        TestLog.Server($"Reusing freed slot on {freedHost.Id}: creating {bestDemand.Requirements.GetDisplayLabel()} " +
-                       $"instance ({bestScore} non-exclusive tests remaining)");
-        InfrastructureEventLog.Emit("pool_expansion", new { server = bestKey, score = bestScore, host_id = freedHost.Id });
+        TestLog.Server(
+            $"Reusing freed slot on {freedHost.Id}: creating {bestDemand.Requirements.GetDisplayLabel()} "
+                + $"instance ({bestScore} non-exclusive tests remaining)"
+        );
+        InfrastructureEventLog.Emit(
+            "pool_expansion",
+            new
+            {
+                server = bestKey,
+                score = bestScore,
+                host_id = freedHost.Id,
+            }
+        );
         try
         {
-            await CreateAndResolveAsync(bestKey, bestDemand.Requirements, freedHost, queue, _runCts.Token);
+            await CreateAndResolveAsync(
+                bestKey,
+                bestDemand.Requirements,
+                freedHost,
+                queue,
+                _runCts.Token
+            );
         }
         catch (Exception ex)
         {
@@ -1468,16 +1852,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var remaining = managed.Release();
         var remainingTests = DecrementRemainingDemand(managed.Key);
         var displayLabel = managed.Requirements.GetDisplayLabel();
-        TestLog.Test($"Done: {remaining} active tests, {remainingTests} remaining on {displayLabel}");
-        InfrastructureEventLog.Emit("server_released", new
-        {
-            server = managed.Key,
-            instanceId = managed.InstanceId,
-            host_id = managed.Host.Id,
-            refCount = remaining,
-            remainingTests,
-            exclusive = wasExclusive,
-        });
+        TestLog.Test(
+            $"Done: {remaining} active tests, {remainingTests} remaining on {displayLabel}"
+        );
+        InfrastructureEventLog.Emit(
+            "server_released",
+            new
+            {
+                server = managed.Key,
+                instanceId = managed.InstanceId,
+                host_id = managed.Host.Id,
+                refCount = remaining,
+                remainingTests,
+                exclusive = wasExclusive,
+            }
+        );
 
         // During shutdown, do NOT self-dispose servers here. Server disposal kills the
         // container, which crashes client game processes connected to it. Their containers
@@ -1487,7 +1876,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         if (ShutdownCoordinator.IsShuttingDown)
         {
             if (remaining <= 0)
-                TestLog.Server($"{displayLabel} idle during shutdown, deferring disposal to broker");
+                TestLog.Server(
+                    $"{displayLabel} idle during shutdown, deferring disposal to broker"
+                );
             return;
         }
 
@@ -1495,8 +1886,20 @@ public sealed class TestResourceBroker : IAsyncDisposable
         {
             _servers.TryRemove(managed.Key, managed);
             ReleaseSteamAccount(managed);
-            InfrastructureEventLog.Emit("server_disposed", new { server = managed.Key, instanceId = managed.InstanceId, reason = "per_test_release", host_id = managed.Host.Id });
-            managed.EmitAnnotationToRunningTests(AnnotationLevel.Info, "Server disposed (per-test release)");
+            InfrastructureEventLog.Emit(
+                "server_disposed",
+                new
+                {
+                    server = managed.Key,
+                    instanceId = managed.InstanceId,
+                    reason = "per_test_release",
+                    host_id = managed.Host.Id,
+                }
+            );
+            managed.EmitAnnotationToRunningTests(
+                AnnotationLevel.Info,
+                "Server disposed (per-test release)"
+            );
             await managed.DisposeAsync();
             _ = TryReuseFreedSlotAsync(managed.Host);
         }
@@ -1513,10 +1916,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
             if (remainingTests <= 0)
             {
                 var host = managed.Host;
-                TestLog.Server($"{displayLabel} idle on {host.Id}, no remaining demand, shutting down");
+                TestLog.Server(
+                    $"{displayLabel} idle on {host.Id}, no remaining demand, shutting down"
+                );
                 _servers.TryRemove(managed.Key, managed);
                 ReleaseSteamAccount(managed);
-                InfrastructureEventLog.Emit("server_disposed", new { server = managed.Key, instanceId = managed.InstanceId, reason = "demand_exhausted", host_id = host.Id });
+                InfrastructureEventLog.Emit(
+                    "server_disposed",
+                    new
+                    {
+                        server = managed.Key,
+                        instanceId = managed.InstanceId,
+                        reason = "demand_exhausted",
+                        host_id = host.Id,
+                    }
+                );
                 await managed.DisposeAsync();
 
                 // Sweep other idle instances of the same key (any host) that became
@@ -1538,10 +1952,25 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     {
                         _servers.TryRemove(managed.Key, sibling);
                         ReleaseSteamAccount(sibling);
-                        InfrastructureEventLog.Emit("server_disposed", new { server = managed.Key, instanceId = sibling.InstanceId, reason = "sibling_sweep", host_id = sibling.Host.Id });
+                        InfrastructureEventLog.Emit(
+                            "server_disposed",
+                            new
+                            {
+                                server = managed.Key,
+                                instanceId = sibling.InstanceId,
+                                reason = "sibling_sweep",
+                                host_id = sibling.Host.Id,
+                            }
+                        );
 
-                        try { sibling.ReleaseSlotEarly(); }
-                        catch (Exception ex) { TestLog.Server($"sibling early slot release failed: {ex.Message}"); }
+                        try
+                        {
+                            sibling.ReleaseSlotEarly();
+                        }
+                        catch (Exception ex)
+                        {
+                            TestLog.Server($"sibling early slot release failed: {ex.Message}");
+                        }
 
                         var capturedKey = managed.Key;
                         var capturedSibling = sibling;
@@ -1551,15 +1980,27 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         // server_dispose_* events. See .claude/rules/asynclocal-pitfalls.md.
                         using (ExecutionContext.SuppressFlow())
                         {
-                            _backgroundDisposeTasks.Enqueue(Task.Run(async () =>
-                            {
-                                try { await capturedSibling.DisposeAsync(); }
-                                catch (Exception ex)
+                            _backgroundDisposeTasks.Enqueue(
+                                Task.Run(async () =>
                                 {
-                                    InfrastructureEventLog.Emit("server_dispose_background_failed",
-                                        new { server = capturedKey, instanceId = capturedSibling.InstanceId, error = ex.Message });
-                                }
-                            }));
+                                    try
+                                    {
+                                        await capturedSibling.DisposeAsync();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        InfrastructureEventLog.Emit(
+                                            "server_dispose_background_failed",
+                                            new
+                                            {
+                                                server = capturedKey,
+                                                instanceId = capturedSibling.InstanceId,
+                                                error = ex.Message,
+                                            }
+                                        );
+                                    }
+                                })
+                            );
                         }
                     }
                 }
@@ -1567,8 +2008,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // Reset the per-host queue if no other healthy instance exists on
                 // this host for this key.
                 var brokerKey = BrokerKeyFor(managed.Key, host);
-                if (_servers.TryGetBest(managed.Key, host.Id) == null
-                    && _queues.TryGetValue(brokerKey, out var queue))
+                if (
+                    _servers.TryGetBest(managed.Key, host.Id) == null
+                    && _queues.TryGetValue(brokerKey, out var queue)
+                )
                     queue.Reset();
 
                 _ = TryReuseFreedSlotAsync(host);
@@ -1583,7 +2026,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// </summary>
     private void ReleaseSteamAccount(ManagedServer managed)
     {
-        if (managed.SteamAccountIndex < 0) return;
+        if (managed.SteamAccountIndex < 0)
+            return;
         if (_accountAllocatorByHost.TryGetValue(managed.Host.Id, out var allocator))
         {
             allocator.Release(managed.SteamAccountIndex);
@@ -1616,9 +2060,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
     {
         var remaining = DecrementRemainingDemand(serverKey);
         var first = _servers.GetAll(serverKey).FirstOrDefault();
-        var displayLabel = first != null
-            ? first.Requirements.GetDisplayLabel()
-            : serverKey;
+        var displayLabel = first != null ? first.Requirements.GetDisplayLabel() : serverKey;
         TestLog.Test($"Test completed: {remaining} remaining on {displayLabel}");
     }
 
@@ -1630,9 +2072,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// Idempotent; safe to call from multiple concurrent DisposeAsync invocations.
     /// </summary>
     private volatile bool _stopOnFailNotified;
+
     internal void NotifyStopOnFail()
     {
-        if (_stopOnFailNotified) return;
+        if (_stopOnFailNotified)
+            return;
         _stopOnFailNotified = true;
 
         TestLog.Server("StopOnFail: zeroing all remaining demand and cancelling run");
@@ -1661,12 +2105,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
     private async Task EvictAllIdleServersAsync()
     {
         // During shutdown, don't evict; let DisposeAsync handle ordering (clients first)
-        if (ShutdownCoordinator.IsShuttingDown) return;
+        if (ShutdownCoordinator.IsShuttingDown)
+            return;
 
         foreach (var (key, server) in _servers.GetAll())
         {
-            if (server.RefCount > 0) continue;
-            if (GetPendingDemand(key) > 0) continue;
+            if (server.RefCount > 0)
+                continue;
+            if (GetPendingDemand(key) > 0)
+                continue;
 
             var displayLabel = server.Requirements.GetDisplayLabel();
             var host = server.Host;
@@ -1676,12 +2123,20 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 ReleaseSteamAccount(server);
 
                 var brokerKey = BrokerKeyFor(key, host);
-                if (_servers.TryGetBest(key, host.Id) == null
-                    && _queues.TryGetValue(brokerKey, out var queue))
+                if (
+                    _servers.TryGetBest(key, host.Id) == null
+                    && _queues.TryGetValue(brokerKey, out var queue)
+                )
                     queue.Reset();
 
-                try { await server.DisposeAsync(); }
-                catch (Exception ex) { TestLog.Server($"{displayLabel} shutdown failed: {ex.Message}"); }
+                try
+                {
+                    await server.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    TestLog.Server($"{displayLabel} shutdown failed: {ex.Message}");
+                }
             }
         }
     }
@@ -1701,9 +2156,19 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // Cancel pre-start if still running. Use shutdown token so we don't block
         // indefinitely if pre-start is stuck (e.g. Docker pull hanging).
         _prestartCts?.Cancel();
-        try { await _prestartTask.WaitAsync(ShutdownCoordinator.Token); }
-        catch (OperationCanceledException) { /* expected during shutdown */ }
-        catch (Exception ex) { TestLog.Server($"Pre-start task faulted during shutdown: {ex.GetType().Name}: {ex.Message}"); }
+        try
+        {
+            await _prestartTask.WaitAsync(ShutdownCoordinator.Token);
+        }
+        catch (OperationCanceledException)
+        { /* expected during shutdown */
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server(
+                $"Pre-start task faulted during shutdown: {ex.GetType().Name}: {ex.Message}"
+            );
+        }
 
         // Dispose every per-host client pool BEFORE servers. Client containers run
         // game processes connected to the servers. Once servers are stopped, client
@@ -1712,11 +2177,19 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // lets us stop ffmpeg and extract recordings while containers are still alive.
         // Each pool is bound to its host's network, so cross-pool ordering is
         // independent — dispose them in parallel.
-        var poolDisposeTasks = _clientPools.Values
-            .Select(async pool =>
+        var poolDisposeTasks = _clientPools
+            .Values.Select(async pool =>
             {
-                try { await pool.DisposeAsync(); }
-                catch (Exception ex) { TestLog.Client($"Failed to dispose client pool on {pool.Host.Id}: {ex.Message}"); }
+                try
+                {
+                    await pool.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    TestLog.Client(
+                        $"Failed to dispose client pool on {pool.Host.Id}: {ex.Message}"
+                    );
+                }
             })
             .ToArray();
         await Task.WhenAll(poolDisposeTasks);
@@ -1728,23 +2201,46 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // documented above) and before the _servers loop so the shutdown
         // log and cleanup finish in one pass. _runCts is already cancelled
         // above, so any in-flight eviction now takes the synchronous path.
-        try { await Task.WhenAll(_backgroundDisposeTasks); }
-        catch (Exception ex) { TestLog.Server($"Background server dispose(s) faulted during shutdown: {ex.Message}"); }
+        try
+        {
+            await Task.WhenAll(_backgroundDisposeTasks);
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"Background server dispose(s) faulted during shutdown: {ex.Message}");
+        }
 
         // Parallelize server teardown. Heavy extraction work inside
         // ServerContainer.DisposeAsync is gated by host.ExtractLimiter, so
         // unbounded concurrency here is safe. ManagedServer.ReleaseSlotEarly is
         // Interlocked-guarded; SteamAccountAllocator.Release is lock-protected;
         // the event emitters are already concurrency-safe.
-        var serverDisposeTasks = _servers.GetAll().Select(async pair =>
-        {
-            var (key, server) = pair;
-            var displayLabel = server.Requirements.GetDisplayLabel();
-            ReleaseSteamAccount(server);
-            InfrastructureEventLog.Emit("server_disposed", new { server = key, instanceId = server.InstanceId, reason = "broker_shutdown" });
-            try { await server.DisposeAsync(); }
-            catch (Exception ex) { TestLog.Server($"Failed to dispose {displayLabel}: {ex.Message}"); }
-        }).ToArray();
+        var serverDisposeTasks = _servers
+            .GetAll()
+            .Select(async pair =>
+            {
+                var (key, server) = pair;
+                var displayLabel = server.Requirements.GetDisplayLabel();
+                ReleaseSteamAccount(server);
+                InfrastructureEventLog.Emit(
+                    "server_disposed",
+                    new
+                    {
+                        server = key,
+                        instanceId = server.InstanceId,
+                        reason = "broker_shutdown",
+                    }
+                );
+                try
+                {
+                    await server.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    TestLog.Server($"Failed to dispose {displayLabel}: {ex.Message}");
+                }
+            })
+            .ToArray();
         await Task.WhenAll(serverDisposeTasks);
         _servers.Clear();
         _queues.Clear();
@@ -1757,10 +2253,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
         {
             try
             {
-                await Task.WhenAll(_accountAllocatorByHost.Values
-                    .Select(a => a.DrainPendingReleasesAsync()));
+                await Task.WhenAll(
+                    _accountAllocatorByHost.Values.Select(a => a.DrainPendingReleasesAsync())
+                );
             }
-            catch (Exception ex) { TestLog.Server($"Steam allocator drain failed: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                TestLog.Server($"Steam allocator drain failed: {ex.Message}");
+            }
         }
 
         // Dispose every per-host steam-auth in parallel, after all servers and
@@ -1769,12 +2269,22 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // before tearing down the container.
         if (!_steamAuthByHost.IsEmpty)
         {
-            TestLog.Server($"Disposing {_steamAuthByHost.Count} per-host steam-auth container(s)...");
-            await Task.WhenAll(_steamAuthByHost.Values.Select(async sa =>
-            {
-                try { await sa.DisposeAsync(); }
-                catch (Exception ex) { TestLog.Server($"Failed to dispose steam-auth: {ex.Message}"); }
-            }));
+            TestLog.Server(
+                $"Disposing {_steamAuthByHost.Count} per-host steam-auth container(s)..."
+            );
+            await Task.WhenAll(
+                _steamAuthByHost.Values.Select(async sa =>
+                {
+                    try
+                    {
+                        await sa.DisposeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        TestLog.Server($"Failed to dispose steam-auth: {ex.Message}");
+                    }
+                })
+            );
             _steamAuthByHost.Clear();
             _accountAllocatorByHost.Clear();
         }
@@ -1802,27 +2312,34 @@ public sealed class TestResourceBroker : IAsyncDisposable
         IReadOnlyList<DockerHost> eligibleHosts,
         Dictionary<string, int> budgets,
         List<ServerDemand> tokens,
-        List<(ServerDemand Demand, DockerHost Host)> placements)
+        List<(ServerDemand Demand, DockerHost Host)> placements
+    )
     {
         var available = eligibleHosts
             .Where(h => budgets[h.Id] > 0)
             .Select(h => (Host: h, Budget: budgets[h.Id]))
             .ToList();
         var totalBudget = available.Sum(x => x.Budget);
-        if (totalBudget <= 0) return;
+        if (totalBudget <= 0)
+            return;
 
         var tokenCount = Math.Min(tokens.Count, totalBudget);
         var quotas = available
-            .Select(b => (b.Host, b.Budget,
-                          Exact: (double)tokenCount * b.Budget / totalBudget))
+            .Select(b => (b.Host, b.Budget, Exact: (double)tokenCount * b.Budget / totalBudget))
             .ToList();
-        var counts = quotas.ToDictionary(q => q.Host.Id, q => Math.Min((int)Math.Floor(q.Exact), q.Budget));
+        var counts = quotas.ToDictionary(
+            q => q.Host.Id,
+            q => Math.Min((int)Math.Floor(q.Exact), q.Budget)
+        );
         var leftover = tokenCount - counts.Values.Sum();
-        foreach (var q in quotas
-            .OrderByDescending(q => q.Exact - Math.Floor(q.Exact))
-            .ThenBy(q => q.Host.Id, StringComparer.Ordinal))
+        foreach (
+            var q in quotas
+                .OrderByDescending(q => q.Exact - Math.Floor(q.Exact))
+                .ThenBy(q => q.Host.Id, StringComparer.Ordinal)
+        )
         {
-            if (leftover <= 0) break;
+            if (leftover <= 0)
+                break;
             if (counts[q.Host.Id] < q.Budget)
             {
                 counts[q.Host.Id]++;
@@ -1835,7 +2352,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var hostOrder = new List<DockerHost>(tokenCount);
         foreach (var host in eligibleHosts)
         {
-            if (!counts.TryGetValue(host.Id, out var n)) continue;
+            if (!counts.TryGetValue(host.Id, out var n))
+                continue;
             for (var i = 0; i < n; i++)
                 hostOrder.Add(host);
         }
@@ -1860,14 +2378,20 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// serialize on one instance regardless of count, so they're excluded.
     /// </summary>
     private static List<(ServerDemand Demand, int Count)> AllocateInstances(
-        List<ServerDemand> demands, int slots, int minHostClientCap)
+        List<ServerDemand> demands,
+        int slots,
+        int minHostClientCap
+    )
     {
         if (demands.Count == 0 || slots <= 0)
             return new List<(ServerDemand, int)>();
 
         int InstancesNeeded(ServerDemand d)
         {
-            var clientsPerInstance = Math.Max(1, minHostClientCap / Math.Max(1, d.Requirements.Clients));
+            var clientsPerInstance = Math.Max(
+                1,
+                minHostClientCap / Math.Max(1, d.Requirements.Clients)
+            );
             var nonExclusive = Math.Max(d.NonExclusiveTestCount, 1);
             return Math.Max(1, (int)Math.Ceiling((double)nonExclusive / clientsPerInstance));
         }
@@ -1880,11 +2404,20 @@ public sealed class TestResourceBroker : IAsyncDisposable
             return demands.Take(slots).Select(d => (d, 1)).ToList();
 
         // Hamilton's method: proportional allocation with largest-remainder distribution
-        var entries = demands.Select((d, i) =>
-        {
-            var exact = (double)weights[i] / totalWeight * slots;
-            return new { Demand = d, Base = Math.Max(1, (int)Math.Floor(exact)), Remainder = exact - Math.Floor(exact) };
-        }).ToList();
+        var entries = demands
+            .Select(
+                (d, i) =>
+                {
+                    var exact = (double)weights[i] / totalWeight * slots;
+                    return new
+                    {
+                        Demand = d,
+                        Base = Math.Max(1, (int)Math.Floor(exact)),
+                        Remainder = exact - Math.Floor(exact),
+                    };
+                }
+            )
+            .ToList();
 
         var allocated = entries.Sum(e => e.Base);
         var remaining = slots - allocated;
@@ -1901,10 +2434,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // Hamilton's largest-remainder pass cannot push it above 1 even when
         // slots > demand-count. Without this, the leftover-distribution step would
         // re-introduce the over-allocation this allocator exists to prevent.
-        return entries.Select((e, i) =>
-        {
-            var raw = e.Base + (indices.Contains(i) ? 1 : 0);
-            return (e.Demand, Math.Min(raw, weights[i]));
-        }).ToList();
+        return entries
+            .Select(
+                (e, i) =>
+                {
+                    var raw = e.Base + (indices.Contains(i) ? 1 : 0);
+                    return (e.Demand, Math.Min(raw, weights[i]));
+                }
+            )
+            .ToList();
     }
 }

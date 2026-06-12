@@ -46,6 +46,7 @@ namespace JunimoServer.Services.Lobby
         public int TileX { get; set; }
         public int TileY { get; set; }
         public int Rotation { get; set; }
+
         /// <summary>Item ID of held object (for tables holding items), or null.</summary>
         public string HeldObjectId { get; set; }
     }

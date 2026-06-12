@@ -1,27 +1,40 @@
+using System.Collections.Generic;
 using HarmonyLib;
 using JunimoServer.Util;
 using Netcode;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Network;
-using System.Collections.Generic;
 
 namespace JunimoServer.Services.Security
 {
     public class SecurityService : ModService
     {
-        public SecurityService(IModHelper helper, IMonitor monitor, Harmony harmony) : base(helper, monitor)
+        public SecurityService(IModHelper helper, IMonitor monitor, Harmony harmony)
+            : base(helper, monitor)
         {
             // Note: As of now (SDV1.6.15-24356) GameServer.broadcastUserName does not appear to be used does not need to be handled
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.sendServerIntroduction)),
-                prefix: new HarmonyMethod(typeof(SecurityService), nameof(sendServerIntroduction_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.sendServerIntroduction)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(SecurityService),
+                    nameof(sendServerIntroduction_Prefix)
+                )
             );
 
             harmony.Patch(
-                original: AccessTools.Method(typeof(Multiplayer), nameof(Multiplayer.broadcastPlayerIntroduction)),
-                prefix: new HarmonyMethod(typeof(SecurityService), nameof(broadcastPlayerIntroduction_Prefix))
+                original: AccessTools.Method(
+                    typeof(Multiplayer),
+                    nameof(Multiplayer.broadcastPlayerIntroduction)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(SecurityService),
+                    nameof(broadcastPlayerIntroduction_Prefix)
+                )
             );
         }
 
@@ -53,11 +66,15 @@ namespace JunimoServer.Services.Security
         {
             foreach (KeyValuePair<long, Farmer> otherFarmer in Game1.otherFarmers)
             {
-                var isNotSelf = farmerRoot.Value.UniqueMultiplayerID != otherFarmer.Value.UniqueMultiplayerID;
+                var isNotSelf =
+                    farmerRoot.Value.UniqueMultiplayerID != otherFarmer.Value.UniqueMultiplayerID;
 
                 if (isNotSelf)
                 {
-                    SendPlayerIntroductionMessage(farmerRoot, otherFarmer.Value.UniqueMultiplayerID);
+                    SendPlayerIntroductionMessage(
+                        farmerRoot,
+                        otherFarmer.Value.UniqueMultiplayerID
+                    );
                 }
             }
 
@@ -66,10 +83,7 @@ namespace JunimoServer.Services.Security
 
         private static void SendServerIntroductionMessage(long peerId)
         {
-            Game1.server.sendMessage(
-                peerId,
-                NetworkHelper.CreateMessageServerIntroduction(peerId)
-            );
+            Game1.server.sendMessage(peerId, NetworkHelper.CreateMessageServerIntroduction(peerId));
         }
 
         private static void SendPlayerIntroductionMessage(NetRoot<Farmer> farmerSource, long peerId)

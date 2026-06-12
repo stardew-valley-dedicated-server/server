@@ -17,10 +17,15 @@ namespace JunimoServer.Util
 
         private static readonly SDate[] Festivals =
         {
-            EggFestival, FlowerDance, Luau, DanceOfJellies, StardewValleyFair, SpiritsEve, FestivalOfIce,
-            FeastOfWinterStar
+            EggFestival,
+            FlowerDance,
+            Luau,
+            DanceOfJellies,
+            StardewValleyFair,
+            SpiritsEve,
+            FestivalOfIce,
+            FeastOfWinterStar,
         };
-
 
         public static bool IsFestivalToday()
         {

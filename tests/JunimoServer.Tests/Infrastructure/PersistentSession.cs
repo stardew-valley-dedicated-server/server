@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using Xunit;
-using System.Diagnostics;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -19,7 +19,7 @@ public enum SessionJoinMode
     Unauthenticated,
 
     /// <summary>Connect only (no world join). For tests that need raw connection control.</summary>
-    ConnectOnly
+    ConnectOnly,
 }
 
 /// <summary>
@@ -49,7 +49,8 @@ internal sealed class PersistentSession : IAsyncDisposable
         string? farmerName,
         long? farmerUid,
         int clientSlotsHeld,
-        bool isAuthenticated)
+        bool isAuthenticated
+    )
     {
         OwnerType = ownerType;
         Lease = lease;
@@ -60,8 +61,21 @@ internal sealed class PersistentSession : IAsyncDisposable
         FarmerUid = farmerUid;
         ClientSlotsHeld = clientSlotsHeld;
         IsAuthenticated = isAuthenticated;
-        TestLog.Test($"{ownerType.Name} session created ({CountTestMethods(ownerType)} tests, farmer={farmerName ?? "<none>"}, uid={farmerUid?.ToString() ?? "<none>"})");
-        InfrastructureEventLog.Emit("session_created", new { owner = ownerType.Name, farmer = farmerName, farmerUid, clientSlots = clientSlotsHeld, tests = CountTestMethods(ownerType), authenticated = isAuthenticated });
+        TestLog.Test(
+            $"{ownerType.Name} session created ({CountTestMethods(ownerType)} tests, farmer={farmerName ?? "<none>"}, uid={farmerUid?.ToString() ?? "<none>"})"
+        );
+        InfrastructureEventLog.Emit(
+            "session_created",
+            new
+            {
+                owner = ownerType.Name,
+                farmer = farmerName,
+                farmerUid,
+                clientSlots = clientSlotsHeld,
+                tests = CountTestMethods(ownerType),
+                authenticated = isAuthenticated,
+            }
+        );
     }
 
     /// <summary>
@@ -81,25 +95,31 @@ internal sealed class PersistentSession : IAsyncDisposable
             var state = await ClientLease.Client.GetState();
             if (state?.IsConnected != true)
             {
-                InfrastructureEventLog.Emit("session_revalidation_failed", new
-                {
-                    owner = OwnerType.Name,
-                    farmer = FarmerName,
-                    farmerUid = FarmerUid,
-                    reason = "client_disconnected"
-                });
+                InfrastructureEventLog.Emit(
+                    "session_revalidation_failed",
+                    new
+                    {
+                        owner = OwnerType.Name,
+                        farmer = FarmerName,
+                        farmerUid = FarmerUid,
+                        reason = "client_disconnected",
+                    }
+                );
                 return false;
             }
         }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("session_revalidation_failed", new
-            {
-                owner = OwnerType.Name,
-                farmer = FarmerName,
-                farmerUid = FarmerUid,
-                reason = "client_getstate_" + ex.GetType().Name
-            });
+            InfrastructureEventLog.Emit(
+                "session_revalidation_failed",
+                new
+                {
+                    owner = OwnerType.Name,
+                    farmer = FarmerName,
+                    farmerUid = FarmerUid,
+                    reason = "client_getstate_" + ex.GetType().Name,
+                }
+            );
             return false;
         }
 
@@ -111,30 +131,37 @@ internal sealed class PersistentSession : IAsyncDisposable
             var seen = await Lease.Api.WaitForPlayerByIdAsync(
                 uid,
                 timeout: TestTimings.SessionRevalidationBudget,
-                ct: ct);
+                ct: ct
+            );
 
             if (!seen)
             {
-                InfrastructureEventLog.Emit("session_revalidation_failed", new
-                {
-                    owner = OwnerType.Name,
-                    farmer = FarmerName,
-                    farmerUid = uid,
-                    reason = "player_not_in_snapshot"
-                });
+                InfrastructureEventLog.Emit(
+                    "session_revalidation_failed",
+                    new
+                    {
+                        owner = OwnerType.Name,
+                        farmer = FarmerName,
+                        farmerUid = uid,
+                        reason = "player_not_in_snapshot",
+                    }
+                );
                 return false;
             }
             return true;
         }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("session_revalidation_failed", new
-            {
-                owner = OwnerType.Name,
-                farmer = FarmerName,
-                farmerUid = uid,
-                reason = "waitforplayer_" + ex.GetType().Name
-            });
+            InfrastructureEventLog.Emit(
+                "session_revalidation_failed",
+                new
+                {
+                    owner = OwnerType.Name,
+                    farmer = FarmerName,
+                    farmerUid = uid,
+                    reason = "waitforplayer_" + ex.GetType().Name,
+                }
+            );
             return false;
         }
     }
@@ -149,8 +176,14 @@ internal sealed class PersistentSession : IAsyncDisposable
         // rethrow the aggregate at the end so infra failures still surface.
         List<Exception>? errors = null;
 
-        try { await ClientLease.DisposeAsync(); }
-        catch (Exception ex) { (errors ??= new()).Add(ex); }
+        try
+        {
+            await ClientLease.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= new()).Add(ex);
+        }
 
         // Wait for the server to confirm the farmer is gone before releasing the lease
         // and returning the client container to the pool. Without this, the next test
@@ -166,25 +199,34 @@ internal sealed class PersistentSession : IAsyncDisposable
             {
                 var waitSw = Stopwatch.StartNew();
                 var removed = await Lease.Api.WaitForPlayerRemovedByIdAsync(
-                    uid, timeout: TestTimings.FarmerRemovalBudget);
+                    uid,
+                    timeout: TestTimings.FarmerRemovalBudget
+                );
                 waitSw.Stop();
 
-                InfrastructureEventLog.Emit("farmer_removal_waited", new
-                {
-                    uid,
-                    farmer = FarmerName,
-                    waitedMs = waitSw.ElapsedMilliseconds,
-                    removed
-                });
+                InfrastructureEventLog.Emit(
+                    "farmer_removal_waited",
+                    new
+                    {
+                        uid,
+                        farmer = FarmerName,
+                        waitedMs = waitSw.ElapsedMilliseconds,
+                        removed,
+                    }
+                );
 
                 if (!removed)
                 {
                     Lease.Managed.PoisonServer(
                         $"farmer uid={uid} ('{FarmerName}') still visible after {TestTimings.FarmerRemovalBudget.TotalSeconds}s disconnect wait",
-                        ManagedServer.PoisonReasonCode.FarmerRemovalTimeout);
+                        ManagedServer.PoisonReasonCode.FarmerRemovalTimeout
+                    );
                 }
             }
-            catch (Exception ex) { (errors ??= new()).Add(ex); }
+            catch (Exception ex)
+            {
+                (errors ??= new()).Add(ex);
+            }
         }
 
         // Capture the host the broker acquired client slots against, before
@@ -192,8 +234,14 @@ internal sealed class PersistentSession : IAsyncDisposable
         // is clearer when scoped to the release site).
         var capacityHost = Lease.Host;
 
-        try { await Lease.DisposeAsync(); }
-        catch (Exception ex) { (errors ??= new()).Add(ex); }
+        try
+        {
+            await Lease.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            (errors ??= new()).Add(ex);
+        }
 
         if (ClientSlotsHeld > 0)
         {
@@ -201,10 +249,21 @@ internal sealed class PersistentSession : IAsyncDisposable
             TestLog.Test($"{OwnerType.Name} released {ClientSlotsHeld} client(s)");
         }
 
-        InfrastructureEventLog.Emit("session_disposed", new { owner = OwnerType.Name, durationMs = sw.ElapsedMilliseconds, clientSlotsReleased = ClientSlotsHeld });
+        InfrastructureEventLog.Emit(
+            "session_disposed",
+            new
+            {
+                owner = OwnerType.Name,
+                durationMs = sw.ElapsedMilliseconds,
+                clientSlotsReleased = ClientSlotsHeld,
+            }
+        );
 
         if (errors is { Count: > 0 })
-            throw new AggregateException($"{OwnerType.Name} session dispose had {errors.Count} failure(s).", errors);
+            throw new AggregateException(
+                $"{OwnerType.Name} session dispose had {errors.Count} failure(s).",
+                errors
+            );
     }
 
     /// <summary>
@@ -213,8 +272,10 @@ internal sealed class PersistentSession : IAsyncDisposable
     internal static int CountTestMethods(Type type)
     {
         return type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Count(m => m.GetCustomAttribute<FactAttribute>() != null
-                     || m.GetCustomAttribute<TheoryAttribute>() != null);
+            .Count(m =>
+                m.GetCustomAttribute<FactAttribute>() != null
+                || m.GetCustomAttribute<TheoryAttribute>() != null
+            );
     }
 }
 
@@ -251,11 +312,9 @@ internal sealed class SessionGate
             WaitName.SessionGate_TurnLock,
             () => _turnLock.WaitAsync(ct),
             ct,
-            snapshot: () => new
-            {
-                totalTests = _totalTests,
-                completed = Volatile.Read(ref _completedTests)
-            });
+            snapshot: () =>
+                new { totalTests = _totalTests, completed = Volatile.Read(ref _completedTests) }
+        );
 
     /// <summary>Releases the turn lock so the next test in the class can proceed.</summary>
     public void ReleaseTurn() => _turnLock.Release();
@@ -317,10 +376,13 @@ internal static class PersistentSessionStore
     /// </summary>
     public static SessionGate GetOrCreateGate(Type type, int totalTests)
     {
-        return Gates.GetOrAdd(type, t =>
-        {
-            TestLog.Test($"Created gate for {t.Name} ({totalTests} tests)");
-            return new SessionGate(totalTests);
-        });
+        return Gates.GetOrAdd(
+            type,
+            t =>
+            {
+                TestLog.Test($"Created gate for {t.Name} ({totalTests} tests)");
+                return new SessionGate(totalTests);
+            }
+        );
     }
 }

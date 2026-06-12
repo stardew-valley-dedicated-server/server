@@ -23,13 +23,16 @@ try
     var asm = Assembly.LoadFrom(dllPath);
 
     // Get the types we need
-    var generatorType = asm.GetType("JunimoServer.Services.Api.OpenApiGenerator")
+    var generatorType =
+        asm.GetType("JunimoServer.Services.Api.OpenApiGenerator")
         ?? throw new Exception("OpenApiGenerator type not found");
-    var apiServiceType = asm.GetType("JunimoServer.Services.Api.ApiService")
+    var apiServiceType =
+        asm.GetType("JunimoServer.Services.Api.ApiService")
         ?? throw new Exception("ApiService type not found");
 
     // Get the Generate method
-    var generateMethod = generatorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Static)
+    var generateMethod =
+        generatorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Static)
         ?? throw new Exception("Generate method not found");
 
     // Exclude test-only endpoints (/test/*) from the published spec — it feeds the public
@@ -38,9 +41,11 @@ try
     // across the net10-tool/net6-mod boundary is fragile (see the typed-attribute note below).
     // NOTE: Generate has an optional includeMethod parameter; MethodInfo.Invoke does not
     // apply C# optional-argument defaults, so this argument must be passed explicitly.
-    var apiEndpointAttrType = asm.GetType("JunimoServer.Services.Api.ApiEndpointAttribute")
+    var apiEndpointAttrType =
+        asm.GetType("JunimoServer.Services.Api.ApiEndpointAttribute")
         ?? throw new Exception("ApiEndpointAttribute type not found");
-    var apiEndpointPathProp = apiEndpointAttrType.GetProperty("Path")
+    var apiEndpointPathProp =
+        apiEndpointAttrType.GetProperty("Path")
         ?? throw new Exception("ApiEndpointAttribute.Path property not found");
 
     // Read ONLY the typed ApiEndpointAttribute. Do not enumerate all attributes
@@ -56,17 +61,22 @@ try
     };
 
     // Invoke it
-    var document = generateMethod.Invoke(null, new object?[]
-    {
-        apiServiceType,
-        "Stardew Dedicated Server API",
-        "v1",
-        "HTTP API for monitoring and interacting with the Stardew Valley dedicated server",
-        includeMethod
-    }) ?? throw new Exception("Generate returned null");
+    var document =
+        generateMethod.Invoke(
+            null,
+            new object?[]
+            {
+                apiServiceType,
+                "Stardew Dedicated Server API",
+                "v1",
+                "HTTP API for monitoring and interacting with the Stardew Valley dedicated server",
+                includeMethod,
+            }
+        ) ?? throw new Exception("Generate returned null");
 
     // Call ToJson() on the OpenApiDocument
-    var toJsonMethod = document.GetType().GetMethod("ToJson", Type.EmptyTypes)
+    var toJsonMethod =
+        document.GetType().GetMethod("ToJson", Type.EmptyTypes)
         ?? throw new Exception("ToJson method not found");
     var json = (string)(toJsonMethod.Invoke(document, null) ?? "{}");
 

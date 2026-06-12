@@ -1,7 +1,7 @@
-using Microsoft.Xna.Framework;
-using StardewModdingAPI;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using StardewModdingAPI;
 
 namespace JunimoServer.Services.CabinManager
 {
@@ -18,7 +18,8 @@ namespace JunimoServer.Services.CabinManager
         /// sweep it back into the hidden stack on the next load. The position itself
         /// persists via the building's own tileX/tileY; this map only records intent.
         /// </summary>
-        public ConcurrentDictionary<long, Vector2> PlayerCabinPositions = new ConcurrentDictionary<long, Vector2>();
+        public ConcurrentDictionary<long, Vector2> PlayerCabinPositions =
+            new ConcurrentDictionary<long, Vector2>();
 
         private const string _storageDataKey = "JunimoHost.CabinManager.data";
 
@@ -34,10 +35,13 @@ namespace JunimoServer.Services.CabinManager
         public void Read()
         {
             Monitor.Log($"Reading saved data '{_storageDataKey}'", LogLevel.Trace);
-            CabinManagerData Data = Helper.Data.ReadSaveData<CabinManagerData>(_storageDataKey) ?? new CabinManagerData(Helper, Monitor);
+            CabinManagerData Data =
+                Helper.Data.ReadSaveData<CabinManagerData>(_storageDataKey)
+                ?? new CabinManagerData(Helper, Monitor);
             DefaultCabinLocation = Data.DefaultCabinLocation;
             AllPlayerIdsEverJoined = Data.AllPlayerIdsEverJoined;
-            PlayerCabinPositions = Data.PlayerCabinPositions ?? new ConcurrentDictionary<long, Vector2>();
+            PlayerCabinPositions =
+                Data.PlayerCabinPositions ?? new ConcurrentDictionary<long, Vector2>();
         }
 
         public void Write()

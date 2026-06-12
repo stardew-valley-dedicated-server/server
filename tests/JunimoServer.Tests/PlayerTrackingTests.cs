@@ -33,7 +33,9 @@ public class PlayerTrackingTests : TestBase
         // Validate game state fields
         AssertHelpers.AssertValidGameState(status);
 
-        LogDetail($"Game world: {status.FarmName} Farm, {status.Season} {status.Day}, Year {status.Year}, {status.TimeOfDay}");
+        LogDetail(
+            $"Game world: {status.FarmName} Farm, {status.Season} {status.Day}, Year {status.Year}, {status.TimeOfDay}"
+        );
     }
 
     /// <summary>
@@ -49,17 +51,25 @@ public class PlayerTrackingTests : TestBase
         // Verify our farmer is not already in the player list
         var initialPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
         var farmerName = Farmers.GenerateName();
-        Assert.True(initialPlayers?.Players?.All(p =>
-            !p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)) != false,
-            $"Farmer '{farmerName}' should not exist before test starts");
+        Assert.True(
+            initialPlayers?.Players?.All(p =>
+                !p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
+            ) != false,
+            $"Farmer '{farmerName}' should not exist before test starts"
+        );
 
         // Join the server and enter the game world
-        var client = await Farmers.ConnectNewAsync(farmerName: farmerName,
-            ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(
+            farmerName: farmerName,
+            ct: TestContext.Current.CancellationToken
+        );
 
         // Verify the client appears in /players (poll until name syncs — this test
         // specifically verifies name-sync behavior, so name-based match is intentional).
-        var playerFound = await ServerApi.WaitForPlayerByNameAsync(farmerName, ct: TestContext.Current.CancellationToken);
+        var playerFound = await ServerApi.WaitForPlayerByNameAsync(
+            farmerName,
+            ct: TestContext.Current.CancellationToken
+        );
 
         Assert.True(playerFound, $"Player '{farmerName}' should appear in /players within timeout");
         var connectedPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
@@ -67,7 +77,8 @@ public class PlayerTrackingTests : TestBase
         Assert.NotEmpty(connectedPlayers.Players);
 
         var ourPlayer = connectedPlayers.Players.FirstOrDefault(p =>
-            p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase));
+            p.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
+        );
         Assert.NotNull(ourPlayer);
         Assert.True(ourPlayer.IsOnline, "Player should be marked as online");
         Log($"Found player in /players: {ourPlayer.Name} (ID: {ourPlayer.Id})");
@@ -77,13 +88,18 @@ public class PlayerTrackingTests : TestBase
         // server may connect/disconnect concurrently, making any baseline unstable.
         var connectedStatus = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
         Assert.NotNull(connectedStatus);
-        Assert.True(connectedStatus.PlayerCount >= 1,
-            $"PlayerCount should be >= 1 with our client connected (got {connectedStatus.PlayerCount})");
+        Assert.True(
+            connectedStatus.PlayerCount >= 1,
+            $"PlayerCount should be >= 1 with our client connected (got {connectedStatus.PlayerCount})"
+        );
         Log($"Status playerCount: {connectedStatus.PlayerCount}");
 
         // Disconnect and wait for the server to release the farmhand slot
-        await Farmers.DisconnectAndWaitForSlotAsync(client.JoinResult.UniqueMultiplayerId, farmerName, TestContext.Current.CancellationToken);
+        await Farmers.DisconnectAndWaitForSlotAsync(
+            client.JoinResult.UniqueMultiplayerId,
+            farmerName,
+            TestContext.Current.CancellationToken
+        );
         Log("Verified: player removed from /players after disconnect");
     }
-
 }

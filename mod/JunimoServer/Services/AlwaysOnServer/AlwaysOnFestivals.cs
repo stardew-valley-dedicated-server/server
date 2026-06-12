@@ -1,10 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using SObject = StardewValley.Object;
 
 namespace JunimoServer.Services.AlwaysOn
@@ -31,7 +31,7 @@ namespace JunimoServer.Services.AlwaysOn
 
             public Func<int> CountdownSeconds;
             public string AnnounceText;
-            public Action OnAnnounce;  // optional action (add iridium star in Luau)
+            public Action OnAnnounce; // optional action (add iridium star in Luau)
             public bool AutoEndAfterCountdown;
 
             public Func<double> TimeoutSeconds;
@@ -66,7 +66,12 @@ namespace JunimoServer.Services.AlwaysOn
         protected readonly IMonitor _monitor;
         protected readonly AlwaysOnConfig Config;
 
-        public AlwaysOnServerFestivals(IModHelper helper, IMonitor monitor, ChatCommandsService chatCommandService, AlwaysOnConfig config)
+        public AlwaysOnServerFestivals(
+            IModHelper helper,
+            IMonitor monitor,
+            ChatCommandsService chatCommandService,
+            AlwaysOnConfig config
+        )
         {
             _helper = helper;
             _monitor = monitor;
@@ -74,7 +79,11 @@ namespace JunimoServer.Services.AlwaysOn
 
             _festivals = BuildFestivalSpecs();
 
-            chatCommandService.RegisterCommand("event", "Tries to start the current festival's event.", StartEventCommand);
+            chatCommandService.RegisterCommand(
+                "event",
+                "Tries to start the current festival's event.",
+                StartEventCommand
+            );
         }
 
         private List<FestivalSpec> BuildFestivalSpecs()
@@ -118,7 +127,8 @@ namespace JunimoServer.Services.AlwaysOn
                     ResetCutoff = 2410,
                     HasMainEvent = true,
                     CountdownSeconds = () => Config.JellyDanceCountdownSeconds,
-                    AnnounceText = "The Dance of the Moonlight Jellies will begin in {0:0.#} minutes.",
+                    AnnounceText =
+                        "The Dance of the Moonlight Jellies will begin in {0:0.#} minutes.",
                     TimeoutStart = TimeoutStart.AfterMainEvent,
                     TimeoutSeconds = () => TicksToSeconds(Config.DanceOfJelliesTimeOut + 180),
                 },
@@ -177,14 +187,17 @@ namespace JunimoServer.Services.AlwaysOn
         /// </summary>
         private static double ElapsedSeconds(DateTime? startTime)
         {
-            if (!startTime.HasValue) return 0;
+            if (!startTime.HasValue)
+                return 0;
             return (DateTime.UtcNow - startTime.Value).TotalSeconds;
         }
 
         private void AddIridiumStarfruitToSoup()
         {
             var item = new SObject("268", 1, false, -1, 3);
-            _helper.Reflection.GetMethod(Game1.CurrentEvent, "addItemToLuauSoup").Invoke(item, Game1.player);
+            _helper
+                .Reflection.GetMethod(Game1.CurrentEvent, "addItemToLuauSoup")
+                .Invoke(item, Game1.player);
         }
 
         /// <summary>
@@ -239,12 +252,18 @@ namespace JunimoServer.Services.AlwaysOn
         public void HandleFestivalStart()
         {
             // Debug: log once per second on festival days
-            if (Game1.whereIsTodaysFest != null && (DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
+            if (
+                Game1.whereIsTodaysFest != null
+                && (DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0
+            )
             {
                 _lastLogTime = DateTime.UtcNow;
                 var numberReady = Game1.netReady.GetNumberReady("festivalStart");
                 var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
-                _monitor.Log($"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}", LogLevel.Info);
+                _monitor.Log(
+                    $"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
+                    LogLevel.Info
+                );
             }
 
             if (Game1.otherFarmers.Count == 0)
@@ -261,7 +280,10 @@ namespace JunimoServer.Services.AlwaysOn
             // Check if there's a festival today and others are ready
             if (Game1.whereIsTodaysFest != null && CheckOthersReady("festivalStart"))
             {
-                _monitor.Log("Other players ready for festival, warping host to festival location", LogLevel.Info);
+                _monitor.Log(
+                    "Other players ready for festival, warping host to festival location",
+                    LogLevel.Info
+                );
                 _warpingToFestival = true;
 
                 // Mark host as ready so players' ReadyCheckDialog completes
@@ -441,9 +463,14 @@ namespace JunimoServer.Services.AlwaysOn
             double resetElapsed = ElapsedSeconds(_timeoutStartTime);
             double timeoutSeconds = spec.TimeoutSeconds();
 
-            if (!_timeoutWarned && resetElapsed >= timeoutSeconds - Config.FestivalExitWarningSeconds)
+            if (
+                !_timeoutWarned
+                && resetElapsed >= timeoutSeconds - Config.FestivalExitWarningSeconds
+            )
             {
-                _helper.SendPublicMessage($"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or");
+                _helper.SendPublicMessage(
+                    $"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or"
+                );
                 _helper.SendPublicMessage("everyone will be kicked.");
                 _timeoutWarned = true;
             }
@@ -477,12 +504,18 @@ namespace JunimoServer.Services.AlwaysOn
             if ((DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
             {
                 _lastLogTime = DateTime.UtcNow;
-                _monitor.Log($"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}", LogLevel.Info);
+                _monitor.Log(
+                    $"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
+                    LogLevel.Info
+                );
             }
 
             if (CheckOthersReady("festivalEnd"))
             {
-                _monitor.Log("Other players ready to leave festival, triggering end dialogue", LogLevel.Info);
+                _monitor.Log(
+                    "Other players ready to leave festival, triggering end dialogue",
+                    LogLevel.Info
+                );
                 Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
                 _startedFestivalEnd = true;
             }

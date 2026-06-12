@@ -1,6 +1,6 @@
-using StardewModdingAPI;
 using System;
 using System.IO;
+using StardewModdingAPI;
 
 namespace JunimoServer.Util
 {
@@ -28,14 +28,20 @@ namespace JunimoServer.Util
         {
             if (string.IsNullOrEmpty(inviteCode))
             {
-                monitor.Log($"Failed to write invite code to '{FilePath}': value cannot be null or empty", LogLevel.Error);
+                monitor.Log(
+                    $"Failed to write invite code to '{FilePath}': value cannot be null or empty",
+                    LogLevel.Error
+                );
                 return false;
             }
 
             var directory = Path.GetDirectoryName(FilePath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
-                monitor.Log($"Failed to write invite code to '{FilePath}': directory '{directory}' does not exist", LogLevel.Error);
+                monitor.Log(
+                    $"Failed to write invite code to '{FilePath}': directory '{directory}' does not exist",
+                    LogLevel.Error
+                );
                 return false;
             }
 
@@ -47,7 +53,10 @@ namespace JunimoServer.Util
             }
             catch (Exception ex)
             {
-                monitor.Log($"Failed to write invite code to '{FilePath}': {ex.Message}", LogLevel.Error);
+                monitor.Log(
+                    $"Failed to write invite code to '{FilePath}': {ex.Message}",
+                    LogLevel.Error
+                );
                 return false;
             }
         }
@@ -79,7 +88,10 @@ namespace JunimoServer.Util
             }
             catch (Exception ex)
             {
-                monitor.Log($"Failed to read invite code from '{FilePath}': {ex.Message}", LogLevel.Error);
+                monitor.Log(
+                    $"Failed to read invite code from '{FilePath}': {ex.Message}",
+                    LogLevel.Error
+                );
                 return null;
             }
         }
@@ -92,7 +104,10 @@ namespace JunimoServer.Util
         {
             if (!File.Exists(FilePath))
             {
-                monitor.Log($"Invite code file '{FilePath}' does not exist, nothing to clear", LogLevel.Trace);
+                monitor.Log(
+                    $"Invite code file '{FilePath}' does not exist, nothing to clear",
+                    LogLevel.Trace
+                );
                 return true;
             }
 
@@ -104,7 +119,10 @@ namespace JunimoServer.Util
             }
             catch (Exception ex)
             {
-                monitor.Log($"Failed to clear invite code file '{FilePath}': {ex.Message}", LogLevel.Error);
+                monitor.Log(
+                    $"Failed to clear invite code file '{FilePath}': {ex.Message}",
+                    LogLevel.Error
+                );
                 return false;
             }
         }

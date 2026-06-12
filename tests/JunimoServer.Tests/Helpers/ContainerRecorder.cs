@@ -23,7 +23,13 @@ namespace JunimoServer.Tests.Helpers;
 /// </summary>
 internal sealed class ContainerRecorder : IAsyncDisposable
 {
-    private enum RecorderState { NotStarted, Recording, Stopped, Failed }
+    private enum RecorderState
+    {
+        NotStarted,
+        Recording,
+        Stopped,
+        Failed,
+    }
 
     /// <summary>Parsed segment entry from segments.csv.</summary>
     private record SegmentInfo(string FileName, double StartTime, double EndTime);
@@ -51,7 +57,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     public string EncoderName => _useGpu ? "nvenc" : "libx264";
     private RecorderState _state = RecorderState.NotStarted;
     private volatile bool _containerDead;
-    private int _containerDeadLogged;  // 0 = not yet logged; flipped via Interlocked.Exchange in MarkContainerDead
+    private int _containerDeadLogged; // 0 = not yet logged; flipped via Interlocked.Exchange in MarkContainerDead
 
     /// <summary>Container-side recording directory.</summary>
     private const string RecDir = "/recordings";
@@ -119,16 +125,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// </para>
     /// </summary>
     private const string BurnInFilter =
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf:" +
-        "fontsize=24:fontcolor=black:box=0:x=8:y=5:" +
-        "text=TIME %{pts}";
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf:"
+        + "fontsize=24:fontcolor=black:box=0:x=8:y=5:"
+        + "text=TIME %{pts}";
 
     private static readonly string[] ContainerDeadIndicators =
     {
         "No such container",
         "is not running",
         "is dead or marked for removal",
-        "InternalServerError"
+        "InternalServerError",
     };
 
     /// <summary>Effective recording FPS (after capping to game FPS).</summary>
@@ -216,7 +222,15 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     public double ContainerEpochAtHostTicks(long hostTicks) =>
         (double)hostTicks / Stopwatch.Frequency + HostToContainerOffsetSeconds;
 
-    public ContainerRecorder(IContainer container, DockerHost host, string displayLabel, int fps, Action<string> log, bool useGpu, DockerExtractLimiter? extractLimiter = null)
+    public ContainerRecorder(
+        IContainer container,
+        DockerHost host,
+        string displayLabel,
+        int fps,
+        Action<string> log,
+        bool useGpu,
+        DockerExtractLimiter? extractLimiter = null
+    )
     {
         _container = container ?? throw new ArgumentNullException(nameof(container));
         _host = host ?? throw new ArgumentNullException(nameof(host));
@@ -240,7 +254,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // below and orphan the first ffmpeg.
         if (_state != RecorderState.NotStarted)
         {
-            _log($"[Recording] WARNING: StartAsync re-entered in {_displayLabel} (state={_state}); ignoring");
+            _log(
+                $"[Recording] WARNING: StartAsync re-entered in {_displayLabel} (state={_state}); ignoring"
+            );
             return _state == RecorderState.Recording;
         }
 
@@ -267,11 +283,13 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 //     sample-phase jitter inside a fictionally precise time axis.
                 //   no -reset_timestamps: each segment's PTS continues the previous segment's,
                 //     so extraction can seek by absolute Unix epoch across boundaries.
-                var input = $"-f x11grab -video_size {RecordingPolicy.Width}x{RecordingPolicy.Height} " +
-                            $"-framerate {_fps} -i :0";
+                var input =
+                    $"-f x11grab -video_size {RecordingPolicy.Width}x{RecordingPolicy.Height} "
+                    + $"-framerate {_fps} -i :0";
                 var encoder = BuildEncoderArgs();
-                var segment = $"-f segment -segment_time {_segmentTime} -segment_format {SegmentFormat} " +
-                              $"-segment_list {RecDir}/segments.csv -segment_list_type csv";
+                var segment =
+                    $"-f segment -segment_time {_segmentTime} -segment_format {SegmentFormat} "
+                    + $"-segment_list {RecDir}/segments.csv -segment_list_type csv";
 
                 // Phase-lock preamble: sleep until CLOCK_REALTIME is at a 1/fps boundary,
                 // so all recorders on the same Docker host (which share CLOCK_REALTIME)
@@ -293,11 +311,11 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 // boundaries — same alignment behavior as before this fix for that case.
                 var periodArg = (1.0 / _fps).ToString("F9", CultureInfo.InvariantCulture);
                 var phaseLockPreamble =
-                    $"NOW=$(date +%s.%N); " +
-                    $"TARGET=$(awk -v n=\"$NOW\" -v p={periodArg} 'BEGIN{{ t=(int(n/p)+1)*p; printf \"%.9f\", t }}'); " +
-                    $"WAIT=$(awk -v n=\"$NOW\" -v t=\"$TARGET\" 'BEGIN{{ v=t-n; if (v<0) v=0; printf \"%.9f\", v }}'); " +
-                    $"echo \"PHASE_LOCK_TARGET=$TARGET\"; " +
-                    $"sleep \"$WAIT\"; ";
+                    $"NOW=$(date +%s.%N); "
+                    + $"TARGET=$(awk -v n=\"$NOW\" -v p={periodArg} 'BEGIN{{ t=(int(n/p)+1)*p; printf \"%.9f\", t }}'); "
+                    + $"WAIT=$(awk -v n=\"$NOW\" -v t=\"$TARGET\" 'BEGIN{{ v=t-n; if (v<0) v=0; printf \"%.9f\", v }}'); "
+                    + $"echo \"PHASE_LOCK_TARGET=$TARGET\"; "
+                    + $"sleep \"$WAIT\"; ";
 
                 // Prefix the directory prep into the launch exec so a cold start is one
                 // round-trip (mkdir + clean stale segments + phase-lock + launch + emit PID)
@@ -305,12 +323,12 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 // Windows parallel-startup load. mkdir -p is idempotent; the rm clears any
                 // stale/failed segments from a prior attempt.
                 var ffmpegCmd =
-                    $"mkdir -p {RecDir} && rm -f {RecDir}/seg_*.{SegmentExtension} {RecDir}/segments.csv {RecDir}/ffmpeg.pid {RecDir}/ffmpeg_err.log; " +
-                    phaseLockPreamble +
-                    $"nohup ffmpeg -use_wallclock_as_timestamps 1 {input} " +
-                    $"-copyts -fps_mode passthrough {encoder} {segment} " +
-                    $"{RecDir}/seg_%04d.{SegmentExtension} </dev/null >/dev/null 2>{RecDir}/ffmpeg_err.log & " +
-                    $"echo $! > {RecDir}/ffmpeg.pid";
+                    $"mkdir -p {RecDir} && rm -f {RecDir}/seg_*.{SegmentExtension} {RecDir}/segments.csv {RecDir}/ffmpeg.pid {RecDir}/ffmpeg_err.log; "
+                    + phaseLockPreamble
+                    + $"nohup ffmpeg -use_wallclock_as_timestamps 1 {input} "
+                    + $"-copyts -fps_mode passthrough {encoder} {segment} "
+                    + $"{RecDir}/seg_%04d.{SegmentExtension} </dev/null >/dev/null 2>{RecDir}/ffmpeg_err.log & "
+                    + $"echo $! > {RecDir}/ffmpeg.pid";
 
                 // Launch ffmpeg. The detection block below derives StartContainerEpoch from
                 // segments.csv (see that property's doc for the anchor rationale) and
@@ -321,10 +339,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 var launchExecDoneTicks = Stopwatch.GetTimestamp();
                 if (result.ExitCode != DockerExitCodes.Success)
                 {
-                    _log($"[Recording] WARNING: ffmpeg launch failed in {_displayLabel} (attempt {attempt}/3): exit={result.ExitCode}");
+                    _log(
+                        $"[Recording] WARNING: ffmpeg launch failed in {_displayLabel} (attempt {attempt}/3): exit={result.ExitCode}"
+                    );
                     lastFailureReason = "exec_failed";
                     lastExitCode = result.ExitCode;
-                    if (attempt < 3) { await Task.Delay(1000, ct); continue; }
+                    if (attempt < 3)
+                    {
+                        await Task.Delay(1000, ct);
+                        continue;
+                    }
                     break;
                 }
 
@@ -335,10 +359,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 foreach (var rawLine in result.Stdout.Split('\n'))
                 {
                     var line = rawLine.Trim();
-                    if (line.StartsWith("PHASE_LOCK_TARGET=", StringComparison.Ordinal)
-                        && double.TryParse(line.AsSpan("PHASE_LOCK_TARGET=".Length),
-                            NumberStyles.Float, CultureInfo.InvariantCulture, out var pt)
-                        && pt > 1e9)
+                    if (
+                        line.StartsWith("PHASE_LOCK_TARGET=", StringComparison.Ordinal)
+                        && double.TryParse(
+                            line.AsSpan("PHASE_LOCK_TARGET=".Length),
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out var pt
+                        )
+                        && pt > 1e9
+                    )
                     {
                         phaseLockTargetEpoch = pt;
                         break;
@@ -370,25 +400,37 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 // not poll the CT mid-exec, so without this a cancel would block up to the
                 // full in-container budget (~60s). On cancel we abandon the exec; the orphaned
                 // shell harmlessly exits on its own (it either detects seg_0001 or times out).
-                var detectResult = await _container.ExecAsync(new[] { "sh", "-c",
-                    $"for _i in $(seq 1 {waitIters}); do " +
-                        $"if [ -f {RecDir}/segments.csv ] && [ \"$(wc -l < {RecDir}/segments.csv 2>/dev/null)\" -ge 2 ]; then " +
-                            $"_row2=$(sed -n '2p' {RecDir}/segments.csv); " +
-                            $"_epoch=$(printf '%s' \"$_row2\" | cut -d, -f2); " +
-                            $"if awk -v e=\"$_epoch\" 'BEGIN{{ exit !(e+0 > 1000000000) }}'; then " +
-                                $"printf '%s\\nREADY\\n' \"$_row2\"; exit 0; " +
-                            $"fi; " +
-                        $"fi; " +
-                        $"sleep 0.1; " +
-                    $"done; " +
-                    $"echo TIMEOUT" }, ct).WaitAsync(ct);
+                var detectResult = await _container
+                    .ExecAsync(
+                        new[]
+                        {
+                            "sh",
+                            "-c",
+                            $"for _i in $(seq 1 {waitIters}); do "
+                                + $"if [ -f {RecDir}/segments.csv ] && [ \"$(wc -l < {RecDir}/segments.csv 2>/dev/null)\" -ge 2 ]; then "
+                                + $"_row2=$(sed -n '2p' {RecDir}/segments.csv); "
+                                + $"_epoch=$(printf '%s' \"$_row2\" | cut -d, -f2); "
+                                + $"if awk -v e=\"$_epoch\" 'BEGIN{{ exit !(e+0 > 1000000000) }}'; then "
+                                + $"printf '%s\\nREADY\\n' \"$_row2\"; exit 0; "
+                                + $"fi; "
+                                + $"fi; "
+                                + $"sleep 0.1; "
+                                + $"done; "
+                                + $"echo TIMEOUT",
+                        },
+                        ct
+                    )
+                    .WaitAsync(ct);
                 var detectStopwatchTicks = Stopwatch.GetTimestamp();
 
                 double firstFramePts = double.NaN;
                 bool gotFirstFramePts = false;
 
-                var detectLines = detectResult.Stdout.Split('\n').Select(l => l.Trim())
-                    .Where(l => !string.IsNullOrEmpty(l)).ToArray();
+                var detectLines = detectResult
+                    .Stdout.Split('\n')
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrEmpty(l))
+                    .ToArray();
                 if (detectLines.Length >= 2 && detectLines[^1] == "READY")
                 {
                     // detectLines[^2] = segments.csv row 2, format
@@ -396,9 +438,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                     // first-frame Unix-epoch second. C# re-validates >1e9 as defense in
                     // depth (the in-shell loop already gated on it).
                     var cols = detectLines[^2].Split(',');
-                    if (cols.Length >= 2
-                        && double.TryParse(cols[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var pts)
-                        && pts > 1e9)  // Unix epoch sanity floor (year 2001+)
+                    if (
+                        cols.Length >= 2
+                        && double.TryParse(
+                            cols[1],
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out var pts
+                        )
+                        && pts > 1e9
+                    ) // Unix epoch sanity floor (year 2001+)
                     {
                         firstFramePts = pts;
                         gotFirstFramePts = true;
@@ -420,14 +469,22 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                     StartContainerEpoch = firstFramePts;
                     FirstFramePtsSource = "segments_csv";
 
-                    var launchExecMs = (long)Stopwatch.GetElapsedTime(launchExecStart, launchExecDoneTicks).TotalMilliseconds;
+                    var launchExecMs = (long)
+                        Stopwatch
+                            .GetElapsedTime(launchExecStart, launchExecDoneTicks)
+                            .TotalMilliseconds;
                     // detectMs now spans launch-exec-done → the single blocking detect exec
                     // returning, so it includes the full in-container wait for seg_0001 to
                     // appear (not just one poll's RTT as before). It is a diagnostic only.
-                    var detectMs = (long)Stopwatch.GetElapsedTime(launchExecDoneTicks, detectStopwatchTicks).TotalMilliseconds;
+                    var detectMs = (long)
+                        Stopwatch
+                            .GetElapsedTime(launchExecDoneTicks, detectStopwatchTicks)
+                            .TotalMilliseconds;
 
                     _state = RecorderState.Recording;
-                    _log($"[Recording] Started in {_displayLabel} ({_fps}fps, {_segmentTime}s segments, encoder: {EncoderName}{(attempt > 1 ? $", attempt {attempt}" : "")})");
+                    _log(
+                        $"[Recording] Started in {_displayLabel} ({_fps}fps, {_segmentTime}s segments, encoder: {EncoderName}{(attempt > 1 ? $", attempt {attempt}" : "")})"
+                    );
                     // Field semantics live on the corresponding properties + the
                     // InfrastructureEventLog event-catalog comment. `phaseLockOvershootMs`
                     // is the realized first-frame wall-clock minus the phase-lock target:
@@ -440,26 +497,34 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                     // line was missing from stdout (e.g. a future image where `date +%s.%N`
                     // semantics changed) — the recorder still works, just without phase-lock
                     // synchronization.
-                    InfrastructureEventLog.Emit("recording_started", new
-                    {
-                        container = _displayLabel,
-                        fps = _fps,
-                        segmentTime = _segmentTime,
-                        encoder = EncoderName,
-                        attempt,
-                        launchExecMs,
-                        detectMs,
-                        startContainerEpoch = StartContainerEpoch,
-                        firstFramePtsSource = FirstFramePtsSource,
-                        hostToContainerOffsetMs = (long)Math.Round(HostToContainerOffsetSeconds * 1000),
-                        calibrationRttMs = (long)Math.Round(CalibrationRttMs),
-                        calibrationSamples = CalibrationSamples,
-                        clockOffsetFromCache = ClockOffsetFromCache,
-                        phaseLockTargetEpoch,
-                        phaseLockOvershootMs = double.IsNaN(phaseLockTargetEpoch)
-                            ? (long?)null
-                            : (long)Math.Round((StartContainerEpoch - phaseLockTargetEpoch - _segmentTime) * 1000)
-                    });
+                    InfrastructureEventLog.Emit(
+                        "recording_started",
+                        new
+                        {
+                            container = _displayLabel,
+                            fps = _fps,
+                            segmentTime = _segmentTime,
+                            encoder = EncoderName,
+                            attempt,
+                            launchExecMs,
+                            detectMs,
+                            startContainerEpoch = StartContainerEpoch,
+                            firstFramePtsSource = FirstFramePtsSource,
+                            hostToContainerOffsetMs = (long)
+                                Math.Round(HostToContainerOffsetSeconds * 1000),
+                            calibrationRttMs = (long)Math.Round(CalibrationRttMs),
+                            calibrationSamples = CalibrationSamples,
+                            clockOffsetFromCache = ClockOffsetFromCache,
+                            phaseLockTargetEpoch,
+                            phaseLockOvershootMs = double.IsNaN(phaseLockTargetEpoch)
+                                ? (long?)null
+                                : (long)
+                                    Math.Round(
+                                        (StartContainerEpoch - phaseLockTargetEpoch - _segmentTime)
+                                            * 1000
+                                    ),
+                        }
+                    );
                     return true;
                 }
 
@@ -467,17 +532,24 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 var ffmpegErr = "";
                 try
                 {
-                    var errResult = await _container.ExecAsync(new[] { "sh", "-c", $"cat {RecDir}/ffmpeg_err.log 2>/dev/null | tail -5" }, ct);
+                    var errResult = await _container.ExecAsync(
+                        new[] { "sh", "-c", $"cat {RecDir}/ffmpeg_err.log 2>/dev/null | tail -5" },
+                        ct
+                    );
                     ffmpegErr = string.Join(
                         " | ",
-                        errResult.Stdout
-                            .Split('\n')
+                        errResult
+                            .Stdout.Split('\n')
                             .Select(l => l.Trim())
                             .Where(l => !string.IsNullOrWhiteSpace(l))
                     );
                 }
-                catch { /* ignore read errors */ }
-                _log($"[Recording] WARNING: ffmpeg not producing output in {_displayLabel} (attempt {attempt}/3): {ffmpegErr}");
+                catch
+                { /* ignore read errors */
+                }
+                _log(
+                    $"[Recording] WARNING: ffmpeg not producing output in {_displayLabel} (attempt {attempt}/3): {ffmpegErr}"
+                );
                 lastFailureReason = "no_output";
                 lastFfmpegStderr = string.IsNullOrEmpty(ffmpegErr) ? null : ffmpegErr;
 
@@ -491,27 +563,33 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             }
 
             _state = RecorderState.Failed;
-            InfrastructureEventLog.Emit("recording_start_failed", new
-            {
-                container = _displayLabel,
-                reason = lastFailureReason,
-                exitCode = lastExitCode,
-                attempts = 3,
-                ffmpegStderr = lastFfmpegStderr
-            });
+            InfrastructureEventLog.Emit(
+                "recording_start_failed",
+                new
+                {
+                    container = _displayLabel,
+                    reason = lastFailureReason,
+                    exitCode = lastExitCode,
+                    attempts = 3,
+                    ffmpegStderr = lastFfmpegStderr,
+                }
+            );
             return false;
         }
         catch (Exception ex)
         {
             _log($"[Recording] WARNING: Failed to start in {_displayLabel}: {ex.Message}");
             _state = RecorderState.Failed;
-            InfrastructureEventLog.Emit("recording_start_failed", new
-            {
-                container = _displayLabel,
-                reason = "exception",
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+            InfrastructureEventLog.Emit(
+                "recording_start_failed",
+                new
+                {
+                    container = _displayLabel,
+                    reason = "exception",
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             return false;
         }
     }
@@ -531,7 +609,11 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             return;
         }
 
-        if (_containerDead) { _state = RecorderState.Stopped; return; }
+        if (_containerDead)
+        {
+            _state = RecorderState.Stopped;
+            return;
+        }
 
         try
         {
@@ -542,78 +624,122 @@ internal sealed class ContainerRecorder : IAsyncDisposable
 
             for (var i = 0; i < 20; i++) // up to 10s for graceful finalization
             {
-                if (_containerDead) { _state = RecorderState.Stopped; return; }
+                if (_containerDead)
+                {
+                    _state = RecorderState.Stopped;
+                    return;
+                }
                 await Task.Delay(500, ct);
                 var check = await _container.ExecAsync(
-                    new[] { "sh", "-c",
-                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); " +
-                        $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE" }, ct);
+                    new[]
+                    {
+                        "sh",
+                        "-c",
+                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
+                            + $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE",
+                    },
+                    ct
+                );
                 if (check.Stdout.Trim().Contains("DONE"))
                 {
                     _state = RecorderState.Stopped;
                     _log($"[Recording] Stopped in {_displayLabel}");
-                    InfrastructureEventLog.Emit("recording_stopped", new
-                    {
-                        container = _displayLabel,
-                        via = "sigint"
-                    });
+                    InfrastructureEventLog.Emit(
+                        "recording_stopped",
+                        new { container = _displayLabel, via = "sigint" }
+                    );
                     return;
                 }
             }
 
-            if (_containerDead) { _state = RecorderState.Stopped; return; }
-            _log($"[Recording] WARNING: ffmpeg not responding to SIGINT in {_displayLabel} after 10s, trying SIGTERM");
+            if (_containerDead)
+            {
+                _state = RecorderState.Stopped;
+                return;
+            }
+            _log(
+                $"[Recording] WARNING: ffmpeg not responding to SIGINT in {_displayLabel} after 10s, trying SIGTERM"
+            );
             await SignalFfmpeg("TERM", ct);
 
             for (var i = 0; i < 6; i++) // up to 3s more
             {
-                if (_containerDead) { _state = RecorderState.Stopped; return; }
+                if (_containerDead)
+                {
+                    _state = RecorderState.Stopped;
+                    return;
+                }
                 await Task.Delay(500, ct);
                 var check = await _container.ExecAsync(
-                    new[] { "sh", "-c",
-                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); " +
-                        $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE" }, ct);
+                    new[]
+                    {
+                        "sh",
+                        "-c",
+                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
+                            + $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE",
+                    },
+                    ct
+                );
                 if (check.Stdout.Trim().Contains("DONE"))
                 {
                     _state = RecorderState.Stopped;
                     _log($"[Recording] Stopped in {_displayLabel} (after SIGTERM)");
-                    InfrastructureEventLog.Emit("recording_stopped", new
-                    {
-                        container = _displayLabel,
-                        via = "sigterm"
-                    });
+                    InfrastructureEventLog.Emit(
+                        "recording_stopped",
+                        new { container = _displayLabel, via = "sigterm" }
+                    );
                     return;
                 }
             }
 
-            if (_containerDead) { _state = RecorderState.Stopped; return; }
+            if (_containerDead)
+            {
+                _state = RecorderState.Stopped;
+                return;
+            }
             _log($"[Recording] WARNING: ffmpeg not responding in {_displayLabel}, sending kill -9");
             await SignalFfmpeg("9", ct);
             await Task.Delay(500, ct);
 
-            if (_containerDead) { _state = RecorderState.Stopped; return; }
+            if (_containerDead)
+            {
+                _state = RecorderState.Stopped;
+                return;
+            }
             // kill -9 may leave the active segment with a truncated trailer / partial final
             // packet. TS itself decodes from any byte position, but a clean re-mux drops the
             // partial packets so downstream concat-copy doesn't error on them.
             _log($"[Recording] Remuxing last segment after kill -9 in {_displayLabel}");
-            var remux = await _container.ExecAsync(new[] { "sh", "-c",
-                $"last=$(ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | tail -1); " +
-                $"[ -n \"$last\" ] && ffmpeg -y -i \"$last\" -c copy \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" " +
-                $"&& mv \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" \"$last\" || true" }, ct);
+            var remux = await _container.ExecAsync(
+                new[]
+                {
+                    "sh",
+                    "-c",
+                    $"last=$(ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | tail -1); "
+                        + $"[ -n \"$last\" ] && ffmpeg -y -i \"$last\" -c copy \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" "
+                        + $"&& mv \"${{last%.{SegmentExtension}}}_fixed.{SegmentExtension}\" \"$last\" || true",
+                },
+                ct
+            );
             var remuxFixed = remux.ExitCode == DockerExitCodes.Success;
             if (!remuxFixed)
             {
-                _log($"[Recording] WARNING: Last segment remux failed in {_displayLabel}: exit={remux.ExitCode}");
+                _log(
+                    $"[Recording] WARNING: Last segment remux failed in {_displayLabel}: exit={remux.ExitCode}"
+                );
                 LogStderr(remux.Stderr);
             }
 
             _state = RecorderState.Stopped;
-            InfrastructureEventLog.Emit("recording_stopped", new
-            {
-                container = _displayLabel,
-                via = "kill9",
-                remuxFixed
-            });
+            InfrastructureEventLog.Emit(
+                "recording_stopped",
+                new
+                {
+                    container = _displayLabel,
+                    via = "kill9",
+                    remuxFixed,
+                }
+            );
         }
         catch (Exception ex)
         {
@@ -639,32 +765,48 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// </para>
     /// </summary>
     public async Task<ExtractionResult> ExtractClipFromLiveAsync(
-        double startEpoch, double durationSec, string hostDestPath, CancellationToken ct = default)
+        double startEpoch,
+        double durationSec,
+        string hostDestPath,
+        CancellationToken ct = default
+    )
     {
-        if (_containerDead) return new ExtractionResult(null, null);
+        if (_containerDead)
+            return new ExtractionResult(null, null);
         if (_state != RecorderState.Recording)
         {
-            _log($"[Recording] WARNING: ExtractClipFromLive called but state is {_state} (expected Recording)");
-            InfrastructureEventLog.Emit("recording_clip_failed", new
-            {
-                container = _displayLabel,
-                mode = "live",
-                stage = "wrong_state",
-                observedState = _state.ToString()
-            });
+            _log(
+                $"[Recording] WARNING: ExtractClipFromLive called but state is {_state} (expected Recording)"
+            );
+            InfrastructureEventLog.Emit(
+                "recording_clip_failed",
+                new
+                {
+                    container = _displayLabel,
+                    mode = "live",
+                    stage = "wrong_state",
+                    observedState = _state.ToString(),
+                }
+            );
             return new ExtractionResult(null, null);
         }
         if (durationSec <= 0)
         {
-            _log(FormattableString.Invariant(
-                $"[Recording] WARNING: Zero/negative duration ({durationSec:F2}s) for live extraction in {_displayLabel}"));
-            InfrastructureEventLog.Emit("recording_clip_failed", new
-            {
-                container = _displayLabel,
-                mode = "live",
-                stage = "zero_duration",
-                durationSec
-            });
+            _log(
+                FormattableString.Invariant(
+                    $"[Recording] WARNING: Zero/negative duration ({durationSec:F2}s) for live extraction in {_displayLabel}"
+                )
+            );
+            InfrastructureEventLog.Emit(
+                "recording_clip_failed",
+                new
+                {
+                    container = _displayLabel,
+                    mode = "live",
+                    stage = "zero_duration",
+                    durationSec,
+                }
+            );
             return new ExtractionResult(null, null);
         }
 
@@ -691,44 +833,62 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                _log($"[Recording] WARNING: Segment discovery failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message}");
-                InfrastructureEventLog.Emit("recording_clip_failed", new
-                {
-                    container = _displayLabel,
-                    mode = "live",
-                    stage = "segment_discovery_failed",
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message
-                });
+                _log(
+                    $"[Recording] WARNING: Segment discovery failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message}"
+                );
+                InfrastructureEventLog.Emit(
+                    "recording_clip_failed",
+                    new
+                    {
+                        container = _displayLabel,
+                        mode = "live",
+                        stage = "segment_discovery_failed",
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message,
+                    }
+                );
                 return new ExtractionResult(null, null);
             }
             if (segments.Count == 0 && activeFile == null)
             {
                 _log($"[Recording] WARNING: No segments found in {_displayLabel}");
-                InfrastructureEventLog.Emit("recording_clip_failed", new
-                {
-                    container = _displayLabel,
-                    mode = "live",
-                    stage = "no_segments"
-                });
+                InfrastructureEventLog.Emit(
+                    "recording_clip_failed",
+                    new
+                    {
+                        container = _displayLabel,
+                        mode = "live",
+                        stage = "no_segments",
+                    }
+                );
                 return new ExtractionResult(null, null);
             }
 
-            var (finalized, covering, needsActive) =
-                SelectCoveringSegments(segments, activeFile, startEpoch, endEpoch);
+            var (finalized, covering, needsActive) = SelectCoveringSegments(
+                segments,
+                activeFile,
+                startEpoch,
+                endEpoch
+            );
 
             if (covering.Count == 0)
             {
-                _log(FormattableString.Invariant(
-                    $"[Recording] WARNING: No segments cover timespan {startEpoch:F2}--{endEpoch:F2} (epoch) in {_displayLabel}"));
-                InfrastructureEventLog.Emit("recording_clip_failed", new
-                {
-                    container = _displayLabel,
-                    mode = "live",
-                    stage = "no_coverage",
-                    offsetSec = startEpoch,
-                    durationSec
-                });
+                _log(
+                    FormattableString.Invariant(
+                        $"[Recording] WARNING: No segments cover timespan {startEpoch:F2}--{endEpoch:F2} (epoch) in {_displayLabel}"
+                    )
+                );
+                InfrastructureEventLog.Emit(
+                    "recording_clip_failed",
+                    new
+                    {
+                        container = _displayLabel,
+                        mode = "live",
+                        stage = "no_coverage",
+                        offsetSec = startEpoch,
+                        durationSec,
+                    }
+                );
                 return new ExtractionResult(null, null);
             }
 
@@ -736,23 +896,39 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             // the extraction shell script will wait for segment rotation (finalization) using
             // local grep on segments.csv inside the container. No C# polling needed.
             if (needsActive && finalized.Count == 0)
-                _log($"[Recording] {_displayLabel}: active-only clip, rotation wait embedded in extraction");
+                _log(
+                    $"[Recording] {_displayLabel}: active-only clip, rotation wait embedded in extraction"
+                );
 
             var segDesc = needsActive
                 ? $"{finalized.Count} finalized + active segment"
                 : $"{covering.Count} segment{(covering.Count != 1 ? "s" : "")}";
-            _log($"[Recording] Extracting clip from {_displayLabel}: " +
-                 FormattableString.Invariant($"epoch {startEpoch:F2}, duration {durationSec:F2}s, {segDesc} ") +
-                 $"(encoded with: {encodedWith})");
+            _log(
+                $"[Recording] Extracting clip from {_displayLabel}: "
+                    + FormattableString.Invariant(
+                        $"epoch {startEpoch:F2}, duration {durationSec:F2}s, {segDesc} "
+                    )
+                    + $"(encoded with: {encodedWith})"
+            );
 
             // Extract via two-pass concat-copy then re-encode; see BuildExtractCommand.
             var result = await RunExtractionAsync(
-                clipName, hostDestPath, covering, startEpoch, durationSec,
-                needsActive, id, "", encodedWith,
-                mode: "live", finalizedSegmentCount: finalized.Count,
-                extractCts.Token);
+                clipName,
+                hostDestPath,
+                covering,
+                startEpoch,
+                durationSec,
+                needsActive,
+                id,
+                "",
+                encodedWith,
+                mode: "live",
+                finalizedSegmentCount: finalized.Count,
+                extractCts.Token
+            );
 
-            if (result.HostPath != null) return result;
+            if (result.HostPath != null)
+                return result;
 
             // Extraction failed. Re-read segments: the active segment may have rotated
             // (become finalized) since our initial discovery, so a fresh cover set may
@@ -761,23 +937,43 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             try
             {
                 var (retrySegs, retryActive) = await ReadSegmentListAsync(extractCts.Token);
-                var (retryFinalized, retryCovering, retryNeedsActive) =
-                    SelectCoveringSegments(retrySegs, retryActive, startEpoch, endEpoch);
+                var (retryFinalized, retryCovering, retryNeedsActive) = SelectCoveringSegments(
+                    retrySegs,
+                    retryActive,
+                    startEpoch,
+                    endEpoch
+                );
 
-                if (retryCovering.Count > 0 && (retryFinalized.Count > finalized.Count || !retryNeedsActive))
+                if (
+                    retryCovering.Count > 0
+                    && (retryFinalized.Count > finalized.Count || !retryNeedsActive)
+                )
                 {
-                    _log($"[Recording] Re-discovered {retryFinalized.Count} finalized segments for {_displayLabel} (was {finalized.Count}), retrying");
+                    _log(
+                        $"[Recording] Re-discovered {retryFinalized.Count} finalized segments for {_displayLabel} (was {finalized.Count}), retrying"
+                    );
                     result = await RunExtractionAsync(
-                        clipName, hostDestPath, retryCovering, startEpoch, durationSec,
-                        retryNeedsActive, id + "_rd", "", encodedWith,
-                        mode: "live", finalizedSegmentCount: retryFinalized.Count,
-                        extractCts.Token);
+                        clipName,
+                        hostDestPath,
+                        retryCovering,
+                        startEpoch,
+                        durationSec,
+                        retryNeedsActive,
+                        id + "_rd",
+                        "",
+                        encodedWith,
+                        mode: "live",
+                        finalizedSegmentCount: retryFinalized.Count,
+                        extractCts.Token
+                    );
                     return result;
                 }
             }
             catch (Exception ex)
             {
-                _log($"[Recording] WARNING: Segment re-discovery failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message}");
+                _log(
+                    $"[Recording] WARNING: Segment re-discovery failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message}"
+                );
             }
 
             return new ExtractionResult(null, null);
@@ -787,19 +983,23 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             if (IsContainerDeadError(ex))
                 MarkContainerDead();
             else
-                _log($"[Recording] WARNING: Live clip extraction error in {_displayLabel}: {ex.GetType().Name}: {ex.Message}");
-            InfrastructureEventLog.Emit("recording_clip_failed", new
-            {
-                container = _displayLabel,
-                mode = "live",
-                stage = "exception",
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+                _log(
+                    $"[Recording] WARNING: Live clip extraction error in {_displayLabel}: {ex.GetType().Name}: {ex.Message}"
+                );
+            InfrastructureEventLog.Emit(
+                "recording_clip_failed",
+                new
+                {
+                    container = _displayLabel,
+                    mode = "live",
+                    stage = "exception",
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             return new ExtractionResult(null, null);
         }
     }
-
 
     /// <summary>
     /// Concatenates all segments into a single MP4 for the full container recording.
@@ -811,55 +1011,76 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// </summary>
     public async Task ConvertToMp4Async(CancellationToken ct = default)
     {
-        if (_containerDead) return;
+        if (_containerDead)
+            return;
 
         _log($"[Recording] {_displayLabel}: concatenating TS segments -> MP4 (stream copy)");
         var sw = Stopwatch.StartNew();
 
         try
         {
-            var result = await _container.ExecAsync(new[] { "sh", "-c",
-                $"ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | sed \"s|.*|file '&'|\" > {RecDir}/concat_all.txt; " +
-                $"if [ ! -s {RecDir}/concat_all.txt ]; then " +
-                    $"echo 'No segments found for concatenation' >&2; rm -f {RecDir}/concat_all.txt; exit 1; " +
-                $"fi; " +
-                $"ffmpeg -y -f concat -safe 0 -i {RecDir}/concat_all.txt -c copy -movflags +faststart {RecDir}/recording.mp4; " +
-                $"rc=$?; rm -f {RecDir}/concat_all.txt; exit $rc" }, ct);
+            var result = await _container.ExecAsync(
+                new[]
+                {
+                    "sh",
+                    "-c",
+                    $"ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | sed \"s|.*|file '&'|\" > {RecDir}/concat_all.txt; "
+                        + $"if [ ! -s {RecDir}/concat_all.txt ]; then "
+                        + $"echo 'No segments found for concatenation' >&2; rm -f {RecDir}/concat_all.txt; exit 1; "
+                        + $"fi; "
+                        + $"ffmpeg -y -f concat -safe 0 -i {RecDir}/concat_all.txt -c copy -movflags +faststart {RecDir}/recording.mp4; "
+                        + $"rc=$?; rm -f {RecDir}/concat_all.txt; exit $rc",
+                },
+                ct
+            );
             sw.Stop();
 
             if (result.ExitCode != DockerExitCodes.Success)
             {
-                _log($"[Recording] WARNING: TS->MP4 failed in {_displayLabel}: exit={result.ExitCode}, took {sw.ElapsedMilliseconds}ms");
+                _log(
+                    $"[Recording] WARNING: TS->MP4 failed in {_displayLabel}: exit={result.ExitCode}, took {sw.ElapsedMilliseconds}ms"
+                );
                 LogStderr(result.Stderr);
-                InfrastructureEventLog.Emit("recording_full_convert_failed", new
-                {
-                    container = _displayLabel,
-                    convertMs = sw.ElapsedMilliseconds,
-                    exitCode = result.ExitCode
-                });
+                InfrastructureEventLog.Emit(
+                    "recording_full_convert_failed",
+                    new
+                    {
+                        container = _displayLabel,
+                        convertMs = sw.ElapsedMilliseconds,
+                        exitCode = result.ExitCode,
+                    }
+                );
             }
             else
             {
                 _log($"[Recording] {_displayLabel}: TS->MP4 done in {sw.ElapsedMilliseconds}ms");
-                InfrastructureEventLog.Emit("recording_full_converted", new
-                {
-                    container = _displayLabel,
-                    convertMs = sw.ElapsedMilliseconds
-                });
+                InfrastructureEventLog.Emit(
+                    "recording_full_converted",
+                    new { container = _displayLabel, convertMs = sw.ElapsedMilliseconds }
+                );
             }
         }
         catch (Exception ex)
         {
             sw.Stop();
-            if (IsContainerDeadError(ex)) { MarkContainerDead(); return; }
-            _log($"[Recording] WARNING: TS->MP4 error in {_displayLabel}: {ex.Message}, took {sw.ElapsedMilliseconds}ms");
-            InfrastructureEventLog.Emit("recording_full_convert_failed", new
+            if (IsContainerDeadError(ex))
             {
-                container = _displayLabel,
-                convertMs = sw.ElapsedMilliseconds,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+                MarkContainerDead();
+                return;
+            }
+            _log(
+                $"[Recording] WARNING: TS->MP4 error in {_displayLabel}: {ex.Message}, took {sw.ElapsedMilliseconds}ms"
+            );
+            InfrastructureEventLog.Emit(
+                "recording_full_convert_failed",
+                new
+                {
+                    container = _displayLabel,
+                    convertMs = sw.ElapsedMilliseconds,
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
         }
     }
 
@@ -867,7 +1088,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// Retrieves the full MP4 recording from the container via Docker tar API.
     /// Must be called after ConvertToMp4Async.
     /// </summary>
-    public async Task RetrieveFullRecordingAsync(string hostDestPath, CancellationToken ct = default)
+    public async Task RetrieveFullRecordingAsync(
+        string hostDestPath,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -875,50 +1099,60 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             if (bytes.Length == 0)
             {
                 _log($"[Recording] WARNING: Full recording is empty in {_displayLabel}");
-                InfrastructureEventLog.Emit("recording_full_retrieve_failed", new
-                {
-                    container = _displayLabel,
-                    reason = "empty"
-                });
+                InfrastructureEventLog.Emit(
+                    "recording_full_retrieve_failed",
+                    new { container = _displayLabel, reason = "empty" }
+                );
                 return;
             }
 
             var dir = Path.GetDirectoryName(hostDestPath);
-            if (dir != null) Directory.CreateDirectory(dir);
+            if (dir != null)
+                Directory.CreateDirectory(dir);
             await File.WriteAllBytesAsync(hostDestPath, bytes, ct);
-            InfrastructureEventLog.Emit("recording_full_retrieved", new
-            {
-                container = _displayLabel,
-                path = hostDestPath,
-                sizeBytes = (long)bytes.Length
-            });
+            InfrastructureEventLog.Emit(
+                "recording_full_retrieved",
+                new
+                {
+                    container = _displayLabel,
+                    path = hostDestPath,
+                    sizeBytes = (long)bytes.Length,
+                }
+            );
         }
         catch (FileNotFoundException)
         {
             _log($"[Recording] WARNING: Full recording not found in container {_displayLabel}");
-            InfrastructureEventLog.Emit("recording_full_retrieve_failed", new
-            {
-                container = _displayLabel,
-                reason = "not_found"
-            });
+            InfrastructureEventLog.Emit(
+                "recording_full_retrieve_failed",
+                new { container = _displayLabel, reason = "not_found" }
+            );
         }
         catch (Exception ex)
         {
             _log($"[Recording] WARNING: Failed to retrieve full recording: {ex.Message}");
-            InfrastructureEventLog.Emit("recording_full_retrieve_failed", new
-            {
-                container = _displayLabel,
-                reason = "exception",
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+            InfrastructureEventLog.Emit(
+                "recording_full_retrieve_failed",
+                new
+                {
+                    container = _displayLabel,
+                    reason = "exception",
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        try { await StopAsync(); }
-        catch { /* swallow: StopAsync already handles its own errors */ }
+        try
+        {
+            await StopAsync();
+        }
+        catch
+        { /* swallow: StopAsync already handles its own errors */
+        }
     }
 
     // Private helpers
@@ -946,9 +1180,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             // host, drop `-g {gopSize}` to `-g 1` (each frame a keyframe) at the cost of
             // ~38x larger segments.
             var gopSize = _fps * _segmentTime;
-            return $"-vf \"{BurnInFilter}\" " +
-                   $"-c:v h264_nvenc -preset p1 -rc constqp -qp 28 " +
-                   $"-g {gopSize} -force_key_frames 'expr:gte(t,n_forced*{_segmentTime})'";
+            return $"-vf \"{BurnInFilter}\" "
+                + $"-c:v h264_nvenc -preset p1 -rc constqp -qp 28 "
+                + $"-g {gopSize} -force_key_frames 'expr:gte(t,n_forced*{_segmentTime})'";
         }
 
         // Software: -g 1 makes every frame a keyframe for clean segment splitting.
@@ -958,8 +1192,8 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // is ~10s deep, so a segment's content lags its PTS/mtime/strftime-epoch by ~10s and
         // per-test clips land that far before the test body. With it the recording's timestamps
         // match its content. (Measured: ~9.9s -> ~0s; see RecordingPolicy fps notes.)
-        return $"-vf \"{BurnInFilter}\" " +
-               $"-c:v libx264 -preset ultrafast -tune zerolatency -crf 28 -pix_fmt yuv420p -g 1";
+        return $"-vf \"{BurnInFilter}\" "
+            + $"-c:v libx264 -preset ultrafast -tune zerolatency -crf 28 -pix_fmt yuv420p -g 1";
     }
 
     /// <summary>
@@ -967,34 +1201,60 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// One docker exec (~200ms) reads both the CSV and the directory listing.
     /// </summary>
     private async Task<(List<SegmentInfo> finalized, string? activeFile)> ReadSegmentListAsync(
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var finalized = new List<SegmentInfo>();
         var csvFileNames = new HashSet<string>(StringComparer.Ordinal);
         string? activeFile = null;
 
-        if (_containerDead) return (finalized, activeFile);
+        if (_containerDead)
+            return (finalized, activeFile);
 
         try
         {
             // Single docker exec: cat CSV + list segment files, separated by "---"
-            var result = await _container.ExecAsync(new[] { "sh", "-c",
-                $"cat {RecDir}/segments.csv 2>/dev/null; echo '---'; ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort" }, ct);
+            var result = await _container.ExecAsync(
+                new[]
+                {
+                    "sh",
+                    "-c",
+                    $"cat {RecDir}/segments.csv 2>/dev/null; echo '---'; ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort",
+                },
+                ct
+            );
 
             var inSegList = false;
             var nonCsvFiles = new List<string>();
             foreach (var rawLine in result.Stdout.Split('\n'))
             {
                 var line = rawLine.Trim();
-                if (line == "---") { inSegList = true; continue; }
-                if (string.IsNullOrEmpty(line)) continue;
+                if (line == "---")
+                {
+                    inSegList = true;
+                    continue;
+                }
+                if (string.IsNullOrEmpty(line))
+                    continue;
 
                 if (!inSegList)
                 {
                     var fields = line.Split(',');
-                    if (fields.Length >= 3
-                        && double.TryParse(fields[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var start)
-                        && double.TryParse(fields[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var end))
+                    if (
+                        fields.Length >= 3
+                        && double.TryParse(
+                            fields[1],
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out var start
+                        )
+                        && double.TryParse(
+                            fields[2],
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out var end
+                        )
+                    )
                     {
                         var fileName = Path.GetFileName(fields[0].Trim());
                         finalized.Add(new SegmentInfo(fileName, start, end));
@@ -1041,8 +1301,14 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            if (IsContainerDeadError(ex)) { MarkContainerDead(); return (finalized, activeFile); }
-            _log($"[Recording] WARNING: ReadSegmentList exec failed in {_displayLabel}: {ex.Message}");
+            if (IsContainerDeadError(ex))
+            {
+                MarkContainerDead();
+                return (finalized, activeFile);
+            }
+            _log(
+                $"[Recording] WARNING: ReadSegmentList exec failed in {_displayLabel}: {ex.Message}"
+            );
         }
 
         return (finalized, activeFile);
@@ -1068,12 +1334,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// host↔container offset calibration residual (~RTT/2; ~ms locally, tens of ms on VPS).
     /// </para>
     /// </summary>
-    private (List<(string containerPath, double segStart)> finalized,
-             List<(string containerPath, double segStart)> all,
-             bool needsActive)
-        SelectCoveringSegments(
-            List<SegmentInfo> segments, string? activeFile,
-            double startEpoch, double endEpoch)
+    private (
+        List<(string containerPath, double segStart)> finalized,
+        List<(string containerPath, double segStart)> all,
+        bool needsActive
+    ) SelectCoveringSegments(
+        List<SegmentInfo> segments,
+        string? activeFile,
+        double startEpoch,
+        double endEpoch
+    )
     {
         double activeStartTime = segments.Count > 0 ? segments[^1].EndTime : 0;
         double slack = 5 * _segmentTime;
@@ -1104,19 +1374,28 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         string clipName,
         string hostDestPath,
         IReadOnlyList<(string containerPath, double segStart)> coveringSegments,
-        double startEpoch, double durationSec,
+        double startEpoch,
+        double durationSec,
         bool hasActiveSegment,
-        string id, string idSuffix,
+        string id,
+        string idSuffix,
         string encodedWith,
         string mode,
         int finalizedSegmentCount,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var clipPath = $"{RecDir}/{clipName}";
         var tArg = durationSec.ToString("F2", CultureInfo.InvariantCulture);
 
-        var command = BuildExtractCommand(clipPath, coveringSegments,
-            tArg, startEpoch, hasActiveSegment, $"{id}{idSuffix}");
+        var command = BuildExtractCommand(
+            clipPath,
+            coveringSegments,
+            tArg,
+            startEpoch,
+            hasActiveSegment,
+            $"{id}{idSuffix}"
+        );
 
         var fullCommand = command + $"; stat -c%s {clipPath} 2>/dev/null || echo 0";
 
@@ -1135,7 +1414,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             {
                 execResult = await _container.ExecAsync(new[] { "sh", "-c", fullCommand }, ct);
             }
-            finally { _extractLimiter.Release(); }
+            finally
+            {
+                _extractLimiter.Release();
+            }
         }
         else
         {
@@ -1152,10 +1434,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         foreach (var rawLine in stdoutLines)
         {
             var line = rawLine.Trim();
-            if (line.StartsWith("ACTUAL_FIRST_FRAME_PTS=", StringComparison.Ordinal)
-                && double.TryParse(line.AsSpan("ACTUAL_FIRST_FRAME_PTS=".Length),
-                    NumberStyles.Float, CultureInfo.InvariantCulture, out var pts)
-                && pts > 1e9)
+            if (
+                line.StartsWith("ACTUAL_FIRST_FRAME_PTS=", StringComparison.Ordinal)
+                && double.TryParse(
+                    line.AsSpan("ACTUAL_FIRST_FRAME_PTS=".Length),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var pts
+                )
+                && pts > 1e9
+            )
             {
                 actualFirstFramePts = pts;
                 break;
@@ -1163,26 +1451,34 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         }
         if (!long.TryParse(sizeStr, out var clipSize) || clipSize < 1024)
         {
-            _log(FormattableString.Invariant(
-                $"[Recording] WARNING: Extraction failed for {_displayLabel}: epoch {startEpoch:F6}, duration {tArg}s, size={clipSize}B, exit={execResult.ExitCode}, took {sw.ElapsedMilliseconds}ms"));
+            _log(
+                FormattableString.Invariant(
+                    $"[Recording] WARNING: Extraction failed for {_displayLabel}: epoch {startEpoch:F6}, duration {tArg}s, size={clipSize}B, exit={execResult.ExitCode}, took {sw.ElapsedMilliseconds}ms"
+                )
+            );
             LogStderr(execResult.Stderr);
             await TryExec($"rm -f {clipPath}");
-            InfrastructureEventLog.Emit("recording_clip_failed", new
-            {
-                container = _displayLabel,
-                mode,
-                stage = "ffmpeg_failed",
-                offsetSec = startEpoch,
-                durationSec,
-                exitCode = execResult.ExitCode,
-                sizeBytes = clipSize,
-                extractMs = sw.ElapsedMilliseconds
-            });
+            InfrastructureEventLog.Emit(
+                "recording_clip_failed",
+                new
+                {
+                    container = _displayLabel,
+                    mode,
+                    stage = "ffmpeg_failed",
+                    offsetSec = startEpoch,
+                    durationSec,
+                    exitCode = execResult.ExitCode,
+                    sizeBytes = clipSize,
+                    extractMs = sw.ElapsedMilliseconds,
+                }
+            );
             return new ExtractionResult(null, null);
         }
 
-        _log($"[Recording] Clip extracted from {_displayLabel}: " +
-             $"{clipSize / 1024}KB in {sw.ElapsedMilliseconds}ms (encoded with: {encodedWith})");
+        _log(
+            $"[Recording] Clip extracted from {_displayLabel}: "
+                + $"{clipSize / 1024}KB in {sw.ElapsedMilliseconds}ms (encoded with: {encodedWith})"
+        );
 
         // Retrieve clip from container via Docker tar API.
         // Don't use the extraction CT here: extraction already succeeded inside
@@ -1192,52 +1488,66 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             var clipBytes = await _container.ReadFileAsync($"{RecDir}/{clipName}");
             if (clipBytes.Length < 1024)
             {
-                _log($"[Recording] WARNING: Retrieved clip too small ({clipBytes.Length}B) in {_displayLabel}");
-                InfrastructureEventLog.Emit("recording_clip_failed", new
+                _log(
+                    $"[Recording] WARNING: Retrieved clip too small ({clipBytes.Length}B) in {_displayLabel}"
+                );
+                InfrastructureEventLog.Emit(
+                    "recording_clip_failed",
+                    new
+                    {
+                        container = _displayLabel,
+                        mode,
+                        stage = "retrieve_failed",
+                        offsetSec = startEpoch,
+                        durationSec,
+                        sizeBytes = (long)clipBytes.Length,
+                        reason = "too_small",
+                    }
+                );
+                return new ExtractionResult(null, null);
+            }
+
+            var dir = Path.GetDirectoryName(hostDestPath);
+            if (dir != null)
+                Directory.CreateDirectory(dir);
+            await File.WriteAllBytesAsync(hostDestPath, clipBytes);
+            InfrastructureEventLog.Emit(
+                "recording_clip_extracted",
+                new
+                {
+                    container = _displayLabel,
+                    mode,
+                    offsetSec = startEpoch,
+                    durationSec,
+                    finalizedSegments = finalizedSegmentCount,
+                    usedActiveSegment = hasActiveSegment,
+                    sizeBytes = (long)clipBytes.Length,
+                    extractMs = sw.ElapsedMilliseconds,
+                    encoder = encodedWith,
+                    path = hostDestPath,
+                    actualFirstFramePts = actualFirstFramePts,
+                }
+            );
+            return new ExtractionResult(hostDestPath, actualFirstFramePts);
+        }
+        catch (Exception ex)
+        {
+            _log(
+                $"[Recording] WARNING: Failed to retrieve clip from container {_displayLabel}: {ex.Message}"
+            );
+            InfrastructureEventLog.Emit(
+                "recording_clip_failed",
+                new
                 {
                     container = _displayLabel,
                     mode,
                     stage = "retrieve_failed",
                     offsetSec = startEpoch,
                     durationSec,
-                    sizeBytes = (long)clipBytes.Length,
-                    reason = "too_small"
-                });
-                return new ExtractionResult(null, null);
-            }
-
-            var dir = Path.GetDirectoryName(hostDestPath);
-            if (dir != null) Directory.CreateDirectory(dir);
-            await File.WriteAllBytesAsync(hostDestPath, clipBytes);
-            InfrastructureEventLog.Emit("recording_clip_extracted", new
-            {
-                container = _displayLabel,
-                mode,
-                offsetSec = startEpoch,
-                durationSec,
-                finalizedSegments = finalizedSegmentCount,
-                usedActiveSegment = hasActiveSegment,
-                sizeBytes = (long)clipBytes.Length,
-                extractMs = sw.ElapsedMilliseconds,
-                encoder = encodedWith,
-                path = hostDestPath,
-                actualFirstFramePts = actualFirstFramePts
-            });
-            return new ExtractionResult(hostDestPath, actualFirstFramePts);
-        }
-        catch (Exception ex)
-        {
-            _log($"[Recording] WARNING: Failed to retrieve clip from container {_displayLabel}: {ex.Message}");
-            InfrastructureEventLog.Emit("recording_clip_failed", new
-            {
-                container = _displayLabel,
-                mode,
-                stage = "retrieve_failed",
-                offsetSec = startEpoch,
-                durationSec,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             return new ExtractionResult(null, null);
         }
     }
@@ -1310,7 +1620,8 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         string duration,
         double startEpoch,
         bool hasActiveSegment,
-        string intermediateId)
+        string intermediateId
+    )
     {
         // -g 1 -keyint_min 1: every output frame is an IDR keyframe, so browser seeks
         // anywhere in the clip decode in O(1) instead of from frame 0 forward. libx264's
@@ -1327,7 +1638,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
 
         var listPath = $"{RecDir}/concat_{intermediateId}.txt";
         var mergedPath = $"{RecDir}/merged_{intermediateId}.{SegmentExtension}";
-        var durationArg = duration;  // already formatted F2 by caller
+        var durationArg = duration; // already formatted F2 by caller
 
         var script = new List<string>();
 
@@ -1340,33 +1651,39 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             var lastSeg = coveringSegments[^1].containerPath;
             var lastSegName = Path.GetFileName(lastSeg);
             script.Add(
-                $"_fin=0; _phase=''; " +
-                $"for _i in $(seq 1 15); do " +
-                    $"grep -qF '{lastSegName}' {RecDir}/segments.csv 2>/dev/null && " +
-                    $"{{ _fin=1; _phase=\"csv:$_i\"; break; }}; " +
-                    $"sleep 0.2; " +
-                $"done; " +
-                $"if [ \"$_fin\" = \"0\" ]; then " +
-                    $"_fsz=0; " +
-                    $"for _j in $(seq 1 10); do " +
-                        $"_fsz=$(stat -c%s {lastSeg} 2>/dev/null || echo 0); " +
-                        $"[ \"$_fsz\" -gt 2048 ] && {{ _phase=\"size:$_j/$_fsz\"; break; }}; " +
-                        $"sleep 0.2; " +
-                    $"done; " +
-                    $"if [ -z \"$_phase\" ]; then _phase=\"timeout/fsz=$_fsz\"; fi; " +
-                $"fi; " +
-                $"_pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); " +
-                $"_alive=0; [ -n \"$_pid\" ] && kill -0 $_pid 2>/dev/null && _alive=1; " +
-                $"echo \"WAIT_RESULT:fin=$_fin,phase=$_phase,alive=$_alive\" >&2");
+                $"_fin=0; _phase=''; "
+                    + $"for _i in $(seq 1 15); do "
+                    + $"grep -qF '{lastSegName}' {RecDir}/segments.csv 2>/dev/null && "
+                    + $"{{ _fin=1; _phase=\"csv:$_i\"; break; }}; "
+                    + $"sleep 0.2; "
+                    + $"done; "
+                    + $"if [ \"$_fin\" = \"0\" ]; then "
+                    + $"_fsz=0; "
+                    + $"for _j in $(seq 1 10); do "
+                    + $"_fsz=$(stat -c%s {lastSeg} 2>/dev/null || echo 0); "
+                    + $"[ \"$_fsz\" -gt 2048 ] && {{ _phase=\"size:$_j/$_fsz\"; break; }}; "
+                    + $"sleep 0.2; "
+                    + $"done; "
+                    + $"if [ -z \"$_phase\" ]; then _phase=\"timeout/fsz=$_fsz\"; fi; "
+                    + $"fi; "
+                    + $"_pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
+                    + $"_alive=0; [ -n \"$_pid\" ] && kill -0 $_pid 2>/dev/null && _alive=1; "
+                    + $"echo \"WAIT_RESULT:fin=$_fin,phase=$_phase,alive=$_alive\" >&2"
+            );
         }
 
         // Cleanup any prior intermediates with the same id (re-run safety).
         script.Add($"rm -f {listPath} {mergedPath}");
 
         // Pass 1: stream-copy-merge the covering source segments into merged.{ext}.
-        var listLines = string.Join("\\n", coveringSegments.Select(s => $"file '{s.containerPath}'"));
+        var listLines = string.Join(
+            "\\n",
+            coveringSegments.Select(s => $"file '{s.containerPath}'")
+        );
         script.Add($"printf '{listLines}\\n' > {listPath}");
-        script.Add($"ffmpeg -hide_banner -y -f concat -safe 0 -i {listPath} -c copy {mergedPath} >/dev/null 2>&1");
+        script.Add(
+            $"ffmpeg -hide_banner -y -f concat -safe 0 -i {listPath} -c copy {mergedPath} >/dev/null 2>&1"
+        );
 
         // cover0Epoch = absolute wall-clock of the first frame of the first covering
         // segment. Read from segments.csv (carried as segStart on each tuple); see
@@ -1382,26 +1699,27 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // Fallback is StartContainerEpoch − segmentTime. x11grab warmup can stretch
         // seg_0000 by tens of ms, which the SelectCoveringSegments slack absorbs.
         var cover0SegStart = coveringSegments[0].segStart;
-        var cover0Epoch = cover0SegStart > 1e9
-            ? cover0SegStart
-            : StartContainerEpoch - _segmentTime;
+        var cover0Epoch =
+            cover0SegStart > 1e9 ? cover0SegStart : StartContainerEpoch - _segmentTime;
         var cover0EpochArg = cover0Epoch.ToString("F6", CultureInfo.InvariantCulture);
         var startEpochArg = startEpoch.ToString("F6", CultureInfo.InvariantCulture);
 
         // Pass 2 seek target in stream-relative seconds (ffmpeg's -ss convention).
         script.Add(
-            $"_rel_ss=$(awk -v a={startEpochArg} -v s={cover0EpochArg} " +
-            $"'BEGIN {{ v=a-s; if (v<0) v=0; printf \"%.6f\", v }}')");
+            $"_rel_ss=$(awk -v a={startEpochArg} -v s={cover0EpochArg} "
+                + $"'BEGIN {{ v=a-s; if (v<0) v=0; printf \"%.6f\", v }}')"
+        );
 
         // Pass 2: extract + re-encode. Snaps to keyframe at-or-before _rel_ss
         // (every frame is a keyframe per -g 1).
         script.Add(
-            $"if [ -s {mergedPath} ]; then " +
-                $"ffmpeg -hide_banner -y -ss \"$_rel_ss\" -i {mergedPath} -t {durationArg} " +
-                    $"{codec} -avoid_negative_ts make_zero -movflags +faststart {clipPath} >/dev/null 2>&1; " +
-            $"else " +
-                $"echo 'EXTRACT_FAILED: pass-1 merged.ts missing or empty' >&2; " +
-            $"fi");
+            $"if [ -s {mergedPath} ]; then "
+                + $"ffmpeg -hide_banner -y -ss \"$_rel_ss\" -i {mergedPath} -t {durationArg} "
+                + $"{codec} -avoid_negative_ts make_zero -movflags +faststart {clipPath} >/dev/null 2>&1; "
+                + $"else "
+                + $"echo 'EXTRACT_FAILED: pass-1 merged.ts missing or empty' >&2; "
+                + $"fi"
+        );
 
         // Emit ACTUAL_FIRST_FRAME_PTS = absolute wall-clock of the seek-landing frame.
         // ffprobe's -read_intervals takes an *absolute* pts_time in stream coords, so the
@@ -1410,25 +1728,29 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // offset; adding cover0Epoch gives the absolute Unix epoch. The subtraction is
         // immune to MPEG-TS PTS wrap because both values share the same wrapped origin.
         script.Add(
-            $"_merged_first_rel=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time " +
-            $"-of csv=p=0 -read_intervals %+#1 {mergedPath} 2>/dev/null | head -1 | tr -d ',')");
+            $"_merged_first_rel=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time "
+                + $"-of csv=p=0 -read_intervals %+#1 {mergedPath} 2>/dev/null | head -1 | tr -d ',')"
+        );
         script.Add(
-            $"_probe_seek=$(awk -v r=\"$_rel_ss\" -v m=\"$_merged_first_rel\" " +
-            $"'BEGIN {{ printf \"%.6f\", m + r }}')");
+            $"_probe_seek=$(awk -v r=\"$_rel_ss\" -v m=\"$_merged_first_rel\" "
+                + $"'BEGIN {{ printf \"%.6f\", m + r }}')"
+        );
         script.Add(
-            $"_landing_rel=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time " +
-            $"-of csv=p=0 -read_intervals \"${{_probe_seek}}%+#1\" {mergedPath} 2>/dev/null | head -1 | tr -d ',')");
+            $"_landing_rel=$(ffprobe -v error -select_streams v:0 -show_entries packet=pts_time "
+                + $"-of csv=p=0 -read_intervals \"${{_probe_seek}}%+#1\" {mergedPath} 2>/dev/null | head -1 | tr -d ',')"
+        );
         // TODO: when either ffprobe returns empty (e.g. no packet at the requested seek
         // interval), the guard below silently skips the emit and the downstream event
         // carries actualFirstFramePts=null with no reason attached. To surface the cause,
         // emit ACTUAL_FIRST_FRAME_PTS_SKIPPED=<reason> here and add an
         // actualFirstFramePtsReason field to recording_clip_extracted.
         script.Add(
-            $"if [ -n \"$_landing_rel\" ] && [ -n \"$_merged_first_rel\" ]; then " +
-                $"_actual_pts=$(awk -v r=\"$_landing_rel\" -v f=\"$_merged_first_rel\" -v c={cover0EpochArg} " +
-                $"'BEGIN {{ printf \"%.6f\", c + (r - f) }}'); " +
-                $"echo \"ACTUAL_FIRST_FRAME_PTS=$_actual_pts\"; " +
-            $"fi");
+            $"if [ -n \"$_landing_rel\" ] && [ -n \"$_merged_first_rel\" ]; then "
+                + $"_actual_pts=$(awk -v r=\"$_landing_rel\" -v f=\"$_merged_first_rel\" -v c={cover0EpochArg} "
+                + $"'BEGIN {{ printf \"%.6f\", c + (r - f) }}'); "
+                + $"echo \"ACTUAL_FIRST_FRAME_PTS=$_actual_pts\"; "
+                + $"fi"
+        );
 
         // Cleanup intermediates regardless of success.
         script.Add($"rm -f {listPath} {mergedPath}");
@@ -1442,17 +1764,21 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// </summary>
     private void LogStderr(string stderr)
     {
-        if (string.IsNullOrWhiteSpace(stderr)) return;
+        if (string.IsNullOrWhiteSpace(stderr))
+            return;
 
-        var meaningful = stderr.Split('\n')
+        var meaningful = stderr
+            .Split('\n')
             .Select(l => l.Trim())
-            .Where(l => l.Length > 0
+            .Where(l =>
+                l.Length > 0
                 && !l.StartsWith("ffmpeg version", StringComparison.Ordinal)
                 && !l.StartsWith("built with", StringComparison.Ordinal)
                 && !l.StartsWith("configuration:", StringComparison.Ordinal)
                 && !l.StartsWith("libav", StringComparison.Ordinal)
                 && !l.StartsWith("libsw", StringComparison.Ordinal)
-                && !l.StartsWith("libpostproc", StringComparison.Ordinal))
+                && !l.StartsWith("libpostproc", StringComparison.Ordinal)
+            )
             .TakeLast(10)
             .ToList();
 
@@ -1467,40 +1793,57 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// </summary>
     private async Task<bool> SignalFfmpeg(string signal, CancellationToken ct = default)
     {
-        if (_containerDead) return false;
+        if (_containerDead)
+            return false;
         try
         {
-            var result = await _container.ExecAsync(new[] { "sh", "-c",
-                $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); " +
-                $"if [ -z \"$pid\" ]; then echo 'NO_PID' >&2; exit 1; fi; " +
-                $"kill -{signal} $pid" }, ct);
+            var result = await _container.ExecAsync(
+                new[]
+                {
+                    "sh",
+                    "-c",
+                    $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
+                        + $"if [ -z \"$pid\" ]; then echo 'NO_PID' >&2; exit 1; fi; "
+                        + $"kill -{signal} $pid",
+                },
+                ct
+            );
             if (result.ExitCode != DockerExitCodes.Success)
             {
                 var stderr = result.Stderr.Trim();
                 // "No such process" is expected during StopAsync escalation (process already exited)
                 if (!stderr.Contains("No such process"))
-                    _log($"[Recording] WARNING: kill -{signal} failed in {_displayLabel}: {stderr}");
+                    _log(
+                        $"[Recording] WARNING: kill -{signal} failed in {_displayLabel}: {stderr}"
+                    );
                 return false;
             }
             return true;
         }
         catch (Exception ex)
         {
-            if (IsContainerDeadError(ex)) MarkContainerDead();
+            if (IsContainerDeadError(ex))
+                MarkContainerDead();
             return false;
         }
     }
 
     private async Task TryExec(string command)
     {
-        if (_containerDead) return;
-        try { await _container.ExecAsync(new[] { "sh", "-c", command }); }
+        if (_containerDead)
+            return;
+        try
+        {
+            await _container.ExecAsync(new[] { "sh", "-c", command });
+        }
         catch (Exception ex)
         {
             if (IsContainerDeadError(ex))
                 MarkContainerDead();
             else
-                _log($"[Recording] TryExec failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message} (cmd: {command})");
+                _log(
+                    $"[Recording] TryExec failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message} (cmd: {command})"
+                );
         }
     }
 
@@ -1516,11 +1859,13 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // failing at once) emit the diagnostic exactly once instead of racing duplicates.
         if (Interlocked.Exchange(ref _containerDeadLogged, 1) == 0)
         {
-            _log($"[Recording] Container {_displayLabel} is dead, skipping remaining recording operations");
-            InfrastructureEventLog.Emit("recording_container_dead", new
-            {
-                container = _displayLabel
-            });
+            _log(
+                $"[Recording] Container {_displayLabel} is dead, skipping remaining recording operations"
+            );
+            InfrastructureEventLog.Emit(
+                "recording_container_dead",
+                new { container = _displayLabel }
+            );
         }
     }
 }

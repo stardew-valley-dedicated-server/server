@@ -96,11 +96,17 @@ internal sealed class PersistentSessionCoordinator
             if (RecordingPolicy.IsEnabled && _testBase.CollectArtifactsInternal)
             {
                 await _testBase.Artifacts.MarkContainerUsedAsync(
-                    _testBase.LeaseInternal!.Server.Container.Name, "server", ct);
+                    _testBase.LeaseInternal!.Server.Container.Name,
+                    "server",
+                    ct
+                );
                 var primaryClientLease = _testBase.PrimaryClientLeaseInternal;
                 if (primaryClientLease != null)
                     await _testBase.Artifacts.MarkContainerUsedAsync(
-                        primaryClientLease.Container.Container.Name, "client", ct);
+                        primaryClientLease.Container.Container.Name,
+                        "client",
+                        ct
+                    );
             }
         }
         else
@@ -112,7 +118,11 @@ internal sealed class PersistentSessionCoordinator
                 await PersistentSessionStore.RemoveAndDisposeAsync(_testBase.GetType());
             }
             var methodName = TestBase.ExtractMethodNameInternal(_displayName);
-            var requirements = ResourceRequirements.FromAttribute(attr, _testBase.GetType().Name, methodName);
+            var requirements = ResourceRequirements.FromAttribute(
+                attr,
+                _testBase.GetType().Name,
+                methodName
+            );
             var priority = TestCollectionOrderer.GetPriorityForClass(_testBase.GetType().FullName);
             await _testBase.AcquireServerAsyncInternal(requirements, ct, priority);
         }
@@ -151,7 +161,11 @@ internal sealed class PersistentSessionCoordinator
         ConnectedFarmerName = session.FarmerName;
         ConnectedFarmerUid = session.FarmerUid;
         _testBase.AdoptSessionResources(
-            session.Lease, session.ClientLease, session.Connection, session.ExceptionMonitor);
+            session.Lease,
+            session.ClientLease,
+            session.Connection,
+            session.ExceptionMonitor
+        );
         ClientSlotsHeld = 0; // Session owns the capacity
 
         // Emit instance_leased so the UI tracks which instances ran this test
@@ -162,7 +176,11 @@ internal sealed class PersistentSessionCoordinator
         if (session.Lease.Managed?.InstanceId != null)
             SetupEventBus.EmitInstanceLeased(session.Lease.Managed.InstanceId, testName);
         if (session.ClientLease != null)
-            SetupEventBus.EmitInstanceLeased(session.ClientLease.InstanceId, testName, session.Lease.Managed?.InstanceId);
+            SetupEventBus.EmitInstanceLeased(
+                session.ClientLease.InstanceId,
+                testName,
+                session.Lease.Managed?.InstanceId
+            );
     }
 
     /// <summary>
@@ -172,7 +190,8 @@ internal sealed class PersistentSessionCoordinator
     internal async Task EnsureConnectedAsync(
         string farmerPrefix,
         SessionJoinMode joinMode,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         // Check for existing session
         var existing = PersistentSessionStore.Get(_testBase.GetType());
@@ -199,8 +218,14 @@ internal sealed class PersistentSessionCoordinator
                 _testBase.ClearAdoptedResources();
                 var methodName = TestBase.ExtractMethodNameInternal(_displayName);
                 var attr = TestServerAttribute.Resolve(_testBase.GetType(), methodName);
-                var requirements = ResourceRequirements.FromAttribute(attr, _testBase.GetType().Name, methodName);
-                var priority = TestCollectionOrderer.GetPriorityForClass(_testBase.GetType().FullName);
+                var requirements = ResourceRequirements.FromAttribute(
+                    attr,
+                    _testBase.GetType().Name,
+                    methodName
+                );
+                var priority = TestCollectionOrderer.GetPriorityForClass(
+                    _testBase.GetType().FullName
+                );
                 await _testBase.AcquireServerAsyncInternal(requirements, ct, priority);
             }
         }
@@ -233,14 +258,18 @@ internal sealed class PersistentSessionCoordinator
                 break;
         }
 
-        Log($"Session established (name={ConnectedFarmerName ?? "<none>"}, uid={ConnectedFarmerUid?.ToString() ?? "<none>"}, mode={joinMode})");
+        Log(
+            $"Session established (name={ConnectedFarmerName ?? "<none>"}, uid={ConnectedFarmerUid?.ToString() ?? "<none>"}, mode={joinMode})"
+        );
 
         // Don't create a persistent session if KeepConnected is off or the session was broken.
         if (!KeepConnected || SessionBroken)
         {
-            Log(SessionBroken
-                ? "Session broken, connected without creating persistent session"
-                : "Non-KeepConnected, connected without creating persistent session");
+            Log(
+                SessionBroken
+                    ? "Session broken, connected without creating persistent session"
+                    : "Non-KeepConnected, connected without creating persistent session"
+            );
             DidConnect = true;
             if (ConnectedFarmerName != null && ConnectedFarmerUid is long trackUid)
                 _testBase.Farmers.TrackFarmer(ConnectedFarmerName, trackUid);
@@ -256,7 +285,8 @@ internal sealed class PersistentSessionCoordinator
             farmerName: ConnectedFarmerName,
             farmerUid: ConnectedFarmerUid,
             clientSlotsHeld: ClientSlotsHeld,
-            isAuthenticated: isAuthenticated);
+            isAuthenticated: isAuthenticated
+        );
 
         PersistentSessionStore.Register(_testBase.GetType(), session);
         Session = session;
@@ -288,7 +318,11 @@ internal sealed class PersistentSessionCoordinator
         var primary = _testBase.PrimaryClientLeaseInternal;
         if (primary != null)
         {
-            try { await primary.DisposeAsync(); } catch { }
+            try
+            {
+                await primary.DisposeAsync();
+            }
+            catch { }
         }
 
         if (session != null)
@@ -296,7 +330,10 @@ internal sealed class PersistentSessionCoordinator
             // Wait for the server to confirm the farmer is gone before reconnecting.
             if (session.FarmerUid is long brokenUid)
             {
-                await session.Lease.Api.WaitForPlayerRemovedByIdAsync(brokenUid, timeout: TestTimings.FarmerRemovalBudget);
+                await session.Lease.Api.WaitForPlayerRemovedByIdAsync(
+                    brokenUid,
+                    timeout: TestTimings.FarmerRemovalBudget
+                );
             }
 
             // Take over the session's server lease and capacity counter for this
@@ -334,7 +371,10 @@ internal sealed class PersistentSessionCoordinator
     /// TestBase's <c>test_completed</c> event payload still includes
     /// <c>lastKeepDisposeMs</c>.
     /// </summary>
-    internal async Task<long> FinalizeSessionAsync(bool isLastKeepConnectedTest, CancellationToken ct)
+    internal async Task<long> FinalizeSessionAsync(
+        bool isLastKeepConnectedTest,
+        CancellationToken ct
+    )
     {
         long lastKeepDisposeMs = 0;
 
@@ -409,11 +449,26 @@ internal sealed class PersistentSessionCoordinator
     }
 
     private void Log(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Info, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Info,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogDetail(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Detail, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Detail,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogTrace(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Trace, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Trace,
+            AnnotationSource.Body,
+            message
+        );
 }

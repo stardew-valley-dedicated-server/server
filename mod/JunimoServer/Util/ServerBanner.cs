@@ -1,10 +1,10 @@
+using System.Collections.Generic;
+using System.Net;
+using System.Threading.Tasks;
 using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Shared;
 using StardewModdingAPI;
 using StardewValley.SDKs.GogGalaxy;
-using System.Collections.Generic;
-using System.Net;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Util
 {
@@ -69,12 +69,18 @@ namespace JunimoServer.Util
             if (SteamGameServerService.IsInitialized && inviteCode != null)
             {
                 var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
-                bannerLines.Add($"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{ChatRedaction.MaskValue(baseCode)}");
-                bannerLines.Add($"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{ChatRedaction.MaskValue(baseCode)}");
+                bannerLines.Add(
+                    $"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{ChatRedaction.MaskValue(baseCode)}"
+                );
+                bannerLines.Add(
+                    $"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{ChatRedaction.MaskValue(baseCode)}"
+                );
             }
             else
             {
-                bannerLines.Add($"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "n/a")}");
+                bannerLines.Add(
+                    $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "n/a")}"
+                );
             }
 
             monitor.LogBanner(bannerLines.ToArray());

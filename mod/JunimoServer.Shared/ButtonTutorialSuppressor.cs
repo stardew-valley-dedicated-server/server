@@ -16,7 +16,10 @@ namespace JunimoServer.Shared
         public static void Apply(Harmony harmony)
         {
             harmony.Patch(
-                original: AccessTools.Constructor(typeof(ButtonTutorialMenu), new[] { typeof(int) }),
+                original: AccessTools.Constructor(
+                    typeof(ButtonTutorialMenu),
+                    new[] { typeof(int) }
+                ),
                 postfix: new HarmonyMethod(typeof(ButtonTutorialSuppressor), nameof(Ctor_Postfix))
             );
         }

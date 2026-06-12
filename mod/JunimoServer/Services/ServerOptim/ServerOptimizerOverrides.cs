@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Galaxy.Api;
 using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Shared;
-using Galaxy.Api;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
@@ -35,7 +35,9 @@ namespace JunimoServer.Services.ServerOptim
             _rendering = new RenderingController(monitor, "Server");
 
             var hotkeys = new List<Keys>();
-            foreach (var button in new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility })
+            foreach (
+                var button in new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility }
+            )
                 if (button.TryGetKeyboard(out var key))
                     hotkeys.Add(key);
             _allowedHotkeys = hotkeys.ToArray();
@@ -45,8 +47,8 @@ namespace JunimoServer.Services.ServerOptim
         /// Saves the original display device so it can be restored when re-enabling rendering.
         /// Must be called after the game has fully initialized its display device.
         /// </summary>
-        public static void SaveOriginalDisplayDevice(IDisplayDevice device)
-            => _rendering.SaveOriginalDisplayDevice(device);
+        public static void SaveOriginalDisplayDevice(IDisplayDevice device) =>
+            _rendering.SaveOriginalDisplayDevice(device);
 
         /// <summary>
         /// Sets the server render rate. 0 disables rendering (NullDisplayDevice installed,
@@ -74,14 +76,14 @@ namespace JunimoServer.Services.ServerOptim
         // drive) or host automation is driving the host. Both inputs are read live, so a
         // runtime fps switch (the VNC button, `rendering <fps>`, POST /rendering?fps=N) or
         // a host-auto/F9 toggle flips input behavior without a restart.
-        private static bool InputSuppressed
-            => _rendering.CurrentFps == 0 || _automationSuppressesInput;
+        private static bool InputSuppressed =>
+            _rendering.CurrentFps == 0 || _automationSuppressesInput;
 
         // The hotkeys stay live only while rendering is on: they exist so an operator
         // watching VNC can drop automation. With rendering off there's nothing to see, so
         // input is suppressed fully.
-        private static bool HotkeysStayLive
-            => _rendering.CurrentFps > 0 && _automationSuppressesInput;
+        private static bool HotkeysStayLive =>
+            _rendering.CurrentFps > 0 && _automationSuppressesInput;
 
         /// <summary>
         /// Harmony postfix on Keyboard.PlatformGetState — the single source feeding the game
@@ -93,7 +95,8 @@ namespace JunimoServer.Services.ServerOptim
         /// </summary>
         public static void KeyboardState_Postfix(ref KeyboardState __result)
         {
-            if (!InputSuppressed) return;
+            if (!InputSuppressed)
+                return;
             if (HotkeysStayLive)
             {
                 var down = Array.FindAll(_allowedHotkeys, __result.IsKeyDown);
@@ -109,7 +112,8 @@ namespace JunimoServer.Services.ServerOptim
         /// </summary>
         public static void MouseState_Postfix(ref MouseState __result)
         {
-            if (InputSuppressed) __result = default;
+            if (InputSuppressed)
+                __result = default;
         }
 
         private static int _galaxyLobbyFailureCount;
@@ -142,8 +146,10 @@ namespace JunimoServer.Services.ServerOptim
 
             // Max retries exceeded. Stop the retry loop.
             _monitor?.Log(
-                $"Galaxy lobby creation failed {_galaxyLobbyFailureCount} times. Stopping retries. " +
-                "Recovery via TryLateAddGalaxyServer if Galaxy reconnects.", LogLevel.Warn);
+                $"Galaxy lobby creation failed {_galaxyLobbyFailureCount} times. Stopping retries. "
+                    + "Recovery via TryLateAddGalaxyServer if Galaxy reconnects.",
+                LogLevel.Warn
+            );
             return false; // Skip original: don't set recreateTimer
         }
 
@@ -166,7 +172,10 @@ namespace JunimoServer.Services.ServerOptim
             // Only override tasks that load content / textures and would deadlock
             if (id == "NewDay" || id == "Save" || id.StartsWith("Load_"))
             {
-                _monitor?.Log($"[MuslFix] StartTask: using task.Start() for '{id}' (BlockOnUIThread deadlock prevention)", LogLevel.Debug);
+                _monitor?.Log(
+                    $"[MuslFix] StartTask: using task.Start() for '{id}' (BlockOnUIThread deadlock prevention)",
+                    LogLevel.Debug
+                );
                 task.Start();
                 __result = task;
                 return false;
@@ -196,8 +205,8 @@ namespace JunimoServer.Services.ServerOptim
         /// game's normal Draw for that frame) and lets normal draws through otherwise.
         /// </summary>
         // ReSharper disable once InconsistentNaming
-        public static bool GameDraw_Prefix(Game __instance, GameTime gameTime)
-            => _rendering.ShouldGameDraw(__instance);
+        public static bool GameDraw_Prefix(Game __instance, GameTime gameTime) =>
+            _rendering.ShouldGameDraw(__instance);
 
         public static void DisableDrawing() => _rendering.DisableDrawing();
 

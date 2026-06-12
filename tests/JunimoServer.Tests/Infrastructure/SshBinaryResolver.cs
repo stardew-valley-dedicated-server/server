@@ -30,7 +30,8 @@ public static class SshBinaryResolver
         foreach (var candidate in candidates)
         {
             var (ok, message) = await ProbeAsync(candidate, ct);
-            if (ok) return candidate;
+            if (ok)
+                return candidate;
             failures.Add($"  - {candidate}: {message}");
         }
 
@@ -38,8 +39,12 @@ public static class SshBinaryResolver
             ? $" (overridden by {EnvVar}={Environment.GetEnvironmentVariable(EnvVar)})"
             : $" (set {EnvVar} to override)";
         throw new InvalidOperationException(
-            "No usable ssh binary found for ControlMaster reuse" + configHint + ":" +
-            Environment.NewLine + string.Join(Environment.NewLine, failures));
+            "No usable ssh binary found for ControlMaster reuse"
+                + configHint
+                + ":"
+                + Environment.NewLine
+                + string.Join(Environment.NewLine, failures)
+        );
     }
 
     private static IEnumerable<string> EnumerateCandidates()
@@ -66,7 +71,10 @@ public static class SshBinaryResolver
         }
     }
 
-    private static async Task<(bool Ok, string Message)> ProbeAsync(string candidate, CancellationToken ct)
+    private static async Task<(bool Ok, string Message)> ProbeAsync(
+        string candidate,
+        CancellationToken ct
+    )
     {
         ProcessStartInfo psi;
         try
@@ -94,7 +102,8 @@ public static class SshBinaryResolver
         {
             return (false, $"failed to start: {ex.Message}");
         }
-        if (process is null) return (false, "Process.Start returned null");
+        if (process is null)
+            return (false, "Process.Start returned null");
 
         try
         {
@@ -109,7 +118,12 @@ public static class SshBinaryResolver
             }
             catch (OperationCanceledException)
             {
-                try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+                try
+                {
+                    if (!process.HasExited)
+                        process.Kill(entireProcessTree: true);
+                }
+                catch { }
                 return (false, "ssh -V did not exit within 5s");
             }
 
@@ -120,12 +134,17 @@ public static class SshBinaryResolver
             // unexpected fork (e.g. a wrapper script) — reject rather than
             // assume it's safe.
             if (stderr.Length == 0)
-                return (false, $"ssh -V wrote nothing to stderr (stdout was: {Truncate(stdout, 200)})");
+                return (
+                    false,
+                    $"ssh -V wrote nothing to stderr (stdout was: {Truncate(stdout, 200)})"
+                );
 
             if (stderr.Contains("OpenSSH_for_Windows", StringComparison.Ordinal))
-                return (false,
-                    "Microsoft Windows OpenSSH port does not support ControlMaster fd-passing " +
-                    $"(banner: {Truncate(stderr, 200)}). Use Git for Windows' ssh instead.");
+                return (
+                    false,
+                    "Microsoft Windows OpenSSH port does not support ControlMaster fd-passing "
+                        + $"(banner: {Truncate(stderr, 200)}). Use Git for Windows' ssh instead."
+                );
 
             if (!stderr.Contains("OpenSSH", StringComparison.Ordinal))
                 return (false, $"banner does not identify OpenSSH: {Truncate(stderr, 200)}");
@@ -134,13 +153,18 @@ public static class SshBinaryResolver
         }
         finally
         {
-            try { process.Dispose(); } catch { }
+            try
+            {
+                process.Dispose();
+            }
+            catch { }
         }
     }
 
     private static string Truncate(string s, int max)
     {
-        if (string.IsNullOrEmpty(s)) return "";
+        if (string.IsNullOrEmpty(s))
+            return "";
         return s.Length <= max ? s : s.Substring(0, max) + "…";
     }
 }

@@ -22,7 +22,7 @@ public enum OutputMode
     /// Web-based UI served via embedded Kestrel with WebSocket push.
     /// Live test tree, inline screenshots, and static report generation.
     /// </summary>
-    Web
+    Web,
 }
 
 /// <summary>

@@ -56,10 +56,14 @@ public static class SteamAccountSlicer
     /// </param>
     public static IReadOnlyList<SteamAccountSlice> Slice(
         string? steamAccountsJson,
-        IReadOnlyList<DockerHost> hostsInDeclaredOrder)
+        IReadOnlyList<DockerHost> hostsInDeclaredOrder
+    )
     {
         var globalAccounts = UserConfigJson.ParseArrayStrict(
-            "STEAM_ACCOUNTS", steamAccountsJson, "{user, pass[, refreshToken]}");
+            "STEAM_ACCOUNTS",
+            steamAccountsJson,
+            "{user, pass[, refreshToken]}"
+        );
         var n = globalAccounts.Count;
 
         var result = new List<SteamAccountSlice>(hostsInDeclaredOrder.Count);
@@ -112,17 +116,19 @@ public static class SteamAccountSlicer
 
             if (firstCall)
             {
-                InfrastructureEventLog.Emit("steam_account_slicing", new
-                {
-                    host_id = slice.HostId,
-                    sliceSize = slice.SliceSize,
-                    globalIndices = slice.GlobalIndices,
-                    isSteamCapable = slice.IsSteamCapable
-                });
+                InfrastructureEventLog.Emit(
+                    "steam_account_slicing",
+                    new
+                    {
+                        host_id = slice.HostId,
+                        sliceSize = slice.SliceSize,
+                        globalIndices = slice.GlobalIndices,
+                        isSteamCapable = slice.IsSteamCapable,
+                    }
+                );
             }
         }
 
         return result;
     }
-
 }

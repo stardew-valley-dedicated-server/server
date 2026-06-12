@@ -24,8 +24,12 @@ public sealed class ReportGenerator
     private readonly string _testResultsPath;
     private readonly IReadOnlyCollection<string> _knownSecrets;
 
-    public ReportGenerator(TestRunState state, string spaDistPath, string testResultsPath,
-        IReadOnlyCollection<string> knownSecrets)
+    public ReportGenerator(
+        TestRunState state,
+        string spaDistPath,
+        string testResultsPath,
+        IReadOnlyCollection<string> knownSecrets
+    )
     {
         _state = state;
         _spaDistPath = spaDistPath;
@@ -41,7 +45,11 @@ public sealed class ReportGenerator
     /// SPA has not been built. <paramref name="knownSecrets"/> are masked out of the
     /// published snapshot (see <see cref="ReportRedactor"/>). Never throws.
     /// </summary>
-    public static void TryGenerate(TestRunState state, string runDir, IReadOnlyCollection<string> knownSecrets)
+    public static void TryGenerate(
+        TestRunState state,
+        string runDir,
+        IReadOnlyCollection<string> knownSecrets
+    )
     {
         try
         {
@@ -49,7 +57,8 @@ public sealed class ReportGenerator
             if (spaDistPath == null || !File.Exists(Path.Combine(spaDistPath, "index.html")))
             {
                 Console.Error.WriteLine(
-                    "WARNING: Report generation skipped. SPA dist not found. Run 'make build-test-ui' first.");
+                    "WARNING: Report generation skipped. SPA dist not found. Run 'make build-test-ui' first."
+                );
                 return;
             }
 
@@ -104,7 +113,10 @@ public sealed class ReportGenerator
         var summary = _state.GetRunSummary();
         try
         {
-            File.WriteAllBytes(Path.Combine(reportDir, "og-image.png"), OgImageGenerator.Render(summary));
+            File.WriteAllBytes(
+                Path.Combine(reportDir, "og-image.png"),
+                OgImageGenerator.Render(summary)
+            );
         }
         catch (Exception ex)
         {
@@ -119,7 +131,8 @@ public sealed class ReportGenerator
             _state.ToSnapshotJson(),
             Path.Combine(reportDir, BundleArtifactsDir),
             BundleArtifactsDir,
-            _testResultsPath);
+            _testResultsPath
+        );
 
         // Redact secrets/infra before the snapshot is published to the public report.
         // Runs after the media-path rewrite so the artifacts/<hash> paths are preserved.
@@ -128,17 +141,22 @@ public sealed class ReportGenerator
         // Fail closed: if redaction somehow produced invalid JSON, do NOT publish the
         // bundle (an unredacted fallback could leak). Masked output can't break JSON by
         // construction, so this is a backstop that should never trip.
-        try { using var _ = JsonDocument.Parse(snapshotJson); }
+        try
+        {
+            using var _ = JsonDocument.Parse(snapshotJson);
+        }
         catch (JsonException ex)
         {
             Console.Error.WriteLine(
-                $"WARNING: Report generation aborted — redacted snapshot is not valid JSON ({ex.Message}). Not publishing.");
+                $"WARNING: Report generation aborted — redacted snapshot is not valid JSON ({ex.Message}). Not publishing."
+            );
             return;
         }
 
         // Inject state JSON using a safe script tag
         // System.Text.Json's default encoder escapes <, >, & (safe against </script> breakout)
-        var dataTag = $"<script type=\"application/json\" id=\"test-report-data\">{snapshotJson}</script>";
+        var dataTag =
+            $"<script type=\"application/json\" id=\"test-report-data\">{snapshotJson}</script>";
 
         var html = File.ReadAllText(indexPath);
         if (html.Contains("</head>"))
@@ -161,7 +179,9 @@ public sealed class ReportGenerator
         var reportPath = Path.Combine(reportDir, "index.html");
         File.WriteAllText(reportPath, html);
 
-        Console.Error.WriteLine($"[WebUI] Static report generated: {PathDisplay.ScrubMessage(reportPath)}");
+        Console.Error.WriteLine(
+            $"[WebUI] Static report generated: {PathDisplay.ScrubMessage(reportPath)}"
+        );
     }
 
     private void CopyRootStatic(string reportDir, string fileName)
@@ -180,51 +200,61 @@ public sealed class ReportGenerator
         const string end = "<!-- META:END -->";
         if (!html.Contains(begin) || !html.Contains(end))
         {
-            Console.Error.WriteLine("[WebUI] Warning: META marker block not found — meta tags left as built defaults.");
+            Console.Error.WriteLine(
+                "[WebUI] Warning: META marker block not found — meta tags left as built defaults."
+            );
             return html;
         }
         // MatchEvaluator (not a replacement string) so a `$` in the meta HTML
         // — e.g. from a git branch/sha — isn't parsed as a regex group token.
         var tags = BuildMetaTags(summary);
-        return Regex.Replace(html, $"{Regex.Escape(begin)}.*?{Regex.Escape(end)}",
-            _ => tags, RegexOptions.Singleline);
+        return Regex.Replace(
+            html,
+            $"{Regex.Escape(begin)}.*?{Regex.Escape(end)}",
+            _ => tags,
+            RegexOptions.Singleline
+        );
     }
 
     private static string BuildMetaTags(RunSummary s)
     {
         var title = Enc(BuildTitle(s));
         var desc = Enc(BuildDescription(s));
-        var themeColor = s.Status == "aborted" ? "#6b7280" : s.Failed > 0 ? "#dc2626" : "#16a34a";
+        var themeColor =
+            s.Status == "aborted" ? "#6b7280"
+            : s.Failed > 0 ? "#dc2626"
+            : "#16a34a";
         return $"""
-        <!-- META:BEGIN -->
-        <title>{title}</title>
-        <meta name="description" content="{desc}" />
-        <meta name="theme-color" content="{themeColor}" />
-        <meta name="robots" content="noindex, nofollow" />
-        <link rel="canonical" href="__OG_URL__" />
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="SDVD E2E Test Report" />
-        <meta property="og:locale" content="en_US" />
-        <meta property="og:title" content="{title}" />
-        <meta property="og:description" content="{desc}" />
-        <meta property="og:url" content="__OG_URL__" />
-        <meta property="og:image" content="__OG_IMAGE__" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="{desc}" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="{title}" />
-        <meta name="twitter:description" content="{desc}" />
-        <meta name="twitter:image" content="__OG_IMAGE__" />
-        <meta name="twitter:image:alt" content="{desc}" />
-        <!-- META:END -->
-        """;
+            <!-- META:BEGIN -->
+            <title>{title}</title>
+            <meta name="description" content="{desc}" />
+            <meta name="theme-color" content="{themeColor}" />
+            <meta name="robots" content="noindex, nofollow" />
+            <link rel="canonical" href="__OG_URL__" />
+            <meta property="og:type" content="website" />
+            <meta property="og:site_name" content="SDVD E2E Test Report" />
+            <meta property="og:locale" content="en_US" />
+            <meta property="og:title" content="{title}" />
+            <meta property="og:description" content="{desc}" />
+            <meta property="og:url" content="__OG_URL__" />
+            <meta property="og:image" content="__OG_IMAGE__" />
+            <meta property="og:image:width" content="1200" />
+            <meta property="og:image:height" content="630" />
+            <meta property="og:image:alt" content="{desc}" />
+            <meta name="twitter:card" content="summary_large_image" />
+            <meta name="twitter:title" content="{title}" />
+            <meta name="twitter:description" content="{desc}" />
+            <meta name="twitter:image" content="__OG_IMAGE__" />
+            <meta name="twitter:image:alt" content="{desc}" />
+            <!-- META:END -->
+            """;
     }
 
     private static string BuildTitle(RunSummary s)
     {
         var git = GitSuffix(s);
-        if (s.Status == "aborted") return $"⚪ Run aborted{git}";
+        if (s.Status == "aborted")
+            return $"⚪ Run aborted{git}";
         var icon = s.Failed > 0 ? "❌" : "✅";
         return s.Failed > 0
             ? $"{icon} {s.Failed} failed of {s.TotalTests}{git}"
@@ -234,14 +264,17 @@ public sealed class ReportGenerator
     private static string BuildDescription(RunSummary s)
     {
         var parts = new List<string> { $"{s.Passed} passed", $"{s.Failed} failed" };
-        if (s.Skipped > 0) parts.Add($"{s.Skipped} skipped");
-        if (s.Canceled > 0) parts.Add($"{s.Canceled} canceled");
+        if (s.Skipped > 0)
+            parts.Add($"{s.Skipped} skipped");
+        if (s.Canceled > 0)
+            parts.Add($"{s.Canceled} canceled");
         return $"{string.Join(" · ", parts)} of {s.TotalTests} tests{GitSuffix(s)}";
     }
 
     private static string GitSuffix(RunSummary s)
     {
-        if (s.GitBranch == null && s.GitSha == null) return "";
+        if (s.GitBranch == null && s.GitSha == null)
+            return "";
         var sha = s.GitSha is { Length: >= 7 } ? s.GitSha[..7] : s.GitSha;
         var branch = s.GitBranch ?? "?";
         return sha != null ? $" — {branch} @ {sha}" : $" — {branch}";
@@ -255,7 +288,11 @@ public sealed class ReportGenerator
     /// Used by mock data export for frontend development. Replaces the directory's
     /// contents (mock data is regenerated wholesale each run).
     /// </summary>
-    public static string ExportMockArtifacts(string snapshotJson, string mockArtifactsDir, string? testResultsPath = null)
+    public static string ExportMockArtifacts(
+        string snapshotJson,
+        string mockArtifactsDir,
+        string? testResultsPath = null
+    )
     {
         if (Directory.Exists(mockArtifactsDir))
             Directory.Delete(mockArtifactsDir, recursive: true);
@@ -264,7 +301,8 @@ public sealed class ReportGenerator
             snapshotJson,
             mockArtifactsDir,
             Path.GetFileName(mockArtifactsDir), // "mock-artifacts"
-            testResultsPath);
+            testResultsPath
+        );
     }
 
     /// <summary>
@@ -275,7 +313,11 @@ public sealed class ReportGenerator
     /// export — content hashing dedupes identical media across tests.
     /// </summary>
     private static string CopyArtifacts(
-        string snapshotJson, string targetDir, string relativePrefix, string? testResultsPath)
+        string snapshotJson,
+        string targetDir,
+        string relativePrefix,
+        string? testResultsPath
+    )
     {
         try
         {
@@ -289,14 +331,17 @@ public sealed class ReportGenerator
                 var resolvedPath = ResolveArtifactPath(originalPath, testResultsPath);
                 if (resolvedPath == null || !File.Exists(resolvedPath))
                 {
-                    Console.Error.WriteLine($"[WebUI] Warning: Artifact not found: {PathDisplay.ScrubMessage(originalPath)}");
+                    Console.Error.WriteLine(
+                        $"[WebUI] Warning: Artifact not found: {PathDisplay.ScrubMessage(originalPath)}"
+                    );
                     continue;
                 }
 
                 var bytes = File.ReadAllBytes(resolvedPath);
                 var hash = Convert.ToHexString(SHA256.HashData(bytes))[..16].ToLowerInvariant();
                 var ext = Path.GetExtension(resolvedPath).ToLowerInvariant();
-                if (string.IsNullOrEmpty(ext)) ext = ".png";
+                if (string.IsNullOrEmpty(ext))
+                    ext = ".png";
                 var fileName = $"{hash}{ext}";
 
                 File.WriteAllBytes(Path.Combine(targetDir, fileName), bytes);
@@ -308,7 +353,8 @@ public sealed class ReportGenerator
                 // Replace full JSON string values (e.g. "screenshotPath": "D:\\path")
                 snapshotJson = snapshotJson.Replace(
                     JsonSerializer.Serialize(originalPath),
-                    JsonSerializer.Serialize(newPath));
+                    JsonSerializer.Serialize(newPath)
+                );
 
                 // Also replace unquoted occurrences within larger JSON strings
                 // (paths may appear as substrings in other serialized values)
@@ -317,7 +363,9 @@ public sealed class ReportGenerator
                 snapshotJson = snapshotJson.Replace(escapedOld, escapedNew);
             }
 
-            Console.Error.WriteLine($"[WebUI] Exported {replacements.Count} artifacts to {PathDisplay.ScrubMessage(targetDir)}");
+            Console.Error.WriteLine(
+                $"[WebUI] Exported {replacements.Count} artifacts to {PathDisplay.ScrubMessage(targetDir)}"
+            );
         }
         catch (Exception ex)
         {
@@ -343,10 +391,12 @@ public sealed class ReportGenerator
         {
             foreach (var collection in collections.EnumerateArray())
             {
-                if (!collection.TryGetProperty("classes", out var classes)) continue;
+                if (!collection.TryGetProperty("classes", out var classes))
+                    continue;
                 foreach (var cls in classes.EnumerateArray())
                 {
-                    if (!cls.TryGetProperty("tests", out var tests)) continue;
+                    if (!cls.TryGetProperty("tests", out var tests))
+                        continue;
                     foreach (var test in tests.EnumerateArray())
                     {
                         CollectStringProp(test, "screenshotPath", paths);
@@ -367,9 +417,16 @@ public sealed class ReportGenerator
         return paths;
     }
 
-    private static void CollectStringProp(JsonElement element, string propertyName, HashSet<string> paths)
+    private static void CollectStringProp(
+        JsonElement element,
+        string propertyName,
+        HashSet<string> paths
+    )
     {
-        if (element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.String)
+        if (
+            element.TryGetProperty(propertyName, out var prop)
+            && prop.ValueKind == JsonValueKind.String
+        )
         {
             var value = prop.GetString();
             if (!string.IsNullOrEmpty(value))
@@ -382,15 +439,20 @@ public sealed class ReportGenerator
     /// </summary>
     private static void CollectOutputArtifacts(JsonElement test, HashSet<string> paths)
     {
-        if (!test.TryGetProperty("output", out var outputProp) || outputProp.ValueKind != JsonValueKind.Array)
+        if (
+            !test.TryGetProperty("output", out var outputProp)
+            || outputProp.ValueKind != JsonValueKind.Array
+        )
             return;
 
         foreach (var entry in outputProp.EnumerateArray())
         {
-            if (entry.TryGetProperty("type", out var typeProp)
+            if (
+                entry.TryGetProperty("type", out var typeProp)
                 && typeProp.GetString() == "screenshot"
                 && entry.TryGetProperty("path", out var pathProp)
-                && pathProp.ValueKind == JsonValueKind.String)
+                && pathProp.ValueKind == JsonValueKind.String
+            )
             {
                 var path = pathProp.GetString();
                 if (!string.IsNullOrEmpty(path))
@@ -404,12 +466,18 @@ public sealed class ReportGenerator
     /// </summary>
     private static void CollectRecordings(JsonElement test, HashSet<string> paths)
     {
-        if (!test.TryGetProperty("recordings", out var recProp) || recProp.ValueKind != JsonValueKind.Array)
+        if (
+            !test.TryGetProperty("recordings", out var recProp)
+            || recProp.ValueKind != JsonValueKind.Array
+        )
             return;
 
         foreach (var entry in recProp.EnumerateArray())
         {
-            if (entry.TryGetProperty("path", out var pathProp) && pathProp.ValueKind == JsonValueKind.String)
+            if (
+                entry.TryGetProperty("path", out var pathProp)
+                && pathProp.ValueKind == JsonValueKind.String
+            )
             {
                 var path = pathProp.GetString();
                 if (!string.IsNullOrEmpty(path))

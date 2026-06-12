@@ -25,8 +25,10 @@ internal static class InfrastructureErrorAggregator
 
     public sealed record Result(IReadOnlyList<Dictionary<string, object?>> Entries, bool Truncated);
 
-    private static readonly Result EmptyResult =
-        new(Array.Empty<Dictionary<string, object?>>(), Truncated: false);
+    private static readonly Result EmptyResult = new(
+        Array.Empty<Dictionary<string, object?>>(),
+        Truncated: false
+    );
 
     public static Result Read(string runDir)
     {
@@ -40,12 +42,15 @@ internal static class InfrastructureErrorAggregator
         {
             foreach (var line in File.ReadLines(path))
             {
-                if (line.Length == 0) continue;
+                if (line.Length == 0)
+                    continue;
                 var entry = TryProject(line);
-                if (entry == null) continue;
+                if (entry == null)
+                    continue;
 
                 totalProjected++;
-                if (ring.Count == MaxEntries) ring.Dequeue();  // keep only the newest MaxEntries
+                if (ring.Count == MaxEntries)
+                    ring.Dequeue(); // keep only the newest MaxEntries
                 ring.Enqueue(entry);
             }
         }
@@ -80,8 +85,12 @@ internal static class InfrastructureErrorAggregator
 
                 switch (eventName)
                 {
-                    case "host_disconnected": AddHostDisconnectedFields(entry, data); break;
-                    case "failure_context": AddFailureContextFields(entry, data); break;
+                    case "host_disconnected":
+                        AddHostDisconnectedFields(entry, data);
+                        break;
+                    case "failure_context":
+                        AddFailureContextFields(entry, data);
+                        break;
                 }
             }
 
@@ -99,7 +108,8 @@ internal static class InfrastructureErrorAggregator
     private static Dictionary<string, object?> ProjectEnvelope(JsonElement root, string eventName)
     {
         var entry = new Dictionary<string, object?> { ["event"] = eventName };
-        if (root.TryGetProperty("ts", out var ts)) entry["ts"] = ts.GetString();
+        if (root.TryGetProperty("ts", out var ts))
+            entry["ts"] = ts.GetString();
         if (root.TryGetProperty("runMs", out var runMs) && runMs.ValueKind == JsonValueKind.Number)
             entry["runMs"] = runMs.GetInt64();
         if (root.TryGetProperty("test", out var test) && test.ValueKind == JsonValueKind.Object)
@@ -107,11 +117,17 @@ internal static class InfrastructureErrorAggregator
         return entry;
     }
 
-    private static void AddHostDisconnectedFields(Dictionary<string, object?> entry, JsonElement data)
+    private static void AddHostDisconnectedFields(
+        Dictionary<string, object?> entry,
+        JsonElement data
+    )
     {
         if (data.TryGetProperty("host_id", out var hostId))
             entry["hostId"] = hostId.GetString();
-        if (data.TryGetProperty("sshMasterLogTail", out var tail) && tail.ValueKind == JsonValueKind.String)
+        if (
+            data.TryGetProperty("sshMasterLogTail", out var tail)
+            && tail.ValueKind == JsonValueKind.String
+        )
             entry["sshMasterLogTail"] = tail.GetString();
     }
 
@@ -119,7 +135,10 @@ internal static class InfrastructureErrorAggregator
     {
         if (data.TryGetProperty("extras", out var extras) && extras.ValueKind != JsonValueKind.Null)
             entry["extras"] = extras.Clone();
-        if (data.TryGetProperty("diagnosticsError", out var diag) && diag.ValueKind == JsonValueKind.String)
+        if (
+            data.TryGetProperty("diagnosticsError", out var diag)
+            && diag.ValueKind == JsonValueKind.String
+        )
             entry["diagnosticsError"] = diag.GetString();
         // serverState is intentionally dropped — too large for summary.json.
     }

@@ -10,15 +10,24 @@ namespace JunimoServer.Services.Commands
 {
     public static class CabinCommand
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, CabinManagerService cabinService, PersistentOptions options)
+        public static void Register(
+            IModHelper helper,
+            ChatCommandsService chatCommandsService,
+            CabinManagerService cabinService,
+            PersistentOptions options
+        )
         {
-            chatCommandsService.RegisterCommand("cabin",
+            chatCommandsService.RegisterCommand(
+                "cabin",
                 "Moves your cabin to the right of your player.\nThis will clear basic debris to make space.",
                 (args, msg) =>
                 {
                     if (cabinService.options.IsFarmHouseStack)
                     {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin. The host has chosen to keep all cabins in the farmhouse.");
+                        helper.SendPrivateMessage(
+                            msg.SourceFarmer,
+                            "Can't move cabin. The host has chosen to keep all cabins in the farmhouse."
+                        );
                         return;
                     }
 
@@ -26,7 +35,10 @@ namespace JunimoServer.Services.Commands
 
                     if (farmer.currentLocation.Name != "Farm")
                     {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Must be on Farm to move your cabin.");
+                        helper.SendPrivateMessage(
+                            msg.SourceFarmer,
+                            "Must be on Farm to move your cabin."
+                        );
                         return;
                     }
 
@@ -34,10 +46,12 @@ namespace JunimoServer.Services.Commands
 
                     if (cabin == null)
                     {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Can't move cabin. (Your cabin was not found, which should not happen.)");
+                        helper.SendPrivateMessage(
+                            msg.SourceFarmer,
+                            "Can't move cabin. (Your cabin was not found, which should not happen.)"
+                        );
                         return;
                     }
-
 
                     // TODO:
                     // a) Potentially add preview mode consisting of a few commands? (first, check if we can trigger native building-move mode on clients)
@@ -48,7 +62,14 @@ namespace JunimoServer.Services.Commands
                     // Place cabin on the right-hand side of the farmer
                     var topLeft = new Point((int)farmer.Tile.X + 1, (int)farmer.Tile.Y);
 
-                    if (!CabinPlacementValidator.TryValidate(Game1.getFarm(), cabin, topLeft, out var reason))
+                    if (
+                        !CabinPlacementValidator.TryValidate(
+                            Game1.getFarm(),
+                            cabin,
+                            topLeft,
+                            out var reason
+                        )
+                    )
                     {
                         helper.SendPrivateMessage(msg.SourceFarmer, $"Can't move cabin: {reason}.");
                         return;

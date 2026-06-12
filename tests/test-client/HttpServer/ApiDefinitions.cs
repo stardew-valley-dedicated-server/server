@@ -13,31 +13,73 @@ public class ApiDefinitions
     // Status Endpoints
     // ============================================================
 
-    [ApiEndpoint("GET", "/ping", Summary = "Health check", Description = "Simple ping endpoint to verify the API is responding", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/ping",
+        Summary = "Health check",
+        Description = "Simple ping endpoint to verify the API is responding",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(PingResponse), 200)]
     private void Ping() { }
 
-    [ApiEndpoint("GET", "/status", Summary = "Get game status", Description = "Returns overall game status including menu, connection, and farmer info", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/status",
+        Summary = "Get game status",
+        Description = "Returns overall game status including menu, connection, and farmer info",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(StatusResponse), 200)]
     private void GetStatus() { }
 
-    [ApiEndpoint("GET", "/menu", Summary = "Get current menu", Description = "Returns information about the currently active menu", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/menu",
+        Summary = "Get current menu",
+        Description = "Returns information about the currently active menu",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(MenuInfo), 200)]
     private void GetMenu() { }
 
-    [ApiEndpoint("GET", "/menu/buttons", Summary = "Get menu buttons", Description = "Returns clickable buttons in the current menu", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/menu/buttons",
+        Summary = "Get menu buttons",
+        Description = "Returns clickable buttons in the current menu",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(MenuButtonsInfo), 200)]
     private void GetMenuButtons() { }
 
-    [ApiEndpoint("GET", "/menu/slots", Summary = "Get menu slots", Description = "Returns slots in the current menu (LoadGameMenu, CoopMenu, etc.)", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/menu/slots",
+        Summary = "Get menu slots",
+        Description = "Returns slots in the current menu (LoadGameMenu, CoopMenu, etc.)",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(MenuSlotsInfo), 200)]
     private void GetMenuSlots() { }
 
-    [ApiEndpoint("GET", "/connection", Summary = "Get connection status", Description = "Returns multiplayer connection status", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/connection",
+        Summary = "Get connection status",
+        Description = "Returns multiplayer connection status",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(ConnectionStatus), 200)]
     private void GetConnection() { }
 
-    [ApiEndpoint("GET", "/farmer", Summary = "Get farmer info", Description = "Returns current farmer information (null if not in game)", Tag = "Status")]
+    [ApiEndpoint(
+        "GET",
+        "/farmer",
+        Summary = "Get farmer info",
+        Description = "Returns current farmer information (null if not in game)",
+        Tag = "Status"
+    )]
     [ApiResponse(typeof(FarmerInfo), 200)]
     private void GetFarmer() { }
 
@@ -45,17 +87,35 @@ public class ApiDefinitions
     // Navigation Endpoints
     // ============================================================
 
-    [ApiEndpoint("POST", "/navigate", Summary = "Navigate to menu", Description = "Navigate to a specific menu (e.g., 'coop', 'load', 'title')", Tag = "Navigation")]
+    [ApiEndpoint(
+        "POST",
+        "/navigate",
+        Summary = "Navigate to menu",
+        Description = "Navigate to a specific menu (e.g., 'coop', 'load', 'title')",
+        Tag = "Navigation"
+    )]
     [ApiRequestBody(typeof(NavigateRequest))]
     [ApiResponse(typeof(NavigationResult), 200)]
     private void Navigate() { }
 
-    [ApiEndpoint("POST", "/coop/tab", Summary = "Switch coop tab", Description = "Switch between tabs in the co-op menu (0=Join, 1=Host)", Tag = "Navigation")]
+    [ApiEndpoint(
+        "POST",
+        "/coop/tab",
+        Summary = "Switch coop tab",
+        Description = "Switch between tabs in the co-op menu (0=Join, 1=Host)",
+        Tag = "Navigation"
+    )]
     [ApiRequestBody(typeof(CoopTabRequest))]
     [ApiResponse(typeof(NavigationResult), 200)]
     private void SwitchCoopTab() { }
 
-    [ApiEndpoint("POST", "/exit", Summary = "Exit to title", Description = "Exit the current game and return to title screen", Tag = "Navigation")]
+    [ApiEndpoint(
+        "POST",
+        "/exit",
+        Summary = "Exit to title",
+        Description = "Exit the current game and return to title screen",
+        Tag = "Navigation"
+    )]
     [ApiResponse(typeof(NavigationResult), 200)]
     private void Exit() { }
 
@@ -63,25 +123,55 @@ public class ApiDefinitions
     // Co-op Endpoints
     // ============================================================
 
-    [ApiEndpoint("POST", "/coop/invite-code/open", Summary = "Open invite code menu", Description = "Navigate to the invite code entry screen", Tag = "Co-op")]
+    [ApiEndpoint(
+        "POST",
+        "/coop/invite-code/open",
+        Summary = "Open invite code menu",
+        Description = "Navigate to the invite code entry screen",
+        Tag = "Co-op"
+    )]
     [ApiResponse(typeof(NavigationResult), 200)]
     private void OpenInviteCodeMenu() { }
 
-    [ApiEndpoint("POST", "/coop/invite-code/submit", Summary = "Submit invite code", Description = "Submit the invite code to connect to a server", Tag = "Co-op")]
+    [ApiEndpoint(
+        "POST",
+        "/coop/invite-code/submit",
+        Summary = "Submit invite code",
+        Description = "Submit the invite code to connect to a server",
+        Tag = "Co-op"
+    )]
     [ApiRequestBody(typeof(InviteCodeRequest))]
     [ApiResponse(typeof(NavigationResult), 200)]
     private void SubmitInviteCode() { }
 
-    [ApiEndpoint("POST", "/coop/join-lan", Summary = "Join via LAN", Description = "Join a co-op game via LAN/IP address", Tag = "Co-op")]
+    [ApiEndpoint(
+        "POST",
+        "/coop/join-lan",
+        Summary = "Join via LAN",
+        Description = "Join a co-op game via LAN/IP address",
+        Tag = "Co-op"
+    )]
     [ApiRequestBody(typeof(JoinLanRequest))]
     [ApiResponse(typeof(JoinResult), 200)]
     private void JoinLan() { }
 
-    [ApiEndpoint("GET", "/farmhands", Summary = "Get farmhand slots", Description = "Get available farmhand slots when connecting to a server", Tag = "Co-op")]
+    [ApiEndpoint(
+        "GET",
+        "/farmhands",
+        Summary = "Get farmhand slots",
+        Description = "Get available farmhand slots when connecting to a server",
+        Tag = "Co-op"
+    )]
     [ApiResponse(typeof(FarmhandSelectionInfo), 200)]
     private void GetFarmhands() { }
 
-    [ApiEndpoint("POST", "/farmhands/select", Summary = "Select farmhand", Description = "Select a farmhand slot to join the game", Tag = "Co-op")]
+    [ApiEndpoint(
+        "POST",
+        "/farmhands/select",
+        Summary = "Select farmhand",
+        Description = "Select a farmhand slot to join the game",
+        Tag = "Co-op"
+    )]
     [ApiRequestBody(typeof(SelectFarmhandRequest))]
     [ApiResponse(typeof(JoinResult), 200)]
     private void SelectFarmhand() { }
@@ -90,12 +180,24 @@ public class ApiDefinitions
     // Character Endpoints
     // ============================================================
 
-    [ApiEndpoint("POST", "/character/customize", Summary = "Customize character", Description = "Set character name and favorite thing during farmhand creation", Tag = "Character")]
+    [ApiEndpoint(
+        "POST",
+        "/character/customize",
+        Summary = "Customize character",
+        Description = "Set character name and favorite thing during farmhand creation",
+        Tag = "Character"
+    )]
     [ApiRequestBody(typeof(CustomizeCharacterRequest))]
     [ApiResponse(typeof(CustomizeResult), 200)]
     private void CustomizeCharacter() { }
 
-    [ApiEndpoint("POST", "/character/confirm", Summary = "Confirm character", Description = "Confirm character creation and join the game", Tag = "Character")]
+    [ApiEndpoint(
+        "POST",
+        "/character/confirm",
+        Summary = "Confirm character",
+        Description = "Confirm character creation and join the game",
+        Tag = "Character"
+    )]
     [ApiResponse(typeof(JoinResult), 200)]
     private void ConfirmCharacter() { }
 
@@ -103,18 +205,40 @@ public class ApiDefinitions
     // Chat Endpoints
     // ============================================================
 
-    [ApiEndpoint("POST", "/chat/send", Summary = "Send chat message", Description = "Send a chat message to all players", Tag = "Chat")]
+    [ApiEndpoint(
+        "POST",
+        "/chat/send",
+        Summary = "Send chat message",
+        Description = "Send a chat message to all players",
+        Tag = "Chat"
+    )]
     [ApiRequestBody(typeof(ChatSendRequest))]
     [ApiResponse(typeof(ChatResult), 200)]
     private void SendChat() { }
 
-    [ApiEndpoint("POST", "/chat/info", Summary = "Send local info", Description = "Display a local info message (only visible to this client)", Tag = "Chat")]
+    [ApiEndpoint(
+        "POST",
+        "/chat/info",
+        Summary = "Send local info",
+        Description = "Display a local info message (only visible to this client)",
+        Tag = "Chat"
+    )]
     [ApiRequestBody(typeof(ChatSendRequest))]
     [ApiResponse(typeof(ChatResult), 200)]
     private void SendInfo() { }
 
-    [ApiEndpoint("GET", "/chat/history", Summary = "Get chat history", Description = "Get recent chat messages", Tag = "Chat")]
-    [ApiQueryParam("count", typeof(int), Description = "Number of messages to return (default: 10)")]
+    [ApiEndpoint(
+        "GET",
+        "/chat/history",
+        Summary = "Get chat history",
+        Description = "Get recent chat messages",
+        Tag = "Chat"
+    )]
+    [ApiQueryParam(
+        "count",
+        typeof(int),
+        Description = "Number of messages to return (default: 10)"
+    )]
     [ApiResponse(typeof(ChatHistoryResult), 200)]
     private void GetChatHistory() { }
 
@@ -122,26 +246,56 @@ public class ApiDefinitions
     // Action Endpoints
     // ============================================================
 
-    [ApiEndpoint("POST", "/actions/sleep", Summary = "Initiate sleep", Description = "Make the farmer go to bed", Tag = "Actions")]
+    [ApiEndpoint(
+        "POST",
+        "/actions/sleep",
+        Summary = "Initiate sleep",
+        Description = "Make the farmer go to bed",
+        Tag = "Actions"
+    )]
     [ApiResponse(typeof(SleepResult), 200)]
     private void Sleep() { }
 
-    [ApiEndpoint("POST", "/actions/warp", Summary = "Warp the player", Description = "Queue an asynchronous warp to a location/tile. Caller must poll /status to confirm arrival.", Tag = "Actions")]
+    [ApiEndpoint(
+        "POST",
+        "/actions/warp",
+        Summary = "Warp the player",
+        Description = "Queue an asynchronous warp to a location/tile. Caller must poll /status to confirm arrival.",
+        Tag = "Actions"
+    )]
     [ApiRequestBody(typeof(WarpParams))]
     [ApiResponse(typeof(WarpResult), 200)]
     private void Warp() { }
 
-    [ApiEndpoint("POST", "/actions/place_pot", Summary = "Place a Garden Pot", Description = "Place an IndoorPot at the given tile on the player's current location.", Tag = "Actions")]
+    [ApiEndpoint(
+        "POST",
+        "/actions/place_pot",
+        Summary = "Place a Garden Pot",
+        Description = "Place an IndoorPot at the given tile on the player's current location.",
+        Tag = "Actions"
+    )]
     [ApiRequestBody(typeof(PlacePotParams))]
     [ApiResponse(typeof(PlacePotResult), 200)]
     private void PlacePot() { }
 
-    [ApiEndpoint("POST", "/actions/clear_area", Summary = "Clear a tile area", Description = "Remove objects, terrain features, bushes, and resource clumps from a tile area on the player's current location.", Tag = "Actions")]
+    [ApiEndpoint(
+        "POST",
+        "/actions/clear_area",
+        Summary = "Clear a tile area",
+        Description = "Remove objects, terrain features, bushes, and resource clumps from a tile area on the player's current location.",
+        Tag = "Actions"
+    )]
     [ApiRequestBody(typeof(ClearAreaParams))]
     [ApiResponse(typeof(ClearAreaResult), 200)]
     private void ClearArea() { }
 
-    [ApiEndpoint("POST", "/actions/plant_crop", Summary = "Plant a crop seed", Description = "Plant a seed in a HoeDirt or IndoorPot at the given tile.", Tag = "Actions")]
+    [ApiEndpoint(
+        "POST",
+        "/actions/plant_crop",
+        Summary = "Plant a crop seed",
+        Description = "Plant a seed in a HoeDirt or IndoorPot at the given tile.",
+        Tag = "Actions"
+    )]
     [ApiRequestBody(typeof(PlantCropParams))]
     [ApiResponse(typeof(PlantCropResult), 200)]
     private void PlantCrop() { }
@@ -150,44 +304,124 @@ public class ApiDefinitions
     // Wait Endpoints
     // ============================================================
 
-    [ApiEndpoint("GET", "/wait/menu", Summary = "Wait for menu", Description = "Block until a specific menu type is active", Tag = "Wait")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/menu",
+        Summary = "Wait for menu",
+        Description = "Block until a specific menu type is active",
+        Tag = "Wait"
+    )]
     [ApiQueryParam("type", typeof(string), Required = true, Description = "Menu type to wait for")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForMenu() { }
 
-    [ApiEndpoint("GET", "/wait/connected", Summary = "Wait for connection", Description = "Block until connected to a server", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/connected",
+        Summary = "Wait for connection",
+        Description = "Block until connected to a server",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForConnected() { }
 
-    [ApiEndpoint("GET", "/wait/world-ready", Summary = "Wait for world ready", Description = "Block until the world is fully loaded and ready", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/world-ready",
+        Summary = "Wait for world ready",
+        Description = "Block until the world is fully loaded and ready",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForWorldReady() { }
 
-    [ApiEndpoint("GET", "/wait/farmhands", Summary = "Wait for farmhand menu", Description = "Block until the farmhand selection menu appears", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/farmhands",
+        Summary = "Wait for farmhand menu",
+        Description = "Block until the farmhand selection menu appears",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForFarmhands() { }
 
-    [ApiEndpoint("GET", "/wait/title", Summary = "Wait for title screen", Description = "Block until returned to the title screen", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/title",
+        Summary = "Wait for title screen",
+        Description = "Block until returned to the title screen",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForTitle() { }
 
-    [ApiEndpoint("GET", "/wait/disconnected", Summary = "Wait for disconnection", Description = "Block until disconnected from server", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/disconnected",
+        Summary = "Wait for disconnection",
+        Description = "Block until disconnected from server",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForDisconnected() { }
 
-    [ApiEndpoint("GET", "/wait/text-input", Summary = "Wait for text input", Description = "Block until a text input dialog appears", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/text-input",
+        Summary = "Wait for text input",
+        Description = "Block until a text input dialog appears",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForTextInput() { }
 
-    [ApiEndpoint("GET", "/wait/character-customization", Summary = "Wait for character customization", Description = "Block until the character customization screen appears", Tag = "Wait")]
-    [ApiQueryParam("timeout", typeof(int), Description = "Timeout in milliseconds (default: 30000)")]
+    [ApiEndpoint(
+        "GET",
+        "/wait/character-customization",
+        Summary = "Wait for character customization",
+        Description = "Block until the character customization screen appears",
+        Tag = "Wait"
+    )]
+    [ApiQueryParam(
+        "timeout",
+        typeof(int),
+        Description = "Timeout in milliseconds (default: 30000)"
+    )]
     [ApiResponse(typeof(WaitResult), 200)]
     private void WaitForCharacterCustomization() { }
 
@@ -195,44 +429,108 @@ public class ApiDefinitions
     // Diagnostics Endpoints
     // ============================================================
 
-    [ApiEndpoint("GET", "/health", Summary = "Health watchdog status", Description = "Returns health status including freeze detection", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "GET",
+        "/health",
+        Summary = "Health watchdog status",
+        Description = "Returns health status including freeze detection",
+        Tag = "Diagnostics"
+    )]
     [ApiResponse(typeof(HealthStatus), 200)]
     private void GetHealth() { }
 
-    [ApiEndpoint("GET", "/stats", Summary = "Performance stats", Description = "Returns performance statistics (FPS, tick time, memory)", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "GET",
+        "/stats",
+        Summary = "Performance stats",
+        Description = "Returns performance statistics (FPS, tick time, memory)",
+        Tag = "Diagnostics"
+    )]
     [ApiResponse(typeof(PerfStats), 200)]
     private void GetStats() { }
 
-    [ApiEndpoint("POST", "/stats/reset", Summary = "Reset stats", Description = "Reset max tick tracking", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "POST",
+        "/stats/reset",
+        Summary = "Reset stats",
+        Description = "Reset max tick tracking",
+        Tag = "Diagnostics"
+    )]
     [ApiResponse(typeof(SuccessResponse), 200)]
     private void ResetStats() { }
 
-    [ApiEndpoint("GET", "/errors", Summary = "Get captured errors", Description = "Returns captured errors/exceptions", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "GET",
+        "/errors",
+        Summary = "Get captured errors",
+        Description = "Returns captured errors/exceptions",
+        Tag = "Diagnostics"
+    )]
     [ApiQueryParam("limit", typeof(int), Description = "Limit number of errors returned")]
     [ApiQueryParam("clear", typeof(bool), Description = "Clear errors after retrieving (true/1)")]
     [ApiResponse(typeof(ErrorsResponse), 200)]
     private void GetErrors() { }
 
-    [ApiEndpoint("DELETE", "/errors", Summary = "Clear errors", Description = "Clear all captured errors", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "DELETE",
+        "/errors",
+        Summary = "Clear errors",
+        Description = "Clear all captured errors",
+        Tag = "Diagnostics"
+    )]
     [ApiResponse(typeof(SuccessResponse), 200)]
     private void ClearErrors() { }
 
-    [ApiEndpoint("POST", "/screenshot", Summary = "Capture screenshot", Description = "Capture a screenshot and return as base64 PNG", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "POST",
+        "/screenshot",
+        Summary = "Capture screenshot",
+        Description = "Capture a screenshot and return as base64 PNG",
+        Tag = "Diagnostics"
+    )]
     [ApiResponse(typeof(ScreenshotResult), 200)]
     private void TakeScreenshot() { }
 
-    [ApiEndpoint("POST", "/screenshot/file", Summary = "Save screenshot", Description = "Capture a screenshot and save to file", Tag = "Diagnostics")]
+    [ApiEndpoint(
+        "POST",
+        "/screenshot/file",
+        Summary = "Save screenshot",
+        Description = "Capture a screenshot and save to file",
+        Tag = "Diagnostics"
+    )]
     [ApiRequestBody(typeof(ScreenshotFileRequest))]
     [ApiResponse(typeof(ScreenshotResult), 200)]
     private void SaveScreenshot() { }
 
-    [ApiEndpoint("GET", "/steam/lobby", Summary = "Diagnose Steam lobby", Description = "Query all available data from a Steam lobby (for debugging connection issues)", Tag = "Diagnostics")]
-    [ApiQueryParam("id", typeof(ulong), Required = true, Description = "Steam lobby ID to diagnose")]
+    [ApiEndpoint(
+        "GET",
+        "/steam/lobby",
+        Summary = "Diagnose Steam lobby",
+        Description = "Query all available data from a Steam lobby (for debugging connection issues)",
+        Tag = "Diagnostics"
+    )]
+    [ApiQueryParam(
+        "id",
+        typeof(ulong),
+        Required = true,
+        Description = "Steam lobby ID to diagnose"
+    )]
     [ApiResponse(typeof(SteamLobbyDiagnostics), 200)]
     private void DiagnoseSteamLobby() { }
 
-    [ApiEndpoint("POST", "/steam/lobby/join-diagnose", Summary = "Join and diagnose Steam lobby", Description = "Join a Steam lobby temporarily to get full diagnostic data, then leave", Tag = "Diagnostics")]
-    [ApiQueryParam("id", typeof(ulong), Required = true, Description = "Steam lobby ID to join and diagnose")]
+    [ApiEndpoint(
+        "POST",
+        "/steam/lobby/join-diagnose",
+        Summary = "Join and diagnose Steam lobby",
+        Description = "Join a Steam lobby temporarily to get full diagnostic data, then leave",
+        Tag = "Diagnostics"
+    )]
+    [ApiQueryParam(
+        "id",
+        typeof(ulong),
+        Required = true,
+        Description = "Steam lobby ID to join and diagnose"
+    )]
     [ApiResponse(typeof(SuccessResponse), 200)]
     private void JoinAndDiagnoseSteamLobby() { }
 
@@ -240,16 +538,40 @@ public class ApiDefinitions
     // Meta Endpoints
     // ============================================================
 
-    [ApiEndpoint("GET", "/openapi.json", Summary = "OpenAPI spec (JSON)", Description = "Returns this OpenAPI specification in JSON format", Tag = "Meta")]
+    [ApiEndpoint(
+        "GET",
+        "/openapi.json",
+        Summary = "OpenAPI spec (JSON)",
+        Description = "Returns this OpenAPI specification in JSON format",
+        Tag = "Meta"
+    )]
     private void GetOpenApiJson() { }
 
-    [ApiEndpoint("GET", "/openapi.yaml", Summary = "OpenAPI spec (YAML)", Description = "Returns this OpenAPI specification in YAML format", Tag = "Meta")]
+    [ApiEndpoint(
+        "GET",
+        "/openapi.yaml",
+        Summary = "OpenAPI spec (YAML)",
+        Description = "Returns this OpenAPI specification in YAML format",
+        Tag = "Meta"
+    )]
     private void GetOpenApiYaml() { }
 
-    [ApiEndpoint("GET", "/docs", Summary = "API documentation (Scalar)", Description = "Interactive API documentation powered by Scalar", Tag = "Meta")]
+    [ApiEndpoint(
+        "GET",
+        "/docs",
+        Summary = "API documentation (Scalar)",
+        Description = "Interactive API documentation powered by Scalar",
+        Tag = "Meta"
+    )]
     private void GetScalarDocs() { }
 
-    [ApiEndpoint("GET", "/swagger", Summary = "API documentation (Swagger)", Description = "Interactive API documentation powered by Swagger UI", Tag = "Meta")]
+    [ApiEndpoint(
+        "GET",
+        "/swagger",
+        Summary = "API documentation (Swagger)",
+        Description = "Interactive API documentation powered by Swagger UI",
+        Tag = "Meta"
+    )]
     private void GetSwaggerDocs() { }
 }
 

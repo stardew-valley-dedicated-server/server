@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
@@ -6,8 +8,6 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
-using System;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Services.GameManager
 {
@@ -47,7 +47,15 @@ namespace JunimoServer.Services.GameManager
         /// </summary>
         internal static GameManagerService? Instance { get; private set; }
 
-        public GameManagerService(GameCreatorService gameCreator, GameLoaderService gameLoader, ServerSettingsLoader settings, PersistentOptions options, IModHelper helper, IMonitor monitor) : base(helper, monitor)
+        public GameManagerService(
+            GameCreatorService gameCreator,
+            GameLoaderService gameLoader,
+            ServerSettingsLoader settings,
+            PersistentOptions options,
+            IModHelper helper,
+            IMonitor monitor
+        )
+            : base(helper, monitor)
         {
             _gameCreatorService = gameCreator;
             _gameLoaderService = gameLoader;
@@ -70,12 +78,17 @@ namespace JunimoServer.Services.GameManager
             if (_reloadCompletion != null)
             {
                 return Task.FromException(
-                    new InvalidOperationException("A reload is already in progress; cannot start a new game."));
+                    new InvalidOperationException(
+                        "A reload is already in progress; cannot start a new game."
+                    )
+                );
             }
 
             IsNewGamePending = true;
             _pendingNewGameConfig = config;
-            _newGameCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _newGameCompletion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             _gameStarted = false;
             _titleLaunched = false;
             _healthCheckTimer = 0;
@@ -101,7 +114,10 @@ namespace JunimoServer.Services.GameManager
             if (_newGameCompletion != null)
             {
                 return Task.FromException(
-                    new InvalidOperationException("A new game is already in progress; cannot reload."));
+                    new InvalidOperationException(
+                        "A new game is already in progress; cannot reload."
+                    )
+                );
             }
 
             // Coalesce overlapping requests: a second /reload while one is in flight would
@@ -117,7 +133,9 @@ namespace JunimoServer.Services.GameManager
             // treats this as expected instead of logging a critical (test-poisoning) error.
             IsNewGamePending = true;
             _pendingReload = true;
-            _reloadCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _reloadCompletion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             _gameStarted = false;
             _titleLaunched = false;
             _healthCheckTimer = 0;
@@ -226,7 +244,9 @@ namespace JunimoServer.Services.GameManager
                     _options.RecaptureAndSync(_settings);
                     if (!_gameLoaderService.LoadSave())
                     {
-                        throw new InvalidOperationException("LoadSave returned false (no loadable save found)");
+                        throw new InvalidOperationException(
+                            "LoadSave returned false (no loadable save found)"
+                        );
                     }
                     // Success is signalled from OnUpdateTicked once SaveLoaded has fired and run
                     // the migration/sync/sweep — not here, where the loader has only been armed.
@@ -285,7 +305,8 @@ namespace JunimoServer.Services.GameManager
 
         private bool HasDurationPassedSinceLastNullCode(TimeSpan duration)
         {
-            return _lastNullCodeTime.HasValue && (DateTime.Now - _lastNullCodeTime.Value) >= duration;
+            return _lastNullCodeTime.HasValue
+                && (DateTime.Now - _lastNullCodeTime.Value) >= duration;
         }
 
         private void RunHealthCheck()
@@ -313,9 +334,10 @@ namespace JunimoServer.Services.GameManager
                     if (HasDurationPassedSinceLastNullCode(TimeSpan.FromMinutes(2)))
                     {
                         Monitor.Log(
-                            "Network unreachable for 2+ minutes; exiting for container restart. " +
-                            "Mid-day state since last sleep will be lost; restart will reload last save.",
-                            LogLevel.Warn);
+                            "Network unreachable for 2+ minutes; exiting for container restart. "
+                                + "Mid-day state since last sleep will be lost; restart will reload last save.",
+                            LogLevel.Warn
+                        );
                         Environment.Exit(1);
                     }
                 }
@@ -325,6 +347,5 @@ namespace JunimoServer.Services.GameManager
                 Monitor.Log("Healthcheck ✗", LogLevel.Info);
             }
         }
-
     }
 }

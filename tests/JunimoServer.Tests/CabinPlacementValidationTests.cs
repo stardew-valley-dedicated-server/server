@@ -36,7 +36,10 @@ public class CabinPlacementValidationTests : TestBase
                 await DisconnectAsync();
                 await CreateNewGameOnServerAsync(farmType: 0);
             }
-            catch (Exception ex) { LogWarning($"Server reset failed during cleanup: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                LogWarning($"Server reset failed during cleanup: {ex.Message}");
+            }
         }
         await base.DisposeAsync();
     }
@@ -66,7 +69,10 @@ public class CabinPlacementValidationTests : TestBase
                 await GameClient.SendChat("!cabin");
                 moved = await GetOurCabinAsync(ownerId, ct);
                 return !moved.IsHidden;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
 
         Assert.True(ok, "Cabin did not move out of the hidden stack after !cabin");
         Assert.Equal(CabinPlacementHelper.ExpectedCabinTile, (moved!.TileX, moved.TileY));
@@ -94,8 +100,11 @@ public class CabinPlacementValidationTests : TestBase
         // Place a Garden Pot inside the just-cleared footprint so the validator's
         // terrain/object check rejects on a single, deterministic obstacle.
         var pot = await GameClient.Actions.PlacePot(
-            "Farm", CabinPlacementHelper.ExpectedCabinTile.X + 1, CabinPlacementHelper.ExpectedCabinTile.Y,
-            clearObstacles: true);
+            "Farm",
+            CabinPlacementHelper.ExpectedCabinTile.X + 1,
+            CabinPlacementHelper.ExpectedCabinTile.Y,
+            clearObstacles: true
+        );
         Assert.True(pot?.Success == true, $"PlacePot failed: {pot?.Error}");
 
         var rejected = await PollingHelper.WaitUntilAsync(
@@ -103,7 +112,9 @@ public class CabinPlacementValidationTests : TestBase
             // "Can't move cabin" (validator reply), not "Must be on Farm" (off-Farm
             // bail); resends absorb server-location lag.
             () => Chat.AssertResponseAsync("!cabin", "Can't move cabin"),
-            TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
 
         Assert.True(rejected, "Expected a 'Can't move cabin' rejection reply");
 
@@ -125,7 +136,9 @@ public class CabinPlacementValidationTests : TestBase
     /// body documents the contained mechanism — a second ConnectionHelper over a
     /// second lease — so enabling it later is mechanical.
     /// </summary>
-    [Fact(Skip = "Needs a 2nd concurrently-connected farmer (first in suite); deferred — see body for approach")]
+    [Fact(
+        Skip = "Needs a 2nd concurrently-connected farmer (first in suite); deferred — see body for approach"
+    )]
     public async Task AnotherPlayerInFootprint_RejectsAndDoesNotMove()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -144,19 +157,28 @@ public class CabinPlacementValidationTests : TestBase
         await using var leaseB = await LeaseClientAsync(ct);
         var connB = new ConnectionHelper(leaseB.Client, serverApi: ServerApi);
         var joinB = await connB.JoinWorldViaLanAsync(
-            Lease!.ServerLanAddress, Lease.ServerLanPort, nameB, cancellationToken: ct);
+            Lease!.ServerLanAddress,
+            Lease.ServerLanPort,
+            nameB,
+            cancellationToken: ct
+        );
         Farmers.TrackFarmer(nameB, joinB.UniqueMultiplayerId);
 
         // Stand B inside A's prospective footprint.
         var warpB = await leaseB.Client.Actions.Warp(
-            "Farm", CabinPlacementHelper.ExpectedCabinTile.X + 1, CabinPlacementHelper.ExpectedCabinTile.Y);
+            "Farm",
+            CabinPlacementHelper.ExpectedCabinTile.X + 1,
+            CabinPlacementHelper.ExpectedCabinTile.Y
+        );
         Assert.True(warpB?.Success == true, $"B warp failed: {warpB?.Error}");
         await leaseB.Client.WaitForLocationAsync("^Farm$", ct: ct);
 
         var rejected = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinPlacement_Rejected,
             () => Chat.AssertResponseAsync("!cabin", "another player is standing there"),
-            TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
         Assert.True(rejected, "Expected an 'another player is standing there' rejection");
 
         var after = await GetOurCabinAsync(ownerIdA, ct);

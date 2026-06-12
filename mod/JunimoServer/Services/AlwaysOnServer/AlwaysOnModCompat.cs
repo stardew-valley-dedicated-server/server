@@ -1,6 +1,6 @@
+using System;
 using StardewModdingAPI;
 using StardewValley;
-using System;
 
 namespace JunimoServer.Services.AlwaysOn
 {
@@ -71,7 +71,8 @@ namespace JunimoServer.Services.AlwaysOn
                 // fast. Never log at Error (poisons E2E error detection — see .claude/rules/debugging.md).
                 _monitor.Log(
                     $"[Automation] Failed to dismiss SpaceCore level up menu ({menu.GetType().FullName}): {ex.Message}",
-                    LogLevel.Warn);
+                    LogLevel.Warn
+                );
             }
         }
     }

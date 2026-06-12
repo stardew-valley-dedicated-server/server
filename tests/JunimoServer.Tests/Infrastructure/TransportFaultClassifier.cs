@@ -40,66 +40,69 @@ internal static class TransportFaultClassifier
         return null;
     }
 
-    private static string? ClassifySingle(Exception ex) => ex switch
-    {
-        // Docker.DotNet wraps HttpClient, so a dead forward surfaces as a
-        // SocketException — the unambiguous transport signal.
-        SocketException se when IsTransportSocketError(se.SocketErrorCode)
-            => $"socket transport fault ({se.SocketErrorCode})",
+    private static string? ClassifySingle(Exception ex) =>
+        ex switch
+        {
+            // Docker.DotNet wraps HttpClient, so a dead forward surfaces as a
+            // SocketException — the unambiguous transport signal.
+            SocketException se when IsTransportSocketError(se.SocketErrorCode) =>
+                $"socket transport fault ({se.SocketErrorCode})",
 
-        // A *connection* HttpRequestError means the daemon was unreachable (vs a
-        // response-status error, which means it answered). A non-connection
-        // HttpRequestException falls through to the inner-chain walk for a wrapped
-        // SocketException; DockerApiException is app-level (the daemon responded).
-        HttpRequestException hre when IsTransportHttpError(hre.HttpRequestError)
-            => $"http transport fault ({hre.HttpRequestError})",
+            // A *connection* HttpRequestError means the daemon was unreachable (vs a
+            // response-status error, which means it answered). A non-connection
+            // HttpRequestException falls through to the inner-chain walk for a wrapped
+            // SocketException; DockerApiException is app-level (the daemon responded).
+            HttpRequestException hre when IsTransportHttpError(hre.HttpRequestError) =>
+                $"http transport fault ({hre.HttpRequestError})",
 
-        // Forward closed mid-response. Explicit arm covers a bare EOF (no message);
-        // the IOException arm below catches the message-bearing cases.
-        EndOfStreamException
-            => "daemon stream ended (transport)",
+            // Forward closed mid-response. Explicit arm covers a bare EOF (no message);
+            // the IOException arm below catches the message-bearing cases.
+            EndOfStreamException => "daemon stream ended (transport)",
 
-        IOException io when LooksLikeBrokenConnection(io.Message)
-            => "io transport fault (broken pipe / connection reset)",
+            IOException io when LooksLikeBrokenConnection(io.Message) =>
+                "io transport fault (broken pipe / connection reset)",
 
-        _ => null,
-    };
+            _ => null,
+        };
 
     /// <summary>
     /// Socket error codes that mean the connection to the daemon was lost or
     /// never established — the forward is gone, not a slow-but-live daemon.
     /// </summary>
-    private static bool IsTransportSocketError(SocketError code) => code switch
-    {
-        SocketError.ConnectionReset => true,
-        SocketError.ConnectionAborted => true,
-        SocketError.ConnectionRefused => true,
-        SocketError.HostUnreachable => true,
-        SocketError.NetworkUnreachable => true,
-        SocketError.NotConnected => true,
-        SocketError.Shutdown => true,
-        // TimedOut at the socket layer (not a bare TimeoutException) means the
-        // peer stopped answering — a dead forward, distinct from a live daemon
-        // taking a long time to produce a response.
-        SocketError.TimedOut => true,
-        _ => false,
-    };
+    private static bool IsTransportSocketError(SocketError code) =>
+        code switch
+        {
+            SocketError.ConnectionReset => true,
+            SocketError.ConnectionAborted => true,
+            SocketError.ConnectionRefused => true,
+            SocketError.HostUnreachable => true,
+            SocketError.NetworkUnreachable => true,
+            SocketError.NotConnected => true,
+            SocketError.Shutdown => true,
+            // TimedOut at the socket layer (not a bare TimeoutException) means the
+            // peer stopped answering — a dead forward, distinct from a live daemon
+            // taking a long time to produce a response.
+            SocketError.TimedOut => true,
+            _ => false,
+        };
 
     /// <summary>
     /// <see cref="HttpRequestError"/> values that indicate the transport could
     /// not carry the request, as opposed to the daemon returning an error status.
     /// </summary>
-    private static bool IsTransportHttpError(HttpRequestError error) => error switch
-    {
-        HttpRequestError.ConnectionError => true,
-        HttpRequestError.SecureConnectionError => true,
-        HttpRequestError.NameResolutionError => true,
-        _ => false,
-    };
+    private static bool IsTransportHttpError(HttpRequestError error) =>
+        error switch
+        {
+            HttpRequestError.ConnectionError => true,
+            HttpRequestError.SecureConnectionError => true,
+            HttpRequestError.NameResolutionError => true,
+            _ => false,
+        };
 
     private static bool LooksLikeBrokenConnection(string? message)
     {
-        if (string.IsNullOrEmpty(message)) return false;
+        if (string.IsNullOrEmpty(message))
+            return false;
         return message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)
             || message.Contains("connection reset", StringComparison.OrdinalIgnoreCase)
             || message.Contains("connection refused", StringComparison.OrdinalIgnoreCase)

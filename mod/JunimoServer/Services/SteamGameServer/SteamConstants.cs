@@ -28,7 +28,8 @@ namespace JunimoServer.Services.SteamGameServer
         /// GOG Galaxy client secret extracted from Stardew Valley's GalaxyHelper.cs.
         /// This is intentionally public - Galaxy SDK credentials are embedded in all games using the SDK.
         /// </summary>
-        public const string GalaxyClientSecret = "58be5c2e55d7f535cf8c4b6bbc09d185de90b152c8c42703cc13502465f0d04a";
+        public const string GalaxyClientSecret =
+            "58be5c2e55d7f535cf8c4b6bbc09d185de90b152c8c42703cc13502465f0d04a";
 
         /// <summary>Display name used for Galaxy authentication when no Steam persona is available.</summary>
         public const string DefaultServerName = "GalaxyTest";

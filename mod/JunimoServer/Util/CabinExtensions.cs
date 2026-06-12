@@ -1,8 +1,8 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Locations;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace JunimoServer.Util
 {
@@ -13,12 +13,10 @@ namespace JunimoServer.Util
             return cabin?.owner?.UniqueMultiplayerID == ownerId;
         }
 
-
         public static IEnumerable<Warp> GetWarpsToFarm(this Cabin cabin)
         {
             return cabin.warps.Where(warp => warp.TargetName == "Farm");
         }
-
 
         public static void SetWarpsToFarm(this Cabin cabin, Point position)
         {

@@ -13,8 +13,9 @@ public static class PathDisplay
 {
     // OrdinalIgnoreCase on Windows so drive-letter / path-segment case drift
     // still matches; Ordinal on POSIX where the filesystem is case-sensitive.
-    private static readonly StringComparison Comparison =
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    private static readonly StringComparison Comparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
 
     private static readonly string Replacement = "." + Path.DirectorySeparatorChar;
 

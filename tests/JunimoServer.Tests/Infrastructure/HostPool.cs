@@ -66,7 +66,9 @@ public sealed class HostPool : IAsyncDisposable
                 {
                     initialized.Add((h.ApiClient, !string.IsNullOrEmpty(h.SshDestination)));
                 }
-                catch (InvalidOperationException) { /* not initialized — skip */ }
+                catch (InvalidOperationException)
+                { /* not initialized — skip */
+                }
             }
             return initialized;
         });
@@ -87,15 +89,14 @@ public sealed class HostPool : IAsyncDisposable
     /// </summary>
     public DockerHost Place(int serverSlotsNeeded, int clientSlotsNeeded, bool requireSteam = false)
     {
-        var alive = Hosts
-            .Where(h => !h.IsPoisoned && (!requireSteam || h.IsSteamCapable))
-            .ToList();
+        var alive = Hosts.Where(h => !h.IsPoisoned && (!requireSteam || h.IsSteamCapable)).ToList();
         if (alive.Count == 0)
         {
             if (requireSteam)
                 throw new InvalidOperationException(
-                    "No Steam-capable hosts available — check STEAM_ACCOUNTS sizing vs SDVD_DOCKER_HOSTS slot config. " +
-                    "Each Steam-capable host needs ≥2 accounts (1 server + ≥1 client).");
+                    "No Steam-capable hosts available — check STEAM_ACCOUNTS sizing vs SDVD_DOCKER_HOSTS slot config. "
+                        + "Each Steam-capable host needs ≥2 accounts (1 server + ≥1 client)."
+                );
             throw new InvalidOperationException("HostPool: all hosts poisoned");
         }
 
@@ -106,7 +107,8 @@ public sealed class HostPool : IAsyncDisposable
             .OrderByDescending(h => h.ClientCapacity.Available)
             .ThenBy(h => h.Id, StringComparer.Ordinal)
             .ToList();
-        if (admitting.Count > 0) return admitting[0];
+        if (admitting.Count > 0)
+            return admitting[0];
 
         // Nothing admits immediately: queue on the host with the fewest server
         // waiters, ties by declared order.
@@ -121,16 +123,20 @@ public sealed class HostPool : IAsyncDisposable
         var raw = Environment.GetEnvironmentVariable("SDVD_DOCKER_HOSTS");
         if (string.IsNullOrWhiteSpace(raw))
             throw new InvalidOperationException(
-                "SDVD_DOCKER_HOSTS is required. " +
-                "Set it to a JSON array of host entries — see .env.test.example for the schema.");
+                "SDVD_DOCKER_HOSTS is required. "
+                    + "Set it to a JSON array of host entries — see .env.test.example for the schema."
+            );
 
         var entries = UserConfigJson.DeserializeArrayStrict<HostEntry>(
-            "SDVD_DOCKER_HOSTS", raw,
-            "{id, serverSlots, clientSlots, [endpoint], [sshKey]}");
+            "SDVD_DOCKER_HOSTS",
+            raw,
+            "{id, serverSlots, clientSlots, [endpoint], [sshKey]}"
+        );
         if (entries is null || entries.Length == 0)
             throw new InvalidOperationException(
-                "SDVD_DOCKER_HOSTS is set but parsed to an empty array. " +
-                "At least one host entry is required.");
+                "SDVD_DOCKER_HOSTS is set but parsed to an empty array. "
+                    + "At least one host entry is required."
+            );
 
         // SDVD_MAX_CONCURRENT_STARTS, when set, becomes the default for every
         // host that omits its own concurrentStarts. When unset, each host
@@ -145,38 +151,48 @@ public sealed class HostPool : IAsyncDisposable
         {
             var entry = entries[i];
             if (string.IsNullOrWhiteSpace(entry.Id))
-                throw new InvalidOperationException($"SDVD_DOCKER_HOSTS entry {i}: 'id' is required.");
+                throw new InvalidOperationException(
+                    $"SDVD_DOCKER_HOSTS entry {i}: 'id' is required."
+                );
             if (!seenIds.Add(entry.Id))
                 throw new InvalidOperationException(
-                    $"SDVD_DOCKER_HOSTS entry {i}: duplicate id '{entry.Id}' (ids must be unique).");
+                    $"SDVD_DOCKER_HOSTS entry {i}: duplicate id '{entry.Id}' (ids must be unique)."
+                );
             if (entry.ServerSlots <= 0)
                 throw new InvalidOperationException(
-                    $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'serverSlots' must be a positive integer (got {entry.ServerSlots}).");
+                    $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'serverSlots' must be a positive integer (got {entry.ServerSlots})."
+                );
             if (entry.ClientSlots <= 0)
                 throw new InvalidOperationException(
-                    $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'clientSlots' must be a positive integer (got {entry.ClientSlots}).");
+                    $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'clientSlots' must be a positive integer (got {entry.ClientSlots})."
+                );
             // Resolution order for each cap: per-host JSON field (if positive)
             // → SDVD_MAX_* env (if set & positive) → host's serverSlots+clientSlots.
-            var concurrentStarts = entry.ConcurrentStarts > 0
-                ? entry.ConcurrentStarts
-                : startsEnvOverride ?? entry.ServerSlots + entry.ClientSlots;
-            var concurrentExtractions = entry.ConcurrentExtractions > 0
-                ? entry.ConcurrentExtractions
-                : extractEnvOverride ?? entry.ServerSlots + entry.ClientSlots;
+            var concurrentStarts =
+                entry.ConcurrentStarts > 0
+                    ? entry.ConcurrentStarts
+                    : startsEnvOverride ?? entry.ServerSlots + entry.ClientSlots;
+            var concurrentExtractions =
+                entry.ConcurrentExtractions > 0
+                    ? entry.ConcurrentExtractions
+                    : extractEnvOverride ?? entry.ServerSlots + entry.ClientSlots;
 
             var sshDest = ResolveSshDestination(entry.Id, entry.Endpoint);
             var sshKeyPath = ResolveSshKeyPath(entry.Id, sshDest, entry.SshKey);
             var socketPath = ResolveSocketPath(entry.Id, sshDest, entry.SocketPath);
-            hosts.Add(new DockerHost(
-                id: entry.Id,
-                sshDestination: sshDest,
-                sshKeyPath: sshKeyPath,
-                serverSlots: entry.ServerSlots,
-                clientSlots: entry.ClientSlots,
-                concurrentStarts: concurrentStarts,
-                concurrentExtractions: concurrentExtractions,
-                hasGpu: entry.Gpu,
-                remoteSocketPath: socketPath));
+            hosts.Add(
+                new DockerHost(
+                    id: entry.Id,
+                    sshDestination: sshDest,
+                    sshKeyPath: sshKeyPath,
+                    serverSlots: entry.ServerSlots,
+                    clientSlots: entry.ClientSlots,
+                    concurrentStarts: concurrentStarts,
+                    concurrentExtractions: concurrentExtractions,
+                    hasGpu: entry.Gpu,
+                    remoteSocketPath: socketPath
+                )
+            );
         }
         return hosts;
     }
@@ -187,17 +203,20 @@ public sealed class HostPool : IAsyncDisposable
     /// </summary>
     private static string? ResolveSshDestination(string id, string? endpoint)
     {
-        if (string.IsNullOrWhiteSpace(endpoint)) return null;
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return null;
 
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' is not a valid URI. " +
-                "Use 'ssh://user@machine' for remote hosts.");
+                $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' is not a valid URI. "
+                    + "Use 'ssh://user@machine' for remote hosts."
+            );
 
         if (!uri.Scheme.Equals("ssh", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' uses scheme '{uri.Scheme}' but only 'ssh' is supported. " +
-                "Drop the endpoint field for local hosts, or use 'ssh://user@machine' for remote.");
+                $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' uses scheme '{uri.Scheme}' but only 'ssh' is supported. "
+                    + "Drop the endpoint field for local hosts, or use 'ssh://user@machine' for remote."
+            );
 
         return string.IsNullOrEmpty(uri.UserInfo) ? uri.Host : $"{uri.UserInfo}@{uri.Host}";
     }
@@ -222,11 +241,13 @@ public sealed class HostPool : IAsyncDisposable
     /// </summary>
     private static string? ResolveSshKeyPath(string id, string? sshDest, string? sshKey)
     {
-        if (string.IsNullOrWhiteSpace(sshKey)) return null;
+        if (string.IsNullOrWhiteSpace(sshKey))
+            return null;
         if (string.IsNullOrEmpty(sshDest))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': 'sshKey' is set but 'endpoint' is local. " +
-                "Drop sshKey for local entries.");
+                $"SDVD_DOCKER_HOSTS entry '{id}': 'sshKey' is set but 'endpoint' is local. "
+                    + "Drop sshKey for local entries."
+            );
 
         // Inline PEM/OpenSSH key material (CI passes the key inside the JSON
         // secret). OpenSSH and PEM private keys begin with a `-----BEGIN` armor
@@ -242,9 +263,10 @@ public sealed class HostPool : IAsyncDisposable
                 // Inline was intended but the armor isn't at the start (leading
                 // junk / wrong indentation). Fail WITHOUT echoing the key.
                 throw new InvalidOperationException(
-                    $"SDVD_DOCKER_HOSTS entry '{id}': sshKey looks like inline key material " +
-                    "but does not start with '-----BEGIN'. Provide the key with the armor " +
-                    "line first and no leading characters. (Key content omitted from this error.)");
+                    $"SDVD_DOCKER_HOSTS entry '{id}': sshKey looks like inline key material "
+                        + "but does not start with '-----BEGIN'. Provide the key with the armor "
+                        + "line first and no leading characters. (Key content omitted from this error.)"
+                );
             return MaterializeInlineKey(id, sshKey);
         }
 
@@ -254,8 +276,9 @@ public sealed class HostPool : IAsyncDisposable
         var full = Helpers.ProjectRoot.Resolve(sshKey);
         if (!File.Exists(full))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': sshKey '{sshKey}' is neither inline key " +
-                $"material (a '-----BEGIN…' block) nor an existing file (resolved to '{full}').");
+                $"SDVD_DOCKER_HOSTS entry '{id}': sshKey '{sshKey}' is neither inline key "
+                    + $"material (a '-----BEGIN…' block) nor an existing file (resolved to '{full}')."
+            );
         return full;
     }
 
@@ -270,8 +293,8 @@ public sealed class HostPool : IAsyncDisposable
     private static string MaterializeInlineKey(string id, string keyMaterial)
     {
         var normalized = keyMaterial.Replace("\r\n", "\n").TrimEnd('\n') + "\n";
-        var hash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))
+        var hash = Convert
+            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))
             .ToLowerInvariant()[..16];
         var path = Path.Combine(Path.GetTempPath(), $"sdvd-test-sshkey-{hash}");
 
@@ -281,7 +304,8 @@ public sealed class HostPool : IAsyncDisposable
         // reuse it. The file is created 0600 atomically (UnixCreateMode applies
         // at open(2)), so the key bytes are never momentarily group/world-
         // readable in the temp dir — no write-then-chmod window.
-        if (File.Exists(path)) return path;
+        if (File.Exists(path))
+            return path;
 
         var options = new FileStreamOptions
         {
@@ -305,8 +329,10 @@ public sealed class HostPool : IAsyncDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': failed to materialize inline sshKey " +
-                $"to '{path}': {ex.Message}", ex);
+                $"SDVD_DOCKER_HOSTS entry '{id}': failed to materialize inline sshKey "
+                    + $"to '{path}': {ex.Message}",
+                ex
+            );
         }
 
         return path;
@@ -327,8 +353,9 @@ public sealed class HostPool : IAsyncDisposable
             return string.IsNullOrEmpty(sshDest) ? null : null; // remote default applied in DockerHost
         if (string.IsNullOrEmpty(sshDest))
             throw new InvalidOperationException(
-                $"SDVD_DOCKER_HOSTS entry '{id}': 'socketPath' is set but 'endpoint' is local. " +
-                "Drop socketPath for local entries.");
+                $"SDVD_DOCKER_HOSTS entry '{id}': 'socketPath' is set but 'endpoint' is local. "
+                    + "Drop socketPath for local entries."
+            );
         return socketPath;
     }
 
@@ -340,18 +367,30 @@ public sealed class HostPool : IAsyncDisposable
 
     private sealed class HostEntry
     {
-        [JsonPropertyName("id")] public string Id { get; set; } = "";
-        [JsonPropertyName("endpoint")] public string? Endpoint { get; set; }
-        [JsonPropertyName("sshKey")] public string? SshKey { get; set; }
-        [JsonPropertyName("serverSlots")] public int ServerSlots { get; set; }
-        [JsonPropertyName("clientSlots")] public int ClientSlots { get; set; }
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+
+        [JsonPropertyName("endpoint")]
+        public string? Endpoint { get; set; }
+
+        [JsonPropertyName("sshKey")]
+        public string? SshKey { get; set; }
+
+        [JsonPropertyName("serverSlots")]
+        public int ServerSlots { get; set; }
+
+        [JsonPropertyName("clientSlots")]
+        public int ClientSlots { get; set; }
+
         /// <summary>
         /// Whether this host has an NVIDIA GPU + Container Toolkit available.
         /// Defaults to false (omit the field for hosts without GPU). Per-host so
         /// a multi-host fleet can mix GPU-equipped (local workstation) and
         /// CPU-only (cheap VPS) machines without all containers requesting GPU.
         /// </summary>
-        [JsonPropertyName("gpu")] public bool Gpu { get; set; }
+        [JsonPropertyName("gpu")]
+        public bool Gpu { get; set; }
+
         /// <summary>
         /// Remote Unix socket path for the daemon. Defaults to
         /// <c>/var/run/docker.sock</c> when omitted. Override for hosts whose
@@ -359,7 +398,9 @@ public sealed class HostPool : IAsyncDisposable
         /// uses <c>~/.docker/run/docker.sock</c> per-user. Ignored for local
         /// entries (no SSH endpoint).
         /// </summary>
-        [JsonPropertyName("socketPath")] public string? SocketPath { get; set; }
+        [JsonPropertyName("socketPath")]
+        public string? SocketPath { get; set; }
+
         /// <summary>
         /// Per-host bound on concurrent Docker container starts on this daemon.
         /// When omitted or non-positive, falls back to <c>SDVD_MAX_CONCURRENT_STARTS</c>
@@ -367,7 +408,9 @@ public sealed class HostPool : IAsyncDisposable
         /// Independent across hosts, so a beefy daemon and a laptop can carry
         /// different caps.
         /// </summary>
-        [JsonPropertyName("concurrentStarts")] public int ConcurrentStarts { get; set; }
+        [JsonPropertyName("concurrentStarts")]
+        public int ConcurrentStarts { get; set; }
+
         /// <summary>
         /// Per-host bound on concurrent video-extraction operations on this daemon
         /// (ffmpeg TS→MP4 concat + Docker tar pull at run-end). When omitted or
@@ -375,7 +418,8 @@ public sealed class HostPool : IAsyncDisposable
         /// set) and otherwise to this host's <c>serverSlots + clientSlots</c>.
         /// Independent of <c>concurrentStarts</c> — different daemon code paths.
         /// </summary>
-        [JsonPropertyName("concurrentExtractions")] public int ConcurrentExtractions { get; set; }
+        [JsonPropertyName("concurrentExtractions")]
+        public int ConcurrentExtractions { get; set; }
     }
 
     /// <summary>
@@ -404,11 +448,10 @@ public sealed class HostPool : IAsyncDisposable
             var sshPath = await SshBinaryResolver.ResolveAsync(ct);
             tunnels.SetSshPath(sshPath);
             var staleDeleted = TunnelManager.CleanupStaleControlSockets(TimeSpan.FromHours(1));
-            InfrastructureEventLog.Emit("ssh_preflight", new
-            {
-                sshPath,
-                staleSocketsDeleted = staleDeleted
-            });
+            InfrastructureEventLog.Emit(
+                "ssh_preflight",
+                new { sshPath, staleSocketsDeleted = staleDeleted }
+            );
 
             // Open one ControlMaster per remote host before any forward open.
             // RegisterHostMasterAsync deletes this run's exact ControlPath
@@ -416,22 +459,32 @@ public sealed class HostPool : IAsyncDisposable
             // catch the silent-multiplex-disable failure mode.
             foreach (var host in Hosts)
             {
-                if (string.IsNullOrEmpty(host.SshDestination)) continue;
+                if (string.IsNullOrEmpty(host.SshDestination))
+                    continue;
                 try
                 {
                     await tunnels.RegisterHostMasterAsync(
-                        host.Id, host.SshDestination!, host.SshKeyPath, ct);
+                        host.Id,
+                        host.SshDestination!,
+                        host.SshKeyPath,
+                        ct
+                    );
                 }
                 catch (Exception ex)
                 {
-                    InfrastructureEventLog.Emit("docker_preflight_failed", new
-                    {
-                        host_id = host.Id,
-                        exceptionType = ex.GetType().Name,
-                        message = ex.Message
-                    });
+                    InfrastructureEventLog.Emit(
+                        "docker_preflight_failed",
+                        new
+                        {
+                            host_id = host.Id,
+                            exceptionType = ex.GetType().Name,
+                            message = ex.Message,
+                        }
+                    );
                     throw new InvalidOperationException(
-                        $"SSH ControlMaster preflight failed for {host.Id} ({host.SshDestination}): {ex.Message}", ex);
+                        $"SSH ControlMaster preflight failed for {host.Id} ({host.SshDestination}): {ex.Message}",
+                        ex
+                    );
                 }
             }
 
@@ -442,7 +495,8 @@ public sealed class HostPool : IAsyncDisposable
             Environment.SetEnvironmentVariable(RunArtifactNames.SshPathEnv, sshPath);
             Environment.SetEnvironmentVariable(
                 RunArtifactNames.SshHostMastersEnv,
-                tunnels.SerializeRegisteredMasters());
+                tunnels.SerializeRegisteredMasters()
+            );
         }
         else
         {
@@ -456,29 +510,37 @@ public sealed class HostPool : IAsyncDisposable
                 await host.InitializeAsync(tunnels, ct: ct);
                 var version = await host.ApiClient.System.GetVersionAsync(ct);
                 var info = await host.ApiClient.System.GetSystemInfoAsync(ct);
-                InfrastructureEventLog.Emit("docker_preflight", new
-                {
-                    host_id = host.Id,
-                    daemonVersion = version?.Version,
-                    apiVersion = version?.APIVersion,
-                    cpuCount = (int)info.NCPU,
-                    totalMemoryMb = info.MemTotal / (1024.0 * 1024.0),
-                    operatingSystem = info.OperatingSystem,
-                    kernelVersion = info.KernelVersion,
-                    serverVersion = info.ServerVersion,
-                    architecture = info.Architecture
-                });
+                InfrastructureEventLog.Emit(
+                    "docker_preflight",
+                    new
+                    {
+                        host_id = host.Id,
+                        daemonVersion = version?.Version,
+                        apiVersion = version?.APIVersion,
+                        cpuCount = (int)info.NCPU,
+                        totalMemoryMb = info.MemTotal / (1024.0 * 1024.0),
+                        operatingSystem = info.OperatingSystem,
+                        kernelVersion = info.KernelVersion,
+                        serverVersion = info.ServerVersion,
+                        architecture = info.Architecture,
+                    }
+                );
             }
             catch (Exception ex)
             {
-                InfrastructureEventLog.Emit("docker_preflight_failed", new
-                {
-                    host_id = host.Id,
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message
-                });
+                InfrastructureEventLog.Emit(
+                    "docker_preflight_failed",
+                    new
+                    {
+                        host_id = host.Id,
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message,
+                    }
+                );
                 throw new InvalidOperationException(
-                    $"Docker preflight failed for {host.Id} ({host.SshDestination ?? "local"}): {ex.Message}", ex);
+                    $"Docker preflight failed for {host.Id} ({host.SshDestination ?? "local"}): {ex.Message}",
+                    ex
+                );
             }
         }
 
@@ -490,11 +552,13 @@ public sealed class HostPool : IAsyncDisposable
         foreach (var h in Hosts)
         {
             var port = h.GetCoordinatorPortOrZero();
-            if (port > 0) tunnelMap[h.Id] = port;
+            if (port > 0)
+                tunnelMap[h.Id] = port;
         }
         Environment.SetEnvironmentVariable(
             RunArtifactNames.HostTunnelsEnv,
-            JsonSerializer.Serialize(tunnelMap));
+            JsonSerializer.Serialize(tunnelMap)
+        );
     }
 
     public async ValueTask DisposeAsync()
@@ -502,7 +566,11 @@ public sealed class HostPool : IAsyncDisposable
         HostPoolAccessor.Clear();
         foreach (var host in Hosts)
         {
-            try { await host.DisposeAsync(); } catch { }
+            try
+            {
+                await host.DisposeAsync();
+            }
+            catch { }
         }
     }
 }

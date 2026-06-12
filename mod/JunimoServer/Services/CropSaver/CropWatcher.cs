@@ -19,7 +19,11 @@ namespace JunimoServer.Services.CropSaver
 
         private const int UpdateEveryTicks = 5;
 
-        public CropWatcher(IModHelper helper, Action<CropLocation> onCropAdded, Action<CropLocation> onCropRemoved)
+        public CropWatcher(
+            IModHelper helper,
+            Action<CropLocation> onCropAdded,
+            Action<CropLocation> onCropRemoved
+        )
         {
             helper.Events.GameLoop.UpdateTicked += GameLoopOnUpdateTicked;
             _onCropAdded = onCropAdded;
@@ -27,6 +31,7 @@ namespace JunimoServer.Services.CropSaver
         }
 
         private int _timer = 0;
+
         private void GameLoopOnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
             if (_timer > 1)
@@ -42,14 +47,16 @@ namespace JunimoServer.Services.CropSaver
 
                 foreach (var feature in location.terrainFeatures.Values)
                 {
-                    if (feature is not HoeDirt dirt) continue;
+                    if (feature is not HoeDirt dirt)
+                        continue;
                     CheckTile(new CropLocation(location, dirt, locName, dirt.Tile));
                 }
 
                 foreach (var pot in location.Objects.Values.OfType<IndoorPot>())
                 {
                     var dirt = pot.hoeDirt.Value;
-                    if (dirt == null) continue;
+                    if (dirt == null)
+                        continue;
                     // Use the pot's tile, not dirt.Tile: an IndoorPot's inner
                     // HoeDirt is not added through GameLocation.terrainFeatures,
                     // so the OnAdded(loc, tilePos) hook that sets dirt.Tile for
@@ -76,13 +83,16 @@ namespace JunimoServer.Services.CropSaver
             // (data already on disk) doesn't double-add.
             if (!_previousHasCrop.TryGetValue(key, out var previous))
             {
-                if (hasCrop) _onCropAdded(cropLoc);
+                if (hasCrop)
+                    _onCropAdded(cropLoc);
                 _previousHasCrop[key] = hasCrop;
                 return;
             }
 
-            if (hasCrop && !previous) _onCropAdded(cropLoc);
-            else if (!hasCrop && previous) _onCropRemoved(cropLoc);
+            if (hasCrop && !previous)
+                _onCropAdded(cropLoc);
+            else if (!hasCrop && previous)
+                _onCropRemoved(cropLoc);
 
             _previousHasCrop[key] = hasCrop;
         }
@@ -96,7 +106,12 @@ namespace JunimoServer.Services.CropSaver
     /// after the IndoorPot.TileLocation setter has propagated, which the ctor
     /// flow does not guarantee at the moment the inner HoeDirt is created.
     /// </summary>
-    public readonly record struct CropLocation(GameLocation Location, HoeDirt Dirt, string LocationName, Vector2 Tile)
+    public readonly record struct CropLocation(
+        GameLocation Location,
+        HoeDirt Dirt,
+        string LocationName,
+        Vector2 Tile
+    )
     {
         public bool HasTrackableCrop => Dirt.crop != null && Dirt.crop.GetData() != null;
     }

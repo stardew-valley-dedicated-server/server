@@ -8,7 +8,8 @@ namespace JunimoServer.Tests.Schema.Events;
 /// </summary>
 public sealed record DiscoveryCompleteEvent(
     [property: JsonPropertyName("test_cases_discovered")] int TestCasesDiscovered,
-    [property: JsonPropertyName("test_cases_to_run")] int TestCasesToRun) : IRendererEvent
+    [property: JsonPropertyName("test_cases_to_run")] int TestCasesToRun
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.DiscoveryComplete;
@@ -21,7 +22,8 @@ public sealed record DiscoveryCompleteEvent(
 /// </summary>
 public sealed record RunStartedEvent(
     [property: JsonPropertyName("assembly_path")] string AssemblyPath,
-    [property: JsonPropertyName("test_cases_to_run")] int TestCasesToRun) : IRendererEvent
+    [property: JsonPropertyName("test_cases_to_run")] int TestCasesToRun
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.RunStarted;
@@ -37,9 +39,12 @@ public sealed record RunFinishedEvent(
     [property: JsonPropertyName("passed")] int Passed,
     [property: JsonPropertyName("failed")] int Failed,
     [property: JsonPropertyName("skipped")] int Skipped,
-    [property: JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
-     JsonPropertyName("duration_ms")]
-    TimeSpan Duration) : IRendererEvent
+    [property:
+        JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
+        JsonPropertyName("duration_ms")
+    ]
+        TimeSpan Duration
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.RunFinished;
@@ -56,9 +61,7 @@ public sealed record RunFinishedEvent(
 /// <see cref="JsonElement"/> on the wire so the producer's typed DTO does not
 /// have to be shared with the consumer.
 /// </summary>
-public sealed record RunMetadataEvent(
-    string RunDir,
-    JsonElement Data) : IRendererEvent
+public sealed record RunMetadataEvent(string RunDir, JsonElement Data) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.RunMetadata;
@@ -70,8 +73,7 @@ public sealed record RunMetadataEvent(
 /// Per-test flakiness over the last 20 runs. Emitted once per run from the test
 /// child process. Each entry has shape <c>{ test, failRate, recentRuns }</c>.
 /// </summary>
-public sealed record FlakyTestsEvent(
-    JsonElement Tests) : IRendererEvent
+public sealed record FlakyTestsEvent(JsonElement Tests) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.FlakyTests;

@@ -24,7 +24,7 @@ public static class FlakinessTracker
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     /// <summary>
@@ -34,10 +34,12 @@ public static class FlakinessTracker
     public static void RecordRun(TestSummaryFixture fixture)
     {
         var runId = RunMetadata.RunId;
-        if (runId == null) return;
+        if (runId == null)
+            return;
 
         var results = fixture.GetAllTestResults();
-        if (results.Count == 0) return;
+        if (results.Count == 0)
+            return;
 
         try
         {
@@ -65,7 +67,7 @@ public static class FlakinessTracker
                     artifactsMs = r.Breakdown?.ArtifactsMs,
                     cleanupMs = r.Breakdown?.CleanupMs,
                     lastKeepDisposeMs = r.Breakdown?.LastKeepDisposeMs,
-                    leaseReleaseMs = r.Breakdown?.LeaseReleaseMs
+                    leaseReleaseMs = r.Breakdown?.LeaseReleaseMs,
                 };
                 writer.WriteLine(JsonSerializer.Serialize(entry, JsonOptions));
             }
@@ -82,17 +84,26 @@ public static class FlakinessTracker
     /// </summary>
     public static List<object> ComputeFlakiness()
     {
-        if (!File.Exists(FilePath)) return [];
+        if (!File.Exists(FilePath))
+            return [];
 
         try
         {
             var lines = File.ReadAllLines(FilePath);
 
-            var entries = new List<(string runId, string test, string result, string? failureCategory, DateTime ts)>();
+            var entries =
+                new List<(
+                    string runId,
+                    string test,
+                    string result,
+                    string? failureCategory,
+                    DateTime ts
+                )>();
 
             foreach (var line in lines)
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
                 try
                 {
                     using var doc = JsonDocument.Parse(line);
@@ -108,7 +119,9 @@ public static class FlakinessTracker
                     var ts = root.GetProperty("ts").GetDateTime();
                     entries.Add((rid, test, result, category, ts));
                 }
-                catch { /* skip malformed lines */ }
+                catch
+                { /* skip malformed lines */
+                }
             }
 
             var recentRuns = entries
@@ -127,28 +140,44 @@ public static class FlakinessTracker
                 .GroupBy(e => e.test)
                 .Select(g =>
                 {
-                    var dispatched = g.Where(e => e.result == "passed"
-                        || (e.result == "failed" && e.failureCategory != "infrastructure")).ToList();
-                    if (dispatched.Count == 0) return null;
+                    var dispatched = g.Where(e =>
+                            e.result == "passed"
+                            || (e.result == "failed" && e.failureCategory != "infrastructure")
+                        )
+                        .ToList();
+                    if (dispatched.Count == 0)
+                        return null;
                     var failures = dispatched.Count(e => e.result == "failed");
                     var failRate = (double)failures / dispatched.Count;
-                    return new { Test = g.Key, FailRate = failRate, RecentRuns = dispatched.Count };
+                    return new
+                    {
+                        Test = g.Key,
+                        FailRate = failRate,
+                        RecentRuns = dispatched.Count,
+                    };
                 })
                 .Where(s => s != null && s.FailRate > 0 && s.FailRate < 1.0)
                 .Select(s => s!)
                 .OrderByDescending(s => s.FailRate)
                 .ToList();
 
-            return testStats.Select(s => (object)new Dictionary<string, object>
-            {
-                ["test"] = s.Test,
-                ["failRate"] = Math.Round(s.FailRate, 2),
-                ["recentRuns"] = s.RecentRuns
-            }).ToList();
+            return testStats
+                .Select(s =>
+                    (object)
+                        new Dictionary<string, object>
+                        {
+                            ["test"] = s.Test,
+                            ["failRate"] = Math.Round(s.FailRate, 2),
+                            ["recentRuns"] = s.RecentRuns,
+                        }
+                )
+                .ToList();
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FlakinessTracker] Failed to compute flakiness: {ex.Message}");
+            Console.Error.WriteLine(
+                $"[FlakinessTracker] Failed to compute flakiness: {ex.Message}"
+            );
             return [];
         }
     }

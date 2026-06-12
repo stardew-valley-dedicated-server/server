@@ -9,10 +9,7 @@ namespace JunimoServer.Services.HostAutomation
 
         public HostBot(IModHelper helper, IMonitor monitor)
         {
-            _activities = new ActivityList(helper, monitor)
-            {
-                new HideHostActivity(),
-            };
+            _activities = new ActivityList(helper, monitor) { new HideHostActivity() };
         }
     }
 }

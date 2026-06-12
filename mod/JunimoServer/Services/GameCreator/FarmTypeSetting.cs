@@ -1,5 +1,5 @@
-using Newtonsoft.Json;
 using System;
+using Newtonsoft.Json;
 
 namespace JunimoServer.Services.GameCreator
 {
@@ -54,7 +54,8 @@ namespace JunimoServer.Services.GameCreator
 
         /// <summary>True when this is the <see cref="FirstModFarmKeyword"/> selector (case-insensitive).</summary>
         public bool IsFirstModFarmKeyword =>
-            Id != null && string.Equals(Id, FirstModFarmKeyword, StringComparison.OrdinalIgnoreCase);
+            Id != null
+            && string.Equals(Id, FirstModFarmKeyword, StringComparison.OrdinalIgnoreCase);
 
         private FarmTypeSetting(int? index, string? id)
         {
@@ -63,6 +64,7 @@ namespace JunimoServer.Services.GameCreator
         }
 
         public static FarmTypeSetting FromIndex(int index) => new(index, null);
+
         public static FarmTypeSetting FromId(string id) => new(null, id);
 
         /// <summary>Default selector: vanilla Standard farm (index 0).</summary>
@@ -74,7 +76,15 @@ namespace JunimoServer.Services.GameCreator
         /// returns "FourCorners"); <see cref="TryGetVanillaIndex"/> accepts either spelling.
         /// </summary>
         private static readonly string[] VanillaNames =
-            { "Standard", "Riverland", "Forest", "Hilltop", "Wilderness", "Four Corners", "Beach" };
+        {
+            "Standard",
+            "Riverland",
+            "Forest",
+            "Hilltop",
+            "Wilderness",
+            "Four Corners",
+            "Beach",
+        };
 
         /// <summary>Friendly display name for a vanilla farm index (0-6), or null if out of range.</summary>
         public static string? VanillaName(int index) =>
@@ -130,8 +140,13 @@ namespace JunimoServer.Services.GameCreator
     /// </summary>
     public class FarmTypeSettingConverter : JsonConverter<FarmTypeSetting>
     {
-        public override FarmTypeSetting ReadJson(JsonReader reader, Type objectType,
-            FarmTypeSetting existingValue, bool hasExistingValue, JsonSerializer serializer)
+        public override FarmTypeSetting ReadJson(
+            JsonReader reader,
+            Type objectType,
+            FarmTypeSetting existingValue,
+            bool hasExistingValue,
+            JsonSerializer serializer
+        )
         {
             switch (reader.TokenType)
             {
@@ -150,11 +165,16 @@ namespace JunimoServer.Services.GameCreator
 
                 default:
                     throw new JsonSerializationException(
-                        $"FarmType must be a JSON number or string, but got {reader.TokenType}.");
+                        $"FarmType must be a JSON number or string, but got {reader.TokenType}."
+                    );
             }
         }
 
-        public override void WriteJson(JsonWriter writer, FarmTypeSetting value, JsonSerializer serializer)
+        public override void WriteJson(
+            JsonWriter writer,
+            FarmTypeSetting value,
+            JsonSerializer serializer
+        )
         {
             if (value.Id != null)
                 writer.WriteValue(value.Id);

@@ -1,8 +1,8 @@
+using System;
+using System.IO;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
-using System;
-using System.IO;
 
 namespace JunimoServer.Services.GameLoader
 {
@@ -18,7 +18,8 @@ namespace JunimoServer.Services.GameLoader
         {
             _helper = helper;
             _monitor = monitor;
-            _saveData = helper.Data.ReadGlobalData<GameLoaderSaveData>(SaveKey) ?? new GameLoaderSaveData();
+            _saveData =
+                helper.Data.ReadGlobalData<GameLoaderSaveData>(SaveKey) ?? new GameLoaderSaveData();
         }
 
         public bool HasLoadableSave()
@@ -34,7 +35,6 @@ namespace JunimoServer.Services.GameLoader
             var saveExists = Directory.Exists(savePath);
 
             return saveExists;
-
         }
 
         public bool LoadSave()
@@ -66,7 +66,6 @@ namespace JunimoServer.Services.GameLoader
             }
 
             return true;
-
         }
 
         public void SetSaveNameToLoad(string saveName)

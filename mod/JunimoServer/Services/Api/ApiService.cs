@@ -1,3 +1,14 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Net.WebSockets;
+using System.Reflection;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.GameCreator;
@@ -22,17 +33,6 @@ using StardewValley.Locations;
 using StardewValley.Objects;
 using StardewValley.SDKs.GogGalaxy;
 using StardewValley.TerrainFeatures;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Net;
-using System.Net.WebSockets;
-using System.Reflection;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace JunimoServer.Services.Api
 {
@@ -166,12 +166,16 @@ namespace JunimoServer.Services.Api
         public bool? IsGameAvailable { get; set; }
         public long? LastTickMs { get; set; }
         public double AvgGameThreadWaitMs { get; set; }
+
         /// <summary>Live cabin ownership read from <c>Game1.getFarm().buildings</c>.</summary>
         public List<DiagnosticsCabinState> Cabins { get; set; } = new();
+
         /// <summary>Farmhand slots from <c>Game1.netWorldState.Value.farmhandData</c>.</summary>
         public List<DiagnosticsFarmhandState> FarmhandData { get; set; } = new();
+
         /// <summary>UMIs in <c>Multiplayer.disconnectingFarmers</c> (mid-disconnect).</summary>
         public long[] DisconnectingFarmers { get; set; } = System.Array.Empty<long>();
+
         /// <summary>Fields that failed to be read. Empty on fully-successful dumps.</summary>
         public List<string> FailedFields { get; set; } = new();
     }
@@ -691,7 +695,10 @@ namespace JunimoServer.Services.Api
         /// if executed from the async HTTP thread (e.g., removing buildings during draw).
         /// Each action includes a TaskCompletionSource to signal completion back to the caller.
         /// </summary>
-        private readonly ConcurrentQueue<(Action Action, TaskCompletionSource<bool> Completion)> _pendingGameActions = new();
+        private readonly ConcurrentQueue<(
+            Action Action,
+            TaskCompletionSource<bool> Completion
+        )> _pendingGameActions = new();
 
         /// <summary>
         /// Ticks timestamp of the last OnUpdateTicked call, used by /health to detect game thread stalls.
@@ -706,8 +713,9 @@ namespace JunimoServer.Services.Api
         // immune to (it reports game-thread liveness, not game-state freshness).
         // Rotation order matches PublishSnapshot at :1012-1016 — install fresh
         // TCS first, then signal the old one — to avoid the missed-wakeup race.
-        private TaskCompletionSource _lastTickChanged =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource _lastTickChanged = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         /// <summary>
         /// Cumulative game-thread tick counter. Used by /health (and the test-side
@@ -757,8 +765,9 @@ namespace JunimoServer.Services.Api
         // snapshot publish: capture the old TCS, allocate a new one, publish
         // the new snapshot, then signal the old TCS so any waiters wake up
         // and re-evaluate. Lock-free read for waiters.
-        private TaskCompletionSource _snapshotChanged =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource _snapshotChanged = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         // Previous snapshot's farmer uids (everyone except the host), used to
         // emit otherfarmers_changed events only on actual set diff. Keeping this
@@ -773,7 +782,10 @@ namespace JunimoServer.Services.Api
         // "when did cabin.owner.UniqueMultiplayerID flip from 0 to X", which is
         // the exact race PasswordProtection / CabinManager integration can
         // expose under concurrent joins.
-        private Dictionary<(int TileX, int TileY), (long OwnerId, bool IsCustomized)>? _previousCabinOwners;
+        private Dictionary<
+            (int TileX, int TileY),
+            (long OwnerId, bool IsCustomized)
+        >? _previousCabinOwners;
 
         // Latches so we only emit newDay-skip and recurring errors once per
         // transition, not every tick.
@@ -903,7 +915,7 @@ namespace JunimoServer.Services.Api
         private static readonly JsonSerializerSettings JsonSettings = new()
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
-            NullValueHandling = NullValueHandling.Ignore
+            NullValueHandling = NullValueHandling.Ignore,
         };
 
         /// <summary>
@@ -911,7 +923,16 @@ namespace JunimoServer.Services.Api
         /// </summary>
         private static readonly bool _authEnabled = !string.IsNullOrEmpty(Env.ApiKey);
 
-        public ApiService(IModHelper helper, IMonitor monitor, ServerSettingsLoader settings, PersistentOptions persistentOptions, CabinManagerService cabinManager, RoleService roleService, PasswordProtectionService? passwordProtectionService = null) : base(helper, monitor)
+        public ApiService(
+            IModHelper helper,
+            IMonitor monitor,
+            ServerSettingsLoader settings,
+            PersistentOptions persistentOptions,
+            CabinManagerService cabinManager,
+            RoleService roleService,
+            PasswordProtectionService? passwordProtectionService = null
+        )
+            : base(helper, monitor)
         {
             _settings = settings;
             _persistentOptions = persistentOptions;
@@ -969,19 +990,20 @@ namespace JunimoServer.Services.Api
                                 stalled = true;
                                 stallStartUtc = DateTime.UtcNow;
                                 stallStartLastTick = tickTicks;
-                                Diagnostics.ModEventLog.Emit("game_thread_stall_started", new
-                                {
-                                    lastTickMs = (long)gap.TotalMilliseconds
-                                });
+                                Diagnostics.ModEventLog.Emit(
+                                    "game_thread_stall_started",
+                                    new { lastTickMs = (long)gap.TotalMilliseconds }
+                                );
                             }
                             else if (stalled && gap <= StallThreshold)
                             {
-                                var totalStallMs = (long)(DateTime.UtcNow - stallStartUtc).TotalMilliseconds;
+                                var totalStallMs = (long)
+                                    (DateTime.UtcNow - stallStartUtc).TotalMilliseconds;
                                 stalled = false;
-                                Diagnostics.ModEventLog.Emit("game_thread_stall_recovered", new
-                                {
-                                    durationMs = totalStallMs
-                                });
+                                Diagnostics.ModEventLog.Emit(
+                                    "game_thread_stall_recovered",
+                                    new { durationMs = totalStallMs }
+                                );
                                 // Suppress unused warning; stallStartLastTick is
                                 // kept for future diagnostics expansion.
                                 _ = stallStartLastTick;
@@ -993,12 +1015,19 @@ namespace JunimoServer.Services.Api
                         // Watchdog must never crash; swallow and keep polling.
                     }
 
-                    try { System.Threading.Thread.Sleep(1000); } catch { break; }
+                    try
+                    {
+                        System.Threading.Thread.Sleep(1000);
+                    }
+                    catch
+                    {
+                        break;
+                    }
                 }
             })
             {
                 IsBackground = true,
-                Name = "ApiService.StallWatchdog"
+                Name = "ApiService.StallWatchdog",
             };
             thread.Start();
         }
@@ -1068,14 +1097,16 @@ namespace JunimoServer.Services.Api
             // off the game thread.
             var oldTickTcs = Interlocked.Exchange(
                 ref _lastTickChanged,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+            );
             oldTickTcs.TrySetResult();
 
             // Record tick timing for /stats
             _tickStopwatch.Stop();
             var tickMs = _tickStopwatch.Elapsed.TotalMilliseconds;
             _tickHistory.Enqueue(tickMs);
-            if (_tickHistory.Count > TickHistorySize) _tickHistory.Dequeue();
+            if (_tickHistory.Count > TickHistorySize)
+                _tickHistory.Dequeue();
             Volatile.Write(ref _lastTickMs, tickMs);
             Volatile.Write(ref _avgTickMs, _tickHistory.Average());
 
@@ -1135,7 +1166,8 @@ namespace JunimoServer.Services.Api
             // already-completed TCS we hadn't yet rotated.
             var oldTcs = Interlocked.Exchange(
                 ref _snapshotChanged,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+            );
             _snapshot = snap;
             oldTcs.TrySetResult();
         }
@@ -1164,14 +1196,19 @@ namespace JunimoServer.Services.Api
                 {
                     IsOnline = Game1.IsServer && Game1.gameMode == 3,
                     CapturedAt = capturedAt.ToString("o"),
-                    CapturedAtUtc = capturedAt
+                    CapturedAtUtc = capturedAt,
                 };
 
                 // IsOnline always tracked (its change is observable independently
                 // of the early-return branch below).
-                snap.IsOnlineChangedAtUtc = prevSnap.IsOnline == snap.IsOnline
-                    ? (prevSnap.IsOnlineChangedAtUtc == default ? capturedAt : prevSnap.IsOnlineChangedAtUtc)
-                    : capturedAt;
+                snap.IsOnlineChangedAtUtc =
+                    prevSnap.IsOnline == snap.IsOnline
+                        ? (
+                            prevSnap.IsOnlineChangedAtUtc == default
+                                ? capturedAt
+                                : prevSnap.IsOnlineChangedAtUtc
+                        )
+                        : capturedAt;
 
                 if (!snap.IsOnline)
                 {
@@ -1181,7 +1218,9 @@ namespace JunimoServer.Services.Api
 
                 // /status fields
                 var onlineFarmers = Game1.getOnlineFarmers().ToList();
-                snap.PlayerCount = onlineFarmers.Count(f => f.UniqueMultiplayerID != Game1.player?.UniqueMultiplayerID);
+                snap.PlayerCount = onlineFarmers.Count(f =>
+                    f.UniqueMultiplayerID != Game1.player?.UniqueMultiplayerID
+                );
                 snap.MaxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
                 snap.IsReady = Game1.server?.isGameAvailable() ?? false;
                 snap.FarmName = Game1.player?.farmName.Value ?? "";
@@ -1198,19 +1237,51 @@ namespace JunimoServer.Services.Api
                 // none); different → stamp `capturedAt`. This makes the
                 // change-time sharp to whichever tick the field actually flipped,
                 // not gated by the 1Hz snapshot publish cadence.
-                DateTime CarryOrStamp<T>(T newVal, T prevVal, DateTime prevChangedAt)
-                    => EqualityComparer<T>.Default.Equals(newVal, prevVal)
+                DateTime CarryOrStamp<T>(T newVal, T prevVal, DateTime prevChangedAt) =>
+                    EqualityComparer<T>.Default.Equals(newVal, prevVal)
                         ? (prevChangedAt == default ? capturedAt : prevChangedAt)
                         : capturedAt;
 
-                snap.IsReadyChangedAtUtc = CarryOrStamp(snap.IsReady, prevSnap.IsReady, prevSnap.IsReadyChangedAtUtc);
-                snap.IsPausedChangedAtUtc = CarryOrStamp(snap.IsPaused, prevSnap.IsPaused, prevSnap.IsPausedChangedAtUtc);
-                snap.PlayerCountChangedAtUtc = CarryOrStamp(snap.PlayerCount, prevSnap.PlayerCount, prevSnap.PlayerCountChangedAtUtc);
-                snap.FarmNameChangedAtUtc = CarryOrStamp(snap.FarmName, prevSnap.FarmName, prevSnap.FarmNameChangedAtUtc);
-                snap.DayChangedAtUtc = CarryOrStamp(snap.Day, prevSnap.Day, prevSnap.DayChangedAtUtc);
-                snap.SeasonChangedAtUtc = CarryOrStamp(snap.Season, prevSnap.Season, prevSnap.SeasonChangedAtUtc);
-                snap.YearChangedAtUtc = CarryOrStamp(snap.Year, prevSnap.Year, prevSnap.YearChangedAtUtc);
-                snap.TimeOfDayChangedAtUtc = CarryOrStamp(snap.TimeOfDay, prevSnap.TimeOfDay, prevSnap.TimeOfDayChangedAtUtc);
+                snap.IsReadyChangedAtUtc = CarryOrStamp(
+                    snap.IsReady,
+                    prevSnap.IsReady,
+                    prevSnap.IsReadyChangedAtUtc
+                );
+                snap.IsPausedChangedAtUtc = CarryOrStamp(
+                    snap.IsPaused,
+                    prevSnap.IsPaused,
+                    prevSnap.IsPausedChangedAtUtc
+                );
+                snap.PlayerCountChangedAtUtc = CarryOrStamp(
+                    snap.PlayerCount,
+                    prevSnap.PlayerCount,
+                    prevSnap.PlayerCountChangedAtUtc
+                );
+                snap.FarmNameChangedAtUtc = CarryOrStamp(
+                    snap.FarmName,
+                    prevSnap.FarmName,
+                    prevSnap.FarmNameChangedAtUtc
+                );
+                snap.DayChangedAtUtc = CarryOrStamp(
+                    snap.Day,
+                    prevSnap.Day,
+                    prevSnap.DayChangedAtUtc
+                );
+                snap.SeasonChangedAtUtc = CarryOrStamp(
+                    snap.Season,
+                    prevSnap.Season,
+                    prevSnap.SeasonChangedAtUtc
+                );
+                snap.YearChangedAtUtc = CarryOrStamp(
+                    snap.Year,
+                    prevSnap.Year,
+                    prevSnap.YearChangedAtUtc
+                );
+                snap.TimeOfDayChangedAtUtc = CarryOrStamp(
+                    snap.TimeOfDay,
+                    prevSnap.TimeOfDay,
+                    prevSnap.TimeOfDayChangedAtUtc
+                );
 
                 // /players
                 foreach (var farmer in onlineFarmers)
@@ -1218,12 +1289,14 @@ namespace JunimoServer.Services.Api
                     if (farmer.UniqueMultiplayerID == Game1.player?.UniqueMultiplayerID)
                         continue;
 
-                    snap.Players.Add(new PlayerInfo
-                    {
-                        Id = farmer.UniqueMultiplayerID,
-                        Name = farmer.Name ?? farmer.displayName ?? "Unknown",
-                        IsOnline = true
-                    });
+                    snap.Players.Add(
+                        new PlayerInfo
+                        {
+                            Id = farmer.UniqueMultiplayerID,
+                            Name = farmer.Name ?? farmer.displayName ?? "Unknown",
+                            IsOnline = true,
+                        }
+                    );
                 }
 
                 // Per-player first-seen times. Carry over from the prior
@@ -1232,10 +1305,12 @@ namespace JunimoServer.Services.Api
                 // subsequent rejoin counts as a fresh first-seen.
                 foreach (var p in snap.Players)
                 {
-                    snap.PlayerFirstSeenAtUtc[p.Id] =
-                        prevSnap.PlayerFirstSeenAtUtc.TryGetValue(p.Id, out var existing)
-                            ? existing
-                            : capturedAt;
+                    snap.PlayerFirstSeenAtUtc[p.Id] = prevSnap.PlayerFirstSeenAtUtc.TryGetValue(
+                        p.Id,
+                        out var existing
+                    )
+                        ? existing
+                        : capturedAt;
                 }
 
                 // /farmhands
@@ -1243,16 +1318,21 @@ namespace JunimoServer.Services.Api
                 {
                     try
                     {
-                        snap.Farmhands.Add(new FarmhandInfo
-                        {
-                            Id = farmer.UniqueMultiplayerID,
-                            Name = farmer.Name ?? "",
-                            IsCustomized = farmer.isCustomized.Value
-                        });
+                        snap.Farmhands.Add(
+                            new FarmhandInfo
+                            {
+                                Id = farmer.UniqueMultiplayerID,
+                                Name = farmer.Name ?? "",
+                                IsCustomized = farmer.isCustomized.Value,
+                            }
+                        );
                     }
                     catch (Exception ex)
                     {
-                        Monitor.Log($"[Snapshot] Error reading farmhand {farmer.UniqueMultiplayerID}: {ex.Message}", LogLevel.Debug);
+                        Monitor.Log(
+                            $"[Snapshot] Error reading farmhand {farmer.UniqueMultiplayerID}: {ex.Message}",
+                            LogLevel.Debug
+                        );
                     }
                 }
 
@@ -1265,10 +1345,11 @@ namespace JunimoServer.Services.Api
                         snap.FarmhandChangeTracks[f.Id] = new FarmhandChangeTrack
                         {
                             FirstSeenAtUtc = prevTrack.FirstSeenAtUtc,
-                            IsCustomizedChangedAtUtc = f.IsCustomized == prevTrack.IsCustomizedLastValue
-                                ? prevTrack.IsCustomizedChangedAtUtc
-                                : capturedAt,
-                            IsCustomizedLastValue = f.IsCustomized
+                            IsCustomizedChangedAtUtc =
+                                f.IsCustomized == prevTrack.IsCustomizedLastValue
+                                    ? prevTrack.IsCustomizedChangedAtUtc
+                                    : capturedAt,
+                            IsCustomizedLastValue = f.IsCustomized,
                         };
                     }
                     else
@@ -1277,7 +1358,7 @@ namespace JunimoServer.Services.Api
                         {
                             FirstSeenAtUtc = capturedAt,
                             IsCustomizedChangedAtUtc = capturedAt,
-                            IsCustomizedLastValue = f.IsCustomized
+                            IsCustomizedLastValue = f.IsCustomized,
                         };
                     }
                 }
@@ -1293,7 +1374,11 @@ namespace JunimoServer.Services.Api
                         if (farmer.UniqueMultiplayerID == Game1.player?.UniqueMultiplayerID)
                             continue;
 
-                        if (_passwordProtectionService.IsPlayerAuthenticated(farmer.UniqueMultiplayerID))
+                        if (
+                            _passwordProtectionService.IsPlayerAuthenticated(
+                                farmer.UniqueMultiplayerID
+                            )
+                        )
                             snap.AuthenticatedCount++;
                         else
                             snap.PendingCount++;
@@ -1309,7 +1394,8 @@ namespace JunimoServer.Services.Api
                 // Emit otherfarmers_changed on set diff only. Cheap set-diff
                 // using HashSet<long>; bounded by MaxPlayers.
                 var currentUids = new HashSet<long>();
-                foreach (var p in snap.Players) currentUids.Add(p.Id);
+                foreach (var p in snap.Players)
+                    currentUids.Add(p.Id);
 
                 if (_previousOtherFarmerUids == null)
                 {
@@ -1317,24 +1403,30 @@ namespace JunimoServer.Services.Api
                     // record them as additions; otherwise stay silent.
                     if (currentUids.Count > 0)
                     {
-                        Diagnostics.ModEventLog.Emit("otherfarmers_changed", new
-                        {
-                            added = currentUids.ToArray(),
-                            removed = System.Array.Empty<long>(),
-                            total = currentUids.Count
-                        });
+                        Diagnostics.ModEventLog.Emit(
+                            "otherfarmers_changed",
+                            new
+                            {
+                                added = currentUids.ToArray(),
+                                removed = System.Array.Empty<long>(),
+                                total = currentUids.Count,
+                            }
+                        );
                     }
                 }
                 else if (!currentUids.SetEquals(_previousOtherFarmerUids))
                 {
                     var added = currentUids.Except(_previousOtherFarmerUids).ToArray();
                     var removed = _previousOtherFarmerUids.Except(currentUids).ToArray();
-                    Diagnostics.ModEventLog.Emit("otherfarmers_changed", new
-                    {
-                        added,
-                        removed,
-                        total = currentUids.Count
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "otherfarmers_changed",
+                        new
+                        {
+                            added,
+                            removed,
+                            total = currentUids.Count,
+                        }
+                    );
                 }
                 _previousOtherFarmerUids = currentUids;
 
@@ -1342,7 +1434,8 @@ namespace JunimoServer.Services.Api
                 // the (oldOwnerId → newOwnerId) transition plus names so the
                 // timeline shows exactly when a cabin's owner binding flipped.
                 var currentCabinOwners = new Dictionary<(int, int), (long, bool)>();
-                var currentCabinMeta = new Dictionary<(int, int), (string OwnerName, string Type)>();
+                var currentCabinMeta =
+                    new Dictionary<(int, int), (string OwnerName, string Type)>();
                 foreach (var c in snap.Cabins)
                 {
                     var key = (c.TileX, c.TileY);
@@ -1355,19 +1448,23 @@ namespace JunimoServer.Services.Api
                     foreach (var kv in currentCabinOwners)
                     {
                         _previousCabinOwners.TryGetValue(kv.Key, out var prev);
-                        if (prev == kv.Value) continue;
+                        if (prev == kv.Value)
+                            continue;
 
                         currentCabinMeta.TryGetValue(kv.Key, out var meta);
-                        Diagnostics.ModEventLog.Emit("cabin_owner_changed", new
-                        {
-                            tileX = kv.Key.Item1,
-                            tileY = kv.Key.Item2,
-                            oldOwnerId = prev.Item1,
-                            newOwnerId = kv.Value.Item1,
-                            newOwnerName = meta.OwnerName,
-                            newOwnerIsCustomized = kv.Value.Item2,
-                            cabinType = meta.Type
-                        });
+                        Diagnostics.ModEventLog.Emit(
+                            "cabin_owner_changed",
+                            new
+                            {
+                                tileX = kv.Key.Item1,
+                                tileY = kv.Key.Item2,
+                                oldOwnerId = prev.Item1,
+                                newOwnerId = kv.Value.Item1,
+                                newOwnerName = meta.OwnerName,
+                                newOwnerIsCustomized = kv.Value.Item2,
+                                cabinType = meta.Type,
+                            }
+                        );
                     }
                 }
                 _previousCabinOwners = currentCabinOwners;
@@ -1382,18 +1479,26 @@ namespace JunimoServer.Services.Api
                 var topFrame = ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim();
                 var key = $"{ex.GetType().Name}|{topFrame}";
                 var now = DateTime.UtcNow;
-                if (_lastSnapshotErrorKey != key
-                    || (now - _lastSnapshotErrorEmittedAt).TotalSeconds >= 1.0)
+                if (
+                    _lastSnapshotErrorKey != key
+                    || (now - _lastSnapshotErrorEmittedAt).TotalSeconds >= 1.0
+                )
                 {
                     _lastSnapshotErrorKey = key;
                     _lastSnapshotErrorEmittedAt = now;
-                    Monitor.Log($"[Snapshot] Error building game state snapshot: {ex.Message}", LogLevel.Warn);
-                    Diagnostics.ModEventLog.Emit("snapshot_error", new
-                    {
-                        exception = ex.GetType().Name,
-                        message = ex.Message,
-                        stackTop = topFrame
-                    });
+                    Monitor.Log(
+                        $"[Snapshot] Error building game state snapshot: {ex.Message}",
+                        LogLevel.Warn
+                    );
+                    Diagnostics.ModEventLog.Emit(
+                        "snapshot_error",
+                        new
+                        {
+                            exception = ex.GetType().Name,
+                            message = ex.Message,
+                            stackTop = topFrame,
+                        }
+                    );
                 }
             }
         }
@@ -1412,7 +1517,8 @@ namespace JunimoServer.Services.Api
             try
             {
                 var farm = Game1.getFarm();
-                if (farm == null) return;
+                if (farm == null)
+                    return;
 
                 var cabinBuildings = farm.buildings.Where(b => b.isCabin).ToList();
                 var strategy = _persistentOptions.Data.CabinStrategy;
@@ -1434,24 +1540,29 @@ namespace JunimoServer.Services.Api
                             CabinRole.Editing => "Editing",
                             _ when strategy == CabinStrategy.FarmhouseStack => "FarmhouseStack",
                             _ when strategy == CabinStrategy.CabinStack => "CabinStack",
-                            _ => "Normal"
+                            _ => "Normal",
                         };
                         var isHidden = role != CabinRole.Player || building.IsInHiddenStack();
 
-                        snap.Cabins.Add(new CabinInfo
-                        {
-                            TileX = building.tileX.Value,
-                            TileY = building.tileY.Value,
-                            IsHidden = isHidden,
-                            Type = cabinType,
-                            OwnerId = ownerId,
-                            OwnerName = ownerName,
-                            IsAssigned = isAssigned
-                        });
+                        snap.Cabins.Add(
+                            new CabinInfo
+                            {
+                                TileX = building.tileX.Value,
+                                TileY = building.tileY.Value,
+                                IsHidden = isHidden,
+                                Type = cabinType,
+                                OwnerId = ownerId,
+                                OwnerName = ownerName,
+                                IsAssigned = isAssigned,
+                            }
+                        );
                     }
                     catch (Exception ex)
                     {
-                        Monitor.Log($"[Snapshot] Error reading cabin at ({building.tileX.Value},{building.tileY.Value}): {ex.Message}", LogLevel.Debug);
+                        Monitor.Log(
+                            $"[Snapshot] Error reading cabin at ({building.tileX.Value},{building.tileY.Value}): {ex.Message}",
+                            LogLevel.Debug
+                        );
                     }
                 }
 
@@ -1476,7 +1587,6 @@ namespace JunimoServer.Services.Api
                 _frameCount = 0;
                 _lastFpsUpdate = now;
             }
-
         }
 
         /// <summary>
@@ -1490,7 +1600,9 @@ namespace JunimoServer.Services.Api
         private async Task RunOnGameThreadAsync(Action action, int timeoutMs = 5000)
         {
             var sw = Stopwatch.StartNew();
-            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             var capturedRequestId = Diagnostics.ModRequestContext.RequestId;
             Action wrapped = () =>
             {
@@ -1527,13 +1639,16 @@ namespace JunimoServer.Services.Api
         /// </summary>
         private bool ValidateApiKey(HttpListenerRequest request)
         {
-            if (!_authEnabled) return true;
+            if (!_authEnabled)
+                return true;
 
             var authHeader = request.Headers["Authorization"];
-            if (string.IsNullOrEmpty(authHeader)) return false;
+            if (string.IsNullOrEmpty(authHeader))
+                return false;
 
             // Expect "Bearer <token>" format
-            if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                return false;
 
             var providedKey = authHeader.Substring(7).Trim();
             return !string.IsNullOrEmpty(providedKey) && providedKey == Env.ApiKey;
@@ -1546,7 +1661,13 @@ namespace JunimoServer.Services.Api
         {
             response.StatusCode = 401;
             response.Headers.Add("WWW-Authenticate", "Bearer");
-            await WriteJsonAsync(response, new { error = "Unauthorized. Provide a valid Authorization header: Bearer <api-key>" });
+            await WriteJsonAsync(
+                response,
+                new
+                {
+                    error = "Unauthorized. Provide a valid Authorization header: Bearer <api-key>",
+                }
+            );
         }
 
         /// <summary>
@@ -1563,7 +1684,8 @@ namespace JunimoServer.Services.Api
 
         private void StartServer()
         {
-            if (_isRunning) return;
+            if (_isRunning)
+                return;
 
             try
             {
@@ -1594,24 +1716,56 @@ namespace JunimoServer.Services.Api
                 _serverTask = Task.Run(() => ProcessRequestsAsync(_cts.Token));
 
                 // Start WebSocket cleanup timer (every 30 seconds)
-                _wsCleanupTimer = new Timer(_ => CleanupDeadWebSocketClients(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                _wsCleanupTimer = new Timer(
+                    _ => CleanupDeadWebSocketClients(),
+                    null,
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromSeconds(30)
+                );
 
                 _isRunning = true;
 
-                Monitor.Log($"API server listening on port {Env.ApiPort} (docs: http://localhost:{Env.ApiPort}/docs)", LogLevel.Info);
+                Monitor.Log(
+                    $"API server listening on port {Env.ApiPort} (docs: http://localhost:{Env.ApiPort}/docs)",
+                    LogLevel.Info
+                );
                 if (_authEnabled)
                 {
-                    Monitor.Log("API authentication enabled - all endpoints require Authorization header", LogLevel.Info);
+                    Monitor.Log(
+                        "API authentication enabled - all endpoints require Authorization header",
+                        LogLevel.Info
+                    );
                 }
                 else
                 {
-                    Monitor.Log("***********************************************************************", LogLevel.Warn);
-                    Monitor.Log("*                                                                     *", LogLevel.Warn);
-                    Monitor.Log("*    WARNING: API authentication is disabled!                         *", LogLevel.Warn);
-                    Monitor.Log("*    All endpoints are publicly accessible.                           *", LogLevel.Warn);
-                    Monitor.Log("*    Set the API_KEY environment variable for production use.         *", LogLevel.Warn);
-                    Monitor.Log("*                                                                     *", LogLevel.Warn);
-                    Monitor.Log("***********************************************************************", LogLevel.Warn);
+                    Monitor.Log(
+                        "***********************************************************************",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "*                                                                     *",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "*    WARNING: API authentication is disabled!                         *",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "*    All endpoints are publicly accessible.                           *",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "*    Set the API_KEY environment variable for production use.         *",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "*                                                                     *",
+                        LogLevel.Warn
+                    );
+                    Monitor.Log(
+                        "***********************************************************************",
+                        LogLevel.Warn
+                    );
                 }
             }
             catch (Exception ex)
@@ -1619,15 +1773,21 @@ namespace JunimoServer.Services.Api
                 // Clean up partially-initialized listener to prevent background accept
                 // callbacks from firing on thread pool threads (which would trigger
                 // FAIL_FAST via AppDomain.UnhandledException).
-                try { _listener?.Close(); }
+                try
+                {
+                    _listener?.Close();
+                }
                 catch (Exception closeEx)
                 {
-                    Diagnostics.ModEventLog.Emit("exception_swallowed", new
-                    {
-                        location = "ApiService.StartServer.listenerClose",
-                        exceptionType = closeEx.GetType().Name,
-                        message = closeEx.Message
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "exception_swallowed",
+                        new
+                        {
+                            location = "ApiService.StartServer.listenerClose",
+                            exceptionType = closeEx.GetType().Name,
+                            message = closeEx.Message,
+                        }
+                    );
                 }
                 _listener = null;
                 Monitor.Log($"Failed to start API server: {ex}", LogLevel.Error);
@@ -1676,8 +1836,14 @@ namespace JunimoServer.Services.Api
             // before the body is streamed — set it first.
             if (!string.IsNullOrEmpty(requestId))
             {
-                try { response.Headers["X-Request-Id"] = requestId; }
-                catch (Exception ex) { Monitor.Log($"[API] Failed to echo X-Request-Id: {ex.Message}", LogLevel.Debug); }
+                try
+                {
+                    response.Headers["X-Request-Id"] = requestId;
+                }
+                catch (Exception ex)
+                {
+                    Monitor.Log($"[API] Failed to echo X-Request-Id: {ex.Message}", LogLevel.Debug);
+                }
             }
 
             // Snapshot age — tells the test harness how stale the data it's about
@@ -1693,11 +1859,20 @@ namespace JunimoServer.Services.Api
                 if (snapForHeader.CapturedAtUtc is DateTime cap)
                 {
                     var ageMs = (long)(DateTime.UtcNow - cap).TotalMilliseconds;
-                    if (ageMs < 0) ageMs = 0; // clock skew paranoia
-                    response.Headers["X-Snapshot-Age-Ms"] = ageMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (ageMs < 0)
+                        ageMs = 0; // clock skew paranoia
+                    response.Headers["X-Snapshot-Age-Ms"] = ageMs.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    );
                 }
             }
-            catch (Exception ex) { Monitor.Log($"[API] Failed to emit X-Snapshot-Age-Ms: {ex.Message}", LogLevel.Debug); }
+            catch (Exception ex)
+            {
+                Monitor.Log(
+                    $"[API] Failed to emit X-Snapshot-Age-Ms: {ex.Message}",
+                    LogLevel.Debug
+                );
+            }
 
             using var _correlationScope = Diagnostics.ModRequestContext.Bind(requestId);
 
@@ -1726,7 +1901,13 @@ namespace JunimoServer.Services.Api
                 // inside the Testcontainers network, not external Internet
                 // clients. Exposing it unauthenticated lets a timed-out poll
                 // grab ground-truth state without having to pass the API key.
-                var isPublicEndpoint = path == "/health" || path == "/wait/health" || path == "/stats" || path == "/docs" || path == "/swagger/v1/swagger.json" || path == "/diagnostics/state";
+                var isPublicEndpoint =
+                    path == "/health"
+                    || path == "/wait/health"
+                    || path == "/stats"
+                    || path == "/docs"
+                    || path == "/swagger/v1/swagger.json"
+                    || path == "/diagnostics/state";
 
                 // Validate API key for protected endpoints
                 if (!isPublicEndpoint && !ValidateApiKey(request))
@@ -1826,7 +2007,10 @@ namespace JunimoServer.Services.Api
                     {
                         case "/rendering":
                             var fpsParam = request.QueryString["fps"];
-                            await WriteJsonAsync(response, await HandlePostRenderingAsync(fpsParam));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostRenderingAsync(fpsParam)
+                            );
                             break;
                         case "/time":
                             var timeParam = request.QueryString["value"];
@@ -1834,12 +2018,18 @@ namespace JunimoServer.Services.Api
                             break;
                         case "/clock-speed":
                             var multiplierParam = request.QueryString["multiplier"];
-                            await WriteJsonAsync(response, await HandlePostClockSpeedAsync(multiplierParam));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostClockSpeedAsync(multiplierParam)
+                            );
                             break;
                         case "/roles/admin":
                             var adminNameParam = request.QueryString["name"];
                             var adminIdParam = request.QueryString["playerId"];
-                            await WriteJsonAsync(response, await HandlePostGrantAdminAsync(adminNameParam, adminIdParam));
+                            await WriteJsonAsync(
+                                response,
+                                await HandlePostGrantAdminAsync(adminNameParam, adminIdParam)
+                            );
                             break;
                         case "/auth/timeout":
                             var timeoutParam = request.QueryString["value"];
@@ -1863,7 +2053,10 @@ namespace JunimoServer.Services.Api
                         case "/farmhands":
                             var nameParam = request.QueryString["name"];
                             var farmhandIdParam = request.QueryString["playerId"];
-                            await WriteJsonAsync(response, await HandleDeleteFarmhandAsync(nameParam, farmhandIdParam));
+                            await WriteJsonAsync(
+                                response,
+                                await HandleDeleteFarmhandAsync(nameParam, farmhandIdParam)
+                            );
                             break;
                         default:
                             await WriteNotFoundAsync(response, path);
@@ -1879,15 +2072,21 @@ namespace JunimoServer.Services.Api
             catch (TaskCanceledException)
             {
                 // Game thread busy (RunOnGameThreadAsync timed out). Transient, not an error.
-                Monitor.Log($"Request to {request.Url?.AbsolutePath} timed out waiting for game thread", LogLevel.Debug);
+                Monitor.Log(
+                    $"Request to {request.Url?.AbsolutePath} timed out waiting for game thread",
+                    LogLevel.Debug
+                );
                 try
                 {
                     response.StatusCode = 503;
-                    await WriteJsonAsync(response, new
-                    {
-                        error = "Game thread is blocked (likely a day transition or save sync) and cannot process requests right now. Retry after a few seconds.",
-                        retry = true
-                    });
+                    await WriteJsonAsync(
+                        response,
+                        new
+                        {
+                            error = "Game thread is blocked (likely a day transition or save sync) and cannot process requests right now. Retry after a few seconds.",
+                            retry = true,
+                        }
+                    );
                 }
                 catch (Exception writeEx)
                 {
@@ -1917,21 +2116,35 @@ namespace JunimoServer.Services.Api
                 {
                     _httpServedStopwatch.Stop();
                     int statusCode;
-                    try { statusCode = response.StatusCode; }
-                    catch { statusCode = 0; } // response already closed/disposed
-                    Diagnostics.ModEventLog.Emit("http_served", new
+                    try
                     {
-                        method = _servedMethod,
-                        path = _servedPath,
-                        status = statusCode,
-                        durationMs = _httpServedStopwatch.ElapsedMilliseconds
-                    });
+                        statusCode = response.StatusCode;
+                    }
+                    catch
+                    {
+                        statusCode = 0;
+                    } // response already closed/disposed
+                    Diagnostics.ModEventLog.Emit(
+                        "http_served",
+                        new
+                        {
+                            method = _servedMethod,
+                            path = _servedPath,
+                            status = statusCode,
+                            durationMs = _httpServedStopwatch.ElapsedMilliseconds,
+                        }
+                    );
                 }
-                catch { /* never let instrumentation fail a request close */ }
+                catch
+                { /* never let instrumentation fail a request close */
+                }
 
                 // TODO: Don't close/write to the response for WebSocket requests (here and above)
                 //       It's already been consumed/disposed by the WebSocket upgrade handshake.
-                try { response.Close(); }
+                try
+                {
+                    response.Close();
+                }
                 catch (Exception closeEx)
                 {
                     Monitor.Log($"Failed to close response: {closeEx}", LogLevel.Debug);
@@ -1949,12 +2162,14 @@ namespace JunimoServer.Services.Api
             var wsMessage = new WebSocketMessage
             {
                 Type = "chat",
-                Payload = JObject.FromObject(new ChatEventPayload
-                {
-                    PlayerName = playerName,
-                    Message = message,
-                    Timestamp = DateTime.UtcNow.ToString("o")
-                })
+                Payload = JObject.FromObject(
+                    new ChatEventPayload
+                    {
+                        PlayerName = playerName,
+                        Message = message,
+                        Timestamp = DateTime.UtcNow.ToString("o"),
+                    }
+                ),
             };
 
             BroadcastToAllClients(wsMessage);
@@ -1969,14 +2184,23 @@ namespace JunimoServer.Services.Api
                 var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
                 ws = wsContext.WebSocket;
 
-                Monitor.Log("[API] WebSocket client connected, awaiting authentication", LogLevel.Debug);
+                Monitor.Log(
+                    "[API] WebSocket client connected, awaiting authentication",
+                    LogLevel.Debug
+                );
 
                 // If auth is disabled, auto-authenticate and add to clients
                 if (!_authEnabled)
                 {
                     isAuthenticated = true;
-                    lock (_wsLock) { _wsClients.Add(ws); }
-                    Monitor.Log("[API] WebSocket client authenticated (auth disabled)", LogLevel.Debug);
+                    lock (_wsLock)
+                    {
+                        _wsClients.Add(ws);
+                    }
+                    Monitor.Log(
+                        "[API] WebSocket client authenticated (auth disabled)",
+                        LogLevel.Debug
+                    );
                 }
 
                 isAuthenticated = await ProcessWebSocketAsync(ws, isAuthenticated);
@@ -1991,17 +2215,26 @@ namespace JunimoServer.Services.Api
                 {
                     if (isAuthenticated)
                     {
-                        lock (_wsLock) { _wsClients.Remove(ws); }
+                        lock (_wsLock)
+                        {
+                            _wsClients.Remove(ws);
+                        }
                     }
-                    try { ws.Dispose(); }
+                    try
+                    {
+                        ws.Dispose();
+                    }
                     catch (Exception disposeEx)
                     {
-                        Diagnostics.ModEventLog.Emit("exception_swallowed", new
-                        {
-                            location = "ApiService.HandleWebSocketAsync.dispose",
-                            exceptionType = disposeEx.GetType().Name,
-                            message = disposeEx.Message
-                        });
+                        Diagnostics.ModEventLog.Emit(
+                            "exception_swallowed",
+                            new
+                            {
+                                location = "ApiService.HandleWebSocketAsync.dispose",
+                                exceptionType = disposeEx.GetType().Name,
+                                message = disposeEx.Message,
+                            }
+                        );
                     }
                     Monitor.Log("[API] WebSocket client disconnected", LogLevel.Debug);
                 }
@@ -2021,46 +2254,88 @@ namespace JunimoServer.Services.Api
                 using var authCts = new CancellationTokenSource(authTimeoutMs);
                 try
                 {
-                    var authResult = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), authCts.Token);
-                    if (authResult.MessageType == WebSocketMessageType.Text && authResult.EndOfMessage)
+                    var authResult = await ws.ReceiveAsync(
+                        new ArraySegment<byte>(buffer),
+                        authCts.Token
+                    );
+                    if (
+                        authResult.MessageType == WebSocketMessageType.Text
+                        && authResult.EndOfMessage
+                    )
                     {
                         var authJson = Encoding.UTF8.GetString(buffer, 0, authResult.Count);
                         var authMsg = JsonConvert.DeserializeObject<WebSocketMessage>(authJson);
 
-                        if (authMsg?.Type == "auth" && authMsg.Payload?["token"]?.ToString() == Env.ApiKey)
+                        if (
+                            authMsg?.Type == "auth"
+                            && authMsg.Payload?["token"]?.ToString() == Env.ApiKey
+                        )
                         {
                             isAuthenticated = true;
-                            lock (_wsLock) { _wsClients.Add(ws); }
+                            lock (_wsLock)
+                            {
+                                _wsClients.Add(ws);
+                            }
                             await SendWebSocketMessageAsync(ws, new { type = "auth_success" });
                             Monitor.Log("[API] WebSocket client authenticated", LogLevel.Debug);
                         }
                         else
                         {
-                            await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Invalid token" });
-                            await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication failed", CancellationToken.None);
-                            Monitor.Log("[API] WebSocket client authentication failed - invalid token", LogLevel.Warn);
+                            await SendWebSocketMessageAsync(
+                                ws,
+                                new { type = "auth_failed", error = "Invalid token" }
+                            );
+                            await ws.CloseAsync(
+                                WebSocketCloseStatus.PolicyViolation,
+                                "Authentication failed",
+                                CancellationToken.None
+                            );
+                            Monitor.Log(
+                                "[API] WebSocket client authentication failed - invalid token",
+                                LogLevel.Warn
+                            );
                             return false;
                         }
                     }
                     else
                     {
-                        await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Expected auth message", CancellationToken.None);
-                        Monitor.Log("[API] WebSocket client authentication failed - unexpected message type", LogLevel.Warn);
+                        await ws.CloseAsync(
+                            WebSocketCloseStatus.PolicyViolation,
+                            "Expected auth message",
+                            CancellationToken.None
+                        );
+                        Monitor.Log(
+                            "[API] WebSocket client authentication failed - unexpected message type",
+                            LogLevel.Warn
+                        );
                         return false;
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    await SendWebSocketMessageAsync(ws, new { type = "auth_failed", error = "Authentication timeout" });
-                    try { await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Authentication timeout", CancellationToken.None); }
+                    await SendWebSocketMessageAsync(
+                        ws,
+                        new { type = "auth_failed", error = "Authentication timeout" }
+                    );
+                    try
+                    {
+                        await ws.CloseAsync(
+                            WebSocketCloseStatus.PolicyViolation,
+                            "Authentication timeout",
+                            CancellationToken.None
+                        );
+                    }
                     catch (Exception closeEx)
                     {
-                        Diagnostics.ModEventLog.Emit("exception_swallowed", new
-                        {
-                            location = "ApiService.ProcessWebSocketAsync.authTimeoutClose",
-                            exceptionType = closeEx.GetType().Name,
-                            message = closeEx.Message
-                        });
+                        Diagnostics.ModEventLog.Emit(
+                            "exception_swallowed",
+                            new
+                            {
+                                location = "ApiService.ProcessWebSocketAsync.authTimeoutClose",
+                                exceptionType = closeEx.GetType().Name,
+                                message = closeEx.Message,
+                            }
+                        );
                     }
                     Monitor.Log("[API] WebSocket client authentication timeout", LogLevel.Warn);
                     return false;
@@ -2071,11 +2346,18 @@ namespace JunimoServer.Services.Api
             {
                 try
                 {
-                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    var result = await ws.ReceiveAsync(
+                        new ArraySegment<byte>(buffer),
+                        CancellationToken.None
+                    );
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                        await ws.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "Closing",
+                            CancellationToken.None
+                        );
                         break;
                     }
 
@@ -2086,7 +2368,10 @@ namespace JunimoServer.Services.Api
                         // Check if message is too large
                         if (messageBuilder.Length > maxMessageSize)
                         {
-                            Monitor.Log("[API] WebSocket message too large, discarding", LogLevel.Warn);
+                            Monitor.Log(
+                                "[API] WebSocket message too large, discarding",
+                                LogLevel.Warn
+                            );
                             messageBuilder.Clear();
                             continue;
                         }
@@ -2115,7 +2400,8 @@ namespace JunimoServer.Services.Api
             try
             {
                 var msg = JsonConvert.DeserializeObject<WebSocketMessage>(json);
-                if (msg == null) return;
+                if (msg == null)
+                    return;
 
                 switch (msg.Type)
                 {
@@ -2127,15 +2413,19 @@ namespace JunimoServer.Services.Api
                         if (msg.Payload != null)
                         {
                             var chatPayload = msg.Payload.ToObject<ChatSendPayload>();
-                            if (chatPayload != null &&
-                                !string.IsNullOrWhiteSpace(chatPayload.Author) &&
-                                !string.IsNullOrWhiteSpace(chatPayload.Message))
+                            if (
+                                chatPayload != null
+                                && !string.IsNullOrWhiteSpace(chatPayload.Author)
+                                && !string.IsNullOrWhiteSpace(chatPayload.Message)
+                            )
                             {
                                 // Queue on game thread - SendPublicMessage iterates Game1.otherFarmers
                                 // which could throw if a player connects/disconnects during iteration
                                 var author = chatPayload.Author;
                                 var message = chatPayload.Message;
-                                await RunOnGameThreadAsync(() => OnExternalChatMessage?.Invoke(author, message));
+                                await RunOnGameThreadAsync(() =>
+                                    OnExternalChatMessage?.Invoke(author, message)
+                                );
                             }
                         }
                         break;
@@ -2149,7 +2439,8 @@ namespace JunimoServer.Services.Api
 
         private async Task SendWebSocketMessageAsync(WebSocket ws, object message)
         {
-            if (ws.State != WebSocketState.Open) return;
+            if (ws.State != WebSocketState.Open)
+                return;
 
             var json = JsonConvert.SerializeObject(message, JsonSettings);
             var bytes = Encoding.UTF8.GetBytes(json);
@@ -2157,7 +2448,12 @@ namespace JunimoServer.Services.Api
 
             try
             {
-                await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(
+                    segment,
+                    WebSocketMessageType.Text,
+                    true,
+                    CancellationToken.None
+                );
             }
             catch (WebSocketException)
             {
@@ -2172,7 +2468,10 @@ namespace JunimoServer.Services.Api
             var segment = new ArraySegment<byte>(bytes);
 
             List<WebSocket> clients;
-            lock (_wsLock) { clients = _wsClients.ToList(); }
+            lock (_wsLock)
+            {
+                clients = _wsClients.ToList();
+            }
 
             foreach (var ws in clients)
             {
@@ -2183,7 +2482,12 @@ namespace JunimoServer.Services.Api
                     {
                         try
                         {
-                            await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                            await ws.SendAsync(
+                                segment,
+                                WebSocketMessageType.Text,
+                                true,
+                                CancellationToken.None
+                            );
                         }
                         catch (WebSocketException)
                         {
@@ -2199,9 +2503,7 @@ namespace JunimoServer.Services.Api
             List<WebSocket> deadClients;
             lock (_wsLock)
             {
-                deadClients = _wsClients
-                    .Where(ws => ws.State != WebSocketState.Open)
-                    .ToList();
+                deadClients = _wsClients.Where(ws => ws.State != WebSocketState.Open).ToList();
 
                 foreach (var ws in deadClients)
                 {
@@ -2211,20 +2513,29 @@ namespace JunimoServer.Services.Api
 
             if (deadClients.Count > 0)
             {
-                Monitor.Log($"[API] Cleaned up {deadClients.Count} dead WebSocket client(s)", LogLevel.Debug);
+                Monitor.Log(
+                    $"[API] Cleaned up {deadClients.Count} dead WebSocket client(s)",
+                    LogLevel.Debug
+                );
             }
 
             foreach (var ws in deadClients)
             {
-                try { ws.Dispose(); }
+                try
+                {
+                    ws.Dispose();
+                }
                 catch (Exception disposeEx)
                 {
-                    Diagnostics.ModEventLog.Emit("exception_swallowed", new
-                    {
-                        location = "ApiService.BroadcastToAllClients.deadClientDispose",
-                        exceptionType = disposeEx.GetType().Name,
-                        message = disposeEx.Message
-                    });
+                    Diagnostics.ModEventLog.Emit(
+                        "exception_swallowed",
+                        new
+                        {
+                            location = "ApiService.BroadcastToAllClients.deadClientDispose",
+                            exceptionType = disposeEx.GetType().Name,
+                            message = disposeEx.Message,
+                        }
+                    );
                 }
             }
         }
@@ -2311,7 +2622,11 @@ namespace JunimoServer.Services.Api
             var inviteCode = InviteCodeFile.Read(Monitor);
             if (string.IsNullOrEmpty(inviteCode))
             {
-                return new InviteCodeResponse { InviteCode = null, Error = "No invite code available" };
+                return new InviteCodeResponse
+                {
+                    InviteCode = null,
+                    Error = "No invite code available",
+                };
             }
             return new InviteCodeResponse { InviteCode = inviteCode };
         }
@@ -2328,35 +2643,84 @@ namespace JunimoServer.Services.Api
         /// the whole point on a timeout. Kept cheap (&lt;1 ms) so it is safe
         /// to call from every failure path.
         /// </summary>
-        [ApiEndpoint("GET", "/diagnostics/state", Summary = "Live game-engine state snapshot (test harness)", Tag = "Diagnostics")]
+        [ApiEndpoint(
+            "GET",
+            "/diagnostics/state",
+            Summary = "Live game-engine state snapshot (test harness)",
+            Tag = "Diagnostics"
+        )]
         [ApiResponse(typeof(DiagnosticsStateResponse), 200)]
         private async Task<DiagnosticsStateResponse> HandleGetDiagnosticsStateAsync()
         {
-            var resp = new DiagnosticsStateResponse
-            {
-                CapturedAt = DateTime.UtcNow.ToString("o")
-            };
+            var resp = new DiagnosticsStateResponse { CapturedAt = DateTime.UtcNow.ToString("o") };
 
             // Phase 1 — primitive / thread-safe reads. These are value-type
             // snapshots or use cached Interlocked counters; safe from the HTTP
             // thread. Each block is independent; a failure only disables its
             // own field.
-            TryRead("timeOfDay", resp.FailedFields, () => { resp.TimeOfDay = Game1.timeOfDay; });
-            TryRead("dayOfMonth", resp.FailedFields, () => { resp.DayOfMonth = Game1.dayOfMonth; });
-            TryRead("season", resp.FailedFields, () => { resp.Season = Game1.currentSeason ?? ""; });
-            TryRead("year", resp.FailedFields, () => { resp.Year = Game1.year; });
-            TryRead("gameMode", resp.FailedFields, () => { resp.GameMode = Game1.gameMode; });
-            TryRead("lastTickMs", resp.FailedFields, () =>
-            {
-                var tickTicks = Interlocked.Read(ref _lastTickTimestamp);
-                resp.LastTickMs = tickTicks > 0
-                    ? (long)(DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds
-                    : (long?)null;
-            });
-            TryRead("avgGameThreadWaitMs", resp.FailedFields, () =>
-            {
-                resp.AvgGameThreadWaitMs = Volatile.Read(ref _avgGameThreadWaitMs);
-            });
+            TryRead(
+                "timeOfDay",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.TimeOfDay = Game1.timeOfDay;
+                }
+            );
+            TryRead(
+                "dayOfMonth",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.DayOfMonth = Game1.dayOfMonth;
+                }
+            );
+            TryRead(
+                "season",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.Season = Game1.currentSeason ?? "";
+                }
+            );
+            TryRead(
+                "year",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.Year = Game1.year;
+                }
+            );
+            TryRead(
+                "gameMode",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.GameMode = Game1.gameMode;
+                }
+            );
+            TryRead(
+                "lastTickMs",
+                resp.FailedFields,
+                () =>
+                {
+                    var tickTicks = Interlocked.Read(ref _lastTickTimestamp);
+                    resp.LastTickMs =
+                        tickTicks > 0
+                            ? (long)
+                                (
+                                    DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)
+                                ).TotalMilliseconds
+                            : (long?)null;
+                }
+            );
+            TryRead(
+                "avgGameThreadWaitMs",
+                resp.FailedFields,
+                () =>
+                {
+                    resp.AvgGameThreadWaitMs = Volatile.Read(ref _avgGameThreadWaitMs);
+                }
+            );
 
             // Phase 2 — reads that touch Netcode collections or game-thread
             // mutable state. Marshalled to the game thread so we don't tear
@@ -2367,53 +2731,96 @@ namespace JunimoServer.Services.Api
             // enough to absorb a legitimate save-in-progress hiccup.
             try
             {
-                await RunOnGameThreadAsync(() =>
-                {
-                    TryRead("otherFarmerUids", resp.FailedFields, () =>
+                await RunOnGameThreadAsync(
+                    () =>
                     {
-                        resp.OtherFarmerUids = Game1.otherFarmers?.Keys?.ToArray() ?? System.Array.Empty<long>();
-                    });
+                        TryRead(
+                            "otherFarmerUids",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.OtherFarmerUids =
+                                    Game1.otherFarmers?.Keys?.ToArray()
+                                    ?? System.Array.Empty<long>();
+                            }
+                        );
 
-                    TryRead("onlineFarmerCount", resp.FailedFields, () =>
-                    {
-                        resp.OnlineFarmerCount = Game1.getOnlineFarmers()?.Count() ?? 0;
-                    });
+                        TryRead(
+                            "onlineFarmerCount",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.OnlineFarmerCount = Game1.getOnlineFarmers()?.Count() ?? 0;
+                            }
+                        );
 
-                    TryRead("netReady", resp.FailedFields, () =>
-                    {
-                        resp.NetReady = ReadNetReadyState();
-                    });
+                        TryRead(
+                            "netReady",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.NetReady = ReadNetReadyState();
+                            }
+                        );
 
-                    TryRead("newDaySync", resp.FailedFields, () =>
-                    {
-                        resp.NewDaySync = ReadNewDaySyncState();
-                    });
+                        TryRead(
+                            "newDaySync",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.NewDaySync = ReadNewDaySyncState();
+                            }
+                        );
 
-                    TryRead("activeClickableMenu", resp.FailedFields, () =>
-                    {
-                        resp.ActiveClickableMenu = Game1.activeClickableMenu?.GetType().Name;
-                    });
+                        TryRead(
+                            "activeClickableMenu",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.ActiveClickableMenu = Game1
+                                    .activeClickableMenu?.GetType()
+                                    .Name;
+                            }
+                        );
 
-                    TryRead("isGameAvailable", resp.FailedFields, () =>
-                    {
-                        resp.IsGameAvailable = Game1.server?.isGameAvailable();
-                    });
+                        TryRead(
+                            "isGameAvailable",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.IsGameAvailable = Game1.server?.isGameAvailable();
+                            }
+                        );
 
-                    TryRead("cabins", resp.FailedFields, () =>
-                    {
-                        resp.Cabins = ReadCabinDiagnostics();
-                    });
+                        TryRead(
+                            "cabins",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.Cabins = ReadCabinDiagnostics();
+                            }
+                        );
 
-                    TryRead("farmhandData", resp.FailedFields, () =>
-                    {
-                        resp.FarmhandData = ReadFarmhandDiagnostics();
-                    });
+                        TryRead(
+                            "farmhandData",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.FarmhandData = ReadFarmhandDiagnostics();
+                            }
+                        );
 
-                    TryRead("disconnectingFarmers", resp.FailedFields, () =>
-                    {
-                        resp.DisconnectingFarmers = ReadDisconnectingFarmers();
-                    });
-                }, timeoutMs: 3000);
+                        TryRead(
+                            "disconnectingFarmers",
+                            resp.FailedFields,
+                            () =>
+                            {
+                                resp.DisconnectingFarmers = ReadDisconnectingFarmers();
+                            }
+                        );
+                    },
+                    timeoutMs: 3000
+                );
             }
             catch (TaskCanceledException)
             {
@@ -2433,30 +2840,37 @@ namespace JunimoServer.Services.Api
         {
             var list = new List<DiagnosticsCabinState>();
             var farm = Game1.getFarm();
-            if (farm == null) return list;
+            if (farm == null)
+                return list;
 
             foreach (var building in farm.buildings)
             {
                 try
                 {
-                    if (!building.isCabin) continue;
+                    if (!building.isCabin)
+                        continue;
                     var cabin = building.GetIndoors<StardewValley.Locations.Cabin>();
                     var owner = cabin?.owner;
-                    list.Add(new DiagnosticsCabinState
-                    {
-                        TileX = building.tileX.Value,
-                        TileY = building.tileY.Value,
-                        IndoorsName = cabin?.NameOrUniqueName ?? "",
-                        OwnerId = owner?.UniqueMultiplayerID ?? 0,
-                        OwnerName = owner?.Name ?? "",
-                        OwnerIsCustomized = owner?.isCustomized?.Value ?? false,
-                        OwnerHasUserId = !string.IsNullOrEmpty(owner?.userID?.Value),
-                        HomeLocationOfOwner = owner?.homeLocation?.Value ?? "",
-                        FarmhandReferenceDefined = cabin?.farmhandReference?.defined?.Value ?? false,
-                        FarmhandReferenceUid = cabin?.farmhandReference?.uid?.Value ?? 0
-                    });
+                    list.Add(
+                        new DiagnosticsCabinState
+                        {
+                            TileX = building.tileX.Value,
+                            TileY = building.tileY.Value,
+                            IndoorsName = cabin?.NameOrUniqueName ?? "",
+                            OwnerId = owner?.UniqueMultiplayerID ?? 0,
+                            OwnerName = owner?.Name ?? "",
+                            OwnerIsCustomized = owner?.isCustomized?.Value ?? false,
+                            OwnerHasUserId = !string.IsNullOrEmpty(owner?.userID?.Value),
+                            HomeLocationOfOwner = owner?.homeLocation?.Value ?? "",
+                            FarmhandReferenceDefined =
+                                cabin?.farmhandReference?.defined?.Value ?? false,
+                            FarmhandReferenceUid = cabin?.farmhandReference?.uid?.Value ?? 0,
+                        }
+                    );
                 }
-                catch { /* skip single-cabin read failures; the dump is best-effort */ }
+                catch
+                { /* skip single-cabin read failures; the dump is best-effort */
+                }
             }
             return list;
         }
@@ -2465,25 +2879,31 @@ namespace JunimoServer.Services.Api
         {
             var list = new List<DiagnosticsFarmhandState>();
             var farmhandData = Game1.netWorldState?.Value?.farmhandData;
-            if (farmhandData == null) return list;
+            if (farmhandData == null)
+                return list;
 
             foreach (var kv in farmhandData.Pairs)
             {
                 try
                 {
                     var f = kv.Value;
-                    if (f == null) continue;
-                    list.Add(new DiagnosticsFarmhandState
-                    {
-                        UniqueMultiplayerId = f.UniqueMultiplayerID,
-                        Name = f.Name ?? "",
-                        IsCustomized = f.isCustomized?.Value ?? false,
-                        HomeLocation = f.homeLocation?.Value ?? "",
-                        LastSleepLocation = f.lastSleepLocation?.Value ?? "",
-                        HasUserId = !string.IsNullOrEmpty(f.userID?.Value)
-                    });
+                    if (f == null)
+                        continue;
+                    list.Add(
+                        new DiagnosticsFarmhandState
+                        {
+                            UniqueMultiplayerId = f.UniqueMultiplayerID,
+                            Name = f.Name ?? "",
+                            IsCustomized = f.isCustomized?.Value ?? false,
+                            HomeLocation = f.homeLocation?.Value ?? "",
+                            LastSleepLocation = f.lastSleepLocation?.Value ?? "",
+                            HasUserId = !string.IsNullOrEmpty(f.userID?.Value),
+                        }
+                    );
                 }
-                catch { /* per-entry failure tolerated */ }
+                catch
+                { /* per-entry failure tolerated */
+                }
             }
             return list;
         }
@@ -2495,23 +2915,37 @@ namespace JunimoServer.Services.Api
         {
             // Game1.multiplayer is non-public; resolve via reflection the same way
             // ModHelperExtensions.GetMultiplayer does.
-            var mpField = _game1MultiplayerField ??= typeof(Game1)
-                .GetField("multiplayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-            if (mpField == null) return System.Array.Empty<long>();
+            var mpField = _game1MultiplayerField ??= typeof(Game1).GetField(
+                "multiplayer",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+            );
+            if (mpField == null)
+                return System.Array.Empty<long>();
             var mp = mpField.GetValue(null) as Multiplayer;
-            if (mp == null) return System.Array.Empty<long>();
+            if (mp == null)
+                return System.Array.Empty<long>();
 
-            var fi = _disconnectingFarmersField ??= typeof(Multiplayer)
-                .GetField("disconnectingFarmers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (fi == null) return System.Array.Empty<long>();
-            if (fi.GetValue(mp) is not System.Collections.Generic.IEnumerable<long> ids) return System.Array.Empty<long>();
+            var fi = _disconnectingFarmersField ??= typeof(Multiplayer).GetField(
+                "disconnectingFarmers",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+            if (fi == null)
+                return System.Array.Empty<long>();
+            if (fi.GetValue(mp) is not System.Collections.Generic.IEnumerable<long> ids)
+                return System.Array.Empty<long>();
             return ids.ToArray();
         }
 
         private static void TryRead(string fieldName, List<string> failedFields, System.Action read)
         {
-            try { read(); }
-            catch (Exception) { failedFields.Add(fieldName); }
+            try
+            {
+                read();
+            }
+            catch (Exception)
+            {
+                failedFields.Add(fieldName);
+            }
         }
 
         // FieldInfo for ReadySynchronizer.ReadyChecks (private). Cached once at
@@ -2522,28 +2956,56 @@ namespace JunimoServer.Services.Api
         {
             var list = new List<ReadyCheckState>();
             var netReady = Game1.netReady;
-            if (netReady == null) return list;
+            if (netReady == null)
+                return list;
 
-            var fi = _readyChecksField ??= typeof(StardewValley.Network.NetReady.ReadySynchronizer)
-                .GetField("ReadyChecks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (fi == null) return list;
+            var fi = _readyChecksField ??=
+                typeof(StardewValley.Network.NetReady.ReadySynchronizer).GetField(
+                    "ReadyChecks",
+                    System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Instance
+                );
+            if (fi == null)
+                return list;
 
-            if (fi.GetValue(netReady) is not System.Collections.IDictionary dict) return list;
+            if (fi.GetValue(netReady) is not System.Collections.IDictionary dict)
+                return list;
 
             foreach (System.Collections.DictionaryEntry kv in dict)
             {
                 var id = kv.Key?.ToString() ?? "";
                 var check = kv.Value;
-                if (check == null) continue;
+                if (check == null)
+                    continue;
 
                 // BaseReadyCheck has public NumberReady/NumberRequired/IsReady/State.
                 // State enum values: NotReady, Ready, Locked — we surface IsLocked
                 // as State==Locked. Read each defensively.
-                int numberReady = 0, numberRequired = 0;
-                bool isReady = false, isLocked = false;
-                try { numberReady = (int)(check.GetType().GetProperty("NumberReady")?.GetValue(check) ?? 0); } catch { }
-                try { numberRequired = (int)(check.GetType().GetProperty("NumberRequired")?.GetValue(check) ?? 0); } catch { }
-                try { isReady = (bool)(check.GetType().GetProperty("IsReady")?.GetValue(check) ?? false); } catch { }
+                int numberReady = 0,
+                    numberRequired = 0;
+                bool isReady = false,
+                    isLocked = false;
+                try
+                {
+                    numberReady = (int)(
+                        check.GetType().GetProperty("NumberReady")?.GetValue(check) ?? 0
+                    );
+                }
+                catch { }
+                try
+                {
+                    numberRequired = (int)(
+                        check.GetType().GetProperty("NumberRequired")?.GetValue(check) ?? 0
+                    );
+                }
+                catch { }
+                try
+                {
+                    isReady = (bool)(
+                        check.GetType().GetProperty("IsReady")?.GetValue(check) ?? false
+                    );
+                }
+                catch { }
                 try
                 {
                     var state = check.GetType().GetProperty("State")?.GetValue(check);
@@ -2551,14 +3013,16 @@ namespace JunimoServer.Services.Api
                 }
                 catch { }
 
-                list.Add(new ReadyCheckState
-                {
-                    Id = id,
-                    NumberReady = numberReady,
-                    NumberRequired = numberRequired,
-                    IsReady = isReady,
-                    IsLocked = isLocked
-                });
+                list.Add(
+                    new ReadyCheckState
+                    {
+                        Id = id,
+                        NumberReady = numberReady,
+                        NumberRequired = numberRequired,
+                        IsReady = isReady,
+                        IsLocked = isLocked,
+                    }
+                );
             }
 
             return list;
@@ -2568,12 +3032,25 @@ namespace JunimoServer.Services.Api
         {
             var s = new NewDaySyncState();
             var sync = Game1.newDaySync;
-            if (sync == null) return s;
+            if (sync == null)
+                return s;
 
             // hasInstance() / hasStarted() / hasFinished() are public on NewDaySynchronizer.
-            try { s.HasStarted = sync.hasStarted(); } catch { }
-            try { s.HasFinished = sync.hasFinished(); } catch { }
-            try { s.IsActive = sync.hasInstance(); } catch { }
+            try
+            {
+                s.HasStarted = sync.hasStarted();
+            }
+            catch { }
+            try
+            {
+                s.HasFinished = sync.hasFinished();
+            }
+            catch { }
+            try
+            {
+                s.IsActive = sync.hasInstance();
+            }
+            catch { }
             return s;
         }
 
@@ -2583,14 +3060,21 @@ namespace JunimoServer.Services.Api
         {
             // Read game thread liveness without RunOnGameThreadAsync. /health must respond even when stuck.
             var tickTicks = Interlocked.Read(ref _lastTickTimestamp);
-            long? lastTickMs = tickTicks > 0
-                ? (long)(DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds
-                : null;
+            long? lastTickMs =
+                tickTicks > 0
+                    ? (long)
+                        (
+                            DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)
+                        ).TotalMilliseconds
+                    : null;
 
             var pendingActions = _pendingGameActions.Count;
 
             bool? gameAvailable = null;
-            try { gameAvailable = Game1.server?.isGameAvailable(); }
+            try
+            {
+                gameAvailable = Game1.server?.isGameAvailable();
+            }
             catch (Exception ex)
             {
                 // This is the single most important exception swallow in the
@@ -2600,12 +3084,15 @@ namespace JunimoServer.Services.Api
                 // correlatable across containers, but keep the health
                 // response going (with gameAvailable left null) so the
                 // endpoint itself never 500s.
-                Diagnostics.ModEventLog.Emit("exception_swallowed", new
-                {
-                    location = "ApiService.HandleGetHealth.isGameAvailable",
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message
-                });
+                Diagnostics.ModEventLog.Emit(
+                    "exception_swallowed",
+                    new
+                    {
+                        location = "ApiService.HandleGetHealth.isGameAvailable",
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message,
+                    }
+                );
             }
 
             var isFrozen = lastTickMs is null or > HealthFrozenThresholdMs;
@@ -2648,7 +3135,11 @@ namespace JunimoServer.Services.Api
         /// Returns 200 + current /status response when filters match a newer
         /// snapshot, or 408 if the timeout elapses with no match.
         /// </summary>
-        private async Task HandleWaitStatusAsync(HttpListenerRequest request, HttpListenerResponse response, string? requestId)
+        private async Task HandleWaitStatusAsync(
+            HttpListenerRequest request,
+            HttpListenerResponse response,
+            string? requestId
+        )
         {
             var qs = request.QueryString;
             var since = ParseLong(qs["since"]) ?? 0;
@@ -2660,11 +3151,16 @@ namespace JunimoServer.Services.Api
 
             bool Matches(GameStateSnapshot snap)
             {
-                if (snap.Version <= since) return false;
-                if (isReadyFilter is bool b && snap.IsReady != b) return false;
-                if (isPausedFilter is bool ip && snap.IsPaused != ip) return false;
-                if (dayFilter is int d && snap.Day != d) return false;
-                if (playerCountFilter is int pc && snap.PlayerCount != pc) return false;
+                if (snap.Version <= since)
+                    return false;
+                if (isReadyFilter is bool b && snap.IsReady != b)
+                    return false;
+                if (isPausedFilter is bool ip && snap.IsPaused != ip)
+                    return false;
+                if (dayFilter is int d && snap.Day != d)
+                    return false;
+                if (playerCountFilter is int pc && snap.PlayerCount != pc)
+                    return false;
                 return true;
             }
 
@@ -2682,10 +3178,14 @@ namespace JunimoServer.Services.Api
             // Version-only / unfiltered case has no field to report; the
             // header is omitted and the harness falls back to snapshot-age.
             var changedAt = default(DateTime);
-            if (isReadyFilter is not null) changedAt = MaxUtc(changedAt, matched.IsReadyChangedAtUtc);
-            if (isPausedFilter is not null) changedAt = MaxUtc(changedAt, matched.IsPausedChangedAtUtc);
-            if (dayFilter is not null) changedAt = MaxUtc(changedAt, matched.DayChangedAtUtc);
-            if (playerCountFilter is not null) changedAt = MaxUtc(changedAt, matched.PlayerCountChangedAtUtc);
+            if (isReadyFilter is not null)
+                changedAt = MaxUtc(changedAt, matched.IsReadyChangedAtUtc);
+            if (isPausedFilter is not null)
+                changedAt = MaxUtc(changedAt, matched.IsPausedChangedAtUtc);
+            if (dayFilter is not null)
+                changedAt = MaxUtc(changedAt, matched.DayChangedAtUtc);
+            if (playerCountFilter is not null)
+                changedAt = MaxUtc(changedAt, matched.PlayerCountChangedAtUtc);
             EmitPredicateChangedAtHeader(response, changedAt);
 
             // Delegate to the regular status handler so the response shape is
@@ -2709,7 +3209,10 @@ namespace JunimoServer.Services.Api
         // Per-handler phase timer aggregator. Used by /diagnostics/handler-timing
         // to surface where /farmhands time goes when the regression cause is
         // unclear. Counts in microseconds for sub-millisecond granularity.
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HandlerTimingAccumulator> _handlerTimings = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+            string,
+            HandlerTimingAccumulator
+        > _handlerTimings = new();
 
         private sealed class HandlerTimingAccumulator
         {
@@ -2783,22 +3286,30 @@ namespace JunimoServer.Services.Api
             foreach (var (name, acc) in _handlerTimings)
             {
                 var calls = Interlocked.Read(ref acc.Calls);
-                if (calls == 0) continue;
-                report.Handlers.Add(new HandlerTimingResponse
-                {
-                    Handler = name,
-                    Calls = calls,
-                    SnapshotReadAvgMs = Interlocked.Read(ref acc.SnapshotReadUs) / 1000.0 / calls,
-                    SerializeAvgMs = Interlocked.Read(ref acc.SerializeUs) / 1000.0 / calls,
-                    EmitAvgMs = Interlocked.Read(ref acc.EmitUs) / 1000.0 / calls,
-                    WriteAvgMs = Interlocked.Read(ref acc.WriteUs) / 1000.0 / calls,
-                    TotalAvgMs = Interlocked.Read(ref acc.TotalUs) / 1000.0 / calls,
-                });
+                if (calls == 0)
+                    continue;
+                report.Handlers.Add(
+                    new HandlerTimingResponse
+                    {
+                        Handler = name,
+                        Calls = calls,
+                        SnapshotReadAvgMs =
+                            Interlocked.Read(ref acc.SnapshotReadUs) / 1000.0 / calls,
+                        SerializeAvgMs = Interlocked.Read(ref acc.SerializeUs) / 1000.0 / calls,
+                        EmitAvgMs = Interlocked.Read(ref acc.EmitUs) / 1000.0 / calls,
+                        WriteAvgMs = Interlocked.Read(ref acc.WriteUs) / 1000.0 / calls,
+                        TotalAvgMs = Interlocked.Read(ref acc.TotalUs) / 1000.0 / calls,
+                    }
+                );
             }
             return report;
         }
 
-        private async Task HandleWaitPlayersAsync(HttpListenerRequest request, HttpListenerResponse response, string? requestId)
+        private async Task HandleWaitPlayersAsync(
+            HttpListenerRequest request,
+            HttpListenerResponse response,
+            string? requestId
+        )
         {
             var qs = request.QueryString;
             var since = ParseLong(qs["since"]) ?? 0;
@@ -2807,12 +3318,21 @@ namespace JunimoServer.Services.Api
 
             bool Matches(GameStateSnapshot snap)
             {
-                if (snap.Version <= since) return false;
+                if (snap.Version <= since)
+                    return false;
                 if (playerIdFilter is long pid)
                 {
                     var found = false;
-                    foreach (var p in snap.Players) { if (p.Id == pid) { found = true; break; } }
-                    if (!found) return false;
+                    foreach (var p in snap.Players)
+                    {
+                        if (p.Id == pid)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        return false;
                 }
                 return true;
             }
@@ -2828,8 +3348,10 @@ namespace JunimoServer.Services.Api
             // player first appeared in any snapshot. For the version-only case
             // (no playerId filter), the snapshot's capture time is the best
             // we can do — there's no single "field that changed" to report.
-            if (playerIdFilter is long matchedPid
-                && matched.PlayerFirstSeenAtUtc.TryGetValue(matchedPid, out var firstSeen))
+            if (
+                playerIdFilter is long matchedPid
+                && matched.PlayerFirstSeenAtUtc.TryGetValue(matchedPid, out var firstSeen)
+            )
             {
                 EmitPredicateChangedAtHeader(response, firstSeen);
             }
@@ -2851,7 +3373,11 @@ namespace JunimoServer.Services.Api
         /// <item><c>timeout=ms</c> — bounded by <see cref="WaitMaxTimeout"/>.</item>
         /// </list>
         /// </summary>
-        private async Task HandleWaitFarmhandsAsync(HttpListenerRequest request, HttpListenerResponse response, string? requestId)
+        private async Task HandleWaitFarmhandsAsync(
+            HttpListenerRequest request,
+            HttpListenerResponse response,
+            string? requestId
+        )
         {
             var qs = request.QueryString;
             var since = ParseLong(qs["since"]) ?? 0;
@@ -2862,21 +3388,30 @@ namespace JunimoServer.Services.Api
 
             bool Matches(GameStateSnapshot snap)
             {
-                if (snap.Version <= since) return false;
-                if (farmhandCountFilter is int fc && snap.Farmhands.Count != fc) return false;
+                if (snap.Version <= since)
+                    return false;
+                if (farmhandCountFilter is int fc && snap.Farmhands.Count != fc)
+                    return false;
                 if (!string.IsNullOrEmpty(hasFarmhandFilter))
                 {
                     var found = false;
                     foreach (var f in snap.Farmhands)
                     {
-                        if (!string.Equals(f.Name, hasFarmhandFilter, StringComparison.OrdinalIgnoreCase))
+                        if (
+                            !string.Equals(
+                                f.Name,
+                                hasFarmhandFilter,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
                             continue;
                         if (requireCustomizedFilter is bool rc && f.IsCustomized != rc)
                             continue;
                         found = true;
                         break;
                     }
-                    if (!found) return false;
+                    if (!found)
+                        return false;
                 }
                 return true;
             }
@@ -2900,7 +3435,13 @@ namespace JunimoServer.Services.Api
             {
                 foreach (var f in matched.Farmhands)
                 {
-                    if (!string.Equals(f.Name, hasFarmhandFilter, StringComparison.OrdinalIgnoreCase))
+                    if (
+                        !string.Equals(
+                            f.Name,
+                            hasFarmhandFilter,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                         continue;
                     if (matched.FarmhandChangeTracks.TryGetValue(f.Id, out var track))
                     {
@@ -2937,7 +3478,11 @@ namespace JunimoServer.Services.Api
         /// <see cref="WaitMaxTimeout"/>; callers must wrap in an outer
         /// re-issue loop.
         /// </summary>
-        private async Task HandleWaitHealthAsync(HttpListenerRequest request, HttpListenerResponse response, string? requestId)
+        private async Task HandleWaitHealthAsync(
+            HttpListenerRequest request,
+            HttpListenerResponse response,
+            string? requestId
+        )
         {
             var qs = request.QueryString;
             var readyFilter = ParseBool(qs["ready"]);
@@ -2945,10 +3490,13 @@ namespace JunimoServer.Services.Api
 
             bool Matches()
             {
-                if (readyFilter is not bool b || !b) return true;
+                if (readyFilter is not bool b || !b)
+                    return true;
                 var tickTicks = Interlocked.Read(ref _lastTickTimestamp);
-                if (tickTicks <= 0) return false;
-                var lastTickMs = (long)(DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds;
+                if (tickTicks <= 0)
+                    return false;
+                var lastTickMs = (long)
+                    (DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds;
                 return lastTickMs <= HealthFrozenThresholdMs;
             }
 
@@ -3025,23 +3573,33 @@ namespace JunimoServer.Services.Api
         /// snapshot-age estimate.
         /// </para>
         /// </summary>
-        private static void EmitPredicateChangedAtHeader(HttpListenerResponse response, DateTime changedAtUtc)
+        private static void EmitPredicateChangedAtHeader(
+            HttpListenerResponse response,
+            DateTime changedAtUtc
+        )
         {
-            if (changedAtUtc == default) return;
+            if (changedAtUtc == default)
+                return;
             var msAgo = (long)(DateTime.UtcNow - changedAtUtc).TotalMilliseconds;
-            if (msAgo < 0) msAgo = 0;
-            response.Headers["X-Predicate-Changed-At-Ms-Ago"] =
-                msAgo.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (msAgo < 0)
+                msAgo = 0;
+            response.Headers["X-Predicate-Changed-At-Ms-Ago"] = msAgo.ToString(
+                System.Globalization.CultureInfo.InvariantCulture
+            );
         }
 
         private async Task<GameStateSnapshot?> WaitForSnapshotAsync(
-            Func<GameStateSnapshot, bool> predicate, TimeSpan timeout, string? requestId)
+            Func<GameStateSnapshot, bool> predicate,
+            TimeSpan timeout,
+            string? requestId
+        )
         {
             var deadline = DateTime.UtcNow + timeout;
             while (true)
             {
                 var remaining = deadline - DateTime.UtcNow;
-                if (remaining <= TimeSpan.Zero) return null;
+                if (remaining <= TimeSpan.Zero)
+                    return null;
 
                 // Capture TCS BEFORE reading the snapshot. If PublishSnapshot rotates
                 // the TCS between these two reads, the rotation also signals the TCS
@@ -3051,7 +3609,8 @@ namespace JunimoServer.Services.Api
                 // publish for a snapshot we'd already see if we re-read.
                 var tcs = _snapshotChanged;
                 var current = _snapshot;
-                if (predicate(current)) return current;
+                if (predicate(current))
+                    return current;
 
                 try
                 {
@@ -3079,16 +3638,16 @@ namespace JunimoServer.Services.Api
             return WaitMaxTimeout;
         }
 
-        private static long? ParseLong(string? raw)
-            => long.TryParse(raw, out var v) ? v : null;
+        private static long? ParseLong(string? raw) => long.TryParse(raw, out var v) ? v : null;
 
-        private static int? ParseInt(string? raw)
-            => int.TryParse(raw, out var v) ? v : null;
+        private static int? ParseInt(string? raw) => int.TryParse(raw, out var v) ? v : null;
 
         private static bool? ParseBool(string? raw)
         {
-            if (raw == null) return null;
-            if (bool.TryParse(raw, out var b)) return b;
+            if (raw == null)
+                return null;
+            if (bool.TryParse(raw, out var b))
+                return b;
             return null;
         }
 
@@ -3132,15 +3691,15 @@ namespace JunimoServer.Services.Api
                     FarmType = raw.Game.FarmType,
                     ProfitMargin = raw.Game.ProfitMargin,
                     StartingCabins = raw.Game.StartingCabins,
-                    SpawnMonstersAtNight = raw.Game.SpawnMonstersAtNight
+                    SpawnMonstersAtNight = raw.Game.SpawnMonstersAtNight,
                 },
                 Server = new ServerRuntimeSettingsInfo
                 {
                     MaxPlayers = raw.Server.MaxPlayers,
                     CabinStrategy = raw.Server.CabinStrategy,
                     SeparateWallets = raw.Server.SeparateWallets,
-                    ExistingCabinBehavior = raw.Server.ExistingCabinBehavior
-                }
+                    ExistingCabinBehavior = raw.Server.ExistingCabinBehavior,
+                },
             };
         }
 
@@ -3157,22 +3716,32 @@ namespace JunimoServer.Services.Api
                 AssignedCount = snap.CabinAssignedCount,
                 AvailableCount = snap.CabinAvailableCount,
                 Cabins = snap.Cabins,
-                SavedPositionPlayerIds = _cabinManager.Data.PlayerCabinPositions.Keys.ToList()
+                SavedPositionPlayerIds = _cabinManager.Data.PlayerCabinPositions.Keys.ToList(),
             };
         }
 
         [ApiEndpoint("GET", "/rendering", Summary = "Get render rate", Tag = "Server")]
-        [ApiResponse(typeof(RenderingStatus), 200, Description = "Current render rate (0 = disabled)")]
+        [ApiResponse(
+            typeof(RenderingStatus),
+            200,
+            Description = "Current render rate (0 = disabled)"
+        )]
         private RenderingStatus HandleGetRendering()
         {
-            return new RenderingStatus
-            {
-                Fps = ServerOptimizerOverrides.GetCurrentServerFps()
-            };
+            return new RenderingStatus { Fps = ServerOptimizerOverrides.GetCurrentServerFps() };
         }
 
-        [ApiEndpoint("GET", "/screenshot", Summary = "Capture a screenshot of the game", Tag = "Server")]
-        [ApiResponse(typeof(ScreenshotResponse), 200, Description = "Screenshot as base64-encoded PNG")]
+        [ApiEndpoint(
+            "GET",
+            "/screenshot",
+            Summary = "Capture a screenshot of the game",
+            Tag = "Server"
+        )]
+        [ApiResponse(
+            typeof(ScreenshotResponse),
+            200,
+            Description = "Screenshot as base64-encoded PNG"
+        )]
         private async Task<ScreenshotResponse> HandleGetScreenshotAsync()
         {
             var result = new ScreenshotResponse();
@@ -3189,7 +3758,12 @@ namespace JunimoServer.Services.Api
                     device.GetBackBufferData(backBuffer);
 
                     using var texture = new Microsoft.Xna.Framework.Graphics.Texture2D(
-                        device, width, height, false, Microsoft.Xna.Framework.Graphics.SurfaceFormat.Color);
+                        device,
+                        width,
+                        height,
+                        false,
+                        Microsoft.Xna.Framework.Graphics.SurfaceFormat.Color
+                    );
                     texture.SetData(backBuffer);
 
                     using var stream = new System.IO.MemoryStream();
@@ -3215,7 +3789,12 @@ namespace JunimoServer.Services.Api
         /// Reads player counts from periodic snapshot, config from the service directly.
         /// See <see cref="TakeGameStateSnapshot"/>.
         /// </summary>
-        [ApiEndpoint("GET", "/auth", Summary = "Get authentication/password protection status", Tag = "Auth")]
+        [ApiEndpoint(
+            "GET",
+            "/auth",
+            Summary = "Get authentication/password protection status",
+            Tag = "Auth"
+        )]
         [ApiResponse(typeof(AuthStatusResponse), 200, Description = "Authentication status")]
         private AuthStatusResponse HandleGetAuthStatus()
         {
@@ -3227,7 +3806,7 @@ namespace JunimoServer.Services.Api
                     AuthenticatedCount = 0,
                     PendingCount = 0,
                     TimeoutSeconds = 0,
-                    MaxAttempts = 0
+                    MaxAttempts = 0,
                 };
             }
 
@@ -3238,11 +3817,16 @@ namespace JunimoServer.Services.Api
                 AuthenticatedCount = snap.AuthenticatedCount,
                 PendingCount = snap.PendingCount,
                 TimeoutSeconds = _passwordProtectionService.AuthTimeoutSeconds,
-                MaxAttempts = _passwordProtectionService.MaxFailedAttempts
+                MaxAttempts = _passwordProtectionService.MaxFailedAttempts,
             };
         }
 
-        [ApiEndpoint("POST", "/auth/timeout", Summary = "Set auth timeout in seconds", Tag = "Auth")]
+        [ApiEndpoint(
+            "POST",
+            "/auth/timeout",
+            Summary = "Set auth timeout in seconds",
+            Tag = "Auth"
+        )]
         [ApiResponse(typeof(AuthTimeoutResponse), 200, Description = "Auth timeout updated")]
         private AuthTimeoutResponse HandlePostAuthTimeout(string? value)
         {
@@ -3252,7 +3836,7 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     TimeoutSeconds = 0,
-                    Error = "Password protection is not enabled"
+                    Error = "Password protection is not enabled",
                 };
             }
 
@@ -3262,7 +3846,7 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     TimeoutSeconds = _passwordProtectionService.AuthTimeoutSeconds,
-                    Error = "Missing or invalid 'value' parameter (expected non-negative integer)"
+                    Error = "Missing or invalid 'value' parameter (expected non-negative integer)",
                 };
             }
 
@@ -3274,7 +3858,7 @@ namespace JunimoServer.Services.Api
             {
                 Success = true,
                 TimeoutSeconds = seconds,
-                PreviousTimeoutSeconds = previous
+                PreviousTimeoutSeconds = previous,
             };
         }
 
@@ -3288,7 +3872,8 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     Fps = ServerOptimizerOverrides.GetCurrentServerFps(),
-                    Error = "Missing or invalid 'fps' parameter (expected non-negative integer; 0 disables rendering)"
+                    Error =
+                        "Missing or invalid 'fps' parameter (expected non-negative integer; 0 disables rendering)",
                 };
             }
 
@@ -3303,7 +3888,7 @@ namespace JunimoServer.Services.Api
                 Success = true,
                 Fps = newFps,
                 PreviousFps = previous,
-                Message = newFps == 0 ? "Rendering disabled" : $"Rendering enabled at {newFps} fps"
+                Message = newFps == 0 ? "Rendering disabled" : $"Rendering enabled at {newFps} fps",
             };
         }
 
@@ -3317,7 +3902,7 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     TimeOfDay = Game1.timeOfDay,
-                    Error = "Missing 'value' query parameter (e.g., 1200 for noon)"
+                    Error = "Missing 'value' query parameter (e.g., 1200 for noon)",
                 };
             }
 
@@ -3327,7 +3912,7 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     TimeOfDay = Game1.timeOfDay,
-                    Error = $"Invalid value '{value}' (expected integer like 1200 for noon)"
+                    Error = $"Invalid value '{value}' (expected integer like 1200 for noon)",
                 };
             }
 
@@ -3337,7 +3922,7 @@ namespace JunimoServer.Services.Api
                 {
                     Success = false,
                     TimeOfDay = Game1.timeOfDay,
-                    Error = $"Value {time} out of range (600-2600)"
+                    Error = $"Value {time} out of range (600-2600)",
                 };
             }
 
@@ -3352,7 +3937,7 @@ namespace JunimoServer.Services.Api
             {
                 Success = true,
                 TimeOfDay = time,
-                Message = $"Time set to {time}"
+                Message = $"Time set to {time}",
             };
         }
 
@@ -3365,17 +3950,25 @@ namespace JunimoServer.Services.Api
                 return new ClockSpeedResponse
                 {
                     Success = false,
-                    Error = "Missing 'multiplier' query parameter (e.g., 10 for 10x speed, 1 to restore)"
+                    Error =
+                        "Missing 'multiplier' query parameter (e.g., 10 for 10x speed, 1 to restore)",
                 };
             }
 
-            if (!double.TryParse(multiplierStr, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var multiplier))
+            if (
+                !double.TryParse(
+                    multiplierStr,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var multiplier
+                )
+            )
             {
                 return new ClockSpeedResponse
                 {
                     Success = false,
-                    Error = $"Invalid multiplier '{multiplierStr}' (expected a number like 10, 0.5, or 1)"
+                    Error =
+                        $"Invalid multiplier '{multiplierStr}' (expected a number like 10, 0.5, or 1)",
                 };
             }
 
@@ -3384,7 +3977,7 @@ namespace JunimoServer.Services.Api
                 return new ClockSpeedResponse
                 {
                     Success = false,
-                    Error = "Multiplier must be greater than 0"
+                    Error = "Multiplier must be greater than 0",
                 };
             }
 
@@ -3396,25 +3989,37 @@ namespace JunimoServer.Services.Api
                     _defaultRealMsPerGameMinute = Game1.realMilliSecondsPerGameMinute;
 
                 var newMs = (int)(_defaultRealMsPerGameMinute / multiplier);
-                if (newMs < 1) newMs = 1;
+                if (newMs < 1)
+                    newMs = 1;
                 Game1.realMilliSecondsPerGameMinute = newMs;
                 Game1.realMilliSecondsPerGameTenMinutes = newMs * 10;
                 effectiveMs = newMs;
             });
 
-            Monitor.Log($"Clock speed set to {multiplier}x ({effectiveMs}ms/game-minute) via API", LogLevel.Info);
+            Monitor.Log(
+                $"Clock speed set to {multiplier}x ({effectiveMs}ms/game-minute) via API",
+                LogLevel.Info
+            );
 
             return new ClockSpeedResponse
             {
                 Success = true,
                 Multiplier = multiplier,
-                EffectiveMs = effectiveMs
+                EffectiveMs = effectiveMs,
             };
         }
 
-        [ApiEndpoint("POST", "/roles/admin", Summary = "Grant admin role to a player", Tag = "Roles")]
+        [ApiEndpoint(
+            "POST",
+            "/roles/admin",
+            Summary = "Grant admin role to a player",
+            Tag = "Roles"
+        )]
         [ApiResponse(typeof(RoleGrantResponse), 200, Description = "Admin granted")]
-        private async Task<RoleGrantResponse> HandlePostGrantAdminAsync(string? name, string? playerId)
+        private async Task<RoleGrantResponse> HandlePostGrantAdminAsync(
+            string? name,
+            string? playerId
+        )
         {
             var hasName = !string.IsNullOrEmpty(name);
             var hasId = !string.IsNullOrEmpty(playerId);
@@ -3424,7 +4029,7 @@ namespace JunimoServer.Services.Api
                 return new RoleGrantResponse
                 {
                     Success = false,
-                    Error = "Missing 'name' or 'playerId' query parameter"
+                    Error = "Missing 'name' or 'playerId' query parameter",
                 };
             }
             if (hasName && hasId)
@@ -3432,7 +4037,7 @@ namespace JunimoServer.Services.Api
                 return new RoleGrantResponse
                 {
                     Success = false,
-                    Error = "Provide either 'name' or 'playerId', not both"
+                    Error = "Provide either 'name' or 'playerId', not both",
                 };
             }
 
@@ -3442,7 +4047,7 @@ namespace JunimoServer.Services.Api
                 return new RoleGrantResponse
                 {
                     Success = false,
-                    Error = $"Invalid 'playerId' value: '{playerId}'"
+                    Error = $"Invalid 'playerId' value: '{playerId}'",
                 };
             }
 
@@ -3456,7 +4061,11 @@ namespace JunimoServer.Services.Api
             {
                 var farmer = hasId
                     ? Game1.getAllFarmers().FirstOrDefault(f => f.UniqueMultiplayerID == parsedId)
-                    : Game1.getAllFarmers().FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+                    : Game1
+                        .getAllFarmers()
+                        .FirstOrDefault(f =>
+                            string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)
+                        );
 
                 if (farmer == null)
                 {
@@ -3464,46 +4073,69 @@ namespace JunimoServer.Services.Api
                     result = new RoleGrantResponse
                     {
                         Success = false,
-                        Error = $"Player {lookup} not found"
+                        Error = $"Player {lookup} not found",
                     };
                     return;
                 }
 
                 _roleService.AssignAdmin(farmer.UniqueMultiplayerID);
-                Monitor.Log($"Admin role granted to '{ChatRedaction.MaskValue(farmer.Name)}' (ID: {farmer.UniqueMultiplayerID}) via API", LogLevel.Info);
+                Monitor.Log(
+                    $"Admin role granted to '{ChatRedaction.MaskValue(farmer.Name)}' (ID: {farmer.UniqueMultiplayerID}) via API",
+                    LogLevel.Info
+                );
 
                 result = new RoleGrantResponse
                 {
                     Success = true,
                     PlayerId = farmer.UniqueMultiplayerID,
                     PlayerName = farmer.Name,
-                    Message = $"Admin role granted to '{farmer.Name}'"
+                    Message = $"Admin role granted to '{farmer.Name}'",
                 };
             });
 
             return result!;
         }
 
-        [ApiEndpoint("DELETE", "/farmhands", Summary = "Delete a farmhand by name or player ID", Tag = "Farmhands")]
+        [ApiEndpoint(
+            "DELETE",
+            "/farmhands",
+            Summary = "Delete a farmhand by name or player ID",
+            Tag = "Farmhands"
+        )]
         [ApiResponse(typeof(FarmhandResponse), 200, Description = "Farmhand deleted")]
-        private async Task<FarmhandResponse> HandleDeleteFarmhandAsync(string? name, string? playerId)
+        private async Task<FarmhandResponse> HandleDeleteFarmhandAsync(
+            string? name,
+            string? playerId
+        )
         {
             var hasName = !string.IsNullOrEmpty(name);
             var hasId = !string.IsNullOrEmpty(playerId);
 
             if (!hasName && !hasId)
             {
-                return new FarmhandResponse { Success = false, Error = "Missing 'name' or 'playerId' query parameter" };
+                return new FarmhandResponse
+                {
+                    Success = false,
+                    Error = "Missing 'name' or 'playerId' query parameter",
+                };
             }
             if (hasName && hasId)
             {
-                return new FarmhandResponse { Success = false, Error = "Provide either 'name' or 'playerId', not both" };
+                return new FarmhandResponse
+                {
+                    Success = false,
+                    Error = "Provide either 'name' or 'playerId', not both",
+                };
             }
 
             long parsedId = 0;
             if (hasId && !long.TryParse(playerId, out parsedId))
             {
-                return new FarmhandResponse { Success = false, Error = $"Invalid 'playerId' value: '{playerId}'" };
+                return new FarmhandResponse
+                {
+                    Success = false,
+                    Error = $"Invalid 'playerId' value: '{playerId}'",
+                };
             }
 
             if (Game1.gameMode != 3 || !Game1.IsServer)
@@ -3513,7 +4145,11 @@ namespace JunimoServer.Services.Api
 
             if (Game1.game1.IsSaving)
             {
-                return new FarmhandResponse { Success = false, Error = "Cannot delete farmhand while save is in progress" };
+                return new FarmhandResponse
+                {
+                    Success = false,
+                    Error = "Cannot delete farmhand while save is in progress",
+                };
             }
 
             var lookupLabel = hasId ? $"id={parsedId}" : $"'{name}'";
@@ -3524,43 +4160,64 @@ namespace JunimoServer.Services.Api
                 // Reading Game1.getAllFarmhands() / getOnlineFarmers() off-thread is racy:
                 // the collections can be mid-update when a player is joining or leaving.
                 FarmhandResponse? result = null;
-                await RunOnGameThreadAsync(() =>
-                {
-                    Farmer? targetFarmhand = null;
-                    foreach (var farmer in Game1.getAllFarmhands())
+                await RunOnGameThreadAsync(
+                    () =>
                     {
-                        var matches = hasId
-                            ? farmer.UniqueMultiplayerID == parsedId
-                            : farmer.Name?.Equals(name, StringComparison.OrdinalIgnoreCase) == true;
-                        if (matches)
+                        Farmer? targetFarmhand = null;
+                        foreach (var farmer in Game1.getAllFarmhands())
                         {
-                            targetFarmhand = farmer;
-                            break;
+                            var matches = hasId
+                                ? farmer.UniqueMultiplayerID == parsedId
+                                : farmer.Name?.Equals(name, StringComparison.OrdinalIgnoreCase)
+                                    == true;
+                            if (matches)
+                            {
+                                targetFarmhand = farmer;
+                                break;
+                            }
                         }
-                    }
 
-                    if (targetFarmhand == null)
-                    {
-                        result = new FarmhandResponse { Success = false, Error = $"Farmhand {lookupLabel} not found" };
-                        return;
-                    }
+                        if (targetFarmhand == null)
+                        {
+                            result = new FarmhandResponse
+                            {
+                                Success = false,
+                                Error = $"Farmhand {lookupLabel} not found",
+                            };
+                            return;
+                        }
 
-                    // Check if farmhand is online
-                    if (Game1.getOnlineFarmers().Any(f => f.UniqueMultiplayerID == targetFarmhand.UniqueMultiplayerID))
-                    {
-                        result = new FarmhandResponse { Success = false, Error = $"Cannot delete farmhand {lookupLabel} - currently online" };
-                        return;
-                    }
+                        // Check if farmhand is online
+                        if (
+                            Game1
+                                .getOnlineFarmers()
+                                .Any(f =>
+                                    f.UniqueMultiplayerID == targetFarmhand.UniqueMultiplayerID
+                                )
+                        )
+                        {
+                            result = new FarmhandResponse
+                            {
+                                Success = false,
+                                Error = $"Cannot delete farmhand {lookupLabel} - currently online",
+                            };
+                            return;
+                        }
 
-                    var resolvedName = targetFarmhand.Name ?? string.Empty;
-                    ExecuteFarmhandDeletion(targetFarmhand.UniqueMultiplayerID, resolvedName);
-                    Monitor.Log($"Deleted farmhand '{ChatRedaction.MaskValue(resolvedName)}' (ID: {targetFarmhand.UniqueMultiplayerID})", LogLevel.Info);
-                    result = new FarmhandResponse
-                    {
-                        Success = true,
-                        Message = $"Farmhand '{resolvedName}' deleted successfully"
-                    };
-                }, timeoutMs: 15000);
+                        var resolvedName = targetFarmhand.Name ?? string.Empty;
+                        ExecuteFarmhandDeletion(targetFarmhand.UniqueMultiplayerID, resolvedName);
+                        Monitor.Log(
+                            $"Deleted farmhand '{ChatRedaction.MaskValue(resolvedName)}' (ID: {targetFarmhand.UniqueMultiplayerID})",
+                            LogLevel.Info
+                        );
+                        result = new FarmhandResponse
+                        {
+                            Success = true,
+                            Message = $"Farmhand '{resolvedName}' deleted successfully",
+                        };
+                    },
+                    timeoutMs: 15000
+                );
 
                 return result!;
             }
@@ -3590,7 +4247,8 @@ namespace JunimoServer.Services.Api
             Building? cabinBuilding = null;
             foreach (var building in farm.buildings)
             {
-                if (!building.isCabin) continue;
+                if (!building.isCabin)
+                    continue;
 
                 var cabin = building.GetIndoors<Cabin>();
                 if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
@@ -3606,7 +4264,10 @@ namespace JunimoServer.Services.Api
             if (targetCabin != null)
             {
                 _cabinManager.DestroyCabin(cabinBuilding);
-                Monitor.Log($"Destroyed cabin for farmhand '{ChatRedaction.MaskValue(farmhandName)}'", LogLevel.Debug);
+                Monitor.Log(
+                    $"Destroyed cabin for farmhand '{ChatRedaction.MaskValue(farmhandName)}'",
+                    LogLevel.Debug
+                );
             }
             else
             {
@@ -3617,22 +4278,35 @@ namespace JunimoServer.Services.Api
                     // at this farmhand via farmhandReference and null it before removal.
                     foreach (var building in farm.buildings)
                     {
-                        if (!building.isCabin) continue;
+                        if (!building.isCabin)
+                            continue;
                         var cabin = building.GetIndoors<Cabin>();
-                        if (cabin != null && cabin.farmhandReference.defined.Value
-                            && cabin.farmhandReference.uid.Value == farmhandId)
+                        if (
+                            cabin != null
+                            && cabin.farmhandReference.defined.Value
+                            && cabin.farmhandReference.uid.Value == farmhandId
+                        )
                         {
                             cabin.farmhandReference.Value = null;
-                            Monitor.Log($"Cleared dangling farmhandReference on cabin '{cabin.NameOrUniqueName}' for farmhand '{ChatRedaction.MaskValue(farmhandName)}' (id={farmhandId})", LogLevel.Warn);
+                            Monitor.Log(
+                                $"Cleared dangling farmhandReference on cabin '{cabin.NameOrUniqueName}' for farmhand '{ChatRedaction.MaskValue(farmhandName)}' (id={farmhandId})",
+                                LogLevel.Warn
+                            );
                         }
                     }
 
-                    Monitor.Log($"No cabin found for farmhand '{ChatRedaction.MaskValue(farmhandName)}', removing from farmhandData directly", LogLevel.Warn);
+                    Monitor.Log(
+                        $"No cabin found for farmhand '{ChatRedaction.MaskValue(farmhandName)}', removing from farmhandData directly",
+                        LogLevel.Warn
+                    );
                     Game1.netWorldState.Value.farmhandData.Remove(farmhandId);
                 }
                 else
                 {
-                    Monitor.Log($"Farmhand '{ChatRedaction.MaskValue(farmhandName)}' already deleted (no cabin or farmhandData found)", LogLevel.Debug);
+                    Monitor.Log(
+                        $"Farmhand '{ChatRedaction.MaskValue(farmhandName)}' already deleted (no cabin or farmhandData found)",
+                        LogLevel.Debug
+                    );
                     return;
                 }
             }
@@ -3641,7 +4315,10 @@ namespace JunimoServer.Services.Api
             // farmhand's lifecycle, so clear its intent entry here too — otherwise a
             // deleted player's position record leaks into the save indefinitely.
             var removedEverJoined = _cabinManager.Data.AllPlayerIdsEverJoined.Remove(farmhandId);
-            var removedPosition = _cabinManager.Data.PlayerCabinPositions.TryRemove(farmhandId, out _);
+            var removedPosition = _cabinManager.Data.PlayerCabinPositions.TryRemove(
+                farmhandId,
+                out _
+            );
             if (removedEverJoined || removedPosition)
             {
                 _cabinManager.Data.Write();
@@ -3652,15 +4329,26 @@ namespace JunimoServer.Services.Api
             _cabinManager.EnsureAtLeastXCabins();
         }
 
-        [ApiEndpoint("POST", "/newgame", Summary = "Create a new game with specified settings", Tag = "Server")]
+        [ApiEndpoint(
+            "POST",
+            "/newgame",
+            Summary = "Create a new game with specified settings",
+            Tag = "Server"
+        )]
         [ApiResponse(typeof(NewGameResponse), 200, Description = "New game created successfully")]
-        private async Task HandlePostNewGameAsync(HttpListenerRequest request, HttpListenerResponse response)
+        private async Task HandlePostNewGameAsync(
+            HttpListenerRequest request,
+            HttpListenerResponse response
+        )
         {
             // Parse the JSON request body
             NewGameRequest? body = null;
             try
             {
-                using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
+                using var reader = new System.IO.StreamReader(
+                    request.InputStream,
+                    request.ContentEncoding
+                );
                 var json = await reader.ReadToEndAsync();
                 if (!string.IsNullOrWhiteSpace(json))
                 {
@@ -3691,11 +4379,15 @@ namespace JunimoServer.Services.Api
             if (connectedClients > 0)
             {
                 response.StatusCode = 409;
-                await WriteJsonAsync(response, new NewGameResponse
-                {
-                    Success = false,
-                    Error = $"Cannot create new game while {connectedClients} client(s) are connected. Disconnect all players first."
-                });
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error =
+                            $"Cannot create new game while {connectedClients} client(s) are connected. Disconnect all players first.",
+                    }
+                );
                 return;
             }
 
@@ -3716,11 +4408,14 @@ namespace JunimoServer.Services.Api
             if (gameManager == null)
             {
                 response.StatusCode = 503;
-                await WriteJsonAsync(response, new NewGameResponse
-                {
-                    Success = false,
-                    Error = "Game manager not initialized yet"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error = "Game manager not initialized yet",
+                    }
+                );
                 return;
             }
 
@@ -3737,11 +4432,14 @@ namespace JunimoServer.Services.Api
             catch (Exception ex)
             {
                 response.StatusCode = 500;
-                await WriteJsonAsync(response, new NewGameResponse
-                {
-                    Success = false,
-                    Error = $"Failed to initiate new game: {ex.Message}"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error = $"Failed to initiate new game: {ex.Message}",
+                    }
+                );
                 return;
             }
 
@@ -3756,34 +4454,48 @@ namespace JunimoServer.Services.Api
                 if (completed == newGameTask)
                 {
                     await newGameTask!; // Propagate any exception from CreateNewGame
-                    await WriteJsonAsync(response, new NewGameResponse
-                    {
-                        Success = true,
-                        Message = $"New game created with farm type {config.WhichFarm}"
-                    });
+                    await WriteJsonAsync(
+                        response,
+                        new NewGameResponse
+                        {
+                            Success = true,
+                            Message = $"New game created with farm type {config.WhichFarm}",
+                        }
+                    );
                     return;
                 }
 
                 // Timeout
                 response.StatusCode = 504;
-                await WriteJsonAsync(response, new NewGameResponse
-                {
-                    Success = false,
-                    Error = "New game creation timed out (120s)"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error = "New game creation timed out (120s)",
+                    }
+                );
             }
             catch (Exception ex)
             {
                 response.StatusCode = 500;
-                await WriteJsonAsync(response, new NewGameResponse
-                {
-                    Success = false,
-                    Error = $"New game creation failed: {ex.Message}"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error = $"New game creation failed: {ex.Message}",
+                    }
+                );
             }
         }
 
-        [ApiEndpoint("POST", "/reload", Summary = "Re-read server-settings.json and reload the active world (no restart)", Tag = "Server")]
+        [ApiEndpoint(
+            "POST",
+            "/reload",
+            Summary = "Re-read server-settings.json and reload the active world (no restart)",
+            Tag = "Server"
+        )]
         [ApiResponse(typeof(ReloadResponse), 200, Description = "World reloaded successfully")]
         private async Task HandlePostReloadAsync(HttpListenerResponse response)
         {
@@ -3802,24 +4514,35 @@ namespace JunimoServer.Services.Api
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[API] Reload precheck could not read connected-client count: {ex.Message}", LogLevel.Warn);
+                Monitor.Log(
+                    $"[API] Reload precheck could not read connected-client count: {ex.Message}",
+                    LogLevel.Warn
+                );
                 response.StatusCode = 503;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = "Cannot verify connected clients right now (game thread busy, likely a day transition or save sync). Retry after a few seconds."
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse
+                    {
+                        Success = false,
+                        Error =
+                            "Cannot verify connected clients right now (game thread busy, likely a day transition or save sync). Retry after a few seconds.",
+                    }
+                );
                 return;
             }
 
             if (connectedClients > 0)
             {
                 response.StatusCode = 409;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = $"Cannot reload while {connectedClients} client(s) are connected. Disconnect all players first."
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse
+                    {
+                        Success = false,
+                        Error =
+                            $"Cannot reload while {connectedClients} client(s) are connected. Disconnect all players first.",
+                    }
+                );
                 return;
             }
 
@@ -3827,11 +4550,14 @@ namespace JunimoServer.Services.Api
             if (gameManager == null)
             {
                 response.StatusCode = 503;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = "Game manager not initialized yet"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse
+                    {
+                        Success = false,
+                        Error = "Game manager not initialized yet",
+                    }
+                );
                 return;
             }
 
@@ -3850,11 +4576,14 @@ namespace JunimoServer.Services.Api
             catch (Exception ex)
             {
                 response.StatusCode = 500;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = $"Failed to initiate reload: {ex.Message}"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse
+                    {
+                        Success = false,
+                        Error = $"Failed to initiate reload: {ex.Message}",
+                    }
+                );
                 return;
             }
 
@@ -3868,30 +4597,31 @@ namespace JunimoServer.Services.Api
                 if (completed == reloadTask)
                 {
                     await reloadTask!; // Propagate any exception from LoadSave
-                    await WriteJsonAsync(response, new ReloadResponse
-                    {
-                        Success = true,
-                        Message = "World reloaded"
-                    });
+                    await WriteJsonAsync(
+                        response,
+                        new ReloadResponse { Success = true, Message = "World reloaded" }
+                    );
                     return;
                 }
 
                 // Timeout
                 response.StatusCode = 504;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = "World reload timed out (120s)"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse { Success = false, Error = "World reload timed out (120s)" }
+                );
             }
             catch (Exception ex)
             {
                 response.StatusCode = 500;
-                await WriteJsonAsync(response, new ReloadResponse
-                {
-                    Success = false,
-                    Error = $"World reload failed: {ex.Message}"
-                });
+                await WriteJsonAsync(
+                    response,
+                    new ReloadResponse
+                    {
+                        Success = false,
+                        Error = $"World reload failed: {ex.Message}",
+                    }
+                );
             }
         }
 
@@ -3942,7 +4672,8 @@ namespace JunimoServer.Services.Api
 
         public async Task StopServerAsync()
         {
-            if (!_isRunning) return;
+            if (!_isRunning)
+                return;
 
             try
             {

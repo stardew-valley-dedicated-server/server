@@ -23,8 +23,14 @@ public class CabinStrategyNoneTests : TestBase
     {
         if (_needsServerReset && Lease != null)
         {
-            try { await CreateNewGameOnServerAsync(farmType: 0); }
-            catch (Exception ex) { LogWarning($"Server reset failed during cleanup: {ex.Message}"); }
+            try
+            {
+                await CreateNewGameOnServerAsync(farmType: 0);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Server reset failed during cleanup: {ex.Message}");
+            }
         }
         _needsServerReset = false;
         await base.DisposeAsync();

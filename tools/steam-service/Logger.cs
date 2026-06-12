@@ -43,7 +43,7 @@ public static class Logger
     {
         WriteIndented = false,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     /// <summary>Exception types already reported on stderr. Used to emit
@@ -74,7 +74,7 @@ public static class Logger
                 requestId = SidecarRequestContext.Current,
                 service = "steam-auth",
                 @event = name,
-                data
+                data,
             };
             var json = JsonSerializer.Serialize(entry, _eventJsonOptions);
             lock (_lock)
@@ -99,8 +99,9 @@ public static class Logger
             if (_reportedEventFailures.TryAdd(ex.GetType(), 0))
             {
                 Console.Error.WriteLine(
-                    $"[Logger.LogEvent] emit failed ({ex.GetType().Name}: {ex.Message}) " +
-                    $"while emitting '{name}'. Further '{ex.GetType().Name}' failures will be silent.");
+                    $"[Logger.LogEvent] emit failed ({ex.GetType().Name}: {ex.Message}) "
+                        + $"while emitting '{name}'. Further '{ex.GetType().Name}' failures will be silent."
+                );
             }
         }
         catch
@@ -130,7 +131,8 @@ public static class Logger
         if (message.Length > 1 && message[0] == '[')
         {
             var end = message.IndexOf(']');
-            if (end > 0) return message[..(end + 1)];
+            if (end > 0)
+                return message[..(end + 1)];
         }
         return "";
     }

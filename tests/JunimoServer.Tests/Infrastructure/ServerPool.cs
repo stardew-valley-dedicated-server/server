@@ -73,7 +73,11 @@ internal sealed class ServerPool
     /// then falls back to <see cref="TryGetBest"/>. When <paramref name="hostId"/> is
     /// non-null, restricts both passes to instances on that host.
     /// </summary>
-    public ManagedServer? TryGetBestForExclusive(string key, string? callerClass, string? hostId = null)
+    public ManagedServer? TryGetBestForExclusive(
+        string key,
+        string? callerClass,
+        string? hostId = null
+    )
     {
         lock (_lock)
         {
@@ -154,7 +158,11 @@ internal sealed class ServerPool
     /// In both cases the returned instance has a reservation outstanding that
     /// the caller must commit or release.
     /// </summary>
-    public ManagedServer? TryReserveBestForExclusive(string key, string? callerClass, string? hostId = null)
+    public ManagedServer? TryReserveBestForExclusive(
+        string key,
+        string? callerClass,
+        string? hostId = null
+    )
     {
         lock (_lock)
         {

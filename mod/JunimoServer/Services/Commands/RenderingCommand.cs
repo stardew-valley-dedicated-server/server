@@ -15,29 +15,40 @@ namespace JunimoServer.Services.Commands
             _helper = helper;
             _monitor = monitor;
 
-            helper.ConsoleCommands.Add("rendering",
+            helper.ConsoleCommands.Add(
+                "rendering",
                 "Set render rate: 'rendering <fps>' (0 to disable) or 'rendering status'",
-                (cmd, args) => HandleCommand(args));
+                (cmd, args) => HandleCommand(args)
+            );
         }
 
         private static void HandleCommand(string[] args)
         {
             if (args.Length == 0)
             {
-                _monitor.Log("Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)", LogLevel.Warn);
+                _monitor.Log(
+                    "Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)",
+                    LogLevel.Warn
+                );
                 return;
             }
 
             if (string.Equals(args[0], "status", StringComparison.OrdinalIgnoreCase))
             {
                 var fps = ServerOptimizerOverrides.GetCurrentServerFps();
-                _monitor.Log(fps == 0 ? "Rendering is disabled (fps 0)" : $"Rendering is at {fps} fps", LogLevel.Info);
+                _monitor.Log(
+                    fps == 0 ? "Rendering is disabled (fps 0)" : $"Rendering is at {fps} fps",
+                    LogLevel.Info
+                );
                 return;
             }
 
             if (!int.TryParse(args[0], out var newFps) || newFps < 0)
             {
-                _monitor.Log($"Invalid argument '{args[0]}'. Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)", LogLevel.Warn);
+                _monitor.Log(
+                    $"Invalid argument '{args[0]}'. Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)",
+                    LogLevel.Warn
+                );
                 return;
             }
 

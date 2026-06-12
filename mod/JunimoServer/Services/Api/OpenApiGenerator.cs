@@ -22,7 +22,13 @@ namespace JunimoServer.Services.Api
         /// decorated methods are included. Used to omit test-only endpoints from the
         /// production spec (gated on <c>Env.IsTest</c> at the call site).
         /// </param>
-        public static OpenApiDocument Generate(Type serviceType, string title, string version, string? description = null, Func<MethodInfo, bool>? includeMethod = null)
+        public static OpenApiDocument Generate(
+            Type serviceType,
+            string title,
+            string version,
+            string? description = null,
+            Func<MethodInfo, bool>? includeMethod = null
+        )
         {
             var document = new OpenApiDocument
             {
@@ -31,13 +37,16 @@ namespace JunimoServer.Services.Api
                 {
                     Title = title,
                     Version = version,
-                    Description = description
-                }
+                    Description = description,
+                },
             };
 
-            var methods = serviceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                .Where(m => m.GetCustomAttribute<ApiEndpointAttribute>() != null
-                            && (includeMethod == null || includeMethod(m)));
+            var methods = serviceType
+                .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                .Where(m =>
+                    m.GetCustomAttribute<ApiEndpointAttribute>() != null
+                    && (includeMethod == null || includeMethod(m))
+                );
 
             foreach (var method in methods)
             {
@@ -48,7 +57,7 @@ namespace JunimoServer.Services.Api
                 {
                     Summary = endpoint.Summary,
                     Description = endpoint.Description,
-                    OperationId = method.Name
+                    OperationId = method.Name,
                 };
 
                 if (!string.IsNullOrEmpty(endpoint.Tag))
@@ -61,7 +70,8 @@ namespace JunimoServer.Services.Api
                 {
                     var apiResponse = new OpenApiResponse
                     {
-                        Description = response.Description ?? GetDefaultDescription(response.StatusCode)
+                        Description =
+                            response.Description ?? GetDefaultDescription(response.StatusCode),
                     };
 
                     if (response.ResponseType != typeof(void))
@@ -69,7 +79,7 @@ namespace JunimoServer.Services.Api
                         var schema = GenerateSchema(response.ResponseType, document);
                         apiResponse.Content["application/json"] = new OpenApiMediaType
                         {
-                            Schema = schema
+                            Schema = schema,
                         };
                     }
 
@@ -98,7 +108,7 @@ namespace JunimoServer.Services.Api
                     "PATCH" => OpenApiOperationMethod.Patch,
                     "HEAD" => OpenApiOperationMethod.Head,
                     "OPTIONS" => OpenApiOperationMethod.Options,
-                    _ => OpenApiOperationMethod.Get
+                    _ => OpenApiOperationMethod.Get,
                 };
                 pathItem[operationMethod] = operation;
             }
@@ -116,10 +126,7 @@ namespace JunimoServer.Services.Api
                 return new JsonSchema { Reference = existingSchema };
             }
 
-            var schema = new JsonSchema
-            {
-                Type = JsonObjectType.Object
-            };
+            var schema = new JsonSchema { Type = JsonObjectType.Object };
 
             // Get XML documentation if available (from DescriptionAttribute)
             var typeDescription = type.GetCustomAttribute<DescriptionAttribute>();
@@ -168,12 +175,13 @@ namespace JunimoServer.Services.Api
             {
                 return new JsonSchemaProperty
                 {
-                    Description = "A built-in farm index (0-7) or name, or a Data/AdditionalFarms farm Id.",
+                    Description =
+                        "A built-in farm index (0-7) or name, or a Data/AdditionalFarms farm Id.",
                     OneOf =
                     {
                         new JsonSchema { Type = JsonObjectType.Integer },
-                        new JsonSchema { Type = JsonObjectType.String }
-                    }
+                        new JsonSchema { Type = JsonObjectType.String },
+                    },
                 };
             }
 
@@ -187,7 +195,11 @@ namespace JunimoServer.Services.Api
             if (type == typeof(bool))
                 return new JsonSchemaProperty { Type = JsonObjectType.Boolean };
             if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return new JsonSchemaProperty { Type = JsonObjectType.String, Format = "date-time" };
+                return new JsonSchemaProperty
+                {
+                    Type = JsonObjectType.String,
+                    Format = "date-time",
+                };
 
             // Handle arrays and lists
             if (type.IsArray)
@@ -195,20 +207,24 @@ namespace JunimoServer.Services.Api
                 return new JsonSchemaProperty
                 {
                     Type = JsonObjectType.Array,
-                    Item = GetPropertySchema(type.GetElementType()!)
+                    Item = GetPropertySchema(type.GetElementType()!),
                 };
             }
 
             if (type.IsGenericType)
             {
                 var genericDef = type.GetGenericTypeDefinition();
-                if (genericDef == typeof(List<>) || genericDef == typeof(IList<>) ||
-                    genericDef == typeof(IEnumerable<>) || genericDef == typeof(ICollection<>))
+                if (
+                    genericDef == typeof(List<>)
+                    || genericDef == typeof(IList<>)
+                    || genericDef == typeof(IEnumerable<>)
+                    || genericDef == typeof(ICollection<>)
+                )
                 {
                     return new JsonSchemaProperty
                     {
                         Type = JsonObjectType.Array,
-                        Item = GetPropertySchema(type.GetGenericArguments()[0])
+                        Item = GetPropertySchema(type.GetGenericArguments()[0]),
                     };
                 }
             }
@@ -223,17 +239,18 @@ namespace JunimoServer.Services.Api
             return schema;
         }
 
-        private static string GetDefaultDescription(int statusCode) => statusCode switch
-        {
-            200 => "Success",
-            201 => "Created",
-            204 => "No Content",
-            400 => "Bad Request",
-            401 => "Unauthorized",
-            403 => "Forbidden",
-            404 => "Not Found",
-            500 => "Internal Server Error",
-            _ => "Response"
-        };
+        private static string GetDefaultDescription(int statusCode) =>
+            statusCode switch
+            {
+                200 => "Success",
+                201 => "Created",
+                204 => "No Content",
+                400 => "Bad Request",
+                401 => "Unauthorized",
+                403 => "Forbidden",
+                404 => "Not Found",
+                500 => "Internal Server Error",
+                _ => "Response",
+            };
     }
 }

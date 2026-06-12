@@ -1,9 +1,9 @@
+using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Objects;
-using System.Linq;
 
 namespace JunimoServer.Services.AlwaysOn
 {
@@ -66,7 +66,10 @@ namespace JunimoServer.Services.AlwaysOn
         {
             if (!TryGetDefaultBedPosition(farmhouse, out var bedPos))
             {
-                _monitor?.Log("Host farmhouse heal: no DefaultBedPosition on the level-0 map; skipped bed fixup.", LogLevel.Warn);
+                _monitor?.Log(
+                    "Host farmhouse heal: no DefaultBedPosition on the level-0 map; skipped bed fixup.",
+                    LogLevel.Warn
+                );
                 return;
             }
 
@@ -76,7 +79,9 @@ namespace JunimoServer.Services.AlwaysOn
                 farmhouse.furniture.Remove(farmhouse.furniture.GuidOf(bed));
             }
 
-            farmhouse.furniture.Add(new BedFurniture(BedFurniture.DEFAULT_BED_INDEX, new Vector2(bedPos.X, bedPos.Y)));
+            farmhouse.furniture.Add(
+                new BedFurniture(BedFurniture.DEFAULT_BED_INDEX, new Vector2(bedPos.X, bedPos.Y))
+            );
         }
 
         /// <summary>
@@ -92,7 +97,10 @@ namespace JunimoServer.Services.AlwaysOn
                 {
                     for (int y = 0; y < layer.LayerHeight; y++)
                     {
-                        if (farmhouse.doesTileHaveProperty(x, y, "DefaultBedPosition", "Back") != null)
+                        if (
+                            farmhouse.doesTileHaveProperty(x, y, "DefaultBedPosition", "Back")
+                            != null
+                        )
                         {
                             position = new Point(x, y);
                             return true;
@@ -126,8 +134,12 @@ namespace JunimoServer.Services.AlwaysOn
         // ReSharper disable once InconsistentNaming
         public static bool BlockThisHouseUpgrade_Prefix()
         {
-            var target = (Game1.currentLocation?.getBuildingAt(Game1.player.Tile + new Vector2(0f, -1f))?.GetIndoors() as FarmHouse)
-                         ?? (Game1.currentLocation as FarmHouse);
+            var target =
+                (
+                    Game1
+                        .currentLocation?.getBuildingAt(Game1.player.Tile + new Vector2(0f, -1f))
+                        ?.GetIndoors() as FarmHouse
+                ) ?? (Game1.currentLocation as FarmHouse);
 
             // Cabin is a FarmHouse subclass; only the main farmhouse is a plain FarmHouse. Let cabins through.
             if (target is null || target is Cabin)
@@ -141,8 +153,9 @@ namespace JunimoServer.Services.AlwaysOn
 
         private static void LogBlocked() =>
             _monitor?.Log(
-                "Blocked a debug house-upgrade command targeting the host's main farmhouse — it is " +
-                "intentionally fixed at level 0 (internal-only). Upgrade a farmhand's cabin instead.",
-                LogLevel.Warn);
+                "Blocked a debug house-upgrade command targeting the host's main farmhouse — it is "
+                    + "intentionally fixed at level 0 (internal-only). Upgrade a farmhand's cabin instead.",
+                LogLevel.Warn
+            );
     }
 }

@@ -446,7 +446,10 @@ public class CoopClient
     /// </summary>
     public Task<NavigationResult?> SubmitInviteCode(string inviteCode)
     {
-        return _client.PostAsync<NavigationResult>("/coop/invite-code/submit", new InviteCodeParams { InviteCode = inviteCode });
+        return _client.PostAsync<NavigationResult>(
+            "/coop/invite-code/submit",
+            new InviteCodeParams { InviteCode = inviteCode }
+        );
     }
 
     /// <summary>
@@ -494,7 +497,10 @@ public class FarmhandClient
     /// </summary>
     public Task<NavigationResult?> Select(int slotIndex)
     {
-        return _client.PostAsync<NavigationResult>("/farmhands/select", new SelectFarmhandParams { SlotIndex = slotIndex });
+        return _client.PostAsync<NavigationResult>(
+            "/farmhands/select",
+            new SelectFarmhandParams { SlotIndex = slotIndex }
+        );
     }
 }
 
@@ -522,8 +528,10 @@ public class CharacterClient
     /// </summary>
     public Task<CustomizeResult?> Customize(string name, string favoriteThing)
     {
-        return _client.PostAsync<CustomizeResult>("/character/customize",
-            new CustomizeCharacterParams { Name = name, FavoriteThing = favoriteThing });
+        return _client.PostAsync<CustomizeResult>(
+            "/character/customize",
+            new CustomizeCharacterParams { Name = name, FavoriteThing = favoriteThing }
+        );
     }
 
     /// <summary>
@@ -560,32 +568,82 @@ public class ActionsClient
     /// before issuing follow-up actions that depend on currentLocation.
     /// POST /actions/warp
     /// </summary>
-    public Task<WarpResult?> Warp(string locationName, int tileX, int tileY)
-        => _client.PostAsync<WarpResult>("/actions/warp", new { locationName, tileX, tileY });
+    public Task<WarpResult?> Warp(string locationName, int tileX, int tileY) =>
+        _client.PostAsync<WarpResult>(
+            "/actions/warp",
+            new
+            {
+                locationName,
+                tileX,
+                tileY,
+            }
+        );
 
     /// <summary>
     /// Place a Garden Pot at the given tile on the player's current location.
     /// POST /actions/place_pot
     /// </summary>
-    public Task<PlacePotResult?> PlacePot(string locationName, int tileX, int tileY, bool clearObstacles = false)
-        => _client.PostAsync<PlacePotResult>("/actions/place_pot",
-            new { locationName, tileX, tileY, clearObstacles });
+    public Task<PlacePotResult?> PlacePot(
+        string locationName,
+        int tileX,
+        int tileY,
+        bool clearObstacles = false
+    ) =>
+        _client.PostAsync<PlacePotResult>(
+            "/actions/place_pot",
+            new
+            {
+                locationName,
+                tileX,
+                tileY,
+                clearObstacles,
+            }
+        );
 
     /// <summary>
     /// Clear debris (objects, terrain features, bushes, resource clumps) from a tile
     /// area on the player's current location. Use to prep a building footprint.
     /// POST /actions/clear_area
     /// </summary>
-    public Task<ClearAreaResult?> ClearArea(string locationName, int tileX, int tileY, int width, int height)
-        => _client.PostAsync<ClearAreaResult>("/actions/clear_area",
-            new { locationName, tileX, tileY, width, height });
+    public Task<ClearAreaResult?> ClearArea(
+        string locationName,
+        int tileX,
+        int tileY,
+        int width,
+        int height
+    ) =>
+        _client.PostAsync<ClearAreaResult>(
+            "/actions/clear_area",
+            new
+            {
+                locationName,
+                tileX,
+                tileY,
+                width,
+                height,
+            }
+        );
 
     /// <summary>
     /// Plant a seed in a HoeDirt or IndoorPot at the given tile.
     /// POST /actions/plant_crop
     /// </summary>
-    public Task<PlantCropResult?> PlantCrop(string itemId, string locationName, int tileX, int tileY)
-        => _client.PostAsync<PlantCropResult>("/actions/plant_crop", new { itemId, locationName, tileX, tileY });
+    public Task<PlantCropResult?> PlantCrop(
+        string itemId,
+        string locationName,
+        int tileX,
+        int tileY
+    ) =>
+        _client.PostAsync<PlantCropResult>(
+            "/actions/plant_crop",
+            new
+            {
+                itemId,
+                locationName,
+                tileX,
+                tileY,
+            }
+        );
 }
 
 public class ChatClient
@@ -626,7 +684,8 @@ public class ChatClient
     public async Task<ChatHistoryResult?> WaitForMessageContainingAsync(
         string[] keywords,
         TimeSpan? timeout = null,
-        int historySize = 10)
+        int historySize = 10
+    )
     {
         var effectiveTimeout = timeout ?? Helpers.TestTimings.ChatCommandTimeout;
         ChatHistoryResult? result = null;
@@ -637,8 +696,11 @@ public class ChatClient
             {
                 result = await GetHistory(historySize);
                 return result?.Messages?.Any(m =>
-                    keywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))) == true;
-            }, effectiveTimeout);
+                        keywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+                    ) == true;
+            },
+            effectiveTimeout
+        );
 
         return found ? result : null;
     }
@@ -650,7 +712,8 @@ public class ChatClient
     public Task<ChatHistoryResult?> WaitForMessageContainingAsync(
         string keyword,
         TimeSpan? timeout = null,
-        int historySize = 10)
+        int historySize = 10
+    )
     {
         return WaitForMessageContainingAsync(new[] { keyword }, timeout, historySize);
     }
@@ -673,7 +736,8 @@ public class ChatClient
         bool matchAll = false,
         TimeSpan? timeout = null,
         int historySize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var chatBefore = await GetHistory(historySize);
         var seqBefore = chatBefore?.TotalReceived ?? 0;
@@ -685,26 +749,32 @@ public class ChatClient
             async () =>
             {
                 var chat = await GetHistory(historySize);
-                if (chat?.Messages == null) return false;
+                if (chat?.Messages == null)
+                    return false;
 
                 // Only check messages that arrived after our snapshot
                 var newMessages = chat.Messages.Where(m => m.Seq > seqBefore).ToList();
                 return matchAll
                     ? keywords_AllPresent(newMessages, responseKeywords)
                     : keywords_AnyPresent(newMessages, responseKeywords);
-            }, timeout ?? Helpers.TestTimings.ChatCommandTimeout, cancellationToken: ct);
+            },
+            timeout ?? Helpers.TestTimings.ChatCommandTimeout,
+            cancellationToken: ct
+        );
     }
 
     private static bool keywords_AllPresent(List<ChatMessage> messages, string[] keywords)
     {
         return keywords.All(k =>
-            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
+            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+        );
     }
 
     private static bool keywords_AnyPresent(List<ChatMessage> messages, string[] keywords)
     {
         return keywords.Any(k =>
-            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
+            messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+        );
     }
 }
 
@@ -727,7 +797,9 @@ public class WaitClient
     /// </summary>
     public Task<WaitResult?> ForMenu(string menuType, TimeSpan? timeout = null)
     {
-        return _client.GetAsync<WaitResult>($"/wait/menu?type={Uri.EscapeDataString(menuType)}&timeout={ToMs(timeout)}");
+        return _client.GetAsync<WaitResult>(
+            $"/wait/menu?type={Uri.EscapeDataString(menuType)}&timeout={ToMs(timeout)}"
+        );
     }
 
     /// <summary>
@@ -818,13 +890,16 @@ public class GameTestClient : IDisposable
     public WaitClient Wait { get; }
     public ChatClient Chat { get; }
 
-    public GameTestClient(string baseUrl = "http://localhost:5123", TimeSpan? defaultWaitTimeout = null)
+    public GameTestClient(
+        string baseUrl = "http://localhost:5123",
+        TimeSpan? defaultWaitTimeout = null
+    )
     {
         var handler = new TracingHandler("test-client") { InnerHandler = new HttpClientHandler() };
         _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl),
-            Timeout = TimeSpan.FromMinutes(2) // Long timeout for wait endpoints
+            Timeout = TimeSpan.FromMinutes(2), // Long timeout for wait endpoints
         };
         Coop = new CoopClient(this);
         Farmhands = new FarmhandClient(this);
@@ -867,11 +942,17 @@ public class GameTestClient : IDisposable
     /// </summary>
     /// <param name="limit">Optional limit on number of errors returned.</param>
     /// <param name="clear">If true, clears errors after retrieval.</param>
-    public Task<ErrorsResponse?> GetErrors(int? limit = null, bool clear = false, CancellationToken ct = default)
+    public Task<ErrorsResponse?> GetErrors(
+        int? limit = null,
+        bool clear = false,
+        CancellationToken ct = default
+    )
     {
         var query = new List<string>();
-        if (limit.HasValue) query.Add($"limit={limit.Value}");
-        if (clear) query.Add("clear=true");
+        if (limit.HasValue)
+            query.Add($"limit={limit.Value}");
+        if (clear)
+            query.Add("clear=true");
 
         var path = query.Count > 0 ? $"/errors?{string.Join("&", query)}" : "/errors";
         return GetAsync<ErrorsResponse>(path, ct);
@@ -902,7 +983,8 @@ public class GameTestClient : IDisposable
     public async Task<GameStateResult?> GetState()
     {
         var status = await GetAsync<StatusResponse>("/status");
-        if (status == null) return null;
+        if (status == null)
+            return null;
 
         return new GameStateResult
         {
@@ -911,7 +993,7 @@ public class GameTestClient : IDisposable
             IsConnected = status.Connection?.IsConnected ?? false,
             IsInGame = status.Connection?.WorldReady ?? false,
             PlayerName = status.Farmer?.Name,
-            UniqueId = status.Farmer?.UniqueId
+            UniqueId = status.Farmer?.UniqueId,
         };
     }
 
@@ -931,9 +1013,16 @@ public class GameTestClient : IDisposable
     /// </list>
     /// </para>
     /// </summary>
-    public async Task<GameStateResult?> WaitForLocationAsync(string locationPattern, TimeSpan? timeout = null, CancellationToken ct = default)
+    public async Task<GameStateResult?> WaitForLocationAsync(
+        string locationPattern,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
     {
-        var regex = new Regex(locationPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var regex = new Regex(
+            locationPattern,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+        );
         GameStateResult? state = null;
         var found = await Helpers.PollingHelper.WaitUntilAsync(
             Helpers.WaitName.Polling_GameTestClient_WaitForLocation,
@@ -941,7 +1030,10 @@ public class GameTestClient : IDisposable
             {
                 state = await GetState();
                 return state?.Location is string loc && regex.IsMatch(loc);
-            }, timeout ?? Helpers.TestTimings.NetworkSyncTimeout, cancellationToken: ct);
+            },
+            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
         return found ? state : null;
     }
 
@@ -963,7 +1055,11 @@ public class GameTestClient : IDisposable
     /// start with the cabin prefix ("FarmHouse").
     /// </summary>
     /// <returns>True if the warp completed within the timeout.</returns>
-    public async Task<bool> WaitForAuthWarpAsync(string lobbyLocation, TimeSpan? timeout = null, CancellationToken ct = default)
+    public async Task<bool> WaitForAuthWarpAsync(
+        string lobbyLocation,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
     {
         return await Helpers.PollingHelper.WaitUntilAsync(
             Helpers.WaitName.Polling_GameTestClient_WaitForAuthWarp,
@@ -972,8 +1068,14 @@ public class GameTestClient : IDisposable
                 var s = await GetState();
                 return !string.IsNullOrEmpty(s?.Location)
                     && s.Location != lobbyLocation
-                    && s.Location.StartsWith(CabinLocationPrefix, StringComparison.OrdinalIgnoreCase);
-            }, timeout ?? Helpers.TestTimings.AuthLoginAttemptTimeout, cancellationToken: ct);
+                    && s.Location.StartsWith(
+                        CabinLocationPrefix,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+            },
+            timeout ?? Helpers.TestTimings.AuthLoginAttemptTimeout,
+            cancellationToken: ct
+        );
     }
 
     /// <summary>
@@ -996,7 +1098,8 @@ public class GameTestClient : IDisposable
 
     #region HTTP Helpers
 
-    public async Task<T?> GetAsync<T>(string path, CancellationToken ct = default) where T : class
+    public async Task<T?> GetAsync<T>(string path, CancellationToken ct = default)
+        where T : class
     {
         var effective = ct == default ? CancellationToken : ct;
         var response = await _httpClient.GetAsync(path, effective);
@@ -1004,7 +1107,8 @@ public class GameTestClient : IDisposable
         return await response.Content.ReadFromJsonAsync<T>(effective);
     }
 
-    public async Task<T?> PostAsync<T>(string path, object body) where T : class
+    public async Task<T?> PostAsync<T>(string path, object body)
+        where T : class
     {
         var response = await _httpClient.PostAsJsonAsync(path, body, CancellationToken);
         response.EnsureSuccessStatusCode();

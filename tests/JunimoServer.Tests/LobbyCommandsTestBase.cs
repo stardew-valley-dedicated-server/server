@@ -35,13 +35,21 @@ public abstract class LobbyCommandsTestBase : TestBase
                         try
                         {
                             await GameClient.Chat.SendAndWaitForResponseAsync(
-                                $"!lobby delete {layoutName}", deleteKeywords);
+                                $"!lobby delete {layoutName}",
+                                deleteKeywords
+                            );
                         }
-                        catch (Exception ex) { Log($"Layout cleanup failed for '{layoutName}': {ex.Message}"); }
+                        catch (Exception ex)
+                        {
+                            Log($"Layout cleanup failed for '{layoutName}': {ex.Message}");
+                        }
                     }
                 }
             }
-            catch (Exception ex) { Log($"Layout cleanup skipped: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Log($"Layout cleanup skipped: {ex.Message}");
+            }
         }
 
         await base.DisposeAsync();
@@ -56,9 +64,11 @@ public abstract class LobbyCommandsTestBase : TestBase
         await EnsureConnectedAsync("LobbyAdmin");
 
         var ct = TestContext.Current.CancellationToken;
-        var uid = PersistentSession.ConnectedFarmerUid
+        var uid =
+            PersistentSession.ConnectedFarmerUid
             ?? throw new InvalidOperationException(
-                $"EnsureAdminSessionAsync requires a joined session (ConnectedFarmerUid=null for '{PersistentSession.ConnectedFarmerName}')");
+                $"EnsureAdminSessionAsync requires a joined session (ConnectedFarmerUid=null for '{PersistentSession.ConnectedFarmerName}')"
+            );
 
         // Visibility is guaranteed by the ConnectionHelper gate (UID-based) before
         // EnsureConnectedAsync returns. Grant admin by UID so this call is stable
@@ -69,8 +79,14 @@ public abstract class LobbyCommandsTestBase : TestBase
             {
                 var result = await ServerApi.GrantAdminById(uid, ct);
                 return result?.Success == true;
-            }, TimeSpan.FromSeconds(10), cancellationToken: ct);
-        Assert.True(adminGranted, $"Failed to grant admin to uid={uid} ('{PersistentSession.ConnectedFarmerName}') within timeout");
+            },
+            TimeSpan.FromSeconds(10),
+            cancellationToken: ct
+        );
+        Assert.True(
+            adminGranted,
+            $"Failed to grant admin to uid={uid} ('{PersistentSession.ConnectedFarmerName}') within timeout"
+        );
     }
 
     /// <summary>
@@ -80,13 +96,19 @@ public abstract class LobbyCommandsTestBase : TestBase
     protected async Task SetupAsNonAdmin()
     {
         await Farmers.ConnectNewAsync(
-            breakSession: true, assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken);
+            breakSession: true,
+            assertAuthenticated: true,
+            ct: TestContext.Current.CancellationToken
+        );
 
         var welcome = await GameClient.Chat.WaitForMessageContainingAsync(
-            "Welcome", TestTimings.ChatCommandTimeout);
-        Assert.True(welcome?.Messages?.Count > 0,
-            "Client must receive 'Welcome' message after auth. Client may have disconnected during post-auth warp.");
+            "Welcome",
+            TestTimings.ChatCommandTimeout
+        );
+        Assert.True(
+            welcome?.Messages?.Count > 0,
+            "Client must receive 'Welcome' message after auth. Client may have disconnected during post-auth warp."
+        );
     }
 
     /// <summary>

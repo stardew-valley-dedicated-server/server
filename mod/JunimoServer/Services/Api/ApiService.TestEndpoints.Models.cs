@@ -99,6 +99,7 @@ namespace JunimoServer.Services.Api
     {
         public bool Success { get; set; }
         public string? Error { get; set; }
+
         /// <summary>True if a SaverCrop entry was found at the requested (location, tile).</summary>
         public bool Found { get; set; }
         public int? ExtraDays { get; set; }

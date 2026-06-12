@@ -10,7 +10,8 @@ namespace JunimoServer.Tests.Schema.Events;
 public sealed record SetupPhaseStartedEvent(
     string Category,
     [property: JsonPropertyName("phase")] string PhaseName,
-    [property: JsonPropertyName("collection")] string? CollectionName = null) : IRendererEvent
+    [property: JsonPropertyName("collection")] string? CollectionName = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.SetupStarted;
@@ -26,7 +27,8 @@ public sealed record SetupPhaseCompletedEvent(
     [property: JsonPropertyName("phase")] string PhaseName,
     bool Success,
     [property: JsonPropertyName("error")] string? ErrorMessage = null,
-    [property: JsonPropertyName("collection")] string? CollectionName = null) : IRendererEvent
+    [property: JsonPropertyName("collection")] string? CollectionName = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.SetupCompleted;
@@ -40,10 +42,10 @@ public sealed record SetupPhaseCompletedEvent(
 public sealed record SetupStepEvent(
     string Category,
     [property: JsonPropertyName("step")] string StepName,
-    [property: JsonConverter(typeof(SetupStepStatusJsonConverter))]
-    SetupStepStatus Status,
+    [property: JsonConverter(typeof(SetupStepStatusJsonConverter))] SetupStepStatus Status,
     string? Details = null,
-    [property: JsonPropertyName("collection")] string? CollectionName = null) : IRendererEvent
+    [property: JsonPropertyName("collection")] string? CollectionName = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.SetupStep;
@@ -57,7 +59,11 @@ public sealed record SetupStepEvent(
 /// </summary>
 public sealed class SetupStepStatusJsonConverter : JsonConverter<SetupStepStatus>
 {
-    public override SetupStepStatus Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override SetupStepStatus Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
     {
         var s = reader.GetString();
         return s switch
@@ -71,7 +77,11 @@ public sealed class SetupStepStatusJsonConverter : JsonConverter<SetupStepStatus
         };
     }
 
-    public override void Write(Utf8JsonWriter writer, SetupStepStatus value, JsonSerializerOptions options)
+    public override void Write(
+        Utf8JsonWriter writer,
+        SetupStepStatus value,
+        JsonSerializerOptions options
+    )
     {
         writer.WriteStringValue(value.ToSnakeCase());
     }

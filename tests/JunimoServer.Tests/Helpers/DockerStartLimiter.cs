@@ -68,13 +68,15 @@ internal sealed class DockerStartLimiter : IDisposable
             WaitName.DockerStartLimiter_StartSlot,
             () => WaitCoreAsync(priority, ct),
             ct,
-            snapshot: () => new
-            {
-                host_id = _hostId,
-                maxConcurrent = _maxConcurrent,
-                priority = priority.ToString(),
-                queueDepth = Volatile.Read(ref _queueDepth),
-            });
+            snapshot: () =>
+                new
+                {
+                    host_id = _hostId,
+                    maxConcurrent = _maxConcurrent,
+                    priority = priority.ToString(),
+                    queueDepth = Volatile.Read(ref _queueDepth),
+                }
+        );
     }
 
     private async Task WaitCoreAsync(StartPriority priority, CancellationToken ct)
@@ -97,20 +99,24 @@ internal sealed class DockerStartLimiter : IDisposable
         // Link caller ct + poison outside the lock; the cancellation callback
         // re-enters the lock to remove the waiter if still queued.
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _poisonCts.Token);
-        await using var _ = linked.Token.Register(() =>
-        {
-            bool removed;
-            lock (_lock)
+        await using var _ = linked
+            .Token.Register(() =>
             {
-                removed = _queue.Remove(waiter);
-                if (removed) Volatile.Write(ref _queueDepth, _queue.Count);
-            }
-            // If we removed the waiter, no Release will reach this Tcs — we
-            // own the cancellation. If not removed, a Release granted the
-            // slot first; let the granted path proceed (TrySetCanceled would
-            // race a TrySetResult and the latter wins, which is correct).
-            if (removed) waiter.Tcs.TrySetCanceled(linked.Token);
-        }).ConfigureAwait(false);
+                bool removed;
+                lock (_lock)
+                {
+                    removed = _queue.Remove(waiter);
+                    if (removed)
+                        Volatile.Write(ref _queueDepth, _queue.Count);
+                }
+                // If we removed the waiter, no Release will reach this Tcs — we
+                // own the cancellation. If not removed, a Release granted the
+                // slot first; let the granted path proceed (TrySetCanceled would
+                // race a TrySetResult and the latter wins, which is correct).
+                if (removed)
+                    waiter.Tcs.TrySetCanceled(linked.Token);
+            })
+            .ConfigureAwait(false);
 
         await waiter.Tcs.Task.ConfigureAwait(false);
     }
@@ -131,7 +137,8 @@ internal sealed class DockerStartLimiter : IDisposable
                 _availableSlots++;
                 if (_availableSlots > _maxConcurrent)
                     throw new InvalidOperationException(
-                        $"DockerStartLimiter[{_hostId}] released more slots than acquired.");
+                        $"DockerStartLimiter[{_hostId}] released more slots than acquired."
+                    );
             }
         }
         // Hand the slot directly to the next waiter without bumping
@@ -146,12 +153,24 @@ internal sealed class DockerStartLimiter : IDisposable
     /// </summary>
     public void CancelPending()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
     }
 
     public void Dispose()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
         _poisonCts.Dispose();
     }
 
@@ -172,14 +191,19 @@ internal sealed class DockerStartLimiter : IDisposable
     private sealed class WaiterComparer : IComparer<Waiter>
     {
         public static readonly WaiterComparer Instance = new();
+
         public int Compare(Waiter? x, Waiter? y)
         {
-            if (ReferenceEquals(x, y)) return 0;
-            if (x is null) return -1;
-            if (y is null) return 1;
+            if (ReferenceEquals(x, y))
+                return 0;
+            if (x is null)
+                return -1;
+            if (y is null)
+                return 1;
             // Lower priority value wins (High=0, Normal=1, Low=2).
             var p = ((int)x.Priority).CompareTo((int)y.Priority);
-            if (p != 0) return p;
+            if (p != 0)
+                return p;
             return x.Sequence.CompareTo(y.Sequence);
         }
     }

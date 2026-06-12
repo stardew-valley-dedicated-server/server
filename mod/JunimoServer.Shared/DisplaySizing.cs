@@ -1,7 +1,7 @@
 using System;
 using HarmonyLib;
-using StardewValley;
 using StardewModdingAPI;
+using StardewValley;
 
 namespace JunimoServer.Shared
 {
@@ -55,10 +55,12 @@ namespace JunimoServer.Shared
         {
             harmony.Patch(
                 AccessTools.PropertyGetter(typeof(Options), nameof(Options.desiredBaseZoomLevel)),
-                postfix: new HarmonyMethod(typeof(DisplaySizing), nameof(ScalePostfix)));
+                postfix: new HarmonyMethod(typeof(DisplaySizing), nameof(ScalePostfix))
+            );
             harmony.Patch(
                 AccessTools.PropertyGetter(typeof(Options), nameof(Options.desiredUIScale)),
-                postfix: new HarmonyMethod(typeof(DisplaySizing), nameof(ScalePostfix)));
+                postfix: new HarmonyMethod(typeof(DisplaySizing), nameof(ScalePostfix))
+            );
         }
 
         /// <summary>
@@ -72,8 +74,18 @@ namespace JunimoServer.Shared
         {
             try
             {
-                var w = int.TryParse(Environment.GetEnvironmentVariable("DISPLAY_WIDTH"), out var dw) ? dw : DefaultWidth;
-                var h = int.TryParse(Environment.GetEnvironmentVariable("DISPLAY_HEIGHT"), out var dh) ? dh : DefaultHeight;
+                var w = int.TryParse(
+                    Environment.GetEnvironmentVariable("DISPLAY_WIDTH"),
+                    out var dw
+                )
+                    ? dw
+                    : DefaultWidth;
+                var h = int.TryParse(
+                    Environment.GetEnvironmentVariable("DISPLAY_HEIGHT"),
+                    out var dh
+                )
+                    ? dh
+                    : DefaultHeight;
 
                 // Derived from height because Stardew's logical baseline is height-driven
                 // (Game1.defaultResolutionY = 720); this keeps the full vertical extent on screen.
@@ -85,7 +97,10 @@ namespace JunimoServer.Shared
                 Game1.options.baseUIScale = _targetScale;
 
                 Game1.game1.SetWindowSize(w, h);
-                monitor.Log($"Resized game window to {w}x{h} (zoom/UI scale {_targetScale:0.###}, matching X display)", LogLevel.Trace);
+                monitor.Log(
+                    $"Resized game window to {w}x{h} (zoom/UI scale {_targetScale:0.###}, matching X display)",
+                    LogLevel.Trace
+                );
             }
             catch (Exception ex)
             {

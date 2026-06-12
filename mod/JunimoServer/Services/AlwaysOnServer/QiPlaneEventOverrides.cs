@@ -45,10 +45,16 @@ namespace JunimoServer.Services.AlwaysOn
         /// the host after the game-time fallback threshold if its draw-driven gate never converged.
         /// </summary>
         // ReSharper disable once InconsistentNaming
-        public static void TickUpdate_Postfix(QiPlaneEvent __instance, GameTime time, ref bool __result)
+        public static void TickUpdate_Postfix(
+            QiPlaneEvent __instance,
+            GameTime time,
+            ref bool __result
+        )
         {
-            if (!Game1.IsMasterGame) return;   // only the host runs the completion block + newDaySync
-            if (__result) return;              // event self-completed (draws were healthy) — nothing to do
+            if (!Game1.IsMasterGame)
+                return; // only the host runs the completion block + newDaySync
+            if (__result)
+                return; // event self-completed (draws were healthy) — nothing to do
 
             // Reset the accumulator when a new event instance starts ticking.
             if (!ReferenceEquals(__instance, _trackedInstance))
@@ -57,16 +63,20 @@ namespace JunimoServer.Services.AlwaysOn
                 _accumulatedMs = 0.0;
                 _forcedThisInstance = false;
             }
-            if (_forcedThisInstance) return;
+            if (_forcedThisInstance)
+                return;
 
             _accumulatedMs += time.ElapsedGameTime.TotalMilliseconds;
-            if (_accumulatedMs < FallbackThresholdMs) return;
+            if (_accumulatedMs < FallbackThresholdMs)
+                return;
 
             _forcedThisInstance = true;
             __result = true;
             _monitor?.Log(
-                "QiPlaneEvent (Mr. Qi mystery box) did not self-complete — forcing overnight completion " +
-                "so the new day can start.", LogLevel.Info);
+                "QiPlaneEvent (Mr. Qi mystery box) did not self-complete — forcing overnight completion "
+                    + "so the new day can start.",
+                LogLevel.Info
+            );
         }
     }
 }

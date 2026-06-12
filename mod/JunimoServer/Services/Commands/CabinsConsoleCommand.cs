@@ -1,10 +1,10 @@
+using System.Linq;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
-using System.Linq;
 
 namespace JunimoServer.Services.Commands
 {
@@ -18,15 +18,18 @@ namespace JunimoServer.Services.Commands
             IModHelper helper,
             IMonitor monitor,
             CabinManagerService cabinManager,
-            PersistentOptions options)
+            PersistentOptions options
+        )
         {
             _monitor = monitor;
             _cabinManager = cabinManager;
             _options = options;
 
-            helper.ConsoleCommands.Add("cabins",
+            helper.ConsoleCommands.Add(
+                "cabins",
                 "Cabin status and management. Run 'cabins' for list, 'cabins add' to create.",
-                (cmd, args) => HandleCommand(args));
+                (cmd, args) => HandleCommand(args)
+            );
         }
 
         private static void HandleCommand(string[] args)
@@ -65,10 +68,11 @@ namespace JunimoServer.Services.Commands
                 var posLabel = role switch
                 {
                     CabinRole.SharedLobby => "SharedLobby",
-                    CabinRole.IndividualLobby => $"IndividualLobby ({building.tileX.Value},{building.tileY.Value})",
+                    CabinRole.IndividualLobby =>
+                        $"IndividualLobby ({building.tileX.Value},{building.tileY.Value})",
                     CabinRole.Editing => "Editing (temp)",
                     _ when building.IsInHiddenStack() => "Hidden (player stack)",
-                    _ => $"Visible ({building.tileX.Value},{building.tileY.Value})"
+                    _ => $"Visible ({building.tileX.Value},{building.tileY.Value})",
                 };
 
                 var ownerId = cabin?.owner?.UniqueMultiplayerID ?? 0;
@@ -85,7 +89,7 @@ namespace JunimoServer.Services.Commands
                     assignedCount++;
                 }
 
-                _monitor.Log($"  #{index,-3} {posLabel,-30} {ownerLabel}", LogLevel.Info);
+                _monitor.Log($"  #{index, -3} {posLabel, -30} {ownerLabel}", LogLevel.Info);
                 index++;
             }
 
@@ -93,11 +97,17 @@ namespace JunimoServer.Services.Commands
             {
                 var stackPos = StackLocation.Create(_cabinManager.Data);
                 _monitor.Log($"", LogLevel.Info);
-                _monitor.Log($"  Stack position: ({stackPos.Location.X}, {stackPos.Location.Y})", LogLevel.Info);
+                _monitor.Log(
+                    $"  Stack position: ({stackPos.Location.X}, {stackPos.Location.Y})",
+                    LogLevel.Info
+                );
             }
 
             _monitor.Log($"", LogLevel.Info);
-            _monitor.Log($"  Total: {cabins.Count} | Assigned: {assignedCount} | Available: {availableCount}", LogLevel.Info);
+            _monitor.Log(
+                $"  Total: {cabins.Count} | Assigned: {assignedCount} | Available: {availableCount}",
+                LogLevel.Info
+            );
         }
 
         private static void AddCabin()
@@ -116,14 +126,17 @@ namespace JunimoServer.Services.Commands
             if (success)
             {
                 var totalCabins = farm.buildings.Count(b => b.isCabin);
-                var available = farm.buildings
-                    .Where(b => b.isCabin)
+                var available = farm
+                    .buildings.Where(b => b.isCabin)
                     .Count(b =>
                     {
                         var cabin = b.GetIndoors<Cabin>();
                         return cabin?.owner == null || cabin.owner.UniqueMultiplayerID == 0;
                     });
-                _monitor.Log($"Cabin created. Total: {totalCabins} | Available: {available}", LogLevel.Info);
+                _monitor.Log(
+                    $"Cabin created. Total: {totalCabins} | Available: {available}",
+                    LogLevel.Info
+                );
             }
             else
             {

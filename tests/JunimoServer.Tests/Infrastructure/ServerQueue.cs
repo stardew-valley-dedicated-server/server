@@ -10,7 +10,9 @@ namespace JunimoServer.Tests.Infrastructure;
 /// </summary>
 internal sealed class ServerQueue
 {
-    private volatile TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private volatile TaskCompletionSource _tcs = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
 
     /// <summary>
     /// Whether at least one server instance is ready (TCS resolved successfully).
@@ -32,7 +34,8 @@ internal sealed class ServerQueue
             WaitName.ServerQueue_WaitUntilReady,
             () => WaitUntilReadyCoreAsync(ct),
             ct,
-            snapshot: () => new { isReady = IsReady, isFaulted = IsFaulted });
+            snapshot: () => new { isReady = IsReady, isFaulted = IsFaulted }
+        );
 
     private async Task WaitUntilReadyCoreAsync(CancellationToken ct)
     {
@@ -41,18 +44,23 @@ internal sealed class ServerQueue
             return;
 
         // Per-waiter TCS so cancellation doesn't nuke the shared TCS.
-        var waiterTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiterTcs = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         using var reg = ct.Register(() => waiterTcs.TrySetCanceled(ct));
 
-        _ = tcs.Task.ContinueWith(t =>
-        {
-            if (t.IsCompletedSuccessfully)
-                waiterTcs.TrySetResult();
-            else if (t.IsFaulted)
-                waiterTcs.TrySetException(t.Exception!.InnerExceptions);
-            else
-                waiterTcs.TrySetCanceled();
-        }, TaskScheduler.Default);
+        _ = tcs.Task.ContinueWith(
+            t =>
+            {
+                if (t.IsCompletedSuccessfully)
+                    waiterTcs.TrySetResult();
+                else if (t.IsFaulted)
+                    waiterTcs.TrySetException(t.Exception!.InnerExceptions);
+                else
+                    waiterTcs.TrySetCanceled();
+            },
+            TaskScheduler.Default
+        );
 
         await waiterTcs.Task;
     }

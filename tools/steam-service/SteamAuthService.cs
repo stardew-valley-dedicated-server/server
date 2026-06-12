@@ -16,7 +16,13 @@ namespace SteamService;
 /// ticket plus instrumentation fields that flow through the HTTP layer to the client mod
 /// so cross-log correlation (steam-auth ↔ test-client Galaxy events) can be done by sha8.
 /// </summary>
-public record AppTicketResult(string TicketBase64, string Source, string Sha8, int TicketLengthBytes, long AgeMs);
+public record AppTicketResult(
+    string TicketBase64,
+    string Source,
+    string Sha8,
+    int TicketLengthBytes,
+    long AgeMs
+);
 
 /// <summary>
 /// Steam service used for authentication, ticket generation, and game downloads.
@@ -84,8 +90,13 @@ public class SteamAuthService
     public string? SteamId => _steamClient.SteamID?.ConvertToUInt64().ToString();
     public ulong CurrentLobbyId => _currentLobbyId;
 
-    public SteamAuthService(int accountIndex, string username, string sessionDir, string gameDir,
-        IReadOnlyCollection<string>? keepLanguages = null)
+    public SteamAuthService(
+        int accountIndex,
+        string username,
+        string sessionDir,
+        string gameDir,
+        IReadOnlyCollection<string>? keepLanguages = null
+    )
     {
         AccountIndex = accountIndex;
         Username = username;
@@ -122,7 +133,9 @@ public class SteamAuthService
         if (result != EResult.OK)
         {
             Logger.Log($"{_logPrefix} Encrypted app ticket failed: {result}");
-            _encryptedTicketTcs?.TrySetException(new Exception($"Failed to get encrypted app ticket: {result}"));
+            _encryptedTicketTcs?.TrySetException(
+                new Exception($"Failed to get encrypted app ticket: {result}")
+            );
             return;
         }
 
@@ -133,7 +146,9 @@ public class SteamAuthService
             return;
         }
 
-        Logger.Log($"{_logPrefix} Encrypted app ticket received: {ticket.Length} bytes for app {appId}");
+        Logger.Log(
+            $"{_logPrefix} Encrypted app ticket received: {ticket.Length} bytes for app {appId}"
+        );
         _encryptedTicketTcs?.TrySetResult(ticket);
     }
 
@@ -149,7 +164,8 @@ public class SteamAuthService
     public void Disconnect()
     {
         _cts.Cancel();
-        if (IsLoggedIn) _steamUser.LogOff();
+        if (IsLoggedIn)
+            _steamUser.LogOff();
         _steamClient.Disconnect();
     }
 
@@ -171,22 +187,24 @@ public class SteamAuthService
         if (cb.Result != EResult.OK)
         {
             Logger.Log($"{_logPrefix} Login failed: {cb.Result} (Extended: {cb.ExtendedResult})");
-            Logger.LogEvent("account_login_failed", new
-            {
-                prefix = _logPrefix,
-                result = cb.Result.ToString(),
-                extendedResult = cb.ExtendedResult.ToString()
-            });
+            Logger.LogEvent(
+                "account_login_failed",
+                new
+                {
+                    prefix = _logPrefix,
+                    result = cb.Result.ToString(),
+                    extendedResult = cb.ExtendedResult.ToString(),
+                }
+            );
             _loginTcs?.TrySetResult(false);
             return;
         }
 
         Logger.Log($"{_logPrefix} Logged in as {_steamClient.SteamID}");
-        Logger.LogEvent("account_logged_in", new
-        {
-            prefix = _logPrefix,
-            steamId = _steamClient.SteamID?.ToString()
-        });
+        Logger.LogEvent(
+            "account_logged_in",
+            new { prefix = _logPrefix, steamId = _steamClient.SteamID?.ToString() }
+        );
         IsLoggedIn = true;
         _loginTcs?.TrySetResult(true);
     }
@@ -194,29 +212,35 @@ public class SteamAuthService
     private void OnLoggedOff(SteamUser.LoggedOffCallback cb)
     {
         Logger.Log($"{_logPrefix} Logged off: {cb.Result}");
-        Logger.LogEvent("account_logged_off", new
-        {
-            prefix = _logPrefix,
-            result = cb.Result.ToString()
-        });
+        Logger.LogEvent(
+            "account_logged_off",
+            new { prefix = _logPrefix, result = cb.Result.ToString() }
+        );
         IsLoggedIn = false;
         MaybeStartReconnect("logged_off", userInitiated: false, cb.Result);
     }
 
     private void MaybeStartReconnect(string trigger, bool userInitiated, EResult result)
     {
-        if (userInitiated) return;                     // intentional Disconnect()
-        if (_cts.IsCancellationRequested) return;      // shutdown in progress
-        if (_refreshToken == null || _username == null) return;  // nothing to retry with
-        if (IsTerminalLogoff(result)) return;          // banned/disabled
-        if (Interlocked.CompareExchange(ref _reconnectInProgress, 1, 0) != 0) return;
+        if (userInitiated)
+            return; // intentional Disconnect()
+        if (_cts.IsCancellationRequested)
+            return; // shutdown in progress
+        if (_refreshToken == null || _username == null)
+            return; // nothing to retry with
+        if (IsTerminalLogoff(result))
+            return; // banned/disabled
+        if (Interlocked.CompareExchange(ref _reconnectInProgress, 1, 0) != 0)
+            return;
 
         _ = Task.Run(() => RunReconnectLoopAsync(trigger, result));
     }
 
     private static bool IsTerminalLogoff(EResult r) =>
-        r == EResult.Banned || r == EResult.AccountDisabled ||
-        r == EResult.Suspended || r == EResult.AccountLockedDown;
+        r == EResult.Banned
+        || r == EResult.AccountDisabled
+        || r == EResult.Suspended
+        || r == EResult.AccountLockedDown;
 
     private async Task RunReconnectLoopAsync(string trigger, EResult initialResult)
     {
@@ -225,22 +249,41 @@ public class SteamAuthService
             for (int attempt = 1; attempt <= MaxReconnectAttempts; attempt++)
             {
                 var delay = TimeSpan.FromSeconds(10 * Math.Pow(2, attempt - 1));
-                Logger.LogEvent("account_reconnect_attempt", new
+                Logger.LogEvent(
+                    "account_reconnect_attempt",
+                    new
+                    {
+                        prefix = _logPrefix,
+                        attempt,
+                        maxAttempts = MaxReconnectAttempts,
+                        trigger,
+                        initialResult = initialResult.ToString(),
+                        delaySec = delay.TotalSeconds,
+                    }
+                );
+                try
                 {
-                    prefix = _logPrefix, attempt, maxAttempts = MaxReconnectAttempts,
-                    trigger, initialResult = initialResult.ToString(),
-                    delaySec = delay.TotalSeconds
-                });
-                try { await Task.Delay(delay, _cts.Token); }
-                catch (OperationCanceledException) { return; }
+                    await Task.Delay(delay, _cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
 
                 await _loginSemaphore.WaitAsync(_cts.Token);
                 try
                 {
                     if (IsLoggedIn)
                     {
-                        Logger.LogEvent("account_reconnect_succeeded", new
-                        { prefix = _logPrefix, attempt, viaConcurrentCaller = true });
+                        Logger.LogEvent(
+                            "account_reconnect_succeeded",
+                            new
+                            {
+                                prefix = _logPrefix,
+                                attempt,
+                                viaConcurrentCaller = true,
+                            }
+                        );
                         return;
                     }
                     if (_steamClient.IsConnected)
@@ -251,32 +294,55 @@ public class SteamAuthService
                     await ConnectAndLoginAsync(_refreshToken!);
                     if (IsLoggedIn)
                     {
-                        Logger.LogEvent("account_reconnect_succeeded", new
-                        { prefix = _logPrefix, attempt, viaConcurrentCaller = false });
+                        Logger.LogEvent(
+                            "account_reconnect_succeeded",
+                            new
+                            {
+                                prefix = _logPrefix,
+                                attempt,
+                                viaConcurrentCaller = false,
+                            }
+                        );
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogEvent("account_reconnect_attempt_failed", new
-                    {
-                        prefix = _logPrefix, attempt,
-                        exceptionType = ex.GetType().Name, message = ex.Message
-                    });
+                    Logger.LogEvent(
+                        "account_reconnect_attempt_failed",
+                        new
+                        {
+                            prefix = _logPrefix,
+                            attempt,
+                            exceptionType = ex.GetType().Name,
+                            message = ex.Message,
+                        }
+                    );
                 }
-                finally { _loginSemaphore.Release(); }
+                finally
+                {
+                    _loginSemaphore.Release();
+                }
             }
-            Logger.LogEvent("account_reconnect_failed", new
-            {
-                prefix = _logPrefix, attempts = MaxReconnectAttempts,
-                initialResult = initialResult.ToString(), trigger,
-                note = "LogonSessionReplaced means another SteamKit2 client logged in " +
-                       "with the same Steam username while we were running. Check the host " +
-                       "for any other sdvd/steam-service container holding this username " +
-                       "and stop one of them; concurrent logins of the same account are not supported by Steam."
-            });
+            Logger.LogEvent(
+                "account_reconnect_failed",
+                new
+                {
+                    prefix = _logPrefix,
+                    attempts = MaxReconnectAttempts,
+                    initialResult = initialResult.ToString(),
+                    trigger,
+                    note = "LogonSessionReplaced means another SteamKit2 client logged in "
+                        + "with the same Steam username while we were running. Check the host "
+                        + "for any other sdvd/steam-service container holding this username "
+                        + "and stop one of them; concurrent logins of the same account are not supported by Steam.",
+                }
+            );
         }
-        finally { Interlocked.Exchange(ref _reconnectInProgress, 0); }
+        finally
+        {
+            Interlocked.Exchange(ref _reconnectInProgress, 0);
+        }
     }
 
     // ========================================================================
@@ -312,7 +378,8 @@ public class SteamAuthService
     private (string username, string refreshToken)? LoadSession()
     {
         var path = SessionFilePath;
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path))
+            return null;
 
         try
         {
@@ -336,10 +403,12 @@ public class SteamAuthService
     /// </summary>
     private void MigrateOldSession(string parentSessionDir)
     {
-        if (File.Exists(SessionFilePath)) return;
+        if (File.Exists(SessionFilePath))
+            return;
 
         var oldPath = Path.Combine(parentSessionDir, $"session-{Username}.json");
-        if (!File.Exists(oldPath)) return;
+        if (!File.Exists(oldPath))
+            return;
 
         try
         {
@@ -356,32 +425,40 @@ public class SteamAuthService
     {
         try
         {
-            var json = JsonSerializer.Serialize(new
-            {
-                ticket = ticketBase64,
-                steam_id = steamId,
-                fetched_at = DateTimeOffset.UtcNow.ToString("o")
-            });
+            var json = JsonSerializer.Serialize(
+                new
+                {
+                    ticket = ticketBase64,
+                    steam_id = steamId,
+                    fetched_at = DateTimeOffset.UtcNow.ToString("o"),
+                }
+            );
             File.WriteAllText(TicketCachePath, json);
         }
-        catch { /* Non-critical */ }
+        catch
+        { /* Non-critical */
+        }
     }
 
     private (string ticket, DateTimeOffset fetchedAt)? LoadTicketCache()
     {
         try
         {
-            if (!File.Exists(TicketCachePath)) return null;
+            if (!File.Exists(TicketCachePath))
+                return null;
 
             var json = File.ReadAllText(TicketCachePath);
             var doc = JsonDocument.Parse(json);
-            var fetchedAt = DateTimeOffset.Parse(doc.RootElement.GetProperty("fetched_at").GetString()!);
+            var fetchedAt = DateTimeOffset.Parse(
+                doc.RootElement.GetProperty("fetched_at").GetString()!
+            );
 
             if (DateTimeOffset.UtcNow - fetchedAt > TicketCacheMaxAge)
                 return null; // Expired
 
             var ticket = doc.RootElement.GetProperty("ticket").GetString();
-            if (ticket == null) return null;
+            if (ticket == null)
+                return null;
             return (ticket, fetchedAt);
         }
         catch
@@ -405,19 +482,21 @@ public class SteamAuthService
     /// </summary>
     public async Task EnsureLoggedInAsync(LoginConfig? config, CancellationToken ct = default)
     {
-        if (IsLoggedIn) return;                               // lock-free fast path
+        if (IsLoggedIn)
+            return; // lock-free fast path
 
         await _loginSemaphore.WaitAsync(ct);
         try
         {
-            if (IsLoggedIn) return;                           // double-check under lock
+            if (IsLoggedIn)
+                return; // double-check under lock
 
             // Quiesce any half-open connection left by a failed prior attempt so the
             // login sequence starts from a known state.
             if (_steamClient.IsConnected && !IsLoggedIn)
             {
                 _steamClient.Disconnect();
-                await Task.Delay(100, ct);                    // let SteamKit callbacks settle
+                await Task.Delay(100, ct); // let SteamKit callbacks settle
             }
 
             if (config?.Token != null)
@@ -428,7 +507,8 @@ public class SteamAuthService
                 await LoginWithCredentialsInsideLockAsync(config.User, config.Pass);
             else
                 throw new InvalidOperationException(
-                    $"Account {AccountIndex}: no auth method (no token, saved session, or password)");
+                    $"Account {AccountIndex}: no auth method (no token, saved session, or password)"
+                );
         }
         finally
         {
@@ -525,7 +605,10 @@ public class SteamAuthService
     /// Login with username/password. If usernameParam/passwordParam are null, prompts
     /// the user on stdin (used by interactive CLI). Must be called with _loginSemaphore held.
     /// </summary>
-    private async Task LoginWithCredentialsInsideLockAsync(string? usernameParam = null, string? passwordParam = null)
+    private async Task LoginWithCredentialsInsideLockAsync(
+        string? usernameParam = null,
+        string? passwordParam = null
+    )
     {
         string username;
         string password;
@@ -568,8 +651,9 @@ public class SteamAuthService
                     Username = username,
                     Password = password,
                     IsPersistentSession = true,
-                    Authenticator = new ConsoleAuthenticator()
-                });
+                    Authenticator = new ConsoleAuthenticator(),
+                }
+            );
 
             var result = await authSession.PollingWaitForResultAsync();
 
@@ -597,7 +681,8 @@ public class SteamAuthService
         try
         {
             var authSession = await _steamClient.Authentication.BeginAuthSessionViaQRAsync(
-                new AuthSessionDetails { IsPersistentSession = true });
+                new AuthSessionDetails { IsPersistentSession = true }
+            );
 
             PrintQrCode(authSession.ChallengeURL);
 
@@ -661,7 +746,9 @@ public class SteamAuthService
 
             if (attempt == 1)
             {
-                Logger.Log($"{_logPrefix} Logging in as {_username} with token ({refreshToken.Length} chars)...");
+                Logger.Log(
+                    $"{_logPrefix} Logging in as {_username} with token ({refreshToken.Length} chars)..."
+                );
                 PrintTokenExpiry(refreshToken);
             }
             else
@@ -669,12 +756,14 @@ public class SteamAuthService
                 Logger.Log($"{_logPrefix} Login attempt {attempt}/{maxRetries}...");
             }
 
-            _steamUser.LogOn(new SteamUser.LogOnDetails
-            {
-                Username = _username,
-                AccessToken = refreshToken,
-                ShouldRememberPassword = true
-            });
+            _steamUser.LogOn(
+                new SteamUser.LogOnDetails
+                {
+                    Username = _username,
+                    AccessToken = refreshToken,
+                    ShouldRememberPassword = true,
+                }
+            );
 
             // Wait for login with timeout to avoid hanging forever
             var timeoutTask = Task.Delay(loginTimeout);
@@ -682,7 +771,9 @@ public class SteamAuthService
 
             if (completedTask == timeoutTask)
             {
-                Logger.Log($"{_logPrefix} Login attempt {attempt} timed out after {loginTimeout.TotalSeconds}s");
+                Logger.Log(
+                    $"{_logPrefix} Login attempt {attempt} timed out after {loginTimeout.TotalSeconds}s"
+                );
             }
             else
             {
@@ -717,7 +808,8 @@ public class SteamAuthService
         {
             // JWT format: header.payload.signature
             var parts = token.Split('.');
-            if (parts.Length != 3) return;
+            if (parts.Length != 3)
+                return;
 
             // Decode payload (base64url)
             var payload = parts[1];
@@ -725,8 +817,12 @@ public class SteamAuthService
             payload = payload.Replace('-', '+').Replace('_', '/');
             switch (payload.Length % 4)
             {
-                case 2: payload += "=="; break;
-                case 3: payload += "="; break;
+                case 2:
+                    payload += "==";
+                    break;
+                case 3:
+                    payload += "=";
+                    break;
             }
 
             var json = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
@@ -738,7 +834,9 @@ public class SteamAuthService
                 var expiryDate = DateTimeOffset.FromUnixTimeSeconds(exp);
                 var remaining = expiryDate - DateTimeOffset.UtcNow;
 
-                Logger.Log($"{_logPrefix} Token expires: {expiryDate:yyyy-MM-dd HH:mm:ss} UTC ({remaining.Days} days remaining)");
+                Logger.Log(
+                    $"{_logPrefix} Token expires: {expiryDate:yyyy-MM-dd HH:mm:ss} UTC ({remaining.Days} days remaining)"
+                );
             }
         }
         catch (Exception ex) when (ex is JsonException or FormatException or KeyNotFoundException)
@@ -766,17 +864,27 @@ public class SteamAuthService
             {
                 var cachedBytes = Convert.FromBase64String(cached.Value.ticket);
                 var cachedSha8 = ComputeSha8(cachedBytes);
-                var ageMs = (long)(DateTimeOffset.UtcNow - cached.Value.fetchedAt).TotalMilliseconds;
+                var ageMs = (long)
+                    (DateTimeOffset.UtcNow - cached.Value.fetchedAt).TotalMilliseconds;
                 Logger.Log($"{_logPrefix} Using cached app ticket");
-                Logger.LogEvent("app_ticket_served", new
-                {
-                    accountIndex = AccountIndex,
-                    source = "cached",
-                    ageMs,
-                    sha8 = cachedSha8,
-                    ticketLengthBytes = cachedBytes.Length,
-                });
-                return new AppTicketResult(cached.Value.ticket, "cached", cachedSha8, cachedBytes.Length, ageMs);
+                Logger.LogEvent(
+                    "app_ticket_served",
+                    new
+                    {
+                        accountIndex = AccountIndex,
+                        source = "cached",
+                        ageMs,
+                        sha8 = cachedSha8,
+                        ticketLengthBytes = cachedBytes.Length,
+                    }
+                );
+                return new AppTicketResult(
+                    cached.Value.ticket,
+                    "cached",
+                    cachedSha8,
+                    cachedBytes.Length,
+                    ageMs
+                );
             }
 
             Logger.Log($"{_logPrefix} Requesting encrypted app ticket for {appId}...");
@@ -786,7 +894,9 @@ public class SteamAuthService
             _encryptedTicketTcs = tcs;
 
             // Send ClientRequestEncryptedAppTicket - this is what steam-user's getEncryptedAppTicket does
-            var request = new ClientMsgProtobuf<CMsgClientRequestEncryptedAppTicket>(EMsg.ClientRequestEncryptedAppTicket);
+            var request = new ClientMsgProtobuf<CMsgClientRequestEncryptedAppTicket>(
+                EMsg.ClientRequestEncryptedAppTicket
+            );
             request.Body.app_id = appId;
             _steamClient.Send(request);
 
@@ -803,11 +913,10 @@ public class SteamAuthService
 
             if (completedTask == timeoutTask)
             {
-                Logger.LogEvent("app_ticket_failed", new
-                {
-                    accountIndex = AccountIndex,
-                    reason = "TIMEOUT",
-                });
+                Logger.LogEvent(
+                    "app_ticket_failed",
+                    new { accountIndex = AccountIndex, reason = "TIMEOUT" }
+                );
                 throw new TimeoutException("Timed out waiting for encrypted app ticket");
             }
 
@@ -817,11 +926,10 @@ public class SteamAuthService
             }
             catch (Exception ex)
             {
-                Logger.LogEvent("app_ticket_failed", new
-                {
-                    accountIndex = AccountIndex,
-                    reason = ex.Message,
-                });
+                Logger.LogEvent(
+                    "app_ticket_failed",
+                    new { accountIndex = AccountIndex, reason = ex.Message }
+                );
                 throw;
             }
 
@@ -829,14 +937,17 @@ public class SteamAuthService
             var sha8 = ComputeSha8(ticketBytes);
 
             Logger.Log($"{_logPrefix} Encrypted app ticket obtained ({ticketBytes.Length} bytes)");
-            Logger.LogEvent("app_ticket_served", new
-            {
-                accountIndex = AccountIndex,
-                source = "fresh",
-                ageMs = 0L,
-                sha8,
-                ticketLengthBytes = ticketBytes.Length,
-            });
+            Logger.LogEvent(
+                "app_ticket_served",
+                new
+                {
+                    accountIndex = AccountIndex,
+                    source = "fresh",
+                    ageMs = 0L,
+                    sha8,
+                    ticketLengthBytes = ticketBytes.Length,
+                }
+            );
 
             // Cache for future requests
             SaveTicketCache(ticketBase64, SteamId);
@@ -895,7 +1006,15 @@ public class SteamAuthService
     /// <summary>
     /// Saves a marker file indicating the download is complete with the given manifest.
     /// </summary>
-    private void SaveDownloadMarker(string downloadDir, uint appId, uint depotId, ulong manifestId, string targetOs, long totalBytes, int totalFiles)
+    private void SaveDownloadMarker(
+        string downloadDir,
+        uint appId,
+        uint depotId,
+        ulong manifestId,
+        string targetOs,
+        long totalBytes,
+        int totalFiles
+    )
     {
         var markerPath = Path.Combine(downloadDir, $".download-manifest-{appId}");
         var marker = new
@@ -906,9 +1025,12 @@ public class SteamAuthService
             targetOs,
             totalBytes,
             totalFiles,
-            downloadedAt = DateTimeOffset.UtcNow.ToString("o")
+            downloadedAt = DateTimeOffset.UtcNow.ToString("o"),
         };
-        File.WriteAllText(markerPath, JsonSerializer.Serialize(marker, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(
+            markerPath,
+            JsonSerializer.Serialize(marker, new JsonSerializerOptions { WriteIndented = true })
+        );
         Logger.Log($"{_logPrefix} Download marker saved (manifest: {manifestId})");
     }
 
@@ -933,18 +1055,24 @@ public class SteamAuthService
         var manifestPath = Path.Combine(contentDir, "ContentHashes.json");
         if (!File.Exists(manifestPath))
         {
-            Logger.Log($"{_logPrefix} ContentHashes.json not found at {manifestPath}; skipping manifest prune");
+            Logger.Log(
+                $"{_logPrefix} ContentHashes.json not found at {manifestPath}; skipping manifest prune"
+            );
             return;
         }
 
         Dictionary<string, JsonElement>? entries;
         try
         {
-            entries = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(manifestPath));
+            entries = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                File.ReadAllText(manifestPath)
+            );
         }
         catch (Exception ex)
         {
-            Logger.Log($"{_logPrefix} WARN: failed to parse ContentHashes.json ({ex.Message}); leaving it unchanged");
+            Logger.Log(
+                $"{_logPrefix} WARN: failed to parse ContentHashes.json ({ex.Message}); leaving it unchanged"
+            );
             return;
         }
         if (entries == null || entries.Count == 0)
@@ -964,7 +1092,9 @@ public class SteamAuthService
             return;
 
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(kept));
-        Logger.Log($"{_logPrefix} Pruned ContentHashes.json: removed {removed} stripped entries, {kept.Count} remain");
+        Logger.Log(
+            $"{_logPrefix} Pruned ContentHashes.json: removed {removed} stripped entries, {kept.Count} remain"
+        );
     }
 
     /// <summary>
@@ -987,7 +1117,9 @@ public class SteamAuthService
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
-                Logger.Log($"{_logPrefix} {label} failed (attempt {attempt}/{maxAttempts}): {ex.Message}");
+                Logger.Log(
+                    $"{_logPrefix} {label} failed (attempt {attempt}/{maxAttempts}): {ex.Message}"
+                );
                 await Task.Delay(1000 * attempt); // Linear backoff: 1s, 2s, 3s
             }
         }
@@ -997,18 +1129,36 @@ public class SteamAuthService
     private static readonly Regex[] WaveBankPatterns =
     [
         new Regex(@"Content/XACT/Wave Bank.xwb", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"Content/XACT/Wave Bank\(1.4\).xwb", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(
+            @"Content/XACT/Wave Bank\(1.4\).xwb",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled
+        ),
     ];
 
     // Every localized content code the game ships (matches LocalizedContentManager
     // .LanguageCodeString in the decompiled game). A file named "*.{code}.xnb" is a
     // per-language variant; by default all are stripped to keep the image small.
     private static readonly string[] AllLanguageCodes =
-        ["de-DE", "es-ES", "fr-FR", "hu-HU", "it-IT", "ja-JP", "ko-KR", "pt-BR", "ru-RU", "tr-TR", "zh-CN", "th-TH"];
+    [
+        "de-DE",
+        "es-ES",
+        "fr-FR",
+        "hu-HU",
+        "it-IT",
+        "ja-JP",
+        "ko-KR",
+        "pt-BR",
+        "ru-RU",
+        "tr-TR",
+        "zh-CN",
+        "th-TH",
+    ];
 
     // CJK fonts are large, multi-file families keyed by family name (not a "*.{code}.xnb"
     // suffix), so a kept CJK language must also un-strip its whole family directory.
-    private static readonly Dictionary<string, string> CjkFontFamilyByCode = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> CjkFontFamilyByCode = new(
+        StringComparer.OrdinalIgnoreCase
+    )
     {
         ["zh-CN"] = "Chinese",
         ["ja-JP"] = "Japanese",
@@ -1031,7 +1181,12 @@ public class SteamAuthService
 
         var canonical = AllLanguageCodes.ToDictionary(c => c, StringComparer.OrdinalIgnoreCase);
         var result = new List<string>();
-        foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (
+            var token in raw.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+        )
         {
             if (canonical.TryGetValue(token, out var code))
             {
@@ -1040,8 +1195,10 @@ public class SteamAuthService
             }
             else
             {
-                Logger.Log($"[SteamService] WARN: STEAM_KEEP_LANGUAGES has unknown code '{token}' — ignoring. " +
-                           $"Valid codes: {string.Join(", ", AllLanguageCodes)}");
+                Logger.Log(
+                    $"[SteamService] WARN: STEAM_KEEP_LANGUAGES has unknown code '{token}' — ignoring. "
+                        + $"Valid codes: {string.Join(", ", AllLanguageCodes)}"
+                );
             }
         }
         return result;
@@ -1062,7 +1219,12 @@ public class SteamAuthService
         foreach (var (code, family) in CjkFontFamilyByCode)
         {
             if (!keep.Contains(code))
-                patterns.Add(new Regex($@"Content/Fonts/{family}.*", RegexOptions.IgnoreCase | RegexOptions.Compiled));
+                patterns.Add(
+                    new Regex(
+                        $@"Content/Fonts/{family}.*",
+                        RegexOptions.IgnoreCase | RegexOptions.Compiled
+                    )
+                );
         }
 
         // Strip "*.{code}.xnb" localized variants for every non-kept code.
@@ -1070,7 +1232,12 @@ public class SteamAuthService
         if (strippedCodes.Length > 0)
         {
             var alternation = string.Join("|", strippedCodes.Select(Regex.Escape));
-            patterns.Add(new Regex($@"\.({alternation})\.xnb$", RegexOptions.IgnoreCase | RegexOptions.Compiled));
+            patterns.Add(
+                new Regex(
+                    $@"\.({alternation})\.xnb$",
+                    RegexOptions.IgnoreCase | RegexOptions.Compiled
+                )
+            );
         }
 
         return patterns.ToArray();
@@ -1109,11 +1276,15 @@ public class SteamAuthService
             var licenseList = await _steamApps.GetAppOwnershipTicket(appId);
             if (licenseList.Result == EResult.AccessDenied)
             {
-                throw new Exception($"Account does not own App {appId}. Please purchase the game or check that you're using the correct Steam account.");
+                throw new Exception(
+                    $"Account does not own App {appId}. Please purchase the game or check that you're using the correct Steam account."
+                );
             }
             else if (licenseList.Result != EResult.OK)
             {
-                Logger.Log($"{_logPrefix} License check returned: {licenseList.Result} (continuing anyway)");
+                Logger.Log(
+                    $"{_logPrefix} License check returned: {licenseList.Result} (continuing anyway)"
+                );
             }
             else
             {
@@ -1133,7 +1304,8 @@ public class SteamAuthService
 
             var productInfo = await _steamApps.PICSGetProductInfo(
                 new SteamApps.PICSRequest(appId, accessToken),
-                null);
+                null
+            );
 
             if (productInfo.Results == null || !productInfo.Results.Any())
             {
@@ -1207,8 +1379,10 @@ public class SteamAuthService
 
             // Get CDN servers. Steam's content API returns transient 5xx under load
             // (e.g. 503 during depot rollouts), so retry like the chunk loop below.
-            var cdnServers = await RetryTransientAsync("Get CDN servers",
-                () => _steamContent.GetServersForSteamPipe());
+            var cdnServers = await RetryTransientAsync(
+                "Get CDN servers",
+                () => _steamContent.GetServersForSteamPipe()
+            );
             if (cdnServers == null || !cdnServers.Any())
             {
                 throw new Exception("No CDN servers available");
@@ -1221,8 +1395,10 @@ public class SteamAuthService
 
             // Get manifest request code
             Logger.Log($"{_logPrefix} Getting manifest request code...");
-            var manifestCode = await RetryTransientAsync("Get manifest request code",
-                () => _steamContent.GetManifestRequestCode(depotId, appId, manifestId, "public"));
+            var manifestCode = await RetryTransientAsync(
+                "Get manifest request code",
+                () => _steamContent.GetManifestRequestCode(depotId, appId, manifestId, "public")
+            );
             Logger.Log($"{_logPrefix} Manifest request code: {manifestCode}");
 
             // Download using CDN client
@@ -1233,21 +1409,23 @@ public class SteamAuthService
             // The manifest fetch is a single CDN request that previously crashed the
             // whole download on a transient 503 (no retry, unlike the chunk loop). Wrap
             // it so a flaky CDN response backs off and retries instead of aborting.
-            var manifest = await RetryTransientAsync("Download manifest",
-                () => cdnClient.DownloadManifestAsync(
-                    depotId,
-                    manifestId,
-                    manifestCode,
-                    server,
-                    depotKeyResult.DepotKey));
+            var manifest = await RetryTransientAsync(
+                "Download manifest",
+                () =>
+                    cdnClient.DownloadManifestAsync(
+                        depotId,
+                        manifestId,
+                        manifestCode,
+                        server,
+                        depotKeyResult.DepotKey
+                    )
+            );
 
             // Calculate totals and savings from filtering
-            var skippedByFilter = manifest.Files!
-                .Where(f => ShouldSkipFile(f.FileName))
-                .ToList();
+            var skippedByFilter = manifest.Files!.Where(f => ShouldSkipFile(f.FileName)).ToList();
 
-            var filesToDownload = manifest.Files!
-                .Where(f => !ShouldSkipFile(f.FileName))
+            var filesToDownload = manifest
+                .Files!.Where(f => !ShouldSkipFile(f.FileName))
                 .Where(f => !f.Flags.HasFlag(EDepotFileFlag.Directory))
                 .ToList();
 
@@ -1256,7 +1434,9 @@ public class SteamAuthService
             var skippedBytes = skippedByFilter.Sum(f => (long)f.TotalSize);
 
             Logger.Log($"{_logPrefix} Manifest contains {manifest.Files!.Count} files");
-            Logger.Log($"{_logPrefix} Skipping {skippedByFilter.Count} unnecessary files ({FormatSize(skippedBytes)} saved)");
+            Logger.Log(
+                $"{_logPrefix} Skipping {skippedByFilter.Count} unnecessary files ({FormatSize(skippedBytes)} saved)"
+            );
             Logger.Log($"{_logPrefix} Downloading {totalFiles} files ({FormatSize(totalBytes)})");
 
             var processedFiles = 0;
@@ -1293,7 +1473,12 @@ public class SteamAuthService
                     if (existingSize == (long)file.TotalSize)
                     {
                         // Size matches - validate chunk checksums
-                        await using var existingFs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        await using var existingFs = new FileStream(
+                            filePath,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.Read
+                        );
                         var invalidChunks = ValidateFileChunks(existingFs, file.Chunks);
 
                         if (invalidChunks.Count == 0)
@@ -1307,7 +1492,9 @@ public class SteamAuthService
 
                         // Some chunks invalid - only download those
                         chunksToDownload = invalidChunks;
-                        Logger.Log($"{_logPrefix} {file.FileName}: {invalidChunks.Count}/{file.Chunks.Count} chunks need repair");
+                        Logger.Log(
+                            $"{_logPrefix} {file.FileName}: {invalidChunks.Count}/{file.Chunks.Count} chunks need repair"
+                        );
                     }
                 }
 
@@ -1318,7 +1505,12 @@ public class SteamAuthService
 
                 try
                 {
-                    await using var fs = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    await using var fs = new FileStream(
+                        filePath,
+                        FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite,
+                        FileShare.None
+                    );
 
                     // Pre-allocate file to final size (no-op if file already exists with correct size)
                     fs.SetLength((long)file.TotalSize);
@@ -1341,12 +1533,15 @@ public class SteamAuthService
                                         chunk,
                                         server,
                                         buffer,
-                                        depotKeyResult.DepotKey);
+                                        depotKeyResult.DepotKey
+                                    );
                                     break; // Success
                                 }
                                 catch (Exception ex) when (retry < maxRetries - 1)
                                 {
-                                    Logger.Log($"{_logPrefix} Chunk download failed (attempt {retry + 1}/{maxRetries}): {ex.Message}");
+                                    Logger.Log(
+                                        $"{_logPrefix} Chunk download failed (attempt {retry + 1}/{maxRetries}): {ex.Message}"
+                                    );
                                     await Task.Delay(1000 * (retry + 1)); // Exponential backoff
                                 }
                             }
@@ -1354,7 +1549,9 @@ public class SteamAuthService
                             // Validate chunk was fully downloaded
                             if (written != (int)chunk.UncompressedLength)
                             {
-                                throw new Exception($"Chunk size mismatch for {file.FileName}: expected {chunk.UncompressedLength}, got {written}");
+                                throw new Exception(
+                                    $"Chunk size mismatch for {file.FileName}: expected {chunk.UncompressedLength}, got {written}"
+                                );
                             }
 
                             // Write chunk at its designated offset (chunks may be out of order)
@@ -1375,7 +1572,9 @@ public class SteamAuthService
                     var failedChunks = ValidateFileChunks(fs, chunksToDownload);
                     if (failedChunks.Count > 0)
                     {
-                        throw new Exception($"Post-download validation failed for {file.FileName}: {failedChunks.Count} chunks corrupted");
+                        throw new Exception(
+                            $"Post-download validation failed for {file.FileName}: {failedChunks.Count} chunks corrupted"
+                        );
                     }
 
                     downloadSuccess = true;
@@ -1404,7 +1603,9 @@ public class SteamAuthService
                 if (processedFiles % 100 == 0 || processedFiles == totalFiles)
                 {
                     var percent = (double)processedBytes / totalBytes * 100;
-                    Logger.Log($"{_logPrefix} Progress: {processedFiles}/{totalFiles} files - {FormatSize(processedBytes)}/{FormatSize(totalBytes)} ({percent:F1}%)");
+                    Logger.Log(
+                        $"{_logPrefix} Progress: {processedFiles}/{totalFiles} files - {FormatSize(processedBytes)}/{FormatSize(totalBytes)} ({percent:F1}%)"
+                    );
                 }
             }
 
@@ -1412,7 +1613,9 @@ public class SteamAuthService
             Logger.Log($"{_logPrefix} App installed to: {downloadDir}");
             Logger.Log($"{_logPrefix} Total size: {FormatSize(processedBytes)}");
             if (skippedExisting > 0)
-                Logger.Log($"{_logPrefix} Skipped {skippedExisting} existing files (already up to date)");
+                Logger.Log(
+                    $"{_logPrefix} Skipped {skippedExisting} existing files (already up to date)"
+                );
 
             // Prune the content manifest to match what we actually downloaded. The game's
             // LocalizedContentManager.DoesAssetExist checks ContentHashes.json (a manifest),
@@ -1423,7 +1626,15 @@ public class SteamAuthService
             PruneContentManifest(downloadDir);
 
             // Save download marker to skip re-download next time
-            SaveDownloadMarker(downloadDir, appId, depotId, manifestId, targetOs, totalBytes, totalFiles);
+            SaveDownloadMarker(
+                downloadDir,
+                appId,
+                depotId,
+                manifestId,
+                targetOs,
+                totalBytes,
+                totalFiles
+            );
 
             Logger.LogTotal();
         }
@@ -1444,7 +1655,8 @@ public class SteamAuthService
     /// </summary>
     private static uint AdlerHash(Stream stream, int length)
     {
-        uint a = 0, b = 0;
+        uint a = 0,
+            b = 0;
         for (var i = 0; i < length; i++)
         {
             var c = (uint)stream.ReadByte();
@@ -1460,7 +1672,8 @@ public class SteamAuthService
     /// </summary>
     private static List<DepotManifest.ChunkData> ValidateFileChunks(
         FileStream fs,
-        IEnumerable<DepotManifest.ChunkData> chunks)
+        IEnumerable<DepotManifest.ChunkData> chunks
+    )
     {
         var invalidChunks = new List<DepotManifest.ChunkData>();
 
@@ -1549,12 +1762,19 @@ public class SteamAuthService
     /// Creates a Steam lobby with the given parameters.
     /// Uses the same authenticated session as other operations.
     /// </summary>
-    public async Task<ulong> CreateLobbyAsync(uint appId, int maxMembers, ulong gameServerSteamId, string protocolVersion)
+    public async Task<ulong> CreateLobbyAsync(
+        uint appId,
+        int maxMembers,
+        ulong gameServerSteamId,
+        string protocolVersion
+    )
     {
         if (!IsLoggedIn)
             throw new Exception("Not logged in");
 
-        Logger.Log($"{_logPrefix} Creating lobby for app {appId}, max members: {maxMembers}, gameServer: {gameServerSteamId}, protocol: {protocolVersion}");
+        Logger.Log(
+            $"{_logPrefix} Creating lobby for app {appId}, max members: {maxMembers}, gameServer: {gameServerSteamId}, protocol: {protocolVersion}"
+        );
 
         var metadata = BuildLobbyMetadata(gameServerSteamId, protocolVersion);
 
@@ -1562,12 +1782,14 @@ public class SteamAuthService
         // before awaiting, since `await job` would NRE on null. (The SetLobbyData sites
         // instead await first and null-check the resulting callback — both guard null,
         // just at different points.)
-        var createJob = _matchmaking.CreateLobby(
-            appId: appId,
-            lobbyType: ELobbyType.Public,
-            maxMembers: maxMembers,
-            lobbyFlags: 0,
-            metadata: metadata) ?? throw new Exception("CreateLobby returned null");
+        var createJob =
+            _matchmaking.CreateLobby(
+                appId: appId,
+                lobbyType: ELobbyType.Public,
+                maxMembers: maxMembers,
+                lobbyFlags: 0,
+                metadata: metadata
+            ) ?? throw new Exception("CreateLobby returned null");
 
         var createResult = await createJob;
 
@@ -1589,7 +1811,11 @@ public class SteamAuthService
     /// Sets metadata on the current lobby.
     /// Merges additional metadata with the base lobby metadata (protocolVersion, gameserver keys).
     /// </summary>
-    public async Task SetLobbyDataAsync(uint appId, ulong lobbyId, Dictionary<string, string>? additionalMetadata = null)
+    public async Task SetLobbyDataAsync(
+        uint appId,
+        ulong lobbyId,
+        Dictionary<string, string>? additionalMetadata = null
+    )
     {
         if (!IsLoggedIn)
             throw new Exception("Not logged in");
@@ -1616,7 +1842,8 @@ public class SteamAuthService
             lobbyType: ELobbyType.Public,
             maxMembers: _currentMaxMembers,
             lobbyFlags: 0,
-            metadata: metadata);
+            metadata: metadata
+        );
 
         if (result == null)
             throw new Exception("SetLobbyData returned null");
@@ -1648,7 +1875,8 @@ public class SteamAuthService
             lobbyType: lobbyType,
             maxMembers: _currentMaxMembers,
             lobbyFlags: 0,
-            metadata: metadata);
+            metadata: metadata
+        );
 
         if (result == null)
             throw new Exception("SetLobbyData returned null");
@@ -1663,7 +1891,10 @@ public class SteamAuthService
     /// Builds the standard metadata dictionary for Steam lobbies.
     /// Steam uses special __gameserver* keys to expose game server info to clients.
     /// </summary>
-    private static Dictionary<string, string> BuildLobbyMetadata(ulong gameServerSteamId, string protocolVersion)
+    private static Dictionary<string, string> BuildLobbyMetadata(
+        ulong gameServerSteamId,
+        string protocolVersion
+    )
     {
         return new Dictionary<string, string>
         {
@@ -1672,7 +1903,7 @@ public class SteamAuthService
             // Setting IP/Port to 0 tells clients to use SteamID for SDR connection
             ["__gameserverIP"] = "0",
             ["__gameserverPort"] = "0",
-            ["__gameserverSteamID"] = gameServerSteamId.ToString()
+            ["__gameserverSteamID"] = gameServerSteamId.ToString(),
         };
     }
 }

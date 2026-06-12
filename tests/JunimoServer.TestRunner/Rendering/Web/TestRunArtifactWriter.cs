@@ -49,7 +49,8 @@ public sealed class TestRunArtifactWriter
     {
         lock (_lock)
         {
-            if (_written) return;
+            if (_written)
+                return;
             if (_runDir == null || _runId == null)
             {
                 // Run identity never set. Either the parent process aborted before
@@ -58,25 +59,58 @@ public sealed class TestRunArtifactWriter
                 // landed. summary.json depends on the run dir, so we cannot write
                 // it. Log and fall through.
                 Console.Error.WriteLine(
-                    "[ArtifactWriter] run identity not set; cannot write summary.json/ctrf-report.json/latest.txt");
+                    "[ArtifactWriter] run identity not set; cannot write summary.json/ctrf-report.json/latest.txt"
+                );
                 return;
             }
             _written = true;
 
-            try { WriteSummaryJson(view); }
-            catch (Exception ex) { Console.Error.WriteLine($"[ArtifactWriter] summary.json failed: {ex.Message}"); }
+            try
+            {
+                WriteSummaryJson(view);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] summary.json failed: {ex.Message}");
+            }
 
-            try { WriteCtrfReport(view); }
-            catch (Exception ex) { Console.Error.WriteLine($"[ArtifactWriter] ctrf-report.json failed: {ex.Message}"); }
+            try
+            {
+                WriteCtrfReport(view);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] ctrf-report.json failed: {ex.Message}");
+            }
 
-            try { WriteRunOutput(view); }
-            catch (Exception ex) { Console.Error.WriteLine($"[ArtifactWriter] run-output.json failed: {ex.Message}"); }
+            try
+            {
+                WriteRunOutput(view);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] run-output.json failed: {ex.Message}");
+            }
 
-            try { WriteRunMetadataMerged(view); }
-            catch (Exception ex) { Console.Error.WriteLine($"[ArtifactWriter] run-metadata.json (merged) failed: {ex.Message}"); }
+            try
+            {
+                WriteRunMetadataMerged(view);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] run-metadata.json (merged) failed: {ex.Message}"
+                );
+            }
 
-            try { WriteLatestPointer(); }
-            catch (Exception ex) { Console.Error.WriteLine($"[ArtifactWriter] latest.txt failed: {ex.Message}"); }
+            try
+            {
+                WriteLatestPointer();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] latest.txt failed: {ex.Message}");
+            }
         }
     }
 
@@ -90,40 +124,46 @@ public sealed class TestRunArtifactWriter
         {
             activeDurationTotalMs += t.DurationMs;
             queueDurationTotalMs += t.QueueDurationMs;
-            if (t.Status != "failed") continue;
+            if (t.Status != "failed")
+                continue;
 
             var methodName = ExtractMethodFromTestName(t.DisplayName);
             var testDirName = $"{t.ClassName}.{methodName}";
 
-            failures.Add(new Dictionary<string, object?>
-            {
-                ["test"] = t.DisplayName,
-                ["className"] = t.ClassName,
-                ["methodName"] = methodName,
-                // failedAt orders the rows (runbook step 1: "identify the FIRST
-                // failure"). The active/queue split mirrors the run-level totals;
-                // queueDurationMs is 0 when the queue→active transition was never
-                // observed (e.g. the test failed inside server acquisition), in
-                // which case activeDurationMs still contains the wait.
-                ["failedAt"] = t.FailedAt?.ToString("o"),
-                ["activeDurationMs"] = t.DurationMs,
-                ["queueDurationMs"] = t.QueueDurationMs,
-                ["failureCategory"] = t.FailureCategory,
-                ["errorPreview"] = t.ErrorPreview,
-                ["error"] = t.ErrorMessage,
-                ["exceptionType"] = t.ErrorType,
-                ["phase"] = t.Phase,
-                ["screenshotDir"] = $"tests/{testDirName}/screenshots/",
-                ["serverKey"] = t.ServerKey,
-                ["serverInstanceId"] = t.ServerInstanceId,
-                ["reproCommand"] = t.ReproCommand,
-            });
+            failures.Add(
+                new Dictionary<string, object?>
+                {
+                    ["test"] = t.DisplayName,
+                    ["className"] = t.ClassName,
+                    ["methodName"] = methodName,
+                    // failedAt orders the rows (runbook step 1: "identify the FIRST
+                    // failure"). The active/queue split mirrors the run-level totals;
+                    // queueDurationMs is 0 when the queue→active transition was never
+                    // observed (e.g. the test failed inside server acquisition), in
+                    // which case activeDurationMs still contains the wait.
+                    ["failedAt"] = t.FailedAt?.ToString("o"),
+                    ["activeDurationMs"] = t.DurationMs,
+                    ["queueDurationMs"] = t.QueueDurationMs,
+                    ["failureCategory"] = t.FailureCategory,
+                    ["errorPreview"] = t.ErrorPreview,
+                    ["error"] = t.ErrorMessage,
+                    ["exceptionType"] = t.ErrorType,
+                    ["phase"] = t.Phase,
+                    ["screenshotDir"] = $"tests/{testDirName}/screenshots/",
+                    ["serverKey"] = t.ServerKey,
+                    ["serverInstanceId"] = t.ServerInstanceId,
+                    ["reproCommand"] = t.ReproCommand,
+                }
+            );
         }
 
         // Never-dispatched count: expected total minus every test that has any record
         // (passed/failed/canceled/skipped). Skipped tests (xUnit's [Fact(Skip=...)])
         // are part of the discovered total but didn't run — they're not "never dispatched".
-        var notDispatched = Math.Max(0, v.ExpectedTestCount - (v.Passed + v.Failed + v.Canceled + v.Skipped));
+        var notDispatched = Math.Max(
+            0,
+            v.ExpectedTestCount - (v.Passed + v.Failed + v.Canceled + v.Skipped)
+        );
 
         var infraErrors = InfrastructureErrorAggregator.Read(_runDir!);
 
@@ -165,10 +205,10 @@ public sealed class TestRunArtifactWriter
     /// so an aborted-but-no-failure run reports <c>"passed"</c> with
     /// <c>aborted=true</c>.
     /// </summary>
-    private static string ResultStatus(RunArtifactView v)
-        => v.Failed > 0 ? "failed"
-         : v.Canceled > 0 ? "canceled"
-         : "passed";
+    private static string ResultStatus(RunArtifactView v) =>
+        v.Failed > 0 ? "failed"
+        : v.Canceled > 0 ? "canceled"
+        : "passed";
 
     /// <summary>
     /// Build the coordinator-only degradation block. Returns null when no
@@ -177,10 +217,12 @@ public sealed class TestRunArtifactWriter
     /// </summary>
     private static Dictionary<string, object?>? BuildDegradation(RunArtifactView v)
     {
-        if (v.DroppedEventsByWorker is null
+        if (
+            v.DroppedEventsByWorker is null
             && v.LostWorkers is null
             && v.RendererFailures is null
-            && v.MissingArtifacts is null)
+            && v.MissingArtifacts is null
+        )
             return null;
 
         var anyDataLoss =
@@ -226,12 +268,18 @@ public sealed class TestRunArtifactWriter
             // CTRF `extra` carve-out for our additions: failure metadata, server
             // context, and the lifecycle phase breakdown.
             var extra = new Dictionary<string, object>();
-            if (t.Phase != null) extra["phase"] = t.Phase;
-            if (t.FailureCategory != null) extra["failureCategory"] = t.FailureCategory;
-            if (t.ErrorPreview != null) extra["errorPreview"] = t.ErrorPreview;
-            if (t.ReproCommand != null) extra["reproCommand"] = t.ReproCommand;
-            if (t.ServerKey != null) extra["serverKey"] = t.ServerKey;
-            if (t.ServerInstanceId != null) extra["serverInstanceId"] = t.ServerInstanceId;
+            if (t.Phase != null)
+                extra["phase"] = t.Phase;
+            if (t.FailureCategory != null)
+                extra["failureCategory"] = t.FailureCategory;
+            if (t.ErrorPreview != null)
+                extra["errorPreview"] = t.ErrorPreview;
+            if (t.ReproCommand != null)
+                extra["reproCommand"] = t.ReproCommand;
+            if (t.ServerKey != null)
+                extra["serverKey"] = t.ServerKey;
+            if (t.ServerInstanceId != null)
+                extra["serverInstanceId"] = t.ServerInstanceId;
             if (t.Lifecycle is { } lc)
             {
                 extra["testBodyMs"] = lc.TestMs;
@@ -240,13 +288,20 @@ public sealed class TestRunArtifactWriter
                 extra["lastKeepDisposeMs"] = lc.LastKeepDisposeMs;
                 extra["leaseReleaseMs"] = lc.LeaseReleaseMs;
             }
-            if (t.SkipReason != null) extra["skipReason"] = t.SkipReason;
-            if (extra.Count > 0) testObj["extra"] = extra;
+            if (t.SkipReason != null)
+                extra["skipReason"] = t.SkipReason;
+            if (extra.Count > 0)
+                testObj["extra"] = extra;
 
             if (t.ScreenshotPath != null)
                 testObj["attachments"] = new[]
                 {
-                    new { name = "screenshot", path = t.ScreenshotPath, contentType = "image/png" }
+                    new
+                    {
+                        name = "screenshot",
+                        path = t.ScreenshotPath,
+                        contentType = "image/png",
+                    },
                 };
 
             tests.Add(testObj);
@@ -258,7 +313,10 @@ public sealed class TestRunArtifactWriter
         // list) intentionally diverge on aborted runs.
         // Skipped is excluded from the notDispatched derivation: skipped tests have a
         // record (xUnit emits them) so they're already part of the discovered total.
-        var notDispatched = Math.Max(0, v.ExpectedTestCount - (v.Passed + v.Failed + v.Canceled + v.Skipped));
+        var notDispatched = Math.Max(
+            0,
+            v.ExpectedTestCount - (v.Passed + v.Failed + v.Canceled + v.Skipped)
+        );
         var other = v.Canceled + notDispatched;
         var totalTests = v.Passed + v.Failed + v.Skipped + other;
 
@@ -337,12 +395,14 @@ public sealed class TestRunArtifactWriter
     /// </summary>
     private void WriteRunMetadataMerged(RunArtifactView v)
     {
-        if (v.WorkerRunMetadata is null || v.WorkerRunMetadata.Count == 0) return;
+        if (v.WorkerRunMetadata is null || v.WorkerRunMetadata.Count == 0)
+            return;
 
         // Use worker 0 as the canonical envelope (schema version, git, env are
         // all coordinator-side properties; any worker's view of them is equivalent).
         var canonical = v.WorkerRunMetadata[0];
-        if (canonical.ValueKind != JsonValueKind.Object) return;
+        if (canonical.ValueKind != JsonValueKind.Object)
+            return;
 
         var merged = new Dictionary<string, object?>();
         foreach (var prop in canonical.EnumerateObject())
@@ -360,7 +420,8 @@ public sealed class TestRunArtifactWriter
 
     private void WriteLatestPointer()
     {
-        if (_outputDir == null || _runDir == null) return;
+        if (_outputDir == null || _runDir == null)
+            return;
         var latestPath = Path.Combine(_outputDir, RunArtifactNames.LatestPointer);
         File.WriteAllText(latestPath, _runDir);
     }

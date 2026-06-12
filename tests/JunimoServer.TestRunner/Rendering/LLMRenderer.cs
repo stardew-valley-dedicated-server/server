@@ -1,7 +1,7 @@
+using JunimoServer.TestRunner.Rendering.Web;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 using JunimoServer.Tests.Schema.Json;
-using JunimoServer.TestRunner.Rendering.Web;
 
 namespace JunimoServer.TestRunner.Rendering;
 
@@ -17,9 +17,11 @@ public sealed class LLMRenderer : RendererBase
     private readonly TestRunState _state;
     private RunMetadataEvent? _runMetadata;
 
-    public LLMRenderer(RunRecorder recorder, bool verbose = false) : this(recorder, Console.Out, verbose) { }
+    public LLMRenderer(RunRecorder recorder, bool verbose = false)
+        : this(recorder, Console.Out, verbose) { }
 
-    public LLMRenderer(RunRecorder recorder, TextWriter output, bool verbose = false) : base(verbose)
+    public LLMRenderer(RunRecorder recorder, TextWriter output, bool verbose = false)
+        : base(verbose)
     {
         _state = recorder.State;
         _out = output;
@@ -45,15 +47,17 @@ public sealed class LLMRenderer : RendererBase
 
     public override void OnTestAnnotation(TestAnnotationEvent e)
     {
-        WriteJson(new
-        {
-            Event = "test_annotation",
-            e.Timestamp,
-            Test = e.DisplayName,
-            Level = e.Level.ToString().ToLowerInvariant(),
-            Source = e.Source.ToString().ToLowerInvariant(),
-            e.Message,
-        });
+        WriteJson(
+            new
+            {
+                Event = "test_annotation",
+                e.Timestamp,
+                Test = e.DisplayName,
+                Level = e.Level.ToString().ToLowerInvariant(),
+                Source = e.Source.ToString().ToLowerInvariant(),
+                e.Message,
+            }
+        );
     }
 
     public override void OnDiscoveryComplete(DiscoveryCompleteEvent e)
@@ -63,12 +67,14 @@ public sealed class LLMRenderer : RendererBase
 
     public override void OnRunStarted(RunStartedEvent e)
     {
-        WriteJson(new
-        {
-            Event = "run_started",
-            e.Timestamp,
-            TestCount = e.TestCasesToRun
-        });
+        WriteJson(
+            new
+            {
+                Event = "run_started",
+                e.Timestamp,
+                TestCount = e.TestCasesToRun,
+            }
+        );
     }
 
     public override void OnRunFinished(RunFinishedEvent e)
@@ -88,53 +94,61 @@ public sealed class LLMRenderer : RendererBase
         // Emit run_aborted before run_finished when stopOnFail cancelled remaining tests.
         if (notExecuted > 0 && (failed > 0 || canceled > 0))
         {
-            WriteJson(new
-            {
-                Event = "run_aborted",
-                e.Timestamp,
-                Reason = "stopOnFail",
-                FailedTests = failed,
-                CanceledTests = canceled,
-                TestsNotExecuted = notExecuted
-            });
+            WriteJson(
+                new
+                {
+                    Event = "run_aborted",
+                    e.Timestamp,
+                    Reason = "stopOnFail",
+                    FailedTests = failed,
+                    CanceledTests = canceled,
+                    TestsNotExecuted = notExecuted,
+                }
+            );
         }
 
-        WriteJson(new
-        {
-            Event = "run_finished",
-            e.Timestamp,
-            Passed = passed,
-            Failed = failed,
-            Canceled = canceled,
-            Skipped = skipped + notExecuted,
-            NotExecuted = notExecuted > 0 ? notExecuted : (int?)null,
-            DurationMs = (long)e.Duration.TotalMilliseconds
-        });
+        WriteJson(
+            new
+            {
+                Event = "run_finished",
+                e.Timestamp,
+                Passed = passed,
+                Failed = failed,
+                Canceled = canceled,
+                Skipped = skipped + notExecuted,
+                NotExecuted = notExecuted > 0 ? notExecuted : (int?)null,
+                DurationMs = (long)e.Duration.TotalMilliseconds,
+            }
+        );
 
         // Stdout events fire here so the LLM consumer sees outcomes immediately.
         // Disk artifacts are written by the outer finally in Program.cs after
         // the setup pipe drains.
         if (_runMetadata != null)
         {
-            WriteJson(new
-            {
-                Event = "run_metadata",
-                Timestamp = DateTime.UtcNow,
-                RunDir = _runMetadata.RunDir,
-                Data = _runMetadata.Data,
-            });
+            WriteJson(
+                new
+                {
+                    Event = "run_metadata",
+                    Timestamp = DateTime.UtcNow,
+                    RunDir = _runMetadata.RunDir,
+                    Data = _runMetadata.Data,
+                }
+            );
         }
 
         // Emit a preliminary run_summary at xUnit's OnRunFinished so LLM consumers
         // see results without waiting for pipe drain. Disk artifacts (which include
         // flakiness) are written later by the outer finally.
         var prelim = _state.GetArtifactView(aborted: false, abortReason: null);
-        WriteJson(new
-        {
-            Event = "run_summary",
-            Timestamp = DateTime.UtcNow,
-            Data = prelim,
-        });
+        WriteJson(
+            new
+            {
+                Event = "run_summary",
+                Timestamp = DateTime.UtcNow,
+                Data = prelim,
+            }
+        );
     }
 
     public override void OnTestStarted(TestStartedEvent e)
@@ -144,43 +158,50 @@ public sealed class LLMRenderer : RendererBase
 
     protected override void OnTestPassedCore(TestPassedEvent e)
     {
-        if (!Verbose) return;
+        if (!Verbose)
+            return;
 
-        WriteJson(new
-        {
-            Event = "test_passed",
-            e.Timestamp,
-            Test = e.DisplayName,
-            DurationMs = (long)e.Duration.TotalMilliseconds
-        });
+        WriteJson(
+            new
+            {
+                Event = "test_passed",
+                e.Timestamp,
+                Test = e.DisplayName,
+                DurationMs = (long)e.Duration.TotalMilliseconds,
+            }
+        );
     }
 
     protected override void OnTestFailedCore(TestFailedEvent e)
     {
-        WriteJson(new
-        {
-            Event = "test_failed",
-            e.Timestamp,
-            Test = e.DisplayName,
-            DurationMs = (long)e.Duration.TotalMilliseconds,
-            Error = e.Message,
-            e.ExceptionType,
-            StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null,
-            e.ScreenshotPath,
-            e.ArtifactId
-        });
+        WriteJson(
+            new
+            {
+                Event = "test_failed",
+                e.Timestamp,
+                Test = e.DisplayName,
+                DurationMs = (long)e.Duration.TotalMilliseconds,
+                Error = e.Message,
+                e.ExceptionType,
+                StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null,
+                e.ScreenshotPath,
+                e.ArtifactId,
+            }
+        );
     }
 
     protected override void OnTestSkippedCore(TestSkippedEvent e)
     {
         // Skipped tests might be relevant for LLMs to understand test coverage
-        WriteJson(new
-        {
-            Event = "test_skipped",
-            e.Timestamp,
-            Test = e.DisplayName,
-            e.Reason
-        });
+        WriteJson(
+            new
+            {
+                Event = "test_skipped",
+                e.Timestamp,
+                Test = e.DisplayName,
+                e.Reason,
+            }
+        );
     }
 
     public override void OnDiagnostic(DiagnosticEvent e)
@@ -190,64 +211,74 @@ public sealed class LLMRenderer : RendererBase
         if (e.Level < minLevel)
             return;
 
-        WriteJson(new
-        {
-            Event = "error",
-            e.Timestamp,
-            Source = e.Source.ToString().ToLowerInvariant(),
-            e.Message
-        });
+        WriteJson(
+            new
+            {
+                Event = "error",
+                e.Timestamp,
+                Source = e.Source.ToString().ToLowerInvariant(),
+                e.Message,
+            }
+        );
     }
 
     public override void OnError(ErrorEvent e)
     {
-        WriteJson(new
-        {
-            Event = "error",
-            e.Timestamp,
-            e.Message,
-            StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null
-        });
+        WriteJson(
+            new
+            {
+                Event = "error",
+                e.Timestamp,
+                e.Message,
+                StackTrace = e.StackTrace != null ? SanitizeStackTrace(e.StackTrace) : null,
+            }
+        );
     }
 
     public override void OnSetupPhaseStarted(SetupPhaseStartedEvent e)
     {
-        WriteJson(new
-        {
-            Event = "setup_started",
-            e.Timestamp,
-            e.Category,
-            Phase = e.PhaseName,
-            Collection = e.CollectionName
-        });
+        WriteJson(
+            new
+            {
+                Event = "setup_started",
+                e.Timestamp,
+                e.Category,
+                Phase = e.PhaseName,
+                Collection = e.CollectionName,
+            }
+        );
     }
 
     public override void OnSetupPhaseCompleted(SetupPhaseCompletedEvent e)
     {
-        WriteJson(new
-        {
-            Event = "setup_completed",
-            e.Timestamp,
-            e.Category,
-            Phase = e.PhaseName,
-            e.Success,
-            Error = e.ErrorMessage,
-            Collection = e.CollectionName
-        });
+        WriteJson(
+            new
+            {
+                Event = "setup_completed",
+                e.Timestamp,
+                e.Category,
+                Phase = e.PhaseName,
+                e.Success,
+                Error = e.ErrorMessage,
+                Collection = e.CollectionName,
+            }
+        );
     }
 
     public override void OnSetupStep(SetupStepEvent e)
     {
-        WriteJson(new
-        {
-            Event = "setup_step",
-            e.Timestamp,
-            e.Category,
-            Step = e.StepName,
-            Status = e.Status.ToSnakeCase(),
-            e.Details,
-            Collection = e.CollectionName
-        });
+        WriteJson(
+            new
+            {
+                Event = "setup_step",
+                e.Timestamp,
+                e.Category,
+                Step = e.StepName,
+                Status = e.Status.ToSnakeCase(),
+                e.Details,
+                Collection = e.CollectionName,
+            }
+        );
     }
 
     private void WriteJson<T>(T obj)

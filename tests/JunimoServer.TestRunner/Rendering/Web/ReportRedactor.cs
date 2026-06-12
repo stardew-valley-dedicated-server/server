@@ -32,23 +32,27 @@ public static class ReportRedactor
     // Private-key PEM blocks (any "BEGIN ... PRIVATE KEY" ... "END ... PRIVATE KEY").
     private static readonly Regex PrivateKeyBlock = new(
         @"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
-        RegexOptions.Singleline | RegexOptions.Compiled);
+        RegexOptions.Singleline | RegexOptions.Compiled
+    );
 
     // `password=value`, `pass=...`, `token=...`, `secret=...`, `key=...` (value up to a
     // quote, whitespace, or shell separator). Keeps the key, masks the value.
     private static readonly Regex SecretAssignment = new(
         @"(?<key>\b(?:password|passwd|pass|token|secret|api[_-]?key|access[_-]?key)\b\s*[=:]\s*)(?<val>[^\s""'`&|;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled
+    );
 
     // `/run/secrets/<name>` paths and the `$(cat /run/secrets/<name>)` snippet.
     private static readonly Regex RunSecrets = new(
         @"/run/secrets/[A-Za-z0-9_.-]+",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled
+    );
 
     // SSH-style user@host destinations (host is a hostname or IPv4).
     private static readonly Regex SshDestination = new(
         @"\b[A-Za-z0-9._-]+@(?:\d{1,3}(?:\.\d{1,3}){3}|[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled
+    );
 
     /// <summary>
     /// Returns <paramref name="snapshotJson"/> with sensitive values masked in place.
@@ -65,26 +69,36 @@ public static class ReportRedactor
 
         // 1. Known values — longest-first so e.g. "user@host" is masked before the bare
         //    "host" substring it contains.
-        foreach (var secret in knownSecrets.Where(s => s.Length >= 3).OrderByDescending(s => s.Length))
+        foreach (
+            var secret in knownSecrets.Where(s => s.Length >= 3).OrderByDescending(s => s.Length)
+        )
         {
             var masked = LooksLikeIp(secret) ? MaskIp(secret) : MaskValue(secret);
             result = result.Replace(secret, masked);
         }
 
         // 2. High-confidence regex.
-        result = PrivateKeyBlock.Replace(result, "-----BEGIN PRIVATE KEY----- [redacted] -----END PRIVATE KEY-----");
+        result = PrivateKeyBlock.Replace(
+            result,
+            "-----BEGIN PRIVATE KEY----- [redacted] -----END PRIVATE KEY-----"
+        );
         result = RunSecrets.Replace(result, "/run/secrets/***");
         result = SshDestination.Replace(result, m => MaskValue(m.Value));
-        result = SecretAssignment.Replace(result, m => m.Groups["key"].Value + MaskValue(m.Groups["val"].Value));
+        result = SecretAssignment.Replace(
+            result,
+            m => m.Groups["key"].Value + MaskValue(m.Groups["val"].Value)
+        );
 
         return result;
     }
 
     private static bool LooksLikeIp(string value)
     {
-        if (value.IndexOf(':') >= 0) return true; // candidate IPv6
+        if (value.IndexOf(':') >= 0)
+            return true; // candidate IPv6
         var octets = value.Split('.');
-        return octets.Length == 4 && octets.All(o => int.TryParse(o, out var n) && n is >= 0 and <= 255);
+        return octets.Length == 4
+            && octets.All(o => int.TryParse(o, out var n) && n is >= 0 and <= 255);
     }
 
     // --- Masking helpers (mirror ChatRedaction; see class remarks) ---
@@ -105,7 +119,8 @@ public static class ReportRedactor
         {
             var parts = ip.Split(':');
             for (var i = parts.Length - 1; i >= 0; i--)
-                if (parts[i].Length > 0) return "***:***:…:" + parts[i];
+                if (parts[i].Length > 0)
+                    return "***:***:…:" + parts[i];
             return ip;
         }
 
@@ -116,8 +131,10 @@ public static class ReportRedactor
     /// <summary>Generic value → <c>first***last</c>; length ≤2 → <c>***</c>.</summary>
     private static string MaskValue(string value)
     {
-        if (string.IsNullOrEmpty(value)) return value;
-        if (value.Length <= 2) return "***";
+        if (string.IsNullOrEmpty(value))
+            return value;
+        if (value.Length <= 2)
+            return "***";
         return $"{value[0]}***{value[value.Length - 1]}";
     }
 }

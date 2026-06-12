@@ -1,6 +1,6 @@
 using System;
-using StardewValley;
 using System.Diagnostics;
+using StardewValley;
 
 namespace JunimoServer.Services.ChatCommands
 {
@@ -9,19 +9,23 @@ namespace JunimoServer.Services.ChatCommands
         private static Action<ReceivedMessage> _onChatMessage;
 
         public static void Initialize(Action<ReceivedMessage> onChatMessage)
-
         {
             _onChatMessage = onChatMessage;
         }
 
-        public static void receiveChatMessage_Postfix(long sourceFarmer, int chatKind, LocalizedContentManager.LanguageCode language, string message)
+        public static void receiveChatMessage_Postfix(
+            long sourceFarmer,
+            int chatKind,
+            LocalizedContentManager.LanguageCode language,
+            string message
+        )
         {
             var msg = new ReceivedMessage
             {
                 SourceFarmer = sourceFarmer,
                 ChatKind = (ReceivedMessage.ChatKinds)chatKind,
                 Language = language,
-                Message = message
+                Message = message,
             };
 
             _onChatMessage(msg);

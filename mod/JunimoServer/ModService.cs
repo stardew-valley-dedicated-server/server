@@ -12,9 +12,7 @@ namespace JunimoServer
         protected readonly IModHelper Helper;
         protected readonly IMonitor Monitor;
 
-        public ModService()
-        {
-        }
+        public ModService() { }
 
         public ModService(IModHelper helper)
         {
@@ -32,9 +30,6 @@ namespace JunimoServer
             Monitor = monitor;
         }
 
-        public virtual void Entry()
-        {
-
-        }
+        public virtual void Entry() { }
     }
 }

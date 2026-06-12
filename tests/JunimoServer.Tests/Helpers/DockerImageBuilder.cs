@@ -34,11 +34,17 @@ public static class DockerImageBuilder
         Environment.GetEnvironmentVariable("SDVD_IMAGE_TAG") ?? "local";
     private static readonly bool UseLocalImages = ImageTag == "local";
     private static readonly bool SkipBuild = string.Equals(
-        Environment.GetEnvironmentVariable("SDVD_SKIP_BUILD"), "true", StringComparison.OrdinalIgnoreCase);
+        Environment.GetEnvironmentVariable("SDVD_SKIP_BUILD"),
+        "true",
+        StringComparison.OrdinalIgnoreCase
+    );
     private static readonly string BuildLockFile = Path.Combine(
-        Path.GetTempPath(), "sdvd-test-build.lock");
+        Path.GetTempPath(),
+        "sdvd-test-build.lock"
+    );
     private static readonly string ServerRepoDir = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")
+    );
 
     /// <summary>
     /// Resolves Steam build credentials from <c>STEAM_ACCOUNTS[0]</c> in the test environment.
@@ -49,7 +55,8 @@ public static class DockerImageBuilder
     private static Dictionary<string, string> GetSteamCredentials(IBuildProgressSink progress)
     {
         var steamAccounts = Environment.GetEnvironmentVariable("STEAM_ACCOUNTS");
-        if (string.IsNullOrEmpty(steamAccounts)) return new Dictionary<string, string>();
+        if (string.IsNullOrEmpty(steamAccounts))
+            return new Dictionary<string, string>();
 
         try
         {
@@ -62,13 +69,18 @@ public static class DockerImageBuilder
             {
                 ["STEAM_USERNAME"] = user,
                 ["STEAM_PASSWORD"] = pass,
-                ["STEAM_REFRESH_TOKEN"] = token
+                ["STEAM_REFRESH_TOKEN"] = token,
             };
         }
-        catch (Exception ex) when (ex is JsonException or IndexOutOfRangeException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex)
+            when (ex
+                    is JsonException
+                        or IndexOutOfRangeException
+                        or InvalidOperationException
+                        or KeyNotFoundException
+            )
         {
-            progress.Step($"STEAM_ACCOUNTS JSON malformed: {ex.Message}",
-                SetupStepStatus.Warning);
+            progress.Step($"STEAM_ACCOUNTS JSON malformed: {ex.Message}", SetupStepStatus.Warning);
             return new Dictionary<string, string>();
         }
     }
@@ -77,15 +89,17 @@ public static class DockerImageBuilder
     /// Ensures all required Docker images exist, building them if necessary.
     /// Returns immediately if images are not local or build is skipped.
     /// </summary>
-    public static async Task EnsureImagesExistAsync(bool includeTestClient, IBuildProgressSink progress)
+    public static async Task EnsureImagesExistAsync(
+        bool includeTestClient,
+        IBuildProgressSink progress
+    )
     {
         if (!UseLocalImages)
             return;
 
         if (SkipBuild)
         {
-            progress.Step("Skipping image build (SDVD_SKIP_BUILD=true)",
-                SetupStepStatus.Warning);
+            progress.Step("Skipping image build (SDVD_SKIP_BUILD=true)", SetupStepStatus.Warning);
             return;
         }
 
@@ -98,7 +112,10 @@ public static class DockerImageBuilder
     /// fixtures within one xUnit process, plus a file lock with retry for cross-process
     /// safety (e.g. concurrent <c>make test</c> invocations).
     /// </summary>
-    private static async Task BuildLocalImagesOnce(bool includeTestClient, IBuildProgressSink progress)
+    private static async Task BuildLocalImagesOnce(
+        bool includeTestClient,
+        IBuildProgressSink progress
+    )
     {
         // Acquire in-process semaphore to serialize concurrent fixture builds
         progress.Step("Waiting for build lock", SetupStepStatus.Started);
@@ -138,14 +155,21 @@ public static class DockerImageBuilder
     /// Acquires a cross-process file lock with retry and builds images if still needed.
     /// The retry loop handles <see cref="IOException"/> when another process holds the lock.
     /// </summary>
-    private static async Task AcquireFileLockAndBuild(bool includeTestClient, IBuildProgressSink progress)
+    private static async Task AcquireFileLockAndBuild(
+        bool includeTestClient,
+        IBuildProgressSink progress
+    )
     {
         for (int attempt = 1; attempt <= FileLockMaxRetries; attempt++)
         {
             try
             {
-                using var lockStream = new FileStream(BuildLockFile, FileMode.OpenOrCreate,
-                    FileAccess.ReadWrite, FileShare.None);
+                using var lockStream = new FileStream(
+                    BuildLockFile,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None
+                );
 
                 try
                 {
@@ -155,15 +179,23 @@ public static class DockerImageBuilder
                 {
                     // Release the FileStream before deleting so the file isn't locked
                     lockStream.Close();
-                    try { File.Delete(BuildLockFile); } catch { /* another process may hold it */ }
+                    try
+                    {
+                        File.Delete(BuildLockFile);
+                    }
+                    catch
+                    { /* another process may hold it */
+                    }
                 }
                 return;
             }
             catch (IOException) when (attempt < FileLockMaxRetries)
             {
-                progress.Step("Waiting for build lock",
+                progress.Step(
+                    "Waiting for build lock",
                     SetupStepStatus.InProgress,
-                    $"File lock contended, retry {attempt}/{FileLockMaxRetries}");
+                    $"File lock contended, retry {attempt}/{FileLockMaxRetries}"
+                );
                 await Task.Delay(FileLockRetryDelay);
             }
         }
@@ -200,11 +232,23 @@ public static class DockerImageBuilder
         progress.Step("Building server image", SetupStepStatus.Started);
 
         var steamAuthTask = BuildAndEmitStatus(
-            "docker", "compose build steam-auth", "steam-service image",
-            TestTimings.DockerBuildSteamAuthTimeout, "Building steam-service image", progress, steamCredentials);
+            "docker",
+            "compose build steam-auth",
+            "steam-service image",
+            TestTimings.DockerBuildSteamAuthTimeout,
+            "Building steam-service image",
+            progress,
+            steamCredentials
+        );
         var serverTask = BuildAndEmitStatus(
-            "make", "build", "server image",
-            TestTimings.DockerBuildServerTimeout, "Building server image", progress, steamCredentials);
+            "make",
+            "build",
+            "server image",
+            TestTimings.DockerBuildServerTimeout,
+            "Building server image",
+            progress,
+            steamCredentials
+        );
 
         await Task.WhenAll(steamAuthTask, serverTask);
 
@@ -212,8 +256,14 @@ public static class DockerImageBuilder
         {
             progress.Step("Building test-client image", SetupStepStatus.Started);
             await BuildAndEmitStatus(
-                "make", "build-test-client", "test-client image",
-                TestTimings.DockerBuildServerTimeout, "Building test-client image", progress, steamCredentials);
+                "make",
+                "build-test-client",
+                "test-client image",
+                TestTimings.DockerBuildServerTimeout,
+                "Building test-client image",
+                progress,
+                steamCredentials
+            );
         }
 
         progress.PhaseCompleted("Docker Images", true);
@@ -224,44 +274,65 @@ public static class DockerImageBuilder
     /// Exceptions from the build are re-thrown so Task.WhenAll propagates them.
     /// </summary>
     private static async Task BuildAndEmitStatus(
-        string command, string arguments, string description,
-        TimeSpan timeout, string stepName, IBuildProgressSink progress,
-        Dictionary<string, string>? environmentVars = null)
+        string command,
+        string arguments,
+        string description,
+        TimeSpan timeout,
+        string stepName,
+        IBuildProgressSink progress,
+        Dictionary<string, string>? environmentVars = null
+    )
     {
         var sw = Stopwatch.StartNew();
         InfrastructureEventLog.Emit("image_build_started", new { image = description });
         try
         {
-            await RunBuildCommand(command, arguments, ServerRepoDir, description, timeout, stepName, progress, environmentVars);
+            await RunBuildCommand(
+                command,
+                arguments,
+                ServerRepoDir,
+                description,
+                timeout,
+                stepName,
+                progress,
+                environmentVars
+            );
             progress.Step(stepName, SetupStepStatus.Completed);
             sw.Stop();
-            InfrastructureEventLog.Emit("image_build_completed", new
-            {
-                image = description,
-                durationMs = sw.ElapsedMilliseconds
-            });
+            InfrastructureEventLog.Emit(
+                "image_build_completed",
+                new { image = description, durationMs = sw.ElapsedMilliseconds }
+            );
         }
         catch (Exception ex)
         {
             progress.Step(stepName, SetupStepStatus.Failed);
             sw.Stop();
-            InfrastructureEventLog.Emit("image_build_failed", new
-            {
-                image = description,
-                durationMs = sw.ElapsedMilliseconds,
-                reason = "exception",
-                exceptionType = ex.GetType().Name,
-                message = ex.Message
-            });
+            InfrastructureEventLog.Emit(
+                "image_build_failed",
+                new
+                {
+                    image = description,
+                    durationMs = sw.ElapsedMilliseconds,
+                    reason = "exception",
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             throw;
         }
     }
 
     private static async Task RunBuildCommand(
-        string command, string arguments, string workingDirectory,
-        string description, TimeSpan timeout,
-        string stepName, IBuildProgressSink progress,
-        Dictionary<string, string>? environmentVars = null)
+        string command,
+        string arguments,
+        string workingDirectory,
+        string description,
+        TimeSpan timeout,
+        string stepName,
+        IBuildProgressSink progress,
+        Dictionary<string, string>? environmentVars = null
+    )
     {
         var startInfo = new ProcessStartInfo
         {
@@ -271,7 +342,7 @@ public static class DockerImageBuilder
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            CreateNoWindow = true
+            CreateNoWindow = true,
         };
 
         // Use plain progress output for Docker builds so ReadLineAsync gets clean lines
@@ -284,7 +355,8 @@ public static class DockerImageBuilder
                 startInfo.Environment[key] = value;
         }
 
-        using var process = Process.Start(startInfo)
+        using var process =
+            Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start '{command} {arguments}'");
 
         // Read stdout / stderr in parallel via local async functions. ReadLineAsync
@@ -314,7 +386,9 @@ public static class DockerImageBuilder
         catch (OperationCanceledException)
         {
             process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"Building {description} timed out after {timeout.TotalMinutes:0} minutes");
+            throw new TimeoutException(
+                $"Building {description} timed out after {timeout.TotalMinutes:0} minutes"
+            );
         }
 
         await Task.WhenAll(stdoutTask, stderrTask);
@@ -325,7 +399,8 @@ public static class DockerImageBuilder
             // progress sink; the InvalidOperationException then surfaces as
             // SetupStepStatus.Failed in the calling BuildAndEmitStatus.
             throw new InvalidOperationException(
-                $"Building {description} failed with exit code {process.ExitCode}.");
+                $"Building {description} failed with exit code {process.ExitCode}."
+            );
         }
     }
 }

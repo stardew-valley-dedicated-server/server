@@ -93,6 +93,6 @@ public static class RunArtifactNames
     public const string SshHostMastersEnv = "SDVD_SSH_HOST_MASTERS";
 
     /// <summary>{runDir}/diagnostics/infrastructure.jsonl</summary>
-    public static string InfrastructureLog(string runDir)
-        => Path.Combine(runDir, DiagnosticsDir, InfrastructureJsonl);
+    public static string InfrastructureLog(string runDir) =>
+        Path.Combine(runDir, DiagnosticsDir, InfrastructureJsonl);
 }

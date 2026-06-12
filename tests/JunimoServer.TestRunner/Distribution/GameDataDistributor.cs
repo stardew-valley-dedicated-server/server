@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.Net;
 using Docker.DotNet;
 using Docker.DotNet.Models;
+using JunimoServer.TestRunner.Rendering;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using JunimoServer.Tests.Schema.Events;
-using JunimoServer.TestRunner.Rendering;
 
 namespace JunimoServer.TestRunner.Distribution;
 
@@ -82,48 +82,80 @@ public sealed class GameDataDistributor : IDisposable
     public async Task<List<TransferResult>> DistributeAsync(
         IReadOnlyList<DockerHost> hosts,
         ITestRenderer? renderer = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         await EnsureHelperImageAsync(_localClient, hostId: "local", ct);
         var localPopulated = await IsVolumePopulatedAsync(_localClient, ct);
         if (!localPopulated)
             throw new InvalidOperationException(
-                $"Local volume '{_gameDataVolumeName}' is not populated " +
-                $"(no '{ProbePath}' inside). Run 'make setup' before launching tests.");
+                $"Local volume '{_gameDataVolumeName}' is not populated "
+                    + $"(no '{ProbePath}' inside). Run 'make setup' before launching tests."
+            );
 
         var remotes = hosts.Where(h => !string.IsNullOrEmpty(h.SshDestination)).ToList();
-        if (remotes.Count == 0) return new List<TransferResult>();
+        if (remotes.Count == 0)
+            return new List<TransferResult>();
 
         using var gate = new SemaphoreSlim(MaxConcurrentTransfers, MaxConcurrentTransfers);
-        var tasks = remotes.Select(async h =>
-        {
-            await gate.WaitAsync(ct);
-            try { return await ProvisionHostAsync(h, renderer, ct); }
-            finally { gate.Release(); }
-        }).ToArray();
+        var tasks = remotes
+            .Select(async h =>
+            {
+                await gate.WaitAsync(ct);
+                try
+                {
+                    return await ProvisionHostAsync(h, renderer, ct);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            })
+            .ToArray();
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
 
     private async Task<TransferResult> ProvisionHostAsync(
-        DockerHost host, ITestRenderer? renderer, CancellationToken ct)
+        DockerHost host,
+        ITestRenderer? renderer,
+        CancellationToken ct
+    )
     {
         // Pull the helper image before any probe: IsVolumePopulatedAsync runs a
         // busybox container to test for the game-data marker, and on a fresh
         // remote daemon that CreateContainerAsync fails with "No such image"
         // before the populated-skip path can return. Mirrors the local
         // pre-check order in DistributeAsync.
-        renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-            SetupStepStatus.Started, "ensuring helper image"));
+        renderer?.OnSetupStep(
+            new SetupStepEvent(
+                SetupCategory,
+                host.Id,
+                SetupStepStatus.Started,
+                "ensuring helper image"
+            )
+        );
         await EnsureHelperImageAsync(host.ApiClient, host.Id, ct);
 
-        renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-            SetupStepStatus.InProgress, "checking game-data volume"));
+        renderer?.OnSetupStep(
+            new SetupStepEvent(
+                SetupCategory,
+                host.Id,
+                SetupStepStatus.InProgress,
+                "checking game-data volume"
+            )
+        );
         if (await IsVolumePopulatedAsync(host.ApiClient, ct))
         {
             InfrastructureEventLog.Emit("game_data_skip_populated", new { host_id = host.Id });
-            renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                SetupStepStatus.Completed, "already populated"));
+            renderer?.OnSetupStep(
+                new SetupStepEvent(
+                    SetupCategory,
+                    host.Id,
+                    SetupStepStatus.Completed,
+                    "already populated"
+                )
+            );
             return new TransferResult(host.Id, true, Skipped: true, Error: null);
         }
 
@@ -131,16 +163,31 @@ public sealed class GameDataDistributor : IDisposable
         // A real failure (e.g. remote disk full) will incur the full backoff
         // sequence before the run aborts — the cost is symmetric with image
         // distribution and is the price of retry symmetry.
-        var delays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(60) };
+        var delays = new[]
+        {
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(20),
+            TimeSpan.FromSeconds(60),
+        };
         Exception? last = null;
         for (var attempt = 0; attempt <= _maxRetries; attempt++)
         {
             try
             {
-                InfrastructureEventLog.Emit("game_data_transfer_started", new { host_id = host.Id, attempt });
-                renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                    SetupStepStatus.Started,
-                    attempt == 0 ? "transferring game files" : $"retry {attempt}: transferring game files"));
+                InfrastructureEventLog.Emit(
+                    "game_data_transfer_started",
+                    new { host_id = host.Id, attempt }
+                );
+                renderer?.OnSetupStep(
+                    new SetupStepEvent(
+                        SetupCategory,
+                        host.Id,
+                        SetupStepStatus.Started,
+                        attempt == 0
+                            ? "transferring game files"
+                            : $"retry {attempt}: transferring game files"
+                    )
+                );
                 var sw = Stopwatch.StartNew();
                 var bytes = await TransferAsync(host, attempt, renderer, ct);
                 sw.Stop();
@@ -152,45 +199,93 @@ public sealed class GameDataDistributor : IDisposable
                 // by attempt 1.
                 if (!await IsVolumePopulatedAsync(host.ApiClient, ct))
                     throw new InvalidOperationException(
-                        $"Volume on {host.Id} still empty after {FormatMb(bytes)} transfer; " +
-                        "check remote disk space and busybox logs.");
+                        $"Volume on {host.Id} still empty after {FormatMb(bytes)} transfer; "
+                            + "check remote disk space and busybox logs."
+                    );
 
-                InfrastructureEventLog.Emit("game_data_transfer_completed", new
-                {
-                    host_id = host.Id,
-                    bytesSent = bytes,
-                    elapsedMs = sw.ElapsedMilliseconds
-                });
-                Console.Error.WriteLine(FormattableString.Invariant(
-                    $"[GameData] {host.Id}: {FormatMb(bytes)} sent in {sw.Elapsed.TotalSeconds:F1}s"));
-                renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                    SetupStepStatus.Completed,
-                    FormattableString.Invariant($"{FormatMb(bytes)} in {sw.Elapsed.TotalSeconds:F1}s")));
+                InfrastructureEventLog.Emit(
+                    "game_data_transfer_completed",
+                    new
+                    {
+                        host_id = host.Id,
+                        bytesSent = bytes,
+                        elapsedMs = sw.ElapsedMilliseconds,
+                    }
+                );
+                Console.Error.WriteLine(
+                    FormattableString.Invariant(
+                        $"[GameData] {host.Id}: {FormatMb(bytes)} sent in {sw.Elapsed.TotalSeconds:F1}s"
+                    )
+                );
+                renderer?.OnSetupStep(
+                    new SetupStepEvent(
+                        SetupCategory,
+                        host.Id,
+                        SetupStepStatus.Completed,
+                        FormattableString.Invariant(
+                            $"{FormatMb(bytes)} in {sw.Elapsed.TotalSeconds:F1}s"
+                        )
+                    )
+                );
                 return new TransferResult(host.Id, true, Skipped: false, Error: null);
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 last = ex;
-                InfrastructureEventLog.Emit("game_data_transfer_failed",
-                    new { host_id = host.Id, attempt, error = ex.Message });
+                InfrastructureEventLog.Emit(
+                    "game_data_transfer_failed",
+                    new
+                    {
+                        host_id = host.Id,
+                        attempt,
+                        error = ex.Message,
+                    }
+                );
                 if (attempt < _maxRetries)
                 {
                     var delay = delays[Math.Min(attempt, delays.Length - 1)];
-                    renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                        SetupStepStatus.InProgress,
-                        FormattableString.Invariant($"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s")));
-                    try { await Task.Delay(delay, ct); }
-                    catch (OperationCanceledException) { throw; }
+                    renderer?.OnSetupStep(
+                        new SetupStepEvent(
+                            SetupCategory,
+                            host.Id,
+                            SetupStepStatus.InProgress,
+                            FormattableString.Invariant(
+                                $"attempt {attempt} failed ({ex.Message}); retrying in {delay.TotalSeconds:F0}s"
+                            )
+                        )
+                    );
+                    try
+                    {
+                        await Task.Delay(delay, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
                 }
                 else
                 {
-                    renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, host.Id,
-                        SetupStepStatus.Failed, ex.Message));
+                    renderer?.OnSetupStep(
+                        new SetupStepEvent(
+                            SetupCategory,
+                            host.Id,
+                            SetupStepStatus.Failed,
+                            ex.Message
+                        )
+                    );
                 }
             }
         }
-        return new TransferResult(host.Id, Success: false, Skipped: false, Error: last?.Message ?? "unknown");
+        return new TransferResult(
+            host.Id,
+            Success: false,
+            Skipped: false,
+            Error: last?.Message ?? "unknown"
+        );
     }
 
     /// <summary>
@@ -206,25 +301,41 @@ public sealed class GameDataDistributor : IDisposable
     {
         await EnsureVolumeExistsAsync(client, ct);
 
-        var probe = await client.Containers.CreateContainerAsync(new CreateContainerParameters
-        {
-            Image = HelperImage,
-            Cmd = new List<string> { "test", "-e", ProbePath },
-            HostConfig = new HostConfig
+        var probe = await client.Containers.CreateContainerAsync(
+            new CreateContainerParameters
             {
-                Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}:ro" },
+                Image = HelperImage,
+                Cmd = new List<string> { "test", "-e", ProbePath },
+                HostConfig = new HostConfig
+                {
+                    Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}:ro" },
+                },
             },
-        }, ct);
+            ct
+        );
         try
         {
-            await client.Containers.StartContainerAsync(probe.ID, new ContainerStartParameters(), ct);
+            await client.Containers.StartContainerAsync(
+                probe.ID,
+                new ContainerStartParameters(),
+                ct
+            );
             var wait = await client.Containers.WaitContainerAsync(probe.ID, ct);
             return wait.StatusCode == 0;
         }
         finally
         {
-            try { await client.Containers.RemoveContainerAsync(probe.ID, new ContainerRemoveParameters { Force = true }, ct); }
-            catch { /* best-effort cleanup */ }
+            try
+            {
+                await client.Containers.RemoveContainerAsync(
+                    probe.ID,
+                    new ContainerRemoveParameters { Force = true },
+                    ct
+                );
+            }
+            catch
+            { /* best-effort cleanup */
+            }
         }
     }
 
@@ -236,14 +347,18 @@ public sealed class GameDataDistributor : IDisposable
         }
         catch (DockerApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            await client.Volumes.CreateAsync(new VolumesCreateParameters
-            {
-                Name = _gameDataVolumeName,
-            }, ct);
+            await client.Volumes.CreateAsync(
+                new VolumesCreateParameters { Name = _gameDataVolumeName },
+                ct
+            );
         }
     }
 
-    private static async Task EnsureHelperImageAsync(DockerClient client, string hostId, CancellationToken ct)
+    private static async Task EnsureHelperImageAsync(
+        DockerClient client,
+        string hostId,
+        CancellationToken ct
+    )
     {
         try
         {
@@ -255,27 +370,45 @@ public sealed class GameDataDistributor : IDisposable
             // Pull below.
         }
 
-        InfrastructureEventLog.Emit("helper_image_pull_started", new { host_id = hostId, image = HelperImage });
+        InfrastructureEventLog.Emit(
+            "helper_image_pull_started",
+            new { host_id = hostId, image = HelperImage }
+        );
 
         var parts = HelperImage.Split(':');
         var pullProgress = new PullProgress();
         try
         {
             await client.Images.CreateImageAsync(
-                new ImagesCreateParameters { FromImage = parts[0], Tag = parts.Length > 1 ? parts[1] : "latest" },
+                new ImagesCreateParameters
+                {
+                    FromImage = parts[0],
+                    Tag = parts.Length > 1 ? parts[1] : "latest",
+                },
                 authConfig: null,
                 progress: pullProgress,
-                cancellationToken: ct);
+                cancellationToken: ct
+            );
             pullProgress.ThrowIfFailed(hostId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            InfrastructureEventLog.Emit("helper_image_pull_failed",
-                new { host_id = hostId, image = HelperImage, error = ex.Message });
+            InfrastructureEventLog.Emit(
+                "helper_image_pull_failed",
+                new
+                {
+                    host_id = hostId,
+                    image = HelperImage,
+                    error = ex.Message,
+                }
+            );
             throw;
         }
 
-        InfrastructureEventLog.Emit("helper_image_pull_completed", new { host_id = hostId, image = HelperImage });
+        InfrastructureEventLog.Emit(
+            "helper_image_pull_completed",
+            new { host_id = hostId, image = HelperImage }
+        );
     }
 
     /// <summary>
@@ -294,16 +427,21 @@ public sealed class GameDataDistributor : IDisposable
         {
             lock (_lock)
             {
-                if (_firstError != null) return;
+                if (_firstError != null)
+                    return;
                 var msg = value.Error?.Message;
-                if (!string.IsNullOrEmpty(msg)) _firstError = msg;
+                if (!string.IsNullOrEmpty(msg))
+                    _firstError = msg;
             }
         }
 
         public void ThrowIfFailed(string hostId)
         {
             string? err;
-            lock (_lock) { err = _firstError; }
+            lock (_lock)
+            {
+                err = _firstError;
+            }
             if (err != null)
                 throw new InvalidOperationException($"Docker daemon pull error on {hostId}: {err}");
         }
@@ -315,26 +453,37 @@ public sealed class GameDataDistributor : IDisposable
     /// daemon's <c>GetArchiveFromContainer</c> / <c>ExtractArchiveToContainer</c>
     /// endpoints stream tar bytes between them with no buffering on our side.
     /// </summary>
-    private async Task<long> TransferAsync(DockerHost host, int attempt, ITestRenderer? renderer, CancellationToken ct)
+    private async Task<long> TransferAsync(
+        DockerHost host,
+        int attempt,
+        ITestRenderer? renderer,
+        CancellationToken ct
+    )
     {
-        var srcContainer = await _localClient.Containers.CreateContainerAsync(new CreateContainerParameters
-        {
-            Image = HelperImage,
-            Cmd = new List<string> { "true" },
-            HostConfig = new HostConfig
+        var srcContainer = await _localClient.Containers.CreateContainerAsync(
+            new CreateContainerParameters
             {
-                Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}:ro" },
+                Image = HelperImage,
+                Cmd = new List<string> { "true" },
+                HostConfig = new HostConfig
+                {
+                    Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}:ro" },
+                },
             },
-        }, ct);
-        var dstContainer = await host.ApiClient.Containers.CreateContainerAsync(new CreateContainerParameters
-        {
-            Image = HelperImage,
-            Cmd = new List<string> { "true" },
-            HostConfig = new HostConfig
+            ct
+        );
+        var dstContainer = await host.ApiClient.Containers.CreateContainerAsync(
+            new CreateContainerParameters
             {
-                Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}" },
+                Image = HelperImage,
+                Cmd = new List<string> { "true" },
+                HostConfig = new HostConfig
+                {
+                    Binds = new List<string> { $"{_gameDataVolumeName}:{MountPath}" },
+                },
             },
-        }, ct);
+            ct
+        );
 
         try
         {
@@ -345,11 +494,15 @@ public sealed class GameDataDistributor : IDisposable
                 srcContainer.ID,
                 new ContainerPathStatParameters { Path = MountPath },
                 statOnly: false,
-                ct);
+                ct
+            );
 
-            var counted = new ByteCountingStream(archive.Stream
-                ?? throw new InvalidOperationException(
-                    $"GetArchiveFromContainer returned no stream for {srcContainer.ID}:{MountPath}."));
+            var counted = new ByteCountingStream(
+                archive.Stream
+                    ?? throw new InvalidOperationException(
+                        $"GetArchiveFromContainer returned no stream for {srcContainer.ID}:{MountPath}."
+                    )
+            );
             var startedAt = Stopwatch.StartNew();
             var progress = new TransferProgress(host.Id, attempt, startedAt, counted, renderer);
 
@@ -357,7 +510,10 @@ public sealed class GameDataDistributor : IDisposable
             Task pollTask;
             using (ExecutionContext.SuppressFlow())
             {
-                pollTask = Task.Run(() => PollLoop(progress, pollCts.Token), CancellationToken.None);
+                pollTask = Task.Run(
+                    () => PollLoop(progress, pollCts.Token),
+                    CancellationToken.None
+                );
             }
             try
             {
@@ -370,20 +526,47 @@ public sealed class GameDataDistributor : IDisposable
                     dstContainer.ID,
                     new CopyToContainerParameters { Path = "/" },
                     counted,
-                    ct);
+                    ct
+                );
             }
             finally
             {
                 pollCts.Cancel();
-                try { await pollTask; } catch { /* expected on cancel */ }
-                try { await archive.Stream.DisposeAsync(); } catch { }
+                try
+                {
+                    await pollTask;
+                }
+                catch
+                { /* expected on cancel */
+                }
+                try
+                {
+                    await archive.Stream.DisposeAsync();
+                }
+                catch { }
             }
             return counted.BytesRead;
         }
         finally
         {
-            try { await _localClient.Containers.RemoveContainerAsync(srcContainer.ID, new ContainerRemoveParameters { Force = true }, ct); } catch { }
-            try { await host.ApiClient.Containers.RemoveContainerAsync(dstContainer.ID, new ContainerRemoveParameters { Force = true }, ct); } catch { }
+            try
+            {
+                await _localClient.Containers.RemoveContainerAsync(
+                    srcContainer.ID,
+                    new ContainerRemoveParameters { Force = true },
+                    ct
+                );
+            }
+            catch { }
+            try
+            {
+                await host.ApiClient.Containers.RemoveContainerAsync(
+                    dstContainer.ID,
+                    new ContainerRemoveParameters { Force = true },
+                    ct
+                );
+            }
+            catch { }
         }
     }
 
@@ -409,7 +592,10 @@ public sealed class GameDataDistributor : IDisposable
         private readonly Stream _inner;
         private long _bytesRead;
 
-        public ByteCountingStream(Stream inner) { _inner = inner; }
+        public ByteCountingStream(Stream inner)
+        {
+            _inner = inner;
+        }
 
         public long BytesRead => Interlocked.Read(ref _bytesRead);
 
@@ -422,27 +608,42 @@ public sealed class GameDataDistributor : IDisposable
             get => throw new NotSupportedException();
             set => throw new NotSupportedException();
         }
+
         public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
         public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
 
         public override int Read(byte[] buffer, int offset, int count)
         {
             var n = _inner.Read(buffer, offset, count);
-            if (n > 0) Interlocked.Add(ref _bytesRead, n);
+            if (n > 0)
+                Interlocked.Add(ref _bytesRead, n);
             return n;
         }
 
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             var n = await _inner.ReadAsync(buffer, cancellationToken);
-            if (n > 0) Interlocked.Add(ref _bytesRead, n);
+            if (n > 0)
+                Interlocked.Add(ref _bytesRead, n);
             return n;
         }
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
     }
 
     /// <summary>
@@ -465,8 +666,13 @@ public sealed class GameDataDistributor : IDisposable
         private readonly object _lock = new();
         private long _lastEmitBytes;
 
-        public TransferProgress(string hostId, int attempt, Stopwatch startedAt,
-            ByteCountingStream counted, ITestRenderer? renderer)
+        public TransferProgress(
+            string hostId,
+            int attempt,
+            Stopwatch startedAt,
+            ByteCountingStream counted,
+            ITestRenderer? renderer
+        )
         {
             _hostId = hostId;
             _attempt = attempt;
@@ -482,23 +688,30 @@ public sealed class GameDataDistributor : IDisposable
                 var bytesSent = _counted.BytesRead;
                 var bytesAdvanced = bytesSent - _lastEmitBytes >= EmitBytesThreshold;
                 var heartbeat = _lastEmit.Elapsed >= StatusEmitThreshold;
-                if (!bytesAdvanced && !heartbeat) return;
+                if (!bytesAdvanced && !heartbeat)
+                    return;
 
-                var rateMbPerSec = _startedAt.Elapsed.TotalSeconds > 0
-                    ? bytesSent / 1024.0 / 1024.0 / _startedAt.Elapsed.TotalSeconds
-                    : 0;
-                InfrastructureEventLog.Emit("game_data_transfer_progress", new
-                {
-                    host_id = _hostId,
-                    attempt = _attempt,
-                    bytesSent,
-                    elapsedMs = _startedAt.ElapsedMilliseconds,
-                });
+                var rateMbPerSec =
+                    _startedAt.Elapsed.TotalSeconds > 0
+                        ? bytesSent / 1024.0 / 1024.0 / _startedAt.Elapsed.TotalSeconds
+                        : 0;
+                InfrastructureEventLog.Emit(
+                    "game_data_transfer_progress",
+                    new
+                    {
+                        host_id = _hostId,
+                        attempt = _attempt,
+                        bytesSent,
+                        elapsedMs = _startedAt.ElapsedMilliseconds,
+                    }
+                );
                 var detail = FormattableString.Invariant(
-                    $"transferring game files {FormatMb(bytesSent)} ({rateMbPerSec:F1} MB/s, {_startedAt.Elapsed.TotalSeconds:F0}s)");
+                    $"transferring game files {FormatMb(bytesSent)} ({rateMbPerSec:F1} MB/s, {_startedAt.Elapsed.TotalSeconds:F0}s)"
+                );
                 Console.Error.WriteLine($"[GameData] {_hostId}: {detail}");
-                _renderer?.OnSetupStep(new SetupStepEvent(SetupCategory, _hostId,
-                    SetupStepStatus.InProgress, detail));
+                _renderer?.OnSetupStep(
+                    new SetupStepEvent(SetupCategory, _hostId, SetupStepStatus.InProgress, detail)
+                );
                 _lastEmitBytes = bytesSent;
                 _lastEmit.Restart();
             }

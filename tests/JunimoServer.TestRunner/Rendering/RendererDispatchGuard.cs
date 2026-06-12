@@ -1,5 +1,5 @@
-using JunimoServer.Tests.Helpers;
 using JunimoServer.TestRunner.Distribution;
+using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.TestRunner.Rendering;
@@ -49,7 +49,8 @@ public sealed class RendererDispatchGuard : ITestRenderer
         ITestRenderer inner,
         RunRecorder recorder,
         Action<string?>? broadcast = null,
-        int strikeLimit = DefaultStrikeLimit)
+        int strikeLimit = DefaultStrikeLimit
+    )
     {
         _inner = inner;
         _recorder = recorder;
@@ -70,7 +71,8 @@ public sealed class RendererDispatchGuard : ITestRenderer
 
     private void Guard(Action action)
     {
-        if (_disabled) return;
+        if (_disabled)
+            return;
         try
         {
             action();
@@ -80,20 +82,26 @@ public sealed class RendererDispatchGuard : ITestRenderer
         {
             Interlocked.Increment(ref _failureCount);
             var streak = Interlocked.Increment(ref _consecutiveFailures);
-            InfrastructureEventLog.Emit("renderer_dispatch_failed", new
-            {
-                consecutive = streak,
-                error_type = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "renderer_dispatch_failed",
+                new
+                {
+                    consecutive = streak,
+                    error_type = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             if (streak >= _strikeLimit && !_disabled)
             {
                 _disabled = true;
-                InfrastructureEventLog.Emit("renderer_degraded", new
-                {
-                    reason = $"{_strikeLimit} consecutive dispatch failures",
-                    total_failures = FailureCount,
-                });
+                InfrastructureEventLog.Emit(
+                    "renderer_degraded",
+                    new
+                    {
+                        reason = $"{_strikeLimit} consecutive dispatch failures",
+                        total_failures = FailureCount,
+                    }
+                );
             }
         }
     }
@@ -108,15 +116,21 @@ public sealed class RendererDispatchGuard : ITestRenderer
     /// </summary>
     private string? ApplyState(string method, Func<string?> apply)
     {
-        try { return apply(); }
+        try
+        {
+            return apply();
+        }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("state_apply_failed", new
-            {
-                method,
-                error_type = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "state_apply_failed",
+                new
+                {
+                    method,
+                    error_type = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             return null;
         }
     }
@@ -129,15 +143,21 @@ public sealed class RendererDispatchGuard : ITestRenderer
     /// </summary>
     private void ApplyState(string method, Action apply)
     {
-        try { apply(); }
+        try
+        {
+            apply();
+        }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("state_apply_failed", new
-            {
-                method,
-                error_type = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "state_apply_failed",
+                new
+                {
+                    method,
+                    error_type = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
         }
     }
 
@@ -147,7 +167,10 @@ public sealed class RendererDispatchGuard : ITestRenderer
 
     public void OnDiscoveryComplete(DiscoveryCompleteEvent e)
     {
-        var json = ApplyState(nameof(OnDiscoveryComplete), () => _recorder.State.ApplyDiscoveryComplete(e));
+        var json = ApplyState(
+            nameof(OnDiscoveryComplete),
+            () => _recorder.State.ApplyDiscoveryComplete(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnDiscoveryComplete(e));
     }
@@ -193,7 +216,10 @@ public sealed class RendererDispatchGuard : ITestRenderer
 
     public void OnTestAnnotation(TestAnnotationEvent e)
     {
-        var json = ApplyState(nameof(OnTestAnnotation), () => _recorder.State.ApplyTestAnnotation(e));
+        var json = ApplyState(
+            nameof(OnTestAnnotation),
+            () => _recorder.State.ApplyTestAnnotation(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnTestAnnotation(e));
     }
@@ -210,12 +236,15 @@ public sealed class RendererDispatchGuard : ITestRenderer
         }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("state_apply_failed", new
-            {
-                method = nameof(OnTestEnrichment),
-                error_type = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "state_apply_failed",
+                new
+                {
+                    method = nameof(OnTestEnrichment),
+                    error_type = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
         }
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnTestEnrichment(e));
@@ -228,15 +257,21 @@ public sealed class RendererDispatchGuard : ITestRenderer
         // that contributes to the WS-snapshot history.
         ApplyState(nameof(OnRunMetadata) + ":apply", () => _recorder.State.ApplyRunMetadata(e));
         string? json = null;
-        try { json = _recorder.State.SerializeRunMetadataEvent(e); }
+        try
+        {
+            json = _recorder.State.SerializeRunMetadataEvent(e);
+        }
         catch (Exception ex)
         {
-            InfrastructureEventLog.Emit("state_apply_failed", new
-            {
-                method = nameof(OnRunMetadata) + ":serialize",
-                error_type = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "state_apply_failed",
+                new
+                {
+                    method = nameof(OnRunMetadata) + ":serialize",
+                    error_type = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
         }
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnRunMetadata(e));
@@ -286,14 +321,20 @@ public sealed class RendererDispatchGuard : ITestRenderer
 
     public void OnSetupPhaseStarted(SetupPhaseStartedEvent e)
     {
-        var json = ApplyState(nameof(OnSetupPhaseStarted), () => _recorder.State.ApplySetupPhaseStarted(e));
+        var json = ApplyState(
+            nameof(OnSetupPhaseStarted),
+            () => _recorder.State.ApplySetupPhaseStarted(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnSetupPhaseStarted(e));
     }
 
     public void OnSetupPhaseCompleted(SetupPhaseCompletedEvent e)
     {
-        var json = ApplyState(nameof(OnSetupPhaseCompleted), () => _recorder.State.ApplySetupPhaseCompleted(e));
+        var json = ApplyState(
+            nameof(OnSetupPhaseCompleted),
+            () => _recorder.State.ApplySetupPhaseCompleted(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnSetupPhaseCompleted(e));
     }
@@ -305,30 +346,49 @@ public sealed class RendererDispatchGuard : ITestRenderer
         Guard(() => _inner.OnSetupStep(e));
     }
 
-    public void PopulateTests(IReadOnlyList<(string Collection, string ClassName, string MethodName, string DisplayName)> tests)
+    public void PopulateTests(
+        IReadOnlyList<(
+            string Collection,
+            string ClassName,
+            string MethodName,
+            string DisplayName
+        )> tests
+    )
     {
-        var json = ApplyState(nameof(PopulateTests), () => _recorder.State.ApplyPopulateTests(tests));
+        var json = ApplyState(
+            nameof(PopulateTests),
+            () => _recorder.State.ApplyPopulateTests(tests)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.PopulateTests(tests));
     }
 
     public void OnScreenshotCaptured(ScreenshotCapturedEvent e)
     {
-        var json = ApplyState(nameof(OnScreenshotCaptured), () => _recorder.State.ApplyScreenshotCaptured(e));
+        var json = ApplyState(
+            nameof(OnScreenshotCaptured),
+            () => _recorder.State.ApplyScreenshotCaptured(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnScreenshotCaptured(e));
     }
 
     public void OnRecordingCaptured(RecordingCapturedEvent e)
     {
-        var json = ApplyState(nameof(OnRecordingCaptured), () => _recorder.State.ApplyRecordingCaptured(e));
+        var json = ApplyState(
+            nameof(OnRecordingCaptured),
+            () => _recorder.State.ApplyRecordingCaptured(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnRecordingCaptured(e));
     }
 
     public void OnRecordingSkipped(RecordingSkippedEvent e)
     {
-        var json = ApplyState(nameof(OnRecordingSkipped), () => _recorder.State.ApplyRecordingSkipped(e));
+        var json = ApplyState(
+            nameof(OnRecordingSkipped),
+            () => _recorder.State.ApplyRecordingSkipped(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnRecordingSkipped(e));
     }
@@ -337,63 +397,90 @@ public sealed class RendererDispatchGuard : ITestRenderer
 
     public void OnInstanceCreated(InstanceCreatedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceCreated), () => _recorder.State.ApplyInstanceCreated(e));
+        var json = ApplyState(
+            nameof(OnInstanceCreated),
+            () => _recorder.State.ApplyInstanceCreated(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceCreated(e));
     }
 
     public void OnInstanceLeased(InstanceLeasedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceLeased), () => _recorder.State.ApplyInstanceLeased(e));
+        var json = ApplyState(
+            nameof(OnInstanceLeased),
+            () => _recorder.State.ApplyInstanceLeased(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceLeased(e));
     }
 
     public void OnInstanceClientAttached(InstanceClientAttachedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceClientAttached), () => _recorder.State.ApplyInstanceClientAttached(e));
+        var json = ApplyState(
+            nameof(OnInstanceClientAttached),
+            () => _recorder.State.ApplyInstanceClientAttached(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceClientAttached(e));
     }
 
     public void OnInstanceReturned(InstanceReturnedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceReturned), () => _recorder.State.ApplyInstanceReturned(e));
+        var json = ApplyState(
+            nameof(OnInstanceReturned),
+            () => _recorder.State.ApplyInstanceReturned(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceReturned(e));
     }
 
     public void OnInstanceDisposed(InstanceDisposedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceDisposed), () => _recorder.State.ApplyInstanceDisposed(e));
+        var json = ApplyState(
+            nameof(OnInstanceDisposed),
+            () => _recorder.State.ApplyInstanceDisposed(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceDisposed(e));
     }
 
     public void OnInstanceRecording(InstanceRecordingEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceRecording), () => _recorder.State.ApplyInstanceRecording(e));
+        var json = ApplyState(
+            nameof(OnInstanceRecording),
+            () => _recorder.State.ApplyInstanceRecording(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceRecording(e));
     }
 
     public void OnInstancePoisoned(InstancePoisonedEvent e)
     {
-        var json = ApplyState(nameof(OnInstancePoisoned), () => _recorder.State.ApplyInstancePoisoned(e));
+        var json = ApplyState(
+            nameof(OnInstancePoisoned),
+            () => _recorder.State.ApplyInstancePoisoned(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstancePoisoned(e));
     }
 
     public void OnInstanceConnected(InstanceConnectedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceConnected), () => _recorder.State.ApplyInstanceConnected(e));
+        var json = ApplyState(
+            nameof(OnInstanceConnected),
+            () => _recorder.State.ApplyInstanceConnected(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceConnected(e));
     }
 
     public void OnInstanceDisconnected(InstanceDisconnectedEvent e)
     {
-        var json = ApplyState(nameof(OnInstanceDisconnected), () => _recorder.State.ApplyInstanceDisconnected(e));
+        var json = ApplyState(
+            nameof(OnInstanceDisconnected),
+            () => _recorder.State.ApplyInstanceDisconnected(e)
+        );
         _broadcast?.Invoke(json);
         Guard(() => _inner.OnInstanceDisconnected(e));
     }

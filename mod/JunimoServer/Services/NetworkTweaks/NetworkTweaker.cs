@@ -18,10 +18,18 @@ namespace JunimoServer.Services.NetworkTweaks
         private readonly ServerSettingsLoader _settings;
         private bool _networkSettingsApplied;
         private static IMonitor _monitor = null!;
-        private static readonly MethodInfo RejectFarmhandRequestMethod =
-            AccessTools.Method(typeof(GameServer), "rejectFarmhandRequest");
+        private static readonly MethodInfo RejectFarmhandRequestMethod = AccessTools.Method(
+            typeof(GameServer),
+            "rejectFarmhandRequest"
+        );
 
-        public NetworkTweaker(IModHelper helper, IMonitor monitor, PersistentOptions options, ServerSettingsLoader settings, Harmony harmony)
+        public NetworkTweaker(
+            IModHelper helper,
+            IMonitor monitor,
+            PersistentOptions options,
+            ServerSettingsLoader settings,
+            Harmony harmony
+        )
         {
             _options = options;
             _settings = settings;
@@ -68,8 +76,18 @@ namespace JunimoServer.Services.NetworkTweaks
             // Fix: prefix that catches the isStructure=false case and retries with true.
             // Ref: decompiled/sdv-1.6.15-24356/StardewValley/Network/GameServer.cs:682-692
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), "warpFarmer",
-                    new[] { typeof(Farmer), typeof(short), typeof(short), typeof(string), typeof(bool) }),
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    "warpFarmer",
+                    new[]
+                    {
+                        typeof(Farmer),
+                        typeof(short),
+                        typeof(short),
+                        typeof(string),
+                        typeof(bool),
+                    }
+                ),
                 prefix: new HarmonyMethod(typeof(NetworkTweaker), nameof(WarpFarmer_Prefix))
             );
 
@@ -83,9 +101,17 @@ namespace JunimoServer.Services.NetworkTweaks
             // Same class of bug as getAllFarmhands() (see GetAllFarmhands_Prefix).
             // Fix: reject the request gracefully if the farmhand ID no longer exists.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.checkFarmhandRequest)),
-                prefix: new HarmonyMethod(typeof(NetworkTweaker), nameof(CheckFarmhandRequest_SafeLookup_Prefix))
-                    { priority = Priority.High }
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.checkFarmhandRequest)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(NetworkTweaker),
+                    nameof(CheckFarmhandRequest_SafeLookup_Prefix)
+                )
+                {
+                    priority = Priority.High,
+                }
             );
 
             // Fix: ensure isCustomized is correct before saveFarmhand persists data.
@@ -103,8 +129,14 @@ namespace JunimoServer.Services.NetworkTweaks
             // together (CharacterCustomization.cs:1696-1699), so a named farmer with
             // isCustomized=false is always a netcode sync race, never a legitimate state.
             harmony.Patch(
-                original: AccessTools.Method(typeof(NetWorldState), nameof(NetWorldState.SaveFarmhand)),
-                prefix: new HarmonyMethod(typeof(NetworkTweaker), nameof(SaveFarmhand_FixCustomizedFlag_Prefix))
+                original: AccessTools.Method(
+                    typeof(NetWorldState),
+                    nameof(NetWorldState.SaveFarmhand)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(NetworkTweaker),
+                    nameof(SaveFarmhand_FixCustomizedFlag_Prefix)
+                )
             );
 
             // Replace network propagation of buildingConstructedEvent with a direct
@@ -116,8 +148,14 @@ namespace JunimoServer.Services.NetworkTweaks
             // ownerless cabins, mail dispatch) are preserved by the direct call.
             // Peers see the building itself via farm.buildings (NetCollection<Building>).
             harmony.Patch(
-                original: AccessTools.Method(typeof(FarmerTeam), nameof(FarmerTeam.SendBuildingConstructedEvent)),
-                prefix: new HarmonyMethod(typeof(NetworkTweaker), nameof(SendBuildingConstructedEvent_Prefix))
+                original: AccessTools.Method(
+                    typeof(FarmerTeam),
+                    nameof(FarmerTeam.SendBuildingConstructedEvent)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(NetworkTweaker),
+                    nameof(SendBuildingConstructedEvent_Prefix)
+                )
             );
 
             // Fix: vanilla IsFarmhandAvailable checks Cabin.isInventoryOpen() which
@@ -132,8 +170,14 @@ namespace JunimoServer.Services.NetworkTweaks
             // causing cascading AssignFarmhand-driven cabin steals across every iteration
             // of sendAvailableFarmhands.
             harmony.Patch(
-                original: AccessTools.Method(typeof(GameServer), nameof(GameServer.IsFarmhandAvailable)),
-                prefix: new HarmonyMethod(typeof(NetworkTweaker), nameof(IsFarmhandAvailable_SkipInventoryLock_Prefix))
+                original: AccessTools.Method(
+                    typeof(GameServer),
+                    nameof(GameServer.IsFarmhandAvailable)
+                ),
+                prefix: new HarmonyMethod(
+                    typeof(NetworkTweaker),
+                    nameof(IsFarmhandAvailable_SkipInventoryLock_Prefix)
+                )
             );
 
             helper.Events.GameLoop.UpdateTicked += OnTick;
@@ -145,7 +189,14 @@ namespace JunimoServer.Services.NetworkTweaks
         /// interior), the vanilla code throws KeyNotFoundException. We catch this and
         /// retry with isStructure=true before falling back to the original behavior.
         /// </summary>
-        public static bool WarpFarmer_Prefix(GameServer __instance, Farmer farmer, short x, short y, string name, bool isStructure)
+        public static bool WarpFarmer_Prefix(
+            GameServer __instance,
+            Farmer farmer,
+            short x,
+            short y,
+            string name,
+            bool isStructure
+        )
         {
             // Only intercept when isStructure is false. If true, vanilla handles it fine.
             if (isStructure)
@@ -162,16 +213,28 @@ namespace JunimoServer.Services.NetworkTweaks
                 return true; // Neither works, let vanilla throw its normal error
 
             // Found as structure. Execute the warp ourselves.
-            _monitor.Log($"[WarpFix] Location '{name}' found as structure (client sent isStructure=false)", LogLevel.Debug);
+            _monitor.Log(
+                $"[WarpFix] Location '{name}' found as structure (client sent isStructure=false)",
+                LogLevel.Debug
+            );
             if (Game1.IsMasterGame)
                 location.hostSetup();
             farmer.currentLocation = location;
-            farmer.Position = new Microsoft.Xna.Framework.Vector2(x * 64, y * 64 - (farmer.Sprite.getHeight() - 32) + 16);
+            farmer.Position = new Microsoft.Xna.Framework.Vector2(
+                x * 64,
+                y * 64 - (farmer.Sprite.getHeight() - 32) + 16
+            );
 
             // Call private sendLocation via reflection
-            var sendLocationMethod = AccessTools.Method(typeof(GameServer), "sendLocation",
-                new[] { typeof(long), typeof(GameLocation), typeof(bool) });
-            sendLocationMethod.Invoke(__instance, new object[] { farmer.UniqueMultiplayerID, location, false });
+            var sendLocationMethod = AccessTools.Method(
+                typeof(GameServer),
+                "sendLocation",
+                new[] { typeof(long), typeof(GameLocation), typeof(bool) }
+            );
+            sendLocationMethod.Invoke(
+                __instance,
+                new object[] { farmer.UniqueMultiplayerID, location, false }
+            );
 
             return false; // Skip original
         }
@@ -209,8 +272,11 @@ namespace JunimoServer.Services.NetworkTweaks
         /// </summary>
         public static bool CheckFarmhandRequest_SafeLookup_Prefix(
             GameServer __instance,
-            string userId, string connectionId, NetFarmerRoot farmer,
-            Action<OutgoingMessage> sendMessage)
+            string userId,
+            string connectionId,
+            NetFarmerRoot farmer,
+            Action<OutgoingMessage> sendMessage
+        )
         {
             if (farmer.Value == null)
                 return true;
@@ -221,8 +287,14 @@ namespace JunimoServer.Services.NetworkTweaks
             var id = farmer.Value.UniqueMultiplayerID;
             if (!Game1.netWorldState.Value.farmhandData.ContainsKey(id))
             {
-                _monitor.Log($"[FarmhandFix] Rejected farmhand {id}: not in farmhandData (likely reassigned by concurrent connection)", LogLevel.Debug);
-                RejectFarmhandRequestMethod.Invoke(__instance, new object[] { userId, connectionId, farmer, sendMessage });
+                _monitor.Log(
+                    $"[FarmhandFix] Rejected farmhand {id}: not in farmhandData (likely reassigned by concurrent connection)",
+                    LogLevel.Debug
+                );
+                RejectFarmhandRequestMethod.Invoke(
+                    __instance,
+                    new object[] { userId, connectionId, farmer, sendMessage }
+                );
                 return false;
             }
 
@@ -234,9 +306,10 @@ namespace JunimoServer.Services.NetworkTweaks
             if (clientHome != serverHome)
             {
                 _monitor.Log(
-                    $"[FarmhandFix] Restored homeLocation for {id}: " +
-                    $"client={clientHome ?? "(null)"}, server={serverHome ?? "(null)"}",
-                    LogLevel.Debug);
+                    $"[FarmhandFix] Restored homeLocation for {id}: "
+                        + $"client={clientHome ?? "(null)"}, server={serverHome ?? "(null)"}",
+                    LogLevel.Debug
+                );
                 farmer.Value.homeLocation.Value = serverHome;
             }
 
@@ -250,9 +323,13 @@ namespace JunimoServer.Services.NetworkTweaks
         /// implementation accidentally called it a second time, which mutated
         /// farmhand state on every filter pass and created cascading cabin steals.
         /// </summary>
-        public static bool IsFarmhandAvailable_SkipInventoryLock_Prefix(Farmer farmhand, ref bool __result)
+        public static bool IsFarmhandAvailable_SkipInventoryLock_Prefix(
+            Farmer farmhand,
+            ref bool __result
+        )
         {
-            __result = farmhand != null && Game1.netWorldState.Value.TryAssignFarmhandHome(farmhand);
+            __result =
+                farmhand != null && Game1.netWorldState.Value.TryAssignFarmhandHome(farmhand);
             return false; // Skip original
         }
 
@@ -269,13 +346,19 @@ namespace JunimoServer.Services.NetworkTweaks
 
             if (!string.IsNullOrEmpty(farmhand.Value.Name) && !farmhand.Value.isCustomized.Value)
             {
-                _monitor.Log($"[SaveFarmhand] Fixing isCustomized for '{farmhand.Value.Name}' ({farmhand.Value.UniqueMultiplayerID}): name was synced but isCustomized was not", LogLevel.Info);
+                _monitor.Log(
+                    $"[SaveFarmhand] Fixing isCustomized for '{farmhand.Value.Name}' ({farmhand.Value.UniqueMultiplayerID}): name was synced but isCustomized was not",
+                    LogLevel.Info
+                );
                 farmhand.Value.isCustomized.Value = true;
             }
         }
 
         public static bool SendBuildingConstructedEvent_Prefix(
-            GameLocation location, Building building, Farmer who)
+            GameLocation location,
+            Building building,
+            Farmer who
+        )
         {
             location.OnBuildingConstructed(building, who);
             return false;
@@ -312,15 +395,19 @@ namespace JunimoServer.Services.NetworkTweaks
 
         private void HandleNetworkSettings()
         {
-            if (_networkSettingsApplied) return;
+            if (_networkSettingsApplied)
+                return;
 
             var period = _settings.NetworkBroadcastPeriod;
-            Game1.Multiplayer.defaultInterpolationTicks = 7;        // Default: 15
+            Game1.Multiplayer.defaultInterpolationTicks = 7; // Default: 15
             Game1.Multiplayer.farmerDeltaBroadcastPeriod = period;
             Game1.Multiplayer.locationDeltaBroadcastPeriod = period;
             Game1.Multiplayer.worldStateDeltaBroadcastPeriod = period;
 
-            _monitor.Log($"Applied NetworkBroadcastPeriod={period} (vanilla default: 3)", LogLevel.Info);
+            _monitor.Log(
+                $"Applied NetworkBroadcastPeriod={period} (vanilla default: 3)",
+                LogLevel.Info
+            );
             _networkSettingsApplied = true;
         }
 
