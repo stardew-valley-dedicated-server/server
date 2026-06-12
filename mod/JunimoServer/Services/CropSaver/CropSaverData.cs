@@ -6,108 +6,106 @@ using StardewValley;
 using StardewValley.Objects;
 using StardewValley.TerrainFeatures;
 
-namespace JunimoServer.Services.CropSaver
+namespace JunimoServer.Services.CropSaver;
+
+public class CropSaverData
 {
-    public class CropSaverData
+    public List<SaverCrop> Crops { get; set; } = new List<SaverCrop>();
+}
+
+public class SaverCrop
+{
+    public string cropLocationName;
+    public Vector2 cropLocationTile;
+    public long ownerId;
+    public SDate datePlanted;
+
+    public int extraDays;
+
+    public SaverCrop(
+        string cropLocationName,
+        Vector2 cropLocationTile,
+        long ownerId,
+        SDate datePlanted,
+        int extraDays = 0
+    )
     {
-        public List<SaverCrop> Crops { get; set; } = new List<SaverCrop>();
+        this.cropLocationName = cropLocationName;
+        this.cropLocationTile = cropLocationTile;
+        this.ownerId = ownerId;
+        this.datePlanted = datePlanted;
+        this.extraDays = extraDays;
     }
 
-    public class SaverCrop
+    public void IncrementExtraDays()
     {
-        public string cropLocationName;
-        public Vector2 cropLocationTile;
-        public long ownerId;
-        public SDate datePlanted;
+        extraDays++;
+    }
 
-        public int extraDays;
+    public bool IsLocatedAt(string cropLocation, Vector2 cropPosition)
+    {
+        return cropLocation.Equals(cropLocationName) && cropLocationTile.Equals(cropPosition);
+    }
 
-        public SaverCrop(
-            string cropLocationName,
-            Vector2 cropLocationTile,
-            long ownerId,
-            SDate datePlanted,
-            int extraDays = 0
-        )
+    public HoeDirt TryGetCoorespondingDirt()
+    {
+        var location = Game1.getLocationFromName(cropLocationName);
+        if (location == null)
         {
-            this.cropLocationName = cropLocationName;
-            this.cropLocationTile = cropLocationTile;
-            this.ownerId = ownerId;
-            this.datePlanted = datePlanted;
-            this.extraDays = extraDays;
-        }
-
-        public void IncrementExtraDays()
-        {
-            extraDays++;
-        }
-
-        public bool IsLocatedAt(string cropLocation, Vector2 cropPosition)
-        {
-            return cropLocation.Equals(cropLocationName) && cropLocationTile.Equals(cropPosition);
-        }
-
-        public HoeDirt TryGetCoorespondingDirt()
-        {
-            var location = Game1.getLocationFromName(cropLocationName);
-            if (location == null)
-            {
-                return null;
-            }
-
-            if (
-                location.terrainFeatures.TryGetValue(cropLocationTile, out var tf)
-                && tf is HoeDirt dirt
-            )
-            {
-                return dirt;
-            }
-
-            if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
-            {
-                return pot.hoeDirt.Value;
-            }
-
             return null;
         }
 
-        public Crop TryGetCoorespondingCrop()
+        if (
+            location.terrainFeatures.TryGetValue(cropLocationTile, out var tf) && tf is HoeDirt dirt
+        )
         {
-            var dirt = TryGetCoorespondingDirt();
-            return dirt is { crop: { } } ? dirt.crop : null;
+            return dirt;
         }
 
-        protected bool Equals(SaverCrop other)
+        if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
         {
-            return cropLocationName == other.cropLocationName
-                && cropLocationTile.Equals(other.cropLocationTile)
-                && ownerId == other.ownerId
-                && Equals(datePlanted, other.datePlanted);
+            return pot.hoeDirt.Value;
         }
 
-        public override bool Equals(object obj)
+        return null;
+    }
+
+    public Crop TryGetCoorespondingCrop()
+    {
+        var dirt = TryGetCoorespondingDirt();
+        return dirt is { crop: { } } ? dirt.crop : null;
+    }
+
+    protected bool Equals(SaverCrop other)
+    {
+        return cropLocationName == other.cropLocationName
+            && cropLocationTile.Equals(other.cropLocationTile)
+            && ownerId == other.ownerId
+            && Equals(datePlanted, other.datePlanted);
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
         {
-            if (ReferenceEquals(null, obj))
-            {
-                return false;
-            }
-
-            if (ReferenceEquals(this, obj))
-            {
-                return true;
-            }
-
-            if (obj.GetType() != this.GetType())
-            {
-                return false;
-            }
-
-            return Equals((SaverCrop)obj);
+            return false;
         }
 
-        public override int GetHashCode()
+        if (ReferenceEquals(this, obj))
         {
-            return HashCode.Combine(cropLocationName, cropLocationTile, ownerId, datePlanted);
+            return true;
         }
+
+        if (obj.GetType() != this.GetType())
+        {
+            return false;
+        }
+
+        return Equals((SaverCrop)obj);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(cropLocationName, cropLocationTile, ownerId, datePlanted);
     }
 }

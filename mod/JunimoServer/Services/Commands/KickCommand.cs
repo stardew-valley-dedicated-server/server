@@ -4,60 +4,56 @@ using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+public class KickCommand
 {
-    public class KickCommand
+    public static void Register(
+        IModHelper helper,
+        ChatCommandsService chatCommandsService,
+        RoleService roleService
+    )
     {
-        public static void Register(
-            IModHelper helper,
-            ChatCommandsService chatCommandsService,
-            RoleService roleService
-        )
-        {
-            chatCommandsService.RegisterCommand(
-                "kick",
-                "\"farmerName|userName\" to kick the player.",
-                (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "kick",
+            "\"farmerName|userName\" to kick the player.",
+            (args, msg) =>
+            {
+                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
-                    if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                    {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                        return;
-                    }
-                    if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
-                    {
-                        helper.SendPrivateMessage(
-                            msg.SourceFarmer,
-                            "Invalid use of command. Correct format is !kick name"
-                        );
-                        return;
-                    }
-
-                    var nameFromCommand = args[0];
-                    var targetFarmer = helper.FindPlayerIdByFarmerNameOrUserName(nameFromCommand);
-
-                    if (targetFarmer == null)
-                    {
-                        helper.SendPrivateMessage(
-                            msg.SourceFarmer,
-                            "Player not found: " + nameFromCommand
-                        );
-                        return;
-                    }
-
-                    if (targetFarmer.UniqueMultiplayerID == helper.GetServerHostId())
-                    {
-                        helper.SendPrivateMessage(
-                            msg.SourceFarmer,
-                            "You can't kick the server host."
-                        );
-                        return;
-                    }
-
-                    Game1.server.kick(targetFarmer.UniqueMultiplayerID);
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Kicked: " + targetFarmer.Name);
+                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
+                    return;
                 }
-            );
-        }
+                if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
+                {
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Invalid use of command. Correct format is !kick name"
+                    );
+                    return;
+                }
+
+                var nameFromCommand = args[0];
+                var targetFarmer = helper.FindPlayerIdByFarmerNameOrUserName(nameFromCommand);
+
+                if (targetFarmer == null)
+                {
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Player not found: " + nameFromCommand
+                    );
+                    return;
+                }
+
+                if (targetFarmer.UniqueMultiplayerID == helper.GetServerHostId())
+                {
+                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't kick the server host.");
+                    return;
+                }
+
+                Game1.server.kick(targetFarmer.UniqueMultiplayerID);
+                helper.SendPrivateMessage(msg.SourceFarmer, "Kicked: " + targetFarmer.Name);
+            }
+        );
     }
 }

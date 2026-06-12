@@ -1,75 +1,74 @@
-namespace JunimoServer.Services.HostAutomation
+namespace JunimoServer.Services.HostAutomation;
+
+public abstract class Activity
 {
-    public abstract class Activity
+    private bool _enabled = false;
+    private readonly int _everyXTicks;
+    private int _ticksToWaitRemaining = 0;
+
+    public Activity(int everyXTicks = 1)
     {
-        private bool _enabled = false;
-        private readonly int _everyXTicks;
-        private int _ticksToWaitRemaining = 0;
+        _everyXTicks = everyXTicks;
+    }
 
-        public Activity(int everyXTicks = 1)
+    protected virtual void OnTick() { }
+
+    protected virtual void OnEnabled() { }
+
+    protected virtual void OnDisabled() { }
+
+    protected virtual void OnDayStart() { }
+
+    public void HandleDayStart()
+    {
+        if (!_enabled)
         {
-            _everyXTicks = everyXTicks;
+            return;
         }
 
-        protected virtual void OnTick() { }
+        OnDayStart();
+    }
 
-        protected virtual void OnEnabled() { }
-
-        protected virtual void OnDisabled() { }
-
-        protected virtual void OnDayStart() { }
-
-        public void HandleDayStart()
+    public void HandleTick()
+    {
+        if (!_enabled)
         {
-            if (!_enabled)
-            {
-                return;
-            }
-
-            OnDayStart();
+            return;
         }
 
-        public void HandleTick()
+        if (_ticksToWaitRemaining <= 0)
         {
-            if (!_enabled)
-            {
-                return;
-            }
-
-            if (_ticksToWaitRemaining <= 0)
-            {
-                OnTick();
-                _ticksToWaitRemaining += _everyXTicks;
-            }
-
-            _ticksToWaitRemaining--;
+            OnTick();
+            _ticksToWaitRemaining += _everyXTicks;
         }
 
-        public void Enable()
-        {
-            if (_enabled)
-            {
-                return;
-            }
+        _ticksToWaitRemaining--;
+    }
 
-            _enabled = true;
-            OnEnabled();
+    public void Enable()
+    {
+        if (_enabled)
+        {
+            return;
         }
 
-        public void Disable()
-        {
-            if (!_enabled)
-            {
-                return;
-            }
+        _enabled = true;
+        OnEnabled();
+    }
 
-            _enabled = false;
-            OnDisabled();
+    public void Disable()
+    {
+        if (!_enabled)
+        {
+            return;
         }
 
-        public void PauseForNumTicks(int numTicks)
-        {
-            _ticksToWaitRemaining = numTicks;
-        }
+        _enabled = false;
+        OnDisabled();
+    }
+
+    public void PauseForNumTicks(int numTicks)
+    {
+        _ticksToWaitRemaining = numTicks;
     }
 }

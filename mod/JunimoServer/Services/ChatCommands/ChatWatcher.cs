@@ -2,33 +2,32 @@ using System;
 using System.Diagnostics;
 using StardewValley;
 
-namespace JunimoServer.Services.ChatCommands
+namespace JunimoServer.Services.ChatCommands;
+
+public static class ChatWatcher
 {
-    public static class ChatWatcher
+    private static Action<ReceivedMessage> _onChatMessage;
+
+    public static void Initialize(Action<ReceivedMessage> onChatMessage)
     {
-        private static Action<ReceivedMessage> _onChatMessage;
+        _onChatMessage = onChatMessage;
+    }
 
-        public static void Initialize(Action<ReceivedMessage> onChatMessage)
+    public static void receiveChatMessage_Postfix(
+        long sourceFarmer,
+        int chatKind,
+        LocalizedContentManager.LanguageCode language,
+        string message
+    )
+    {
+        var msg = new ReceivedMessage
         {
-            _onChatMessage = onChatMessage;
-        }
+            SourceFarmer = sourceFarmer,
+            ChatKind = (ReceivedMessage.ChatKinds)chatKind,
+            Language = language,
+            Message = message,
+        };
 
-        public static void receiveChatMessage_Postfix(
-            long sourceFarmer,
-            int chatKind,
-            LocalizedContentManager.LanguageCode language,
-            string message
-        )
-        {
-            var msg = new ReceivedMessage
-            {
-                SourceFarmer = sourceFarmer,
-                ChatKind = (ReceivedMessage.ChatKinds)chatKind,
-                Language = language,
-                Message = message,
-            };
-
-            _onChatMessage(msg);
-        }
+        _onChatMessage(msg);
     }
 }

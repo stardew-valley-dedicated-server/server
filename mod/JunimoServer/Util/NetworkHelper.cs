@@ -10,251 +10,247 @@ using Netcode;
 using StardewValley;
 using StardewValley.Network;
 
-namespace JunimoServer.Util
+namespace JunimoServer.Util;
+
+public enum MessageTypes : byte
 {
-    public enum MessageTypes : byte
+    FarmerDelta = Multiplayer.farmerDelta,
+    ServerIntroduction = Multiplayer.serverIntroduction,
+    PlayerIntroduction = Multiplayer.playerIntroduction,
+    LocationIntroduction = Multiplayer.locationIntroduction,
+    ForceEvent = Multiplayer.forceEvent,
+    WarpFarmer = Multiplayer.warpFarmer,
+    LocationDelta = Multiplayer.locationDelta,
+    LocationSprites = Multiplayer.locationSprites,
+    CharacterWarp = Multiplayer.characterWarp,
+    AvailableFarmhands = Multiplayer.availableFarmhands,
+    ChatMessage = Multiplayer.chatMessage,
+    ConnectionMessage = Multiplayer.connectionMessage,
+    WorldDelta = Multiplayer.worldDelta,
+    TeamDelta = Multiplayer.teamDelta,
+    NewDaySync = Multiplayer.newDaySync,
+    ChatInfoMessage = Multiplayer.chatInfoMessage,
+    UserNameUpdate = Multiplayer.userNameUpdate,
+    FarmerGainExperience = Multiplayer.farmerGainExperience,
+    ServerToClientsMessage = Multiplayer.serverToClientsMessage,
+    Disconnecting = Multiplayer.disconnecting,
+    SharedAchievement = Multiplayer.sharedAchievement,
+    GlobalMessage = Multiplayer.globalMessage,
+    PartyWideMail = Multiplayer.partyWideMail,
+    ForceKick = Multiplayer.forceKick,
+    RemoveLocationFromLookup = Multiplayer.removeLocationFromLookup,
+    FarmerKilledMonster = Multiplayer.farmerKilledMonster,
+    RequestGrandpaReevaluation = Multiplayer.requestGrandpaReevaluation,
+    DigBuriedNut = Multiplayer.digBuriedNut,
+    RequestPassout = Multiplayer.requestPassout,
+    Passout = Multiplayer.passout,
+    StartNewDaySync = Multiplayer.startNewDaySync,
+    ReadySync = Multiplayer.readySync,
+    ChestHitSync = Multiplayer.chestHitSync,
+    DedicatedServerSync = Multiplayer.dedicatedServerSync,
+}
+
+public class NetworkHelper
+{
+    private static readonly HttpClient _httpClient = new HttpClient
     {
-        FarmerDelta = Multiplayer.farmerDelta,
-        ServerIntroduction = Multiplayer.serverIntroduction,
-        PlayerIntroduction = Multiplayer.playerIntroduction,
-        LocationIntroduction = Multiplayer.locationIntroduction,
-        ForceEvent = Multiplayer.forceEvent,
-        WarpFarmer = Multiplayer.warpFarmer,
-        LocationDelta = Multiplayer.locationDelta,
-        LocationSprites = Multiplayer.locationSprites,
-        CharacterWarp = Multiplayer.characterWarp,
-        AvailableFarmhands = Multiplayer.availableFarmhands,
-        ChatMessage = Multiplayer.chatMessage,
-        ConnectionMessage = Multiplayer.connectionMessage,
-        WorldDelta = Multiplayer.worldDelta,
-        TeamDelta = Multiplayer.teamDelta,
-        NewDaySync = Multiplayer.newDaySync,
-        ChatInfoMessage = Multiplayer.chatInfoMessage,
-        UserNameUpdate = Multiplayer.userNameUpdate,
-        FarmerGainExperience = Multiplayer.farmerGainExperience,
-        ServerToClientsMessage = Multiplayer.serverToClientsMessage,
-        Disconnecting = Multiplayer.disconnecting,
-        SharedAchievement = Multiplayer.sharedAchievement,
-        GlobalMessage = Multiplayer.globalMessage,
-        PartyWideMail = Multiplayer.partyWideMail,
-        ForceKick = Multiplayer.forceKick,
-        RemoveLocationFromLookup = Multiplayer.removeLocationFromLookup,
-        FarmerKilledMonster = Multiplayer.farmerKilledMonster,
-        RequestGrandpaReevaluation = Multiplayer.requestGrandpaReevaluation,
-        DigBuriedNut = Multiplayer.digBuriedNut,
-        RequestPassout = Multiplayer.requestPassout,
-        Passout = Multiplayer.passout,
-        StartNewDaySync = Multiplayer.startNewDaySync,
-        ReadySync = Multiplayer.readySync,
-        ChestHitSync = Multiplayer.chestHitSync,
-        DedicatedServerSync = Multiplayer.dedicatedServerSync,
+        Timeout = TimeSpan.FromSeconds(5),
+    };
+
+    public static IPAddress GetIpAddressLocal()
+    {
+        var interfaces = NetworkInterface
+            .GetAllNetworkInterfaces()
+            .Where(a => a.OperationalStatus == OperationalStatus.Up);
+
+        return interfaces
+            .First()
+            .GetIPProperties()
+            .UnicastAddresses.First(a =>
+                a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            )
+            .Address;
     }
 
-    public class NetworkHelper
+    public static async Task<IPAddress> GetIpAddressExternalAsync()
     {
-        private static readonly HttpClient _httpClient = new HttpClient
+        try
         {
-            Timeout = TimeSpan.FromSeconds(5),
-        };
-
-        public static IPAddress GetIpAddressLocal()
-        {
-            var interfaces = NetworkInterface
-                .GetAllNetworkInterfaces()
-                .Where(a => a.OperationalStatus == OperationalStatus.Up);
-
-            return interfaces
-                .First()
-                .GetIPProperties()
-                .UnicastAddresses.First(a =>
-                    a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
-                )
-                .Address;
+            string pubIp = await _httpClient
+                .GetStringAsync("https://api.ipify.org")
+                .ConfigureAwait(false);
+            return IPAddress.Parse(pubIp);
         }
-
-        public static async Task<IPAddress> GetIpAddressExternalAsync()
+        catch
         {
-            try
-            {
-                string pubIp = await _httpClient
-                    .GetStringAsync("https://api.ipify.org")
-                    .ConfigureAwait(false);
-                return IPAddress.Parse(pubIp);
-            }
-            catch
-            {
-                return IPAddress.None;
-            }
-        }
-
-        public static IncomingMessage ParseOutgoingMessage(OutgoingMessage message)
-        {
-            IncomingMessage incMsg = new IncomingMessage();
-
-            using (MemoryStream memoryStream = new MemoryStream())
-            {
-                using (BinaryWriter writer = new BinaryWriter(memoryStream))
-                {
-                    message.Write(writer);
-                    memoryStream.Position = 0;
-                    using (BinaryReader reader = new BinaryReader(memoryStream))
-                    {
-                        incMsg.Read(reader);
-                    }
-                }
-            }
-
-            return incMsg;
-        }
-
-        public static bool IsLocationDeltaMessageForLocation<T>(
-            MessageContext context,
-            out T location
-        )
-            where T : GameLocation
-        {
-            var isStructure = context.Reader.ReadByte() > 0;
-            var locationName = context.Reader.ReadString();
-
-            if (locationName.StartsWith(typeof(T).Name))
-            {
-                // Uses global location, so changes affect server + all clients
-                if (Game1.getLocationFromName(locationName, isStructure) is T locationGeneric)
-                {
-                    location = locationGeneric;
-                    return true;
-                }
-            }
-
-            location = null;
-            return false;
-        }
-
-        public static OutgoingMessage CreateMessagePlayerIntroduction(
-            NetRoot<Farmer> farmerRoot,
-            Farmer otherFarmer,
-            string farmerRootIpText
-        )
-        {
-            return new OutgoingMessage(
-                Multiplayer.playerIntroduction,
-                farmerRoot.Value,
-                farmerRootIpText,
-                Game1.Multiplayer.writeObjectFullBytes(farmerRoot, otherFarmer.UniqueMultiplayerID)
-            );
-        }
-
-        public static OutgoingMessage CreateMessageServerIntroduction(long peerId)
-        {
-            return new OutgoingMessage(
-                Multiplayer.serverIntroduction,
-                Game1.serverHost.Value,
-                Game1.Multiplayer.writeObjectFullBytes(Game1.serverHost, peerId),
-                Game1.Multiplayer.writeObjectFullBytes(Game1.player.teamRoot, peerId),
-                Game1.Multiplayer.writeObjectFullBytes(Game1.netWorldState, peerId)
-            );
-        }
-
-        public static OutgoingMessage CreateMessagePlayerIntroduction(
-            NetRoot<Farmer> farmerRoot,
-            long peerId,
-            string farmerIpText
-        )
-        {
-            return new OutgoingMessage(
-                Multiplayer.playerIntroduction,
-                farmerRoot.Value,
-                farmerIpText,
-                Game1.Multiplayer.writeObjectFullBytes(farmerRoot, peerId)
-            );
-        }
-
-        public static OutgoingMessage CreateMessageLocationIntroduction(
-            long peerId,
-            NetRoot<GameLocation> location,
-            bool forceCurrentLocation
-        )
-        {
-            return new OutgoingMessage(
-                Multiplayer.locationIntroduction,
-                Game1.serverHost.Value,
-                forceCurrentLocation,
-                Game1.Multiplayer.writeObjectFullBytes(location, peerId)
-            );
-        }
-
-        public static OutgoingMessage CreateMessageUserNameUpdate(long farmerId, string userName)
-        {
-            return new OutgoingMessage(
-                Multiplayer.userNameUpdate,
-                Game1.serverHost.Value,
-                farmerId,
-                userName
-            );
+            return IPAddress.None;
         }
     }
 
-    /// <summary>
-    /// Not sure if we want to implement per-message structs like this, it's nice to use but probably less so to maintain them.
-    /// For now leaveing it here for thought, usage:
-    /// var message = new LocationIntroductionMessage(Game1.serverHost, context);
-    /// if (context.MessageType == Multiplayer.xxxMessageType)
-    /// context.ModifiedMessage = message.ToOutgoingMessage();
-    /// </summary>
-    public struct LocationIntroductionMessage
+    public static IncomingMessage ParseOutgoingMessage(OutgoingMessage message)
     {
-        public NetRoot<GameLocation> Location;
+        IncomingMessage incMsg = new IncomingMessage();
 
-        public bool ForceCurrentLocation;
-
-        public long PeerId;
-
-        private NetRoot<Farmer> farmerRoot;
-
-        public LocationIntroductionMessage(NetRoot<Farmer> farmerRoot, MessageContext context)
+        using (MemoryStream memoryStream = new MemoryStream())
         {
-            this.farmerRoot = farmerRoot;
-            PeerId = context.PeerId;
-
-            ForceCurrentLocation = context.IncomingMessage.Reader.ReadBoolean();
-            Location = NetRoot<GameLocation>.Connect(context.IncomingMessage.Reader);
+            using (BinaryWriter writer = new BinaryWriter(memoryStream))
+            {
+                message.Write(writer);
+                memoryStream.Position = 0;
+                using (BinaryReader reader = new BinaryReader(memoryStream))
+                {
+                    incMsg.Read(reader);
+                }
+            }
         }
 
-        public LocationIntroductionMessage(
-            NetRoot<Farmer> farmerRoot,
-            long peerId,
-            IncomingMessage message
-        )
-        {
-            this.farmerRoot = farmerRoot;
-            PeerId = peerId;
+        return incMsg;
+    }
 
-            ForceCurrentLocation = message.Reader.ReadBoolean();
-            Location = NetRoot<GameLocation>.Connect(message.Reader);
+    public static bool IsLocationDeltaMessageForLocation<T>(MessageContext context, out T location)
+        where T : GameLocation
+    {
+        var isStructure = context.Reader.ReadByte() > 0;
+        var locationName = context.Reader.ReadString();
+
+        if (locationName.StartsWith(typeof(T).Name))
+        {
+            // Uses global location, so changes affect server + all clients
+            if (Game1.getLocationFromName(locationName, isStructure) is T locationGeneric)
+            {
+                location = locationGeneric;
+                return true;
+            }
         }
 
-        public LocationIntroductionMessage(
-            NetRoot<Farmer> farmerRoot,
-            long peerId,
-            NetRoot<GameLocation> location,
-            bool forceCurrentLocation
-        )
-        {
-            this.farmerRoot = farmerRoot;
-            PeerId = peerId;
+        location = null;
+        return false;
+    }
 
-            Location = location;
-            ForceCurrentLocation = forceCurrentLocation;
-        }
+    public static OutgoingMessage CreateMessagePlayerIntroduction(
+        NetRoot<Farmer> farmerRoot,
+        Farmer otherFarmer,
+        string farmerRootIpText
+    )
+    {
+        return new OutgoingMessage(
+            Multiplayer.playerIntroduction,
+            farmerRoot.Value,
+            farmerRootIpText,
+            Game1.Multiplayer.writeObjectFullBytes(farmerRoot, otherFarmer.UniqueMultiplayerID)
+        );
+    }
 
-        public OutgoingMessage ToOutgoingMessage()
-        {
-            return new OutgoingMessage(
-                Multiplayer.playerIntroduction,
-                farmerRoot.Value,
-                ForceCurrentLocation,
-                Game1.Multiplayer.writeObjectFullBytes(Location, PeerId)
-            );
-        }
+    public static OutgoingMessage CreateMessageServerIntroduction(long peerId)
+    {
+        return new OutgoingMessage(
+            Multiplayer.serverIntroduction,
+            Game1.serverHost.Value,
+            Game1.Multiplayer.writeObjectFullBytes(Game1.serverHost, peerId),
+            Game1.Multiplayer.writeObjectFullBytes(Game1.player.teamRoot, peerId),
+            Game1.Multiplayer.writeObjectFullBytes(Game1.netWorldState, peerId)
+        );
+    }
+
+    public static OutgoingMessage CreateMessagePlayerIntroduction(
+        NetRoot<Farmer> farmerRoot,
+        long peerId,
+        string farmerIpText
+    )
+    {
+        return new OutgoingMessage(
+            Multiplayer.playerIntroduction,
+            farmerRoot.Value,
+            farmerIpText,
+            Game1.Multiplayer.writeObjectFullBytes(farmerRoot, peerId)
+        );
+    }
+
+    public static OutgoingMessage CreateMessageLocationIntroduction(
+        long peerId,
+        NetRoot<GameLocation> location,
+        bool forceCurrentLocation
+    )
+    {
+        return new OutgoingMessage(
+            Multiplayer.locationIntroduction,
+            Game1.serverHost.Value,
+            forceCurrentLocation,
+            Game1.Multiplayer.writeObjectFullBytes(location, peerId)
+        );
+    }
+
+    public static OutgoingMessage CreateMessageUserNameUpdate(long farmerId, string userName)
+    {
+        return new OutgoingMessage(
+            Multiplayer.userNameUpdate,
+            Game1.serverHost.Value,
+            farmerId,
+            userName
+        );
+    }
+}
+
+/// <summary>
+/// Not sure if we want to implement per-message structs like this, it's nice to use but probably less so to maintain them.
+/// For now leaveing it here for thought, usage:
+/// var message = new LocationIntroductionMessage(Game1.serverHost, context);
+/// if (context.MessageType == Multiplayer.xxxMessageType)
+/// context.ModifiedMessage = message.ToOutgoingMessage();
+/// </summary>
+public struct LocationIntroductionMessage
+{
+    public NetRoot<GameLocation> Location;
+
+    public bool ForceCurrentLocation;
+
+    public long PeerId;
+
+    private NetRoot<Farmer> farmerRoot;
+
+    public LocationIntroductionMessage(NetRoot<Farmer> farmerRoot, MessageContext context)
+    {
+        this.farmerRoot = farmerRoot;
+        PeerId = context.PeerId;
+
+        ForceCurrentLocation = context.IncomingMessage.Reader.ReadBoolean();
+        Location = NetRoot<GameLocation>.Connect(context.IncomingMessage.Reader);
+    }
+
+    public LocationIntroductionMessage(
+        NetRoot<Farmer> farmerRoot,
+        long peerId,
+        IncomingMessage message
+    )
+    {
+        this.farmerRoot = farmerRoot;
+        PeerId = peerId;
+
+        ForceCurrentLocation = message.Reader.ReadBoolean();
+        Location = NetRoot<GameLocation>.Connect(message.Reader);
+    }
+
+    public LocationIntroductionMessage(
+        NetRoot<Farmer> farmerRoot,
+        long peerId,
+        NetRoot<GameLocation> location,
+        bool forceCurrentLocation
+    )
+    {
+        this.farmerRoot = farmerRoot;
+        PeerId = peerId;
+
+        Location = location;
+        ForceCurrentLocation = forceCurrentLocation;
+    }
+
+    public OutgoingMessage ToOutgoingMessage()
+    {
+        return new OutgoingMessage(
+            Multiplayer.playerIntroduction,
+            farmerRoot.Value,
+            ForceCurrentLocation,
+            Game1.Multiplayer.writeObjectFullBytes(Location, PeerId)
+        );
     }
 }
