@@ -48,6 +48,7 @@ install:
 	@echo Installing development dependencies...
 	@npm ci
 	@dotnet tool restore
+	@git config blame.ignoreRevsFile .git-blame-ignore-revs
 	@echo Setup complete. Git hooks are now active.
 
 # Build all production docker images (server + steam-service)
