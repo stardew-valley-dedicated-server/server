@@ -46,12 +46,11 @@
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!-- IDE0005 (unused usings) only runs at build when doc-comment analysis is on.
-             Doc-quality lint is not enforced (docs are IDE-tooltip-only): CS1591 missing
-             docs, CS1573 partially documented params, CS0419/CS1574/CS1584/CS1658/CS1734
-             cref/paramref resolution, CS1587 docs on local functions (not exportable).
-             Malformed XML (CS1570) stays enforced. -->
+             Suppressed by policy: CS1591 missing docs, CS1573 partially documented params,
+             CS1587 docs on local functions (not exportable). Malformed XML (CS1570) and
+             broken cref/paramref references stay enforced. -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
-        <NoWarn>$(NoWarn);CS1591;CS1573;CS0419;CS1574;CS1584;CS1658;CS1734;CS1587</NoWarn>
+        <NoWarn>$(NoWarn);CS1591;CS1573;CS1587</NoWarn>
     </PropertyGroup>
 
     <PropertyGroup>
