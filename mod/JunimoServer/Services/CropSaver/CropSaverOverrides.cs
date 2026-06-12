@@ -19,7 +19,9 @@ namespace JunimoServer.Services.CropSaver
         {
             var dirt = __instance.Dirt;
             if (dirt?.Location == null)
+            {
                 return true;
+            }
 
             var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.Name, dirt.Tile);
             return managed == null;

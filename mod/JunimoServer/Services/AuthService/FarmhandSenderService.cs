@@ -65,9 +65,11 @@ namespace JunimoServer.Services.Auth
         )
         {
             if (_instance != null)
+            {
                 throw new InvalidOperationException(
                     "FarmhandSenderService already initialized - only one instance allowed"
                 );
+            }
 
             // Assign instance first to avoid race conditions with Harmony patches
             // that may fire before constructor completes
@@ -96,14 +98,24 @@ namespace JunimoServer.Services.Auth
         private static string GetTransportName(string connectionId)
         {
             if (string.IsNullOrEmpty(connectionId))
+            {
                 return "Unknown";
+            }
 
             if (connectionId.StartsWith("GN_"))
+            {
                 return "Galaxy P2P";
+            }
+
             if (connectionId.StartsWith("SN_"))
+            {
                 return "Steam SDR";
+            }
+
             if (connectionId.StartsWith("L_"))
+            {
                 return "LAN";
+            }
 
             return "Unknown";
         }
@@ -234,16 +246,24 @@ namespace JunimoServer.Services.Auth
                     }
                 }
                 if (allClaimed)
+                {
                     staleKeys.Add(kvp.Key);
+                }
             }
             foreach (var key in staleKeys)
+            {
                 _reservedFarmhands.Remove(key);
+            }
 
             // Collect all currently reserved farmhand IDs (from OTHER pending clients)
             var reservedIds = new HashSet<long>();
             foreach (var kvp in _reservedFarmhands)
-            foreach (var fhId in kvp.Value.FarmhandIds)
-                reservedIds.Add(fhId);
+            {
+                foreach (var fhId in kvp.Value.FarmhandIds)
+                {
+                    reservedIds.Add(fhId);
+                }
+            }
 
             // Ensure enough cabins exist for pending clients + 1 for this connection
             _cabinManager?.EnsureAtLeastXCabins(reservedIds.Count + 1);
@@ -299,7 +319,9 @@ namespace JunimoServer.Services.Auth
             }
             availableFarmers = claimedFarmers;
             if (firstUnclaimed?.Value != null)
+            {
                 availableFarmers.Add(firstUnclaimed);
+            }
 
             var unclaimedIds = availableFarmers
                 .Where(r => !r.Value.isCustomized.Value)
@@ -307,7 +329,9 @@ namespace JunimoServer.Services.Auth
                 .ToHashSet();
 
             if (unclaimedIds.Count > 0)
+            {
                 _reservedFarmhands[connectionId] = (unclaimedIds, DateTime.UtcNow);
+            }
 
             _monitor.Log(
                 $"Sending {availableFarmers.Count}/{farmhandRefsAll.Count()} farmhands to {transport} (reserved={reservedIds.Count})",
@@ -487,7 +511,9 @@ namespace JunimoServer.Services.Auth
         {
             // UNCLAIMED: allow if farmhand creation enabled
             if (string.IsNullOrEmpty(farmhand.userID.Value))
+            {
                 return Game1.options.enableFarmhandCreation;
+            }
 
             // OWNED: show to all clients, authCheck() during join handles verification
             return true;
@@ -497,7 +523,10 @@ namespace JunimoServer.Services.Auth
         {
             var cabin = Game1.getFarm()?.GetCabin(farmhand.UniqueMultiplayerID);
             if (cabin == null)
+            {
                 return false;
+            }
+
             return LobbyService.IsLobbyCabin(cabin);
         }
     }

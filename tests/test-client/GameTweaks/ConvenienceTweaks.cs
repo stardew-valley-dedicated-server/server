@@ -160,9 +160,13 @@ public class ConvenienceTweaks
     private static void UpdateFadeAlpha_Postfix(ScreenFade __instance)
     {
         if (__instance.fadeIn)
+        {
             __instance.fadeToBlackAlpha = 1.2f;
+        }
         else
+        {
             __instance.fadeToBlackAlpha = -0.2f;
+        }
     }
 
     /// <summary>
@@ -175,9 +179,13 @@ public class ConvenienceTweaks
     private static void UpdateGlobalFade_Postfix(ScreenFade __instance)
     {
         if (__instance.fadeIn)
+        {
             __instance.fadeToBlackAlpha = 0f;
+        }
         else
+        {
             __instance.fadeToBlackAlpha = 1f;
+        }
     }
 
     private void DisablePauseOnUnfocus()

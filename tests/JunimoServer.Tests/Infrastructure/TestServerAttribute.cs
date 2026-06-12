@@ -165,7 +165,10 @@ public class TestServerAttribute : Attribute
     public TestServerAttribute MergeWith(TestServerAttribute? method)
     {
         if (method == null)
+        {
             return this;
+        }
+
         var merged = new TestServerAttribute();
 
         merged._farmType = method._farmType ?? _farmType;
@@ -212,7 +215,9 @@ public class TestServerAttribute : Attribute
             testClass.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
 
         if (methodName == null)
+        {
             return classAttr;
+        }
 
         var methodInfo = testClass.GetMethod(
             methodName,

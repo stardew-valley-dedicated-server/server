@@ -100,7 +100,9 @@ public sealed class ImageDistributor : IDisposable
         foreach (var h in hosts)
         {
             if (string.IsNullOrEmpty(h.SshDestination))
+            {
                 continue; // local host — no-op
+            }
 
             var allMatch = true;
             foreach (var name in _imageNames)
@@ -141,9 +143,11 @@ public sealed class ImageDistributor : IDisposable
         }
 
         if (transferNeeded.Count > 0)
+        {
             Console.Error.WriteLine(
                 $"[ImageTransfer] distributing {_imageNames.Length} image(s) to {transferNeeded.Count} host(s)"
             );
+        }
 
         // Bounded-concurrency parallel transfer.
         using var gate = new SemaphoreSlim(MaxConcurrentTransfers, MaxConcurrentTransfers);
@@ -189,12 +193,23 @@ public sealed class ImageDistributor : IDisposable
     private static bool LayersEqual(IReadOnlyList<string> a, IReadOnlyList<string> b)
     {
         if (a.Count == 0 || b.Count == 0)
+        {
             return false;
+        }
+
         if (a.Count != b.Count)
+        {
             return false;
+        }
+
         for (var i = 0; i < a.Count; i++)
+        {
             if (!string.Equals(a[i], b[i], StringComparison.Ordinal))
+            {
                 return false;
+            }
+        }
+
         return true;
     }
 
@@ -434,12 +449,21 @@ public sealed class ImageDistributor : IDisposable
     private static string FormatEta(double seconds)
     {
         if (seconds < 0 || double.IsInfinity(seconds) || double.IsNaN(seconds))
+        {
             return "?";
+        }
+
         var t = TimeSpan.FromSeconds(seconds);
         if (t.TotalHours >= 1)
+        {
             return FormattableString.Invariant($"{(int)t.TotalHours}h{t.Minutes:D2}m");
+        }
+
         if (t.TotalMinutes >= 1)
+        {
             return FormattableString.Invariant($"{t.Minutes}m{t.Seconds:D2}s");
+        }
+
         return FormattableString.Invariant($"{t.Seconds}s");
     }
 
@@ -458,7 +482,10 @@ public sealed class ImageDistributor : IDisposable
             try
             {
                 if (!File.Exists(BaselinePath))
+                {
                     return new Dictionary<string, long>();
+                }
+
                 return JsonSerializer.Deserialize<Dictionary<string, long>>(
                         File.ReadAllText(BaselinePath)
                     ) ?? new Dictionary<string, long>();
@@ -493,7 +520,10 @@ public sealed class ImageDistributor : IDisposable
     private static Dictionary<string, long> ReadBaselineUnlocked()
     {
         if (!File.Exists(BaselinePath))
+        {
             return new Dictionary<string, long>();
+        }
+
         return JsonSerializer.Deserialize<Dictionary<string, long>>(File.ReadAllText(BaselinePath))
             ?? new Dictionary<string, long>();
     }
@@ -539,7 +569,10 @@ public sealed class ImageDistributor : IDisposable
         {
             var n = _inner.Read(buffer, offset, count);
             if (n > 0)
+            {
                 Interlocked.Add(ref _bytesRead, n);
+            }
+
             return n;
         }
 
@@ -550,7 +583,10 @@ public sealed class ImageDistributor : IDisposable
         {
             var n = await _inner.ReadAsync(buffer, cancellationToken);
             if (n > 0)
+            {
                 Interlocked.Add(ref _bytesRead, n);
+            }
+
             return n;
         }
 
@@ -611,7 +647,9 @@ public sealed class ImageDistributor : IDisposable
             {
                 var msg = value.Error?.Message;
                 if (!string.IsNullOrEmpty(msg))
+                {
                     _firstError = msg;
+                }
             }
 
             // `Stream` carries human-readable lines like "Loaded image: foo:bar";
@@ -633,14 +671,18 @@ public sealed class ImageDistributor : IDisposable
             lock (_lock)
             {
                 if (daemonStatus != null)
+                {
                     _lastStatus = daemonStatus;
+                }
 
                 var bytesSent = _counted.BytesRead;
                 var bytesAdvanced = bytesSent - _lastEmitBytes >= EmitBytesThreshold;
                 var statusChanged =
                     _lastStatus != _lastEmittedStatus && _lastEmit.Elapsed >= StatusEmitThreshold;
                 if (!bytesAdvanced && !statusChanged)
+                {
                     return;
+                }
 
                 var elapsedSec = _startedAt.Elapsed.TotalSeconds;
                 var rateMbPerSec = elapsedSec > 0 ? bytesSent / 1024.0 / 1024.0 / elapsedSec : 0;
@@ -693,15 +735,20 @@ public sealed class ImageDistributor : IDisposable
         public void ThrowIfFailed()
         {
             if (_firstError != null)
+            {
                 throw new InvalidOperationException(
                     $"Docker daemon load error on {_hostId}: {_firstError}"
                 );
+            }
         }
 
         private static string? TrimStatus(string? s)
         {
             if (string.IsNullOrWhiteSpace(s))
+            {
                 return null;
+            }
+
             var trimmed = s.Trim();
             return trimmed.Length == 0 ? null : trimmed;
         }

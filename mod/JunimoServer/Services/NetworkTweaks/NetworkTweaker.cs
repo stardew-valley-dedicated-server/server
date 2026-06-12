@@ -200,17 +200,23 @@ namespace JunimoServer.Services.NetworkTweaks
         {
             // Only intercept when isStructure is false. If true, vanilla handles it fine.
             if (isStructure)
+            {
                 return true;
+            }
 
             // Try the normal lookup first
             var location = Game1.getLocationFromName(name, isStructure: false);
             if (location != null)
+            {
                 return true; // Normal path works, let vanilla handle it
+            }
 
             // Vanilla would throw here. Try as structure instead.
             location = Game1.getLocationFromName(name, isStructure: true);
             if (location == null)
+            {
                 return true; // Neither works, let vanilla throw its normal error
+            }
 
             // Found as structure. Execute the warp ourselves.
             _monitor.Log(
@@ -218,7 +224,10 @@ namespace JunimoServer.Services.NetworkTweaks
                 LogLevel.Debug
             );
             if (Game1.IsMasterGame)
+            {
                 location.hostSetup();
+            }
+
             farmer.currentLocation = location;
             farmer.Position = new Microsoft.Xna.Framework.Vector2(
                 x * 64,
@@ -279,10 +288,14 @@ namespace JunimoServer.Services.NetworkTweaks
         )
         {
             if (farmer.Value == null)
+            {
                 return true;
+            }
 
             if (!__instance.isGameAvailable())
+            {
                 return true;
+            }
 
             var id = farmer.Value.UniqueMultiplayerID;
             if (!Game1.netWorldState.Value.farmhandData.ContainsKey(id))
@@ -342,7 +355,9 @@ namespace JunimoServer.Services.NetworkTweaks
         public static void SaveFarmhand_FixCustomizedFlag_Prefix(NetFarmerRoot farmhand)
         {
             if (farmhand?.Value == null)
+            {
                 return;
+            }
 
             if (!string.IsNullOrEmpty(farmhand.Value.Name) && !farmhand.Value.isCustomized.Value)
             {
@@ -373,7 +388,9 @@ namespace JunimoServer.Services.NetworkTweaks
                     // Vanilla uses otherFarmers[id] here, which throws if key was
                     // already removed by removeDisconnectedFarmers().
                     if (Game1.otherFarmers.TryGetValue(value.UniqueMultiplayerID, out var farmer))
+                    {
                         yield return farmer;
+                    }
                 }
                 else
                 {
@@ -396,7 +413,9 @@ namespace JunimoServer.Services.NetworkTweaks
         private void HandleNetworkSettings()
         {
             if (_networkSettingsApplied)
+            {
                 return;
+            }
 
             var period = _settings.NetworkBroadcastPeriod;
             Game1.Multiplayer.defaultInterpolationTicks = 7; // Default: 15

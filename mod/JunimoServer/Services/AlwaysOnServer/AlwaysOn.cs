@@ -834,11 +834,19 @@ namespace JunimoServer.Services.AlwaysOn
         private void HandleAutoSleep()
         {
             if (Game1.otherFarmers.Count == 0)
+            {
                 return;
+            }
+
             if (_warpingSleep)
+            {
                 return;
+            }
+
             if (!OthersReadyForSleep())
+            {
                 return;
+            }
 
             var home = Game1.player.homeLocation.Value;
 
@@ -897,9 +905,15 @@ namespace JunimoServer.Services.AlwaysOn
         {
             int ready = Game1.netReady.GetNumberReady("sleep");
             if (ready <= 0)
+            {
                 return false;
+            }
+
             if (Game1.netReady.IsReady("sleep"))
+            {
                 return false;
+            }
+
             return ready >= Game1.netReady.GetNumberRequired("sleep") - 1;
         }
 
@@ -913,13 +927,17 @@ namespace JunimoServer.Services.AlwaysOn
             // on "mail was collected this day", and OnTimeChanged(620) tomorrow is
             // the retry. If that day is also blocked, we defer again.
             if (AlwaysOnUtil.IsReadyCheckActive())
+            {
                 return;
+            }
 
             // Nothing to collect — don't open the "mailbox is empty" dialog. It
             // briefly steals activeClickableMenu for no benefit and widens the race
             // window if a ReadyCheckDialog shows up a tick later.
             if (Game1.mailbox.Count == 0)
+            {
                 return;
+            }
 
             // Checking mails once more closes the last one
             int mailboxCount = Game1.mailbox.Count + 1;
@@ -1098,26 +1116,40 @@ namespace JunimoServer.Services.AlwaysOn
         private void LockOfflineFarmhandStorage()
         {
             if (!Config.LockPlayerChests)
+            {
                 return;
+            }
+
             if (!Game1.IsMasterGame)
+            {
                 return;
+            }
 
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return;
+            }
 
             var onlineFarmers = Game1.getOnlineFarmers();
 
             foreach (var building in farm.buildings)
             {
                 if (!building.isCabin)
+                {
                     continue;
+                }
+
                 if (building.GetIndoors() is not Cabin cabin)
+                {
                     continue;
+                }
 
                 var owner = cabin.owner;
                 if (owner != null && !owner.isUnclaimedFarmhand && onlineFarmers.Contains(owner))
+                {
                     continue;
+                }
 
                 if (cabin.fridge.Value is { } fridge && !fridge.mutex.IsLocked())
                 {
@@ -1126,7 +1158,9 @@ namespace JunimoServer.Services.AlwaysOn
                 foreach (var chest in cabin.objects.Values.OfType<Chest>())
                 {
                     if (!chest.mutex.IsLocked())
+                    {
                         chest.mutex.RequestLock();
+                    }
                 }
             }
         }
@@ -1141,33 +1175,59 @@ namespace JunimoServer.Services.AlwaysOn
         private void ReleaseOnlineFarmhandStorage(Farmer owner)
         {
             if (!Config.LockPlayerChests)
+            {
                 return;
+            }
+
             if (!Game1.IsMasterGame)
+            {
                 return;
+            }
+
             if (owner == null)
+            {
                 return;
+            }
 
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return;
+            }
 
             foreach (var building in farm.buildings)
             {
                 if (!building.isCabin)
+                {
                     continue;
+                }
+
                 if (building.GetIndoors() is not Cabin cabin)
+                {
                     continue;
+                }
+
                 if (cabin.owner != owner)
+                {
                     continue;
+                }
 
                 if (cabin.inventoryMutex.IsLockHeld())
+                {
                     cabin.inventoryMutex.ReleaseLock();
+                }
+
                 if (cabin.fridge.Value is { } fridge && fridge.mutex.IsLockHeld())
+                {
                     fridge.mutex.ReleaseLock();
+                }
+
                 foreach (var chest in cabin.objects.Values.OfType<Chest>())
                 {
                     if (chest.mutex.IsLockHeld())
+                    {
                         chest.mutex.ReleaseLock();
+                    }
                 }
                 return;
             }
@@ -1176,13 +1236,20 @@ namespace JunimoServer.Services.AlwaysOn
         private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
         {
             if (!Config.LockPlayerChests)
+            {
                 return;
+            }
+
             if (!Game1.IsMasterGame)
+            {
                 return;
+            }
 
             var farmer = Game1.GetPlayer(e.Peer.PlayerID, onlyOnline: true);
             if (farmer != null)
+            {
                 ReleaseOnlineFarmhandStorage(farmer);
+            }
         }
 
         private void OnPeerDisconnected(object sender, PeerDisconnectedEventArgs e)
@@ -1195,11 +1262,19 @@ namespace JunimoServer.Services.AlwaysOn
         private void OnObjectListChanged(object sender, ObjectListChangedEventArgs e)
         {
             if (!Config.LockPlayerChests)
+            {
                 return;
+            }
+
             if (!Game1.IsMasterGame)
+            {
                 return;
+            }
+
             if (e.Location is not Cabin cabin)
+            {
                 return;
+            }
 
             var owner = cabin.owner;
             var ownerOffline =
@@ -1207,7 +1282,9 @@ namespace JunimoServer.Services.AlwaysOn
                 || owner.isUnclaimedFarmhand
                 || !Game1.getOnlineFarmers().Contains(owner);
             if (!ownerOffline)
+            {
                 return;
+            }
 
             foreach (var added in e.Added)
             {

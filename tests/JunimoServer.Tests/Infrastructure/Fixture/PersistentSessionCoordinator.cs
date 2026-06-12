@@ -102,11 +102,13 @@ internal sealed class PersistentSessionCoordinator
                 );
                 var primaryClientLease = _testBase.PrimaryClientLeaseInternal;
                 if (primaryClientLease != null)
+                {
                     await _testBase.Artifacts.MarkContainerUsedAsync(
                         primaryClientLease.Container.Container.Name,
                         "client",
                         ct
                     );
+                }
             }
         }
         else
@@ -174,13 +176,18 @@ internal sealed class PersistentSessionCoordinator
         // session already holds the server ref.
         var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
         if (session.Lease.Managed?.InstanceId != null)
+        {
             SetupEventBus.EmitInstanceLeased(session.Lease.Managed.InstanceId, testName);
+        }
+
         if (session.ClientLease != null)
+        {
             SetupEventBus.EmitInstanceLeased(
                 session.ClientLease.InstanceId,
                 testName,
                 session.Lease.Managed?.InstanceId
             );
+        }
     }
 
     /// <summary>
@@ -201,7 +208,10 @@ internal sealed class PersistentSessionCoordinator
             {
                 // Already wired up from InitializeAsync, or re-wire if BreakSessionAsync was called
                 if (!IsUsingPersistentSession)
+                {
                     WireUpPersistentSession(existing);
+                }
+
                 LogDetail("Reusing existing session");
                 return;
             }
@@ -272,7 +282,10 @@ internal sealed class PersistentSessionCoordinator
             );
             DidConnect = true;
             if (ConnectedFarmerName != null && ConnectedFarmerUid is long trackUid)
+            {
                 _testBase.Farmers.TrackFarmer(ConnectedFarmerName, trackUid);
+            }
+
             return;
         }
 
@@ -344,7 +357,9 @@ internal sealed class PersistentSessionCoordinator
 
             var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
             if (session.Lease.Managed?.InstanceId != null)
+            {
                 SetupEventBus.EmitInstanceLeased(session.Lease.Managed.InstanceId, testName);
+            }
         }
 
         // Clear session-derived state; this test is now independent.
@@ -393,7 +408,9 @@ internal sealed class PersistentSessionCoordinator
                 // Not the last test: keep session alive, just notify broker for demand tracking.
                 var serverKey = _testBase.LeaseInternal?.ServerKey;
                 if (serverKey != null)
+                {
                     TestResourceBroker.Instance.NotifyTestCompleted(serverKey);
+                }
             }
         }
 

@@ -162,7 +162,10 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     public Task FlushAsync()
     {
         if (_consumerFailed)
+        {
             return Task.CompletedTask;
+        }
+
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _channel.Writer.TryWrite(new FlushMarker(tcs));
         return tcs.Task;
@@ -259,7 +262,9 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
                 if (pendingFlushes != null)
                 {
                     foreach (var tcs in pendingFlushes)
+                    {
                         tcs.TrySetResult();
+                    }
                 }
             }
         }
@@ -273,7 +278,9 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
                 while (_channel.Reader.TryRead(out var item))
                 {
                     if (item is FlushMarker marker)
+                    {
                         marker.Tcs.TrySetException(ex);
+                    }
                 }
             }
             catch
@@ -286,7 +293,10 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     private void ReportFaultOnce()
     {
         if (Interlocked.Increment(ref _faultReportedTimes) != 1)
+        {
             return;
+        }
+
         var ex = _consumerFault;
         if (!_silentFault)
         {

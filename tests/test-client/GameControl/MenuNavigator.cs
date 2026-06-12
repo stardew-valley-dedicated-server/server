@@ -84,7 +84,9 @@ public class MenuNavigator
             {
                 var titleResult = NavigateToTitle();
                 if (!titleResult.Success)
+                {
                     return titleResult;
+                }
 
                 if (Game1.activeClickableMenu is not TitleMenu)
                 {

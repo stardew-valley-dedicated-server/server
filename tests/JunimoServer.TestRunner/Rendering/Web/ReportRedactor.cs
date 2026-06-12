@@ -63,7 +63,9 @@ public static class ReportRedactor
     public static string Scrub(string snapshotJson, IReadOnlyCollection<string> knownSecrets)
     {
         if (string.IsNullOrEmpty(snapshotJson))
+        {
             return snapshotJson;
+        }
 
         var result = snapshotJson;
 
@@ -95,7 +97,10 @@ public static class ReportRedactor
     private static bool LooksLikeIp(string value)
     {
         if (value.IndexOf(':') >= 0)
+        {
             return true; // candidate IPv6
+        }
+
         var octets = value.Split('.');
         return octets.Length == 4
             && octets.All(o => int.TryParse(o, out var n) && n is >= 0 and <= 255);
@@ -119,8 +124,13 @@ public static class ReportRedactor
         {
             var parts = ip.Split(':');
             for (var i = parts.Length - 1; i >= 0; i--)
+            {
                 if (parts[i].Length > 0)
+                {
                     return "***:***:…:" + parts[i];
+                }
+            }
+
             return ip;
         }
 
@@ -132,9 +142,15 @@ public static class ReportRedactor
     private static string MaskValue(string value)
     {
         if (string.IsNullOrEmpty(value))
+        {
             return value;
+        }
+
         if (value.Length <= 2)
+        {
             return "***";
+        }
+
         return $"{value[0]}***{value[value.Length - 1]}";
     }
 }

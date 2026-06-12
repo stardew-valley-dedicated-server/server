@@ -152,11 +152,16 @@ public sealed class DockerHost : IAsyncDisposable
     private void EnsureInitialized()
     {
         if (_endpointConfig != null)
+        {
             return;
+        }
+
         lock (_lazyInitLock)
         {
             if (_endpointConfig != null)
+            {
                 return;
+            }
 
             if (string.IsNullOrEmpty(SshDestination))
             {
@@ -182,7 +187,10 @@ public sealed class DockerHost : IAsyncDisposable
     {
         var raw = Environment.GetEnvironmentVariable(RunArtifactNames.HostTunnelsEnv);
         if (string.IsNullOrWhiteSpace(raw))
+        {
             return null;
+        }
+
         try
         {
             var map = JsonSerializer.Deserialize<Dictionary<string, int>>(raw);
@@ -254,7 +262,9 @@ public sealed class DockerHost : IAsyncDisposable
     internal async Task InitializeAsync(TunnelManager tunnels, CancellationToken ct = default)
     {
         if (_endpointConfig != null)
+        {
             return;
+        }
 
         if (string.IsNullOrEmpty(SshDestination))
         {
@@ -339,23 +349,27 @@ public sealed class DockerHost : IAsyncDisposable
     )
     {
         if (_hostClockOffsetSec is double cached)
+        {
             return new HostClockOffset(
                 cached,
                 _hostClockCalibrationRttMs,
                 _hostClockCalibrationSamples,
                 FromCache: true
             );
+        }
 
         await _hostClockCalibrationLock.WaitAsync(ct);
         try
         {
             if (_hostClockOffsetSec is double cached2)
+            {
                 return new HostClockOffset(
                     cached2,
                     _hostClockCalibrationRttMs,
                     _hostClockCalibrationSamples,
                     FromCache: true
                 );
+            }
 
             // Single `date +%s.%N` exec bracketed by one Stopwatch pair. The offset is
             // host-shared (this cached value is read by every recorder on the host), so
@@ -394,11 +408,13 @@ public sealed class DockerHost : IAsyncDisposable
                 )
                 || epoch <= 1e9
             )
+            {
                 throw new InvalidOperationException(
                     $"DockerHost '{Id}' clock calibration failed: unparseable or "
                         + $"out-of-range `date` output '{result.Stdout.Trim()}' from container "
                         + $"'{calibrationContainer.Id}'."
                 );
+            }
 
             var hostMidpointSec = (before + after) / 2.0 / Stopwatch.Frequency;
             _hostClockOffsetSec = epoch - hostMidpointSec;
@@ -463,10 +479,12 @@ public sealed class DockerHost : IAsyncDisposable
             // Console breadcrumb so the CI job log isn't blind to a tunnel fault.
             // Names the host + log file only — the VPS IP is kept out of CI logs.
             if (transport)
+            {
                 TestLog.Test(
                     $"[ssh] host '{Id}' poisoned (transport): {reason}. "
                         + $"See diagnostics/ssh-master-{Id}.log"
                 );
+            }
         }
     }
 
@@ -488,8 +506,10 @@ public sealed class DockerHost : IAsyncDisposable
         if (transportReason is null && ex is TimeoutException && SshDestination is not null)
         {
             if (!await TunnelManager.Default.IsMasterAliveAsync(Id))
+            {
                 transportReason =
                     $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
+            }
         }
 
         if (transportReason is not null)

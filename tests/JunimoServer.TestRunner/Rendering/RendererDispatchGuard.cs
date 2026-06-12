@@ -72,7 +72,10 @@ public sealed class RendererDispatchGuard : ITestRenderer
     private void Guard(Action action)
     {
         if (_disabled)
+        {
             return;
+        }
+
         try
         {
             action();

@@ -41,7 +41,10 @@ public class NavigationTests : TestBase
                     ct: ct
                 );
                 if (status == null)
+                {
                     return new PollingHelper.LongPollResult(false, since);
+                }
+
                 var matched = status.IsOnline && !string.IsNullOrEmpty(status.InviteCode);
                 return new PollingHelper.LongPollResult(matched, status.Version);
             },

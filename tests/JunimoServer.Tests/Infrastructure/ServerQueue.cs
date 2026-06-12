@@ -41,7 +41,9 @@ internal sealed class ServerQueue
     {
         var tcs = _tcs;
         if (tcs.Task.IsCompletedSuccessfully)
+        {
             return;
+        }
 
         // Per-waiter TCS so cancellation doesn't nuke the shared TCS.
         var waiterTcs = new TaskCompletionSource(
@@ -53,11 +55,17 @@ internal sealed class ServerQueue
             t =>
             {
                 if (t.IsCompletedSuccessfully)
+                {
                     waiterTcs.TrySetResult();
+                }
                 else if (t.IsFaulted)
+                {
                     waiterTcs.TrySetException(t.Exception!.InnerExceptions);
+                }
                 else
+                {
                     waiterTcs.TrySetCanceled();
+                }
             },
             TaskScheduler.Default
         );

@@ -32,7 +32,10 @@ public sealed class ContainerLogFile : IAsyncDisposable
         lock (_lock)
         {
             if (_disposed)
+            {
                 return;
+            }
+
             _writer.WriteLine(line);
             if (++_linesSinceFlush >= FlushEveryNLines)
             {
@@ -47,7 +50,10 @@ public sealed class ContainerLogFile : IAsyncDisposable
         lock (_lock)
         {
             if (_disposed)
+            {
                 return ValueTask.CompletedTask;
+            }
+
             _disposed = true;
             _writer.Flush();
             _writer.Dispose();

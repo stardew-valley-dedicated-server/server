@@ -91,7 +91,9 @@ public static class FailureContext
         if (extras != null)
         {
             foreach (var kv in extras)
+            {
                 result[kv.Key] = kv.Value;
+            }
         }
 
         DiagnosticsStateResponse? serverState = null;
@@ -111,9 +113,14 @@ public static class FailureContext
         }
 
         if (serverState != null)
+        {
             result["serverState"] = serverState;
+        }
+
         if (diagnosticsError != null)
+        {
             result["diagnosticsError"] = diagnosticsError;
+        }
 
         InfrastructureEventLog.Emit(
             "failure_context",
@@ -135,7 +142,9 @@ public static class FailureContext
         // write is a no-op rather than throwing — DumpAsync is called from
         // pre-test prewarm paths too.
         if (_stash.Value is { } stash)
+        {
             stash.Value = result;
+        }
 
         return result;
     }

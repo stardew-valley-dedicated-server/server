@@ -115,7 +115,9 @@ namespace JunimoServer.Shared
         private static void ScalePostfix(ref float __result)
         {
             if (_targetScale != 1f)
+            {
                 __result = _targetScale;
+            }
         }
     }
 }

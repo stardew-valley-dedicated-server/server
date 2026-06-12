@@ -83,9 +83,15 @@ namespace JunimoServer.Services.Commands
         private static string FormatUptime(TimeSpan uptime)
         {
             if (uptime.TotalDays >= 1)
+            {
                 return $"{(int)uptime.TotalDays}d {uptime.Hours}h {uptime.Minutes}m";
+            }
+
             if (uptime.TotalHours >= 1)
+            {
                 return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+            }
+
             return $"{(int)uptime.TotalMinutes}m";
         }
 
@@ -96,7 +102,10 @@ namespace JunimoServer.Services.Commands
             var period = hours >= 12 && hours < 24 ? "PM" : "AM";
             var displayHours = hours % 12;
             if (displayHours == 0)
+            {
                 displayHours = 12;
+            }
+
             return $"{displayHours}:{minutes:D2} {period}";
         }
 

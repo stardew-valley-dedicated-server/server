@@ -57,7 +57,9 @@ public class SteamAuthClient : IDisposable
                     var json = await response.Content.ReadAsStringAsync();
                     var ready = JsonSerializer.Deserialize<ReadyResponse>(json);
                     if (ready?.ready == true)
+                    {
                         return ready;
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -109,7 +111,10 @@ public class SteamAuthClient : IDisposable
                         LogLevel.Error
                     );
                     if (attempt == maxAttempts)
+                    {
                         return null;
+                    }
+
                     continue;
                 }
 
@@ -138,7 +143,10 @@ public class SteamAuthClient : IDisposable
     public void Dispose()
     {
         if (_disposed)
+        {
             return;
+        }
+
         _httpClient.Dispose();
         _disposed = true;
     }

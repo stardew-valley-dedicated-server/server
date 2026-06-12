@@ -188,7 +188,10 @@ namespace JunimoServer.Services.AlwaysOn
         private static double ElapsedSeconds(DateTime? startTime)
         {
             if (!startTime.HasValue)
+            {
                 return 0;
+            }
+
             return (DateTime.UtcNow - startTime.Value).TotalSeconds;
         }
 

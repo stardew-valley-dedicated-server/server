@@ -44,7 +44,10 @@ namespace JunimoServer.Services.Auth
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
+
             _httpClient.Dispose();
             _disposed = true;
         }
@@ -63,9 +66,14 @@ namespace JunimoServer.Services.Auth
         public LoginStatusResponse StartCredentialsLogin(string username, string password)
         {
             if (string.IsNullOrEmpty(username))
+            {
                 throw new ArgumentException("Username cannot be null or empty", nameof(username));
+            }
+
             if (string.IsNullOrEmpty(password))
+            {
                 throw new ArgumentException("Password cannot be null or empty", nameof(password));
+            }
 
             var request = new { username, password };
             return Post<LoginStatusResponse>("/steam/login/start", request);

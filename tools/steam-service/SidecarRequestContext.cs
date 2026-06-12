@@ -45,7 +45,10 @@ public static class SidecarRequestContext
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
+
             _disposed = true;
             _requestId.Value = _previous;
         }

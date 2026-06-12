@@ -56,7 +56,9 @@ public static class DockerImageBuilder
     {
         var steamAccounts = Environment.GetEnvironmentVariable("STEAM_ACCOUNTS");
         if (string.IsNullOrEmpty(steamAccounts))
+        {
             return new Dictionary<string, string>();
+        }
 
         try
         {
@@ -95,7 +97,9 @@ public static class DockerImageBuilder
     )
     {
         if (!UseLocalImages)
+        {
             return;
+        }
 
         if (SkipBuild)
         {
@@ -352,7 +356,9 @@ public static class DockerImageBuilder
         if (environmentVars != null)
         {
             foreach (var (key, value) in environmentVars)
+            {
                 startInfo.Environment[key] = value;
+            }
         }
 
         using var process =
@@ -366,13 +372,17 @@ public static class DockerImageBuilder
         async Task ReadStdoutAsync()
         {
             while (await process.StandardOutput.ReadLineAsync().ConfigureAwait(false) is { } line)
+            {
                 progress.Step(stepName, SetupStepStatus.InProgress, line);
+            }
         }
 
         async Task ReadStderrAsync()
         {
             while (await process.StandardError.ReadLineAsync().ConfigureAwait(false) is { } line)
+            {
                 progress.Step(stepName, SetupStepStatus.InProgress, line);
+            }
         }
 
         var stdoutTask = ReadStdoutAsync();

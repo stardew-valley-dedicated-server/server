@@ -210,9 +210,14 @@ public class DownloadValidationTests : IAsyncLifetime
 
         // Log download output for debugging
         if (!string.IsNullOrWhiteSpace(stdout))
+        {
             LogDetail($"Download stdout: {stdout}");
+        }
+
         if (!string.IsNullOrWhiteSpace(stderr))
+        {
             LogDetail($"Download stderr: {stderr}");
+        }
 
         // Step 5: Verify the file is re-downloaded and valid
         exists = await FileExists(container, TestFilePath);

@@ -54,7 +54,9 @@ public class TestCollectionOrderer : ITestCollectionOrderer
         foreach (var type in assembly.GetTypes())
         {
             if (type.IsAbstract || !type.IsSubclassOf(typeof(TestBase)))
+            {
                 continue;
+            }
 
             var attr = type.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
             var fullName = type.FullName!;
@@ -119,7 +121,10 @@ public class TestCollectionOrderer : ITestCollectionOrderer
             var shortName = entry.Key;
             var lastDot = shortName.LastIndexOf('.');
             if (lastDot >= 0)
+            {
                 shortName = shortName[(lastDot + 1)..];
+            }
+
             Log($"  {entry.Value, 3} -> {shortName}");
         }
 
@@ -133,18 +138,25 @@ public class TestCollectionOrderer : ITestCollectionOrderer
     public static int GetPriorityForClass(string? fullTypeName)
     {
         if (fullTypeName != null && PriorityMap.TryGetValue(fullTypeName, out var priority))
+        {
             return priority;
+        }
+
         return UnknownPriority;
     }
 
     private static int GetPriority(string? collectionName)
     {
         if (collectionName == null)
+        {
             return UnknownPriority;
+        }
 
         // Exact match (explicit collections like "DownloadValidation")
         if (PriorityMap.TryGetValue(collectionName, out var priority))
+        {
             return priority;
+        }
 
         // Implicit collections: xUnit uses a decorated display name that contains
         // the full type name. Check if any of our known type name keys appear
@@ -152,7 +164,9 @@ public class TestCollectionOrderer : ITestCollectionOrderer
         foreach (var (key, p) in PriorityMap)
         {
             if (collectionName.Contains(key, StringComparison.Ordinal))
+            {
                 return p;
+            }
         }
 
         return UnknownPriority;

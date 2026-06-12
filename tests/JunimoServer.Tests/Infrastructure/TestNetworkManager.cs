@@ -31,7 +31,9 @@ public static class TestNetworkManager
         lock (_networks)
         {
             if (_networks.TryGetValue(host.Id, out var existing))
+            {
                 return existing;
+            }
         }
 
         await _lock.WaitAsync(ct);
@@ -40,7 +42,9 @@ public static class TestNetworkManager
             lock (_networks)
             {
                 if (_networks.TryGetValue(host.Id, out var existing))
+                {
                     return existing;
+                }
             }
 
             var networkId = Guid.NewGuid().ToString("N")[..8];

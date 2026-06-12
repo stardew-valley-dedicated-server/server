@@ -48,7 +48,10 @@ namespace JunimoServer.Services.CropSaver
                 foreach (var feature in location.terrainFeatures.Values)
                 {
                     if (feature is not HoeDirt dirt)
+                    {
                         continue;
+                    }
+
                     CheckTile(new CropLocation(location, dirt, locName, dirt.Tile));
                 }
 
@@ -56,7 +59,9 @@ namespace JunimoServer.Services.CropSaver
                 {
                     var dirt = pot.hoeDirt.Value;
                     if (dirt == null)
+                    {
                         continue;
+                    }
                     // Use the pot's tile, not dirt.Tile: an IndoorPot's inner
                     // HoeDirt is not added through GameLocation.terrainFeatures,
                     // so the OnAdded(loc, tilePos) hook that sets dirt.Tile for
@@ -84,15 +89,22 @@ namespace JunimoServer.Services.CropSaver
             if (!_previousHasCrop.TryGetValue(key, out var previous))
             {
                 if (hasCrop)
+                {
                     _onCropAdded(cropLoc);
+                }
+
                 _previousHasCrop[key] = hasCrop;
                 return;
             }
 
             if (hasCrop && !previous)
+            {
                 _onCropAdded(cropLoc);
+            }
             else if (!hasCrop && previous)
+            {
                 _onCropRemoved(cropLoc);
+            }
 
             _previousHasCrop[key] = hasCrop;
         }

@@ -540,13 +540,17 @@ public class ClientAuthService
     private static bool CreateClient_Prefix(object lobby, ref Client __result)
     {
         if (lobby == null)
+        {
             return true;
+        }
 
         var lobbyType = lobby.GetType();
         var galaxyIdProp = lobbyType.GetProperty("GalaxyId");
         var lobbyTypeProp = lobbyType.GetProperty("LobbyType");
         if (galaxyIdProp == null || lobbyTypeProp == null)
+        {
             return true;
+        }
 
         // LobbyConnectionType: Steam=0, Galaxy=1, Hybrid=2, Invalid=3
         var connectionType = (int)lobbyTypeProp.GetValue(lobby)!;
@@ -621,7 +625,10 @@ public class ClientAuthService
             );
             SetGalaxyReady(false, "failed");
             if (steamHelper.Networking == null)
+            {
                 SetNetworking(steamHelper, CreateSteamNetHelper());
+            }
+
             SetConnectionFinished(steamHelper, true);
             SetGalaxyConnected(steamHelper, false);
         };
@@ -632,7 +639,10 @@ public class ClientAuthService
             ClientEventLog.Emit("auth_galaxy_auth_lost", new { accountIndex, ticketSha8 });
             SetGalaxyReady(false, "lost");
             if (steamHelper.Networking == null)
+            {
                 SetNetworking(steamHelper, CreateSteamNetHelper());
+            }
+
             SetConnectionFinished(steamHelper, true);
             SetGalaxyConnected(steamHelper, false);
         };
@@ -656,7 +666,9 @@ public class ClientAuthService
             (operationalState) =>
             {
                 if (steamHelper.Networking != null)
+                {
                     return;
+                }
 
                 if ((operationalState & 1) != 0)
                 {

@@ -73,22 +73,29 @@ namespace JunimoServer.Services.Auth
             }
 
             if (last == null)
+            {
                 throw new Exception(
                     $"Could not reach steam-auth service within {budgetSec}s"
                         + (lastEx != null ? $": {lastEx.Message}" : "")
                 );
+            }
+
             if (last.status != "ok")
+            {
                 throw new Exception(
                     $"Steam-auth service unhealthy after {budgetSec}s: status={last.status}"
                 );
+            }
 
             var anyEverLoggedIn = last.accounts != null && last.accounts.Any(a => a.logged_in);
             if (!anyEverLoggedIn)
+            {
                 throw new Exception(
                     "Steam-auth service has no logged-in accounts. "
                         + "If this is a fresh install, run 'docker compose run -it steam-auth setup'. "
                         + $"Account snapshot: {SummarizeAccounts(last.accounts)}"
                 );
+            }
 
             throw new Exception(
                 $"Steam-auth account currently disconnected after {budgetSec}s of waiting "

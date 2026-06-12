@@ -79,7 +79,10 @@ internal sealed class ManagedServer : IAsyncDisposable
     public void AddRef(string? testName = null, bool consumeReservation = false)
     {
         if (consumeReservation)
+        {
             Interlocked.Decrement(ref _reservations);
+        }
+
         Interlocked.Increment(ref _refCount);
         if (InstanceId != null)
         {
@@ -102,11 +105,20 @@ internal sealed class ManagedServer : IAsyncDisposable
     {
         var remaining = Interlocked.Decrement(ref _refCount);
         if (remaining <= 0 && InstanceId != null)
+        {
             SetupEventBus.EmitInstanceReturned(InstanceId);
+        }
+
         if (remaining <= 1)
+        {
             _drainSignal?.TrySetResult();
+        }
+
         if (remaining <= 0)
+        {
             _poisonDrainSignal?.TrySetResult();
+        }
+
         return remaining;
     }
 
@@ -161,7 +173,10 @@ internal sealed class ManagedServer : IAsyncDisposable
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
                 return;
+            }
+
             _server._runningTests.TryRemove(_displayName, out _);
         }
     }
@@ -248,7 +263,9 @@ internal sealed class ManagedServer : IAsyncDisposable
     internal static string? ExtractClassName(string? testName)
     {
         if (testName == null)
+        {
             return null;
+        }
         // Strip method name (and any Theory args in parens)
         var parenIdx = testName.IndexOf('(');
         var name = parenIdx >= 0 ? testName[..parenIdx] : testName;
@@ -359,7 +376,10 @@ internal sealed class ManagedServer : IAsyncDisposable
                     _exclusiveOwnerClass = callerClass;
                     // Drain any stale semaphore permits from a prior cancelled session.
                     while (_exclusiveClassTurn.CurrentCount > 0)
+                    {
                         _exclusiveClassTurn.Wait(0);
+                    }
+
                     AddRef(testName, consumeReservation);
                     reservationConsumed = consumeReservation;
                     break;
@@ -424,7 +444,10 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // Cancellation/error before AddRef ran on this same-class
                 // inherited path: release the reservation the caller staked.
                 if (consumeReservation && !reservationConsumed)
+                {
                     ReleaseReservation();
+                }
+
                 throw;
             }
 
@@ -542,7 +565,9 @@ internal sealed class ManagedServer : IAsyncDisposable
         lock (_exclusiveLock)
         {
             if (_exclusiveDone == null)
+            {
                 return;
+            }
 
             // Same-class methods are waiting; signal the next one via semaphore.
             // The TCS stays held so non-class tests remain blocked.
@@ -622,7 +647,9 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // method in the same class set it in this very turn, which can't happen
                 // because the turn lock serializes methods. Safe to treat as a no-op race.
                 if (callerClass != null && _exclusiveOwnerClass == callerClass)
+                {
                     return;
+                }
             }
 
             // Different class holds the gate; wait for it to finish.
@@ -643,7 +670,10 @@ internal sealed class ManagedServer : IAsyncDisposable
             async () =>
             {
                 while (_refCount > 1 && !ct.IsCancellationRequested)
+                {
                     await Task.Delay(100, ct);
+                }
+
                 ct.ThrowIfCancellationRequested();
             },
             ct,
@@ -714,7 +744,9 @@ internal sealed class ManagedServer : IAsyncDisposable
     public void ReleaseSlotEarly()
     {
         if (Interlocked.Exchange(ref _slotReleased, 1) == 0)
+        {
             Host.ServerCapacity.Release(1);
+        }
     }
 
     private CancellationToken _initCts;
@@ -808,6 +840,7 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         // Show video recording status in container setup steps
         if (Server.IsRecording)
+        {
             SetupEventBus.EmitStep(
                 "Setup",
                 "Video recording",
@@ -815,6 +848,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 "recording active",
                 collectionName: Key
             );
+        }
 
         // Update UI with VNC URL now that ports are published
         SetupEventBus.EmitInstanceCreated(
@@ -969,7 +1003,9 @@ internal sealed class ManagedServer : IAsyncDisposable
                 await Task.Delay(intervalMs, ct);
 
                 if (ShutdownCoordinator.IsShuttingDown)
+                {
                     break;
+                }
 
                 // A poisoned host means every probe goes through a dead daemon
                 // or tunnel. Poison the server now (accurate reason, immediate
@@ -1232,9 +1268,11 @@ internal sealed class ManagedServer : IAsyncDisposable
                 ct: ct
             );
             if (result?.Success != true)
+            {
                 throw new InvalidOperationException(
                     $"New game creation failed: {result?.Error ?? "unknown"}"
                 );
+            }
 
             // Verify the server is actually back online
             var status = await api.WaitForServerOnline(
@@ -1275,7 +1313,9 @@ internal sealed class ManagedServer : IAsyncDisposable
 
             var result = await api.ReloadAsync(ct);
             if (result?.Success != true)
+            {
                 throw new InvalidOperationException($"Reload failed: {result?.Error ?? "unknown"}");
+            }
 
             // Verify the server is actually back online
             var status = await api.WaitForServerOnline(
@@ -1352,17 +1392,21 @@ internal sealed class ManagedServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return; // Already disposed (safe against concurrent calls from poison + release)
+        }
 
         // Order matters: cancel health first, then dispose server.
         // Use shutdown token so we don't block if the health loop is stuck.
         _healthCts?.Cancel();
         if (_healthTask != null)
+        {
             try
             {
                 await _healthTask.WaitAsync(ShutdownCoordinator.Token);
             }
             catch { }
+        }
 
         // Unregister from stats tracking before disposal
         ContainerStatsCollector.Unregister(InstanceId ?? "");

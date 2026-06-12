@@ -52,7 +52,9 @@ public static class UserConfigJson
     )
     {
         if (string.IsNullOrWhiteSpace(json))
+        {
             return Array.Empty<JsonNode>();
+        }
 
         var hint =
             expectedShapeHint != null
@@ -74,16 +76,20 @@ public static class UserConfigJson
         }
 
         if (node is not JsonArray arr)
+        {
             throw new InvalidOperationException(
                 $"{envVarName} is set but is not a JSON array.{hint}"
             );
+        }
 
         var nodes = new List<JsonNode>(arr.Count);
         for (var i = 0; i < arr.Count; i++)
         {
             var entry = arr[i];
             if (entry != null)
+            {
                 nodes.Add(entry);
+            }
         }
         return nodes;
     }
@@ -95,7 +101,10 @@ public static class UserConfigJson
     public static int CountArrayTolerant(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
+        {
             return 0;
+        }
+
         try
         {
             using var doc = JsonDocument.Parse(json, Document);
@@ -125,7 +134,10 @@ public static class UserConfigJson
     )
     {
         if (string.IsNullOrWhiteSpace(json))
+        {
             return null;
+        }
+
         var hint =
             expectedShapeHint != null ? $" Expected: an array of {expectedShapeHint} objects." : "";
         try

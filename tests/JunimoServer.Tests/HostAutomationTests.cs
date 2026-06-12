@@ -45,9 +45,12 @@ public class HostAutomationTests : TestBase
                     ct: ct
                 );
                 if (s != null)
+                {
                     Log(
                         $"PlayerCount==0 confirmed: PlayerCount={s.PlayerCount}, IsReady={s.IsReady}"
                     );
+                }
+
                 return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
             },
             TestTimings.ServerReadyBetweenTests,
@@ -109,7 +112,10 @@ public class HostAutomationTests : TestBase
                         ct: ct
                     );
                     if (s == null)
+                    {
                         return new PollingHelper.LongPollResult(false, since);
+                    }
+
                     if (s.TimeOfDay != time1)
                     {
                         Log($"Time changed: {time1} → {s.TimeOfDay}, PlayerCount={s.PlayerCount}");
@@ -164,9 +170,15 @@ public class HostAutomationTests : TestBase
                     ct: ct
                 );
                 if (s == null)
+                {
                     return new PollingHelper.LongPollResult(false, since);
+                }
+
                 if (s.TimeOfDay >= TestTimings.Noon)
+                {
                     return new PollingHelper.LongPollResult(true, s.Version);
+                }
+
                 return new PollingHelper.LongPollResult(false, s.Version);
             },
             TestTimings.NetworkSyncTimeout,
@@ -201,7 +213,10 @@ public class HostAutomationTests : TestBase
                         ct: ct
                     );
                     if (s == null)
+                    {
                         return new PollingHelper.LongPollResult(false, since);
+                    }
+
                     return new PollingHelper.LongPollResult(s.TimeOfDay > time1, s.Version);
                 },
                 TestTimings.TimeAdvanceWait,

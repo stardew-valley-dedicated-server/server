@@ -142,7 +142,9 @@ public sealed class TestRunState
             _status = "running";
             _runStartTime = e.Timestamp;
             if (e.TestCasesToRun > 0)
+            {
                 _totalTests = e.TestCasesToRun;
+            }
 
             var evt = new
             {
@@ -190,22 +192,28 @@ public sealed class TestRunState
             // before the test process exits. Without enrichment, default to
             // canceled (genuine interruption: run aborted, Ctrl-C, etc.).
             foreach (var col in _collections.Values)
-            foreach (var cls in col.Classes.Values)
-            foreach (var test in cls.Tests.Values)
             {
-                if (test.Status is "pending" or "queued")
+                foreach (var cls in col.Classes.Values)
                 {
-                    SetOutcome(test, "skipped", source: "sweep");
-                    test.SkipReason = "Not executed";
-                }
-                else if (test.Status == "running")
-                {
-                    if (test.EnrichmentOutcome != null)
-                        SetOutcome(test, test.EnrichmentOutcome, source: "enrichment");
-                    else
+                    foreach (var test in cls.Tests.Values)
                     {
-                        SetOutcome(test, "canceled", source: "sweep");
-                        test.ErrorMessage = "Test was interrupted when the run ended";
+                        if (test.Status is "pending" or "queued")
+                        {
+                            SetOutcome(test, "skipped", source: "sweep");
+                            test.SkipReason = "Not executed";
+                        }
+                        else if (test.Status == "running")
+                        {
+                            if (test.EnrichmentOutcome != null)
+                            {
+                                SetOutcome(test, test.EnrichmentOutcome, source: "enrichment");
+                            }
+                            else
+                            {
+                                SetOutcome(test, "canceled", source: "sweep");
+                                test.ErrorMessage = "Test was interrupted when the run ended";
+                            }
+                        }
                     }
                 }
             }
@@ -217,30 +225,36 @@ public sealed class TestRunState
             _canceled = 0;
             _skipped = 0;
             foreach (var col in _collections.Values)
-            foreach (var cls in col.Classes.Values)
-            foreach (var test in cls.Tests.Values)
             {
-                switch (test.Status)
+                foreach (var cls in col.Classes.Values)
                 {
-                    case "passed":
-                        _passed++;
-                        break;
-                    case "failed":
-                        _failed++;
-                        break;
-                    case "canceled":
-                        _canceled++;
-                        break;
-                    case "skipped":
-                        _skipped++;
-                        break;
+                    foreach (var test in cls.Tests.Values)
+                    {
+                        switch (test.Status)
+                        {
+                            case "passed":
+                                _passed++;
+                                break;
+                            case "failed":
+                                _failed++;
+                                break;
+                            case "canceled":
+                                _canceled++;
+                                break;
+                            case "skipped":
+                                _skipped++;
+                                break;
+                        }
+                    }
                 }
             }
 
             // Keep the larger of execution total and discovered total
             // (StopOnFail means xUnit's TotalTests only counts tests it actually ran)
             if (e.TotalTests > _totalTests)
+            {
                 _totalTests = e.TotalTests;
+            }
 
             // Finalize any still-running setup phases and steps
             var finalStatus = _failed > 0 ? "failed" : "completed";
@@ -253,7 +267,9 @@ public sealed class TestRunState
                     foreach (var step in phase.Steps)
                     {
                         if (step.Status is "started" or "in_progress")
+                        {
                             step.Status = "failed";
+                        }
                     }
                 }
             }
@@ -414,7 +430,9 @@ public sealed class TestRunState
         var priorSource = test.OutcomeSource;
 
         if (prior == outcome)
+        {
             return;
+        }
 
         // First terminal set, or normal lifecycle progression. The Status
         // before reaching here is one of "pending"/"queued"/"running" which
@@ -661,7 +679,9 @@ public sealed class TestRunState
                     foreach (var step in phase.Steps)
                     {
                         if (step.Status is "started" or "in_progress")
+                        {
                             step.Status = "failed";
+                        }
                     }
                 }
 
@@ -674,7 +694,9 @@ public sealed class TestRunState
                 foreach (var inst in _instances.Values)
                 {
                     if (inst.ServerKey == e.CollectionName || inst.InstanceId == e.CollectionName)
+                    {
                         inst.SetupStatus = e.Success ? "completed" : "failed";
+                    }
                 }
             }
 
@@ -740,7 +762,10 @@ public sealed class TestRunState
                 foreach (var inst in _instances.Values)
                 {
                     if (inst.ServerKey != e.CollectionName && inst.InstanceId != e.CollectionName)
+                    {
                         continue;
+                    }
+
                     inst.SetupStatus ??= "running";
                     var existingInstStep = inst.SetupSteps.Find(s => s.StepName == e.StepName);
                     if (existingInstStep != null)
@@ -802,7 +827,10 @@ public sealed class TestRunState
         lock (_lock)
         {
             if (_runMetadataData != null)
+            {
                 return;
+            }
+
             _runMetadataRunDir = e.RunDir;
             _runMetadataData = e.Data;
         }
@@ -1240,10 +1268,18 @@ public sealed class TestRunState
                         if (testName != null)
                         {
                             foreach (var col in _collections.Values)
-                            foreach (var cls in col.Classes.Values)
-                                if (cls.Tests.TryGetValue(testName, out var test))
-                                    if (!test.UsedInstances.Contains(instanceId))
-                                        test.UsedInstances.Add(instanceId);
+                            {
+                                foreach (var cls in col.Classes.Values)
+                                {
+                                    if (cls.Tests.TryGetValue(testName, out var test))
+                                    {
+                                        if (!test.UsedInstances.Contains(instanceId))
+                                        {
+                                            test.UsedInstances.Add(instanceId);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         break;
                     case "instance_returned":
@@ -1302,7 +1338,9 @@ public sealed class TestRunState
         lock (_lock)
         {
             if (_instances.TryGetValue(e.InstanceId, out var inst))
+            {
                 inst.RecordingPath = e.RecordingPath;
+            }
 
             var evt = new
             {
@@ -1326,12 +1364,16 @@ public sealed class TestRunState
         lock (_lock)
         {
             if (!_instances.TryGetValue(e.InstanceId, out var inst))
+            {
                 return null;
+            }
             // Backfill HostId on the existing InstanceState so late-connecting WS
             // clients receive correct placement info via BuildSnapshot, even if
             // they missed the original instance_created event.
             if (!string.IsNullOrEmpty(e.HostId))
+            {
                 inst.HostId = e.HostId;
+            }
 
             var d = e.Data;
             var timestamp = DateTime.UtcNow;
@@ -1456,23 +1498,27 @@ public sealed class TestRunState
             var canceled = 0;
             var skipped = 0;
             foreach (var col in _collections.Values)
-            foreach (var cls in col.Classes.Values)
-            foreach (var test in cls.Tests.Values)
             {
-                switch (test.Status)
+                foreach (var cls in col.Classes.Values)
                 {
-                    case "passed":
-                        passed++;
-                        break;
-                    case "failed":
-                        failed++;
-                        break;
-                    case "canceled":
-                        canceled++;
-                        break;
-                    case "skipped":
-                        skipped++;
-                        break;
+                    foreach (var test in cls.Tests.Values)
+                    {
+                        switch (test.Status)
+                        {
+                            case "passed":
+                                passed++;
+                                break;
+                            case "failed":
+                                failed++;
+                                break;
+                            case "canceled":
+                                canceled++;
+                                break;
+                            case "skipped":
+                                skipped++;
+                                break;
+                        }
+                    }
                 }
             }
 
@@ -1486,9 +1532,14 @@ public sealed class TestRunState
             )
             {
                 if (git.TryGetProperty("branch", out var b) && b.ValueKind == JsonValueKind.String)
+                {
                     gitBranch = b.GetString();
+                }
+
                 if (git.TryGetProperty("sha", out var s) && s.ValueKind == JsonValueKind.String)
+                {
                     gitSha = s.GetString();
+                }
             }
 
             return new RunSummary(
@@ -1524,53 +1575,59 @@ public sealed class TestRunState
         {
             var tests = new List<TestArtifactView>();
             foreach (var col in _collections.Values)
-            foreach (var cls in col.Classes.Values)
-            foreach (var t in cls.Tests.Values)
             {
-                tests.Add(
-                    new TestArtifactView(
-                        Collection: t.Collection,
-                        ClassName: t.ClassName,
-                        DisplayName: t.DisplayName,
-                        Status: t.Status,
-                        DurationMs: t.DurationMs ?? 0,
-                        QueueDurationMs: t.QueueDurationMs ?? 0,
-                        FailedAt: t.FailedAt,
-                        ErrorMessage: t.ErrorMessage,
-                        ErrorType: t.ErrorType,
-                        // Broker-level failures (e.g. AcquireServerAsync queue
-                        // faults) never reach the test-side enrichment path, so
-                        // classify and build the repro here from the xUnit-native
-                        // fields. Enrichment-provided values win when present.
-                        FailureCategory: t.FailureCategory
-                            ?? (
-                                t.Status == "failed" && t.ErrorType != null
-                                    ? TestSummaryFixture.ClassifyFailureCategory(t.ErrorType)
-                                    : null
-                            ),
-                        ErrorPreview: t.ErrorPreview,
-                        Phase: t.Phase,
-                        ReproCommand: t.ReproCommand
-                            ?? (
-                                t.Status == "failed"
-                                    ? TestSummaryFixture.BuildReproCommand(t.DisplayName)
-                                    : null
-                            ),
-                        ServerKey: t.ServerKey,
-                        ServerInstanceId: t.ServerInstanceId,
-                        ScreenshotPath: t.LatestScreenshotPath,
-                        Lifecycle: t.Lifecycle is { } lc
-                            ? new LifecycleView(
-                                lc.TestMs,
-                                lc.CleanupMs,
-                                lc.ArtifactsMs,
-                                lc.LastKeepDisposeMs,
-                                lc.LeaseReleaseMs
+                foreach (var cls in col.Classes.Values)
+                {
+                    foreach (var t in cls.Tests.Values)
+                    {
+                        tests.Add(
+                            new TestArtifactView(
+                                Collection: t.Collection,
+                                ClassName: t.ClassName,
+                                DisplayName: t.DisplayName,
+                                Status: t.Status,
+                                DurationMs: t.DurationMs ?? 0,
+                                QueueDurationMs: t.QueueDurationMs ?? 0,
+                                FailedAt: t.FailedAt,
+                                ErrorMessage: t.ErrorMessage,
+                                ErrorType: t.ErrorType,
+                                // Broker-level failures (e.g. AcquireServerAsync queue
+                                // faults) never reach the test-side enrichment path, so
+                                // classify and build the repro here from the xUnit-native
+                                // fields. Enrichment-provided values win when present.
+                                FailureCategory: t.FailureCategory
+                                    ?? (
+                                        t.Status == "failed" && t.ErrorType != null
+                                            ? TestSummaryFixture.ClassifyFailureCategory(
+                                                t.ErrorType
+                                            )
+                                            : null
+                                    ),
+                                ErrorPreview: t.ErrorPreview,
+                                Phase: t.Phase,
+                                ReproCommand: t.ReproCommand
+                                    ?? (
+                                        t.Status == "failed"
+                                            ? TestSummaryFixture.BuildReproCommand(t.DisplayName)
+                                            : null
+                                    ),
+                                ServerKey: t.ServerKey,
+                                ServerInstanceId: t.ServerInstanceId,
+                                ScreenshotPath: t.LatestScreenshotPath,
+                                Lifecycle: t.Lifecycle is { } lc
+                                    ? new LifecycleView(
+                                        lc.TestMs,
+                                        lc.CleanupMs,
+                                        lc.ArtifactsMs,
+                                        lc.LastKeepDisposeMs,
+                                        lc.LeaseReleaseMs
+                                    )
+                                    : null,
+                                SkipReason: t.SkipReason
                             )
-                            : null,
-                        SkipReason: t.SkipReason
-                    )
-                );
+                        );
+                    }
+                }
             }
 
             return new RunArtifactView(
@@ -1675,23 +1732,27 @@ public sealed class TestRunState
         var snapshotCanceled = 0;
         var snapshotSkipped = 0;
         foreach (var col in _collections.Values)
-        foreach (var cls in col.Classes.Values)
-        foreach (var test in cls.Tests.Values)
         {
-            switch (test.Status)
+            foreach (var cls in col.Classes.Values)
             {
-                case "passed":
-                    snapshotPassed++;
-                    break;
-                case "failed":
-                    snapshotFailed++;
-                    break;
-                case "canceled":
-                    snapshotCanceled++;
-                    break;
-                case "skipped":
-                    snapshotSkipped++;
-                    break;
+                foreach (var test in cls.Tests.Values)
+                {
+                    switch (test.Status)
+                    {
+                        case "passed":
+                            snapshotPassed++;
+                            break;
+                        case "failed":
+                            snapshotFailed++;
+                            break;
+                        case "canceled":
+                            snapshotCanceled++;
+                            break;
+                        case "skipped":
+                            snapshotSkipped++;
+                            break;
+                    }
+                }
             }
         }
 
@@ -1878,9 +1939,15 @@ public sealed class TestRunState
     private string ResolveCollectionName(string runtimeName, string className)
     {
         if (_collections.ContainsKey(runtimeName))
+        {
             return runtimeName;
+        }
+
         if (_classToCollection.TryGetValue(className, out var populated))
+        {
             return populated;
+        }
+
         return runtimeName;
     }
 
@@ -1899,7 +1966,9 @@ public sealed class TestRunState
             foreach (var key in _activePhases.Keys)
             {
                 if (key.StartsWith(collectionName + ":" + category + ":"))
+                {
                     return key;
+                }
             }
         }
 
@@ -1907,7 +1976,9 @@ public sealed class TestRunState
         foreach (var key in _activePhases.Keys)
         {
             if (key.Contains(":" + category + ":") || key.StartsWith(category + ":"))
+            {
                 return key;
+            }
         }
 
         // Fallback: any active phase
@@ -1924,7 +1995,10 @@ public sealed class TestRunState
         var searchUpTo = parenIdx >= 0 ? parenIdx : displayName.Length;
         var lastDot = displayName.LastIndexOf('.', searchUpTo - 1, searchUpTo);
         if (lastDot < 0)
+        {
             return ("Unknown", displayName);
+        }
+
         var methodName = displayName[(lastDot + 1)..];
         var classPath = displayName[..lastDot];
         var secondLastDot = classPath.LastIndexOf('.');
@@ -1935,7 +2009,10 @@ public sealed class TestRunState
     private void AddEventLog(object evt)
     {
         if (_eventLog.Count >= MaxEventLogSize)
+        {
             _eventLog.RemoveAt(0);
+        }
+
         _eventLog.Add(evt);
     }
 
@@ -1953,7 +2030,10 @@ public sealed class TestRunState
                 ? (long)(test.RunningStartTime.Value - test.StartTime.Value).TotalMilliseconds
                 : 0L;
         if (queueMs < 0)
+        {
             queueMs = 0;
+        }
+
         test.DurationMs = totalMs - queueMs;
         test.QueueDurationMs = queueMs > 0 ? queueMs : null;
     }

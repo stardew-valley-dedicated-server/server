@@ -130,7 +130,10 @@ internal sealed class ClientPool : IAsyncDisposable
         if (TryTakeClient(requireSteam, out var client))
         {
             if (client!.SteamAccountIndex >= 0)
+            {
                 ConsumeSteamTicket();
+            }
+
             TestLog.Client(
                 $"client-{client.ClientIndex} reused (steam={client.SteamAccountIndex})"
             );
@@ -159,7 +162,10 @@ internal sealed class ClientPool : IAsyncDisposable
             if (TryTakeClient(requireSteam, out client))
             {
                 if (client!.SteamAccountIndex >= 0)
+                {
                     ConsumeSteamTicket();
+                }
+
                 TestLog.Client(
                     $"client-{client.ClientIndex} reused (pre-warmed, steam={client.SteamAccountIndex})"
                 );
@@ -180,8 +186,12 @@ internal sealed class ClientPool : IAsyncDisposable
             {
                 steamBearingTotal = 0;
                 foreach (var c in _allClients)
+                {
                     if (c.SteamAccountIndex >= 0)
+                    {
                         steamBearingTotal++;
+                    }
+                }
             }
             InfrastructureEventLog.Emit(
                 "steam_pool_lease_wait_started",
@@ -246,7 +256,10 @@ internal sealed class ClientPool : IAsyncDisposable
             if (TryTakeClient(requireSteam, out client))
             {
                 if (client!.SteamAccountIndex >= 0)
+                {
                     ConsumeSteamTicket();
+                }
+
                 TestLog.Client(
                     $"client-{client.ClientIndex} reused (after cap wait, steam={client.SteamAccountIndex})"
                 );
@@ -299,7 +312,10 @@ internal sealed class ClientPool : IAsyncDisposable
                     if (TryTakeClient(requireSteam, out client))
                     {
                         if (client!.SteamAccountIndex >= 0)
+                        {
                             ConsumeSteamTicket();
+                        }
+
                         TestLog.Client(
                             $"client-{client.ClientIndex} reused (after patience wait, steam={client.SteamAccountIndex})"
                         );
@@ -386,14 +402,23 @@ internal sealed class ClientPool : IAsyncDisposable
         {
             client = fallback;
             foreach (var c in others)
+            {
                 _available.Add(c);
+            }
+
             return true;
         }
 
         if (fallback != null)
+        {
             others.Add(fallback);
+        }
+
         foreach (var c in others)
+        {
             _available.Add(c);
+        }
+
         client = preferred;
         return preferred != null;
     }
@@ -427,12 +452,20 @@ internal sealed class ClientPool : IAsyncDisposable
     private bool PoolHasAnySteamBearingClient()
     {
         if (Volatile.Read(ref _inFlightSteamCreations) > 0)
+        {
             return true;
+        }
+
         lock (_allClientsLock)
         {
             foreach (var c in _allClients)
+            {
                 if (c.SteamAccountIndex >= 0)
+                {
                     return true;
+                }
+            }
+
             return false;
         }
     }
@@ -452,7 +485,10 @@ internal sealed class ClientPool : IAsyncDisposable
         // the otherwise-tiny race window where neither signal would be true.
         var willAllocateSteam = requireSteam && _steamAuthUrl != null && _accountAllocator != null;
         if (willAllocateSteam)
+        {
             Interlocked.Increment(ref _inFlightSteamCreations);
+        }
+
         Interlocked.Increment(ref _inFlightCreations);
         // Tracks whether the in-flight counters have been decremented yet, so the
         // catch/outer-finally don't double-decrement. Decremented on the success path
@@ -479,7 +515,10 @@ internal sealed class ClientPool : IAsyncDisposable
                 // finally) means the client is counted exactly once during StartRecordingAsync.
                 Interlocked.Decrement(ref _inFlightCreations);
                 if (willAllocateSteam)
+                {
                     Interlocked.Decrement(ref _inFlightSteamCreations);
+                }
+
                 inFlightDecremented = true;
                 InfrastructureEventLog.Emit(
                     "client_created",
@@ -525,7 +564,9 @@ internal sealed class ClientPool : IAsyncDisposable
             {
                 Interlocked.Decrement(ref _inFlightCreations);
                 if (willAllocateSteam)
+                {
                     Interlocked.Decrement(ref _inFlightSteamCreations);
+                }
             }
         }
     }
@@ -630,7 +671,9 @@ internal sealed class ClientPool : IAsyncDisposable
             // (StartAsync threw, CreateAsync threw, etc.). When the assignment above runs,
             // steamAccountIndex is reset to -1 so this is a no-op on success.
             if (steamAccountIndex >= 0 && _accountAllocator != null)
+            {
                 _accountAllocator.Release(steamAccountIndex);
+            }
         }
     }
 
@@ -668,7 +711,9 @@ internal sealed class ClientPool : IAsyncDisposable
                     );
                     _available.Add(client);
                     if (client.SteamAccountIndex >= 0)
+                    {
                         _steamAvailable.Release();
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
                 catch (Exception ex)
@@ -702,7 +747,9 @@ internal sealed class ClientPool : IAsyncDisposable
         );
         _returnSignal.Release();
         if (client.SteamAccountIndex >= 0)
+        {
             _steamAvailable.Release();
+        }
     }
 
     /// <summary>

@@ -121,7 +121,9 @@ public class GodTool
     private static void Axe_DoFunction_Prefix(Axe __instance, ref int __state)
     {
         if (!_enabled)
+        {
             return;
+        }
 
         // Store original value
         __state = __instance.additionalPower.Value;
@@ -135,7 +137,10 @@ public class GodTool
     private static void Axe_DoFunction_Postfix(Axe __instance, int __state)
     {
         if (!_enabled)
+        {
             return;
+        }
+
         __instance.additionalPower.Value = __state;
     }
 
@@ -145,7 +150,9 @@ public class GodTool
     private static void Pickaxe_DoFunction_Prefix(Pickaxe __instance, ref int __state)
     {
         if (!_enabled)
+        {
             return;
+        }
 
         // Store original value
         __state = __instance.additionalPower.Value;
@@ -159,7 +166,10 @@ public class GodTool
     private static void Pickaxe_DoFunction_Postfix(Pickaxe __instance, int __state)
     {
         if (!_enabled)
+        {
             return;
+        }
+
         __instance.additionalPower.Value = __state;
     }
 
@@ -179,13 +189,20 @@ public class GodTool
     )
     {
         if (!_enabled)
+        {
             return true; // Run original
+        }
+
         if (t is not Axe && t is not Pickaxe)
+        {
             return true; // Run original for other tools
+        }
 
         var location = __instance.Location;
         if (location == null)
+        {
             return true;
+        }
 
         var farmer = t.getLastFarmerToUse();
 
@@ -226,7 +243,9 @@ public class GodTool
     )
     {
         if (!_enabled)
+        {
             return;
+        }
 
         // ResourceClumps (stumps, logs, boulders) have varying health
         // Set to minimum so one hit destroys them
@@ -244,13 +263,20 @@ public class GodTool
     )
     {
         if (!_enabled)
+        {
             return true; // Run original
+        }
+
         if (t is not Axe && t is not Pickaxe)
+        {
             return true; // Run original for other tools
+        }
 
         var location = __instance.Location;
         if (location == null)
+        {
             return true;
+        }
 
         // Handle stones with axe (normally only pickaxe works)
         if (__instance.IsBreakableStone() && t is Axe)
@@ -325,9 +351,14 @@ public class GodTool
     )
     {
         if (!_enabled)
+        {
             return;
+        }
+
         if (!__instance.isScythe())
+        {
             return;
+        }
 
         var playerTile = who.Tile;
         var radius = 5; // 10x10 area = 5 tiles in each direction

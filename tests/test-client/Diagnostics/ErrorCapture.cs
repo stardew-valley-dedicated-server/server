@@ -48,7 +48,9 @@ public class ErrorCapture
         // game multiplayer). The tasks are abandoned when the connection drops.
         var innerExceptions = e.Exception.Flatten().InnerExceptions;
         if (innerExceptions.All(IsBenignTeardownException))
+        {
             return;
+        }
 
         // Something slipped past the cancellation filter; log the full exception tree
         // so we can diagnose what's actually in the AggregateException.
@@ -60,11 +62,16 @@ public class ErrorCapture
         {
             var chain = (inner.GetType().FullName ?? inner.GetType().Name) + ": " + inner.Message;
             for (var cause = inner.InnerException; cause != null; cause = cause.InnerException)
+            {
                 chain +=
                     $"\n    → {(cause.GetType().FullName ?? cause.GetType().Name)}: {cause.Message}";
+            }
+
             _monitor.Log($"  - {chain}", LogLevel.Warn);
             if (inner.StackTrace != null)
+            {
                 _monitor.Log($"    StackTrace: {inner.StackTrace}", LogLevel.Debug);
+            }
         }
 
         CaptureError(
@@ -84,13 +91,17 @@ public class ErrorCapture
     {
         // CancellationToken-triggered cancellation (includes TaskCanceledException)
         if (ex is OperationCanceledException)
+        {
             return true;
+        }
 
         // Async socket I/O canceled on disconnect. .NET throws SocketException
         // from Socket.AwaitableSocketAsyncEventArgs instead of OperationCanceledException.
         // OperationAborted = WSA 995 on Windows / ECANCELED 125 on Linux.
         if (ex is SocketException { SocketErrorCode: SocketError.OperationAborted })
+        {
             return true;
+        }
 
         return false;
     }
@@ -187,7 +198,9 @@ public class ErrorCapture
         get
         {
             lock (_lock)
+            {
                 return _errors.Count;
+            }
         }
     }
 

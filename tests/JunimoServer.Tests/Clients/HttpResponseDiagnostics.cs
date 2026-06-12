@@ -67,7 +67,9 @@ internal static class HttpResponseDiagnostics
         set
         {
             if (_slot.Value is { } s)
+            {
                 s.Value = value;
+            }
         }
     }
 
@@ -103,7 +105,10 @@ internal static class HttpResponseDiagnostics
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
+
             _disposed = true;
             _slot.Value = _prior;
         }

@@ -53,7 +53,10 @@ public static class ShutdownCoordinator
     public static void NotifyDockerDown(string reason)
     {
         if (_dockerDown || _isShuttingDown)
+        {
             return;
+        }
+
         _dockerDown = true;
         SignalShutdown();
         TestLog.Server($"Docker daemon failure detected: {reason}");

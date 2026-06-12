@@ -14,7 +14,9 @@ public class ConsoleAuthenticator : IAuthenticator
     public Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect)
     {
         if (previousCodeWasIncorrect)
+        {
             Logger.Log("[Steam] Incorrect code, try again.");
+        }
 
         // If user already entered a code during device confirmation prompt, use it
         if (!string.IsNullOrEmpty(_pendingCode))
@@ -32,7 +34,9 @@ public class ConsoleAuthenticator : IAuthenticator
     public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect)
     {
         if (previousCodeWasIncorrect)
+        {
             Logger.Log("[Steam] Incorrect code, try again.");
+        }
 
         // If user already entered a code during device confirmation prompt, use it
         if (!string.IsNullOrEmpty(_pendingCode))

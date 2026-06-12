@@ -120,7 +120,9 @@ public static class ContainerStatsCollector
         // Docker stats stream nor the /stats HTTP poll fires. The UI's
         // instance_stats graphs render empty arrays gracefully.
         if (TestStats.Level == TestStatsLevel.None)
+        {
             return;
+        }
 
         var entry = new InstanceEntry
         {
@@ -137,7 +139,9 @@ public static class ContainerStatsCollector
         _instances[instanceId] = entry;
 
         if (_started)
+        {
             entry.StreamTask = StartStreamAsync(entry);
+        }
     }
 
     public static void Unregister(string instanceId)
@@ -160,10 +164,15 @@ public static class ContainerStatsCollector
     public static void Start()
     {
         if (_started)
+        {
             return;
+        }
         // No stream, no emission loop, no HTTP poller when stats are off.
         if (TestStats.Level == TestStatsLevel.None)
+        {
             return;
+        }
+
         _started = true;
         _cts = new CancellationTokenSource();
         // SuppressFlow: the emission loop runs for the whole process and emits
@@ -227,7 +236,9 @@ public static class ContainerStatsCollector
             foreach (var (_, entry) in _instances)
             {
                 if (entry.StreamTask == null)
+                {
                     entry.StreamTask = StartStreamAsync(entry);
+                }
             }
 
             _emissionLoop = EmissionLoopAsync(ct);
@@ -273,7 +284,9 @@ public static class ContainerStatsCollector
                             || response.PreCPUStats is null
                             || response.MemoryStats is null
                         )
+                        {
                             return;
+                        }
 
                         var cpuDelta =
                             response.CPUStats.CPUUsage.TotalUsage
@@ -291,7 +304,9 @@ public static class ContainerStatsCollector
 
                         var memBytes = response.MemoryStats.Usage ?? 0;
                         if (response.MemoryStats.Stats?.TryGetValue("cache", out var cache) == true)
+                        {
                             memBytes -= cache;
+                        }
 
                         // Network I/O: sum all interfaces
                         double netRx = 0,
@@ -316,11 +331,15 @@ public static class ContainerStatsCollector
                             foreach (var e in blkioEntries)
                             {
                                 if (string.Equals(e.Op, "read", StringComparison.OrdinalIgnoreCase))
+                                {
                                     blkRead += e.Value;
+                                }
                                 else if (
                                     string.Equals(e.Op, "write", StringComparison.OrdinalIgnoreCase)
                                 )
+                                {
                                     blkWrite += e.Value;
+                                }
                             }
                         }
 
@@ -342,10 +361,12 @@ public static class ContainerStatsCollector
                     catch (Exception ex)
                     {
                         if (ShouldEmitStrike(ref entry.DockerStatsFailureStreak))
+                        {
                             InfrastructureEventLog.Emit(
                                 "docker_stats_snapshot_failed",
                                 new { instanceId = entry.InstanceId, error = ex.Message }
                             );
+                        }
                     }
                 });
 
@@ -371,7 +392,9 @@ public static class ContainerStatsCollector
                 try
                 {
                     if (_instances.IsEmpty)
+                    {
                         continue;
+                    }
 
                     var mappings = _instances.ToArray();
 
@@ -395,10 +418,13 @@ public static class ContainerStatsCollector
                             catch (JsonException ex)
                             {
                                 if (ShouldEmitStrike(ref m.Value.GameStatsFailureStreak))
+                                {
                                     InfrastructureEventLog.Emit(
                                         "game_stats_parse_failed",
                                         new { instanceId = m.Key, error = ex.Message }
                                     );
+                                }
+
                                 return (m.Key, Stats: (GameStatsResponse?)null);
                             }
                             catch
@@ -419,7 +445,9 @@ public static class ContainerStatsCollector
                         gameStats.TryGetValue(instanceId, out var game);
 
                         if (docker == null && game == null)
+                        {
                             continue;
+                        }
 
                         var now = DateTime.UtcNow;
                         var elapsed =

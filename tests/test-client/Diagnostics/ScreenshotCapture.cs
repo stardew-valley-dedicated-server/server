@@ -45,7 +45,9 @@ public class ScreenshotCapture
     public void OnPostRender()
     {
         if (_pendingCapture == null)
+        {
             return;
+        }
 
         var tcs = _pendingCapture;
         _pendingCapture = null;

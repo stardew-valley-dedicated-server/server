@@ -97,14 +97,22 @@ public sealed class TestResourceBroker : IAsyncDisposable
     internal void EmitModPhaseAnnotation(string forwardedVia, string phase)
     {
         if (!forwardedVia.StartsWith("server-", StringComparison.Ordinal))
+        {
             return;
+        }
+
         if (!int.TryParse(forwardedVia.AsSpan("server-".Length), out var serverIndex))
+        {
             return;
+        }
 
         foreach (var (_, managed) in _servers.GetAll())
         {
             if (managed.Server.ServerIndex != serverIndex)
+            {
                 continue;
+            }
+
             managed.EmitAnnotationToRunningTests(AnnotationLevel.Info, $"mod_phase: {phase}");
             return;
         }
@@ -258,7 +266,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     $"  {d.Requirements.GetDisplayLabel()}: {d.ClassCount} class(es), {d.TestCount} test(s):"
                 );
                 foreach (var name in d.ClassNames)
+                {
                     TestLog.Server($"    · {name}");
+                }
             }
 
             // Initialize remaining demand counters from discovered test counts.
@@ -310,10 +320,13 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     .Instance.Hosts.Where(h => capableIds.Contains(h.Id))
                     .ToList();
                 if (capableHosts.Count == 0)
+                {
                     throw new InvalidOperationException(
                         "Pre-start: configs require Steam but no host's slice is Steam-capable. "
                             + "ServerConfigDiscovery should have caught this — check STEAM_ACCOUNTS sizing."
                     );
+                }
+
                 DistributeAndAppend(capableHosts, budgets, steamTokens, placements);
             }
 
@@ -325,7 +338,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // Create queues for each (config, host) placement upfront so deferred-create
             // and on-demand paths see them.
             foreach (var (demand, host) in placements)
+            {
                 _queues.GetOrAdd(BrokerKeyFor(demand.Key, host), _ => new ServerQueue());
+            }
 
             _prestartCts = new CancellationTokenSource();
             // Defense in depth: StartPrestart() already suppressed flow before its
@@ -359,7 +374,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             foreach (var (_, queue) in _queues)
             {
                 if (!queue.IsReady && !queue.IsFaulted)
+                {
                     queue.ServerFailed(ex);
+                }
             }
 
             return Task.CompletedTask;
@@ -528,7 +545,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     $"Pre-starting {totalInstances} server instance(s) across {instancePlan.Count} config(s) on hosts [{hostSummary}]: {string.Join(", ", labels)}"
                 );
                 foreach (var d in deferred)
+                {
                     TestLog.Server($"  deferred: {d.Requirements.GetDisplayLabel()}");
+                }
             }
 
             // Eagerly construct per-host client pools for every host that has at
@@ -634,7 +653,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             foreach (var (key, queue) in _queues)
             {
                 if (!queue.IsReady && !queue.IsFaulted)
+                {
                     queue.ServerFailed(ex);
+                }
             }
         }
     }
@@ -670,7 +691,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
     private async Task<ClientPool> EnsureClientPoolAsync(DockerHost host, CancellationToken ct)
     {
         if (_clientPools.TryGetValue(host.Id, out var existing))
+        {
             return existing;
+        }
 
         var network = await TestNetworkManager.GetOrCreateNetworkAsync(host, ct);
         var defaults = new ServerContainerOptions();
@@ -729,7 +752,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // Rethrow the captured exception directly so the test-UI / per-test error
         // shows the real cause without an outer wrapper layer.
         if (_prestartException != null)
+        {
             ExceptionDispatchInfo.Capture(_prestartException).Throw();
+        }
 
         var key = requirements.GetServerKey();
         var displayLabel = requirements.GetDisplayLabel();
@@ -812,7 +837,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
         // Fast path: a healthy server instance already exists *on this host*, no waiting needed.
         if (_servers.TryGetBest(key, host.Id) != null)
+        {
             return;
+        }
 
         // No healthy instance exists on this host. If this host's server slots are
         // full, we can't create one now — wait for the host's queue to resolve
@@ -1092,7 +1119,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     {
                         server.Release();
                         if (requirements.Exclusive)
+                        {
                             server.ReleaseExclusive();
+                        }
+
                         TestLog.Test(
                             $"{shortTest} server {displayLabel} was evicted after AddRef, retrying"
                         );
@@ -1119,7 +1149,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // Release any reservation we still hold (AddRef didn't consume it).
             reservedServer?.ReleaseReservation();
             if (ownsCapacity)
+            {
                 host.ClientCapacity.Release(requirements.Clients);
+            }
+
             throw;
         }
     }
@@ -1170,7 +1203,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 _servers.TryRemove(key, managed);
                 ReleaseSteamAccount(managed);
                 if (_servers.TryGetBest(key, host.Id) == null)
+                {
                     queue.Reset();
+                }
+
                 InfrastructureEventLog.Emit(
                     "server_disposed",
                     new
@@ -1232,11 +1268,13 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // completed and none succeeded. If a sibling instance succeeded, queue.IsReady
                 // is true.
                 if (!succeeded && inFlightRemaining == 0 && !queue.IsReady)
+                {
                     queue.ServerFailed(
                         new ServerUnavailableException(
                             $"All server creation attempts failed for {displayLabel} on {host.Id}"
                         )
                     );
+                }
             }
         }
     }
@@ -1271,9 +1309,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // or tunnel burns ~12s per doomed attempt. Covers every creation seam
         // (pre-start, on-demand, replacement, per-test) at the single chokepoint.
         if (host.IsPoisoned)
+        {
             throw new ServerUnavailableException(
                 $"Host {host.Id} is poisoned ({host.PoisonReason}); refusing to create {displayLabel}"
             );
+        }
 
         var isShared = requirements.Isolation != IsolationMode.PerTest;
         TestLog.Server($"{displayLabel} starting up on {host.Id} (server-{serverIndex})...");
@@ -1283,7 +1323,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // exists on this host, we just queue on host.ServerCapacity below — Place's
         // tiebreak prefers admitting hosts so this case is rare.
         if (host.ServerCapacity.Available <= 0)
+        {
             await TryEvictIdleServerForAsync(key, host);
+        }
 
         var slotName = $"{key}#{serverIndex}@{host.Id}";
         await host.ServerCapacity.AcquireAsync(1, slotName, ct);
@@ -1299,9 +1341,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
             var envVars = new Dictionary<string, string>();
             var vncPassword = TestEnvLoader.Get("VNC_PASSWORD");
             if (!string.IsNullOrEmpty(vncPassword))
+            {
                 envVars["VNC_PASSWORD"] = vncPassword;
+            }
+
             if (requirements.Password != null)
+            {
                 envVars["SERVER_PASSWORD"] = requirements.Password;
+            }
 
             var network = await TestNetworkManager.GetOrCreateNetworkAsync(host, ct);
 
@@ -1337,9 +1384,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // The slot is now owned by the ManagedServer; its DisposeAsync releases it.
             slotHeldOutsideManaged = false;
             if (steamAccountIndex.HasValue)
+            {
                 managed.SteamAccountIndex = steamAccountIndex.Value;
+            }
+
             if (isShared)
+            {
                 _servers.Add(key, managed);
+            }
 
             await managed.EnsureInitializedAsync(ct);
 
@@ -1476,7 +1528,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 _servers.TryGetBest(key, host.Id) == null
                 && _queues.TryGetValue(brokerKey, out var queue)
             )
+            {
                 queue.Reset();
+            }
 
             _ = ReplaceServerInBackgroundAsync(key, managed.Requirements, host, managed);
         }
@@ -1488,12 +1542,17 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
             // Clear remaining demand and reset queue only if no other instances exist anywhere
             if (!_servers.HasHealthy(key))
+            {
                 _remainingDemand.TryRemove(key, out _);
+            }
+
             if (
                 _servers.TryGetBest(key, host.Id) == null
                 && _queues.TryGetValue(brokerKey, out var queue)
             )
+            {
                 queue.Reset();
+            }
 
             _ = DisposeWithoutReplacementAsync(displayLabel, managed);
         }
@@ -1568,7 +1627,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // Ensure queue is in a fresh state for the replacement only if no other
         // healthy instance exists on this host for this key.
         if (_servers.TryGetBest(key, host.Id) == null && (queue.IsReady || queue.IsFaulted))
+        {
             queue.Reset();
+        }
 
         _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
         var replacementSucceeded = false;
@@ -1620,12 +1681,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     (_, v) => Math.Max(0, v - 1)
                 );
                 if (!replacementSucceeded && inFlightRemaining == 0 && !queue.IsReady)
+                {
                     queue.ServerFailed(
                         replacementError
                             ?? new ServerUnavailableException(
                                 $"Server replacement failed for {displayLabel} on {host.Id}"
                             )
                     );
+                }
             }
         }
     }
@@ -1646,17 +1709,34 @@ public sealed class TestResourceBroker : IAsyncDisposable
         foreach (var (key, server) in _servers.GetAll())
         {
             if (key == requestingKey)
+            {
                 continue;
+            }
+
             if (server.Host.Id != requestingHost.Id)
+            {
                 continue;
+            }
+
             if (server.IsPoisoned)
+            {
                 continue;
+            }
+
             if (!server.IsInitialized)
+            {
                 continue;
+            }
+
             if (server.RefCount > 0)
+            {
                 continue;
+            }
+
             if (GetPendingDemand(key) > 0)
+            {
                 continue;
+            }
 
             // Don't evict servers that still have remaining tests. They were
             // pre-started for a reason and evicting them causes wasteful create/destroy
@@ -1664,7 +1744,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // until a server finishes naturally.
             var remaining = _remainingDemand.TryGetValue(key, out var r) ? r : 0;
             if (remaining > 0)
+            {
                 continue;
+            }
 
             var evictLabel = server.Requirements.GetDisplayLabel();
             var evictBrokerKey = BrokerKeyFor(key, requestingHost);
@@ -1686,7 +1768,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 _servers.TryGetBest(key, requestingHost.Id) == null
                 && _queues.TryGetValue(evictBrokerKey, out var queue)
             )
+            {
                 queue.Reset();
+            }
 
             // Broker-shutdown short-circuit. _runCts is cancelled only in
             // DisposeAsync, so IsCancellationRequested means "we're tearing
@@ -1759,11 +1843,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
     private async Task TryReuseFreedSlotAsync(DockerHost freedHost)
     {
         if (_runCts.IsCancellationRequested || ShutdownCoordinator.IsShuttingDown)
+        {
             return;
+        }
 
         // Slot may not be visible yet (DisposeAsync is async)
         if (freedHost.ServerCapacity.Available <= 0)
+        {
             return;
+        }
 
         string? bestKey = null;
         ServerDemand? bestDemand = null;
@@ -1773,9 +1861,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
         {
             var remaining = _remainingDemand.TryGetValue(demand.Key, out var r) ? r : 0;
             if (remaining <= 0)
+            {
                 continue;
+            }
+
             if (_creationsInFlight.GetOrAdd(BrokerKeyFor(demand.Key, freedHost), 0) > 0)
+            {
                 continue;
+            }
 
             // Only expand if remaining tests exceed current cluster-wide instance throughput.
             // Sum each existing instance's per-host client cap so a config served by
@@ -1783,12 +1876,16 @@ public sealed class TestResourceBroker : IAsyncDisposable
             var instances = _servers.GetAll(demand.Key);
             var clusterClientThroughput = instances.Sum(i => i.Host.ClientCapacity.Capacity);
             if (remaining <= clusterClientThroughput)
+            {
                 continue;
+            }
 
             // Score by non-exclusive demand (exclusive tests serialize, extra instances don't help)
             var score = Math.Max(remaining - demand.ExclusiveTestCount, 0);
             if (score <= 0)
+            {
                 continue;
+            }
 
             if (score > bestScore)
             {
@@ -1799,7 +1896,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         }
 
         if (bestKey == null || bestDemand == null)
+        {
             return;
+        }
 
         var brokerKey = BrokerKeyFor(bestKey, freedHost);
         var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
@@ -1814,7 +1913,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
         lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
         {
             if (_creationsInFlight.GetOrAdd(brokerKey, 0) > 0)
+            {
                 return;
+            }
+
             _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
         }
 
@@ -1876,9 +1978,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
         if (ShutdownCoordinator.IsShuttingDown)
         {
             if (remaining <= 0)
+            {
                 TestLog.Server(
                     $"{displayLabel} idle during shutdown, deferring disposal to broker"
                 );
+            }
+
             return;
         }
 
@@ -2012,7 +2117,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     _servers.TryGetBest(managed.Key, host.Id) == null
                     && _queues.TryGetValue(brokerKey, out var queue)
                 )
+                {
                     queue.Reset();
+                }
 
                 _ = TryReuseFreedSlotAsync(host);
             }
@@ -2027,7 +2134,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
     private void ReleaseSteamAccount(ManagedServer managed)
     {
         if (managed.SteamAccountIndex < 0)
+        {
             return;
+        }
+
         if (_accountAllocatorByHost.TryGetValue(managed.Host.Id, out var allocator))
         {
             allocator.Release(managed.SteamAccountIndex);
@@ -2076,7 +2186,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
     internal void NotifyStopOnFail()
     {
         if (_stopOnFailNotified)
+        {
             return;
+        }
+
         _stopOnFailNotified = true;
 
         TestLog.Server("StopOnFail: zeroing all remaining demand and cancelling run");
@@ -2106,14 +2219,21 @@ public sealed class TestResourceBroker : IAsyncDisposable
     {
         // During shutdown, don't evict; let DisposeAsync handle ordering (clients first)
         if (ShutdownCoordinator.IsShuttingDown)
+        {
             return;
+        }
 
         foreach (var (key, server) in _servers.GetAll())
         {
             if (server.RefCount > 0)
+            {
                 continue;
+            }
+
             if (GetPendingDemand(key) > 0)
+            {
                 continue;
+            }
 
             var displayLabel = server.Requirements.GetDisplayLabel();
             var host = server.Host;
@@ -2127,7 +2247,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     _servers.TryGetBest(key, host.Id) == null
                     && _queues.TryGetValue(brokerKey, out var queue)
                 )
+                {
                     queue.Reset();
+                }
 
                 try
                 {
@@ -2321,7 +2443,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
             .ToList();
         var totalBudget = available.Sum(x => x.Budget);
         if (totalBudget <= 0)
+        {
             return;
+        }
 
         var tokenCount = Math.Min(tokens.Count, totalBudget);
         var quotas = available
@@ -2339,7 +2463,10 @@ public sealed class TestResourceBroker : IAsyncDisposable
         )
         {
             if (leftover <= 0)
+            {
                 break;
+            }
+
             if (counts[q.Host.Id] < q.Budget)
             {
                 counts[q.Host.Id]++;
@@ -2353,9 +2480,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
         foreach (var host in eligibleHosts)
         {
             if (!counts.TryGetValue(host.Id, out var n))
+            {
                 continue;
+            }
+
             for (var i = 0; i < n; i++)
+            {
                 hostOrder.Add(host);
+            }
         }
         for (var i = 0; i < tokens.Count && i < hostOrder.Count; i++)
         {
@@ -2384,7 +2516,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
     )
     {
         if (demands.Count == 0 || slots <= 0)
+        {
             return new List<(ServerDemand, int)>();
+        }
 
         int InstancesNeeded(ServerDemand d)
         {
@@ -2401,7 +2535,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
         // If more configs than slots, only top N configs get 1 slot each
         if (demands.Count > slots)
+        {
             return demands.Take(slots).Select(d => (d, 1)).ToList();
+        }
 
         // Hamilton's method: proportional allocation with largest-remainder distribution
         var entries = demands

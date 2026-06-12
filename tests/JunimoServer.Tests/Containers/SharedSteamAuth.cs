@@ -153,7 +153,9 @@ public class SharedSteamAuth : IAsyncDisposable
         // Inject the host's slice. The global STEAM_ACCOUNTS is intentionally NOT
         // forwarded — each host gets its disjoint slice instead.
         if (!string.IsNullOrEmpty(steamAccountsJson))
+        {
             builder = builder.WithEnvironment("STEAM_ACCOUNTS", steamAccountsJson);
+        }
 
         // Steam allows only one live login per account: a second SteamKit2 client
         // logging in with a username we already plan to use will kick our login with
@@ -246,9 +248,12 @@ public class SharedSteamAuth : IAsyncDisposable
     public int GetHostPort()
     {
         if (_apiForward == null)
+        {
             throw new InvalidOperationException(
                 "SharedSteamAuth not started yet — host port unavailable."
             );
+        }
+
         return _apiForward.CoordinatorPort;
     }
 
@@ -265,7 +270,9 @@ public class SharedSteamAuth : IAsyncDisposable
     public async Task WaitForAccountsLoggedInAsync(int accountCount, CancellationToken ct)
     {
         if (accountCount <= 0)
+        {
             return;
+        }
 
         var hostUrl = GetHostUrl();
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -327,12 +334,17 @@ public class SharedSteamAuth : IAsyncDisposable
     private static bool AllAccountsReady(int accountCount, HealthResponse? snapshot)
     {
         if (snapshot?.Accounts == null)
+        {
             return false;
+        }
+
         for (var i = 0; i < accountCount; i++)
         {
             var entry = snapshot.Accounts.FirstOrDefault(a => a.Index == i);
             if (entry == null || !entry.LoggedIn)
+            {
                 return false;
+            }
         }
         return true;
     }
@@ -344,7 +356,9 @@ public class SharedSteamAuth : IAsyncDisposable
         {
             var entry = snapshot?.Accounts?.FirstOrDefault(a => a.Index == i);
             if (entry == null || !entry.LoggedIn)
+            {
                 notReady.Add(i);
+            }
         }
         return notReady;
     }
@@ -385,7 +399,9 @@ public class SharedSteamAuth : IAsyncDisposable
     {
         var planned = ExtractUsernames(steamAccountsJson);
         if (planned.Count == 0)
+        {
             return;
+        }
 
         IList<ContainerListResponse> containers;
         try
@@ -418,13 +434,18 @@ public class SharedSteamAuth : IAsyncDisposable
         {
             var image = c.Image ?? "";
             if (!image.StartsWith("sdvd/steam-service", StringComparison.OrdinalIgnoreCase))
+            {
                 continue;
+            }
+
             if (
                 c.Labels != null
                 && c.Labels.TryGetValue("sdvd.test", out var testLabel)
                 && testLabel == "true"
             )
+            {
                 continue;
+            }
 
             ContainerInspectResponse inspect;
             try
@@ -439,7 +460,9 @@ public class SharedSteamAuth : IAsyncDisposable
             var existing = ExtractUsernamesFromEnv(inspect.Config?.Env);
             var overlap = planned.Intersect(existing, StringComparer.OrdinalIgnoreCase).ToList();
             if (overlap.Count == 0)
+            {
                 continue;
+            }
 
             var name = (
                 c.Names != null && c.Names.Count > 0 ? c.Names[0].TrimStart('/') : c.ID[..12]
@@ -461,12 +484,17 @@ public class SharedSteamAuth : IAsyncDisposable
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(steamAccountsJson))
+        {
             return set;
+        }
+
         foreach (var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccountsJson))
         {
             var user = node["user"]?.GetValue<string>();
             if (!string.IsNullOrWhiteSpace(user))
+            {
                 set.Add(user);
+            }
         }
         return set;
     }
@@ -475,7 +503,9 @@ public class SharedSteamAuth : IAsyncDisposable
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (env == null)
+        {
             return set;
+        }
 
         string? steamAccounts = null;
         string? steamUsername = null;
@@ -483,15 +513,25 @@ public class SharedSteamAuth : IAsyncDisposable
         {
             var eq = line.IndexOf('=');
             if (eq <= 0)
+            {
                 continue;
+            }
+
             var key = line[..eq];
             var val = line[(eq + 1)..].Trim();
             if (val.Length == 0)
+            {
                 continue;
+            }
+
             if (key.Equals("STEAM_ACCOUNTS", StringComparison.OrdinalIgnoreCase))
+            {
                 steamAccounts = val;
+            }
             else if (key.Equals("STEAM_USERNAME", StringComparison.OrdinalIgnoreCase))
+            {
                 steamUsername = val;
+            }
         }
 
         // Mirror tools/steam-service/Program.cs DiscoverAccounts — STEAM_ACCOUNTS wins;
@@ -506,7 +546,9 @@ public class SharedSteamAuth : IAsyncDisposable
                 {
                     var user = node["user"]?.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(user))
+                    {
                         set.Add(user);
+                    }
                 }
                 return set;
             }
@@ -516,7 +558,10 @@ public class SharedSteamAuth : IAsyncDisposable
         }
 
         if (steamUsername != null)
+        {
             set.Add(steamUsername);
+        }
+
         return set;
     }
 

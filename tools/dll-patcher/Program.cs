@@ -301,9 +301,13 @@ try
                     var inst = afterInstructions[j];
                     string operandStr = "";
                     if (inst.Operand is MethodReference mr)
+                    {
                         operandStr = $" {mr.DeclaringType.Name}::{mr.Name}";
+                    }
                     else if (inst.Operand != null)
+                    {
                         operandStr = $" {inst.Operand}";
+                    }
 
                     Log($"    [{j}] {inst.OpCode}{operandStr}");
                 }

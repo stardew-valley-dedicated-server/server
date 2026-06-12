@@ -233,7 +233,9 @@ public class GameClientContainer : IAsyncDisposable
                             onGalaxyStateResolved: state =>
                             {
                                 if (selfRef != null)
+                                {
                                     selfRef.GalaxyState = state;
+                                }
                             }
                         )
                     )
@@ -511,7 +513,9 @@ public class GameClientContainer : IAsyncDisposable
     public async Task StartRecordingAsync(CancellationToken ct = default)
     {
         if (!RecordingPolicy.RecordClientEnabled)
+        {
             return;
+        }
 
         SetupEventBus.EmitStep(
             "Setup",
@@ -642,10 +646,14 @@ public class GameClientContainer : IAsyncDisposable
 
         // Emit to UI during startup phases (callback is null post-startup)
         if (!isEvent)
+        {
             _startupLogCallback?.Invoke(line);
+        }
 
         if (!isEvent)
+        {
             _logCallback?.Invoke(line);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -707,7 +715,9 @@ public class GameClientContainer : IAsyncDisposable
         }
 
         if (_containerLog != null)
+        {
             await _containerLog.DisposeAsync();
+        }
 
         // Pass ShutdownCoordinator.Token so recording extraction aborts immediately on Ctrl+C
         // instead of hanging the shutdown chain on slow Docker I/O.
@@ -723,7 +733,9 @@ public class GameClientContainer : IAsyncDisposable
                     $"[Recording] client-{_clientIndex}: stopping ffmpeg (IsRecording={_recorder.IsRecording})"
                 );
                 if (_recorder.IsRecording)
+                {
                     await _recorder.StopAsync(ct);
+                }
 
                 var destPath = Path.Combine(
                     TestArtifacts.GetContainerDir($"client-{_clientIndex}"),

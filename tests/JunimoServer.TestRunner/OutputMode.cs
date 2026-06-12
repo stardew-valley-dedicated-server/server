@@ -36,10 +36,14 @@ public static class OutputModeDetector
     public static OutputMode Detect(string[] args)
     {
         if (args.Contains("--llm", StringComparer.OrdinalIgnoreCase))
+        {
             return OutputMode.LLM;
+        }
 
         if (args.Contains("--web", StringComparer.OrdinalIgnoreCase))
+        {
             return OutputMode.Web;
+        }
 
         return OutputMode.CI;
     }

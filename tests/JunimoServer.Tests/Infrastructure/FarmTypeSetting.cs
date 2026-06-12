@@ -86,8 +86,12 @@ public class FarmTypeSettingJsonConverter : JsonConverter<FarmTypeSetting>
     )
     {
         if (value.Id != null)
+        {
             writer.WriteStringValue(value.Id);
+        }
         else
+        {
             writer.WriteNumberValue(value.Index ?? 0);
+        }
     }
 }

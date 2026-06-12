@@ -165,7 +165,10 @@ public class SteamAuthService
     {
         _cts.Cancel();
         if (IsLoggedIn)
+        {
             _steamUser.LogOff();
+        }
+
         _steamClient.Disconnect();
     }
 
@@ -223,15 +226,29 @@ public class SteamAuthService
     private void MaybeStartReconnect(string trigger, bool userInitiated, EResult result)
     {
         if (userInitiated)
+        {
             return; // intentional Disconnect()
+        }
+
         if (_cts.IsCancellationRequested)
+        {
             return; // shutdown in progress
+        }
+
         if (_refreshToken == null || _username == null)
+        {
             return; // nothing to retry with
+        }
+
         if (IsTerminalLogoff(result))
+        {
             return; // banned/disabled
+        }
+
         if (Interlocked.CompareExchange(ref _reconnectInProgress, 1, 0) != 0)
+        {
             return;
+        }
 
         _ = Task.Run(() => RunReconnectLoopAsync(trigger, result));
     }
@@ -379,7 +396,9 @@ public class SteamAuthService
     {
         var path = SessionFilePath;
         if (!File.Exists(path))
+        {
             return null;
+        }
 
         try
         {
@@ -404,11 +423,15 @@ public class SteamAuthService
     private void MigrateOldSession(string parentSessionDir)
     {
         if (File.Exists(SessionFilePath))
+        {
             return;
+        }
 
         var oldPath = Path.Combine(parentSessionDir, $"session-{Username}.json");
         if (!File.Exists(oldPath))
+        {
             return;
+        }
 
         try
         {
@@ -445,7 +468,9 @@ public class SteamAuthService
         try
         {
             if (!File.Exists(TicketCachePath))
+            {
                 return null;
+            }
 
             var json = File.ReadAllText(TicketCachePath);
             var doc = JsonDocument.Parse(json);
@@ -454,11 +479,16 @@ public class SteamAuthService
             );
 
             if (DateTimeOffset.UtcNow - fetchedAt > TicketCacheMaxAge)
+            {
                 return null; // Expired
+            }
 
             var ticket = doc.RootElement.GetProperty("ticket").GetString();
             if (ticket == null)
+            {
                 return null;
+            }
+
             return (ticket, fetchedAt);
         }
         catch
@@ -483,13 +513,17 @@ public class SteamAuthService
     public async Task EnsureLoggedInAsync(LoginConfig? config, CancellationToken ct = default)
     {
         if (IsLoggedIn)
+        {
             return; // lock-free fast path
+        }
 
         await _loginSemaphore.WaitAsync(ct);
         try
         {
             if (IsLoggedIn)
+            {
                 return; // double-check under lock
+            }
 
             // Quiesce any half-open connection left by a failed prior attempt so the
             // login sequence starts from a known state.
@@ -500,15 +534,23 @@ public class SteamAuthService
             }
 
             if (config?.Token != null)
+            {
                 await LoginWithTokenInsideLockAsync(config.User, config.Token);
+            }
             else if (HasSavedSession())
+            {
                 await LoginWithSavedSessionInsideLockAsync();
+            }
             else if (config?.Pass != null)
+            {
                 await LoginWithCredentialsInsideLockAsync(config.User, config.Pass);
+            }
             else
+            {
                 throw new InvalidOperationException(
                     $"Account {AccountIndex}: no auth method (no token, saved session, or password)"
                 );
+            }
         }
         finally
         {
@@ -524,7 +566,9 @@ public class SteamAuthService
     {
         var session = LoadSession();
         if (session == null)
+        {
             throw new Exception("No saved session found");
+        }
 
         _username = session.Value.username;
         _refreshToken = session.Value.refreshToken;
@@ -779,7 +823,9 @@ public class SteamAuthService
             {
                 var success = await tcs.Task;
                 if (success)
+                {
                     return;
+                }
             }
 
             if (attempt < maxRetries)
@@ -809,7 +855,9 @@ public class SteamAuthService
             // JWT format: header.payload.signature
             var parts = token.Split('.');
             if (parts.Length != 3)
+            {
                 return;
+            }
 
             // Decode payload (base64url)
             var payload = parts[1];
@@ -852,7 +900,9 @@ public class SteamAuthService
     public async Task<AppTicketResult> GetAppTicketAsync(uint appId)
     {
         if (!IsLoggedIn)
+        {
             throw new Exception("Not logged in");
+        }
 
         // Serialize concurrent requests to same account
         await _ticketSemaphore.WaitAsync();
@@ -982,7 +1032,9 @@ public class SteamAuthService
     {
         var markerPath = Path.Combine(downloadDir, $".download-manifest-{appId}");
         if (!File.Exists(markerPath))
+        {
             return false;
+        }
 
         try
         {
@@ -1076,7 +1128,9 @@ public class SteamAuthService
             return;
         }
         if (entries == null || entries.Count == 0)
+        {
             return;
+        }
 
         var kept = new Dictionary<string, JsonElement>(entries.Count);
         foreach (var (key, value) in entries)
@@ -1084,12 +1138,16 @@ public class SteamAuthService
             // Manifest keys use forward slashes regardless of OS; normalize for the local FS.
             var localPath = Path.Combine(contentDir, key.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(localPath))
+            {
                 kept[key] = value;
+            }
         }
 
         var removed = entries.Count - kept.Count;
         if (removed == 0)
+        {
             return;
+        }
 
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(kept));
         Logger.Log(
@@ -1177,7 +1235,9 @@ public class SteamAuthService
     public static IReadOnlyCollection<string> ParseKeepLanguages(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
+        {
             return [];
+        }
 
         var canonical = AllLanguageCodes.ToDictionary(c => c, StringComparer.OrdinalIgnoreCase);
         var result = new List<string>();
@@ -1191,7 +1251,9 @@ public class SteamAuthService
             if (canonical.TryGetValue(token, out var code))
             {
                 if (!result.Contains(code))
+                {
                     result.Add(code);
+                }
             }
             else
             {
@@ -1219,12 +1281,14 @@ public class SteamAuthService
         foreach (var (code, family) in CjkFontFamilyByCode)
         {
             if (!keep.Contains(code))
+            {
                 patterns.Add(
                     new Regex(
                         $@"Content/Fonts/{family}.*",
                         RegexOptions.IgnoreCase | RegexOptions.Compiled
                     )
                 );
+            }
         }
 
         // Strip "*.{code}.xnb" localized variants for every non-kept code.
@@ -1248,7 +1312,9 @@ public class SteamAuthService
         foreach (var pattern in _skipPatterns)
         {
             if (pattern.IsMatch(fileName))
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -1320,7 +1386,9 @@ public class SteamAuthService
             foreach (var depot in depots.Children)
             {
                 if (!uint.TryParse(depot.Name, out var id))
+                {
                     continue;
+                }
 
                 var oslist = depot["config"]["oslist"].Value;
                 if (oslist != null && oslist.Equals(targetOs, StringComparison.OrdinalIgnoreCase))
@@ -1366,7 +1434,9 @@ public class SteamAuthService
             // Always validate files to detect corruption/deletion
             var forceRedownload = Environment.GetEnvironmentVariable("FORCE_REDOWNLOAD") == "1";
             if (forceRedownload)
+            {
                 Logger.Log($"{_logPrefix} FORCE_REDOWNLOAD=1 set, skipping all validation");
+            }
 
             // Get depot key
             var depotKeyResult = await _steamApps.GetDepotDecryptionKey(depotId, appId);
@@ -1456,7 +1526,9 @@ public class SteamAuthService
                 // Create directory if needed
                 var dir = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(dir))
+                {
                     Directory.CreateDirectory(dir);
+                }
 
                 // Skip directories
                 if (file.Flags.HasFlag(EDepotFileFlag.Directory))
@@ -1613,9 +1685,11 @@ public class SteamAuthService
             Logger.Log($"{_logPrefix} App installed to: {downloadDir}");
             Logger.Log($"{_logPrefix} Total size: {FormatSize(processedBytes)}");
             if (skippedExisting > 0)
+            {
                 Logger.Log(
                     $"{_logPrefix} Skipped {skippedExisting} existing files (already up to date)"
                 );
+            }
 
             // Prune the content manifest to match what we actually downloaded. The game's
             // LocalizedContentManager.DoesAssetExist checks ContentHashes.json (a manifest),
@@ -1713,7 +1787,10 @@ public class SteamAuthService
         {
             var key = Console.ReadKey(intercept: true);
             if (key.Key == ConsoleKey.Enter)
+            {
                 break;
+            }
+
             if (key.Key == ConsoleKey.Backspace && password.Length > 0)
             {
                 password.Length--;
@@ -1770,7 +1847,9 @@ public class SteamAuthService
     )
     {
         if (!IsLoggedIn)
+        {
             throw new Exception("Not logged in");
+        }
 
         Logger.Log(
             $"{_logPrefix} Creating lobby for app {appId}, max members: {maxMembers}, gameServer: {gameServerSteamId}, protocol: {protocolVersion}"
@@ -1794,7 +1873,9 @@ public class SteamAuthService
         var createResult = await createJob;
 
         if (createResult.Result != EResult.OK)
+        {
             throw new Exception($"Failed to create lobby: {createResult.Result}");
+        }
 
         // Store lobby state for use in SetLobbyData/SetLobbyPrivacy
         _currentLobbyId = createResult.LobbySteamID.ConvertToUInt64();
@@ -1818,10 +1899,14 @@ public class SteamAuthService
     )
     {
         if (!IsLoggedIn)
+        {
             throw new Exception("Not logged in");
+        }
 
         if (_currentLobbyId == 0)
+        {
             throw new Exception("No lobby created yet");
+        }
 
         var metadata = BuildLobbyMetadata(_currentGameServerSteamId, _currentProtocolVersion);
 
@@ -1846,10 +1931,14 @@ public class SteamAuthService
         );
 
         if (result == null)
+        {
             throw new Exception("SetLobbyData returned null");
+        }
 
         if (result.Result != EResult.OK)
+        {
             throw new Exception($"Failed to set lobby data: {result.Result}");
+        }
 
         Logger.Log($"{_logPrefix} Lobby metadata updated");
     }
@@ -1860,10 +1949,14 @@ public class SteamAuthService
     public async Task SetLobbyPrivacyAsync(uint appId, ulong lobbyId, ELobbyType lobbyType)
     {
         if (!IsLoggedIn)
+        {
             throw new Exception("Not logged in");
+        }
 
         if (_currentLobbyId == 0)
+        {
             throw new Exception("No lobby created yet");
+        }
 
         var metadata = BuildLobbyMetadata(_currentGameServerSteamId, _currentProtocolVersion);
 
@@ -1879,10 +1972,14 @@ public class SteamAuthService
         );
 
         if (result == null)
+        {
             throw new Exception("SetLobbyData returned null");
+        }
 
         if (result.Result != EResult.OK)
+        {
             throw new Exception($"Failed to set lobby privacy: {result.Result}");
+        }
 
         Logger.Log($"{_logPrefix} Lobby privacy set to {lobbyType}");
     }

@@ -193,7 +193,9 @@ class Program
 
                     task.Increment(1);
                     if (i < 9)
+                    {
                         await Task.Delay(500);
+                    }
                 }
             });
 
@@ -389,11 +391,15 @@ class Program
     private static void ProcessOutput(DataReceivedEventArgs e, string protocol, Regex regex)
     {
         if (string.IsNullOrWhiteSpace(e.Data))
+        {
             return;
+        }
 
         var match = regex.Match(e.Data);
         if (!match.Success)
+        {
             return;
+        }
 
         string srcIp = match.Groups[1].Value;
         int srcPort = int.Parse(match.Groups[2].Value);
@@ -406,7 +412,9 @@ class Program
 
         bool isGogTraffic = IsGogHost(srcHost) || IsGogHost(dstHost);
         if (!isGogTraffic)
+        {
             return;
+        }
 
         if (action == "gog-requests")
         {
@@ -448,14 +456,20 @@ class Program
 
             // Outgoing traffic: our server -> GOG
             if (IsGogHost(dstHost))
+            {
                 changed = outgoing.Add(dstPort);
+            }
 
             // Incoming traffic: GOG -> our server
             if (IsGogHost(srcHost))
+            {
                 changed = incoming.Add(srcPort) || changed;
+            }
 
             if (changed)
+            {
                 PrintPorts();
+            }
         }
     }
 
@@ -492,7 +506,10 @@ class Program
         {
             // Check if it's a private IP (don't redact those)
             if (IsPrivateIp(bytes))
+            {
                 return ip.ToString();
+            }
+
             return $"{bytes[0]}.x.x.x";
         }
         return ip.ToString();
@@ -502,16 +519,25 @@ class Program
     {
         // 10.0.0.0/8
         if (bytes[0] == 10)
+        {
             return true;
+        }
         // 172.16.0.0/12
         if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+        {
             return true;
+        }
         // 192.168.0.0/16
         if (bytes[0] == 192 && bytes[1] == 168)
+        {
             return true;
+        }
         // 127.0.0.0/8 (loopback)
         if (bytes[0] == 127)
+        {
             return true;
+        }
+
         return false;
     }
 
@@ -766,7 +792,9 @@ class Program
                                 // First verify this server responds to basic binding
                                 var basicTest = await StunBindingRequest(socket, serverEndpoint);
                                 if (basicTest == null)
+                                {
                                     continue;
+                                }
 
                                 // Test 1: Change IP + Change Port (Full Cone test)
                                 var fullConeResult = await StunChangeRequest(
@@ -956,9 +984,15 @@ class Program
         // Flags: 0x04 = change IP, 0x02 = change port
         byte flags = 0;
         if (changeIp)
+        {
             flags |= 0x04;
+        }
+
         if (changePort)
+        {
             flags |= 0x02;
+        }
+
         request[24] = 0x00;
         request[25] = 0x00;
         request[26] = 0x00;
@@ -981,13 +1015,17 @@ class Program
             );
             // Verify it's a Binding Response (0x0101)
             if (result.ReceivedBytes < 20 || buffer[0] != 0x01 || buffer[1] != 0x01)
+            {
                 return false;
+            }
 
             // Verify transaction ID matches (bytes 8-19)
             for (int i = 0; i < 12; i++)
             {
                 if (buffer[8 + i] != transactionId[i])
+                {
                     return false;
+                }
             }
             return true;
         }
@@ -1030,7 +1068,9 @@ class Program
 
             var receiverExternal = await StunBindingRequest(receiverSocket, serverEndpoint);
             if (receiverExternal == null)
+            {
                 return false;
+            }
 
             // Generate a unique test packet
             var testData = RandomNumberGenerator.GetBytes(16);
@@ -1055,7 +1095,9 @@ class Program
                         for (int i = 0; i < testData.Length; i++)
                         {
                             if (buffer[i] != testData[i])
+                            {
                                 return false;
+                            }
                         }
                         return true;
                     }
@@ -1121,20 +1163,26 @@ class Program
 
         var completedTask = await Task.WhenAny(receiveTask, timeoutTask);
         if (completedTask == timeoutTask)
+        {
             return null;
+        }
 
         var result = await receiveTask;
         var response = buffer.AsSpan(0, result.ReceivedBytes);
 
         // Verify it's a Binding Response (0x0101)
         if (response[0] != 0x01 || response[1] != 0x01)
+        {
             return null;
+        }
 
         // Verify transaction ID matches (bytes 8-19)
         for (int i = 0; i < 12; i++)
         {
             if (response[8 + i] != transactionId[i])
+            {
                 return null;
+            }
         }
 
         // Parse attributes
@@ -1146,7 +1194,9 @@ class Program
             pos += 4;
 
             if (pos + attrLen > response.Length)
+            {
                 break;
+            }
 
             // XOR-MAPPED-ADDRESS (0x0020) or MAPPED-ADDRESS (0x0001)
             if (attrType == 0x0020 || attrType == 0x0001)

@@ -110,7 +110,9 @@ namespace JunimoServer.Shared
             DrawLabelRow(spriteBatch, font, tickText, tickSize.Y, y, panelWidth);
             y += RowHeight;
             if (hasName)
+            {
                 DrawLabelRow(spriteBatch, font, nameText, nameSize.Y, y, panelWidth);
+            }
         }
 
         /// <summary>
@@ -157,7 +159,9 @@ namespace JunimoServer.Shared
         {
             var player = Game1.player;
             if (player == null || Game1.currentLocation == null)
+            {
                 return;
+            }
 
             var sprite = player.Sprite;
             int zoom = Game1.pixelZoom;

@@ -111,7 +111,9 @@ namespace JunimoServer.Services.Auth
         {
             // Return cached value if already validated
             if (_validatedSteamAuthUrl != null)
+            {
                 return _validatedSteamAuthUrl;
+            }
 
             var steamAuthUrl = Environment.GetEnvironmentVariable("STEAM_AUTH_URL");
             if (string.IsNullOrEmpty(steamAuthUrl))
@@ -144,7 +146,9 @@ namespace JunimoServer.Services.Auth
         {
             var steamAuthUrl = GetValidatedSteamAuthUrl();
             if (steamAuthUrl == null)
+            {
                 return null;
+            }
 
             if (_cachedApiClient == null)
             {
@@ -212,9 +216,11 @@ namespace JunimoServer.Services.Auth
         ) // Dependency ensures correct init order
         {
             if (_instance != null)
+            {
                 throw new InvalidOperationException(
                     "AuthService already initialized - only one instance allowed"
                 );
+            }
 
             // Set instance variables for use in static harmony patches
             _instance = this;
@@ -692,7 +698,9 @@ namespace JunimoServer.Services.Auth
             {
                 var apiClient = GetOrCreateApiClient();
                 if (apiClient == null)
+                {
                     return false;
+                }
 
                 if (!SteamGameServerService.IsInitialized)
                 {
@@ -784,10 +792,14 @@ namespace JunimoServer.Services.Auth
         {
             // Only update if privacy actually changed
             if (_lastSteamLobbyPrivacy == privacy)
+            {
                 return;
+            }
 
             if (_steamLobbyId == 0)
+            {
                 return;
+            }
 
             // Optimistically cache so repeated calls from the game loop don't queue redundant work
             _lastSteamLobbyPrivacy = privacy;
@@ -801,7 +813,9 @@ namespace JunimoServer.Services.Auth
                 {
                     var apiClient = GetOrCreateApiClient();
                     if (apiClient == null)
+                    {
                         return;
+                    }
 
                     // Force Public for dedicated server - invite codes need joinable lobbies
                     apiClient.SetLobbyPrivacy(lobbyId: _steamLobbyId, privacy: "public");
@@ -876,7 +890,9 @@ namespace JunimoServer.Services.Auth
                 {
                     var apiClient = GetOrCreateApiClient();
                     if (apiClient == null)
+                    {
                         return;
+                    }
 
                     apiClient.SetLobbyData(
                         lobbyId: _steamLobbyId,
@@ -1197,7 +1213,9 @@ namespace JunimoServer.Services.Auth
                     );
 
                     if (steamHelper.Networking != null)
+                    {
                         return;
+                    }
 
                     if ((operationalState & 1) != 0)
                     {
@@ -1258,7 +1276,9 @@ namespace JunimoServer.Services.Auth
         private static void GalaxySocket_GetInviteCode_Postfix(string __result)
         {
             if (string.IsNullOrEmpty(__result))
+            {
                 return;
+            }
 
             try
             {

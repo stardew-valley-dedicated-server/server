@@ -73,11 +73,20 @@ public static class OgImageGenerator
 
             var counts = new List<string> { $"{summary.TotalTests} tests" };
             if (summary.Skipped > 0)
+            {
                 counts.Add($"{summary.Skipped} skipped");
+            }
+
             if (summary.Canceled > 0)
+            {
                 counts.Add($"{summary.Canceled} canceled");
+            }
+
             if (summary.DurationMs is { } ms)
+            {
                 counts.Add(FormatDuration(ms));
+            }
+
             ctx.DrawText(string.Join("  ·  ", counts), sub, Muted, new PointF(72, 360));
 
             var branch = summary.GitBranch ?? "unknown";
@@ -107,9 +116,15 @@ public static class OgImageGenerator
     {
         var t = TimeSpan.FromMilliseconds(ms);
         if (t.TotalHours >= 1)
+        {
             return $"{(int)t.TotalHours}h {t.Minutes}m";
+        }
+
         if (t.TotalMinutes >= 1)
+        {
             return $"{t.Minutes}m {t.Seconds}s";
+        }
+
         return $"{t.Seconds}s";
     }
 }

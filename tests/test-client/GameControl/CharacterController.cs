@@ -38,11 +38,15 @@ public class CharacterController
             Game1.activeClickableMenu is TitleMenu
             && TitleMenu.subMenu is CharacterCustomization charSub
         )
+        {
             return charSub;
+        }
 
         // Check if it's the active menu directly
         if (Game1.activeClickableMenu is CharacterCustomization charDirect)
+        {
             return charDirect;
+        }
 
         return null;
     }

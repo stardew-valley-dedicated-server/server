@@ -70,7 +70,9 @@ internal sealed class TracingHandler : DelegatingHandler
             request.Headers.Remove(RequestIdHeader);
             request.Headers.Add(RequestIdHeader, requestId);
             if (ambient == null)
+            {
                 scope = CorrelationContext.BeginWithId(requestId);
+            }
         }
 
         long? reqBytes = null;
@@ -78,7 +80,9 @@ internal sealed class TracingHandler : DelegatingHandler
         {
             // Cheap size read for known-bounded content types.
             if (request.Content.Headers.ContentLength is long cl)
+            {
                 reqBytes = cl;
+            }
         }
 
         var sw = Stopwatch.StartNew();
@@ -97,13 +101,17 @@ internal sealed class TracingHandler : DelegatingHandler
             {
                 var first = ageValues.FirstOrDefault();
                 if (long.TryParse(first, out var parsed))
+                {
                     snapshotAgeMs = parsed;
+                }
             }
             if (response.Headers.TryGetValues(PredicateChangedAtHeader, out var predValues))
             {
                 var first = predValues.FirstOrDefault();
                 if (long.TryParse(first, out var parsed))
+                {
                     predicateChangedMsAgo = parsed;
+                }
             }
 
             // Publish to the ambient diagnostic slot so a polling helper can

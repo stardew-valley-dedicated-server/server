@@ -64,7 +64,9 @@ namespace JunimoServer.Services.SteamGameServer
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
             if (!_initialized)
+            {
                 return;
+            }
 
             // Process GameServer callbacks every frame
             // This is required for connection handling and SDR status updates
@@ -253,7 +255,9 @@ namespace JunimoServer.Services.SteamGameServer
         public static void Shutdown()
         {
             if (!_initialized)
+            {
                 return;
+            }
 
             _monitor.Log("Shutting down Steam GameServer...", LogLevel.Info);
 

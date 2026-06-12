@@ -131,7 +131,10 @@ public class ModEntry : Mod
         // "Rendering Disabled" notice + device swap when watched over VNC during debugging.
         var clientFpsRaw = Environment.GetEnvironmentVariable("CLIENT_FPS");
         if (!int.TryParse(clientFpsRaw, out var fps) || fps < 0)
+        {
             fps = 0;
+        }
+
         _bootFps = fps;
         _rendering = new RenderingController(Monitor, "Client");
         _perfStats?.SetTargetFps(fps);
@@ -181,7 +184,10 @@ public class ModEntry : Mod
     public static bool BeginDraw_Prefix(GameRunner __instance)
     {
         if (_rendering.ShouldBeginDraw())
+        {
             return true;
+        }
+
         __instance.SuppressDraw();
         return false;
     }
@@ -211,7 +217,9 @@ public class ModEntry : Mod
     private void StartServer()
     {
         if (_server != null)
+        {
             return;
+        }
 
         var port = GetPortFromEnv();
         _server = new TestApiServer(port, Monitor);
@@ -220,23 +228,32 @@ public class ModEntry : Mod
 
         _server.Start();
         if (_server.IsListening)
+        {
             Monitor.Log($"Test API available at http://localhost:{port}/", LogLevel.Info);
+        }
         else
+        {
             Monitor.Log($"Test API failed to start on port {port}", LogLevel.Error);
+        }
     }
 
     private int GetPortFromEnv()
     {
         var portStr = Environment.GetEnvironmentVariable("JUNIMO_TEST_PORT");
         if (int.TryParse(portStr, out var port) && port > 0 && port < 65536)
+        {
             return port;
+        }
+
         return DefaultPort;
     }
 
     private void RegisterEndpoints()
     {
         if (_server == null)
+        {
             return;
+        }
 
         RegisterStatusEndpoints();
         RegisterNavigationEndpoints();
@@ -568,7 +585,10 @@ public class ModEntry : Mod
             {
                 var body = TestApiServer.ReadBody<WarpParams>(req);
                 if (body == null)
+                {
                     return new WarpResult { Success = false, Error = "Missing body" };
+                }
+
                 return ExecuteOnGameThread(() =>
                     _actionsController!.Warp(body.LocationName, body.TileX, body.TileY)
                 );
@@ -582,7 +602,10 @@ public class ModEntry : Mod
             {
                 var body = TestApiServer.ReadBody<PlacePotParams>(req);
                 if (body == null)
+                {
                     return new PlacePotResult { Success = false, Error = "Missing body" };
+                }
+
                 return ExecuteOnGameThread(() =>
                     _actionsController!.PlacePot(
                         body.LocationName,
@@ -601,7 +624,10 @@ public class ModEntry : Mod
             {
                 var body = TestApiServer.ReadBody<ClearAreaParams>(req);
                 if (body == null)
+                {
                     return new ClearAreaResult { Success = false, Error = "Missing body" };
+                }
+
                 return ExecuteOnGameThread(() =>
                     _actionsController!.ClearArea(
                         body.LocationName,
@@ -621,7 +647,10 @@ public class ModEntry : Mod
             {
                 var body = TestApiServer.ReadBody<PlantCropParams>(req);
                 if (body == null)
+                {
                     return new PlantCropResult { Success = false, Error = "Missing body" };
+                }
+
                 return ExecuteOnGameThread(() =>
                     _actionsController!.PlantCrop(
                         body.ItemId,
@@ -727,16 +756,24 @@ public class ModEntry : Mod
                             Game1.activeClickableMenu is TitleMenu
                             && TitleMenu.subMenu is FarmhandMenu sub
                         )
+                        {
                             farmhandMenu = sub;
+                        }
                         else if (Game1.activeClickableMenu is FarmhandMenu direct)
+                        {
                             farmhandMenu = direct;
+                        }
 
                         if (farmhandMenu == null)
+                        {
                             return false;
+                        }
 
                         // Check that menu is not still loading farmhands
                         if (farmhandMenu.gettingFarmhands)
+                        {
                             return false;
+                        }
 
                         // Check that slots are actually populated
                         if (
@@ -744,7 +781,9 @@ public class ModEntry : Mod
                                 is not System.Collections.IList slots
                             || slots.Count == 0
                         )
+                        {
                             return false;
+                        }
 
                         return true;
                     },
@@ -758,20 +797,30 @@ public class ModEntry : Mod
                             Game1.activeClickableMenu is TitleMenu
                             && TitleMenu.subMenu is FarmhandMenu sub
                         )
+                        {
                             farmhandMenu = sub;
+                        }
                         else if (Game1.activeClickableMenu is FarmhandMenu direct)
+                        {
                             farmhandMenu = direct;
+                        }
 
                         if (farmhandMenu == null)
+                        {
                             return null; // Menu not visible yet, keep waiting
+                        }
 
                         // No client at all
                         if (farmhandMenu.client == null)
+                        {
                             return "Connection failed (no client)";
+                        }
 
                         // Connection timed out or peer disconnected
                         if (farmhandMenu.client.timedOut)
+                        {
                             return "Connection failed (timed out)";
+                        }
 
                         // Server/lobby sent an error message. When connectionMessage is set with
                         // no availableFarmhands, checkListPopulation sets approvingFarmhand=true.
@@ -785,7 +834,9 @@ public class ModEntry : Mod
                             && farmhandMenu.client.connectionMessage != null
                             && farmhandMenu.client.availableFarmhands == null
                         )
+                        {
                             return $"Connection failed: {farmhandMenu.client.connectionMessage}";
+                        }
 
                         // Finished loading but no slots (no cabins available)
                         if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand)
@@ -793,7 +844,9 @@ public class ModEntry : Mod
                             var slots =
                                 menuSlotsField?.GetValue(farmhandMenu) as System.Collections.IList;
                             if (slots != null && slots.Count == 0)
+                            {
                                 return "No cabins available (server has no farmhand slots)";
+                            }
                         }
 
                         return null; // No terminal failure detected, keep waiting
@@ -838,9 +891,15 @@ public class ModEntry : Mod
                             Game1.activeClickableMenu is TitleMenu
                             && TitleMenu.subMenu is TitleTextInputMenu
                         )
+                        {
                             return true;
+                        }
+
                         if (Game1.activeClickableMenu is TitleTextInputMenu)
+                        {
                             return true;
+                        }
+
                         return false;
                     },
                     timeout,
@@ -865,15 +924,21 @@ public class ModEntry : Mod
                         // Check we're at title with no submenu
                         var menu = MenuDetector.GetCurrentMenu();
                         if (menu.Type != "TitleMenu" || menu.SubMenu != null)
+                        {
                             return false;
+                        }
 
                         // Check no active multiplayer connection
                         if (Game1.IsMultiplayer || Game1.IsClient || Game1.IsServer)
+                        {
                             return false;
+                        }
 
                         // Check no client object exists
                         if (Game1.client != null)
+                        {
                             return false;
+                        }
 
                         return true;
                     },
@@ -1148,7 +1213,10 @@ public class ModEntry : Mod
         QueueGameAction(() =>
         {
             if (Interlocked.CompareExchange(ref state, 2, 0) != 0)
+            {
                 return; // Caller timed out (state was 1); skip to avoid corrupting game state
+            }
+
             using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
             try
             {
@@ -1198,7 +1266,9 @@ public class ModEntry : Mod
         }
 
         if (error != null)
+        {
             throw error;
+        }
 
         return result;
     }
@@ -1277,7 +1347,9 @@ public class ModEntry : Mod
                     satisfied = condition();
                     // Only check for terminal failure if condition not yet satisfied
                     if (!satisfied && failureDetector != null)
+                    {
                         failureReason = failureDetector();
+                    }
                 }
                 catch
                 {

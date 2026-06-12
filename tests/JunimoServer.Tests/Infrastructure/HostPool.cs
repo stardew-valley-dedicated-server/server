@@ -93,10 +93,13 @@ public sealed class HostPool : IAsyncDisposable
         if (alive.Count == 0)
         {
             if (requireSteam)
+            {
                 throw new InvalidOperationException(
                     "No Steam-capable hosts available — check STEAM_ACCOUNTS sizing vs SDVD_DOCKER_HOSTS slot config. "
                         + "Each Steam-capable host needs ≥2 accounts (1 server + ≥1 client)."
                 );
+            }
+
             throw new InvalidOperationException("HostPool: all hosts poisoned");
         }
 
@@ -108,7 +111,9 @@ public sealed class HostPool : IAsyncDisposable
             .ThenBy(h => h.Id, StringComparer.Ordinal)
             .ToList();
         if (admitting.Count > 0)
+        {
             return admitting[0];
+        }
 
         // Nothing admits immediately: queue on the host with the fewest server
         // waiters, ties by declared order.
@@ -122,10 +127,12 @@ public sealed class HostPool : IAsyncDisposable
     {
         var raw = Environment.GetEnvironmentVariable("SDVD_DOCKER_HOSTS");
         if (string.IsNullOrWhiteSpace(raw))
+        {
             throw new InvalidOperationException(
                 "SDVD_DOCKER_HOSTS is required. "
                     + "Set it to a JSON array of host entries — see .env.test.example for the schema."
             );
+        }
 
         var entries = UserConfigJson.DeserializeArrayStrict<HostEntry>(
             "SDVD_DOCKER_HOSTS",
@@ -133,10 +140,12 @@ public sealed class HostPool : IAsyncDisposable
             "{id, serverSlots, clientSlots, [endpoint], [sshKey]}"
         );
         if (entries is null || entries.Length == 0)
+        {
             throw new InvalidOperationException(
                 "SDVD_DOCKER_HOSTS is set but parsed to an empty array. "
                     + "At least one host entry is required."
             );
+        }
 
         // SDVD_MAX_CONCURRENT_STARTS, when set, becomes the default for every
         // host that omits its own concurrentStarts. When unset, each host
@@ -151,21 +160,32 @@ public sealed class HostPool : IAsyncDisposable
         {
             var entry = entries[i];
             if (string.IsNullOrWhiteSpace(entry.Id))
+            {
                 throw new InvalidOperationException(
                     $"SDVD_DOCKER_HOSTS entry {i}: 'id' is required."
                 );
+            }
+
             if (!seenIds.Add(entry.Id))
+            {
                 throw new InvalidOperationException(
                     $"SDVD_DOCKER_HOSTS entry {i}: duplicate id '{entry.Id}' (ids must be unique)."
                 );
+            }
+
             if (entry.ServerSlots <= 0)
+            {
                 throw new InvalidOperationException(
                     $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'serverSlots' must be a positive integer (got {entry.ServerSlots})."
                 );
+            }
+
             if (entry.ClientSlots <= 0)
+            {
                 throw new InvalidOperationException(
                     $"SDVD_DOCKER_HOSTS entry '{entry.Id}': 'clientSlots' must be a positive integer (got {entry.ClientSlots})."
                 );
+            }
             // Resolution order for each cap: per-host JSON field (if positive)
             // → SDVD_MAX_* env (if set & positive) → host's serverSlots+clientSlots.
             var concurrentStarts =
@@ -204,19 +224,25 @@ public sealed class HostPool : IAsyncDisposable
     private static string? ResolveSshDestination(string id, string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
+        {
             return null;
+        }
 
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+        {
             throw new InvalidOperationException(
                 $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' is not a valid URI. "
                     + "Use 'ssh://user@machine' for remote hosts."
             );
+        }
 
         if (!uri.Scheme.Equals("ssh", StringComparison.OrdinalIgnoreCase))
+        {
             throw new InvalidOperationException(
                 $"SDVD_DOCKER_HOSTS entry '{id}': endpoint '{endpoint}' uses scheme '{uri.Scheme}' but only 'ssh' is supported. "
                     + "Drop the endpoint field for local hosts, or use 'ssh://user@machine' for remote."
             );
+        }
 
         return string.IsNullOrEmpty(uri.UserInfo) ? uri.Host : $"{uri.UserInfo}@{uri.Host}";
     }
@@ -242,12 +268,17 @@ public sealed class HostPool : IAsyncDisposable
     private static string? ResolveSshKeyPath(string id, string? sshDest, string? sshKey)
     {
         if (string.IsNullOrWhiteSpace(sshKey))
+        {
             return null;
+        }
+
         if (string.IsNullOrEmpty(sshDest))
+        {
             throw new InvalidOperationException(
                 $"SDVD_DOCKER_HOSTS entry '{id}': 'sshKey' is set but 'endpoint' is local. "
                     + "Drop sshKey for local entries."
             );
+        }
 
         // Inline PEM/OpenSSH key material (CI passes the key inside the JSON
         // secret). OpenSSH and PEM private keys begin with a `-----BEGIN` armor
@@ -260,6 +291,7 @@ public sealed class HostPool : IAsyncDisposable
         if (looksInline)
         {
             if (!sshKey.TrimStart().StartsWith("-----BEGIN", StringComparison.Ordinal))
+            {
                 // Inline was intended but the armor isn't at the start (leading
                 // junk / wrong indentation). Fail WITHOUT echoing the key.
                 throw new InvalidOperationException(
@@ -267,6 +299,8 @@ public sealed class HostPool : IAsyncDisposable
                         + "but does not start with '-----BEGIN'. Provide the key with the armor "
                         + "line first and no leading characters. (Key content omitted from this error.)"
                 );
+            }
+
             return MaterializeInlineKey(id, sshKey);
         }
 
@@ -275,10 +309,13 @@ public sealed class HostPool : IAsyncDisposable
         // was launched. Safe to echo `sshKey` here — it is a path, not a key.
         var full = Helpers.ProjectRoot.Resolve(sshKey);
         if (!File.Exists(full))
+        {
             throw new InvalidOperationException(
                 $"SDVD_DOCKER_HOSTS entry '{id}': sshKey '{sshKey}' is neither inline key "
                     + $"material (a '-----BEGIN…' block) nor an existing file (resolved to '{full}')."
             );
+        }
+
         return full;
     }
 
@@ -305,7 +342,9 @@ public sealed class HostPool : IAsyncDisposable
         // at open(2)), so the key bytes are never momentarily group/world-
         // readable in the temp dir — no write-then-chmod window.
         if (File.Exists(path))
+        {
             return path;
+        }
 
         var options = new FileStreamOptions
         {
@@ -313,7 +352,9 @@ public sealed class HostPool : IAsyncDisposable
             Access = FileAccess.Write,
         };
         if (!OperatingSystem.IsWindows())
+        {
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
 
         try
         {
@@ -350,12 +391,18 @@ public sealed class HostPool : IAsyncDisposable
     private static string? ResolveSocketPath(string id, string? sshDest, string? socketPath)
     {
         if (string.IsNullOrWhiteSpace(socketPath))
+        {
             return string.IsNullOrEmpty(sshDest) ? null : null; // remote default applied in DockerHost
+        }
+
         if (string.IsNullOrEmpty(sshDest))
+        {
             throw new InvalidOperationException(
                 $"SDVD_DOCKER_HOSTS entry '{id}': 'socketPath' is set but 'endpoint' is local. "
                     + "Drop socketPath for local entries."
             );
+        }
+
         return socketPath;
     }
 
@@ -460,7 +507,10 @@ public sealed class HostPool : IAsyncDisposable
             foreach (var host in Hosts)
             {
                 if (string.IsNullOrEmpty(host.SshDestination))
+                {
                     continue;
+                }
+
                 try
                 {
                     await tunnels.RegisterHostMasterAsync(
@@ -553,7 +603,9 @@ public sealed class HostPool : IAsyncDisposable
         {
             var port = h.GetCoordinatorPortOrZero();
             if (port > 0)
+            {
                 tunnelMap[h.Id] = port;
+            }
         }
         Environment.SetEnvironmentVariable(
             RunArtifactNames.HostTunnelsEnv,

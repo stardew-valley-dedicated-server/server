@@ -80,7 +80,9 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 }
 
                 if (line == null)
+                {
                     break; // Client disconnected
+                }
 
                 // Oversize lines indicate the child wrote something weird
                 // (raw stacktrace, corrupted framing). Drop with a diagnostic;

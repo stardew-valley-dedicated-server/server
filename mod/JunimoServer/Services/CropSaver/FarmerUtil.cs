@@ -16,9 +16,15 @@ namespace JunimoServer.Services.CropSaver
             foreach (var farmer in Game1.getOnlineFarmers())
             {
                 if (farmer.UniqueMultiplayerID == serverHostId)
+                {
                     continue;
+                }
+
                 if (!farmer.currentLocation.Equals(location))
+                {
                     continue;
+                }
+
                 var farmerDistance = Vector2.Distance(farmer.Tile, tileLocation);
                 if (farmerDistance < closestDistance)
                 {

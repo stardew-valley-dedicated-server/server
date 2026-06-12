@@ -178,7 +178,10 @@ namespace JunimoServer.Services.GameManager
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
             if (!_saveLoadedSinceRequest)
+            {
                 return;
+            }
+
             _saveLoadedSinceRequest = false;
 
             _reloadCompletion?.TrySetResult(true);
@@ -298,9 +301,13 @@ namespace JunimoServer.Services.GameManager
             }
 
             if (_gameLoaderService.HasLoadableSave())
+            {
                 _gameLoaderService.LoadSave();
+            }
             else
+            {
                 _gameCreatorService.CreateNewGameFromConfig();
+            }
         }
 
         private bool HasDurationPassedSinceLastNullCode(TimeSpan duration)

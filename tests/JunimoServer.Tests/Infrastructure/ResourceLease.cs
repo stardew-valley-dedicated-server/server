@@ -76,9 +76,12 @@ public sealed class ResourceLease : IAsyncDisposable
     public async Task<ClientLease> LeaseClientAsync(CancellationToken ct = default)
     {
         if (_managed.IsPoisoned)
+        {
             throw new InvalidOperationException(
                 $"Server {_managed.Key} is poisoned: {_managed.AbortReason}"
             );
+        }
+
         var lease = await _clientPool.LeaseClientAsync(
             _managed.Key,
             ct,
@@ -86,7 +89,10 @@ public sealed class ResourceLease : IAsyncDisposable
         );
         lease.EmitLeased(_testName, _managed.InstanceId);
         if (_managed.InstanceId != null)
+        {
             SetupEventBus.EmitInstanceClientAttached(_managed.InstanceId, lease.InstanceId);
+        }
+
         _activeLeases.Add(lease);
         var shortTest = TestLog.Short(_testName);
         var displayLabel = _requirements.GetDisplayLabel();
@@ -134,7 +140,9 @@ public sealed class ResourceLease : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return;
+        }
 
         // Dispose every active lease even if one throws; rethrow the
         // aggregated errors at the end so infra failures surface loudly
@@ -156,7 +164,9 @@ public sealed class ResourceLease : IAsyncDisposable
         // Release exclusive access before releasing the ref, so waiting tests
         // can proceed as soon as our ref is gone.
         if (_exclusive)
+        {
             _managed.ReleaseExclusive();
+        }
 
         try
         {
@@ -171,9 +181,11 @@ public sealed class ResourceLease : IAsyncDisposable
         }
 
         if (disposeErrors is { Count: > 0 })
+        {
             throw new AggregateException(
                 "One or more ClientLeases failed to dispose.",
                 disposeErrors
             );
+        }
     }
 }

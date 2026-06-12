@@ -54,7 +54,9 @@ namespace JunimoServer.Services.SteamGameServer
         public static void TryAddSteamGameServer()
         {
             if (_serverAdded)
+            {
                 return;
+            }
 
             if (!SteamGameServerService.IsInitialized)
             {

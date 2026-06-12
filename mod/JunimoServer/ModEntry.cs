@@ -39,7 +39,10 @@ namespace JunimoServer
         private void EmitModPhase(string phase)
         {
             if (_bootStopwatch == null)
+            {
                 return;
+            }
+
             var bootMs = _bootStopwatch.ElapsedMilliseconds;
             var phaseMs = bootMs - _previousPhaseMs;
             _previousPhaseMs = bootMs;
@@ -96,7 +99,10 @@ namespace JunimoServer
         private void OnFirstDayStarted(object sender, DayStartedEventArgs e)
         {
             if (_firstDayStartedEmitted)
+            {
                 return;
+            }
+
             _firstDayStartedEmitted = true;
             EmitModPhase("world_ready");
         }

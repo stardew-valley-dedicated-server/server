@@ -750,7 +750,9 @@ public class ChatClient
             {
                 var chat = await GetHistory(historySize);
                 if (chat?.Messages == null)
+                {
                     return false;
+                }
 
                 // Only check messages that arrived after our snapshot
                 var newMessages = chat.Messages.Where(m => m.Seq > seqBefore).ToList();
@@ -950,9 +952,14 @@ public class GameTestClient : IDisposable
     {
         var query = new List<string>();
         if (limit.HasValue)
+        {
             query.Add($"limit={limit.Value}");
+        }
+
         if (clear)
+        {
             query.Add("clear=true");
+        }
 
         var path = query.Count > 0 ? $"/errors?{string.Join("&", query)}" : "/errors";
         return GetAsync<ErrorsResponse>(path, ct);
@@ -984,7 +991,9 @@ public class GameTestClient : IDisposable
     {
         var status = await GetAsync<StatusResponse>("/status");
         if (status == null)
+        {
             return null;
+        }
 
         return new GameStateResult
         {

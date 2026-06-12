@@ -104,9 +104,14 @@ namespace JunimoServer.Services.NetworkTweaks
                 {
                     using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
                     if (token.IsCancellationRequested)
+                    {
                         return;
+                    }
+
                     if (Game1.server == null)
+                    {
                         return;
+                    }
 
                     var excludedIds = _lobbyService?.GetExcludedPlayerIds() ?? new HashSet<long>();
                     foreach (
@@ -132,7 +137,10 @@ namespace JunimoServer.Services.NetworkTweaks
         private void OnDayEnding(object sender, DayEndingEventArgs e)
         {
             if (SDate.Now().IsDayZero())
+            {
                 return;
+            }
+
             _monitor.Log("DayEnding");
 
             _currentNewDayBarrierCancelToken?.Cancel();
@@ -161,9 +169,14 @@ namespace JunimoServer.Services.NetworkTweaks
                 {
                     using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
                     if (token.IsCancellationRequested)
+                    {
                         return;
+                    }
+
                     if (Game1.server == null)
+                    {
                         return;
+                    }
 
                     var readyPlayers = _helper
                         .Reflection.GetMethod(Game1.newDaySync, "barrierPlayers")
@@ -174,7 +187,10 @@ namespace JunimoServer.Services.NetworkTweaks
                     foreach (var key in Game1.otherFarmers.Keys.ToArray())
                     {
                         if (excludedIds.Contains(key))
+                        {
                             continue; // Skip lobby/editor players, excluded from barriers by design
+                        }
+
                         if (!readyPlayers.Contains(key))
                         {
                             Game1.server.kick(key);

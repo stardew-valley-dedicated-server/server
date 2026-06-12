@@ -116,10 +116,16 @@ namespace JunimoServer.Services.Api
                         foreach (var feature in location.terrainFeatures.Values)
                         {
                             if (feature is not HoeDirt dirt)
+                            {
                                 continue;
+                            }
+
                             var crop = dirt.crop;
                             if (crop == null)
+                            {
                                 continue;
+                            }
+
                             crops.Add(
                                 new TestCrop
                                 {
@@ -138,10 +144,16 @@ namespace JunimoServer.Services.Api
                         {
                             var dirt = pot.hoeDirt.Value;
                             if (dirt == null)
+                            {
                                 continue;
+                            }
+
                             var crop = dirt.crop;
                             if (crop == null)
+                            {
                                 continue;
+                            }
+
                             crops.Add(
                                 new TestCrop
                                 {
@@ -419,11 +431,19 @@ namespace JunimoServer.Services.Api
                 }
 
                 if (body.ExtraDays.HasValue)
+                {
                     saverCrop.extraDays = body.ExtraDays.Value;
+                }
+
                 if (body.OwnerId.HasValue)
+                {
                     saverCrop.ownerId = body.OwnerId.Value;
+                }
+
                 if (newDatePlanted != null)
+                {
                     saverCrop.datePlanted = newDatePlanted;
+                }
 
                 result = new TestSaverCropResponse
                 {
@@ -517,16 +537,26 @@ namespace JunimoServer.Services.Api
                     foreach (var building in farm.buildings)
                     {
                         if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+                        {
                             continue;
+                        }
 
                         var cabin = building.GetIndoors<Cabin>();
                         var owner = cabin?.owner;
                         if (owner == null)
+                        {
                             continue;
+                        }
+
                         if (owner.isCustomized.Value)
+                        {
                             continue;
+                        }
+
                         if (!string.IsNullOrEmpty(owner.userID.Value))
+                        {
                             continue;
+                        }
 
                         // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
                         // (the slot's home should already be its cabin; set it to be deterministic).

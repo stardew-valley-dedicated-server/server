@@ -72,7 +72,9 @@ public class PerformanceStats
         // Track history for averaging
         _tickHistory.Enqueue(_lastTickMs);
         if (_tickHistory.Count > TickHistorySize)
+        {
             _tickHistory.Dequeue();
+        }
 
         _avgTickMs = _tickHistory.Average();
         _maxTickMs = Math.Max(_maxTickMs, _lastTickMs);

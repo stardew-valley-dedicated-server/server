@@ -157,11 +157,15 @@ namespace JunimoServer.Services.CropSaver
         private SDate CalculateEarliestPossibleFullyGrownDate(Crop crop, SaverCrop saverCrop)
         {
             if (CalculateFullyGrown(crop))
+            {
                 return SDate.Now();
+            }
 
             var dirt = saverCrop.TryGetCoorespondingDirt();
             if (dirt == null)
+            {
                 return SDate.Now();
+            }
 
             var extraDayForUnwatered = 1;
             if (dirt.state.Value == HoeDirt.watered)
@@ -222,7 +226,9 @@ namespace JunimoServer.Services.CropSaver
             // observation of a crop-bearing HoeDirt, which races against
             // OnSaveLoaded re-populating CropSaverData from disk.
             if (_cropSaverDataLoader.GetSaverCrop(cropLoc.LocationName, cropLoc.Tile) != null)
+            {
                 return;
+            }
 
             var closestFarmer = FarmerUtil.GetClosestFarmer(
                 cropLoc.Location,

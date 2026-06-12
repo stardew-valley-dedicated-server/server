@@ -22,7 +22,9 @@ namespace TestFarmMod
         private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
         {
             if (!e.Name.IsEquivalentTo("Data/AdditionalFarms"))
+            {
                 return;
+            }
 
             e.Edit(asset =>
             {

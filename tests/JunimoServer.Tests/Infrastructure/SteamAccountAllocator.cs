@@ -112,7 +112,9 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         {
             var head = PeekHeadUnderLock(queue);
             if (head.HasValue)
+            {
                 await WaitForHeadHealthyAsync(head.Value, kind, ct);
+            }
         }
 
         return Dequeue(queue, kind, awaitedMs);
@@ -148,6 +150,7 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
             if (ok)
             {
                 if (emittedWait)
+                {
                     InfrastructureEventLog.Emit(
                         "steam_account_allocation_recovered",
                         new
@@ -157,6 +160,8 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
                             waitedMs = startedSw.ElapsedMilliseconds,
                         }
                     );
+                }
+
                 return;
             }
             if (!emittedWait)
@@ -206,9 +211,13 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         }
 
         if (kind == "server")
+        {
             TestLog.Server($"Steam server account {index} allocated");
+        }
         else
+        {
             TestLog.Client($"Steam client account {index} allocated ({remaining} remaining)");
+        }
 
         if (awaitedMs > 0)
         {
@@ -245,7 +254,9 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
     public void Release(int index)
     {
         if (!_knownIndices.Contains(index))
+        {
             return;
+        }
 
         int available;
         bool isServer = index == _serverIndex;

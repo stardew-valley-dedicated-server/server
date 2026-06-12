@@ -12,18 +12,24 @@ public static class TestRunRegistry
     public static void Register(string runId)
     {
         lock (Lock)
+        {
             ActiveRunIds.Add(runId);
+        }
     }
 
     public static void Unregister(string runId)
     {
         lock (Lock)
+        {
             ActiveRunIds.Remove(runId);
+        }
     }
 
     public static bool IsActive(string runId)
     {
         lock (Lock)
+        {
             return ActiveRunIds.Contains(runId);
+        }
     }
 }

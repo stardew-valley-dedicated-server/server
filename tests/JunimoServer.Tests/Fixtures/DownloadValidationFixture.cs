@@ -93,7 +93,10 @@ public class DownloadValidationFixture : IAsyncLifetime
         lock (_abortLock)
         {
             if (_testRunAborted)
+            {
                 return;
+            }
+
             _testRunAborted = true;
             _abortReason = reason;
             Log("", LogLevel.Info);
@@ -191,7 +194,10 @@ public class DownloadValidationFixture : IAsyncLifetime
     private static void Log(string message, LogLevel level = LogLevel.Info)
     {
         if (string.IsNullOrEmpty(message))
+        {
             return;
+        }
+
         var status = level switch
         {
             LogLevel.Success => SetupStepStatus.Completed,

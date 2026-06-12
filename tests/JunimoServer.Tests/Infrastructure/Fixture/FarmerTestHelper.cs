@@ -56,9 +56,13 @@ internal sealed class FarmerTestHelper
     )
     {
         if (breakSession)
+        {
             await _testBase.PersistentSession.BreakSessionAsync();
+        }
         else
+        {
             await _testBase.Connect.EnsureDisconnectedAsync();
+        }
 
         var name = farmerName ?? GenerateName(namePrefix);
 
@@ -77,9 +81,13 @@ internal sealed class FarmerTestHelper
             );
 
         if (assertAuthenticated)
+        {
             _testBase.Connect.AssertAuthenticated(result);
+        }
         else
+        {
             _testBase.Connect.AssertJoinSuccess(result);
+        }
 
         // Track only after join has succeeded — AssertJoinSuccess guarantees UID is set.
         TrackFarmer(name, result.UniqueMultiplayerId);
@@ -103,9 +111,13 @@ internal sealed class FarmerTestHelper
             : await _testBase.Connect.JoinWithRetryAsync(farmerName, ct: ct);
 
         if (assertAuthenticated)
+        {
             _testBase.Connect.AssertAuthenticated(result);
+        }
         else
+        {
             _testBase.Connect.AssertJoinSuccess(result);
+        }
 
         return new ClientConnection(farmerName, result);
     }

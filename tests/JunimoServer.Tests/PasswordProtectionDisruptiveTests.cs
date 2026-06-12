@@ -151,9 +151,12 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 var s = await GameClient.GetState();
                 pollCount++;
                 if (pollCount <= 3 || pollCount % 10 == 0)
+                {
                     Log(
                         $"Poll #{pollCount}: IsConnected={s?.IsConnected}, Location={s?.Location}, IsInGame={s?.IsInGame}"
                     );
+                }
+
                 return s?.IsConnected != true;
             },
             TestTimings.DisconnectedTimeout,
@@ -179,7 +182,9 @@ public class PasswordProtectionDisruptiveTests : TestBase
             {
                 Log($"KICK FAILED: last {chatHistory.Messages.Count} chat messages:");
                 foreach (var msg in chatHistory.Messages.TakeLast(10))
+                {
                     Log($"  {msg.Message}");
+                }
             }
         }
 

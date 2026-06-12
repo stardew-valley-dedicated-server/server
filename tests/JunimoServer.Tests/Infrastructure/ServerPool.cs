@@ -39,7 +39,9 @@ internal sealed class ServerPool
         lock (_lock)
         {
             if (!_instances.TryGetValue(key, out var list))
+            {
                 return null;
+            }
 
             ManagedServer? bestNonGated = null;
             ManagedServer? bestGated = null;
@@ -47,19 +49,28 @@ internal sealed class ServerPool
             foreach (var server in list)
             {
                 if (server.IsPoisoned || !server.IsInitialized)
+                {
                     continue;
+                }
+
                 if (hostId != null && server.Host.Id != hostId)
+                {
                     continue;
+                }
 
                 if (!server.HasExclusiveGate)
                 {
                     if (bestNonGated == null || server.RefCount < bestNonGated.RefCount)
+                    {
                         bestNonGated = server;
+                    }
                 }
                 else
                 {
                     if (bestGated == null || server.RefCount < bestGated.RefCount)
+                    {
                         bestGated = server;
+                    }
                 }
             }
 
@@ -86,11 +97,19 @@ internal sealed class ServerPool
                 foreach (var server in list)
                 {
                     if (server.IsPoisoned || !server.IsInitialized)
+                    {
                         continue;
+                    }
+
                     if (hostId != null && server.Host.Id != hostId)
+                    {
                         continue;
+                    }
+
                     if (server.HasExclusiveGate && server.ExclusiveOwnerClass == callerClass)
+                    {
                         return server;
+                    }
                 }
             }
         }
@@ -113,7 +132,9 @@ internal sealed class ServerPool
         lock (_lock)
         {
             if (!_instances.TryGetValue(key, out var list))
+            {
                 return null;
+            }
 
             ManagedServer? bestNonGated = null;
             ManagedServer? bestGated = null;
@@ -123,9 +144,14 @@ internal sealed class ServerPool
             foreach (var server in list)
             {
                 if (server.IsPoisoned || !server.IsInitialized)
+                {
                     continue;
+                }
+
                 if (hostId != null && server.Host.Id != hostId)
+                {
                     continue;
+                }
 
                 var load = server.RefCount + server.Reservations;
                 if (!server.HasExclusiveGate)
@@ -171,9 +197,15 @@ internal sealed class ServerPool
                 foreach (var server in list)
                 {
                     if (server.IsPoisoned || !server.IsInitialized)
+                    {
                         continue;
+                    }
+
                     if (hostId != null && server.Host.Id != hostId)
+                    {
                         continue;
+                    }
+
                     if (server.HasExclusiveGate && server.ExclusiveOwnerClass == callerClass)
                     {
                         server.ReserveForAcquire();
@@ -205,10 +237,16 @@ internal sealed class ServerPool
         lock (_lock)
         {
             if (!_instances.TryGetValue(key, out var list))
+            {
                 return false;
+            }
+
             var removed = list.Remove(server);
             if (list.Count == 0)
+            {
                 _instances.Remove(key);
+            }
+
             return removed;
         }
     }
@@ -221,11 +259,16 @@ internal sealed class ServerPool
         lock (_lock)
         {
             if (!_instances.TryGetValue(key, out var list))
+            {
                 return false;
+            }
+
             foreach (var server in list)
             {
                 if (!server.IsPoisoned && server.IsInitialized)
+                {
                     return true;
+                }
             }
             return false;
         }
@@ -240,7 +283,10 @@ internal sealed class ServerPool
         lock (_lock)
         {
             if (!_instances.TryGetValue(key, out var list))
+            {
                 return Array.Empty<ManagedServer>();
+            }
+
             return list.ToList();
         }
     }
@@ -257,7 +303,9 @@ internal sealed class ServerPool
             foreach (var (key, list) in _instances)
             {
                 foreach (var server in list)
+                {
                     result.Add((key, server));
+                }
             }
             return result;
         }

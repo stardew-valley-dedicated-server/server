@@ -67,7 +67,9 @@ internal sealed class TestLifecycle
         // Deferred mode: skip acquisition. Test method will call AcquireServerAsync().
         // DeferAcquisition classes are excluded from ServerConfigDiscovery, so no demand tracking needed.
         if (attr.DeferAcquisition)
+        {
             return;
+        }
 
         // Pre-compute server key AND collection name before any await.
         // This ensures: (a) ExpectedServerKey is available for demand
@@ -136,9 +138,11 @@ internal sealed class TestLifecycle
         TestPhaseBreakdown? breakdown = null;
 
         if (activeStartTime == null)
+        {
             LogWarning(
                 "DisposeAsync called without active start time; test may not have acquired a server"
             );
+        }
 
         // If stopOnFail triggered, xUnit cancels the CT for dispatched tests.
         // Skipped (never-dispatched) tests never run DisposeAsync, so their
@@ -451,9 +455,13 @@ internal sealed class TestLifecycle
                     failed: _testBase.TestFailedInternal
                 );
                 if (_testBase.TestFailedInternal)
+                {
                     LogError(doneTree);
+                }
                 else
+                {
                     LogSuccess(doneTree);
+                }
             }
             finally
             {
@@ -568,9 +576,11 @@ internal sealed class TestLifecycle
                         ct: ct
                     );
                     if (!ok && !ct.IsCancellationRequested)
+                    {
                         LogWarning(
                             $"Cleanup disconnect wait timed out; {myUids.Count} farmer(s) still online"
                         );
+                    }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -595,7 +605,10 @@ internal sealed class TestLifecycle
                 {
                     ct.ThrowIfCancellationRequested();
                     if (!await DeleteFarmerAsync(farmer))
+                    {
                         failedCount++;
+                    }
+
                     processed++;
                 }
             }
@@ -637,7 +650,9 @@ internal sealed class TestLifecycle
                 {
                     LogWarning($"{captured.Count} exception(s) occurred during test:");
                     foreach (var ex in captured)
+                    {
                         LogDetail(ex.ToString());
+                    }
                 }
             }
             catch (OperationCanceledException) when (diagCts.IsCancellationRequested)
@@ -664,11 +679,19 @@ internal sealed class TestLifecycle
     private void PoisonOnCleanupFailureIfNeeded(int failedCount)
     {
         if (failedCount <= 0)
+        {
             return;
+        }
+
         if (_testBase.LeaseInternal is not { IsPoisoned: false } lease)
+        {
             return;
+        }
+
         if (ShutdownCoordinator.IsShuttingDown)
+        {
             return;
+        }
 
         lease.Managed.PoisonServer(
             $"DeleteFarmerAsync failed for {failedCount} farmer(s) in cleanup",
@@ -679,7 +702,10 @@ internal sealed class TestLifecycle
     private async Task<bool> DeleteFarmerAsync(TrackedFarmer farmer)
     {
         if (_testBase.LeaseInternal == null)
+        {
             return true;
+        }
+
         var deadline = DateTime.UtcNow + TestTimings.FarmerDeleteTimeout;
         var label = $"'{farmer.Name}' (uid={farmer.Uid})";
 
@@ -753,7 +779,9 @@ internal sealed class TestLifecycle
         var items = new List<(int depth, string dur, string label)>();
 
         if (queued.TotalSeconds >= 1)
+        {
             items.Add((0, FormatQueued(queued), "queued"));
+        }
 
         items.Add((0, FormatSec(test), "test"));
 
@@ -763,9 +791,14 @@ internal sealed class TestLifecycle
             if (at != null)
             {
                 if (at.ScreenshotMs > 0)
+                {
                     items.Add((1, FormatSec(at.ScreenshotMs), "screenshot"));
+                }
+
                 if (at.RecordingMs > 0)
+                {
                     items.Add((1, FormatSec(at.RecordingMs), "recording"));
+                }
             }
         }
 
@@ -775,14 +808,24 @@ internal sealed class TestLifecycle
             if (ct != null)
             {
                 if (ct.DisconnectMs > 0)
+                {
                     items.Add((1, FormatSec(ct.DisconnectMs), "disconnect"));
+                }
+
                 if (ct.FarmerDeleteMs > 0)
+                {
                     items.Add((1, FormatSec(ct.FarmerDeleteMs), "farmerDelete"));
+                }
             }
             if (leaseReleaseMs > 0)
+            {
                 items.Add((1, FormatSec(leaseReleaseMs), "leaseRelease"));
+            }
+
             if (lastKeepDisposeMs > 0)
+            {
                 items.Add((1, FormatSec(lastKeepDisposeMs), "lastKeepDispose"));
+            }
         }
 
         var sb = new System.Text.StringBuilder();
@@ -800,15 +843,21 @@ internal sealed class TestLifecycle
                     break;
                 }
                 if (items[j].depth < items[i].depth)
+                {
                     break;
+                }
             }
             isLast[i] = !foundLaterSibling;
         }
 
         var maxDurLen = 0;
         foreach (var item in items)
+        {
             if (item.dur.Length > maxDurLen)
+            {
                 maxDurLen = item.dur.Length;
+            }
+        }
 
         for (var i = 0; i < items.Count; i++)
         {

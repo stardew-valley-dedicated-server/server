@@ -108,7 +108,9 @@ public class ActionsController
     public WarpResult Warp(string locationName, int tileX, int tileY)
     {
         if (!Context.IsWorldReady)
+        {
             return new WarpResult { Success = false, Error = "Not in a game world" };
+        }
 
         Game1.warpFarmer(locationName, tileX, tileY, Game1.player.FacingDirection);
         return new WarpResult
@@ -129,15 +131,19 @@ public class ActionsController
     public PlacePotResult PlacePot(string locationName, int tileX, int tileY, bool clearObstacles)
     {
         if (!Context.IsWorldReady)
+        {
             return new PlacePotResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new PlacePotResult
             {
                 Success = false,
                 Error =
                     $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         var location = Game1.player.currentLocation;
         var tile = new Vector2(tileX, tileY);
@@ -154,11 +160,13 @@ public class ActionsController
         }
 
         if (location.Objects.ContainsKey(tile))
+        {
             return new PlacePotResult
             {
                 Success = false,
                 Error = $"Tile ({tileX},{tileY}) is occupied",
             };
+        }
 
         location.Objects.Add(tile, new IndoorPot(tile));
         return new PlacePotResult
@@ -186,15 +194,19 @@ public class ActionsController
     )
     {
         if (!Context.IsWorldReady)
+        {
             return new ClearAreaResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new ClearAreaResult
             {
                 Success = false,
                 Error =
                     $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         Game1.player.currentLocation.removeObjectsAndSpawned(tileX, tileY, width, height);
         return new ClearAreaResult
@@ -216,38 +228,50 @@ public class ActionsController
     public PlantCropResult PlantCrop(string itemId, string locationName, int tileX, int tileY)
     {
         if (!Context.IsWorldReady)
+        {
             return new PlantCropResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new PlantCropResult
             {
                 Success = false,
                 Error =
                     $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         var location = Game1.player.currentLocation;
         var tile = new Vector2(tileX, tileY);
 
         HoeDirt? dirt = null;
         if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt td)
+        {
             dirt = td;
+        }
         else if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
+        {
             dirt = pot.hoeDirt.Value;
+        }
 
         if (dirt == null)
+        {
             return new PlantCropResult
             {
                 Success = false,
                 Error = $"No HoeDirt or IndoorPot at ({tileX},{tileY})",
             };
+        }
 
         if (!dirt.plant(itemId, Game1.player, isFertilizer: false))
+        {
             return new PlantCropResult
             {
                 Success = false,
                 Error = $"HoeDirt.plant rejected '{itemId}'",
             };
+        }
 
         return new PlantCropResult
         {

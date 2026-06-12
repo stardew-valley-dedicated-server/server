@@ -52,7 +52,10 @@ internal static class WaitTrace
         var startMs = RunMetadata.RunClock.ElapsedMilliseconds;
         var (snap, snapErr) = SafeSnapshot(snapshot);
         if (EmitStarted)
+        {
             InfrastructureEventLog.EmitWait(name, WaitPhase.Started, null, snap, snapErr);
+        }
+
         try
         {
             await body();
@@ -98,7 +101,10 @@ internal static class WaitTrace
         var startMs = RunMetadata.RunClock.ElapsedMilliseconds;
         var (snap, snapErr) = SafeSnapshot(snapshot);
         if (EmitStarted)
+        {
             InfrastructureEventLog.EmitWait(name, WaitPhase.Started, null, snap, snapErr);
+        }
+
         try
         {
             var result = await body();
@@ -134,7 +140,10 @@ internal static class WaitTrace
     private static (object? value, string? error) SafeSnapshot(Func<object>? f)
     {
         if (f == null)
+        {
             return (null, null);
+        }
+
         try
         {
             return (f(), null);

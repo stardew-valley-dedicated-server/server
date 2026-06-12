@@ -140,7 +140,10 @@ namespace JunimoServer.Services.Diagnostics
         public static void AddPlayer_Postfix(NetFarmerRoot f)
         {
             if (f?.Value == null)
+            {
                 return;
+            }
+
             ModEventLog.Emit(
                 "farmhand_request",
                 new { approved = true, sourceFarmerId = f.Value.UniqueMultiplayerID }
@@ -188,7 +191,10 @@ namespace JunimoServer.Services.Diagnostics
         public static void ServerReadyCheck_Update_Postfix(object __instance)
         {
             if (__instance == null)
+            {
                 return;
+            }
+
             try
             {
                 // All of Id/NumberReady/NumberRequired/IsReady live on the abstract
@@ -245,13 +251,19 @@ namespace JunimoServer.Services.Diagnostics
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
                 );
                 if (prop != null)
+                {
                     return prop.GetValue(instance);
+                }
+
                 var field = t.GetField(
                     name,
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
                 );
                 if (field != null)
+                {
                     return field.GetValue(instance);
+                }
+
                 t = t.BaseType;
             }
             return null;

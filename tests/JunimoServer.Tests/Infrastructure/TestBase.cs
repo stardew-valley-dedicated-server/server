@@ -162,7 +162,10 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     private void MarkActiveAndArmBudget()
     {
         if (_budgetArmed)
+        {
             return;
+        }
+
         _budgetArmed = true;
 
         _activeStartTime = DateTime.UtcNow;
@@ -180,7 +183,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // KeepConnected). Lease may be null for dispose-during-init paths;
         // skip silently in that case.
         if (Lease != null && _testDisplayName != null)
+        {
             _runningTestToken = Lease.Managed.RegisterRunningTest(_testDisplayName);
+        }
 
         _budgetCts?.CancelAfter(TestTimeout);
     }
@@ -196,7 +201,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     )
     {
         if (Lease != null)
+        {
             throw new InvalidOperationException("Server already acquired.");
+        }
 
         var testName = _testDisplayName ?? GetType().Name;
 
@@ -236,7 +243,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         }
 
         if (Lease.IsPoisoned)
+        {
             throw new TestRunAbortedException("Server poisoned");
+        }
 
         // Register deferred-acquisition tests (not registered in InitializeAsync)
         if (_collectionName == null)
@@ -261,9 +270,14 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
                     ct: ct
                 );
                 if (status == null)
+                {
                     return new PollingHelper.LongPollResult(false, since);
+                }
+
                 if (!string.IsNullOrEmpty(status.FarmName))
+                {
                     return new PollingHelper.LongPollResult(true, status.Version);
+                }
                 // IsReady matched but FarmName empty (degraded snapshot) — advance
                 // cursor and wait for the next snapshot.
                 return new PollingHelper.LongPollResult(false, status.Version);
@@ -290,18 +304,22 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
                 "Server not acquired. Call AcquireServerAsync() first."
             );
         if (_primaryClientLease != null)
+        {
             return _primaryClientLease.Client;
+        }
 
         var lease = _primaryClientLease = await serverLease.LeaseClientAsync(ct);
 
         // LeaseClientAsync emits instance_leased with the lease's original testName.
         // Re-emit with the current test's name so UsedInstances is correct after BreakSessionAsync.
         if (_testDisplayName != null)
+        {
             SetupEventBus.EmitInstanceLeased(
                 lease.InstanceId,
                 _testDisplayName,
                 serverLease.Managed?.InstanceId
             );
+        }
 
         // Mark client container for video recording clip extraction
         if (RecordingPolicy.IsEnabled)
@@ -358,7 +376,10 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected async Task<ClientLease> LeaseClientAsync(CancellationToken ct = default)
     {
         if (Lease == null)
+        {
             throw new InvalidOperationException("Server not acquired.");
+        }
+
         var lease = await Lease.LeaseClientAsync(ct);
 
         // Mark additional client container for video recording clip extraction
@@ -585,9 +606,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     )
     {
         if (Lease == null)
+        {
             throw new InvalidOperationException(
                 "No server lease. Call AcquireServerAsync() first."
             );
+        }
 
         await Lease.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, TestCt);
 
@@ -604,9 +627,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected async Task ReloadServerAsync()
     {
         if (Lease == null)
+        {
             throw new InvalidOperationException(
                 "No server lease. Call AcquireServerAsync() first."
             );
+        }
 
         await Lease.ReloadAsync(TestCt);
 
@@ -672,7 +697,10 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected void ThrowIfServerError(OperationCanceledException ex, string? context = null)
     {
         if (Lease?.Server == null)
+        {
             throw ex;
+        }
+
         var serverErrors = Lease.Server.Errors;
         if (serverErrors.Count > 0)
         {
@@ -695,7 +723,10 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     protected void ThrowIfServerError()
     {
         if (Lease?.Server == null)
+        {
             return;
+        }
+
         var serverErrors = Lease.Server.Errors;
         if (serverErrors.Count > 0)
         {
@@ -894,7 +925,9 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     internal static string? ExtractMethodName(string? fullName)
     {
         if (string.IsNullOrEmpty(fullName))
+        {
             return null;
+        }
 
         // Strip parameters first. Dots inside parameter values (e.g. "Game.SpawnMonstersAtNight")
         // would otherwise be matched by LastIndexOf('.') instead of the namespace separator.
@@ -908,10 +941,16 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     private static string? ParamsHash(string? displayName)
     {
         if (displayName == null)
+        {
             return null;
+        }
+
         var paren = displayName.IndexOf('(');
         if (paren < 0)
+        {
             return null;
+        }
+
         var bytes = System.Text.Encoding.UTF8.GetBytes(displayName[paren..]);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..8];
     }

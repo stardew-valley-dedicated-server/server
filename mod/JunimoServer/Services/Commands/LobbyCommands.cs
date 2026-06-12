@@ -127,7 +127,9 @@ namespace JunimoServer.Services.Commands
             };
 
             foreach (var line in lines)
+            {
                 helper.SendPrivateMessage(playerId, line);
+            }
         }
 
         private static void HandleCreate(

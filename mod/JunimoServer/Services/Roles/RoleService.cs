@@ -147,11 +147,15 @@ namespace JunimoServer.Services.Roles
         {
             var adminSteamIds = _settings.AdminSteamIds;
             if (adminSteamIds == null || adminSteamIds.Length == 0)
+            {
                 return;
+            }
 
             // Already an admin, skip
             if (IsPlayerAdmin(playerId))
+            {
                 return;
+            }
 
             // Use provided Steam ID (SDR path) or resolve via reflection (Galaxy path)
             steamId ??= GetPlayerSteamId(playerId);
@@ -178,7 +182,9 @@ namespace JunimoServer.Services.Roles
         private static string GetPlayerSteamId(long playerId)
         {
             if (Game1.server is not GameServer gameServer)
+            {
                 return null;
+            }
 
             // Access internal 'servers' field via reflection
             var serversField = typeof(GameServer).GetField(
@@ -186,13 +192,17 @@ namespace JunimoServer.Services.Roles
                 BindingFlags.NonPublic | BindingFlags.Instance
             );
             if (serversField?.GetValue(gameServer) is not List<Server> servers)
+            {
                 return null;
+            }
 
             foreach (var server in servers)
             {
                 var userId = server.getUserId(playerId);
                 if (!string.IsNullOrEmpty(userId))
+                {
                     return userId;
+                }
             }
 
             return null;

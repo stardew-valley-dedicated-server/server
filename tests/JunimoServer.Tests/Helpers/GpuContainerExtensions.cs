@@ -23,7 +23,9 @@ public static class GpuContainerExtensions
     )
     {
         if (!host.HasGpu)
+        {
             return builder;
+        }
 
         return builder
             .WithEnvironment("NVIDIA_VISIBLE_DEVICES", "all")

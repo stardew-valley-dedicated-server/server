@@ -29,11 +29,15 @@ public class CoopController
     {
         // Check if it's a submenu of TitleMenu
         if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is CoopMenu coopSub)
+        {
             return coopSub;
+        }
 
         // Check if it's the active menu directly
         if (Game1.activeClickableMenu is CoopMenu coopDirect)
+        {
             return coopDirect;
+        }
 
         return null;
     }
@@ -44,10 +48,14 @@ public class CoopController
     private FarmhandMenu? GetFarmhandMenu()
     {
         if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is FarmhandMenu farmhandSub)
+        {
             return farmhandSub;
+        }
 
         if (Game1.activeClickableMenu is FarmhandMenu farmhandDirect)
+        {
             return farmhandDirect;
+        }
 
         return null;
     }
@@ -61,10 +69,14 @@ public class CoopController
             Game1.activeClickableMenu is TitleMenu
             && TitleMenu.subMenu is TitleTextInputMenu inputSub
         )
+        {
             return inputSub;
+        }
 
         if (Game1.activeClickableMenu is TitleTextInputMenu inputDirect)
+        {
             return inputDirect;
+        }
 
         return null;
     }

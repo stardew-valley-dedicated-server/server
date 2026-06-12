@@ -19,7 +19,10 @@ public class CapturedException
     {
         var result = $"[{Source}] {ExceptionType ?? "Exception"}: {Message}";
         if (!string.IsNullOrEmpty(StackTrace))
+        {
             result += $"\n{StackTrace}";
+        }
+
         return result;
     }
 }
@@ -122,13 +125,17 @@ public class ExceptionMonitor
     public async Task CheckGameClientErrorsAsync(CancellationToken ct = default)
     {
         if (!_options.MonitorGameClient)
+        {
             return;
+        }
 
         try
         {
             var errors = await _gameClient.GetErrors(ct: ct);
             if (errors?.Errors == null || errors.Errors.Count == 0)
+            {
                 return;
+            }
 
             lock (_lock)
             {
@@ -136,7 +143,9 @@ public class ExceptionMonitor
                 {
                     // Skip if we've already seen this error
                     if (_seenClientErrorIds.Contains(error.Id))
+                    {
                         continue;
+                    }
 
                     _seenClientErrorIds.Add(error.Id);
 
@@ -270,7 +279,9 @@ public class ExceptionMonitor
         await CheckGameClientErrorsAsync();
 
         if (!_options.AbortOnException)
+        {
             return;
+        }
 
         ExceptionMonitorException? toThrow = null;
         lock (_lock)

@@ -88,14 +88,18 @@ public sealed class GameDataDistributor : IDisposable
         await EnsureHelperImageAsync(_localClient, hostId: "local", ct);
         var localPopulated = await IsVolumePopulatedAsync(_localClient, ct);
         if (!localPopulated)
+        {
             throw new InvalidOperationException(
                 $"Local volume '{_gameDataVolumeName}' is not populated "
                     + $"(no '{ProbePath}' inside). Run 'make setup' before launching tests."
             );
+        }
 
         var remotes = hosts.Where(h => !string.IsNullOrEmpty(h.SshDestination)).ToList();
         if (remotes.Count == 0)
+        {
             return new List<TransferResult>();
+        }
 
         using var gate = new SemaphoreSlim(MaxConcurrentTransfers, MaxConcurrentTransfers);
         var tasks = remotes
@@ -198,10 +202,12 @@ public sealed class GameDataDistributor : IDisposable
                 // caught and triggers a retry rather than being silently observed
                 // by attempt 1.
                 if (!await IsVolumePopulatedAsync(host.ApiClient, ct))
+                {
                     throw new InvalidOperationException(
                         $"Volume on {host.Id} still empty after {FormatMb(bytes)} transfer; "
                             + "check remote disk space and busybox logs."
                     );
+                }
 
                 InfrastructureEventLog.Emit(
                     "game_data_transfer_completed",
@@ -428,10 +434,15 @@ public sealed class GameDataDistributor : IDisposable
             lock (_lock)
             {
                 if (_firstError != null)
+                {
                     return;
+                }
+
                 var msg = value.Error?.Message;
                 if (!string.IsNullOrEmpty(msg))
+                {
                     _firstError = msg;
+                }
             }
         }
 
@@ -443,7 +454,9 @@ public sealed class GameDataDistributor : IDisposable
                 err = _firstError;
             }
             if (err != null)
+            {
                 throw new InvalidOperationException($"Docker daemon pull error on {hostId}: {err}");
+            }
         }
     }
 
@@ -574,7 +587,9 @@ public sealed class GameDataDistributor : IDisposable
     {
         using var ticker = new PeriodicTimer(TimeSpan.FromSeconds(1));
         while (await ticker.WaitForNextTickAsync(ct))
+        {
             progress.PollByteProgress();
+        }
     }
 
     // Invariant culture — these strings land in CI logs and the WebUI; a locale's
@@ -623,7 +638,10 @@ public sealed class GameDataDistributor : IDisposable
         {
             var n = _inner.Read(buffer, offset, count);
             if (n > 0)
+            {
                 Interlocked.Add(ref _bytesRead, n);
+            }
+
             return n;
         }
 
@@ -634,7 +652,10 @@ public sealed class GameDataDistributor : IDisposable
         {
             var n = await _inner.ReadAsync(buffer, cancellationToken);
             if (n > 0)
+            {
                 Interlocked.Add(ref _bytesRead, n);
+            }
+
             return n;
         }
 
@@ -689,7 +710,9 @@ public sealed class GameDataDistributor : IDisposable
                 var bytesAdvanced = bytesSent - _lastEmitBytes >= EmitBytesThreshold;
                 var heartbeat = _lastEmit.Elapsed >= StatusEmitThreshold;
                 if (!bytesAdvanced && !heartbeat)
+                {
                     return;
+                }
 
                 var rateMbPerSec =
                     _startedAt.Elapsed.TotalSeconds > 0

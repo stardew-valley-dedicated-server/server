@@ -132,7 +132,9 @@ public static class Logger
         {
             var end = message.IndexOf(']');
             if (end > 0)
+            {
                 return message[..(end + 1)];
+            }
         }
         return "";
     }

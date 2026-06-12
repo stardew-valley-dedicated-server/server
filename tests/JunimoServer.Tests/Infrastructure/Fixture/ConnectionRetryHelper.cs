@@ -115,7 +115,9 @@ internal sealed class ConnectionRetryHelper
                 );
                 var primaryClientLease = _testBase.PrimaryClientLeaseInternal;
                 if (primaryClientLease != null)
+                {
                     SetupEventBus.EmitInstanceConnected(primaryClientLease.InstanceId);
+                }
             }
             return result;
         }
@@ -194,7 +196,9 @@ internal sealed class ConnectionRetryHelper
     {
         var connection = _testBase.ConnectionInternalOrNull;
         if (connection == null)
+        {
             return true;
+        }
 
         try
         {
@@ -212,10 +216,13 @@ internal sealed class ConnectionRetryHelper
     public void AssertConnectionSuccess(ConnectionResult result)
     {
         if (!result.Success)
+        {
             _testBase.RecordTestFailureInternal(
                 $"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}",
                 "connect"
             );
+        }
+
         Assert.True(
             result.Success,
             $"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}"
@@ -225,10 +232,13 @@ internal sealed class ConnectionRetryHelper
     public void AssertJoinSuccess(JoinWorldResult result)
     {
         if (!result.Success)
+        {
             _testBase.RecordTestFailureInternal(
                 $"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}",
                 "connect"
             );
+        }
+
         Assert.True(
             result.Success,
             $"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}"

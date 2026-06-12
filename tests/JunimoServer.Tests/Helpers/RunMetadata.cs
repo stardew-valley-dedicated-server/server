@@ -66,7 +66,9 @@ public static class RunMetadata
         // same in-process state (test assemblies hosted in-process). Honor
         // the existing run rather than racing a fresh one.
         if (IsInitialized)
+        {
             return;
+        }
 
         _clock.Start();
 
@@ -125,9 +127,11 @@ public static class RunMetadata
     )
     {
         if (!IsInitialized)
+        {
             throw new InvalidOperationException(
                 $"{nameof(WriteRunMetadata)} called before {nameof(BeginRun)}."
             );
+        }
 
         var runDir = TestArtifacts.RunDir;
 
@@ -215,7 +219,9 @@ public static class RunMetadata
         {
             var val = Environment.GetEnvironmentVariable(key);
             if (val != null)
+            {
                 result[key] = val;
+            }
         }
         return result;
     }
@@ -262,7 +268,10 @@ public static class RunMetadata
             };
             using var process = Process.Start(psi);
             if (process == null)
+            {
                 return null;
+            }
+
             var output = process.StandardOutput.ReadToEnd().Trim();
             process.WaitForExit(5000);
             return process.ExitCode == 0 ? output : null;

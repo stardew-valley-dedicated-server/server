@@ -64,7 +64,10 @@ public static class EmergencyCleanup
         lock (Lock)
         {
             if (_registered)
+            {
                 return;
+            }
+
             _registered = true;
             AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
@@ -172,7 +175,9 @@ public static class EmergencyCleanup
         // burns 5–10s for no gain. Abort paths leave the flag clear so the
         // safety net runs.
         if (!_skipBulkSweep)
+        {
             BulkCleanupLabeledResources();
+        }
     }
 
     /// <summary>
@@ -212,11 +217,13 @@ public static class EmergencyCleanup
             finally
             {
                 if (dispose)
+                {
                     try
                     {
                         client.Dispose();
                     }
                     catch { }
+                }
             }
         }
     }
@@ -231,7 +238,10 @@ public static class EmergencyCleanup
         if (hosts != null && hosts.Count > 0)
         {
             foreach (var (client, isRemote) in hosts)
+            {
                 yield return (client, isRemote, false);
+            }
+
             yield break;
         }
 
@@ -244,7 +254,9 @@ public static class EmergencyCleanup
         }
         catch { }
         if (local != null)
+        {
             yield return (local, false, true);
+        }
     }
 
     private static void BulkRemoveOnHost(

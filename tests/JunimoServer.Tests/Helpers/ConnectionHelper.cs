@@ -180,12 +180,14 @@ public class ConnectionHelper
     {
         var displayName = TestIdentityContext.Current?.DisplayName;
         if (displayName != null)
+        {
             SetupEventBus.EmitTestAnnotation(
                 displayName,
                 AnnotationLevel.Trace,
                 AnnotationSource.Broker,
                 $"[ConnectionHelper] {message}"
             );
+        }
     }
 
     private static void EmitDiagnostic(string eventName, object? data) =>
@@ -194,7 +196,10 @@ public class ConnectionHelper
     private async Task CaptureCheckpointIfEnabled(string label)
     {
         if (OnCheckpointScreenshot == null)
+        {
             return;
+        }
+
         try
         {
             await OnCheckpointScreenshot(label);
@@ -246,7 +251,9 @@ public class ConnectionHelper
                 {
                     var freshCode = await _serverApi.GetInviteCode();
                     if (!string.IsNullOrEmpty(freshCode?.InviteCode))
+                    {
                         inviteCode = freshCode.InviteCode;
+                    }
                 }
             }
 
@@ -257,7 +264,10 @@ public class ConnectionHelper
                 cancellationToken
             );
             if (result.Success)
+            {
                 return result;
+            }
+
             errors.Add($"Attempt {attempt}: {result.Error}");
         }
 
@@ -283,58 +293,73 @@ public class ConnectionHelper
         {
             var navigateResult = await _gameClient.Navigate("coopmenu");
             if (navigateResult?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Navigate to coop menu: {navigateResult?.Error ?? "failed"}",
                     attempt
                 );
+            }
 
             var menuWait = await _gameClient.Wait.ForMenu("CoopMenu", TestTimings.MenuWaitTimeout);
             if (menuWait?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Wait for CoopMenu: {menuWait?.Error ?? "timeout"}",
                     attempt
                 );
+            }
 
             var tabResult = await _gameClient.Coop.Tab(0);
             if (tabResult?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Switch to JOIN tab: {tabResult?.Error ?? "failed"}",
                     attempt
                 );
+            }
 
             var openResult = await _gameClient.Coop.OpenInviteCodeMenu();
             if (openResult?.Success != true)
             {
                 var error = $"Open invite code menu: {openResult?.Error ?? "failed"}";
                 if (openResult?.Error != null && IsNonRetryableError(openResult.Error))
+                {
                     return ConnectionResult.Failed(
                         $"{error}. This usually means Steam is not running or not logged in.",
                         attempt
                     );
+                }
+
                 return ConnectionResult.Failed(error, attempt);
             }
 
             var textInputWait = await _gameClient.Wait.ForTextInput(TestTimings.TextInputTimeout);
             if (textInputWait?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Wait for text input: {textInputWait?.Error ?? "timeout"}",
                     attempt
                 );
+            }
 
             var submitResult = await _gameClient.Coop.SubmitInviteCode(inviteCode);
             if (submitResult?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Submit invite code: {submitResult?.Error ?? "failed"}",
                     attempt
                 );
+            }
 
             var farmhandTimeout = _options.FarmhandMenuTimeout ?? TestTimings.FarmhandMenuTimeout;
             var farmhandWait = await _gameClient.Wait.ForFarmhands(farmhandTimeout);
             if (farmhandWait?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Wait for farmhands: {farmhandWait?.Error ?? "timeout"}",
                     attempt
                 );
+            }
 
             FarmhandsResponse? farmhands = null;
             var slotsReady = await PollingHelper.WaitUntilAsync(
@@ -349,7 +374,9 @@ public class ConnectionHelper
             );
 
             if (!slotsReady || farmhands == null)
+            {
                 return ConnectionResult.Failed("Load farmhand slots: timeout", attempt);
+            }
 
             Log($"Connected ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})");
             await CaptureCheckpointIfEnabled("after_connect");
@@ -405,7 +432,10 @@ public class ConnectionHelper
                 cancellationToken
             );
             if (result.Success)
+            {
                 return result;
+            }
+
             errors.Add($"Attempt {attempt}: {result.Error}");
         }
 
@@ -433,18 +463,22 @@ public class ConnectionHelper
         {
             var joinResult = await _gameClient.Coop.ConnectLanDirect(fullAddress);
             if (joinResult?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Direct LAN connect ({fullAddress}): {joinResult?.Error ?? "failed"}",
                     attempt
                 );
+            }
 
             var farmhandTimeout = _options.FarmhandMenuTimeout ?? TestTimings.FarmhandMenuTimeout;
             var farmhandWait = await _gameClient.Wait.ForFarmhands(farmhandTimeout);
             if (farmhandWait?.Success != true)
+            {
                 return ConnectionResult.Failed(
                     $"Wait for farmhands: {farmhandWait?.Error ?? "timeout"}",
                     attempt
                 );
+            }
 
             FarmhandsResponse? farmhands = null;
             var slotsReady = await PollingHelper.WaitUntilAsync(
@@ -459,7 +493,9 @@ public class ConnectionHelper
             );
 
             if (!slotsReady || farmhands == null)
+            {
                 return ConnectionResult.Failed("Load farmhand slots: timeout", attempt);
+            }
 
             Log(
                 $"Connected via LAN ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
@@ -514,7 +550,9 @@ public class ConnectionHelper
                 {
                     var freshCode = await _serverApi.GetInviteCode();
                     if (!string.IsNullOrEmpty(freshCode?.InviteCode))
+                    {
                         currentInviteCode = freshCode.InviteCode;
+                    }
                 }
             },
             cancellationToken
@@ -612,7 +650,9 @@ public class ConnectionHelper
                         }
                     );
                     if (attempt == _options.MaxAttempts)
+                    {
                         break;
+                    }
                     // Fall through to retry logic below
                 }
                 else
@@ -629,7 +669,9 @@ public class ConnectionHelper
                     );
 
                     if (joinResult != null)
+                    {
                         return joinResult;
+                    }
 
                     // CompleteJoinAsync returned null = retryable failure
                     lastError = completeError;
@@ -663,10 +705,12 @@ public class ConnectionHelper
                     }
                 );
                 if (attempt == _options.MaxAttempts)
+                {
                     return JoinWorldResult.Failed(
                         $"Join failed after {_options.MaxAttempts} attempts: {lastError}",
                         attempt
                     );
+                }
             }
 
             // Return to title before retry
@@ -677,7 +721,9 @@ public class ConnectionHelper
                 await EnsureDisconnectedAsync();
                 await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
                 if (onRetry != null)
+                {
                     await onRetry();
+                }
             }
             catch (OperationCanceledException)
             {
@@ -723,7 +769,9 @@ public class ConnectionHelper
         // Find appropriate slot
         var targetSlot = PickSlot(farmhands, farmerName, preferExistingFarmer);
         if (targetSlot == null)
+        {
             return (null, "No available farmhand slots");
+        }
 
         int selectedSlotIndex = targetSlot.Index;
         EmitDiagnostic(
@@ -750,19 +798,25 @@ public class ConnectionHelper
                 cancellationToken
             );
             if (!characterCreated)
+            {
                 return (null, charError);
+            }
         }
         else
         {
             var selectResult = await _gameClient.Farmhands.Select(targetSlot.Index);
             if (selectResult?.Success != true)
+            {
                 return (null, $"Select farmhand slot: {selectResult?.Error ?? "failed"}");
+            }
         }
 
         // Wait for world to be ready
         var worldWait = await _gameClient.Wait.ForWorldReady(TestTimings.WorldReadyTimeout);
         if (worldWait?.Success != true)
+        {
             return (null, $"Wait for world ready: {worldWait?.Error ?? "timeout"}");
+        }
 
         await CaptureCheckpointIfEnabled("after_join");
 
@@ -815,9 +869,11 @@ public class ConnectionHelper
                 )
                 {
                     if (loginAttempt > 1)
+                    {
                         Log(
                             $"[Auth] Retrying !login (attempt {loginAttempt}/{TestTimings.AuthLoginMaxAttempts})..."
                         );
+                    }
 
                     try
                     {
@@ -969,7 +1025,9 @@ public class ConnectionHelper
                 s.IsCustomized && s.Name.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
             );
             if (existing != null)
+            {
                 return existing;
+            }
         }
 
         var available = farmhands.Farmhands.Where(s => !s.IsCustomized).ToList();
@@ -1002,9 +1060,11 @@ public class ConnectionHelper
             cancellationToken.ThrowIfCancellationRequested();
 
             if (bounce > 0)
+            {
                 Log(
                     $"[Join] Server bounced back to farmhand selection (attempt {bounce}/{maxBounceRetries}), re-selecting slot..."
                 );
+            }
 
             var bounceElapsedMs = (long)(DateTime.UtcNow - methodStart).TotalMilliseconds;
             Log(
@@ -1035,15 +1095,19 @@ public class ConnectionHelper
                 }
             );
             if (selectResult?.Success != true)
+            {
                 return (false, $"Select farmhand slot: {selectResult?.Error ?? "failed"}");
+            }
 
             // Poll for either CharacterCustomization (success) or FarmhandMenu reappearing (bounce-back)
             var remaining = deadline - DateTime.UtcNow;
             if (remaining <= TimeSpan.Zero)
+            {
                 return (
                     false,
                     $"Wait for character menu: deadline exceeded after {maxBounceRetries} bounce-back(s)"
                 );
+            }
 
             // Race the test-client's two server-side wait endpoints — character
             // customization (success) vs. farmhand-menu reappearing (bounce-back).
@@ -1161,13 +1225,17 @@ public class ConnectionHelper
                     favoriteThing
                 );
                 if (customizeResult?.Success != true)
+                {
                     return (false, $"Customize character: {customizeResult?.Error ?? "failed"}");
+                }
 
                 await Task.Delay(TestTimings.CharacterCreationSyncDelay, cancellationToken);
 
                 var confirmResult = await _gameClient.Character.Confirm();
                 if (confirmResult?.Success != true)
+                {
                     return (false, $"Confirm character: {confirmResult?.Error ?? "failed"}");
+                }
 
                 EmitDiagnostic("character_confirmed", new { slotIndex = currentSlot.Index });
                 return (true, null);
@@ -1189,9 +1257,12 @@ public class ConnectionHelper
                 if (repicked != null)
                 {
                     if (repicked.Index != currentSlot.Index)
+                    {
                         Log(
                             $"[Join] Re-picked slot {repicked.Index} (was {currentSlot.Index}) after bounce-back"
                         );
+                    }
+
                     currentSlot = repicked;
                 }
             }

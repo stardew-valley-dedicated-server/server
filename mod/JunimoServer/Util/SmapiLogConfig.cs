@@ -52,9 +52,13 @@ namespace JunimoServer.Util
                 }
 
                 if (enabled)
+                {
                     hashSet.Add(modId);
+                }
                 else
+                {
                     hashSet.Remove(modId);
+                }
 
                 monitor.Log(
                     $"SMAPI ForceVerboseLogging updated: {modId}={enabled}",

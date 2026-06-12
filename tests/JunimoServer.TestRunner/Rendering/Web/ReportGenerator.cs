@@ -82,13 +82,18 @@ public sealed class ReportGenerator
         {
             var candidate = Path.Combine(dir, "tests", "test-ui");
             if (Directory.Exists(Path.Combine(candidate, "src")))
+            {
                 return candidate;
+            }
+
             dir = Path.GetDirectoryName(dir);
         }
 
         var cwdCandidate = Path.GetFullPath("tests/test-ui");
         if (Directory.Exists(Path.Combine(cwdCandidate, "src")))
+        {
             return cwdCandidate;
+        }
 
         return null;
     }
@@ -188,7 +193,9 @@ public sealed class ReportGenerator
     {
         var src = Path.Combine(_spaDistPath, fileName);
         if (File.Exists(src))
+        {
             File.Copy(src, Path.Combine(reportDir, fileName), overwrite: true);
+        }
     }
 
     // Replaces the source index.html's <!-- META:BEGIN/END --> block with per-run
@@ -254,7 +261,10 @@ public sealed class ReportGenerator
     {
         var git = GitSuffix(s);
         if (s.Status == "aborted")
+        {
             return $"⚪ Run aborted{git}";
+        }
+
         var icon = s.Failed > 0 ? "❌" : "✅";
         return s.Failed > 0
             ? $"{icon} {s.Failed} failed of {s.TotalTests}{git}"
@@ -265,16 +275,25 @@ public sealed class ReportGenerator
     {
         var parts = new List<string> { $"{s.Passed} passed", $"{s.Failed} failed" };
         if (s.Skipped > 0)
+        {
             parts.Add($"{s.Skipped} skipped");
+        }
+
         if (s.Canceled > 0)
+        {
             parts.Add($"{s.Canceled} canceled");
+        }
+
         return $"{string.Join(" · ", parts)} of {s.TotalTests} tests{GitSuffix(s)}";
     }
 
     private static string GitSuffix(RunSummary s)
     {
         if (s.GitBranch == null && s.GitSha == null)
+        {
             return "";
+        }
+
         var sha = s.GitSha is { Length: >= 7 } ? s.GitSha[..7] : s.GitSha;
         var branch = s.GitBranch ?? "?";
         return sha != null ? $" — {branch} @ {sha}" : $" — {branch}";
@@ -295,7 +314,9 @@ public sealed class ReportGenerator
     )
     {
         if (Directory.Exists(mockArtifactsDir))
+        {
             Directory.Delete(mockArtifactsDir, recursive: true);
+        }
 
         return CopyArtifacts(
             snapshotJson,
@@ -341,7 +362,10 @@ public sealed class ReportGenerator
                 var hash = Convert.ToHexString(SHA256.HashData(bytes))[..16].ToLowerInvariant();
                 var ext = Path.GetExtension(resolvedPath).ToLowerInvariant();
                 if (string.IsNullOrEmpty(ext))
+                {
                     ext = ".png";
+                }
+
                 var fileName = $"{hash}{ext}";
 
                 File.WriteAllBytes(Path.Combine(targetDir, fileName), bytes);
@@ -392,11 +416,17 @@ public sealed class ReportGenerator
             foreach (var collection in collections.EnumerateArray())
             {
                 if (!collection.TryGetProperty("classes", out var classes))
+                {
                     continue;
+                }
+
                 foreach (var cls in classes.EnumerateArray())
                 {
                     if (!cls.TryGetProperty("tests", out var tests))
+                    {
                         continue;
+                    }
+
                     foreach (var test in tests.EnumerateArray())
                     {
                         CollectStringProp(test, "screenshotPath", paths);
@@ -411,7 +441,9 @@ public sealed class ReportGenerator
         if (root.TryGetProperty("instances", out var instances))
         {
             foreach (var instance in instances.EnumerateArray())
+            {
                 CollectStringProp(instance, "recordingPath", paths);
+            }
         }
 
         return paths;
@@ -430,7 +462,9 @@ public sealed class ReportGenerator
         {
             var value = prop.GetString();
             if (!string.IsNullOrEmpty(value))
+            {
                 paths.Add(value);
+            }
         }
     }
 
@@ -443,7 +477,9 @@ public sealed class ReportGenerator
             !test.TryGetProperty("output", out var outputProp)
             || outputProp.ValueKind != JsonValueKind.Array
         )
+        {
             return;
+        }
 
         foreach (var entry in outputProp.EnumerateArray())
         {
@@ -456,7 +492,9 @@ public sealed class ReportGenerator
             {
                 var path = pathProp.GetString();
                 if (!string.IsNullOrEmpty(path))
+                {
                     paths.Add(path);
+                }
             }
         }
     }
@@ -470,7 +508,9 @@ public sealed class ReportGenerator
             !test.TryGetProperty("recordings", out var recProp)
             || recProp.ValueKind != JsonValueKind.Array
         )
+        {
             return;
+        }
 
         foreach (var entry in recProp.EnumerateArray())
         {
@@ -481,7 +521,9 @@ public sealed class ReportGenerator
             {
                 var path = pathProp.GetString();
                 if (!string.IsNullOrEmpty(path))
+                {
                     paths.Add(path);
+                }
             }
         }
     }
@@ -490,15 +532,21 @@ public sealed class ReportGenerator
     {
         // Try as-is (absolute paths)
         if (File.Exists(artifactPath))
+        {
             return artifactPath;
+        }
 
         if (testResultsPath == null)
+        {
             return null;
+        }
 
         // Try relative to TestResults
         var relative = Path.Combine(testResultsPath, artifactPath);
         if (File.Exists(relative))
+        {
             return relative;
+        }
 
         return null;
     }
@@ -507,7 +555,9 @@ public sealed class ReportGenerator
     {
         var assetsSource = Path.Combine(_spaDistPath, "assets");
         if (!Directory.Exists(assetsSource))
+        {
             return;
+        }
 
         var assetsDest = Path.Combine(reportDir, "assets");
         Directory.CreateDirectory(assetsDest);
@@ -518,7 +568,10 @@ public sealed class ReportGenerator
             var destPath = Path.Combine(assetsDest, relativePath);
             var destDir = Path.GetDirectoryName(destPath);
             if (destDir != null)
+            {
                 Directory.CreateDirectory(destDir);
+            }
+
             File.Copy(file, destPath, overwrite: true);
         }
     }

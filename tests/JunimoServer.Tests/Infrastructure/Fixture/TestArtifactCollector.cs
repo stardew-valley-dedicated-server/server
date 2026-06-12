@@ -59,6 +59,7 @@ internal sealed class TestArtifactCollector
             var label = testFailed ? "failure" : "result";
             var screenshotPath = await CaptureScreenshotAsync(label);
             if (testFailed)
+            {
                 InfrastructureEventLog.Emit(
                     "test_error",
                     new
@@ -68,6 +69,8 @@ internal sealed class TestArtifactCollector
                         screenshotPath,
                     }
                 );
+            }
+
             screenshotMs = phaseSw.ElapsedMilliseconds;
         }
 
@@ -81,7 +84,10 @@ internal sealed class TestArtifactCollector
     {
         var lease = _testBase.LeaseInternal;
         if (lease?.Server?.Container == null)
+        {
             return null;
+        }
+
         var method = TestBase.ExtractMethodNameInternal(_displayName)!;
         var hash = TestBase.ParamsHashInternal(_displayName);
         var testMethod = hash != null ? $"{method}_{hash}" : method;
@@ -202,7 +208,9 @@ internal sealed class TestArtifactCollector
         }
 
         if (serverPath != null)
+        {
             InfrastructureEventLog.Emit("screenshot_captured", new { label, path = serverPath });
+        }
 
         return serverPath;
     }
@@ -227,7 +235,9 @@ internal sealed class TestArtifactCollector
     internal async Task FinalizeRecordingAsync(bool testFailed)
     {
         if (_recordingOrchestrator == null)
+        {
             return;
+        }
 
         var recordingTestFailed =
             testFailed || TestContext.Current?.TestState?.Result == TestResult.Failed;

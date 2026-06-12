@@ -50,7 +50,10 @@ public sealed class TestRunArtifactWriter
         lock (_lock)
         {
             if (_written)
+            {
                 return;
+            }
+
             if (_runDir == null || _runId == null)
             {
                 // Run identity never set. Either the parent process aborted before
@@ -125,7 +128,9 @@ public sealed class TestRunArtifactWriter
             activeDurationTotalMs += t.DurationMs;
             queueDurationTotalMs += t.QueueDurationMs;
             if (t.Status != "failed")
+            {
                 continue;
+            }
 
             var methodName = ExtractMethodFromTestName(t.DisplayName);
             var testDirName = $"{t.ClassName}.{methodName}";
@@ -223,7 +228,9 @@ public sealed class TestRunArtifactWriter
             && v.RendererFailures is null
             && v.MissingArtifacts is null
         )
+        {
             return null;
+        }
 
         var anyDataLoss =
             (v.DroppedEventsByWorker?.Values.Any(n => n > 0) ?? false)
@@ -263,23 +270,43 @@ public sealed class TestRunArtifactWriter
             };
 
             if (t.Status == "failed" && t.ErrorMessage != null)
+            {
                 testObj["message"] = t.ErrorMessage;
+            }
 
             // CTRF `extra` carve-out for our additions: failure metadata, server
             // context, and the lifecycle phase breakdown.
             var extra = new Dictionary<string, object>();
             if (t.Phase != null)
+            {
                 extra["phase"] = t.Phase;
+            }
+
             if (t.FailureCategory != null)
+            {
                 extra["failureCategory"] = t.FailureCategory;
+            }
+
             if (t.ErrorPreview != null)
+            {
                 extra["errorPreview"] = t.ErrorPreview;
+            }
+
             if (t.ReproCommand != null)
+            {
                 extra["reproCommand"] = t.ReproCommand;
+            }
+
             if (t.ServerKey != null)
+            {
                 extra["serverKey"] = t.ServerKey;
+            }
+
             if (t.ServerInstanceId != null)
+            {
                 extra["serverInstanceId"] = t.ServerInstanceId;
+            }
+
             if (t.Lifecycle is { } lc)
             {
                 extra["testBodyMs"] = lc.TestMs;
@@ -289,11 +316,17 @@ public sealed class TestRunArtifactWriter
                 extra["leaseReleaseMs"] = lc.LeaseReleaseMs;
             }
             if (t.SkipReason != null)
+            {
                 extra["skipReason"] = t.SkipReason;
+            }
+
             if (extra.Count > 0)
+            {
                 testObj["extra"] = extra;
+            }
 
             if (t.ScreenshotPath != null)
+            {
                 testObj["attachments"] = new[]
                 {
                     new
@@ -303,6 +336,7 @@ public sealed class TestRunArtifactWriter
                         contentType = "image/png",
                     },
                 };
+            }
 
             tests.Add(testObj);
         }
@@ -396,17 +430,23 @@ public sealed class TestRunArtifactWriter
     private void WriteRunMetadataMerged(RunArtifactView v)
     {
         if (v.WorkerRunMetadata is null || v.WorkerRunMetadata.Count == 0)
+        {
             return;
+        }
 
         // Use worker 0 as the canonical envelope (schema version, git, env are
         // all coordinator-side properties; any worker's view of them is equivalent).
         var canonical = v.WorkerRunMetadata[0];
         if (canonical.ValueKind != JsonValueKind.Object)
+        {
             return;
+        }
 
         var merged = new Dictionary<string, object?>();
         foreach (var prop in canonical.EnumerateObject())
+        {
             merged[prop.Name] = prop.Value.Clone();
+        }
 
         // Override the runDir to the merged dir (each worker's payload had its
         // own per-worker runDir).
@@ -421,7 +461,10 @@ public sealed class TestRunArtifactWriter
     private void WriteLatestPointer()
     {
         if (_outputDir == null || _runDir == null)
+        {
             return;
+        }
+
         var latestPath = Path.Combine(_outputDir, RunArtifactNames.LatestPointer);
         File.WriteAllText(latestPath, _runDir);
     }

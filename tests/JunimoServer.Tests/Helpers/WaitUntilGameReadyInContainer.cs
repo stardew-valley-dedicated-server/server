@@ -72,10 +72,12 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
     )
     {
         if (useLongPoll && requireGalaxyResolved)
+        {
             throw new ArgumentException(
                 "useLongPoll requires requireGalaxyResolved=false: server /health doesn't carry Galaxy fields.",
                 nameof(useLongPoll)
             );
+        }
 
         _port = port;
         _label = label;
@@ -214,7 +216,9 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
             if (tickCount > 0 && !isFrozen && galaxyResolved)
             {
                 if (_requireGalaxyResolved)
+                {
                     _onGalaxyStateResolved?.Invoke(galaxyState);
+                }
 
                 SetupEventBus.EmitStep(
                     "Setup",

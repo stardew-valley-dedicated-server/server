@@ -117,7 +117,10 @@ namespace JunimoServer.Services.GameCreator
         public string DisplayName()
         {
             if (Id != null)
+            {
                 return NameKey(Id) == NameKey(MeadowlandsFarmId) ? "Meadowlands" : Id;
+            }
+
             var index = Index ?? 0;
             return VanillaName(index)
                 ?? (index == MeadowlandsIndex ? "Meadowlands" : index.ToString());
@@ -177,9 +180,13 @@ namespace JunimoServer.Services.GameCreator
         )
         {
             if (value.Id != null)
+            {
                 writer.WriteValue(value.Id);
+            }
             else
+            {
                 writer.WriteValue(value.Index ?? 0);
+            }
         }
     }
 }

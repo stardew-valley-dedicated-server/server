@@ -159,11 +159,19 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
         DateTime timestamp = DateTime.UtcNow;
 
         if (root.TryGetProperty("instanceId", out var iid))
+        {
             instanceId = iid.GetString() ?? "";
+        }
+
         if (root.TryGetProperty("hostId", out var hid))
+        {
             hostId = hid.GetString() ?? "";
+        }
+
         if (root.TryGetProperty("timestamp", out var ts) && ts.ValueKind == JsonValueKind.String)
+        {
             timestamp = ts.GetDateTime();
+        }
 
         // Reconstruct InstanceStatsData by reading each property. Missing fields
         // fall back to record defaults (0 for value types, null for nullables).
@@ -231,13 +239,17 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
     private static void WriteOptDouble(Utf8JsonWriter w, string name, double? v)
     {
         if (v.HasValue)
+        {
             w.WriteNumber(name, v.Value);
+        }
     }
 
     private static void WriteOptInt(Utf8JsonWriter w, string name, int? v)
     {
         if (v.HasValue)
+        {
             w.WriteNumber(name, v.Value);
+        }
     }
 
     private static double GetDouble(JsonElement el, string p) =>

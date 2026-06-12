@@ -127,7 +127,9 @@ public sealed class CIRenderer : RendererBase
                 // Additional message lines (e.g. inner exception details)
                 var messageLines = f.Message.Split('\n');
                 for (var i = 1; i < messageLines.Length && i < 5; i++)
+                {
                     _out.WriteLine($"   {Red(messageLines[i].TrimEnd())}");
+                }
 
                 _out.WriteLine();
 
@@ -136,20 +138,28 @@ public sealed class CIRenderer : RendererBase
                 {
                     var sanitized = SanitizeStackTrace(f.StackTrace);
                     foreach (var line in sanitized.Split('\n').Take(10))
+                    {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
+                    }
+
                     _out.WriteLine();
                 }
 
                 // Screenshot path
                 if (!string.IsNullOrEmpty(f.ScreenshotPath))
+                {
                     _out.WriteLine($"   Screenshot: {PathDisplay.ScrubMessage(f.ScreenshotPath)}");
+                }
 
                 // Test output (ConnectionHelper logs, etc.), only for failures
                 if (!string.IsNullOrWhiteSpace(fOutput))
                 {
                     _out.WriteLine($"   {Dim("\u2500\u2500 Output \u2500\u2500")}");
                     foreach (var line in fOutput.Split('\n').Take(20))
+                    {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
+                    }
+
                     _out.WriteLine();
                 }
             }
@@ -166,9 +176,15 @@ public sealed class CIRenderer : RendererBase
         var parts = new List<string>();
 
         if (e.Failed > 0)
+        {
             parts.Add(RedBold($"{e.Failed} failed"));
+        }
+
         if (totalSkipped > 0)
+        {
             parts.Add(Yellow($"{totalSkipped} skipped"));
+        }
+
         parts.Add(Green($"{e.Passed} passed"));
 
         var countsStr = string.Join($" {Dim("|")} ", parts);
@@ -186,17 +202,23 @@ public sealed class CIRenderer : RendererBase
         {
             // If a test spinner is active, clear its line before writing the phase header
             if (_isTTY && _spinnerLabel != null && !_spinnerIsSetup)
+            {
                 _out.Write("\r\x1b[2K");
+            }
 
             _out.WriteLine();
             _out.WriteLine($" {Cyan("\u25C8")} {Bold(e.PhaseName)}");
 
             if (_isGitHubActions)
+            {
                 _out.WriteLine($"::group::Setup: {e.PhaseName}");
+            }
 
             // Redraw the test spinner if it was active
             if (_isTTY && _spinnerLabel != null && !_spinnerIsSetup)
+            {
                 _out.Write(BuildSpinnerLine(_spinnerFrame));
+            }
 
             _out.Flush();
         }
@@ -213,7 +235,10 @@ public sealed class CIRenderer : RendererBase
                 // The check is intentionally outside the lock. StartSpinner acquires
                 // it internally, and the worst case is a benign no-op race.
                 if (_spinnerLabel == null || _spinnerIsSetup)
+                {
                     StartSpinner($"{e.StepName}{details}", "   ", isSetup: true);
+                }
+
                 break;
 
             case SetupStepStatus.InProgress:
@@ -224,7 +249,9 @@ public sealed class CIRenderer : RendererBase
                     lock (_writeLock)
                     {
                         if (_spinnerIsSetup)
+                        {
                             _spinnerLabel = $"{e.StepName}{details}";
+                        }
                     }
                 }
                 break;
@@ -268,7 +295,9 @@ public sealed class CIRenderer : RendererBase
         }
 
         if (_isGitHubActions)
+        {
             _out.WriteLine("::endgroup::");
+        }
     }
 
     // ── Tests ──
@@ -310,7 +339,10 @@ public sealed class CIRenderer : RendererBase
         lock (_writeLock)
         {
             if (_spinnerLabel == null)
+            {
                 return;
+            }
+
             _spinnerFrame = (_spinnerFrame + 1) % SpinnerFrames.Length;
             _out.Write(BuildSpinnerLine(_spinnerFrame));
             _out.Flush();
@@ -330,7 +362,9 @@ public sealed class CIRenderer : RendererBase
 
         var label = _spinnerLabel ?? "";
         if (maxLabelLen > 4 && label.Length > maxLabelLen)
+        {
             label = string.Concat(label.AsSpan(0, maxLabelLen - 1), "\u2026"); // ellipsis
+        }
 
         return $"\r\x1b[2K{_spinnerIndent}{Yellow(SpinnerFrames[frame])} {label}";
     }
@@ -367,7 +401,9 @@ public sealed class CIRenderer : RendererBase
     private bool StopSetupSpinnerLocked()
     {
         if (_spinnerLabel == null || !_spinnerIsSetup)
+        {
             return false;
+        }
 
         StopSpinnerLocked();
         return true;
@@ -384,14 +420,20 @@ public sealed class CIRenderer : RendererBase
         {
             // Was a setup spinner; clear its line and write the result
             if (_isTTY)
+            {
                 _out.Write("\r\x1b[2K");
+            }
+
             _out.WriteLine(line);
         }
         else if (_spinnerLabel != null)
         {
             // A test spinner is active; write result above it then redraw
             if (_isTTY)
+            {
                 _out.Write("\r\x1b[2K");
+            }
+
             _out.WriteLine(line);
             _out.Write(BuildSpinnerLine(_spinnerFrame));
         }
@@ -412,7 +454,9 @@ public sealed class CIRenderer : RendererBase
         // per-test timeout (Outcome == "failed"), sync the counter so the
         // stdout summary tally agrees with summary.json.
         if (e.Outcome == "failed")
+        {
             ReclassifyCanceledAsFailed(e.DisplayName);
+        }
     }
 
     protected override void OnTestPassedCore(TestPassedEvent e)
@@ -425,7 +469,9 @@ public sealed class CIRenderer : RendererBase
         {
             StopSpinnerLocked();
             if (_isTTY)
+            {
                 _out.Write("\r\x1b[2K");
+            }
 
             _out.WriteLine(line);
 
@@ -433,7 +479,9 @@ public sealed class CIRenderer : RendererBase
             if (Verbose && !string.IsNullOrWhiteSpace(output))
             {
                 foreach (var ol in output.Split('\n'))
+                {
                     _out.WriteLine($"     {Dim(ol.TrimEnd())}");
+                }
             }
 
             _out.Flush();
@@ -449,7 +497,9 @@ public sealed class CIRenderer : RendererBase
         {
             StopSpinnerLocked();
             if (_isTTY)
+            {
                 _out.Write("\r\x1b[2K");
+            }
 
             _out.WriteLine(
                 $"   {RedBold("\u2717")} {shortTest}  {Dim(FormatDuration(e.Duration))}"
@@ -474,7 +524,9 @@ public sealed class CIRenderer : RendererBase
             if (Verbose && !string.IsNullOrWhiteSpace(output))
             {
                 foreach (var line in output.Split('\n'))
+                {
                     _out.WriteLine($"     {Dim(line.TrimEnd())}");
+                }
             }
 
             _out.Flush();
@@ -489,7 +541,9 @@ public sealed class CIRenderer : RendererBase
         {
             StopSpinnerLocked();
             if (_isTTY)
+            {
                 _out.Write("\r\x1b[2K");
+            }
 
             _out.WriteLine($"   {Yellow("\u25CB")} {shortTest}  {Dim(e.Reason)}");
             _out.Flush();
@@ -502,7 +556,9 @@ public sealed class CIRenderer : RendererBase
     {
         // Trace level only renders when verbose.
         if (e.Level == AnnotationLevel.Trace && !Verbose)
+        {
             return;
+        }
 
         var (icon, colorize) = e.Level switch
         {
@@ -522,12 +578,16 @@ public sealed class CIRenderer : RendererBase
         lock (_writeLock)
         {
             if (_isTTY && _spinnerLabel != null)
+            {
                 _err.Write("\r\x1b[2K");
+            }
 
             _err.WriteLine(line);
 
             if (_isTTY && _spinnerLabel != null)
+            {
                 _out.Write(BuildSpinnerLine(_spinnerFrame));
+            }
 
             _err.Flush();
         }
@@ -539,11 +599,15 @@ public sealed class CIRenderer : RendererBase
     {
         // In non-verbose mode: suppress everything except errors
         if (!Verbose && e.Level < LogLevel.Error)
+        {
             return;
+        }
 
         // In verbose mode: show Info+ (same as old behavior)
         if (Verbose && e.Level < LogLevel.Info)
+        {
             return;
+        }
 
         var prefix = e.Source switch
         {
@@ -560,14 +624,22 @@ public sealed class CIRenderer : RendererBase
         {
             // If a spinner is active on TTY, clear its line before writing the diagnostic
             if (_isTTY && _spinnerLabel != null)
+            {
                 _out.Write("\r\x1b[2K");
+            }
 
             if (e.Level >= LogLevel.Error)
+            {
                 _err.WriteLine(Red(line));
+            }
             else if (e.Level >= LogLevel.Warning)
+            {
                 _out.WriteLine(Yellow(line));
+            }
             else
+            {
                 _out.WriteLine(Dim(line));
+            }
 
             // Redraw the spinner line if it was active
             if (_isTTY && _spinnerLabel != null)
@@ -586,7 +658,9 @@ public sealed class CIRenderer : RendererBase
         {
             var sanitized = SanitizeStackTrace(e.StackTrace);
             foreach (var line in sanitized.Split('\n').Take(10))
+            {
                 _err.WriteLine(Dim($"   {line.TrimEnd()}"));
+            }
         }
 
         if (_isGitHubActions)
@@ -619,7 +693,9 @@ public sealed class CIRenderer : RendererBase
     private void EmitClassHeaderIfNew(string className)
     {
         if (_currentClassName == className)
+        {
             return;
+        }
 
         // Close previous class group
         EndClassGroup();
@@ -649,7 +725,10 @@ public sealed class CIRenderer : RendererBase
     private static string FirstLine(string text)
     {
         if (string.IsNullOrEmpty(text))
+        {
             return text;
+        }
+
         var idx = text.IndexOfAny(['\r', '\n']);
         return idx >= 0 ? text[..idx] : text;
     }

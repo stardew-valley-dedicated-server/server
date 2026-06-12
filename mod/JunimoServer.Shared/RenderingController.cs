@@ -50,7 +50,10 @@ namespace JunimoServer.Shared
         public void SetFps(int fps)
         {
             if (fps < 0)
+            {
                 fps = 0;
+            }
+
             var previous = _currentFps;
             _currentFps = fps;
 
@@ -65,7 +68,10 @@ namespace JunimoServer.Shared
             else
             {
                 if (_originalDisplayDevice != null)
+                {
                     Game1.mapDisplayDevice = _originalDisplayDevice;
+                }
+
                 _renderDisabledNoticeNeeded = false;
                 _shouldDrawFrame = true;
                 _monitor.Log(
@@ -91,13 +97,22 @@ namespace JunimoServer.Shared
             if (!_shouldDrawFrame)
             {
                 if (_renderDisabledNoticeNeeded)
+                {
                     return true; // PASSTHROUGH 1 — notice frame
+                }
+
                 if (Game1.showingEndOfNightStuff)
+                {
                     return true; // PASSTHROUGH 2 — save window
+                }
+
                 return false;
             }
             if (_currentFps == 0)
+            {
                 return true; // save forced a draw; skip throttle
+            }
+
             return FpsThrottle.ShouldDraw(_currentFps); // _currentFps >= 1 here
         }
 
@@ -109,7 +124,10 @@ namespace JunimoServer.Shared
         public bool ShouldGameDraw(Game game)
         {
             if (!_renderDisabledNoticeNeeded)
+            {
                 return true;
+            }
+
             _renderDisabledNoticeNeeded = false;
             try
             {

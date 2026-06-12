@@ -70,7 +70,9 @@ public class FarmerCreationTests : TestBase
         {
             Log($"Server farmhands after disconnect ({serverFarmhands.Farmhands.Count}):");
             foreach (var fh in serverFarmhands.Farmhands)
+            {
                 Log($"  '{fh.Name}' customized={fh.IsCustomized}");
+            }
         }
 
         if (!farmerPersisted)
@@ -101,9 +103,11 @@ public class FarmerCreationTests : TestBase
         // Always log slot details for diagnostics
         Log($"Farmhand slots after reconnect ({reconnectFarmhands.Farmhands.Count}):");
         foreach (var slot in reconnectFarmhands.Farmhands)
+        {
             Log(
                 $"  Slot {slot.Index}: name='{slot.Name}' customized={slot.IsCustomized} empty={slot.IsEmpty}"
             );
+        }
 
         var ourFarmer = reconnectFarmhands.Farmhands.FirstOrDefault(s =>
             s.Name == client.FarmerName && s.IsCustomized
@@ -145,7 +149,9 @@ public class FarmerCreationTests : TestBase
 
         LogTrace($"Farmhand slots ({connectResult.Farmhands.Farmhands.Count}):");
         foreach (var slot in connectResult.Farmhands.Farmhands)
+        {
             LogTrace($"  Slot {slot.Index}: '{slot.Name}' (customized: {slot.IsCustomized})");
+        }
     }
 
     /// <summary>

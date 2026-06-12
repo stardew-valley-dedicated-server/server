@@ -744,9 +744,14 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         catch (Exception ex)
         {
             if (IsContainerDeadError(ex))
+            {
                 MarkContainerDead();
+            }
             else
+            {
                 _log($"[Recording] WARNING: Error stopping in {_displayLabel}: {ex.Message}");
+            }
+
             _state = RecorderState.Stopped;
         }
     }
@@ -772,7 +777,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     )
     {
         if (_containerDead)
+        {
             return new ExtractionResult(null, null);
+        }
+
         if (_state != RecorderState.Recording)
         {
             _log(
@@ -896,9 +904,11 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             // the extraction shell script will wait for segment rotation (finalization) using
             // local grep on segments.csv inside the container. No C# polling needed.
             if (needsActive && finalized.Count == 0)
+            {
                 _log(
                     $"[Recording] {_displayLabel}: active-only clip, rotation wait embedded in extraction"
                 );
+            }
 
             var segDesc = needsActive
                 ? $"{finalized.Count} finalized + active segment"
@@ -928,7 +938,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             );
 
             if (result.HostPath != null)
+            {
                 return result;
+            }
 
             // Extraction failed. Re-read segments: the active segment may have rotated
             // (become finalized) since our initial discovery, so a fresh cover set may
@@ -981,11 +993,16 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         catch (Exception ex)
         {
             if (IsContainerDeadError(ex))
+            {
                 MarkContainerDead();
+            }
             else
+            {
                 _log(
                     $"[Recording] WARNING: Live clip extraction error in {_displayLabel}: {ex.GetType().Name}: {ex.Message}"
                 );
+            }
+
             InfrastructureEventLog.Emit(
                 "recording_clip_failed",
                 new
@@ -1012,7 +1029,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     public async Task ConvertToMp4Async(CancellationToken ct = default)
     {
         if (_containerDead)
+        {
             return;
+        }
 
         _log($"[Recording] {_displayLabel}: concatenating TS segments -> MP4 (stream copy)");
         var sw = Stopwatch.StartNew();
@@ -1108,7 +1127,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
 
             var dir = Path.GetDirectoryName(hostDestPath);
             if (dir != null)
+            {
                 Directory.CreateDirectory(dir);
+            }
+
             await File.WriteAllBytesAsync(hostDestPath, bytes, ct);
             InfrastructureEventLog.Emit(
                 "recording_full_retrieved",
@@ -1209,7 +1231,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         string? activeFile = null;
 
         if (_containerDead)
+        {
             return (finalized, activeFile);
+        }
 
         try
         {
@@ -1235,7 +1259,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                     continue;
                 }
                 if (string.IsNullOrEmpty(line))
+                {
                     continue;
+                }
 
                 if (!inSegList)
                 {
@@ -1265,7 +1291,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 {
                     var fileName = Path.GetFileName(line);
                     if (fileName.StartsWith("seg_") && !csvFileNames.Contains(fileName))
+                    {
                         nonCsvFiles.Add(fileName);
+                    }
                 }
             }
 
@@ -1352,13 +1380,17 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         foreach (var seg in segments)
         {
             if (seg.EndTime > (startEpoch - slack) && seg.StartTime < (endEpoch + slack))
+            {
                 finalized.Add(($"{RecDir}/{seg.FileName}", seg.StartTime));
+            }
         }
 
         var needsActive = activeFile != null && (endEpoch + slack) > activeStartTime;
         var all = new List<(string containerPath, double segStart)>(finalized);
         if (needsActive)
+        {
             all.Add(($"{RecDir}/{activeFile}", activeStartTime));
+        }
 
         all.Sort((a, b) => a.segStart.CompareTo(b.segStart));
         return (finalized, all, needsActive);
@@ -1509,7 +1541,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
 
             var dir = Path.GetDirectoryName(hostDestPath);
             if (dir != null)
+            {
                 Directory.CreateDirectory(dir);
+            }
+
             await File.WriteAllBytesAsync(hostDestPath, clipBytes);
             InfrastructureEventLog.Emit(
                 "recording_clip_extracted",
@@ -1765,7 +1800,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     private void LogStderr(string stderr)
     {
         if (string.IsNullOrWhiteSpace(stderr))
+        {
             return;
+        }
 
         var meaningful = stderr
             .Split('\n')
@@ -1783,7 +1820,9 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             .ToList();
 
         if (meaningful.Count > 0)
+        {
             _log($"[Recording] ffmpeg stderr ({_displayLabel}): {string.Join(" | ", meaningful)}");
+        }
     }
 
     /// <summary>
@@ -1794,7 +1833,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     private async Task<bool> SignalFfmpeg(string signal, CancellationToken ct = default)
     {
         if (_containerDead)
+        {
             return false;
+        }
+
         try
         {
             var result = await _container.ExecAsync(
@@ -1813,9 +1855,12 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 var stderr = result.Stderr.Trim();
                 // "No such process" is expected during StopAsync escalation (process already exited)
                 if (!stderr.Contains("No such process"))
+                {
                     _log(
                         $"[Recording] WARNING: kill -{signal} failed in {_displayLabel}: {stderr}"
                     );
+                }
+
                 return false;
             }
             return true;
@@ -1823,7 +1868,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         catch (Exception ex)
         {
             if (IsContainerDeadError(ex))
+            {
                 MarkContainerDead();
+            }
+
             return false;
         }
     }
@@ -1831,7 +1879,10 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     private async Task TryExec(string command)
     {
         if (_containerDead)
+        {
             return;
+        }
+
         try
         {
             await _container.ExecAsync(new[] { "sh", "-c", command });
@@ -1839,11 +1890,15 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         catch (Exception ex)
         {
             if (IsContainerDeadError(ex))
+            {
                 MarkContainerDead();
+            }
             else
+            {
                 _log(
                     $"[Recording] TryExec failed in {_displayLabel}: {ex.GetType().Name}: {ex.Message} (cmd: {command})"
                 );
+            }
         }
     }
 

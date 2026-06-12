@@ -42,7 +42,9 @@ public sealed class LLMRenderer : RendererBase
         // and folded the outcome into TestRunState; this is the renderer-side
         // counter sync gated by RendererBase's _classifiedAsCanceled set.
         if (e.Outcome == "failed")
+        {
             ReclassifyCanceledAsFailed(e.DisplayName);
+        }
     }
 
     public override void OnTestAnnotation(TestAnnotationEvent e)
@@ -159,7 +161,9 @@ public sealed class LLMRenderer : RendererBase
     protected override void OnTestPassedCore(TestPassedEvent e)
     {
         if (!Verbose)
+        {
             return;
+        }
 
         WriteJson(
             new
@@ -209,7 +213,9 @@ public sealed class LLMRenderer : RendererBase
         // In verbose mode, include warnings too; otherwise only errors
         var minLevel = Verbose ? LogLevel.Warning : LogLevel.Error;
         if (e.Level < minLevel)
+        {
             return;
+        }
 
         WriteJson(
             new

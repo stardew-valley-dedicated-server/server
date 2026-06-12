@@ -388,7 +388,10 @@ public static class InfrastructureEventLog
         lock (_lock)
         {
             if (_asyncWriter != null)
+            {
                 return;
+            }
+
             var path = Path.Combine(TestArtifacts.GetDiagnosticsDir(), fileName);
             // Disk preflight + consumer thread spawn happen inside Open. A failure
             // here (disk full, permission denied) throws synchronously and aborts
@@ -590,7 +593,9 @@ public static class InfrastructureEventLog
                 && ev.TryGetValue(out string? name)
                 && !string.IsNullOrEmpty(name)
             )
+            {
                 eventType = name;
+            }
         }
         catch (Exception ex)
         {

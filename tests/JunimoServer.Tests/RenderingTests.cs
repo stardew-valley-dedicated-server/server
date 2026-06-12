@@ -241,7 +241,9 @@ public class RenderingTests : TestBase
     {
         var result = await ServerApi.GetScreenshot(TestContext.Current.CancellationToken);
         if (result?.Success != true || result.Base64Png == null)
+        {
             return (0, null);
+        }
 
         var bytes = Convert.FromBase64String(result.Base64Png);
         using var image = Image.Load<Rgba32>(bytes);
@@ -277,7 +279,10 @@ public class RenderingTests : TestBase
     private static int SampleTestOverlayBrightness(Image<Rgba32> image)
     {
         if (PanelOrigin >= image.Width || PanelOrigin >= image.Height)
+        {
             return 0;
+        }
+
         var pixel = image[PanelOrigin, PanelOrigin];
         return (pixel.R + pixel.G + pixel.B) / 3;
     }

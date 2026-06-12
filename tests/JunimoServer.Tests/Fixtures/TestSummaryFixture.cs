@@ -115,7 +115,10 @@ public class TestSummaryFixture : IAsyncLifetime
         lock (_abortLock)
         {
             if (_testRunAborted)
+            {
                 return;
+            }
+
             _testRunAborted = true;
             _abortReason = reason;
         }
@@ -188,16 +191,25 @@ public class TestSummaryFixture : IAsyncLifetime
                 requireUnsetDuration: true
             );
             if (record == null)
+            {
                 return;
+            }
 
             record.Duration = activeDuration;
             if (queueDuration != null)
+            {
                 record.QueueDuration = queueDuration;
+            }
+
             if (breakdown != null)
+            {
                 record.Breakdown = breakdown;
+            }
 
             if (record.Outcome == TestOutcome.Running)
+            {
                 record.Outcome = TestOutcome.Passed;
+            }
         }
     }
 
@@ -217,7 +229,10 @@ public class TestSummaryFixture : IAsyncLifetime
         {
             var record = FindRecord(collectionName, className, testName);
             if (record == null)
+            {
                 return;
+            }
+
             record.ServerKey = serverKey;
             record.ServerInstanceId = serverInstanceId;
         }
@@ -243,7 +258,9 @@ public class TestSummaryFixture : IAsyncLifetime
         {
             var record = FindRecord(collectionName, className, testName);
             if (record == null)
+            {
                 return;
+            }
 
             if (record.Outcome != TestOutcome.Running)
             {
@@ -260,9 +277,14 @@ public class TestSummaryFixture : IAsyncLifetime
             record.ExceptionType = exceptionType;
             record.FailureCategory = failureCategory;
             if (serverKey != null)
+            {
                 record.ServerKey = serverKey;
+            }
+
             if (serverInstanceId != null)
+            {
                 record.ServerInstanceId = serverInstanceId;
+            }
         }
     }
 
@@ -276,7 +298,9 @@ public class TestSummaryFixture : IAsyncLifetime
         {
             var record = FindRecord(collectionName, className, testName);
             if (record == null)
+            {
                 return;
+            }
 
             if (record.Outcome != TestOutcome.Running)
             {
@@ -298,17 +322,28 @@ public class TestSummaryFixture : IAsyncLifetime
     )
     {
         if (!_testsByCollection.TryGetValue(collectionName, out var testsByClass))
+        {
             return null;
+        }
+
         if (!testsByClass.TryGetValue(className, out var tests))
+        {
             return null;
+        }
 
         var name = testName ?? "(unknown)";
         for (var i = tests.Count - 1; i >= 0; i--)
         {
             if (tests[i].Name != name)
+            {
                 continue;
+            }
+
             if (requireUnsetDuration && tests[i].Duration != null)
+            {
                 continue;
+            }
+
             return tests[i];
         }
         return null;
@@ -330,7 +365,10 @@ public class TestSummaryFixture : IAsyncLifetime
         {
             var r = FindRecord(collectionName, className, testName);
             if (r == null)
+            {
                 return null;
+            }
+
             return new TestEnrichmentSnapshot(
                 Outcome: r.Outcome,
                 Error: r.Error,
@@ -490,7 +528,10 @@ public class TestSummaryFixture : IAsyncLifetime
     private void FinalizeRun()
     {
         if (_finalized)
+        {
             return;
+        }
+
         _finalized = true;
 
         // Sweep records still in Running. Only happens on hard process kill where
@@ -499,11 +540,17 @@ public class TestSummaryFixture : IAsyncLifetime
         lock (_testLock)
         {
             foreach (var testsByClass in _testsByCollection.Values)
-            foreach (var classTests in testsByClass.Values)
-            foreach (var test in classTests)
             {
-                if (test.Outcome == TestOutcome.Running)
-                    test.Outcome = TestOutcome.Canceled;
+                foreach (var classTests in testsByClass.Values)
+                {
+                    foreach (var test in classTests)
+                    {
+                        if (test.Outcome == TestOutcome.Running)
+                        {
+                            test.Outcome = TestOutcome.Canceled;
+                        }
+                    }
+                }
             }
         }
 
@@ -542,9 +589,15 @@ public class TestSummaryFixture : IAsyncLifetime
     private void EmergencyFlush()
     {
         if (_finalized)
+        {
             return;
+        }
+
         if (!_testRunAborted)
+        {
             SetAborted("emergency-shutdown");
+        }
+
         FinalizeRun();
     }
 
@@ -553,17 +606,23 @@ public class TestSummaryFixture : IAsyncLifetime
     private static string ClassifyFailure(string? exceptionType)
     {
         if (string.IsNullOrEmpty(exceptionType))
+        {
             return "crash";
+        }
 
         if (exceptionType.StartsWith("Xunit.Sdk.") || exceptionType.Contains("AssertException"))
+        {
             return "assertion";
+        }
 
         if (
             exceptionType.Contains("TimeoutException")
             || exceptionType.Contains("OperationCanceledException")
             || exceptionType.Contains("TaskCanceledException")
         )
+        {
             return "timeout";
+        }
 
         if (
             exceptionType.Contains("Docker")
@@ -571,7 +630,9 @@ public class TestSummaryFixture : IAsyncLifetime
             || exceptionType.Contains("ServerUnavailableException")
             || exceptionType.Contains("TestRunAbortedException")
         )
+        {
             return "infrastructure";
+        }
 
         return "crash";
     }
@@ -579,7 +640,10 @@ public class TestSummaryFixture : IAsyncLifetime
     private static string? ErrorPreview(string? error)
     {
         if (string.IsNullOrEmpty(error))
+        {
             return null;
+        }
+
         var firstLine = error.Split('\n', 2)[0].Trim();
         return firstLine.Length > 120 ? firstLine[..117] + "..." : firstLine;
     }

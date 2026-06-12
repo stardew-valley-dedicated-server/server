@@ -82,7 +82,10 @@ public class AbandonedClaimTests : TestBase
                     c.OwnerHasUserId && !c.OwnerIsCustomized
                 );
                 if (stuck == null)
+                {
                     return false;
+                }
+
                 stuckUid = stuck.OwnerId;
                 return true;
             },
@@ -113,7 +116,10 @@ public class AbandonedClaimTests : TestBase
             {
                 var state = await ServerApi.GetDiagnosticsState(ct);
                 if (state == null)
+                {
                     return false; // transient null must not read as "healed"
+                }
+
                 var cabin = state.Cabins.FirstOrDefault(c => c.OwnerId == stuckUid);
                 var entry = state.FarmhandData.FirstOrDefault(f =>
                     f.UniqueMultiplayerId == stuckUid
@@ -221,7 +227,10 @@ public class AbandonedClaimTests : TestBase
             {
                 postState = await ServerApi.GetDiagnosticsState(ct);
                 if (postState == null)
+                {
                     return false; // transient null must not read as "swept"
+                }
+
                 var entry = postState.FarmhandData.FirstOrDefault(f =>
                     f.UniqueMultiplayerId == stuckUid
                 );

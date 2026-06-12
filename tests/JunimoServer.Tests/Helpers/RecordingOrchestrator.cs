@@ -80,7 +80,10 @@ internal sealed class RecordingOrchestrator
     )
     {
         if (!RecordingPolicy.IsEnabled)
+        {
             return Task.CompletedTask;
+        }
+
         _usages.Add(
             new ContainerUsage(containerId, label, Stopwatch.GetTimestamp(), RunMetadata.GetRunMs())
         );
@@ -102,7 +105,9 @@ internal sealed class RecordingOrchestrator
     )
     {
         if (!RecordingPolicy.IsEnabled || _usages.Count == 0)
+        {
             return;
+        }
 
         // Deduplicate: when the same container is marked multiple times with the same label
         // prefix (e.g., BreakSession returns client to pool, test re-leases the SAME container),
@@ -211,9 +216,14 @@ internal sealed class RecordingOrchestrator
             }
 
             if (usage.Label.StartsWith("server") && !RecordingPolicy.RecordServer)
+            {
                 continue;
+            }
+
             if (usage.Label.StartsWith("client") && !RecordingPolicy.RecordClient)
+            {
                 continue;
+            }
 
             // Use pre-snapshotted end time so all clips share the same reference point.
             if (!endEpochs.TryGetValue(usage.ContainerId, out var endEpoch))
@@ -354,7 +364,9 @@ internal sealed class RecordingOrchestrator
             if (result.ActualFirstFramePts is double pts && pts > 1e9)
             {
                 if (alignmentBaseEpoch == null || pts < alignmentBaseEpoch.Value)
+                {
                     alignmentBaseEpoch = pts;
+                }
             }
         }
 
@@ -371,7 +383,9 @@ internal sealed class RecordingOrchestrator
                 try
                 {
                     if (exception != null)
+                    {
                         throw exception;
+                    }
 
                     if (result.HostPath != null)
                     {

@@ -264,15 +264,29 @@ public static class OpenApiGenerator
 
         // Handle common types
         if (type == typeof(string))
+        {
             return new OpenApiSchema { Type = "string" };
+        }
+
         if (type == typeof(int) || type == typeof(long) || type == typeof(short))
+        {
             return new OpenApiSchema { Type = "integer" };
+        }
+
         if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+        {
             return new OpenApiSchema { Type = "number" };
+        }
+
         if (type == typeof(bool))
+        {
             return new OpenApiSchema { Type = "boolean" };
+        }
+
         if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
+        {
             return new OpenApiSchema { Type = "string", Format = "date-time" };
+        }
 
         // Handle arrays
         if (type.IsArray)
@@ -310,13 +324,25 @@ public static class OpenApiGenerator
     private static OpenApiSchema GetSchemaForType(Type type)
     {
         if (type == typeof(string))
+        {
             return new OpenApiSchema { Type = "string" };
+        }
+
         if (type == typeof(int) || type == typeof(long))
+        {
             return new OpenApiSchema { Type = "integer" };
+        }
+
         if (type == typeof(bool))
+        {
             return new OpenApiSchema { Type = "boolean" };
+        }
+
         if (type == typeof(float) || type == typeof(double))
+        {
             return new OpenApiSchema { Type = "number" };
+        }
+
         return new OpenApiSchema { Type = "string" };
     }
 

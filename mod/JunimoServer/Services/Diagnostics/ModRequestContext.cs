@@ -48,7 +48,10 @@ namespace JunimoServer.Services.Diagnostics
             public void Dispose()
             {
                 if (_disposed)
+                {
                     return;
+                }
+
                 _disposed = true;
                 _requestId.Value = _previousRequestId;
             }

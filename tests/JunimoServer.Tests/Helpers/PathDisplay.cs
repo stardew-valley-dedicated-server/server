@@ -43,7 +43,9 @@ public static class PathDisplay
     public static string ScrubMessage(string message)
     {
         if (string.IsNullOrEmpty(message) || _prefix is null)
+        {
             return message;
+        }
 
         return message.Replace(_prefix, Replacement, Comparison);
     }

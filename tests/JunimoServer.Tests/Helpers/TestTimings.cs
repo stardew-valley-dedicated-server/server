@@ -124,9 +124,15 @@ public static class TestTimings
     {
         var raw = Environment.GetEnvironmentVariable("SDVD_CLIENT_LEASE_PATIENCE_S");
         if (string.IsNullOrEmpty(raw))
+        {
             return TimeSpan.FromSeconds(20);
+        }
+
         if (int.TryParse(raw, out var s) && s >= 0)
+        {
             return TimeSpan.FromSeconds(s);
+        }
+
         return TimeSpan.FromSeconds(20);
     }
 

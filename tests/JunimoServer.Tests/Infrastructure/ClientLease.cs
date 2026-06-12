@@ -60,7 +60,10 @@ public sealed class ClientLease : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
+        {
             return;
+        }
+
         _disposed = true;
 
         SetupEventBus.EmitInstanceReturned(_instanceId);

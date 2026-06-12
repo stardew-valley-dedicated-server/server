@@ -191,7 +191,9 @@ namespace JunimoServer.Services.SteamGameServer
         public override void receiveMessages()
         {
             if (!connected())
+            {
                 return;
+            }
 
             PollJoiningMessages();
             PollFarmhandMessages();
@@ -513,7 +515,9 @@ namespace JunimoServer.Services.SteamGameServer
         )
         {
             if (!steamId.IsValid())
+            {
                 return;
+            }
 
             _monitor.Log($"{steamId.m_SteamID} disconnected", LogLevel.Debug);
 
@@ -572,12 +576,16 @@ namespace JunimoServer.Services.SteamGameServer
                 || connectionId.Length <= 3
                 || !connectionId.StartsWith("SN_")
             )
+            {
                 return null;
+            }
 
             string text = connectionId.Substring(3);
             int separatorIndex = text.IndexOf('_');
             if (separatorIndex <= 0 || separatorIndex >= text.Length - 1)
+            {
                 return null;
+            }
 
             // Use TryParse for safe parsing (prevents exceptions from malformed input)
             string steamIdPart = text.Substring(0, separatorIndex);
@@ -602,16 +610,22 @@ namespace JunimoServer.Services.SteamGameServer
             }
 
             if (!new CSteamID(steamId).IsValid())
+            {
                 return null;
+            }
 
             HSteamNetConnection conn = new HSteamNetConnection();
             conn.m_HSteamNetConnection = connHandle;
 
             if (!_connectionDataMap.TryGetValue(conn, out var value))
+            {
                 return null;
+            }
 
             if (value.SteamId.m_SteamID != steamId)
+            {
                 return null;
+            }
 
             return value;
         }
@@ -624,14 +638,19 @@ namespace JunimoServer.Services.SteamGameServer
         public override string getUserId(long farmerId)
         {
             if (!_farmerConnectionMap.TryGetValue(farmerId, out var value))
+            {
                 return null;
+            }
+
             return value.SteamId.m_SteamID.ToString();
         }
 
         public override bool hasUserId(string userId)
         {
             if (string.IsNullOrEmpty(userId))
+            {
                 return false;
+            }
 
             // Use TryParse for safe parsing
             if (!ulong.TryParse(userId, out ulong steamId))
@@ -646,7 +665,9 @@ namespace JunimoServer.Services.SteamGameServer
         public override string getUserName(long farmerId)
         {
             if (!_farmerConnectionMap.TryGetValue(farmerId, out var value))
+            {
                 return "";
+            }
 
             try
             {
@@ -705,7 +726,9 @@ namespace JunimoServer.Services.SteamGameServer
         public override float getPingToClient(long farmerId)
         {
             if (!_farmerConnectionMap.TryGetValue(farmerId, out var value))
+            {
                 return -1f;
+            }
 
             SteamGameServerNetworkingSockets.GetQuickConnectionStatus(
                 value.Connection,
@@ -748,7 +771,9 @@ namespace JunimoServer.Services.SteamGameServer
         private void CloseConnection(HSteamNetConnection connection, Action beforeClose = null)
         {
             if (connection == HSteamNetConnection.Invalid)
+            {
                 return;
+            }
 
             SteamGameServerNetworkingSockets.SetConnectionPollGroup(
                 connection,

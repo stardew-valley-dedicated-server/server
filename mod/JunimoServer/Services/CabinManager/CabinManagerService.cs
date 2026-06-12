@@ -69,9 +69,11 @@ namespace JunimoServer.Services.CabinManager
             : base(helper, monitor)
         {
             if (_instance != null)
+            {
                 throw new InvalidOperationException(
                     "CabinManagerService already initialized - only one instance allowed"
                 );
+            }
 
             _instance = this;
 
@@ -186,16 +188,23 @@ namespace JunimoServer.Services.CabinManager
         {
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return;
+            }
 
             var validCabinNames = new HashSet<string>();
             foreach (var building in farm.buildings)
             {
                 if (!building.isCabin)
+                {
                     continue;
+                }
+
                 var name = building.GetIndoors<Cabin>()?.NameOrUniqueName;
                 if (!string.IsNullOrEmpty(name))
+                {
                     validCabinNames.Add(name);
+                }
             }
 
             var farmhandData = Game1.netWorldState.Value.farmhandData;
@@ -206,7 +215,9 @@ namespace JunimoServer.Services.CabinManager
             {
                 var f = kvp.Value.Value;
                 if (f == null)
+                {
                     continue;
+                }
 
                 var home = f.homeLocation.Value;
                 var lastSleep = f.lastSleepLocation.Value;
@@ -214,7 +225,9 @@ namespace JunimoServer.Services.CabinManager
                 var lastSleepStale =
                     !string.IsNullOrEmpty(lastSleep) && !validCabinNames.Contains(lastSleep);
                 if (!homeStale && !lastSleepStale)
+                {
                     continue;
+                }
 
                 if (!f.isCustomized.Value)
                 {
@@ -249,7 +262,9 @@ namespace JunimoServer.Services.CabinManager
                 }
             }
             foreach (var key in toRemove)
+            {
                 farmhandData.Remove(key);
+            }
 
             if (toRemove.Count > 0 || homeCleared > 0 || lastSleepCleared > 0)
             {
@@ -666,7 +681,9 @@ namespace JunimoServer.Services.CabinManager
                 bool success = options.IsNone ? BuildNewCabinVisible(farm) : BuildNewCabin(farm);
 
                 if (success)
+                {
                     built++;
+                }
                 else
                 {
                     failed++;
@@ -770,13 +787,19 @@ namespace JunimoServer.Services.CabinManager
         private bool TryClearAbandonedClaim(Farmer farmhand)
         {
             if (farmhand == null)
+            {
                 return false;
+            }
 
             if (string.IsNullOrEmpty(farmhand.userID.Value))
+            {
                 return false; // no claim
+            }
 
             if (farmhand.isCustomized.Value)
+            {
                 return false; // real player — must not touch
+            }
 
             Monitor.Log(
                 $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', slot was claimed but not customized)",
@@ -809,7 +832,9 @@ namespace JunimoServer.Services.CabinManager
         public static void CleanupAbandonedCabinClaim(long disconnecteeId)
         {
             if (_instance == null)
+            {
                 return;
+            }
 
             // TryGetValue, not the indexer: NetLongDictionary's indexer throws KeyNotFoundException
             // on a missing key (see NetworkTweaker's checkFarmhandRequest safe-lookup patch).
@@ -819,7 +844,9 @@ namespace JunimoServer.Services.CabinManager
                     out var farmhand
                 )
             )
+            {
                 return;
+            }
 
             if (
                 _instance.TryClearAbandonedClaim(farmhand)
@@ -852,7 +879,9 @@ namespace JunimoServer.Services.CabinManager
             foreach (var kvp in farmhandData.FieldDict)
             {
                 if (TryClearAbandonedClaim(kvp.Value.Value))
+                {
                     cleared++;
+                }
             }
 
             if (cleared > 0)
@@ -987,10 +1016,15 @@ namespace JunimoServer.Services.CabinManager
         public void DestroyCabin(Building cabinBuilding)
         {
             if (cabinBuilding == null)
+            {
                 return;
+            }
+
             var farm = Game1.getFarm();
             if (farm == null || !farm.buildings.Contains(cabinBuilding))
+            {
                 return;
+            }
 
             var indoors = cabinBuilding.GetIndoors<Cabin>();
             var deletedName = indoors?.NameOrUniqueName;
@@ -998,7 +1032,9 @@ namespace JunimoServer.Services.CabinManager
             var ownerName = indoors?.owner?.Name ?? "";
 
             if (indoors != null && indoors.HasOwner)
+            {
                 indoors.DeleteFarmhand();
+            }
 
             farm.buildings.Remove(cabinBuilding);
 
@@ -1015,7 +1051,9 @@ namespace JunimoServer.Services.CabinManager
             );
 
             if (indoors == null || string.IsNullOrEmpty(deletedName))
+            {
                 return;
+            }
 
             // Scrub surviving farmhandData entries whose location refs point at the
             // removed cabin. Ownership removal is handled by Cabin.DeleteFarmhand
@@ -1042,13 +1080,17 @@ namespace JunimoServer.Services.CabinManager
             {
                 var f = kvp.Value.Value;
                 if (f == null)
+                {
                     continue;
+                }
 
                 var homeMatch = f.homeLocation.Value == deletedName;
                 var currentMatch = ReferenceEquals(f.currentLocation, indoors);
                 var lastSleepMatch = f.lastSleepLocation.Value == deletedName;
                 if (!homeMatch && !currentMatch && !lastSleepMatch)
+                {
                     continue;
+                }
 
                 Monitor.Log(
                     $"Clearing stale cabin refs from farmhand '{f.Name}' (dictKey={kvp.Key}, isCustomized={f.isCustomized.Value}): "
@@ -1056,11 +1098,19 @@ namespace JunimoServer.Services.CabinManager
                     LogLevel.Warn
                 );
                 if (homeMatch)
+                {
                     f.homeLocation.Value = "";
+                }
+
                 if (currentMatch)
+                {
                     f.currentLocation = null;
+                }
+
                 if (lastSleepMatch)
+                {
                     f.lastSleepLocation.Value = null;
+                }
             }
         }
 

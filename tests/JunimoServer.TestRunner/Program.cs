@@ -51,7 +51,9 @@ Environment.SetEnvironmentVariable(RunArtifactNames.RunDirEnv, TestArtifacts.Run
 // Without this the child scans the full assembly and pre-provisions
 // containers for tests xUnit will never run.
 if (!string.IsNullOrEmpty(filter))
+{
     Environment.SetEnvironmentVariable("SDVD_TEST_FILTER", filter);
+}
 
 // Open the structured-event log so parent-process emits land in
 // {runDir}/diagnostics/infrastructure.parent.jsonl. We use a parent-specific
@@ -202,7 +204,9 @@ void BeginAbort(string cause)
                 TimeSpan.FromSeconds(15)
             );
             if (drained)
+            {
                 JunimoServer.Tests.Helpers.EmergencyCleanup.SkipBulkSweepOnExit();
+            }
             // Kill the xUnit child (and its grandchildren: per-container
             // `ssh -N -L` forwards) so it cannot outlive the parent. Idempotent
             // on already-exited processes — safe to call even on the drained
@@ -439,7 +443,9 @@ if (UnwrapRenderer(renderer) is WebRenderer wr)
     wr.OnCommand(cmd =>
     {
         if (cmd == "stop")
+        {
             ForceExitNow("ui_stop");
+        }
     });
 }
 
@@ -469,7 +475,9 @@ renderer.PopulateTests(discoveredTests);
 // feedback while a long remote-host transfer runs (~minutes for multi-GB
 // images).
 if (UnwrapRenderer(renderer) is WebRenderer webRendererReady)
+{
     webRendererReady.OpenBrowser();
+}
 
 // Preflight + image distribution emit setup events directly to the renderer.
 // (The parent process bypasses SetupEventBus's pipe channel — it owns the
@@ -641,9 +649,12 @@ try
     if (transferFailures.Count > 0)
     {
         foreach (var f in transferFailures)
+        {
             Console.Error.WriteLine(
                 $"[ImageTransfer] host '{f.HostId}' failed: {f.Error ?? "unknown"}"
             );
+        }
+
         InfrastructureEventLog.Emit(
             "run_aborted",
             new { cause = "image_transfer", failures = transferFailures.Count }
@@ -698,7 +709,10 @@ try
     if (gdFailures.Count > 0)
     {
         foreach (var f in gdFailures)
+        {
             Console.Error.WriteLine($"[GameData] host '{f.HostId}' failed: {f.Error ?? "unknown"}");
+        }
+
         InfrastructureEventLog.Emit(
             "run_aborted",
             new { cause = "game_data_transfer", failures = gdFailures.Count }
@@ -879,7 +893,9 @@ finally
     // CI. No-ops with a warning when the SPA hasn't been built. Requires the
     // final state, so it runs after WriteRunArtifacts.
     if (generateReport || IsCIEnvironment())
+    {
         ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir, CollectKnownSecrets());
+    }
 
     // Dev-mode Web runs that completed normally: hold the browser open
     // until the operator presses a key (or signals shutdown). Skipped on
@@ -925,10 +941,14 @@ finally
     // (Ctrl+C, UI Stop, force-exit) intentionally never set this — they
     // need the safety net because in-flight DisposeAsyncs were cancelled.
     if (abortCount == 0)
+    {
         JunimoServer.Tests.Helpers.EmergencyCleanup.SkipBulkSweepOnExit();
+    }
 
     if (abortCount > 0)
+    {
         exitCode = 130; // Standard exit code for Ctrl+C / UI Stop
+    }
 }
 
 return exitCode;
@@ -967,8 +987,12 @@ static IReadOnlyCollection<string> CollectKnownSecrets()
         )
         {
             foreach (var field in new[] { "user", "pass", "refreshToken" })
+            {
                 if (account?[field]?.GetValue<string>() is { Length: > 0 } v)
+                {
                     secrets.Add(v);
+                }
+            }
         }
     }
     catch
@@ -980,11 +1004,16 @@ static IReadOnlyCollection<string> CollectKnownSecrets()
         foreach (var host in HostPool.Instance.Hosts)
         {
             if (string.IsNullOrEmpty(host.SshDestination))
+            {
                 continue;
+            }
+
             secrets.Add(host.SshDestination); // user@host
             var at = host.SshDestination.IndexOf('@');
             if (at >= 0 && at < host.SshDestination.Length - 1)
+            {
                 secrets.Add(host.SshDestination[(at + 1)..]); // bare host / IP
+            }
         }
     }
     catch
@@ -1010,12 +1039,16 @@ static string? ParseFilter(string[] args)
     for (var i = 0; i < args.Length - 1; i++)
     {
         if (args[i].Equals("--filter", StringComparison.OrdinalIgnoreCase))
+        {
             return args[i + 1];
+        }
     }
     foreach (var arg in args)
     {
         if (arg.StartsWith("--filter=", StringComparison.OrdinalIgnoreCase))
+        {
             return arg[9..];
+        }
     }
     return null;
 }
@@ -1048,12 +1081,16 @@ static List<(
         ?? Type.GetType("Xunit.CollectionAttribute, xunit.core");
 
     if (factType == null && theoryType == null)
+    {
         return tests;
+    }
 
     foreach (var type in assembly.GetTypes())
     {
         if (!type.IsClass || type.IsAbstract || !type.IsPublic)
+        {
             continue;
+        }
 
         var collectionAttr = type.GetCustomAttribute(collectionType!);
         var collectionName =
@@ -1090,7 +1127,10 @@ static List<(
                                     StringComparison.OrdinalIgnoreCase
                                 )
                             )
+                            {
                                 continue;
+                            }
+
                             tests.Add((collectionName, className, methodName, theoryDisplayName));
                         }
                         continue;
@@ -1102,7 +1142,10 @@ static List<(
                     !classMatchesFilter
                     && !displayName.Contains(filter!, StringComparison.OrdinalIgnoreCase)
                 )
+                {
                     continue;
+                }
+
                 tests.Add((collectionName, className, methodName, displayName));
             }
         }
@@ -1150,7 +1193,9 @@ static List<string> ExpandTheoryDataRows(MethodInfo method, string classFullName
             {
                 var memberName = (string?)attr.GetType().GetProperty("MemberName")?.GetValue(attr);
                 if (string.IsNullOrEmpty(memberName))
+                {
                     continue;
+                }
 
                 var declaringType = method.DeclaringType!;
                 var prop = declaringType.GetProperty(
@@ -1160,9 +1205,11 @@ static List<string> ExpandTheoryDataRows(MethodInfo method, string classFullName
                 if (prop?.GetValue(null) is IEnumerable<object[]> dataRows)
                 {
                     foreach (var row in dataRows)
+                    {
                         results.Add(
                             FormatTheoryDisplayName(classFullName, method.Name, parameters, row)
                         );
+                    }
                 }
             }
         }

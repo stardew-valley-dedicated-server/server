@@ -34,7 +34,9 @@ internal static class InfrastructureErrorAggregator
     {
         var path = RunArtifactNames.InfrastructureLog(runDir);
         if (!File.Exists(path))
+        {
             return EmptyResult;
+        }
 
         var ring = new Queue<Dictionary<string, object?>>(MaxEntries);
         var totalProjected = 0;
@@ -43,14 +45,22 @@ internal static class InfrastructureErrorAggregator
             foreach (var line in File.ReadLines(path))
             {
                 if (line.Length == 0)
+                {
                     continue;
+                }
+
                 var entry = TryProject(line);
                 if (entry == null)
+                {
                     continue;
+                }
 
                 totalProjected++;
                 if (ring.Count == MaxEntries)
+                {
                     ring.Dequeue(); // keep only the newest MaxEntries
+                }
+
                 ring.Enqueue(entry);
             }
         }
@@ -70,10 +80,15 @@ internal static class InfrastructureErrorAggregator
             var root = doc.RootElement;
 
             if (!root.TryGetProperty("event", out var ev))
+            {
                 return null;
+            }
+
             var eventName = ev.GetString();
             if (eventName is not ("failure_context" or "host_disconnected"))
+            {
                 return null;
+            }
 
             // Envelope + data.reason are common to both events; the switch adds the
             // event-specific data.* fields. data is absent on malformed lines only.
@@ -81,7 +96,9 @@ internal static class InfrastructureErrorAggregator
             if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
             {
                 if (data.TryGetProperty("reason", out var reason))
+                {
                     entry["reason"] = reason.GetString();
+                }
 
                 switch (eventName)
                 {
@@ -109,11 +126,20 @@ internal static class InfrastructureErrorAggregator
     {
         var entry = new Dictionary<string, object?> { ["event"] = eventName };
         if (root.TryGetProperty("ts", out var ts))
+        {
             entry["ts"] = ts.GetString();
+        }
+
         if (root.TryGetProperty("runMs", out var runMs) && runMs.ValueKind == JsonValueKind.Number)
+        {
             entry["runMs"] = runMs.GetInt64();
+        }
+
         if (root.TryGetProperty("test", out var test) && test.ValueKind == JsonValueKind.Object)
+        {
             entry["test"] = test.Clone();
+        }
+
         return entry;
     }
 
@@ -123,23 +149,33 @@ internal static class InfrastructureErrorAggregator
     )
     {
         if (data.TryGetProperty("host_id", out var hostId))
+        {
             entry["hostId"] = hostId.GetString();
+        }
+
         if (
             data.TryGetProperty("sshMasterLogTail", out var tail)
             && tail.ValueKind == JsonValueKind.String
         )
+        {
             entry["sshMasterLogTail"] = tail.GetString();
+        }
     }
 
     private static void AddFailureContextFields(Dictionary<string, object?> entry, JsonElement data)
     {
         if (data.TryGetProperty("extras", out var extras) && extras.ValueKind != JsonValueKind.Null)
+        {
             entry["extras"] = extras.Clone();
+        }
+
         if (
             data.TryGetProperty("diagnosticsError", out var diag)
             && diag.ValueKind == JsonValueKind.String
         )
+        {
             entry["diagnosticsError"] = diag.GetString();
+        }
         // serverState is intentionally dropped — too large for summary.json.
     }
 }

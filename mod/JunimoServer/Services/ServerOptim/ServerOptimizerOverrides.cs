@@ -38,8 +38,13 @@ namespace JunimoServer.Services.ServerOptim
             foreach (
                 var button in new[] { config.HotKeyToggleAutoMode, config.HotKeyToggleVisibility }
             )
+            {
                 if (button.TryGetKeyboard(out var key))
+                {
                     hotkeys.Add(key);
+                }
+            }
+
             _allowedHotkeys = hotkeys.ToArray();
         }
 
@@ -96,7 +101,10 @@ namespace JunimoServer.Services.ServerOptim
         public static void KeyboardState_Postfix(ref KeyboardState __result)
         {
             if (!InputSuppressed)
+            {
                 return;
+            }
+
             if (HotkeysStayLive)
             {
                 var down = Array.FindAll(_allowedHotkeys, __result.IsKeyDown);
@@ -113,7 +121,9 @@ namespace JunimoServer.Services.ServerOptim
         public static void MouseState_Postfix(ref MouseState __result)
         {
             if (InputSuppressed)
+            {
                 __result = default;
+            }
         }
 
         private static int _galaxyLobbyFailureCount;
@@ -137,12 +147,16 @@ namespace JunimoServer.Services.ServerOptim
         public static bool OnGalaxyLobbyCreated_Prefix(GalaxyID lobbyID, LobbyCreateResult result)
         {
             if (result != LobbyCreateResult.LOBBY_CREATE_RESULT_ERROR)
+            {
                 return true; // Success path: let original handle it
+            }
 
             _galaxyLobbyFailureCount++;
 
             if (_galaxyLobbyFailureCount <= MaxGalaxyLobbyRetries)
+            {
                 return true; // Let original run (Error log + retry timer)
+            }
 
             // Max retries exceeded. Stop the retry loop.
             _monitor?.Log(
@@ -194,7 +208,10 @@ namespace JunimoServer.Services.ServerOptim
         public static bool Draw_Prefix(GameRunner __instance)
         {
             if (_rendering.ShouldBeginDraw())
+            {
                 return true;
+            }
+
             __instance.SuppressDraw();
             return false;
         }

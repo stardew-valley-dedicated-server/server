@@ -35,11 +35,15 @@ public static class FlakinessTracker
     {
         var runId = RunMetadata.RunId;
         if (runId == null)
+        {
             return;
+        }
 
         var results = fixture.GetAllTestResults();
         if (results.Count == 0)
+        {
             return;
+        }
 
         try
         {
@@ -85,7 +89,9 @@ public static class FlakinessTracker
     public static List<object> ComputeFlakiness()
     {
         if (!File.Exists(FilePath))
+        {
             return [];
+        }
 
         try
         {
@@ -103,7 +109,10 @@ public static class FlakinessTracker
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line))
+                {
                     continue;
+                }
+
                 try
                 {
                     using var doc = JsonDocument.Parse(line);
@@ -146,7 +155,10 @@ public static class FlakinessTracker
                         )
                         .ToList();
                     if (dispatched.Count == 0)
+                    {
                         return null;
+                    }
+
                     var failures = dispatched.Count(e => e.result == "failed");
                     var failRate = (double)failures / dispatched.Count;
                     return new

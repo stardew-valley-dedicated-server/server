@@ -77,7 +77,10 @@ namespace JunimoServer.Services.Lobby
         public static bool IsLobbyCabin(Building building)
         {
             if (building == null || !building.isCabin)
+            {
                 return false;
+            }
+
             return CabinPositions.IsLobbyOrEditing(building);
         }
 
@@ -117,13 +120,19 @@ namespace JunimoServer.Services.Lobby
         public static string ValidateLayoutName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
+            {
                 return "Layout name cannot be empty";
+            }
 
             if (name.Length > MaxLayoutNameLength)
+            {
                 return $"Layout name too long (max {MaxLayoutNameLength} characters)";
+            }
 
             if (!ValidLayoutNameRegex.IsMatch(name))
+            {
                 return "Layout name can only contain letters, numbers, dash (-), and underscore (_)";
+            }
 
             return null; // Valid
         }
@@ -209,9 +218,12 @@ namespace JunimoServer.Services.Lobby
             : base(helper, monitor)
         {
             if (_instance != null)
+            {
                 throw new InvalidOperationException(
                     "LobbyService already initialized - only one instance allowed"
                 );
+            }
+
             _instance = this;
 
             _helper = helper;
@@ -423,10 +435,14 @@ namespace JunimoServer.Services.Lobby
 
             // Fast path: no players need frozen time → run the original method unchanged
             if (frozenTimePlayers.Count == 0)
+            {
                 return true;
+            }
 
             if (!Game1.netWorldState.Dirty)
+            {
                 return false; // Nothing to broadcast
+            }
 
             // Step 1: Serialize the normal delta (real time) for normal players
             byte[] normalDelta = __instance.writeObjectDeltaBytes(Game1.netWorldState);
@@ -499,35 +515,56 @@ namespace JunimoServer.Services.Lobby
         {
             // Only act when the original returned false (some player hasn't reached the barrier)
             if (__result)
+            {
                 return;
+            }
 
             // Only act when we have players to exclude
             if (_instance == null)
+            {
                 return;
+            }
+
             if (!_instance.HasPlayersToExclude())
+            {
                 return;
+            }
 
             // Build set of excluded player IDs
             var excludedPlayerIds = new HashSet<long>();
             foreach (var playerId in _instance._layoutEditingSessions.Keys)
+            {
                 excludedPlayerIds.Add(playerId);
+            }
+
             foreach (var playerId in _instance._unauthenticatedPlayers.Keys)
+            {
                 excludedPlayerIds.Add(playerId);
+            }
 
             if (excludedPlayerIds.Count == 0)
+            {
                 return;
+            }
 
             // Re-check barrier readiness, skipping excluded players
             HashSet<long> barrierPlayers;
             if (!___barriers.TryGetValue(name, out barrierPlayers))
+            {
                 barrierPlayers = new HashSet<long>();
+            }
 
             foreach (long key in Game1.otherFarmers.Keys)
             {
                 if (excludedPlayerIds.Contains(key))
+                {
                     continue; // Skip excluded players
+                }
+
                 if (!barrierPlayers.Contains(key))
+                {
                     return; // Non-excluded player hasn't reached barrier yet
+                }
             }
 
             // All non-excluded players have reached the barrier
@@ -549,9 +586,14 @@ namespace JunimoServer.Services.Lobby
         private static void IsFarmerRequired_Postfix(long uid, ref bool __result)
         {
             if (!__result)
+            {
                 return;
+            }
+
             if (_instance == null)
+            {
                 return;
+            }
 
             if (
                 _instance._unauthenticatedPlayers.ContainsKey(uid)
@@ -586,9 +628,14 @@ namespace JunimoServer.Services.Lobby
         private static bool ResetFarmhandState_Prefix(Farmer farmhand)
         {
             if (_instance == null)
+            {
                 return true; // Not initialized; run original (safe default)
+            }
+
             if (!_instance._unauthenticatedPlayers.ContainsKey(farmhand.UniqueMultiplayerID))
+            {
                 return true; // Not a lobby player, run original
+            }
 
             // Still clear transient state (buffs, mount, events), same as line 775 of original
             farmhand.resetState();
@@ -625,7 +672,9 @@ namespace JunimoServer.Services.Lobby
         )
         {
             if (!__result)
+            {
                 return; // Already rejected, nothing to do
+            }
 
             var building = __instance.ParentBuilding;
             if (building != null && IsLobbyCabin(building))
@@ -684,7 +733,9 @@ namespace JunimoServer.Services.Lobby
         private void RecoverInterruptedEditingSessions()
         {
             if (_data.EditingSessionBackups == null || _data.EditingSessionBackups.Count == 0)
+            {
                 return;
+            }
 
             _monitor.Log(
                 $"[Lobby] Found {_data.EditingSessionBackups.Count} interrupted editing session(s) to recover",
@@ -746,12 +797,18 @@ namespace JunimoServer.Services.Lobby
         {
             Farmer player = null;
             if (Game1.player?.UniqueMultiplayerID == backup.PlayerId)
+            {
                 player = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(backup.PlayerId, out var otherFarmer))
+            {
                 player = otherFarmer;
+            }
 
             if (player == null)
+            {
                 return false;
+            }
 
             // Clear current inventory
             player.Items.Clear();
@@ -813,7 +870,9 @@ namespace JunimoServer.Services.Lobby
         {
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return;
+            }
 
             var orphanedLobbies = farm
                 .buildings.Where(b =>
@@ -824,7 +883,9 @@ namespace JunimoServer.Services.Lobby
                 .ToList();
 
             if (orphanedLobbies.Count == 0)
+            {
                 return;
+            }
 
             foreach (var cabin in orphanedLobbies)
             {
@@ -895,7 +956,9 @@ namespace JunimoServer.Services.Lobby
             }
 
             if (!_isEditingModeActive || _layoutEditingSessions.IsEmpty)
+            {
                 return;
+            }
 
             // Take a snapshot of current editing sessions for safe iteration
             // ConcurrentDictionary's enumerator is safe but we want consistent state
@@ -906,7 +969,9 @@ namespace JunimoServer.Services.Lobby
                 Farmer editor = GetFarmerById(playerId);
 
                 if (editor == null)
+                {
                     continue;
+                }
 
                 // Only apply immunity if editor is inside their editing cabin
                 var editingCabinIndoors = session.Cabin?.GetIndoors<Cabin>();
@@ -920,11 +985,15 @@ namespace JunimoServer.Services.Lobby
                 {
                     // Keep stamina full (only restore if depleted to avoid overwriting legitimate states)
                     if (editor.stamina < editor.MaxStamina)
+                    {
                         editor.stamina = editor.MaxStamina;
+                    }
 
                     // Keep health full (only restore if depleted)
                     if (editor.health < editor.maxHealth)
+                    {
                         editor.health = editor.maxHealth;
+                    }
 
                     // Clear exhaustion flag
                     editor.exhausted.Value = false;
@@ -938,9 +1007,15 @@ namespace JunimoServer.Services.Lobby
         private Farmer GetFarmerById(long playerId)
         {
             if (Game1.player.UniqueMultiplayerID == playerId)
+            {
                 return Game1.player;
+            }
+
             if (Game1.otherFarmers.TryGetValue(playerId, out var farmer))
+            {
                 return farmer;
+            }
+
             return null;
         }
 
@@ -969,7 +1044,9 @@ namespace JunimoServer.Services.Lobby
         {
             // Nothing to exclude if no editors and no unauthenticated players
             if (_layoutEditingSessions.Count == 0 && _unauthenticatedPlayers.Count == 0)
+            {
                 return;
+            }
 
             try
             {
@@ -1045,7 +1122,9 @@ namespace JunimoServer.Services.Lobby
         private void OnTimeChanged(object sender, TimeChangedEventArgs e)
         {
             if (!_isEditingModeActive || _layoutEditingSessions.Count == 0)
+            {
                 return;
+            }
 
             // Just log for debugging - editors are decoupled from time
             _monitor.Log($"[Lobby] Time is {Game1.timeOfDay} (editors decoupled)", LogLevel.Trace);
@@ -1068,7 +1147,9 @@ namespace JunimoServer.Services.Lobby
                 {
                     var cabinIndoors = kvp.Value.Cabin?.GetIndoors<Cabin>();
                     if (cabinIndoors != null)
+                    {
                         SetCabinDaylightMode(cabinIndoors, true);
+                    }
                 }
             }
 
@@ -1195,7 +1276,9 @@ namespace JunimoServer.Services.Lobby
         private void EnableEditingMode()
         {
             if (_isEditingModeActive)
+            {
                 return;
+            }
 
             _isEditingModeActive = true;
 
@@ -1214,7 +1297,9 @@ namespace JunimoServer.Services.Lobby
         private void DisableEditingMode()
         {
             if (!_isEditingModeActive)
+            {
                 return;
+            }
 
             _isEditingModeActive = false;
 
@@ -1239,9 +1324,13 @@ namespace JunimoServer.Services.Lobby
         {
             Farmer player = null;
             if (Game1.player.UniqueMultiplayerID == playerId)
+            {
                 player = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(playerId, out var otherFarmer))
+            {
                 player = otherFarmer;
+            }
 
             if (player == null)
             {
@@ -1323,9 +1412,13 @@ namespace JunimoServer.Services.Lobby
 
             Farmer player = null;
             if (Game1.player.UniqueMultiplayerID == playerId)
+            {
                 player = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(playerId, out var otherFarmer))
+            {
                 player = otherFarmer;
+            }
 
             if (player == null)
             {
@@ -1387,9 +1480,13 @@ namespace JunimoServer.Services.Lobby
         {
             Farmer player = null;
             if (Game1.player.UniqueMultiplayerID == playerId)
+            {
                 player = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(playerId, out var otherFarmer))
+            {
                 player = otherFarmer;
+            }
 
             if (player?.currentLocation != null)
             {
@@ -1591,7 +1688,9 @@ namespace JunimoServer.Services.Lobby
             );
 
             if (cabin == null)
+            {
                 return;
+            }
 
             // Master runs performActionOnConstruction for every buildStructure call,
             // which calls CreateFarmhand on ownerless cabins. Lobby cabins must remain
@@ -1688,7 +1787,9 @@ namespace JunimoServer.Services.Lobby
         private void SetCabinDaylightMode(Cabin cabin, bool enabled)
         {
             if (cabin == null)
+            {
                 return;
+            }
 
             try
             {
@@ -1832,7 +1933,10 @@ namespace JunimoServer.Services.Lobby
         {
             var excluded = new HashSet<long>(_unauthenticatedPlayers.Keys);
             foreach (var playerId in _layoutEditingSessions.Keys)
+            {
                 excluded.Add(playerId);
+            }
+
             return excluded;
         }
 
@@ -1909,9 +2013,13 @@ namespace JunimoServer.Services.Lobby
         {
             Building cabin = null;
             if (Mode == LobbyMode.Shared)
+            {
                 cabin = _sharedLobbyCabin;
+            }
             else
+            {
                 _individualLobbies.TryGetValue(playerId, out cabin);
+            }
 
             return cabin?.GetIndoors<Cabin>()?.NameOrUniqueName;
         }
@@ -2071,7 +2179,9 @@ namespace JunimoServer.Services.Lobby
                 }
 
                 if (Mode != LobbyMode.Individual)
+                {
                     return;
+                }
 
                 if (_individualLobbies.TryRemove(playerId, out var cabin))
                 {
@@ -2093,7 +2203,9 @@ namespace JunimoServer.Services.Lobby
         private void CleanupEditingCabin(Building cabin)
         {
             if (cabin == null)
+            {
                 return;
+            }
 
             var farm = Game1.getFarm();
             if (farm.buildings.Contains(cabin))
@@ -2112,14 +2224,18 @@ namespace JunimoServer.Services.Lobby
             {
                 var sharedName = _sharedLobbyCabin.GetIndoors<Cabin>()?.NameOrUniqueName;
                 if (locationName == sharedName)
+                {
                     return true;
+                }
             }
 
             foreach (var kvp in _individualLobbies)
             {
                 var name = kvp.Value.GetIndoors<Cabin>()?.NameOrUniqueName;
                 if (locationName == name)
+                {
                     return true;
+                }
             }
 
             return false;
@@ -2135,7 +2251,9 @@ namespace JunimoServer.Services.Lobby
         public LobbyLayout GetActiveLayout()
         {
             if (_data.Layouts.TryGetValue(_data.ActiveLayoutName, out var layout))
+            {
                 return layout;
+            }
 
             return _data.Layouts.GetValueOrDefault("default");
         }
@@ -2154,7 +2272,9 @@ namespace JunimoServer.Services.Lobby
         public bool SetActiveLayout(string name)
         {
             if (!_data.Layouts.ContainsKey(name))
+            {
                 return false;
+            }
 
             _data.ActiveLayoutName = name;
             SaveData();
@@ -2186,7 +2306,9 @@ namespace JunimoServer.Services.Lobby
             var cabin = CreateLobbyCabin(Game1.getFarm(), editPosition);
 
             if (cabin == null)
+            {
                 return null;
+            }
 
             // Save player's current location for teleport back after saving
             SavePlayerLocation(adminPlayerId);
@@ -2237,7 +2359,9 @@ namespace JunimoServer.Services.Lobby
             var cabin = CreateLobbyCabin(Game1.getFarm(), editPosition);
 
             if (cabin == null)
+            {
                 return null;
+            }
 
             // Apply the existing layout to the editing cabin (without door blockers)
             var cabinIndoors = cabin.GetIndoors<Cabin>();
@@ -2281,7 +2405,9 @@ namespace JunimoServer.Services.Lobby
 
             // Verify the tile is passable
             if (cabin.isTilePlaceable(new Vector2(safePoint.X, safePoint.Y)))
+            {
                 return safePoint;
+            }
 
             // Try alternative positions in the center area
             var alternatives = new[]
@@ -2299,7 +2425,9 @@ namespace JunimoServer.Services.Lobby
             foreach (var alt in alternatives)
             {
                 if (cabin.isTilePlaceable(new Vector2(alt.X, alt.Y)))
+                {
                     return alt;
+                }
             }
 
             // Fallback to default entry
@@ -2566,9 +2694,13 @@ namespace JunimoServer.Services.Lobby
 
             Farmer admin = null;
             if (Game1.player.UniqueMultiplayerID == adminPlayerId)
+            {
                 admin = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(adminPlayerId, out var otherFarmer))
+            {
                 admin = otherFarmer;
+            }
 
             if (admin == null)
             {
@@ -2613,9 +2745,13 @@ namespace JunimoServer.Services.Lobby
 
             Farmer admin = null;
             if (Game1.player.UniqueMultiplayerID == adminPlayerId)
+            {
                 admin = Game1.player;
+            }
             else if (Game1.otherFarmers.TryGetValue(adminPlayerId, out var otherFarmer))
+            {
                 admin = otherFarmer;
+            }
 
             if (admin?.currentLocation is not Cabin cabin)
             {
@@ -2860,11 +2996,15 @@ namespace JunimoServer.Services.Lobby
         {
             var layout = GetActiveLayout();
             if (layout == null)
+            {
                 return;
+            }
 
             var cabin = cabinBuilding.GetIndoors<Cabin>();
             if (cabin == null)
+            {
                 return;
+            }
 
             DeserializeToCabin(cabin, layout);
 

@@ -73,7 +73,9 @@ public sealed class WebRenderer : RendererBase
     public void EnqueueEventNullable(string? json)
     {
         if (json != null)
+        {
             _eventChannel.Writer.TryWrite(json);
+        }
     }
 
     public override async ValueTask InitializeAsync()
@@ -135,10 +137,14 @@ public sealed class WebRenderer : RendererBase
                     !resolvedPath.StartsWith(testResultsDir + Path.DirectorySeparatorChar)
                     && resolvedPath != testResultsDir
                 )
+                {
                     return Results.NotFound();
+                }
 
                 if (!File.Exists(resolvedPath))
+                {
                     return Results.NotFound();
+                }
 
                 var contentType = Path.GetExtension(resolvedPath).ToLowerInvariant() switch
                 {
@@ -192,7 +198,10 @@ public sealed class WebRenderer : RendererBase
                     {
                         var result = await ws.ReceiveAsync(buffer, _connectionsCts.Token);
                         if (result.MessageType == WebSocketMessageType.Close)
+                        {
                             break;
+                        }
+
                         if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
                         {
                             // Commands are tiny ({"cmd":"stop"} ≈ 15 bytes). Drop
@@ -278,7 +287,9 @@ public sealed class WebRenderer : RendererBase
     public void OpenBrowser()
     {
         if (_serverUrl == null || IsCI())
+        {
             return;
+        }
 
         try
         {
@@ -297,7 +308,9 @@ public sealed class WebRenderer : RendererBase
         // OnRunFinished path below already wrote it with instances still
         // present.
         if (!_recorder.IsRunFinished)
+        {
             WriteMockData();
+        }
 
         // The static report bundle is assembled from Program.cs's finally (one
         // site, runs in every mode incl. CIRenderer) — not here, which only ran
@@ -366,10 +379,16 @@ public sealed class WebRenderer : RendererBase
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("cmd", out var cmdEl))
+            {
                 return;
+            }
+
             var cmd = cmdEl.GetString();
             if (cmd is null)
+            {
                 return;
+            }
+
             Dispatch(cmd);
         }
         catch (JsonException)
@@ -388,7 +407,10 @@ public sealed class WebRenderer : RendererBase
                 // xUnit child + bulk-removes Docker resources before exit.
                 var handler = _onCommand;
                 if (handler != null)
+                {
                     Task.Run(() => handler("stop"));
+                }
+
                 break;
         }
     }
@@ -435,7 +457,9 @@ public sealed class WebRenderer : RendererBase
         // _classifiedAsCanceled set (idempotent — no-op when the test was
         // never classified as canceled).
         if (e.Outcome == "failed")
+        {
             ReclassifyCanceledAsFailed(e.DisplayName);
+        }
     }
 
     protected override void OnTestPassedCore(TestPassedEvent e) { }
@@ -485,7 +509,9 @@ public sealed class WebRenderer : RendererBase
             await foreach (var json in _eventChannel.Reader.ReadAllAsync())
             {
                 if (_wsClients.IsEmpty)
+                {
                     continue;
+                }
 
                 var toRemove = new List<string>();
                 foreach (var (id, ws) in _wsClients)
@@ -540,7 +566,9 @@ public sealed class WebRenderer : RendererBase
             // Vite serves public/ as static files, so the dev server can load mock data directly.
             var projectDir = ReportGenerator.FindSpaProjectPath();
             if (projectDir == null)
+            {
                 return;
+            }
 
             var mockArtifactsDir = Path.Combine(projectDir, "public", "mock-artifacts");
             var mockPath = Path.Combine(mockArtifactsDir, "mock-data.json");
@@ -585,7 +613,10 @@ public sealed class WebRenderer : RendererBase
     private void ExtractAndEmitVncUrl(string? message)
     {
         if (string.IsNullOrEmpty(message))
+        {
             return;
+        }
+
         var match = VncUrlPattern.Match(message);
         if (match.Success)
         {

@@ -35,7 +35,9 @@ internal static class TransportFaultClassifier
         {
             var reason = ClassifySingle(current);
             if (reason is not null)
+            {
                 return reason;
+            }
         }
         return null;
     }
@@ -102,7 +104,10 @@ internal static class TransportFaultClassifier
     private static bool LooksLikeBrokenConnection(string? message)
     {
         if (string.IsNullOrEmpty(message))
+        {
             return false;
+        }
+
         return message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)
             || message.Contains("connection reset", StringComparison.OrdinalIgnoreCase)
             || message.Contains("connection refused", StringComparison.OrdinalIgnoreCase)

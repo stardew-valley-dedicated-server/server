@@ -29,7 +29,9 @@ public static class ProjectRoot
     public static string Resolve(string relativePath)
     {
         if (string.IsNullOrEmpty(relativePath))
+        {
             throw new ArgumentException("Path cannot be null or empty.", nameof(relativePath));
+        }
 
         var expanded = Environment.ExpandEnvironmentVariables(relativePath);
         if (expanded.StartsWith("~/", StringComparison.Ordinal) || expanded == "~")
@@ -57,7 +59,9 @@ public static class ProjectRoot
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
         {
             if (File.Exists(System.IO.Path.Combine(d.FullName, Marker)))
+            {
                 return d.FullName;
+            }
         }
 
         throw new InvalidOperationException(

@@ -164,7 +164,10 @@ namespace JunimoServer.Services.ServerOptim
                 {
                     var smodHooksType = asm.GetType("StardewModdingAPI.Framework.SModHooks");
                     if (smodHooksType == null)
+                    {
                         continue;
+                    }
+
                     smodHooksStartTask = AccessTools.Method(
                         smodHooksType,
                         "StartTask",

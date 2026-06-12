@@ -119,7 +119,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     public Task RunAsync(CancellationToken ct)
     {
         if (_runTask != null)
+        {
             return _runTask;
+        }
+
         _runTask = RunWithLinkedCtsAsync(ct);
         return _runTask;
     }
@@ -147,7 +150,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         }
         catch (ObjectDisposedException) { }
         if (_runTask == null)
+        {
             return;
+        }
+
         await Task.WhenAny(_runTask, Task.Delay(timeout));
     }
 
@@ -225,7 +231,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 //    Tty=false open after container creation would terminate
                 //    the reader before any logs flow.
                 if (hasReadAny)
+                {
                     return;
+                }
+
                 try
                 {
                     await Task.Delay(1000, ct);
@@ -243,9 +252,14 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             catch (Exception ex)
             {
                 if (ct.IsCancellationRequested)
+                {
                     return;
+                }
+
                 if (ShutdownCoordinator.IsShuttingDown)
+                {
                     return;
+                }
 
                 // Docker daemon restart (OOM, WSL crash) returns
                 // InternalServerError for every active stream. Match the
@@ -335,7 +349,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             }
 
             if (result.Count == 0)
+            {
                 continue;
+            }
 
             if (firstRead)
             {
@@ -367,7 +383,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         for (var i = 0; i < sb.Length; i++)
         {
             if (sb[i] == '\n')
+            {
                 return i;
+            }
         }
         return -1;
     }
@@ -375,7 +393,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     private void FlushPartial(StringBuilder sb)
     {
         if (sb.Length == 0)
+        {
             return;
+        }
+
         var tail = sb.ToString();
         sb.Clear();
         EmitLine(tail);
@@ -387,7 +408,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         // stray whitespace; LF was already consumed by the splitter.
         var trimmed = raw.TrimEnd();
         if (trimmed.Length == 0)
+        {
             return;
+        }
 
         // Dedup the single inclusive replay produced by reconnecting with
         // Since = lastTimestamp. The first emit after a reconnect is the
@@ -398,7 +421,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         {
             _expectDedupNextEmit = false;
             if (trimmed == _lastRawEmitted)
+            {
                 return;
+            }
         }
 
         _lastRawEmitted = trimmed;
@@ -418,7 +443,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
 
         line = LogmonitorProcessTag.Replace(line, "");
         if (line.Length == 0)
+        {
             return;
+        }
 
         _onLine(line);
     }

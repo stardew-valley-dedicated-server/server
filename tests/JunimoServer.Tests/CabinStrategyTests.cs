@@ -303,7 +303,9 @@ public class CabinStrategyTests : TestBase
                 cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
                 farmhands = await ServerApi.GetFarmhands();
                 if (cabins == null || farmhands == null)
+                {
                     return false;
+                }
                 // Deletion is reflected when our farmer is gone and an uncustomized slot exists
                 var ourFarmerGone = !farmhands.Farmhands.Any(f =>
                     f.IsCustomized

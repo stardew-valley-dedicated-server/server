@@ -39,7 +39,9 @@ public static class EventDispatcher
         {
             var evt = Deserialize<VncUrlEvent>(e);
             if (!string.IsNullOrEmpty(evt.Url))
+            {
                 r.OnVncUrl(evt);
+            }
         },
         [EventNames.InstanceCreated] = (e, r) =>
             r.OnInstanceCreated(Deserialize<InstanceCreatedEvent>(e)),
@@ -69,7 +71,10 @@ public static class EventDispatcher
         [EventNames.RunMetadata] = (e, r) =>
         {
             if (!e.TryGetProperty("data", out var dataEl))
+            {
                 return;
+            }
+
             var runDir =
                 e.TryGetProperty("runDir", out var rd) && rd.ValueKind == JsonValueKind.String
                     ? rd.GetString() ?? ""
@@ -79,7 +84,10 @@ public static class EventDispatcher
         [EventNames.FlakyTests] = (e, r) =>
         {
             if (!e.TryGetProperty("tests", out var tests))
+            {
                 return;
+            }
+
             r.OnFlakyTests(new FlakyTestsEvent(tests.Clone()));
         },
 
@@ -113,13 +121,20 @@ public static class EventDispatcher
             var root = doc.RootElement;
 
             if (!root.TryGetProperty("event", out var eventProp))
+            {
                 return;
+            }
+
             var eventType = eventProp.GetString();
             if (eventType == null)
+            {
                 return;
+            }
 
             if (Routes.TryGetValue(eventType, out var handler))
+            {
                 handler(root, renderer);
+            }
         }
         catch (Exception ex)
         {
@@ -134,7 +149,9 @@ public static class EventDispatcher
             // and may count consecutive failures for null-renderer degradation;
             // rethrow non-JSON exceptions so that path sees them.
             if (ex is not JsonException)
+            {
                 throw;
+            }
         }
     }
 
@@ -143,7 +160,10 @@ public static class EventDispatcher
     {
         var v = DiagnosticEmitJson.Deserialize<T>(el);
         if (v == null)
+        {
             throw new JsonException($"Failed to deserialize event as {typeof(T).Name}");
+        }
+
         return v;
     }
 }

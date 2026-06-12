@@ -81,7 +81,9 @@ public static class SteamAccountSlicer
             // Steam test. Give the host 0 instead so the next host (or none)
             // picks it up. With N=1 the very first host falls into this branch.
             if (remaining < 2)
+            {
                 desired = 0;
+            }
 
             int sliceSize;
             IReadOnlyList<int> indices;

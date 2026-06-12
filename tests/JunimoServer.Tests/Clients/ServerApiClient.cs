@@ -754,14 +754,19 @@ public class ServerApiClient : IDisposable
         {
             var request = new HttpRequestMessage(method, path);
             if (contentFactory != null)
+            {
                 request.Content = contentFactory();
+            }
+
             var response = await _httpClient.SendAsync(request, ct);
 
             if (
                 response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable
                 || attempt >= TestTimings.GameThreadRetryMaxAttempts
             )
+            {
                 return response;
+            }
 
             // 503: game thread busy, retry after delay
             response.Dispose();
@@ -824,13 +829,25 @@ public class ServerApiClient : IDisposable
     {
         var query = new List<string> { $"since={since}" };
         if (isReady is bool b)
+        {
             query.Add($"isReady={b.ToString().ToLowerInvariant()}");
+        }
+
         if (isPaused is bool ip)
+        {
             query.Add($"isPaused={ip.ToString().ToLowerInvariant()}");
+        }
+
         if (day is int d)
+        {
             query.Add($"day={d}");
+        }
+
         if (playerCount is int pc)
+        {
             query.Add($"playerCount={pc}");
+        }
+
         var serverTimeoutMs = (long)(
             timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
         );
@@ -839,7 +856,10 @@ public class ServerApiClient : IDisposable
 
         var response = await _httpClient.GetAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+        {
             return null;
+        }
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ServerStatus>(ct);
     }
@@ -859,7 +879,10 @@ public class ServerApiClient : IDisposable
     {
         var query = new List<string> { $"since={since}" };
         if (playerId is long pid)
+        {
             query.Add($"playerId={pid}");
+        }
+
         var serverTimeoutMs = (long)(
             timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
         );
@@ -868,7 +891,10 @@ public class ServerApiClient : IDisposable
 
         var response = await _httpClient.GetAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+        {
             return null;
+        }
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PlayersResponse>(ct);
     }
@@ -944,7 +970,10 @@ public class ServerApiClient : IDisposable
     {
         var query = new List<string>();
         if (ready)
+        {
             query.Add("ready=true");
+        }
+
         var serverTimeoutMs = (long)(
             timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
         );
@@ -953,7 +982,10 @@ public class ServerApiClient : IDisposable
 
         var response = await _httpClient.GetAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+        {
             return null;
+        }
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HealthResponse>(ct);
     }
@@ -1064,11 +1096,20 @@ public class ServerApiClient : IDisposable
     {
         var query = new List<string> { $"since={since}" };
         if (farmhandCount is int fc)
+        {
             query.Add($"farmhandCount={fc}");
+        }
+
         if (!string.IsNullOrEmpty(hasFarmhand))
+        {
             query.Add($"hasFarmhand={Uri.EscapeDataString(hasFarmhand)}");
+        }
+
         if (requireCustomized is bool rc)
+        {
             query.Add($"requireCustomized={rc.ToString().ToLowerInvariant()}");
+        }
+
         var serverTimeoutMs = (long)(
             timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
         );
@@ -1077,7 +1118,10 @@ public class ServerApiClient : IDisposable
 
         var response = await _httpClient.GetAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+        {
             return null;
+        }
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ServerFarmhandsResponse>(ct);
     }
@@ -1443,7 +1487,10 @@ public class ServerApiClient : IDisposable
                 {
                     var remaining = deadline - DateTime.UtcNow;
                     if (remaining <= TimeSpan.Zero)
+                    {
                         break;
+                    }
+
                     var status = await WaitForStatusAsync(
                         since: since,
                         isReady: true,
@@ -1460,7 +1507,9 @@ public class ServerApiClient : IDisposable
                     {
                         var isReady = status.IsOnline && status.IsReady;
                         if (requireInviteCode)
+                        {
                             isReady = isReady && !string.IsNullOrEmpty(status.InviteCode);
+                        }
 
                         if (isReady)
                         {
@@ -1537,17 +1586,34 @@ public class ServerApiClient : IDisposable
     {
         var body = new Dictionary<string, object>();
         if (farmType.HasValue)
+        {
             body["farmType"] = farmType.Value.ToJsonValue();
+        }
+
         if (farmName != null)
+        {
             body["farmName"] = farmName;
+        }
+
         if (startingCabins.HasValue)
+        {
             body["startingCabins"] = startingCabins.Value;
+        }
+
         if (cabinStrategy != null)
+        {
             body["cabinStrategy"] = cabinStrategy;
+        }
+
         if (maxPlayers.HasValue)
+        {
             body["maxPlayers"] = maxPlayers.Value;
+        }
+
         if (allowIpConnections.HasValue)
+        {
             body["allowIpConnections"] = allowIpConnections.Value;
+        }
 
         var content = JsonContent.Create(body);
         var response = await _httpClient.PostAsync("/newgame", content, ct);
@@ -1698,7 +1764,10 @@ public class ServerApiClient : IDisposable
                     reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
                     var players = await GetPlayers(reqCts.Token);
                     if (players?.Players == null)
+                    {
                         return false;
+                    }
+
                     return !players.Players.Any(p => nameSet.Contains(p.Name));
                 }
                 catch (Exception ex)
@@ -1753,7 +1822,10 @@ public class ServerApiClient : IDisposable
                     reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
                     var players = await GetPlayers(reqCts.Token);
                     if (players?.Players == null)
+                    {
                         return false;
+                    }
+
                     return !players.Players.Any(p => idSet.Contains(p.Id));
                 }
                 catch (Exception ex)
@@ -1815,7 +1887,10 @@ public class ServerApiClient : IDisposable
                         ct: reqCts.Token
                     );
                     if (farmhands == null)
+                    {
                         return new Helpers.PollingHelper.LongPollResult(false, since);
+                    }
+
                     return new Helpers.PollingHelper.LongPollResult(true, farmhands.Version);
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)

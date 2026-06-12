@@ -205,7 +205,10 @@ internal static class DockerOps
         );
 
         if (listed?.Volumes == null)
+        {
             return 0;
+        }
+
         foreach (var v in listed.Volumes)
         {
             using var cts = perCallTimeout is { } t

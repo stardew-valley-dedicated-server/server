@@ -151,7 +151,9 @@ public class LocalGameClientProvider : IGameClientProvider
             foreach (var name in names)
             {
                 if (Process.GetProcessesByName(name).Length > 0)
+                {
                     return true;
+                }
             }
             return false;
         }
@@ -365,7 +367,9 @@ public class LocalGameClientProvider : IGameClientProvider
 
             using var stopProcess = Process.Start(stopInfo);
             if (stopProcess == null)
+            {
                 return false;
+            }
 
             using var cts = new CancellationTokenSource(TestTimings.ContainerStopTimeout);
             try
@@ -468,7 +472,9 @@ public class LocalGameClientProvider : IGameClientProvider
             }
 
             if (ct.IsCancellationRequested)
+            {
                 return;
+            }
 
             using var fs = new FileStream(
                 filePath,
@@ -504,7 +510,9 @@ public class LocalGameClientProvider : IGameClientProvider
     private static string CleanLine(string? input)
     {
         if (string.IsNullOrEmpty(input))
+        {
             return "";
+        }
 
         var result = Regex.Replace(input, @"\x1B\[[0-9;]*[a-zA-Z]", "");
         result = result.Replace("\r", "").Replace("\n", "");

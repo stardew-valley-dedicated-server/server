@@ -52,9 +52,14 @@ namespace JunimoServer.Services.AlwaysOn
         )
         {
             if (!Game1.IsMasterGame)
+            {
                 return; // only the host runs the completion block + newDaySync
+            }
+
             if (__result)
+            {
                 return; // event self-completed (draws were healthy) — nothing to do
+            }
 
             // Reset the accumulator when a new event instance starts ticking.
             if (!ReferenceEquals(__instance, _trackedInstance))
@@ -64,11 +69,15 @@ namespace JunimoServer.Services.AlwaysOn
                 _forcedThisInstance = false;
             }
             if (_forcedThisInstance)
+            {
                 return;
+            }
 
             _accumulatedMs += time.ElapsedGameTime.TotalMilliseconds;
             if (_accumulatedMs < FallbackThresholdMs)
+            {
                 return;
+            }
 
             _forcedThisInstance = true;
             __result = true;

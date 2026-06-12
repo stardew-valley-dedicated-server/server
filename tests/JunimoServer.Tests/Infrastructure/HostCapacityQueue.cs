@@ -40,7 +40,10 @@ internal sealed class HostCapacityQueue
     public HostCapacityQueue(string name, int capacity)
     {
         if (capacity <= 0)
+        {
             throw new ArgumentOutOfRangeException(nameof(capacity));
+        }
+
         Name = name;
         Capacity = capacity;
         _available = capacity;
@@ -68,7 +71,10 @@ internal sealed class HostCapacityQueue
     public async Task AcquireAsync(int count, string testName, int priority, CancellationToken ct)
     {
         if (count <= 0)
+        {
             return;
+        }
+
         var shortName = TestLog.Short(testName);
         Waiter waiter;
         lock (_lock)
@@ -142,7 +148,10 @@ internal sealed class HostCapacityQueue
     public void Release(int count)
     {
         if (count <= 0)
+        {
             return;
+        }
+
         lock (_lock)
         {
             _available += count;
@@ -182,7 +191,10 @@ internal sealed class HostCapacityQueue
     )
     {
         if (count <= 0)
+        {
             return;
+        }
+
         var shortName = TestLog.Short(testName);
         Waiter waiter;
         lock (_lock)
@@ -195,7 +207,10 @@ internal sealed class HostCapacityQueue
 
             _available += count;
             if (_available > Capacity)
+            {
                 _available = Capacity;
+            }
+
             DrainQueue();
         }
 
@@ -247,7 +262,10 @@ internal sealed class HostCapacityQueue
     private async Task SettleAndDrainAsync()
     {
         if (!_steadyState)
+        {
             await Task.Delay(SettleDelay);
+        }
+
         lock (_lock)
         {
             _drainScheduled = false;
@@ -264,7 +282,10 @@ internal sealed class HostCapacityQueue
         {
             var head = _waiters.Min!;
             if (_available < head.Count)
+            {
                 break;
+            }
+
             _waiters.Remove(head);
             _available -= head.Count;
             TestLog.Test(
@@ -274,7 +295,9 @@ internal sealed class HostCapacityQueue
         }
 
         if (!_steadyState && _available <= 0)
+        {
             _steadyState = true;
+        }
     }
 
     private int GetQueuePosition(Waiter waiter)
@@ -284,7 +307,9 @@ internal sealed class HostCapacityQueue
         {
             pos++;
             if (w == waiter)
+            {
                 return pos;
+            }
         }
         return pos;
     }
@@ -309,10 +334,16 @@ internal sealed class HostCapacityQueue
         public int CompareTo(Waiter? other)
         {
             if (other is null)
+            {
                 return -1;
+            }
+
             var cmp = Priority.CompareTo(other.Priority);
             if (cmp != 0)
+            {
                 return cmp;
+            }
+
             return Sequence.CompareTo(other.Sequence);
         }
     }

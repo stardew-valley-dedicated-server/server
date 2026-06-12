@@ -65,7 +65,10 @@ public class SteamAppIdTests : TestBase
                 // Extract the AppID number
                 var parts = line.Split('=');
                 if (parts.Length >= 2)
+                {
                     detectedAppId = parts[^1].Trim();
+                }
+
                 break;
             }
         }

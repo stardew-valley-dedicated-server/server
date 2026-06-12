@@ -51,16 +51,22 @@ namespace JunimoServer.Services.CropSaver
         {
             var location = Game1.getLocationFromName(cropLocationName);
             if (location == null)
+            {
                 return null;
+            }
 
             if (
                 location.terrainFeatures.TryGetValue(cropLocationTile, out var tf)
                 && tf is HoeDirt dirt
             )
+            {
                 return dirt;
+            }
 
             if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
+            {
                 return pot.hoeDirt.Value;
+            }
 
             return null;
         }
@@ -82,11 +88,20 @@ namespace JunimoServer.Services.CropSaver
         public override bool Equals(object obj)
         {
             if (ReferenceEquals(null, obj))
+            {
                 return false;
+            }
+
             if (ReferenceEquals(this, obj))
+            {
                 return true;
+            }
+
             if (obj.GetType() != this.GetType())
+            {
                 return false;
+            }
+
             return Equals((SaverCrop)obj);
         }
 

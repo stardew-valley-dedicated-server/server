@@ -177,7 +177,10 @@ public abstract class RendererBase : ITestRenderer
     protected bool ReclassifyCanceledAsFailed(string displayName)
     {
         if (!_classifiedAsCanceled.TryRemove(displayName, out _))
+        {
             return false;
+        }
+
         Interlocked.Decrement(ref _canceled);
         Interlocked.Increment(ref _failed);
         return true;
@@ -269,7 +272,10 @@ public abstract class RendererBase : ITestRenderer
     protected static string SanitizeDisplayName(string name)
     {
         if (string.IsNullOrEmpty(name))
+        {
             return name;
+        }
+
         var result = name.Replace("\r\n", " ").Replace("\n", " ");
         return MultipleSpaces.Replace(result, " ");
     }
@@ -300,7 +306,9 @@ public abstract class RendererBase : ITestRenderer
     public static string SanitizeStackTrace(string stackTrace)
     {
         if (string.IsNullOrEmpty(stackTrace))
+        {
             return stackTrace;
+        }
 
         var lines = stackTrace.Split('\n');
         var filtered = new List<string>(lines.Length);
@@ -309,7 +317,9 @@ public abstract class RendererBase : ITestRenderer
         {
             var line = rawLine.TrimEnd();
             if (string.IsNullOrEmpty(line))
+            {
                 continue;
+            }
 
             // Keep "--- End of stack trace ---" markers
             if (line.TrimStart().StartsWith("---"))
@@ -329,7 +339,9 @@ public abstract class RendererBase : ITestRenderer
 
             // Drop frames from hidden namespaces entirely
             if (IsHiddenFrame(method))
+            {
                 continue;
+            }
 
             var hasSource = match.Groups["source"].Success;
             if (!hasSource)
@@ -340,11 +352,15 @@ public abstract class RendererBase : ITestRenderer
 
             var path = match.Groups["path"].Value;
             if (ProjectFramePattern.IsMatch(path))
+            {
                 filtered.Add(
                     $"{match.Groups["indent"].Value}at {method} in {CleanProjectPath(path)}"
                 );
+            }
             else
+            {
                 filtered.Add($"{match.Groups["indent"].Value}at {method}");
+            }
         }
 
         return string.Join('\n', filtered);
@@ -355,7 +371,9 @@ public abstract class RendererBase : ITestRenderer
         foreach (var ns in HiddenFrameNamespaces)
         {
             if (method.StartsWith(ns, StringComparison.Ordinal))
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -380,7 +398,10 @@ public abstract class RendererBase : ITestRenderer
     {
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 6 && dir != null; i++)
+        {
             dir = Path.GetDirectoryName(dir);
+        }
+
         return dir;
     }
 }

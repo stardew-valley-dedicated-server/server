@@ -34,18 +34,22 @@ public static class SetupEventBus
     {
         var pipeName = Environment.GetEnvironmentVariable("SDVD_SETUP_PIPE");
         if (string.IsNullOrEmpty(pipeName))
+        {
             throw new InvalidOperationException(
                 "JunimoServer.Tests must be run via the JunimoServer.TestRunner "
                     + "(`make test`); SDVD_SETUP_PIPE is not set."
             );
+        }
 
         var sink = NamedPipeSink.TryCreate(pipeName);
         if (sink == null)
+        {
             throw new InvalidOperationException(
                 $"JunimoServer.Tests could not connect to the parent runner's setup pipe "
                     + $"'{pipeName}'. Ensure the assembly is launched by JunimoServer.TestRunner "
                     + "(`make test`)."
             );
+        }
 
         return sink;
     }
@@ -250,28 +254,59 @@ public static class SetupEventBus
     public static string ToPastTense(string stepName)
     {
         if (string.IsNullOrEmpty(stepName))
+        {
             return stepName;
+        }
 
         if (stepName.StartsWith("Starting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Started " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Building ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Built " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Preparing ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Prepared " + stepName[10..];
+        }
+
         if (stepName.StartsWith("Checking ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Checked " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Waiting for ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Waited for " + stepName[12..];
+        }
+
         if (stepName.StartsWith("Cleaning ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Cleaned " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Loading ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Loaded " + stepName[8..];
+        }
+
         if (stepName.StartsWith("Creating ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Created " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Inspecting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Inspected " + stepName[11..];
+        }
+
         if (stepName.StartsWith("Connecting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Connected " + stepName[11..];
+        }
 
         return stepName;
     }
@@ -280,17 +315,23 @@ public static class SetupEventBus
     public static string FormatDuration(TimeSpan duration)
     {
         if (duration.TotalMinutes >= 1)
+        {
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
                 "{0:F1}m",
                 duration.TotalMinutes
             );
+        }
+
         if (duration.TotalSeconds >= 1)
+        {
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
                 "{0:F2}s",
                 duration.TotalSeconds
             );
+        }
+
         return string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
             "{0:F0}ms",
@@ -427,7 +468,9 @@ public static class SetupEventBus
         private async Task DrainAsync(TimeSpan timeout)
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
                 return;
+            }
 
             _channel.Writer.TryComplete();
             try

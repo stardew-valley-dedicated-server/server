@@ -97,12 +97,14 @@ public static class PollingHelper
 
             // Surface the last exception if polling timed out due to repeated failures
             if (lastException != null)
+            {
                 throw new TimeoutException(
                     FormattableString.Invariant(
                         $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
                     ) + $"Last error: {lastException.Message}",
                     lastException
                 );
+            }
 
             return false;
         }
@@ -165,7 +167,10 @@ public static class PollingHelper
     {
         var msAgo = HttpResponseDiagnostics.LastPredicateChangedMsAgo;
         if (msAgo is not long ago)
+        {
             return;
+        }
+
         var producerTime = new InfrastructureEventLog.EventTime(
             DateTime.UtcNow - TimeSpan.FromMilliseconds(ago),
             RunMetadata.GetRunMs() - ago
@@ -256,12 +261,14 @@ public static class PollingHelper
             }
 
             if (lastException != null)
+            {
                 throw new TimeoutException(
                     FormattableString.Invariant(
                         $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
                     ) + $"Last error: {lastException.Message}",
                     lastException
                 );
+            }
 
             return default;
         }
@@ -382,7 +389,9 @@ public static class PollingHelper
             {
                 var remaining = timeout - sw.Elapsed;
                 if (remaining <= TimeSpan.Zero)
+                {
                     break;
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 iterations++;
@@ -404,7 +413,9 @@ public static class PollingHelper
                     // 408 responses with no observed version leave Version
                     // unchanged from `since`, so this guard is a no-op there.
                     if (result.Version > since)
+                    {
                         since = result.Version;
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -413,12 +424,14 @@ public static class PollingHelper
             }
 
             if (lastException != null)
+            {
                 throw new TimeoutException(
                     FormattableString.Invariant(
                         $"Long-poll [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
                     ) + $"Last error: {lastException.Message}",
                     lastException
                 );
+            }
 
             return false;
         }

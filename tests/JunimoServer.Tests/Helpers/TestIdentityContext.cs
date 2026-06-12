@@ -35,7 +35,10 @@ public static class TestIdentityContext
             var testMethod = ctx?.TestMethod;
             var displayName = ctx?.Test?.TestDisplayName;
             if (testClass == null || testMethod == null || string.IsNullOrEmpty(displayName))
+            {
                 return null;
+            }
+
             return new TestIdentity(
                 Class: testClass.TestClassSimpleName,
                 Method: testMethod.MethodName,
@@ -88,7 +91,10 @@ public static class TestIdentityContext
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
+
             _disposed = true;
             _phase.Value = _prior;
         }

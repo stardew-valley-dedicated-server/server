@@ -56,7 +56,10 @@ public sealed class TunnelManager : IAsyncDisposable
     public void SetSshPath(string sshPath)
     {
         if (string.IsNullOrWhiteSpace(sshPath))
+        {
             throw new ArgumentException("ssh path must be non-empty", nameof(sshPath));
+        }
+
         _sshPath = sshPath;
     }
 
@@ -75,15 +78,19 @@ public sealed class TunnelManager : IAsyncDisposable
     )
     {
         if (string.IsNullOrEmpty(sshDestination))
+        {
             throw new ArgumentException(
                 "RegisterHostMasterAsync requires a remote SSH destination.",
                 nameof(sshDestination)
             );
+        }
 
         lock (_lock)
         {
             if (_masters.ContainsKey(hostId))
+            {
                 return;
+            }
         }
 
         var controlPath = ComputeControlPath(hostId);
@@ -276,7 +283,9 @@ public sealed class TunnelManager : IAsyncDisposable
             master = TryGetMaster(hostId);
         }
         if (master is null)
+        {
             return false;
+        }
 
         try
         {
@@ -308,7 +317,10 @@ public sealed class TunnelManager : IAsyncDisposable
     private static void AddIdentityArg(ProcessStartInfo psi, string? keyPath)
     {
         if (string.IsNullOrEmpty(keyPath))
+        {
             return;
+        }
+
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(keyPath);
         psi.ArgumentList.Add("-o");
@@ -362,10 +374,12 @@ public sealed class TunnelManager : IAsyncDisposable
     )
     {
         if (string.IsNullOrEmpty(sshDestination))
+        {
             throw new ArgumentException(
                 "OpenSocketForwardAsync requires a remote SSH destination.",
                 nameof(sshDestination)
             );
+        }
 
         return OpenForwardCoreAsync(
             hostId,
@@ -529,12 +543,16 @@ public sealed class TunnelManager : IAsyncDisposable
 
         var (exit, stderr) = await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
         if (exit == 0)
+        {
             return;
+        }
 
         if (LooksLikePortCollision(stderr))
+        {
             throw new PortCollisionException(
                 $"ssh -O forward exited (code {exit}); local bind collision on {coordinatorPort}: {stderr}"
             );
+        }
 
         throw new InvalidOperationException(
             $"ssh -O forward failed (exit {exit}) for {master.HostId} → {target}: {stderr}"
@@ -552,9 +570,11 @@ public sealed class TunnelManager : IAsyncDisposable
         {
             ct.ThrowIfCancellationRequested();
             if (deadline.IsCancellationRequested)
+            {
                 throw new ProbeTimeoutException(
                     $"127.0.0.1:{coordinatorPort} did not accept within {timeout.TotalMilliseconds:F0}ms after ssh -O forward returned 0."
                 );
+            }
 
             using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(
                 ct,
@@ -609,7 +629,9 @@ public sealed class TunnelManager : IAsyncDisposable
         lock (_lock)
         {
             if (!_forwards.Remove(new ForwardKey(hostId, coordinatorPort), out entry))
+            {
                 return;
+            }
         }
 
         await CancelForwardAsync(entry, TimeSpan.FromSeconds(2), via: "dispose");
@@ -885,7 +907,9 @@ public sealed class TunnelManager : IAsyncDisposable
                 )
                 {
                     lock (stderr)
+                    {
                         stderr.AppendLine(line);
+                    }
                 }
             }
             catch
@@ -918,7 +942,9 @@ public sealed class TunnelManager : IAsyncDisposable
             try
             {
                 if (!process.HasExited)
+                {
                     process.Kill(entireProcessTree: true);
+                }
             }
             catch
             { /* best effort */
@@ -944,7 +970,10 @@ public sealed class TunnelManager : IAsyncDisposable
             catch { }
             string captured;
             lock (stderr)
+            {
                 captured = stderr.ToString().TrimEnd();
+            }
+
             return (
                 124,
                 captured
@@ -965,7 +994,10 @@ public sealed class TunnelManager : IAsyncDisposable
         catch { }
         string captured2;
         lock (stderr)
+        {
             captured2 = stderr.ToString().TrimEnd();
+        }
+
         return (process.ExitCode, captured2);
     }
 
@@ -974,7 +1006,9 @@ public sealed class TunnelManager : IAsyncDisposable
         lock (_lock)
         {
             if (_masters.TryGetValue(hostId, out var m))
+            {
                 return m;
+            }
         }
 
         // Child-process path: xUnit's AssemblyRunner spawns the test assembly
@@ -988,7 +1022,10 @@ public sealed class TunnelManager : IAsyncDisposable
         lock (_lock)
         {
             if (_masters.TryGetValue(hostId, out var m))
+            {
                 return m;
+            }
+
             throw new InvalidOperationException(
                 $"No SSH ControlMaster registered for host '{hostId}'. "
                     + $"HostPool.PreflightAsync must run RegisterHostMasterAsync before any forward open "
@@ -1001,11 +1038,15 @@ public sealed class TunnelManager : IAsyncDisposable
     {
         var sshPathEnv = Environment.GetEnvironmentVariable(RunArtifactNames.SshPathEnv);
         if (!string.IsNullOrWhiteSpace(sshPathEnv) && _sshPath == "ssh")
+        {
             _sshPath = sshPathEnv;
+        }
 
         var raw = Environment.GetEnvironmentVariable(RunArtifactNames.SshHostMastersEnv);
         if (string.IsNullOrWhiteSpace(raw))
+        {
             return;
+        }
 
         Dictionary<string, HostMasterEnvEntry>? map;
         try
@@ -1020,19 +1061,27 @@ public sealed class TunnelManager : IAsyncDisposable
             return;
         }
         if (map is null)
+        {
             return;
+        }
 
         lock (_lock)
         {
             foreach (var (hostId, entry) in map)
             {
                 if (_masters.ContainsKey(hostId))
+                {
                     continue;
+                }
+
                 if (
                     string.IsNullOrEmpty(entry.SshDestination)
                     || string.IsNullOrEmpty(entry.ControlPath)
                 )
+                {
                     continue;
+                }
+
                 _masters[hostId] = new HostMaster
                 {
                     HostId = hostId,
@@ -1115,9 +1164,15 @@ public sealed class TunnelManager : IAsyncDisposable
             {
                 var info = new FileInfo(file);
                 if (!info.Exists)
+                {
                     continue;
+                }
+
                 if (info.LastWriteTimeUtc > cutoff)
+                {
                     continue;
+                }
+
                 info.Delete();
                 deleted++;
             }
@@ -1136,7 +1191,9 @@ public sealed class TunnelManager : IAsyncDisposable
         try
         {
             if (File.Exists(path))
+            {
                 File.Delete(path);
+            }
         }
         catch
         { /* best effort */
@@ -1157,11 +1214,17 @@ public sealed class TunnelManager : IAsyncDisposable
     private static string ReadMasterLogTail(string? logPath, int maxBytes)
     {
         if (string.IsNullOrEmpty(logPath))
+        {
             return "";
+        }
+
         try
         {
             if (!File.Exists(logPath))
+            {
                 return "";
+            }
+
             using var stream = new FileStream(
                 logPath,
                 FileMode.Open,
@@ -1170,7 +1233,10 @@ public sealed class TunnelManager : IAsyncDisposable
             );
             var length = stream.Length;
             if (length == 0)
+            {
                 return "";
+            }
+
             var take = (int)Math.Min(length, maxBytes);
             stream.Seek(-take, SeekOrigin.End);
             var buffer = new byte[take];
@@ -1303,9 +1369,14 @@ public sealed class ForwardLease : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
+        {
             return;
+        }
+
         _disposed = true;
         if (_isRemote)
+        {
             await _owner.CloseAsync(_hostId, CoordinatorPort, _mappedPort);
+        }
     }
 }

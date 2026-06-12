@@ -39,12 +39,16 @@ namespace JunimoServer.Shared
         public static bool ShouldDraw(int targetFps)
         {
             if (targetFps < 1)
+            {
                 return true;
+            }
 
             var now = DateTime.UtcNow;
             var thresholdMs = (1000.0 / targetFps) * JitterToleranceFactor;
             if ((now - _lastDrawTime).TotalMilliseconds < thresholdMs)
+            {
                 return false;
+            }
 
             _lastDrawTime = now;
             return true;

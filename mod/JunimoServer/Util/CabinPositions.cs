@@ -30,7 +30,9 @@ namespace JunimoServer.Util
         public static CabinRole Classify(Building building)
         {
             if (building == null || !building.isCabin)
+            {
                 return CabinRole.Player;
+            }
 
             int x = building.tileX.Value;
             int y = building.tileY.Value;
@@ -38,11 +40,19 @@ namespace JunimoServer.Util
             if (y == LobbyRowY)
             {
                 if (x == SharedLobby.X)
+                {
                     return CabinRole.SharedLobby;
+                }
+
                 if (x <= EditingThresholdX)
+                {
                     return CabinRole.Editing;
+                }
+
                 if (x < SharedLobby.X)
+                {
                     return CabinRole.IndividualLobby;
+                }
             }
 
             return CabinRole.Player;

@@ -56,7 +56,9 @@ string? GetEnvTrimmed(string name)
 // warned-and-ignored (not fatal) so a typo can't abort the whole download.
 var keepLanguages = SteamAuthService.ParseKeepLanguages(GetEnvTrimmed("STEAM_KEEP_LANGUAGES"));
 if (keepLanguages.Count > 0)
+{
     Logger.Log($"[SteamService] Keeping localized content for: {string.Join(", ", keepLanguages)}");
+}
 
 // ============================================================================
 // Account Discovery
@@ -122,7 +124,9 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
     var pass = GetEnvTrimmed("STEAM_PASSWORD");
     var token = GetEnvTrimmed("STEAM_REFRESH_TOKEN");
     if (user != null)
+    {
         result[0] = (user, pass, token);
+    }
 
     return result;
 }
@@ -239,7 +243,9 @@ switch (command)
                 {
                     Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
                     if (downloadAccount == null)
+                    {
                         downloadAccount = svc;
+                    }
                 }
                 else
                 {
@@ -289,9 +295,13 @@ switch (command)
                 }
 
                 if (svc.IsLoggedIn)
+                {
                     Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
+                }
                 else
+                {
                     Logger.Log($"[SteamService] Account {idx}: Login failed");
+                }
             }
         }
         break;
@@ -329,7 +339,10 @@ switch (command)
         {
             var session = svc.GetSavedSession();
             if (session == null)
+            {
                 continue;
+            }
+
             anyExported = true;
             var exportJson = JsonSerializer.Serialize(
                 new
@@ -369,7 +382,10 @@ switch (command)
 
 // Disconnect all accounts
 foreach (var svc in accounts.Values)
+{
     svc.Disconnect();
+}
+
 return;
 
 // ============================================================================
@@ -414,7 +430,9 @@ async Task RunHttpServerAsync(
         {
             string? requestId = ctx.Request.Headers["X-Request-Id"].FirstOrDefault();
             if (!string.IsNullOrEmpty(requestId))
+            {
                 ctx.Response.Headers["X-Request-Id"] = requestId;
+            }
 
             using var _scope = SidecarRequestContext.Begin(requestId);
             await next();
@@ -426,7 +444,10 @@ async Task RunHttpServerAsync(
     {
         var idx = int.TryParse(ctx.Request.Query["account"].FirstOrDefault(), out var n) ? n : 0;
         if (!accts.TryGetValue(idx, out var svc))
+        {
             throw new KeyNotFoundException($"Account {idx} not configured");
+        }
+
         return svc;
     }
 
@@ -551,10 +572,12 @@ async Task RunHttpServerAsync(
                 var svc = GetAccount(ctx);
                 var session = svc.GetSavedSession();
                 if (session == null)
+                {
                     return Results.Json(
                         new { error = "No session. Run setup first." },
                         statusCode: 503
                     );
+                }
 
                 return Results.Json(
                     new
@@ -586,7 +609,9 @@ async Task RunHttpServerAsync(
 
                 var body = await ctx.Request.ReadFromJsonAsync<CreateLobbyRequest>();
                 if (body == null)
+                {
                     return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+                }
 
                 var lobbyId = await svc.CreateLobbyAsync(
                     appId: StardewValleyAppId,
@@ -617,7 +642,9 @@ async Task RunHttpServerAsync(
 
                 var body = await ctx.Request.ReadFromJsonAsync<SetLobbyDataRequest>();
                 if (body == null)
+                {
                     return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+                }
 
                 await svc.SetLobbyDataAsync(
                     appId: StardewValleyAppId,
@@ -645,7 +672,9 @@ async Task RunHttpServerAsync(
 
                 var body = await ctx.Request.ReadFromJsonAsync<SetLobbyPrivacyRequest>();
                 if (body == null)
+                {
                     return Results.Json(new { error = "Invalid request body" }, statusCode: 400);
+                }
 
                 var lobbyType = body.privacy?.ToLower() switch
                 {
@@ -705,7 +734,9 @@ async Task RunHttpServerAsync(
             {
                 await LoginAccountAsync(svc, cfg);
                 if (svc.IsLoggedIn)
+                {
                     Logger.Log($"[SteamService] A{svc.AccountIndex}: Logged in as {svc.SteamId}");
+                }
             }
         }
         catch (Exception ex)

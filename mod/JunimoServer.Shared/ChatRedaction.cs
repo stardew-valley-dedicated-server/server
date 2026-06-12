@@ -24,7 +24,10 @@ namespace JunimoServer.Shared
         public static string MaskIp(string ip)
         {
             if (string.IsNullOrEmpty(ip))
+            {
                 return ip;
+            }
+
             switch (ip)
             {
                 case "127.0.0.1":
@@ -52,7 +55,9 @@ namespace JunimoServer.Shared
 
             var octets = ip.Split('.');
             if (octets.Length == 4)
+            {
                 return "***.***.***." + octets[3];
+            }
 
             return ip;
         }
@@ -65,9 +70,15 @@ namespace JunimoServer.Shared
         public static string MaskValue(string value)
         {
             if (string.IsNullOrEmpty(value))
+            {
                 return value;
+            }
+
             if (value.Length <= 2)
+            {
                 return "***";
+            }
+
             return $"{value[0]}***{value[value.Length - 1]}";
         }
 
@@ -78,7 +89,10 @@ namespace JunimoServer.Shared
         public static string MaskSecrets(string message)
         {
             if (string.IsNullOrEmpty(message))
+            {
                 return message;
+            }
+
             var trimmed = message.TrimStart();
             const string prefix = "!login";
             if (

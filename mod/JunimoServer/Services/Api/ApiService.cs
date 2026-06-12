@@ -1067,9 +1067,13 @@ namespace JunimoServer.Services.Api
             while (_completedWaitTimes.TryDequeue(out var waitMs))
             {
                 if (_gameThreadWaitCount == GameThreadWaitBufferSize)
+                {
                     _gameThreadWaitSum -= _gameThreadWaitBuffer[_gameThreadWaitIndex];
+                }
                 else
+                {
                     _gameThreadWaitCount++;
+                }
 
                 _gameThreadWaitBuffer[_gameThreadWaitIndex] = waitMs;
                 _gameThreadWaitSum += waitMs;
@@ -1106,7 +1110,10 @@ namespace JunimoServer.Services.Api
             var tickMs = _tickStopwatch.Elapsed.TotalMilliseconds;
             _tickHistory.Enqueue(tickMs);
             if (_tickHistory.Count > TickHistorySize)
+            {
                 _tickHistory.Dequeue();
+            }
+
             Volatile.Write(ref _lastTickMs, tickMs);
             Volatile.Write(ref _avgTickMs, _tickHistory.Average());
 
@@ -1287,7 +1294,9 @@ namespace JunimoServer.Services.Api
                 foreach (var farmer in onlineFarmers)
                 {
                     if (farmer.UniqueMultiplayerID == Game1.player?.UniqueMultiplayerID)
+                    {
                         continue;
+                    }
 
                     snap.Players.Add(
                         new PlayerInfo
@@ -1372,16 +1381,22 @@ namespace JunimoServer.Services.Api
                     foreach (var farmer in onlineFarmers)
                     {
                         if (farmer.UniqueMultiplayerID == Game1.player?.UniqueMultiplayerID)
+                        {
                             continue;
+                        }
 
                         if (
                             _passwordProtectionService.IsPlayerAuthenticated(
                                 farmer.UniqueMultiplayerID
                             )
                         )
+                        {
                             snap.AuthenticatedCount++;
+                        }
                         else
+                        {
                             snap.PendingCount++;
+                        }
                     }
                 }
 
@@ -1395,7 +1410,9 @@ namespace JunimoServer.Services.Api
                 // using HashSet<long>; bounded by MaxPlayers.
                 var currentUids = new HashSet<long>();
                 foreach (var p in snap.Players)
+                {
                     currentUids.Add(p.Id);
+                }
 
                 if (_previousOtherFarmerUids == null)
                 {
@@ -1449,7 +1466,9 @@ namespace JunimoServer.Services.Api
                     {
                         _previousCabinOwners.TryGetValue(kv.Key, out var prev);
                         if (prev == kv.Value)
+                        {
                             continue;
+                        }
 
                         currentCabinMeta.TryGetValue(kv.Key, out var meta);
                         Diagnostics.ModEventLog.Emit(
@@ -1518,7 +1537,9 @@ namespace JunimoServer.Services.Api
             {
                 var farm = Game1.getFarm();
                 if (farm == null)
+                {
                     return;
+                }
 
                 var cabinBuildings = farm.buildings.Where(b => b.isCabin).ToList();
                 var strategy = _persistentOptions.Data.CabinStrategy;
@@ -1640,15 +1661,21 @@ namespace JunimoServer.Services.Api
         private bool ValidateApiKey(HttpListenerRequest request)
         {
             if (!_authEnabled)
+            {
                 return true;
+            }
 
             var authHeader = request.Headers["Authorization"];
             if (string.IsNullOrEmpty(authHeader))
+            {
                 return false;
+            }
 
             // Expect "Bearer <token>" format
             if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
                 return false;
+            }
 
             var providedKey = authHeader.Substring(7).Trim();
             return !string.IsNullOrEmpty(providedKey) && providedKey == Env.ApiKey;
@@ -1685,7 +1712,9 @@ namespace JunimoServer.Services.Api
         private void StartServer()
         {
             if (_isRunning)
+            {
                 return;
+            }
 
             try
             {
@@ -1860,7 +1889,10 @@ namespace JunimoServer.Services.Api
                 {
                     var ageMs = (long)(DateTime.UtcNow - cap).TotalMilliseconds;
                     if (ageMs < 0)
+                    {
                         ageMs = 0; // clock skew paranoia
+                    }
+
                     response.Headers["X-Snapshot-Age-Ms"] = ageMs.ToString(
                         System.Globalization.CultureInfo.InvariantCulture
                     );
@@ -2401,7 +2433,9 @@ namespace JunimoServer.Services.Api
             {
                 var msg = JsonConvert.DeserializeObject<WebSocketMessage>(json);
                 if (msg == null)
+                {
                     return;
+                }
 
                 switch (msg.Type)
                 {
@@ -2440,7 +2474,9 @@ namespace JunimoServer.Services.Api
         private async Task SendWebSocketMessageAsync(WebSocket ws, object message)
         {
             if (ws.State != WebSocketState.Open)
+            {
                 return;
+            }
 
             var json = JsonConvert.SerializeObject(message, JsonSettings);
             var bytes = Encoding.UTF8.GetBytes(json);
@@ -2841,14 +2877,19 @@ namespace JunimoServer.Services.Api
             var list = new List<DiagnosticsCabinState>();
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return list;
+            }
 
             foreach (var building in farm.buildings)
             {
                 try
                 {
                     if (!building.isCabin)
+                    {
                         continue;
+                    }
+
                     var cabin = building.GetIndoors<StardewValley.Locations.Cabin>();
                     var owner = cabin?.owner;
                     list.Add(
@@ -2880,7 +2921,9 @@ namespace JunimoServer.Services.Api
             var list = new List<DiagnosticsFarmhandState>();
             var farmhandData = Game1.netWorldState?.Value?.farmhandData;
             if (farmhandData == null)
+            {
                 return list;
+            }
 
             foreach (var kv in farmhandData.Pairs)
             {
@@ -2888,7 +2931,10 @@ namespace JunimoServer.Services.Api
                 {
                     var f = kv.Value;
                     if (f == null)
+                    {
                         continue;
+                    }
+
                     list.Add(
                         new DiagnosticsFarmhandState
                         {
@@ -2920,19 +2966,30 @@ namespace JunimoServer.Services.Api
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
             );
             if (mpField == null)
+            {
                 return System.Array.Empty<long>();
+            }
+
             var mp = mpField.GetValue(null) as Multiplayer;
             if (mp == null)
+            {
                 return System.Array.Empty<long>();
+            }
 
             var fi = _disconnectingFarmersField ??= typeof(Multiplayer).GetField(
                 "disconnectingFarmers",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
             );
             if (fi == null)
+            {
                 return System.Array.Empty<long>();
+            }
+
             if (fi.GetValue(mp) is not System.Collections.Generic.IEnumerable<long> ids)
+            {
                 return System.Array.Empty<long>();
+            }
+
             return ids.ToArray();
         }
 
@@ -2957,7 +3014,9 @@ namespace JunimoServer.Services.Api
             var list = new List<ReadyCheckState>();
             var netReady = Game1.netReady;
             if (netReady == null)
+            {
                 return list;
+            }
 
             var fi = _readyChecksField ??=
                 typeof(StardewValley.Network.NetReady.ReadySynchronizer).GetField(
@@ -2966,17 +3025,23 @@ namespace JunimoServer.Services.Api
                         | System.Reflection.BindingFlags.Instance
                 );
             if (fi == null)
+            {
                 return list;
+            }
 
             if (fi.GetValue(netReady) is not System.Collections.IDictionary dict)
+            {
                 return list;
+            }
 
             foreach (System.Collections.DictionaryEntry kv in dict)
             {
                 var id = kv.Key?.ToString() ?? "";
                 var check = kv.Value;
                 if (check == null)
+                {
                     continue;
+                }
 
                 // BaseReadyCheck has public NumberReady/NumberRequired/IsReady/State.
                 // State enum values: NotReady, Ready, Locked — we surface IsLocked
@@ -3033,7 +3098,9 @@ namespace JunimoServer.Services.Api
             var s = new NewDaySyncState();
             var sync = Game1.newDaySync;
             if (sync == null)
+            {
                 return s;
+            }
 
             // hasInstance() / hasStarted() / hasFinished() are public on NewDaySynchronizer.
             try
@@ -3152,15 +3219,30 @@ namespace JunimoServer.Services.Api
             bool Matches(GameStateSnapshot snap)
             {
                 if (snap.Version <= since)
+                {
                     return false;
+                }
+
                 if (isReadyFilter is bool b && snap.IsReady != b)
+                {
                     return false;
+                }
+
                 if (isPausedFilter is bool ip && snap.IsPaused != ip)
+                {
                     return false;
+                }
+
                 if (dayFilter is int d && snap.Day != d)
+                {
                     return false;
+                }
+
                 if (playerCountFilter is int pc && snap.PlayerCount != pc)
+                {
                     return false;
+                }
+
                 return true;
             }
 
@@ -3179,13 +3261,25 @@ namespace JunimoServer.Services.Api
             // header is omitted and the harness falls back to snapshot-age.
             var changedAt = default(DateTime);
             if (isReadyFilter is not null)
+            {
                 changedAt = MaxUtc(changedAt, matched.IsReadyChangedAtUtc);
+            }
+
             if (isPausedFilter is not null)
+            {
                 changedAt = MaxUtc(changedAt, matched.IsPausedChangedAtUtc);
+            }
+
             if (dayFilter is not null)
+            {
                 changedAt = MaxUtc(changedAt, matched.DayChangedAtUtc);
+            }
+
             if (playerCountFilter is not null)
+            {
                 changedAt = MaxUtc(changedAt, matched.PlayerCountChangedAtUtc);
+            }
+
             EmitPredicateChangedAtHeader(response, changedAt);
 
             // Delegate to the regular status handler so the response shape is
@@ -3287,7 +3381,10 @@ namespace JunimoServer.Services.Api
             {
                 var calls = Interlocked.Read(ref acc.Calls);
                 if (calls == 0)
+                {
                     continue;
+                }
+
                 report.Handlers.Add(
                     new HandlerTimingResponse
                     {
@@ -3319,7 +3416,10 @@ namespace JunimoServer.Services.Api
             bool Matches(GameStateSnapshot snap)
             {
                 if (snap.Version <= since)
+                {
                     return false;
+                }
+
                 if (playerIdFilter is long pid)
                 {
                     var found = false;
@@ -3332,7 +3432,9 @@ namespace JunimoServer.Services.Api
                         }
                     }
                     if (!found)
+                    {
                         return false;
+                    }
                 }
                 return true;
             }
@@ -3389,9 +3491,15 @@ namespace JunimoServer.Services.Api
             bool Matches(GameStateSnapshot snap)
             {
                 if (snap.Version <= since)
+                {
                     return false;
+                }
+
                 if (farmhandCountFilter is int fc && snap.Farmhands.Count != fc)
+                {
                     return false;
+                }
+
                 if (!string.IsNullOrEmpty(hasFarmhandFilter))
                 {
                     var found = false;
@@ -3404,14 +3512,22 @@ namespace JunimoServer.Services.Api
                                 StringComparison.OrdinalIgnoreCase
                             )
                         )
+                        {
                             continue;
+                        }
+
                         if (requireCustomizedFilter is bool rc && f.IsCustomized != rc)
+                        {
                             continue;
+                        }
+
                         found = true;
                         break;
                     }
                     if (!found)
+                    {
                         return false;
+                    }
                 }
                 return true;
             }
@@ -3442,12 +3558,17 @@ namespace JunimoServer.Services.Api
                             StringComparison.OrdinalIgnoreCase
                         )
                     )
+                    {
                         continue;
+                    }
+
                     if (matched.FarmhandChangeTracks.TryGetValue(f.Id, out var track))
                     {
                         changedAt = MaxUtc(changedAt, track.FirstSeenAtUtc);
                         if (requireCustomizedFilter is not null)
+                        {
                             changedAt = MaxUtc(changedAt, track.IsCustomizedChangedAtUtc);
+                        }
                     }
                     break;
                 }
@@ -3455,7 +3576,9 @@ namespace JunimoServer.Services.Api
             else if (farmhandCountFilter is not null)
             {
                 foreach (var track in matched.FarmhandChangeTracks.Values)
+                {
                     changedAt = MaxUtc(changedAt, track.FirstSeenAtUtc);
+                }
             }
             EmitPredicateChangedAtHeader(response, changedAt);
 
@@ -3491,10 +3614,16 @@ namespace JunimoServer.Services.Api
             bool Matches()
             {
                 if (readyFilter is not bool b || !b)
+                {
                     return true;
+                }
+
                 var tickTicks = Interlocked.Read(ref _lastTickTimestamp);
                 if (tickTicks <= 0)
+                {
                     return false;
+                }
+
                 var lastTickMs = (long)
                     (DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds;
                 return lastTickMs <= HealthFrozenThresholdMs;
@@ -3579,10 +3708,16 @@ namespace JunimoServer.Services.Api
         )
         {
             if (changedAtUtc == default)
+            {
                 return;
+            }
+
             var msAgo = (long)(DateTime.UtcNow - changedAtUtc).TotalMilliseconds;
             if (msAgo < 0)
+            {
                 msAgo = 0;
+            }
+
             response.Headers["X-Predicate-Changed-At-Ms-Ago"] = msAgo.ToString(
                 System.Globalization.CultureInfo.InvariantCulture
             );
@@ -3599,7 +3734,9 @@ namespace JunimoServer.Services.Api
             {
                 var remaining = deadline - DateTime.UtcNow;
                 if (remaining <= TimeSpan.Zero)
+                {
                     return null;
+                }
 
                 // Capture TCS BEFORE reading the snapshot. If PublishSnapshot rotates
                 // the TCS between these two reads, the rotation also signals the TCS
@@ -3610,7 +3747,9 @@ namespace JunimoServer.Services.Api
                 var tcs = _snapshotChanged;
                 var current = _snapshot;
                 if (predicate(current))
+                {
                     return current;
+                }
 
                 try
                 {
@@ -3645,9 +3784,15 @@ namespace JunimoServer.Services.Api
         private static bool? ParseBool(string? raw)
         {
             if (raw == null)
+            {
                 return null;
+            }
+
             if (bool.TryParse(raw, out var b))
+            {
                 return b;
+            }
+
             return null;
         }
 
@@ -3986,11 +4131,16 @@ namespace JunimoServer.Services.Api
             {
                 // Capture default on first call
                 if (_defaultRealMsPerGameMinute < 0)
+                {
                     _defaultRealMsPerGameMinute = Game1.realMilliSecondsPerGameMinute;
+                }
 
                 var newMs = (int)(_defaultRealMsPerGameMinute / multiplier);
                 if (newMs < 1)
+                {
                     newMs = 1;
+                }
+
                 Game1.realMilliSecondsPerGameMinute = newMs;
                 Game1.realMilliSecondsPerGameTenMinutes = newMs * 10;
                 effectiveMs = newMs;
@@ -4248,7 +4398,9 @@ namespace JunimoServer.Services.Api
             foreach (var building in farm.buildings)
             {
                 if (!building.isCabin)
+                {
                     continue;
+                }
 
                 var cabin = building.GetIndoors<Cabin>();
                 if (cabin?.owner?.UniqueMultiplayerID == farmhandId)
@@ -4279,7 +4431,10 @@ namespace JunimoServer.Services.Api
                     foreach (var building in farm.buildings)
                     {
                         if (!building.isCabin)
+                        {
                             continue;
+                        }
+
                         var cabin = building.GetIndoors<Cabin>();
                         if (
                             cabin != null
@@ -4673,7 +4828,9 @@ namespace JunimoServer.Services.Api
         public async Task StopServerAsync()
         {
             if (!_isRunning)
+            {
                 return;
+            }
 
             try
             {

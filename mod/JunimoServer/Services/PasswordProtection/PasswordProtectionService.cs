@@ -64,9 +64,11 @@ namespace JunimoServer.Services.PasswordProtection
             : base(helper, monitor)
         {
             if (_instance != null)
+            {
                 throw new InvalidOperationException(
                     "PasswordProtectionService already initialized - only one instance allowed"
                 );
+            }
 
             // Set instance variable for use in static Harmony patches
             _instance = this;
@@ -197,14 +199,18 @@ namespace JunimoServer.Services.PasswordProtection
         private static void CheckFarmhandRequest_Postfix(NetFarmerRoot farmer)
         {
             if (_instance == null || !_instance.IsEnabled || farmer?.Value == null)
+            {
                 return;
+            }
 
             var f = farmer.Value;
             var farmerId = f.UniqueMultiplayerID;
             var approved = Game1.otherFarmers.ContainsKey(farmerId);
 
             if (!approved)
+            {
                 return;
+            }
 
             var daysPlayed = (int)Game1.MasterPlayer.stats.DaysPlayed;
             var disconnectMatch = f.disconnectDay.Value == daysPlayed;
@@ -237,18 +243,26 @@ namespace JunimoServer.Services.PasswordProtection
         )
         {
             if (_instance == null || !_instance.IsEnabled || _sendLocationMethod == null)
+            {
                 return true;
+            }
 
             if (!Game1.otherFarmers.TryGetValue(peer, out var farmer))
+            {
                 return true;
+            }
 
             var disconnectLocation = farmer.disconnectLocation.Value;
             if (string.IsNullOrEmpty(disconnectLocation))
+            {
                 return true;
+            }
 
             var lobbyName = _instance._lobbyService.GetExistingLobbyLocationName(peer);
             if (lobbyName == null || disconnectLocation != lobbyName)
+            {
                 return true;
+            }
 
             var lobbyGameLocation = Game1.getLocationFromName(disconnectLocation);
             if (lobbyGameLocation == null)
@@ -358,7 +372,9 @@ namespace JunimoServer.Services.PasswordProtection
         private void OnFarmhandRequest(NetFarmerRoot farmer)
         {
             if (!IsEnabled || farmer?.Value == null)
+            {
                 return;
+            }
 
             // Unpause the game before sendServerIntroduction runs.
             // When no players are connected, the server is paused. If we don't unpause here,
@@ -373,7 +389,9 @@ namespace JunimoServer.Services.PasswordProtection
 
             // Skip host
             if (farmerId == Game1.player.UniqueMultiplayerID)
+            {
                 return;
+            }
 
             var isNewPlayer = !farmer.Value.isCustomized.Value;
             var playerType = isNewPlayer ? "new" : "returning";
@@ -393,16 +411,25 @@ namespace JunimoServer.Services.PasswordProtection
         private bool ShouldProcessMessage(IncomingMessage message)
         {
             if (!IsEnabled)
+            {
                 return true;
+            }
+
             if (message.FarmerID == Game1.player.UniqueMultiplayerID)
+            {
                 return true; // Host
+            }
 
             var authData = GetAuthData(message.FarmerID);
             if (authData == null)
+            {
                 return false; // Block - no auth data means something went wrong
+            }
 
             if (authData.State == AuthState.Authenticated)
+            {
                 return true;
+            }
 
             // Unauthenticated player - WHITELIST approach (only allow specific safe messages)
             switch (message.MessageType)
@@ -453,9 +480,14 @@ namespace JunimoServer.Services.PasswordProtection
         private bool ShouldSendMessage(long peerId, OutgoingMessage message)
         {
             if (!IsEnabled)
+            {
                 return true;
+            }
+
             if (peerId == Game1.player.UniqueMultiplayerID)
+            {
                 return true; // Host
+            }
 
             // Check if this player is authenticated
             if (!_playerAuthData.TryGetValue(peerId, out var authData))
@@ -471,7 +503,9 @@ namespace JunimoServer.Services.PasswordProtection
             }
 
             if (authData.State == AuthState.Authenticated)
+            {
                 return true;
+            }
 
             // Unauthenticated player - block day sync messages that would close their menu
             switch (message.MessageType)
@@ -507,7 +541,9 @@ namespace JunimoServer.Services.PasswordProtection
         private PlayerAuthData GetAuthData(long farmerId)
         {
             if (_playerAuthData.TryGetValue(farmerId, out var existing))
+            {
                 return existing;
+            }
 
             // This should never happen - processIncomingMessage only runs for players
             // who have already been approved via checkFarmhandRequest, which creates auth data.
@@ -595,20 +631,26 @@ namespace JunimoServer.Services.PasswordProtection
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
             if (!IsEnabled || !Game1.hasLoadedGame)
+            {
                 return;
+            }
 
             foreach (var kvp in _playerAuthData.ToList())
             {
                 var authData = kvp.Value;
                 if (authData.State != AuthState.Unauthenticated)
+                {
                     continue;
+                }
 
                 // Don't process players who haven't fully connected yet.
                 // JoinTime is set during checkFarmhandRequest (before connection completes),
                 // so we must wait until the player appears in otherFarmers before sending
                 // any messages. Otherwise the client's chatbox won't exist yet.
                 if (!Game1.otherFarmers.TryGetValue(authData.PlayerId, out var farmer))
+                {
                     continue;
+                }
 
                 // For new players, wait until they finish CharacterCustomization before sending login prompts.
                 // The player can't access chat while the customization menu is open anyway.
@@ -693,7 +735,9 @@ namespace JunimoServer.Services.PasswordProtection
         public AuthenticationResult TryAuthenticate(long playerId, string password)
         {
             if (!IsEnabled)
+            {
                 return new AuthenticationResult(true, "Password protection disabled.");
+            }
 
             if (!_playerAuthData.TryGetValue(playerId, out var authData))
             {
@@ -795,11 +839,20 @@ namespace JunimoServer.Services.PasswordProtection
         public bool IsPlayerAuthenticated(long playerId)
         {
             if (!IsEnabled)
+            {
                 return true;
+            }
+
             if (playerId == Game1.player.UniqueMultiplayerID)
+            {
                 return true; // Host
+            }
+
             if (!_playerAuthData.TryGetValue(playerId, out var auth))
+            {
                 return false; // No data = not authenticated
+            }
+
             return auth.State == AuthState.Authenticated;
         }
 
@@ -923,28 +976,41 @@ namespace JunimoServer.Services.PasswordProtection
         {
             var farm = Game1.getFarm();
             if (farm == null)
+            {
                 return null;
+            }
 
             // Primary lookup: match by farmhandReference (owner ID or uid)
             foreach (var building in farm.buildings)
             {
                 if (!building.isCabin)
+                {
                     continue;
+                }
+
                 if (LobbyService.IsLobbyCabin(building))
+                {
                     continue;
+                }
 
                 var cabin = building.GetIndoors<Cabin>();
                 if (cabin == null)
+                {
                     continue;
+                }
 
                 if (cabin.owner?.UniqueMultiplayerID == playerId)
+                {
                     return cabin;
+                }
 
                 if (
                     cabin.farmhandReference.defined.Value
                     && cabin.farmhandReference.uid.Value == playerId
                 )
+                {
                     return cabin;
+                }
             }
 
             // Fallback: match by homeLocation. farmhandReference.uid can become stale
@@ -961,9 +1027,15 @@ namespace JunimoServer.Services.PasswordProtection
                     foreach (var building in farm.buildings)
                     {
                         if (!building.isCabin)
+                        {
                             continue;
+                        }
+
                         if (LobbyService.IsLobbyCabin(building))
+                        {
                             continue;
+                        }
+
                         var cabin = building.GetIndoors<Cabin>();
                         if (cabin != null && cabin.NameOrUniqueName == homeLocation)
                         {
@@ -993,22 +1065,38 @@ namespace JunimoServer.Services.PasswordProtection
                 foreach (var building in farm.buildings)
                 {
                     if (!building.isCabin)
+                    {
                         continue;
+                    }
+
                     if (LobbyService.IsLobbyCabin(building))
+                    {
                         continue;
+                    }
+
                     var cabin = building.GetIndoors<Cabin>();
                     if (cabin == null)
+                    {
                         continue;
+                    }
 
                     if (cabin.owner?.UniqueMultiplayerID == playerId)
+                    {
                         return cabin;
+                    }
+
                     if (
                         cabin.farmhandReference.defined.Value
                         && cabin.farmhandReference.uid.Value == playerId
                     )
+                    {
                         return cabin;
+                    }
+
                     if (cabin.NameOrUniqueName == player.homeLocation.Value)
+                    {
                         return cabin;
+                    }
                 }
             }
 
@@ -1049,7 +1137,10 @@ namespace JunimoServer.Services.PasswordProtection
                     out var diagRef
                 )
             )
+            {
                 diagFarmer = diagRef.Value;
+            }
+
             _monitor.Log(
                 $"[Auth]   Player {playerId}: inFarmhandData={inFarmhandData}, inOtherFarmers={inOtherFarmers}, "
                     + $"homeLocation='{diagFarmer?.homeLocation.Value}', currentLocation='{diagFarmer?.currentLocation?.NameOrUniqueName}'",
@@ -1085,7 +1176,9 @@ namespace JunimoServer.Services.PasswordProtection
             };
 
             foreach (var line in lines)
+            {
                 _helper.SendPrivateMessage(authData.PlayerId, line);
+            }
         }
 
         /// <summary>
@@ -1094,7 +1187,9 @@ namespace JunimoServer.Services.PasswordProtection
         private static bool SecureComparePasswords(string provided, string expected)
         {
             if (provided == null || expected == null)
+            {
                 return false;
+            }
 
             var providedBytes = Encoding.UTF8.GetBytes(provided);
             var expectedBytes = Encoding.UTF8.GetBytes(expected);

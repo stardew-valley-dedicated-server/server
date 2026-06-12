@@ -187,19 +187,33 @@ namespace JunimoServer.Services.Api
 
             // Handle common types
             if (type == typeof(string))
+            {
                 return new JsonSchemaProperty { Type = JsonObjectType.String };
+            }
+
             if (type == typeof(int) || type == typeof(long) || type == typeof(short))
+            {
                 return new JsonSchemaProperty { Type = JsonObjectType.Integer };
+            }
+
             if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+            {
                 return new JsonSchemaProperty { Type = JsonObjectType.Number };
+            }
+
             if (type == typeof(bool))
+            {
                 return new JsonSchemaProperty { Type = JsonObjectType.Boolean };
+            }
+
             if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
+            {
                 return new JsonSchemaProperty
                 {
                     Type = JsonObjectType.String,
                     Format = "date-time",
                 };
+            }
 
             // Handle arrays and lists
             if (type.IsArray)

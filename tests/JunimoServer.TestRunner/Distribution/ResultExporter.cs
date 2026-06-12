@@ -24,9 +24,15 @@ public static class ResultExporters
     {
         var target = Environment.GetEnvironmentVariable(ArtifactExportEnv);
         if (string.IsNullOrEmpty(target))
+        {
             return new LocalExporter();
+        }
+
         if (target.StartsWith("gh://", StringComparison.OrdinalIgnoreCase))
+        {
             return new GitHubActionsExporter();
+        }
+
         throw new NotSupportedException(
             $"{ArtifactExportEnv}='{target}' is not a supported export target. "
                 + "Supported: '' (default, local), 'gh://' (GitHub Actions artifact)."
@@ -49,7 +55,9 @@ public sealed class GitHubActionsExporter : IResultExporter
     public async Task ExportAsync(string runDir, CancellationToken ct = default)
     {
         if (!Directory.Exists(runDir))
+        {
             throw new InvalidOperationException($"Run directory does not exist: {runDir}");
+        }
 
         var artifactName = $"e2e-results-{Path.GetFileName(runDir)}";
         var psi = new ProcessStartInfo("gh")

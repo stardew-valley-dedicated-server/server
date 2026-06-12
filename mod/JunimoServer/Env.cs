@@ -107,7 +107,10 @@ namespace JunimoServer
         {
             var value = Environment.GetEnvironmentVariable(envVar);
             if (string.IsNullOrWhiteSpace(value))
+            {
                 return defaultValue;
+            }
+
             return int.TryParse(value, out var result) ? result : defaultValue;
         }
 
@@ -115,7 +118,10 @@ namespace JunimoServer
         {
             var value = Environment.GetEnvironmentVariable(envVar);
             if (string.IsNullOrWhiteSpace(value))
+            {
                 return defaultValue;
+            }
+
             return bool.TryParse(value, out var result) ? result : defaultValue;
         }
 
@@ -123,9 +129,15 @@ namespace JunimoServer
         {
             var value = Environment.GetEnvironmentVariable(envVar);
             if (string.IsNullOrEmpty(value))
+            {
                 return null;
+            }
+
             if (bool.TryParse(value, out var result))
+            {
                 return result;
+            }
+
             return null;
         }
     }

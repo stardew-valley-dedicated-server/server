@@ -73,14 +73,19 @@ internal sealed class DayChangeWaiter
 
                 var outerRemaining = deadline - DateTime.UtcNow;
                 if (outerRemaining <= TimeSpan.Zero)
+                {
                     break;
+                }
+
                 var status = await _testBase.ServerApi.WaitForStatusAsync(
                     since: since,
                     timeout: outerRemaining,
                     ct: ct
                 );
                 if (status == null)
+                {
                     continue; // 408 — re-issue under our deadline
+                }
 
                 since = status.Version;
 
@@ -130,9 +135,11 @@ internal sealed class DayChangeWaiter
                 }
 
                 if (attempt % 5 == 0)
+                {
                     LogDetail(
                         $"Still waiting for day change... (time={status.TimeOfDay}, attempt {attempt})"
                     );
+                }
             }
             catch (OperationCanceledException)
             {

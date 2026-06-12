@@ -236,9 +236,13 @@ public class ChatController
         foreach (var segment in msg.message)
         {
             if (segment.message != null)
+            {
                 text += segment.message;
+            }
             else if (segment.emojiIndex >= 0)
+            {
                 text += $"[emoji:{segment.emojiIndex}]";
+            }
         }
         // The game's ChatBox wraps long messages via Game1.parseText(), inserting
         // newlines to fit the chat box pixel width. Collapse them back to spaces
@@ -249,7 +253,9 @@ public class ChatController
     private static Color? ParseColor(string hex)
     {
         if (string.IsNullOrEmpty(hex))
+        {
             return null;
+        }
 
         hex = hex.TrimStart('#');
 

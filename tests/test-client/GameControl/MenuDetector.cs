@@ -65,7 +65,9 @@ public static class MenuDetector
     {
         var subMenu = TitleMenu.subMenu;
         if (subMenu == null)
+        {
             return null;
+        }
 
         var info = new SubMenuInfo
         {
@@ -86,7 +88,9 @@ public static class MenuDetector
     {
         // TitleMenu has different visual states
         if (TitleMenu.subMenu != null)
+        {
             return "SubMenuOpen";
+        }
 
         return "MainButtons";
     }
@@ -145,7 +149,9 @@ public static class MenuDetector
     public static FarmerInfo? GetFarmerInfo()
     {
         if (!Context.IsWorldReady || Game1.player == null)
+        {
             return null;
+        }
 
         return new FarmerInfo
         {

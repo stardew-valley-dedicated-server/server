@@ -450,6 +450,8 @@ public class PasswordProtectionTests : TestBase
     {
         LogTrace($"Chat messages ({chatHistory.Messages.Count}):");
         foreach (var msg in chatHistory.Messages)
+        {
             LogTrace($"  {msg.Message}");
+        }
     }
 }

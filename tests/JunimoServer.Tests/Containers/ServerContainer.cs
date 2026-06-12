@@ -210,10 +210,12 @@ public class ServerContainer : IAsyncDisposable
         // and threads it here; if it's missing when options.WithSteam is true, that's
         // a broker bug.
         if (options.WithSteam && sharedSteamAuth == null)
+        {
             throw new InvalidOperationException(
                 "Pre-start invariant violated: SharedSteamAuth is required when options.WithSteam is true. "
                     + "TestResourceBroker should initialize it before any server creation."
             );
+        }
 
         var runId = Guid.NewGuid().ToString("N")[..8];
         TestRunRegistry.Register(runId);
@@ -332,10 +334,12 @@ public class ServerContainer : IAsyncDisposable
 
             // Pass Steam account index so the mod uses the correct account via ?account=N
             if (steamAccountIndex.HasValue)
+            {
                 serverBuilder = serverBuilder.WithEnvironment(
                     "SDVD_TEST_STEAM_ACCOUNT_INDEX",
                     steamAccountIndex.Value.ToString()
                 );
+            }
         }
 
         // Pass non-Steam env vars to server (Steam credentials are handled by steam-auth service)
@@ -345,12 +349,17 @@ public class ServerContainer : IAsyncDisposable
                 envVars.TryGetValue("VNC_PASSWORD", out var vncPass)
                 && !string.IsNullOrEmpty(vncPass)
             )
+            {
                 serverBuilder = serverBuilder.WithEnvironment("VNC_PASSWORD", vncPass);
+            }
+
             if (
                 envVars.TryGetValue("SERVER_PASSWORD", out var serverPassword)
                 && !string.IsNullOrEmpty(serverPassword)
             )
+            {
                 serverBuilder = serverBuilder.WithEnvironment("SERVER_PASSWORD", serverPassword);
+            }
         }
 
         var serverContainer = serverBuilder.Build();
@@ -601,7 +610,9 @@ public class ServerContainer : IAsyncDisposable
     public async Task StartRecordingAsync(CancellationToken ct = default)
     {
         if (!RecordingPolicy.RecordServerEnabled)
+        {
             return;
+        }
 
         SetupEventBus.EmitStep(
             "Setup",
@@ -785,7 +796,9 @@ public class ServerContainer : IAsyncDisposable
 
         // Emit to UI during startup phases (callback is null post-startup)
         if (!isEvent)
+        {
             _startupLogCallback?.Invoke(line);
+        }
 
         var isNewLogLine = SmapiLogLinePrefix.IsMatch(line);
 
@@ -817,7 +830,9 @@ public class ServerContainer : IAsyncDisposable
     private void FlushError()
     {
         if (_currentErrorHeader == null)
+        {
             return;
+        }
 
         var fullError =
             _currentErrorDetails.Count > 0
@@ -899,7 +914,9 @@ public class ServerContainer : IAsyncDisposable
         }
 
         if (_containerLog != null)
+        {
             await _containerLog.DisposeAsync();
+        }
 
         _errorCancellation?.Dispose();
 
@@ -912,7 +929,9 @@ public class ServerContainer : IAsyncDisposable
             try
             {
                 if (_recorder.IsRecording)
+                {
                     await _recorder.StopAsync(ct);
+                }
 
                 var destPath = Path.Combine(
                     TestArtifacts.GetContainerDir($"server-{_serverIndex}"),
@@ -942,7 +961,9 @@ public class ServerContainer : IAsyncDisposable
                     try
                     {
                         if (InstanceId != null)
+                        {
                             SetupEventBus.EmitInstanceRecording(InstanceId, destPath);
+                        }
                     }
                     catch (Exception ex)
                     {

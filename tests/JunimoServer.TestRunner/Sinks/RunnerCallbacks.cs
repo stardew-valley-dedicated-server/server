@@ -71,7 +71,10 @@ public sealed class RunnerCallbacks
     public void OnTestPassed(TestPassedInfo info)
     {
         if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+        {
             return;
+        }
+
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
         _renderer.OnTestPassed(
@@ -88,7 +91,10 @@ public sealed class RunnerCallbacks
     public void OnTestFailed(TestFailedInfo info)
     {
         if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+        {
             return;
+        }
+
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
         // Extract exception info from ExceptionInfo structure.
@@ -119,7 +125,10 @@ public sealed class RunnerCallbacks
     public void OnTestSkipped(TestSkippedInfo info)
     {
         if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+        {
             return;
+        }
+
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
         _renderer.OnTestSkipped(
@@ -143,7 +152,10 @@ public sealed class RunnerCallbacks
     public void OnTestNotRun(TestNotRunInfo info)
     {
         if (!_alreadyDispatched.TryAdd(info.TestDisplayName, 0))
+        {
             return;
+        }
+
         var (className, methodName) = ParseTestDisplayName(info.TestDisplayName);
 
         _renderer.OnTestSkipped(
@@ -172,7 +184,9 @@ public sealed class RunnerCallbacks
     public void OnTestFinished(TestFinishedInfo info)
     {
         if (_alreadyDispatched.ContainsKey(info.TestDisplayName))
+        {
             return;
+        }
 
         switch (info)
         {
@@ -284,7 +298,9 @@ public sealed class RunnerCallbacks
 
         var lastDot = displayName.LastIndexOf('.', searchUpTo - 1, searchUpTo);
         if (lastDot < 0)
+        {
             return ("Unknown", displayName);
+        }
 
         var methodName = displayName[(lastDot + 1)..];
         var classPath = displayName[..lastDot];
@@ -304,7 +320,9 @@ public sealed class RunnerCallbacks
     )
     {
         if (exception?.InnerExceptions == null || exception.InnerExceptions.Count == 0)
+        {
             return null;
+        }
 
         var inner = exception.InnerExceptions[0];
         // Recurse: if the inner exception also has inners, keep unwrapping
@@ -320,9 +338,14 @@ public sealed class RunnerCallbacks
     )
     {
         if (outer == null)
+        {
             return "Unknown error";
+        }
+
         if (root == null)
+        {
             return outer.Message ?? "Unknown error";
+        }
 
         // Walk the chain to show each level
         var parts = new System.Collections.Generic.List<string>();
@@ -347,19 +370,29 @@ public sealed class RunnerCallbacks
     private static (LogSource Source, string Message) ParseDiagnosticMessage(string message)
     {
         if (message.StartsWith("[Server]", StringComparison.OrdinalIgnoreCase))
+        {
             return (LogSource.Server, message[8..].TrimStart());
+        }
 
         if (message.StartsWith("[Game]", StringComparison.OrdinalIgnoreCase))
+        {
             return (LogSource.Game, message[6..].TrimStart());
+        }
 
         if (message.StartsWith("[Setup]", StringComparison.OrdinalIgnoreCase))
+        {
             return (LogSource.Fixture, message[7..].TrimStart());
+        }
 
         if (message.StartsWith("[Test]", StringComparison.OrdinalIgnoreCase))
+        {
             return (LogSource.Test, message[6..].TrimStart());
+        }
 
         if (message.StartsWith("[Fixture]", StringComparison.OrdinalIgnoreCase))
+        {
             return (LogSource.Fixture, message[9..].TrimStart());
+        }
 
         return (LogSource.Framework, message);
     }

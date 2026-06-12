@@ -107,14 +107,18 @@ internal sealed class DockerStartLimiter : IDisposable
                 {
                     removed = _queue.Remove(waiter);
                     if (removed)
+                    {
                         Volatile.Write(ref _queueDepth, _queue.Count);
+                    }
                 }
                 // If we removed the waiter, no Release will reach this Tcs — we
                 // own the cancellation. If not removed, a Release granted the
                 // slot first; let the granted path proceed (TrySetCanceled would
                 // race a TrySetResult and the latter wins, which is correct).
                 if (removed)
+                {
                     waiter.Tcs.TrySetCanceled(linked.Token);
+                }
             })
             .ConfigureAwait(false);
 
@@ -136,9 +140,11 @@ internal sealed class DockerStartLimiter : IDisposable
             {
                 _availableSlots++;
                 if (_availableSlots > _maxConcurrent)
+                {
                     throw new InvalidOperationException(
                         $"DockerStartLimiter[{_hostId}] released more slots than acquired."
                     );
+                }
             }
         }
         // Hand the slot directly to the next waiter without bumping
@@ -195,15 +201,26 @@ internal sealed class DockerStartLimiter : IDisposable
         public int Compare(Waiter? x, Waiter? y)
         {
             if (ReferenceEquals(x, y))
+            {
                 return 0;
+            }
+
             if (x is null)
+            {
                 return -1;
+            }
+
             if (y is null)
+            {
                 return 1;
+            }
             // Lower priority value wins (High=0, Normal=1, Low=2).
             var p = ((int)x.Priority).CompareTo((int)y.Priority);
             if (p != 0)
+            {
                 return p;
+            }
+
             return x.Sequence.CompareTo(y.Sequence);
         }
     }

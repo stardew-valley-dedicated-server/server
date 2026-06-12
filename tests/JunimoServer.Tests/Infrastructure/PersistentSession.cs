@@ -124,7 +124,9 @@ internal sealed class PersistentSession : IAsyncDisposable
         }
 
         if (FarmerUid is not long uid)
+        {
             return true;
+        }
 
         try
         {
@@ -260,10 +262,12 @@ internal sealed class PersistentSession : IAsyncDisposable
         );
 
         if (errors is { Count: > 0 })
+        {
             throw new AggregateException(
                 $"{OwnerType.Name} session dispose had {errors.Count} failure(s).",
                 errors
             );
+        }
     }
 
     /// <summary>
@@ -368,7 +372,9 @@ internal static class PersistentSessionStore
     public static void Remove(Type type)
     {
         if (Sessions.TryRemove(type, out _))
+        {
             TestLog.Test($"Removed session for {type.Name} (no dispose)");
+        }
     }
 
     /// <summary>
