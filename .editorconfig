@@ -19,7 +19,11 @@ indent_style = tab
 # gap (build-time via EnforceCodeStyleInBuild in Directory.Build.props).
 csharp_prefer_braces = true
 dotnet_diagnostic.IDE0011.severity = error
+csharp_style_namespace_declarations = file_scoped
+dotnet_diagnostic.IDE0161.severity = error
 
 # Reference-only third-party sources — don't flag their style in the IDE.
+# Per-rule mutes: a category-level mute would lose to the per-rule severities above.
 [{decompiled,sub_modules}/**.cs]
 dotnet_diagnostic.IDE0011.severity = none
+dotnet_diagnostic.IDE0161.severity = none
