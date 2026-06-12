@@ -28,7 +28,6 @@ This installs:
 - **commitlint** - Validates commit message format
 - **CSharpier** - C# formatter, restored as a local dotnet tool
 - **git hooks** - Auto-format staged C# files on commit, validate commit messages, block direct pushes to `master`
-- **git blame config** - Points `blame.ignoreRevsFile` at `.git-blame-ignore-revs` so bulk-reformat commits don't pollute `git blame`
 
 #### Line Endings
 
@@ -59,8 +58,6 @@ make format       # format all C# files
 make format-check # check without writing (what CI runs)
 make lint         # auto-fix analyzer style violations, then format (builds the solution, slower)
 ```
-
-The bulk-reformat commits are listed in `.git-blame-ignore-revs`. GitHub's blame UI skips them automatically; `make install` configures your local `git blame` to do the same.
 
 #### Development Workflow
 
