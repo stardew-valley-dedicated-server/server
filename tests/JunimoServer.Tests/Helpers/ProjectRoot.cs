@@ -29,15 +29,19 @@ public static class ProjectRoot
     public static string Resolve(string relativePath)
     {
         if (string.IsNullOrEmpty(relativePath))
+        {
             throw new ArgumentException("Path cannot be null or empty.", nameof(relativePath));
+        }
 
         var expanded = Environment.ExpandEnvironmentVariables(relativePath);
         if (expanded.StartsWith("~/", StringComparison.Ordinal) || expanded == "~")
         {
-            var home = Environment.GetEnvironmentVariable("USERPROFILE")
-                       ?? Environment.GetEnvironmentVariable("HOME")
-                       ?? throw new InvalidOperationException(
-                           $"Cannot expand '~' in path '{relativePath}': neither USERPROFILE nor HOME is set.");
+            var home =
+                Environment.GetEnvironmentVariable("USERPROFILE")
+                ?? Environment.GetEnvironmentVariable("HOME")
+                ?? throw new InvalidOperationException(
+                    $"Cannot expand '~' in path '{relativePath}': neither USERPROFILE nor HOME is set."
+                );
             expanded = expanded.Length == 1 ? home : System.IO.Path.Combine(home, expanded[2..]);
         }
 
@@ -55,11 +59,14 @@ public static class ProjectRoot
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
         {
             if (File.Exists(System.IO.Path.Combine(d.FullName, Marker)))
+            {
                 return d.FullName;
+            }
         }
 
         throw new InvalidOperationException(
-            $"Could not locate project root: walked up from '{AppContext.BaseDirectory}' " +
-            $"without finding '{Marker}'. The marker file should exist at the repo root.");
+            $"Could not locate project root: walked up from '{AppContext.BaseDirectory}' "
+                + $"without finding '{Marker}'. The marker file should exist at the repo root."
+        );
     }
 }

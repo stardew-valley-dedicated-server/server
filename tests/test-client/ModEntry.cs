@@ -1,18 +1,16 @@
 using HarmonyLib;
 using JunimoServer.Shared;
-using Microsoft.Xna.Framework;
 using JunimoTestClient.Auth;
 using JunimoTestClient.Diagnostics;
 using JunimoTestClient.GameControl;
 using JunimoTestClient.GameTweaks;
 using JunimoTestClient.HttpServer;
+using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Menus;
 using Steamworks;
-using System;
-using System.Threading.Tasks;
 
 namespace JunimoTestClient;
 
@@ -131,7 +129,10 @@ public class ModEntry : Mod
         // "Rendering Disabled" notice + device swap when watched over VNC during debugging.
         var clientFpsRaw = Environment.GetEnvironmentVariable("CLIENT_FPS");
         if (!int.TryParse(clientFpsRaw, out var fps) || fps < 0)
+        {
             fps = 0;
+        }
+
         _bootFps = fps;
         _rendering = new RenderingController(Monitor, "Client");
         _perfStats?.SetTargetFps(fps);
@@ -143,16 +144,20 @@ public class ModEntry : Mod
             original: AccessTools.Method(typeof(Game), "Draw", new[] { typeof(GameTime) }),
             prefix: new HarmonyMethod(typeof(ModEntry), nameof(GameDraw_Prefix))
         );
-        Monitor.Log(fps > 0
-            ? $"Client FPS cap set to {fps}"
-            : "Client rendering disabled (CLIENT_FPS=0)", LogLevel.Info);
+        Monitor.Log(
+            fps > 0 ? $"Client FPS cap set to {fps}" : "Client rendering disabled (CLIENT_FPS=0)",
+            LogLevel.Info
+        );
     }
 
     private void OnFirstTickSetTps(object? sender, UpdateTickedEventArgs e)
     {
         Helper.Events.GameLoop.UpdateTicked -= OnFirstTickSetTps;
         Game1.game1.TargetElapsedTime = TimeSpan.FromMilliseconds(1000.0 / _targetTps);
-        Monitor.Log($"Client TPS set to {_targetTps} (tick interval: {Game1.game1.TargetElapsedTime.TotalMilliseconds:F1}ms)", LogLevel.Info);
+        Monitor.Log(
+            $"Client TPS set to {_targetTps} (tick interval: {Game1.game1.TargetElapsedTime.TotalMilliseconds:F1}ms)",
+            LogLevel.Info
+        );
 
         // Cap MaxElapsedTime to one tick. MonoGame's default 500ms catch-up
         // budget allows ~7 catch-up Updates at CLIENT_TPS=15. Catch-up runs
@@ -167,23 +172,27 @@ public class ModEntry : Mod
         // InstanceGame which only proxies TargetElapsedTime / IsFixedTimeStep.
         StardewValley.GameRunner.instance.MaxElapsedTime = Game1.game1.TargetElapsedTime;
         Monitor.Log(
-            $"MaxElapsedTime capped to TargetElapsedTime " +
-            $"({StardewValley.GameRunner.instance.MaxElapsedTime.TotalMilliseconds:F1}ms) — no MonoGame catch-up bursts.",
-            LogLevel.Info);
+            $"MaxElapsedTime capped to TargetElapsedTime "
+                + $"({StardewValley.GameRunner.instance.MaxElapsedTime.TotalMilliseconds:F1}ms) — no MonoGame catch-up bursts.",
+            LogLevel.Info
+        );
     }
 
     // ReSharper disable once InconsistentNaming
     public static bool BeginDraw_Prefix(GameRunner __instance)
     {
         if (_rendering.ShouldBeginDraw())
+        {
             return true;
+        }
+
         __instance.SuppressDraw();
         return false;
     }
 
     // ReSharper disable once InconsistentNaming
-    public static bool GameDraw_Prefix(Game __instance, GameTime gameTime)
-        => _rendering.ShouldGameDraw(__instance);
+    public static bool GameDraw_Prefix(Game __instance, GameTime gameTime) =>
+        _rendering.ShouldGameDraw(__instance);
 
     /// <summary>Sets the client render rate at runtime. 0 disables, N &gt; 0 throttles at N.</summary>
     public void SetClientFps(int fps) => _rendering.SetFps(fps);
@@ -206,7 +215,9 @@ public class ModEntry : Mod
     private void StartServer()
     {
         if (_server != null)
+        {
             return;
+        }
 
         var port = GetPortFromEnv();
         _server = new TestApiServer(port, Monitor);
@@ -215,22 +226,32 @@ public class ModEntry : Mod
 
         _server.Start();
         if (_server.IsListening)
+        {
             Monitor.Log($"Test API available at http://localhost:{port}/", LogLevel.Info);
+        }
         else
+        {
             Monitor.Log($"Test API failed to start on port {port}", LogLevel.Error);
+        }
     }
 
     private int GetPortFromEnv()
     {
         var portStr = Environment.GetEnvironmentVariable("JUNIMO_TEST_PORT");
         if (int.TryParse(portStr, out var port) && port > 0 && port < 65536)
+        {
             return port;
+        }
+
         return DefaultPort;
     }
 
     private void RegisterEndpoints()
     {
-        if (_server == null) return;
+        if (_server == null)
+        {
+            return;
+        }
 
         RegisterStatusEndpoints();
         RegisterNavigationEndpoints();
@@ -245,35 +266,55 @@ public class ModEntry : Mod
     private void RegisterStatusEndpoints()
     {
         // GET /ping - Simple health check
-        _server!.Get("ping", _ => new { pong = true, timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+        _server!.Get(
+            "ping",
+            _ => new { pong = true, timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+        );
 
         // GET /status - Overall game status
-        _server.Get("status", _ => new
-        {
-            menu = MenuDetector.GetCurrentMenu(),
-            connection = MenuDetector.GetConnectionStatus(),
-            farmer = MenuDetector.GetFarmerInfo(),
-            timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        });
+        _server.Get(
+            "status",
+            _ => new
+            {
+                menu = MenuDetector.GetCurrentMenu(),
+                connection = MenuDetector.GetConnectionStatus(),
+                farmer = MenuDetector.GetFarmerInfo(),
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            }
+        );
 
         // GET /menu - Current menu info
         _server.Get("menu", _ => MenuDetector.GetCurrentMenu());
 
         // GET /menu/buttons - Get clickable buttons in current menu
-        _server.Get("menu/buttons", _ =>
-        {
-            MenuButtonsInfo? result = null;
-            ExecuteOnGameThread(() => { result = MenuDetector.GetMenuButtons(); return result; });
-            return result;
-        });
+        _server.Get(
+            "menu/buttons",
+            _ =>
+            {
+                MenuButtonsInfo? result = null;
+                ExecuteOnGameThread(() =>
+                {
+                    result = MenuDetector.GetMenuButtons();
+                    return result;
+                });
+                return result;
+            }
+        );
 
         // GET /menu/slots - Get slots in current menu (LoadGameMenu, CoopMenu, etc.)
-        _server.Get("menu/slots", _ =>
-        {
-            MenuSlotsInfo? result = null;
-            ExecuteOnGameThread(() => { result = MenuDetector.GetMenuSlots(); return result; });
-            return result;
-        });
+        _server.Get(
+            "menu/slots",
+            _ =>
+            {
+                MenuSlotsInfo? result = null;
+                ExecuteOnGameThread(() =>
+                {
+                    result = MenuDetector.GetMenuSlots();
+                    return result;
+                });
+                return result;
+            }
+        );
 
         // GET /connection - Connection status
         _server.Get("connection", _ => MenuDetector.GetConnectionStatus());
@@ -285,28 +326,38 @@ public class ModEntry : Mod
     private void RegisterNavigationEndpoints()
     {
         // POST /navigate - Navigate to a menu
-        _server!.Post("navigate", req =>
-        {
-            var body = TestApiServer.ReadBody<NavigateRequest>(req);
-            if (body == null || string.IsNullOrEmpty(body.Target))
+        _server!.Post(
+            "navigate",
+            req =>
             {
-                return new NavigationResult { Success = false, Error = "Missing 'target' in request body" };
-            }
+                var body = TestApiServer.ReadBody<NavigateRequest>(req);
+                if (body == null || string.IsNullOrEmpty(body.Target))
+                {
+                    return new NavigationResult
+                    {
+                        Success = false,
+                        Error = "Missing 'target' in request body",
+                    };
+                }
 
-            return ExecuteOnGameThread(() => _navigator!.NavigateTo(body.Target));
-        });
+                return ExecuteOnGameThread(() => _navigator!.NavigateTo(body.Target));
+            }
+        );
 
         // POST /coop/tab - Switch coop menu tab
-        _server.Post("coop/tab", req =>
-        {
-            var body = TestApiServer.ReadBody<CoopTabRequest>(req);
-            if (body == null)
+        _server.Post(
+            "coop/tab",
+            req =>
             {
-                return new NavigationResult { Success = false, Error = "Missing request body" };
-            }
+                var body = TestApiServer.ReadBody<CoopTabRequest>(req);
+                if (body == null)
+                {
+                    return new NavigationResult { Success = false, Error = "Missing request body" };
+                }
 
-            return ExecuteOnGameThread(() => _navigator!.SwitchCoopTab(body.Tab));
-        });
+                return ExecuteOnGameThread(() => _navigator!.SwitchCoopTab(body.Tab));
+            }
+        );
 
         // POST /exit - Exit to title
         _server.Post("exit", _ => ExecuteOnGameThread(() => _navigator!.ExitToTitle()));
@@ -315,396 +366,587 @@ public class ModEntry : Mod
     private void RegisterCoopEndpoints()
     {
         // POST /coop/invite-code/open - Open the invite code input dialog
-        _server!.Post("coop/invite-code/open", _ =>
-            ExecuteOnGameThread(() => _coopController!.OpenInviteCodeMenu()));
+        _server!.Post(
+            "coop/invite-code/open",
+            _ => ExecuteOnGameThread(() => _coopController!.OpenInviteCodeMenu())
+        );
 
         // POST /coop/invite-code/submit - Submit invite code in the text input menu
-        _server.Post("coop/invite-code/submit", req =>
-        {
-            var body = TestApiServer.ReadBody<JoinInviteRequest>(req);
-            if (body == null || string.IsNullOrEmpty(body.InviteCode))
+        _server.Post(
+            "coop/invite-code/submit",
+            req =>
             {
-                return new JoinResult { Success = false, Error = "Missing 'inviteCode' in request body" };
-            }
+                var body = TestApiServer.ReadBody<JoinInviteRequest>(req);
+                if (body == null || string.IsNullOrEmpty(body.InviteCode))
+                {
+                    return new JoinResult
+                    {
+                        Success = false,
+                        Error = "Missing 'inviteCode' in request body",
+                    };
+                }
 
-            return ExecuteOnGameThread(() => _coopController!.SubmitInviteCode(body.InviteCode));
-        });
+                return ExecuteOnGameThread(() =>
+                    _coopController!.SubmitInviteCode(body.InviteCode)
+                );
+            }
+        );
 
         // POST /coop/join-lan - Join via LAN/IP address (requires CoopMenu)
-        _server.Post("coop/join-lan", req =>
-        {
-            var body = TestApiServer.ReadBody<JoinLanRequest>(req);
-            var address = body?.Address ?? "localhost";
+        _server.Post(
+            "coop/join-lan",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<JoinLanRequest>(req);
+                var address = body?.Address ?? "localhost";
 
-            return ExecuteOnGameThread(() => _coopController!.EnterLanAddress(address));
-        });
+                return ExecuteOnGameThread(() => _coopController!.EnterLanAddress(address));
+            }
+        );
 
         // POST /connect/lan - Direct LAN connect (no menu navigation required)
-        _server.Post("connect/lan", req =>
-        {
-            var body = TestApiServer.ReadBody<JoinLanRequest>(req);
-            var address = body?.Address ?? "localhost";
+        _server.Post(
+            "connect/lan",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<JoinLanRequest>(req);
+                var address = body?.Address ?? "localhost";
 
-            return ExecuteOnGameThread(() => _coopController!.ConnectLanDirect(address));
-        });
+                return ExecuteOnGameThread(() => _coopController!.ConnectLanDirect(address));
+            }
+        );
 
         // GET /farmhands - Get available farmhand slots
-        _server.Get("farmhands", _ =>
-        {
-            FarmhandSelectionInfo? result = null;
-            ExecuteOnGameThread(() =>
+        _server.Get(
+            "farmhands",
+            _ =>
             {
-                result = _coopController!.GetFarmhandSlots();
+                FarmhandSelectionInfo? result = null;
+                ExecuteOnGameThread(() =>
+                {
+                    result = _coopController!.GetFarmhandSlots();
+                    return result;
+                });
                 return result;
-            });
-            return result;
-        });
+            }
+        );
 
         // POST /farmhands/select - Select a farmhand slot
-        _server.Post("farmhands/select", req =>
-        {
-            var body = TestApiServer.ReadBody<SelectFarmhandRequest>(req);
-            if (body == null)
+        _server.Post(
+            "farmhands/select",
+            req =>
             {
-                return new JoinResult { Success = false, Error = "Missing request body" };
-            }
+                var body = TestApiServer.ReadBody<SelectFarmhandRequest>(req);
+                if (body == null)
+                {
+                    return new JoinResult { Success = false, Error = "Missing request body" };
+                }
 
-            return ExecuteOnGameThread(() => _coopController!.SelectFarmhand(body.SlotIndex));
-        });
+                return ExecuteOnGameThread(() => _coopController!.SelectFarmhand(body.SlotIndex));
+            }
+        );
     }
 
     private void RegisterCharacterEndpoints()
     {
         // GET /character - Get current CharacterCustomization state
-        _server!.Get("character", _ =>
-        {
-            CharacterInfo? result = null;
-            ExecuteOnGameThread(() =>
+        _server!.Get(
+            "character",
+            _ =>
             {
-                result = _characterController!.GetCharacterInfo();
+                CharacterInfo? result = null;
+                ExecuteOnGameThread(() =>
+                {
+                    result = _characterController!.GetCharacterInfo();
+                    return result;
+                });
                 return result;
-            });
-            return result;
-        });
+            }
+        );
 
         // POST /character/customize - Set name and favorite thing
-        _server.Post("character/customize", req =>
-        {
-            var body = TestApiServer.ReadBody<CustomizeCharacterRequest>(req);
-            if (body == null)
+        _server.Post(
+            "character/customize",
+            req =>
             {
-                return new CustomizeResult { Success = false, Error = "Missing request body" };
-            }
+                var body = TestApiServer.ReadBody<CustomizeCharacterRequest>(req);
+                if (body == null)
+                {
+                    return new CustomizeResult { Success = false, Error = "Missing request body" };
+                }
 
-            return ExecuteOnGameThread(() => _characterController!.SetCharacterData(body.Name, body.FavoriteThing));
-        });
+                return ExecuteOnGameThread(() =>
+                    _characterController!.SetCharacterData(body.Name, body.FavoriteThing)
+                );
+            }
+        );
 
         // POST /character/confirm - Click OK to confirm character
-        _server.Post("character/confirm", _ =>
-            ExecuteOnGameThread(() => _characterController!.ConfirmCharacter()));
+        _server.Post(
+            "character/confirm",
+            _ => ExecuteOnGameThread(() => _characterController!.ConfirmCharacter())
+        );
 
         // GET /wait/character - Wait for CharacterCustomization menu
-        _server.Get("wait/character", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/character",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () =>
-                {
-                    var menu = MenuDetector.GetCurrentMenu();
-                    return menu.Type == "CharacterCustomization" ||
-                           (menu.SubMenu?.Type == "CharacterCustomization");
-                },
-                timeout,
-                "character-customization"
-            );
-        });
+                return WaitForCondition(
+                    () =>
+                    {
+                        var menu = MenuDetector.GetCurrentMenu();
+                        return menu.Type == "CharacterCustomization"
+                            || (menu.SubMenu?.Type == "CharacterCustomization");
+                    },
+                    timeout,
+                    "character-customization"
+                );
+            }
+        );
     }
 
     private void RegisterChatEndpoints()
     {
         // POST /chat/send - Send a chat message
-        _server!.Post("chat/send", req =>
-        {
-            var body = TestApiServer.ReadBody<ChatSendRequest>(req);
-            if (body == null || string.IsNullOrEmpty(body.Message))
+        _server!.Post(
+            "chat/send",
+            req =>
             {
-                return new ChatResult { Success = false, Error = "Missing 'message' in request body" };
-            }
+                var body = TestApiServer.ReadBody<ChatSendRequest>(req);
+                if (body == null || string.IsNullOrEmpty(body.Message))
+                {
+                    return new ChatResult
+                    {
+                        Success = false,
+                        Error = "Missing 'message' in request body",
+                    };
+                }
 
-            return ExecuteOnGameThread(() => _chatController!.SendMessage(body.Message));
-        });
+                return ExecuteOnGameThread(() => _chatController!.SendMessage(body.Message));
+            }
+        );
 
         // POST /chat/info - Send a local info message
-        _server.Post("chat/info", req =>
-        {
-            var body = TestApiServer.ReadBody<ChatSendRequest>(req);
-            if (body == null || string.IsNullOrEmpty(body.Message))
+        _server.Post(
+            "chat/info",
+            req =>
             {
-                return new ChatResult { Success = false, Error = "Missing 'message' in request body" };
-            }
+                var body = TestApiServer.ReadBody<ChatSendRequest>(req);
+                if (body == null || string.IsNullOrEmpty(body.Message))
+                {
+                    return new ChatResult
+                    {
+                        Success = false,
+                        Error = "Missing 'message' in request body",
+                    };
+                }
 
-            return ExecuteOnGameThread(() => _chatController!.SendLocalInfo(body.Message));
-        });
+                return ExecuteOnGameThread(() => _chatController!.SendLocalInfo(body.Message));
+            }
+        );
 
         // GET /chat/history - Get recent chat messages
-        _server.Get("chat/history", req =>
-        {
-            var countStr = req.QueryString["count"];
-            var count = int.TryParse(countStr, out var c) ? c : 10;
-
-            ChatHistoryResult? result = null;
-            ExecuteOnGameThread(() =>
+        _server.Get(
+            "chat/history",
+            req =>
             {
-                result = _chatController!.GetRecentMessages(count);
+                var countStr = req.QueryString["count"];
+                var count = int.TryParse(countStr, out var c) ? c : 10;
+
+                ChatHistoryResult? result = null;
+                ExecuteOnGameThread(() =>
+                {
+                    result = _chatController!.GetRecentMessages(count);
+                    return result;
+                });
                 return result;
-            });
-            return result;
-        });
+            }
+        );
     }
 
     private void RegisterActionEndpoints()
     {
         // POST /actions/sleep - Make the player go to sleep
-        _server!.Post("actions/sleep", _ =>
-            ExecuteOnGameThread(() => _actionsController!.GoToSleep()));
+        _server!.Post(
+            "actions/sleep",
+            _ => ExecuteOnGameThread(() => _actionsController!.GoToSleep())
+        );
 
         // POST /actions/warp - Queue a warp to the given location/tile (async; caller polls /status to confirm)
-        _server.Post("actions/warp", req =>
-        {
-            var body = TestApiServer.ReadBody<WarpParams>(req);
-            if (body == null) return new WarpResult { Success = false, Error = "Missing body" };
-            return ExecuteOnGameThread(() => _actionsController!.Warp(body.LocationName, body.TileX, body.TileY));
-        });
+        _server.Post(
+            "actions/warp",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<WarpParams>(req);
+                if (body == null)
+                {
+                    return new WarpResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.Warp(body.LocationName, body.TileX, body.TileY)
+                );
+            }
+        );
 
         // POST /actions/place_pot - Place a Garden Pot at the given tile on the player's current location
-        _server.Post("actions/place_pot", req =>
-        {
-            var body = TestApiServer.ReadBody<PlacePotParams>(req);
-            if (body == null) return new PlacePotResult { Success = false, Error = "Missing body" };
-            return ExecuteOnGameThread(() => _actionsController!.PlacePot(body.LocationName, body.TileX, body.TileY, body.ClearObstacles));
-        });
+        _server.Post(
+            "actions/place_pot",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<PlacePotParams>(req);
+                if (body == null)
+                {
+                    return new PlacePotResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.PlacePot(
+                        body.LocationName,
+                        body.TileX,
+                        body.TileY,
+                        body.ClearObstacles
+                    )
+                );
+            }
+        );
 
         // POST /actions/clear_area - Clear debris from a tile area (prep a building footprint)
-        _server.Post("actions/clear_area", req =>
-        {
-            var body = TestApiServer.ReadBody<ClearAreaParams>(req);
-            if (body == null) return new ClearAreaResult { Success = false, Error = "Missing body" };
-            return ExecuteOnGameThread(() =>
-                _actionsController!.ClearArea(body.LocationName, body.TileX, body.TileY, body.Width, body.Height));
-        });
+        _server.Post(
+            "actions/clear_area",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<ClearAreaParams>(req);
+                if (body == null)
+                {
+                    return new ClearAreaResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.ClearArea(
+                        body.LocationName,
+                        body.TileX,
+                        body.TileY,
+                        body.Width,
+                        body.Height
+                    )
+                );
+            }
+        );
 
         // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
-        _server.Post("actions/plant_crop", req =>
-        {
-            var body = TestApiServer.ReadBody<PlantCropParams>(req);
-            if (body == null) return new PlantCropResult { Success = false, Error = "Missing body" };
-            return ExecuteOnGameThread(() =>
-                _actionsController!.PlantCrop(body.ItemId, body.LocationName, body.TileX, body.TileY));
-        });
+        _server.Post(
+            "actions/plant_crop",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<PlantCropParams>(req);
+                if (body == null)
+                {
+                    return new PlantCropResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.PlantCrop(
+                        body.ItemId,
+                        body.LocationName,
+                        body.TileX,
+                        body.TileY
+                    )
+                );
+            }
+        );
     }
 
     private void RegisterWaitEndpoints()
     {
         // GET /wait/menu - Wait for a specific menu type
-        _server!.Get("wait/menu", req =>
-        {
-            var menuType = req.QueryString["type"];
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
-
-            if (string.IsNullOrEmpty(menuType))
+        _server!.Get(
+            "wait/menu",
+            req =>
             {
-                return new WaitResult { Success = false, Error = "Missing 'type' query parameter" };
-            }
+                var menuType = req.QueryString["type"];
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () =>
+                if (string.IsNullOrEmpty(menuType))
                 {
-                    var menu = MenuDetector.GetCurrentMenu();
-                    return menu.Type.Equals(menuType, StringComparison.OrdinalIgnoreCase) ||
-                           (menu.SubMenu?.Type.Equals(menuType, StringComparison.OrdinalIgnoreCase) ?? false);
-                },
-                timeout,
-                $"menu:{menuType}"
-            );
-        });
+                    return new WaitResult
+                    {
+                        Success = false,
+                        Error = "Missing 'type' query parameter",
+                    };
+                }
+
+                return WaitForCondition(
+                    () =>
+                    {
+                        var menu = MenuDetector.GetCurrentMenu();
+                        return menu.Type.Equals(menuType, StringComparison.OrdinalIgnoreCase)
+                            || (
+                                menu.SubMenu?.Type.Equals(
+                                    menuType,
+                                    StringComparison.OrdinalIgnoreCase
+                                ) ?? false
+                            );
+                    },
+                    timeout,
+                    $"menu:{menuType}"
+                );
+            }
+        );
 
         // GET /wait/connected - Wait until connected to a server
-        _server.Get("wait/connected", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/connected",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () => MenuDetector.GetConnectionStatus().IsConnected,
-                timeout,
-                "connected"
-            );
-        });
+                return WaitForCondition(
+                    () => MenuDetector.GetConnectionStatus().IsConnected,
+                    timeout,
+                    "connected"
+                );
+            }
+        );
 
         // GET /wait/world-ready - Wait until world is ready
-        _server.Get("wait/world-ready", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/world-ready",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () => MenuDetector.GetConnectionStatus().WorldReady,
-                timeout,
-                "world-ready"
-            );
-        });
+                return WaitForCondition(
+                    () => MenuDetector.GetConnectionStatus().WorldReady,
+                    timeout,
+                    "world-ready"
+                );
+            }
+        );
 
         // GET /wait/farmhands - Wait for farmhand selection screen with slots loaded
-        _server.Get("wait/farmhands", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/farmhands",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            var menuSlotsField = typeof(LoadGameMenu).GetField("menuSlots",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var menuSlotsField = typeof(LoadGameMenu).GetField(
+                    "menuSlots",
+                    System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Instance
+                );
 
-            return WaitForCondition(
-                () =>
-                {
-                    // Check if FarmhandMenu is active
-                    FarmhandMenu? farmhandMenu = null;
-                    if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is FarmhandMenu sub)
-                        farmhandMenu = sub;
-                    else if (Game1.activeClickableMenu is FarmhandMenu direct)
-                        farmhandMenu = direct;
-
-                    if (farmhandMenu == null)
-                        return false;
-
-                    // Check that menu is not still loading farmhands
-                    if (farmhandMenu.gettingFarmhands)
-                        return false;
-
-                    // Check that slots are actually populated
-                    if (menuSlotsField?.GetValue(farmhandMenu) is not System.Collections.IList slots || slots.Count == 0)
-                        return false;
-
-                    return true;
-                },
-                timeout,
-                "farmhand-menu",
-                // Detect terminal failures so we don't wait the full timeout
-                () =>
-                {
-                    FarmhandMenu? farmhandMenu = null;
-                    if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is FarmhandMenu sub)
-                        farmhandMenu = sub;
-                    else if (Game1.activeClickableMenu is FarmhandMenu direct)
-                        farmhandMenu = direct;
-
-                    if (farmhandMenu == null)
-                        return null; // Menu not visible yet, keep waiting
-
-                    // No client at all
-                    if (farmhandMenu.client == null)
-                        return "Connection failed (no client)";
-
-                    // Connection timed out or peer disconnected
-                    if (farmhandMenu.client.timedOut)
-                        return "Connection failed (timed out)";
-
-                    // Server/lobby sent an error message. When connectionMessage is set with
-                    // no availableFarmhands, checkListPopulation sets approvingFarmhand=true.
-                    // If approvingFarmhand is true, the game is still actively waiting. The
-                    // server registered a whenGameAvailable callback that will re-send the
-                    // farmhand list once the event finishes (e.g., day transition). Only treat
-                    // it as terminal when approvingFarmhand is false (true connection failure).
-                    if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand
-                        && farmhandMenu.client.connectionMessage != null
-                        && farmhandMenu.client.availableFarmhands == null)
-                        return $"Connection failed: {farmhandMenu.client.connectionMessage}";
-
-                    // Finished loading but no slots (no cabins available)
-                    if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand)
+                return WaitForCondition(
+                    () =>
                     {
-                        var slots = menuSlotsField?.GetValue(farmhandMenu) as System.Collections.IList;
-                        if (slots != null && slots.Count == 0)
-                            return "No cabins available (server has no farmhand slots)";
-                    }
+                        // Check if FarmhandMenu is active
+                        FarmhandMenu? farmhandMenu = null;
+                        if (
+                            Game1.activeClickableMenu is TitleMenu
+                            && TitleMenu.subMenu is FarmhandMenu sub
+                        )
+                        {
+                            farmhandMenu = sub;
+                        }
+                        else if (Game1.activeClickableMenu is FarmhandMenu direct)
+                        {
+                            farmhandMenu = direct;
+                        }
 
-                    return null; // No terminal failure detected, keep waiting
-                }
-            );
-        });
+                        if (farmhandMenu == null)
+                        {
+                            return false;
+                        }
+
+                        // Check that menu is not still loading farmhands
+                        if (farmhandMenu.gettingFarmhands)
+                        {
+                            return false;
+                        }
+
+                        // Check that slots are actually populated
+                        if (
+                            menuSlotsField?.GetValue(farmhandMenu)
+                                is not System.Collections.IList slots
+                            || slots.Count == 0
+                        )
+                        {
+                            return false;
+                        }
+
+                        return true;
+                    },
+                    timeout,
+                    "farmhand-menu",
+                    // Detect terminal failures so we don't wait the full timeout
+                    () =>
+                    {
+                        FarmhandMenu? farmhandMenu = null;
+                        if (
+                            Game1.activeClickableMenu is TitleMenu
+                            && TitleMenu.subMenu is FarmhandMenu sub
+                        )
+                        {
+                            farmhandMenu = sub;
+                        }
+                        else if (Game1.activeClickableMenu is FarmhandMenu direct)
+                        {
+                            farmhandMenu = direct;
+                        }
+
+                        if (farmhandMenu == null)
+                        {
+                            return null; // Menu not visible yet, keep waiting
+                        }
+
+                        // No client at all
+                        if (farmhandMenu.client == null)
+                        {
+                            return "Connection failed (no client)";
+                        }
+
+                        // Connection timed out or peer disconnected
+                        if (farmhandMenu.client.timedOut)
+                        {
+                            return "Connection failed (timed out)";
+                        }
+
+                        // Server/lobby sent an error message. When connectionMessage is set with
+                        // no availableFarmhands, checkListPopulation sets approvingFarmhand=true.
+                        // If approvingFarmhand is true, the game is still actively waiting. The
+                        // server registered a whenGameAvailable callback that will re-send the
+                        // farmhand list once the event finishes (e.g., day transition). Only treat
+                        // it as terminal when approvingFarmhand is false (true connection failure).
+                        if (
+                            !farmhandMenu.gettingFarmhands
+                            && !farmhandMenu.approvingFarmhand
+                            && farmhandMenu.client.connectionMessage != null
+                            && farmhandMenu.client.availableFarmhands == null
+                        )
+                        {
+                            return $"Connection failed: {farmhandMenu.client.connectionMessage}";
+                        }
+
+                        // Finished loading but no slots (no cabins available)
+                        if (!farmhandMenu.gettingFarmhands && !farmhandMenu.approvingFarmhand)
+                        {
+                            var slots =
+                                menuSlotsField?.GetValue(farmhandMenu) as System.Collections.IList;
+                            if (slots != null && slots.Count == 0)
+                            {
+                                return "No cabins available (server has no farmhand slots)";
+                            }
+                        }
+
+                        return null; // No terminal failure detected, keep waiting
+                    }
+                );
+            }
+        );
 
         // GET /wait/title - Wait for title screen
-        _server.Get("wait/title", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/title",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () =>
-                {
-                    var menu = MenuDetector.GetCurrentMenu();
-                    return menu.Type == "TitleMenu" && menu.SubMenu == null;
-                },
-                timeout,
-                "title"
-            );
-        });
+                return WaitForCondition(
+                    () =>
+                    {
+                        var menu = MenuDetector.GetCurrentMenu();
+                        return menu.Type == "TitleMenu" && menu.SubMenu == null;
+                    },
+                    timeout,
+                    "title"
+                );
+            }
+        );
 
         // GET /wait/text-input - Wait for TitleTextInputMenu (invite code / LAN input dialog)
-        _server.Get("wait/text-input", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/text-input",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            return WaitForCondition(
-                () =>
-                {
-                    // Check if TitleTextInputMenu is active as a submenu or directly
-                    if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is TitleTextInputMenu)
-                        return true;
-                    if (Game1.activeClickableMenu is TitleTextInputMenu)
-                        return true;
-                    return false;
-                },
-                timeout,
-                "text-input"
-            );
-        });
+                return WaitForCondition(
+                    () =>
+                    {
+                        // Check if TitleTextInputMenu is active as a submenu or directly
+                        if (
+                            Game1.activeClickableMenu is TitleMenu
+                            && TitleMenu.subMenu is TitleTextInputMenu
+                        )
+                        {
+                            return true;
+                        }
+
+                        if (Game1.activeClickableMenu is TitleTextInputMenu)
+                        {
+                            return true;
+                        }
+
+                        return false;
+                    },
+                    timeout,
+                    "text-input"
+                );
+            }
+        );
 
         // GET /wait/disconnected - Wait until fully disconnected (no active connection)
         // Includes stability delay to ensure Galaxy SDK fully cleans up
-        _server.Get("wait/disconnected", req =>
-        {
-            var timeoutStr = req.QueryString["timeout"];
-            var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
+        _server.Get(
+            "wait/disconnected",
+            req =>
+            {
+                var timeoutStr = req.QueryString["timeout"];
+                var timeout = int.TryParse(timeoutStr, out var t) ? t : DefaultWaitTimeout;
 
-            // First wait for the basic disconnection condition
-            var result = WaitForCondition(
-                () =>
-                {
-                    // Check we're at title with no submenu
-                    var menu = MenuDetector.GetCurrentMenu();
-                    if (menu.Type != "TitleMenu" || menu.SubMenu != null)
-                        return false;
+                // First wait for the basic disconnection condition
+                var result = WaitForCondition(
+                    () =>
+                    {
+                        // Check we're at title with no submenu
+                        var menu = MenuDetector.GetCurrentMenu();
+                        if (menu.Type != "TitleMenu" || menu.SubMenu != null)
+                        {
+                            return false;
+                        }
 
-                    // Check no active multiplayer connection
-                    if (Game1.IsMultiplayer || Game1.IsClient || Game1.IsServer)
-                        return false;
+                        // Check no active multiplayer connection
+                        if (Game1.IsMultiplayer || Game1.IsClient || Game1.IsServer)
+                        {
+                            return false;
+                        }
 
-                    // Check no client object exists
-                    if (Game1.client != null)
-                        return false;
+                        // Check no client object exists
+                        if (Game1.client != null)
+                        {
+                            return false;
+                        }
 
-                    return true;
-                },
-                timeout,
-                "disconnected"
-            );
+                        return true;
+                    },
+                    timeout,
+                    "disconnected"
+                );
 
-            return result;
-        });
+                return result;
+            }
+        );
     }
 
     private void RegisterDiagnosticsEndpoints()
@@ -716,90 +958,121 @@ public class ModEntry : Mod
         _server.Get("stats", _ => _perfStats!.GetStats());
 
         // POST /stats/reset - Reset max tick tracking
-        _server.Post("stats/reset", _ =>
-        {
-            _perfStats!.ResetMax();
-            return new { success = true };
-        });
+        _server.Post(
+            "stats/reset",
+            _ =>
+            {
+                _perfStats!.ResetMax();
+                return new { success = true };
+            }
+        );
 
         // GET /errors - Get captured errors
-        _server.Get("errors", req =>
-        {
-            var limitStr = req.QueryString["limit"];
-            var clearStr = req.QueryString["clear"];
-            var limit = int.TryParse(limitStr, out var l) ? l : (int?)null;
-            var clear = clearStr == "true" || clearStr == "1";
+        _server.Get(
+            "errors",
+            req =>
+            {
+                var limitStr = req.QueryString["limit"];
+                var clearStr = req.QueryString["clear"];
+                var limit = int.TryParse(limitStr, out var l) ? l : (int?)null;
+                var clear = clearStr == "true" || clearStr == "1";
 
-            return _errorCapture!.GetErrors(limit, clear);
-        });
+                return _errorCapture!.GetErrors(limit, clear);
+            }
+        );
 
         // DELETE /errors - Clear all errors
-        _server.Delete("errors", _ =>
-        {
-            _errorCapture!.Clear();
-            return new { success = true, message = "Errors cleared" };
-        });
+        _server.Delete(
+            "errors",
+            _ =>
+            {
+                _errorCapture!.Clear();
+                return new { success = true, message = "Errors cleared" };
+            }
+        );
 
         // POST /screenshot - Capture screenshot (returns base64 PNG)
-        _server.Post("screenshot", _ =>
-        {
-            ScreenshotResult? result = null;
-
-            // Capture synchronously on game thread
-            ExecuteOnGameThread(() =>
+        _server.Post(
+            "screenshot",
+            _ =>
             {
-                result = _screenshot!.CaptureToBase64();
-                return result;
-            });
+                ScreenshotResult? result = null;
 
-            return result;
-        });
+                // Capture synchronously on game thread
+                ExecuteOnGameThread(() =>
+                {
+                    result = _screenshot!.CaptureToBase64();
+                    return result;
+                });
+
+                return result;
+            }
+        );
 
         // POST /screenshot/file - Capture screenshot to file
-        _server.Post("screenshot/file", req =>
-        {
-            var body = TestApiServer.ReadBody<ScreenshotRequest>(req);
-            var filename = body?.Filename;
-
-            // Queue and wait for capture
-            var task = _screenshot!.CaptureAsync(filename);
-
-            // Wait for render to complete capture
-            var timeout = DateTime.UtcNow.AddSeconds(5);
-            while (!task.IsCompleted && DateTime.UtcNow < timeout)
+        _server.Post(
+            "screenshot/file",
+            req =>
             {
-                Thread.Sleep(TickSleepMs);
+                var body = TestApiServer.ReadBody<ScreenshotRequest>(req);
+                var filename = body?.Filename;
+
+                // Queue and wait for capture
+                var task = _screenshot!.CaptureAsync(filename);
+
+                // Wait for render to complete capture
+                var timeout = DateTime.UtcNow.AddSeconds(5);
+                while (!task.IsCompleted && DateTime.UtcNow < timeout)
+                {
+                    Thread.Sleep(TickSleepMs);
+                }
+
+                return task.IsCompleted
+                    ? task.Result
+                    : new ScreenshotResult
+                    {
+                        Success = false,
+                        Error = "Screenshot capture timed out",
+                    };
             }
-
-            return task.IsCompleted ? task.Result : new ScreenshotResult
-            {
-                Success = false,
-                Error = "Screenshot capture timed out"
-            };
-        });
+        );
 
         // GET /steam/lobby - Diagnose Steam lobby by ID (pass ?id=123456)
-        _server.Get("steam/lobby", req =>
-        {
-            var lobbyIdStr = req.QueryString["id"];
-            if (string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId))
+        _server.Get(
+            "steam/lobby",
+            req =>
             {
-                return new { error = "Missing or invalid 'id' query parameter" };
+                var lobbyIdStr = req.QueryString["id"];
+                if (
+                    string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId)
+                )
+                {
+                    return new { error = "Missing or invalid 'id' query parameter" };
+                }
+                return _coopController!.DiagnoseSteamLobby(lobbyId);
             }
-            return _coopController!.DiagnoseSteamLobby(lobbyId);
-        });
+        );
 
         // POST /steam/lobby/join-diagnose - Join lobby, diagnose, then leave (pass ?id=123456)
-        _server.Post("steam/lobby/join-diagnose", req =>
-        {
-            var lobbyIdStr = req.QueryString["id"];
-            if (string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId))
+        _server.Post(
+            "steam/lobby/join-diagnose",
+            req =>
             {
-                return new { error = "Missing or invalid 'id' query parameter" };
+                var lobbyIdStr = req.QueryString["id"];
+                if (
+                    string.IsNullOrEmpty(lobbyIdStr) || !ulong.TryParse(lobbyIdStr, out var lobbyId)
+                )
+                {
+                    return new { error = "Missing or invalid 'id' query parameter" };
+                }
+                _coopController!.DiagnoseSteamLobbyWithJoin(lobbyId);
+                return new
+                {
+                    success = true,
+                    message = "Join initiated - check logs for diagnostic output",
+                };
             }
-            _coopController!.DiagnoseSteamLobbyWithJoin(lobbyId);
-            return new { success = true, message = "Join initiated - check logs for diagnostic output" };
-        });
+        );
 
         // The OpenAPI spec + Swagger/Scalar explorer UIs are a manual debugging aid,
         // not part of automated test flow — no test or test-ui fetches them. Gated off
@@ -808,22 +1081,34 @@ public class ModEntry : Mod
         if (IsApiExplorerEnabled())
         {
             // GET /openapi.json - OpenAPI 3.0 specification
-            _server.GetRaw("openapi.json", _ => (
-                OpenApiGenerator.GenerateJson(
-                    typeof(ApiDefinitions),
-                    "JunimoTestClient API",
-                    "0.1.0",
-                    "HTTP API for automated testing of Stardew Valley client"),
-                "application/json"));
+            _server.GetRaw(
+                "openapi.json",
+                _ =>
+                    (
+                        OpenApiGenerator.GenerateJson(
+                            typeof(ApiDefinitions),
+                            "JunimoTestClient API",
+                            "0.1.0",
+                            "HTTP API for automated testing of Stardew Valley client"
+                        ),
+                        "application/json"
+                    )
+            );
 
             // GET /openapi.yaml - OpenAPI 3.0 specification (YAML)
-            _server.GetRaw("openapi.yaml", _ => (
-                OpenApiGenerator.GenerateYaml(
-                    typeof(ApiDefinitions),
-                    "JunimoTestClient API",
-                    "0.1.0",
-                    "HTTP API for automated testing of Stardew Valley client"),
-                "application/x-yaml"));
+            _server.GetRaw(
+                "openapi.yaml",
+                _ =>
+                    (
+                        OpenApiGenerator.GenerateYaml(
+                            typeof(ApiDefinitions),
+                            "JunimoTestClient API",
+                            "0.1.0",
+                            "HTTP API for automated testing of Stardew Valley client"
+                        ),
+                        "application/x-yaml"
+                    )
+            );
 
             // GET /docs - Scalar API documentation UI
             _server.GetRaw("docs", _ => (GetScalarHtml(), "text/html"));
@@ -831,14 +1116,18 @@ public class ModEntry : Mod
             // GET /swagger - Swagger UI
             _server.GetRaw("swagger", _ => (GetSwaggerHtml(), "text/html"));
 
-            Monitor.Log("API explorer enabled: /openapi.json, /openapi.yaml, /docs, /swagger", LogLevel.Info);
+            Monitor.Log(
+                "API explorer enabled: /openapi.json, /openapi.yaml, /docs, /swagger",
+                LogLevel.Info
+            );
         }
     }
 
     private static bool IsApiExplorerEnabled()
     {
         var raw = Environment.GetEnvironmentVariable("SDVD_TEST_CLIENT_API_EXPLORER");
-        return raw is "1" or "true" or "yes" || string.Equals(raw, "on", StringComparison.OrdinalIgnoreCase);
+        return raw is "1" or "true" or "yes"
+            || string.Equals(raw, "on", StringComparison.OrdinalIgnoreCase);
     }
 
     private string GetSwaggerHtml()
@@ -892,7 +1181,8 @@ public class ModEntry : Mod
     /// <summary>
     /// Sleep duration for polling loops: one game tick, derived from the configured TPS.
     /// </summary>
-    private static int TickSleepMs => Math.Max(1, (int)Game1.game1.TargetElapsedTime.TotalMilliseconds);
+    private static int TickSleepMs =>
+        Math.Max(1, (int)Game1.game1.TargetElapsedTime.TotalMilliseconds);
 
     private readonly Queue<Action> _gameActions = new();
     private readonly object _actionLock = new();
@@ -921,7 +1211,10 @@ public class ModEntry : Mod
         QueueGameAction(() =>
         {
             if (Interlocked.CompareExchange(ref state, 2, 0) != 0)
+            {
                 return; // Caller timed out (state was 1); skip to avoid corrupting game state
+            }
+
             using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
             try
             {
@@ -959,15 +1252,21 @@ public class ModEntry : Mod
                     continue;
                 }
                 int queueDepth;
-                lock (_actionLock) { queueDepth = _gameActions.Count; }
+                lock (_actionLock)
+                {
+                    queueDepth = _gameActions.Count;
+                }
                 throw new TimeoutException(
-                    $"Game thread frozen: no tick for {msSinceLastTick:F0}ms " +
-                    $"(threshold: {timeoutMs}ms, queueDepth={queueDepth})");
+                    $"Game thread frozen: no tick for {msSinceLastTick:F0}ms "
+                        + $"(threshold: {timeoutMs}ms, queueDepth={queueDepth})"
+                );
             }
         }
 
         if (error != null)
+        {
             throw error;
+        }
 
         return result;
     }
@@ -1014,8 +1313,12 @@ public class ModEntry : Mod
 
     #region Wait/Polling
 
-    private WaitResult WaitForCondition(Func<bool> condition, int timeoutMs, string conditionName,
-        Func<string?>? failureDetector = null)
+    private WaitResult WaitForCondition(
+        Func<bool> condition,
+        int timeoutMs,
+        string conditionName,
+        Func<string?>? failureDetector = null
+    )
     {
         var startTime = DateTime.UtcNow;
         var deadline = startTime.AddMilliseconds(timeoutMs);
@@ -1034,13 +1337,17 @@ public class ModEntry : Mod
             var checkCompleted = false;
             QueueGameAction(() =>
             {
-                using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
+                using var _correlationScope = Diagnostics.ClientRequestContext.Bind(
+                    capturedRequestId
+                );
                 try
                 {
                     satisfied = condition();
                     // Only check for terminal failure if condition not yet satisfied
                     if (!satisfied && failureDetector != null)
+                    {
                         failureReason = failureDetector();
+                    }
                 }
                 catch
                 {
@@ -1065,7 +1372,7 @@ public class ModEntry : Mod
                 {
                     Success = true,
                     Condition = conditionName,
-                    WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds
+                    WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds,
                 };
             }
 
@@ -1077,7 +1384,7 @@ public class ModEntry : Mod
                     Success = false,
                     Condition = conditionName,
                     Error = failureReason,
-                    WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds
+                    WaitedMs = (int)(DateTime.UtcNow - startTime).TotalMilliseconds,
                 };
             }
 
@@ -1089,7 +1396,7 @@ public class ModEntry : Mod
             Success = false,
             Condition = conditionName,
             Error = $"Timeout waiting for {conditionName} after {timeoutMs}ms",
-            WaitedMs = timeoutMs
+            WaitedMs = timeoutMs,
         };
     }
 
@@ -1121,9 +1428,18 @@ public class ModEntry : Mod
     {
         if (e.IsLocalPlayer)
         {
-            Monitor.Log($"[Spawn] Player warped: {e.OldLocation?.NameOrUniqueName ?? "null"} -> {e.NewLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
-            Monitor.Log($"[Spawn] OldLocation.isStructure={e.OldLocation?.isStructure?.Value}, NewLocation.isStructure={e.NewLocation?.isStructure?.Value}", LogLevel.Debug);
-            Monitor.Log($"[Spawn] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+            Monitor.Log(
+                $"[Spawn] Player warped: {e.OldLocation?.NameOrUniqueName ?? "null"} -> {e.NewLocation?.NameOrUniqueName ?? "null"}",
+                LogLevel.Debug
+            );
+            Monitor.Log(
+                $"[Spawn] OldLocation.isStructure={e.OldLocation?.isStructure?.Value}, NewLocation.isStructure={e.NewLocation?.isStructure?.Value}",
+                LogLevel.Debug
+            );
+            Monitor.Log(
+                $"[Spawn] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}",
+                LogLevel.Debug
+            );
             LogSpawnInfo("AfterWarp");
         }
     }
@@ -1146,17 +1462,41 @@ public class ModEntry : Mod
         Monitor.Log($"[Spawn:{context}] Player ID: {player.UniqueMultiplayerID}", LogLevel.Debug);
         Monitor.Log($"[Spawn:{context}] Player Name: {player.Name}", LogLevel.Debug);
         Monitor.Log($"[Spawn:{context}] isCustomized: {player.isCustomized.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] currentLocation: {player.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+        Monitor.Log(
+            $"[Spawn:{context}] currentLocation: {player.currentLocation?.NameOrUniqueName ?? "null"}",
+            LogLevel.Debug
+        );
         Monitor.Log($"[Spawn:{context}] Position: {player.Position}", LogLevel.Debug);
         Monitor.Log($"[Spawn:{context}] TileLocation: {player.Tile}", LogLevel.Debug);
         Monitor.Log($"[Spawn:{context}] homeLocation: {player.homeLocation.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] lastSleepLocation: {player.lastSleepLocation.Value ?? "null"}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] lastSleepPoint: {player.lastSleepPoint.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] sleptInTemporaryBed: {player.sleptInTemporaryBed.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] disconnectDay: {player.disconnectDay.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] disconnectLocation: {player.disconnectLocation.Value ?? "null"}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] disconnectPosition: {player.disconnectPosition.Value}", LogLevel.Debug);
-        Monitor.Log($"[Spawn:{context}] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}", LogLevel.Debug);
+        Monitor.Log(
+            $"[Spawn:{context}] lastSleepLocation: {player.lastSleepLocation.Value ?? "null"}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] lastSleepPoint: {player.lastSleepPoint.Value}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] sleptInTemporaryBed: {player.sleptInTemporaryBed.Value}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] disconnectDay: {player.disconnectDay.Value}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] disconnectLocation: {player.disconnectLocation.Value ?? "null"}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] disconnectPosition: {player.disconnectPosition.Value}",
+            LogLevel.Debug
+        );
+        Monitor.Log(
+            $"[Spawn:{context}] Game1.currentLocation: {Game1.currentLocation?.NameOrUniqueName ?? "null"}",
+            LogLevel.Debug
+        );
         Monitor.Log($"[Spawn:{context}] ======================================", LogLevel.Debug);
     }
 
@@ -1175,18 +1515,26 @@ public class ModEntry : Mod
             // Patch SteamMatchmaking.SetLobbyGameServer to log what the vanilla client sends
             var setLobbyGameServerMethod = AccessTools.Method(
                 typeof(SteamMatchmaking),
-                nameof(SteamMatchmaking.SetLobbyGameServer));
+                nameof(SteamMatchmaking.SetLobbyGameServer)
+            );
 
             if (setLobbyGameServerMethod != null)
             {
                 _harmony.Patch(
                     setLobbyGameServerMethod,
-                    prefix: new HarmonyMethod(typeof(ModEntry), nameof(SetLobbyGameServer_Prefix)));
-                Monitor.Log("Patched SteamMatchmaking.SetLobbyGameServer for diagnostics", LogLevel.Debug);
+                    prefix: new HarmonyMethod(typeof(ModEntry), nameof(SetLobbyGameServer_Prefix))
+                );
+                Monitor.Log(
+                    "Patched SteamMatchmaking.SetLobbyGameServer for diagnostics",
+                    LogLevel.Debug
+                );
             }
             else
             {
-                Monitor.Log("Could not find SteamMatchmaking.SetLobbyGameServer method", LogLevel.Warn);
+                Monitor.Log(
+                    "Could not find SteamMatchmaking.SetLobbyGameServer method",
+                    LogLevel.Warn
+                );
             }
         }
         catch (Exception ex)
@@ -1195,14 +1543,28 @@ public class ModEntry : Mod
         }
     }
 
-    private static bool SetLobbyGameServer_Prefix(CSteamID steamIDLobby, uint unGameServerIP, ushort unGameServerPort, CSteamID steamIDGameServer)
+    private static bool SetLobbyGameServer_Prefix(
+        CSteamID steamIDLobby,
+        uint unGameServerIP,
+        ushort unGameServerPort,
+        CSteamID steamIDGameServer
+    )
     {
         _staticMonitor?.Log("=== SetLobbyGameServer CALLED ===", LogLevel.Alert);
         _staticMonitor?.Log($"  Lobby ID: {steamIDLobby.m_SteamID}", LogLevel.Alert);
-        _staticMonitor?.Log($"  Game Server IP: {unGameServerIP} (0x{unGameServerIP:X8})", LogLevel.Alert);
+        _staticMonitor?.Log(
+            $"  Game Server IP: {unGameServerIP} (0x{unGameServerIP:X8})",
+            LogLevel.Alert
+        );
         _staticMonitor?.Log($"  Game Server Port: {unGameServerPort}", LogLevel.Alert);
-        _staticMonitor?.Log($"  Game Server Steam ID: {steamIDGameServer.m_SteamID}", LogLevel.Alert);
-        _staticMonitor?.Log($"  Game Server Steam ID Valid: {steamIDGameServer.IsValid()}", LogLevel.Alert);
+        _staticMonitor?.Log(
+            $"  Game Server Steam ID: {steamIDGameServer.m_SteamID}",
+            LogLevel.Alert
+        );
+        _staticMonitor?.Log(
+            $"  Game Server Steam ID Valid: {steamIDGameServer.IsValid()}",
+            LogLevel.Alert
+        );
         _staticMonitor?.Log("=================================", LogLevel.Alert);
 
         // Let the original method run

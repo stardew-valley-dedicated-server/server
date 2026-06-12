@@ -29,7 +29,7 @@ namespace JunimoServer.Tests.Infrastructure;
 /// </list>
 ///
 /// Construction is two-phase:
-///   1. <see cref="DockerHost(...)"/> takes the user-facing <c>ssh://</c> URI
+///   1. The constructor takes the user-facing <c>ssh://</c> URI
 ///      (or null for local) and stores it for diagnostics. The api client
 ///      and endpoint config are unset.
 ///   2. <see cref="InitializeAsync"/> — for remote hosts, opens the daemon
@@ -45,12 +45,14 @@ public sealed class DockerHost : IAsyncDisposable
 {
     public string Id { get; }
     public string? SshDestination { get; }
+
     /// <summary>
     /// Optional SSH private-key path (resolved, absolute or `~`-expanded).
     /// Threaded into every `ssh -M` / `ssh -O` invocation as `-i {path}`. Null
     /// means "use ~/.ssh/config + ssh-agent" — the default OpenSSH behavior.
     /// </summary>
     public string? SshKeyPath { get; }
+
     /// <summary>
     /// Remote Unix socket path for the Docker daemon, used as the endpoint of
     /// the <c>ssh -L</c> daemon-socket forward. Defaults to <c>/var/run/docker.sock</c>
@@ -62,6 +64,7 @@ public sealed class DockerHost : IAsyncDisposable
     public string RemoteSocketPath { get; }
     public int ServerSlots { get; }
     public int ClientSlots { get; }
+
     /// <summary>
     /// Whether this host has an NVIDIA GPU + Container Toolkit available.
     /// Containers placed on this host call <c>WithGpuIfEnabled(host)</c> to
@@ -71,6 +74,7 @@ public sealed class DockerHost : IAsyncDisposable
     public bool HasGpu { get; }
     internal HostCapacityQueue ServerCapacity { get; }
     internal HostCapacityQueue ClientCapacity { get; }
+
     /// <summary>
     /// Per-host bound on concurrent <c>docker create+start</c> calls against this
     /// daemon. Independent across hosts because separate daemons share no
@@ -116,7 +120,11 @@ public sealed class DockerHost : IAsyncDisposable
     /// </summary>
     internal DockerEndpointConfig EndpointConfig
     {
-        get { EnsureInitialized(); return _endpointConfig!; }
+        get
+        {
+            EnsureInitialized();
+            return _endpointConfig!;
+        }
     }
 
     /// <summary>
@@ -126,7 +134,11 @@ public sealed class DockerHost : IAsyncDisposable
     /// </summary>
     public DockerClient ApiClient
     {
-        get { EnsureInitialized(); return _apiClient!; }
+        get
+        {
+            EnsureInitialized();
+            return _apiClient!;
+        }
     }
 
     /// <summary>
@@ -139,10 +151,17 @@ public sealed class DockerHost : IAsyncDisposable
     /// </summary>
     private void EnsureInitialized()
     {
-        if (_endpointConfig != null) return;
+        if (_endpointConfig != null)
+        {
+            return;
+        }
+
         lock (_lazyInitLock)
         {
-            if (_endpointConfig != null) return;
+            if (_endpointConfig != null)
+            {
+                return;
+            }
 
             if (string.IsNullOrEmpty(SshDestination))
             {
@@ -151,11 +170,13 @@ public sealed class DockerHost : IAsyncDisposable
                 return;
             }
 
-            var port = ReadTunnelPortFromEnv(Id)
+            var port =
+                ReadTunnelPortFromEnv(Id)
                 ?? throw new InvalidOperationException(
-                    $"DockerHost '{Id}' (remote: {SshDestination}) has no tunnel port. " +
-                    $"In the parent process, call HostPool.PreflightAsync first. " +
-                    $"In the child, ensure {RunArtifactNames.HostTunnelsEnv} is inherited from the parent.");
+                    $"DockerHost '{Id}' (remote: {SshDestination}) has no tunnel port. "
+                        + $"In the parent process, call HostPool.PreflightAsync first. "
+                        + $"In the child, ensure {RunArtifactNames.HostTunnelsEnv} is inherited from the parent."
+                );
             var localEndpoint = new Uri($"tcp://localhost:{port}");
             _endpointConfig = DockerEndpointConfig.CreateRemote(localEndpoint);
             _apiClient = _endpointConfig.CreateDockerClient();
@@ -165,13 +186,20 @@ public sealed class DockerHost : IAsyncDisposable
     private static int? ReadTunnelPortFromEnv(string hostId)
     {
         var raw = Environment.GetEnvironmentVariable(RunArtifactNames.HostTunnelsEnv);
-        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
         try
         {
             var map = JsonSerializer.Deserialize<Dictionary<string, int>>(raw);
             return map != null && map.TryGetValue(hostId, out var p) && p > 0 ? p : null;
         }
-        catch { return null; }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -203,7 +231,8 @@ public sealed class DockerHost : IAsyncDisposable
         int concurrentStarts,
         int concurrentExtractions,
         bool hasGpu = false,
-        string? remoteSocketPath = null)
+        string? remoteSocketPath = null
+    )
     {
         Id = id;
         SshDestination = sshDestination;
@@ -230,11 +259,12 @@ public sealed class DockerHost : IAsyncDisposable
     /// <see cref="RemoteSocketPath"/> and points the client at
     /// <c>tcp://localhost:&lt;coordinatorPort&gt;</c>.
     /// </summary>
-    internal async Task InitializeAsync(
-        TunnelManager tunnels,
-        CancellationToken ct = default)
+    internal async Task InitializeAsync(TunnelManager tunnels, CancellationToken ct = default)
     {
-        if (_endpointConfig != null) return;
+        if (_endpointConfig != null)
+        {
+            return;
+        }
 
         if (string.IsNullOrEmpty(SshDestination))
         {
@@ -246,7 +276,13 @@ public sealed class DockerHost : IAsyncDisposable
         // Remote hosts: open the SSH forward outside the lock (it does I/O),
         // then commit the resulting endpoint under the lock so a concurrent
         // lazy reader can't race in with the env-var-driven path.
-        var forward = await tunnels.OpenSocketForwardAsync(Id, SshDestination!, SshKeyPath, RemoteSocketPath, ct);
+        var forward = await tunnels.OpenSocketForwardAsync(
+            Id,
+            SshDestination!,
+            SshKeyPath,
+            RemoteSocketPath,
+            ct
+        );
         lock (_lazyInitLock)
         {
             if (_endpointConfig != null)
@@ -278,7 +314,8 @@ public sealed class DockerHost : IAsyncDisposable
         double OffsetSec,
         double CalibrationRttMs,
         int CalibrationSamples,
-        bool FromCache);
+        bool FromCache
+    );
 
     /// <summary>
     /// Returns the constant offset that converts host-monotonic
@@ -307,18 +344,32 @@ public sealed class DockerHost : IAsyncDisposable
     /// </para>
     /// </summary>
     public async Task<HostClockOffset> GetHostClockOffsetAsync(
-        IContainer calibrationContainer, CancellationToken ct = default)
+        IContainer calibrationContainer,
+        CancellationToken ct = default
+    )
     {
         if (_hostClockOffsetSec is double cached)
-            return new HostClockOffset(cached, _hostClockCalibrationRttMs,
-                _hostClockCalibrationSamples, FromCache: true);
+        {
+            return new HostClockOffset(
+                cached,
+                _hostClockCalibrationRttMs,
+                _hostClockCalibrationSamples,
+                FromCache: true
+            );
+        }
 
         await _hostClockCalibrationLock.WaitAsync(ct);
         try
         {
             if (_hostClockOffsetSec is double cached2)
-                return new HostClockOffset(cached2, _hostClockCalibrationRttMs,
-                    _hostClockCalibrationSamples, FromCache: true);
+            {
+                return new HostClockOffset(
+                    cached2,
+                    _hostClockCalibrationRttMs,
+                    _hostClockCalibrationSamples,
+                    FromCache: true
+                );
+            }
 
             // Single `date +%s.%N` exec bracketed by one Stopwatch pair. The offset is
             // host-shared (this cached value is read by every recorder on the host), so
@@ -334,32 +385,48 @@ public sealed class DockerHost : IAsyncDisposable
             try
             {
                 result = await calibrationContainer.ExecAsync(
-                    new[] { "sh", "-c", "date +%s.%N" }, ct);
+                    new[] { "sh", "-c", "date +%s.%N" },
+                    ct
+                );
             }
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    $"DockerHost '{Id}' clock calibration failed: exec threw on container " +
-                    $"'{calibrationContainer.Id}'.", ex);
+                    $"DockerHost '{Id}' clock calibration failed: exec threw on container "
+                        + $"'{calibrationContainer.Id}'.",
+                    ex
+                );
             }
             var after = Stopwatch.GetTimestamp();
 
-            if (!double.TryParse(result.Stdout.Trim(),
-                NumberStyles.Float, CultureInfo.InvariantCulture, out var epoch)
-                || epoch <= 1e9)
+            if (
+                !double.TryParse(
+                    result.Stdout.Trim(),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var epoch
+                )
+                || epoch <= 1e9
+            )
+            {
                 throw new InvalidOperationException(
-                    $"DockerHost '{Id}' clock calibration failed: unparseable or " +
-                    $"out-of-range `date` output '{result.Stdout.Trim()}' from container " +
-                    $"'{calibrationContainer.Id}'.");
+                    $"DockerHost '{Id}' clock calibration failed: unparseable or "
+                        + $"out-of-range `date` output '{result.Stdout.Trim()}' from container "
+                        + $"'{calibrationContainer.Id}'."
+                );
+            }
 
             var hostMidpointSec = (before + after) / 2.0 / Stopwatch.Frequency;
             _hostClockOffsetSec = epoch - hostMidpointSec;
             _hostClockCalibrationRttMs = (after - before) * 1000.0 / Stopwatch.Frequency;
             _hostClockCalibrationSamples = 1;
 
-            return new HostClockOffset(_hostClockOffsetSec.Value,
-                _hostClockCalibrationRttMs, _hostClockCalibrationSamples,
-                FromCache: false);
+            return new HostClockOffset(
+                _hostClockOffsetSec.Value,
+                _hostClockCalibrationRttMs,
+                _hostClockCalibrationSamples,
+                FromCache: false
+            );
         }
         finally
         {
@@ -399,18 +466,25 @@ public sealed class DockerHost : IAsyncDisposable
             // Tail only for transport poisons; null (omitted) when absent — an
             // RST drop or an app poison leaves no tail.
             var tail = transport ? TunnelManager.ReadMasterLogTailForHost(Id) : "";
-            InfrastructureEventLog.Emit("host_disconnected", new
-            {
-                host_id = Id,
-                reason,
-                sshMasterLogTail = string.IsNullOrEmpty(tail) ? null : tail
-            });
+            InfrastructureEventLog.Emit(
+                "host_disconnected",
+                new
+                {
+                    host_id = Id,
+                    reason,
+                    sshMasterLogTail = string.IsNullOrEmpty(tail) ? null : tail,
+                }
+            );
 
             // Console breadcrumb so the CI job log isn't blind to a tunnel fault.
             // Names the host + log file only — the VPS IP is kept out of CI logs.
             if (transport)
-                TestLog.Test($"[ssh] host '{Id}' poisoned (transport): {reason}. " +
-                             $"See diagnostics/ssh-master-{Id}.log");
+            {
+                TestLog.Test(
+                    $"[ssh] host '{Id}' poisoned (transport): {reason}. "
+                        + $"See diagnostics/ssh-master-{Id}.log"
+                );
+            }
         }
     }
 
@@ -432,7 +506,10 @@ public sealed class DockerHost : IAsyncDisposable
         if (transportReason is null && ex is TimeoutException && SshDestination is not null)
         {
             if (!await TunnelManager.Default.IsMasterAliveAsync(Id))
-                transportReason = $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
+            {
+                transportReason =
+                    $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
+            }
         }
 
         if (transportReason is not null)
@@ -446,7 +523,9 @@ public sealed class DockerHost : IAsyncDisposable
             }
             catch (Exception poisonEx)
             {
-                TestLog.Test($"[ssh] best-effort transport poison failed on '{Id}': {poisonEx.Message}");
+                TestLog.Test(
+                    $"[ssh] best-effort transport poison failed on '{Id}': {poisonEx.Message}"
+                );
             }
         }
     }
@@ -465,12 +544,28 @@ public sealed class DockerHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        try { StartLimiter.Dispose(); } catch { }
-        try { ExtractLimiter.Dispose(); } catch { }
-        try { _apiClient?.Dispose(); } catch { }
+        try
+        {
+            StartLimiter.Dispose();
+        }
+        catch { }
+        try
+        {
+            ExtractLimiter.Dispose();
+        }
+        catch { }
+        try
+        {
+            _apiClient?.Dispose();
+        }
+        catch { }
         if (_daemonForward != null)
         {
-            try { await _daemonForward.DisposeAsync(); } catch { }
+            try
+            {
+                await _daemonForward.DisposeAsync();
+            }
+            catch { }
         }
     }
 }

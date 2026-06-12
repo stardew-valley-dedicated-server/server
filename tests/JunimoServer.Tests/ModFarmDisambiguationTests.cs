@@ -16,7 +16,12 @@ namespace JunimoServer.Tests;
 /// FixtureFarmMod flag is part of the server reuse key, so this costs at most one extra pooled
 /// server for this class.
 /// </summary>
-[TestServer(Isolation = IsolationMode.SharedClass, Priority = 91, Exclusive = true, FixtureFarmMod = true)]
+[TestServer(
+    Isolation = IsolationMode.SharedClass,
+    Priority = 91,
+    Exclusive = true,
+    FixtureFarmMod = true
+)]
 public class ModFarmDisambiguationTests : TestBase
 {
     /// <summary>Must match the Id TestFarmMod adds to Data/AdditionalFarms (separate net6.0 assembly, not referenced here).</summary>

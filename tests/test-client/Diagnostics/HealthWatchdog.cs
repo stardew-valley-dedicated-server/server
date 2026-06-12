@@ -47,11 +47,7 @@ public class HealthWatchdog
 
         _shutdown = false;
         _stallLogged = false;
-        _watchdogThread = new Thread(WatchdogLoop)
-        {
-            Name = "HealthWatchdog",
-            IsBackground = true
-        };
+        _watchdogThread = new Thread(WatchdogLoop) { Name = "HealthWatchdog", IsBackground = true };
         _watchdogThread.Start();
 
         _monitor.Log("Health watchdog started", LogLevel.Trace);
@@ -84,11 +80,12 @@ public class HealthWatchdog
                     {
                         _monitor.Log(
                             $"[Watchdog] Game thread stalled: no tick for {msSinceLastTick:F0}ms",
-                            LogLevel.Warn);
-                        ClientEventLog.Emit("client_health_stall_started", new
-                        {
-                            lastTickMs = (long)msSinceLastTick
-                        });
+                            LogLevel.Warn
+                        );
+                        ClientEventLog.Emit(
+                            "client_health_stall_started",
+                            new { lastTickMs = (long)msSinceLastTick }
+                        );
                         _stallLogged = true;
                     }
                 }
@@ -102,11 +99,12 @@ public class HealthWatchdog
                     {
                         _monitor.Log(
                             $"[Watchdog] Game thread resumed after {gapMs:F0}ms pause",
-                            LogLevel.Info);
-                        ClientEventLog.Emit("client_health_stall_recovered", new
-                        {
-                            durationMs = (long)gapMs
-                        });
+                            LogLevel.Info
+                        );
+                        ClientEventLog.Emit(
+                            "client_health_stall_recovered",
+                            new { durationMs = (long)gapMs }
+                        );
                     }
                     _stallLogged = false;
                 }
@@ -148,7 +146,7 @@ public class HealthWatchdog
             LastUnhealthyReason = isFrozen ? _lastUnhealthyReason : null,
             UptimeSeconds = (int)(now - _startTime).TotalSeconds,
             GalaxyReady = ClientAuthService.GalaxyReady,
-            GalaxyState = ClientAuthService.GalaxyState
+            GalaxyState = ClientAuthService.GalaxyState,
         };
     }
 

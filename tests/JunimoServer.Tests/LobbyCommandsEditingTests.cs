@@ -44,9 +44,7 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
     {
         await EnsureAdminSessionAsync();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby save",
-            "not editing");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby save", "not editing");
 
         Assert.True(hasResponse, "Should see not editing error");
 
@@ -65,18 +63,19 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         await Chat.SendAndWaitAsync($"!lobby create {layoutName}", "Created", "Editing mode");
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby cancel",
-            "Cancelled", "discarded");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby cancel", "Cancelled", "discarded");
 
         Assert.True(hasResponse, "Should see cancelled message");
 
         await Chat.AssertResponseAsync("!lobby list", "Lobby Layouts", "default");
         var chatHistory = await GameClient.GetChatHistory(20);
 
-        var layoutInList = chatHistory?.Messages.Any(m =>
-            m.Message.Contains($"- {layoutName}", StringComparison.OrdinalIgnoreCase) ||
-            m.Message.Contains($"\u2022 {layoutName}", StringComparison.OrdinalIgnoreCase)) ?? false;
+        var layoutInList =
+            chatHistory?.Messages.Any(m =>
+                m.Message.Contains($"- {layoutName}", StringComparison.OrdinalIgnoreCase)
+                || m.Message.Contains($"\u2022 {layoutName}", StringComparison.OrdinalIgnoreCase)
+            )
+            ?? false;
 
         Assert.False(layoutInList, "Cancelled layout should not appear in list");
 
@@ -97,9 +96,7 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         await Chat.SendAndWaitAsync($"!lobby create {layoutName1}", "Created", "Editing mode");
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby edit default",
-            "already editing");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby edit default", "already editing");
 
         Assert.True(hasResponse, "Should see already editing message");
 
@@ -123,7 +120,8 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby create {layoutName2}",
-            "already editing");
+            "already editing"
+        );
 
         Assert.True(hasResponse, "Should see already editing message");
 
@@ -152,7 +150,8 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby rename {layoutName} newname",
-            "Cannot rename");
+            "Cannot rename"
+        );
 
         Assert.True(hasResponse, "Should see cannot rename message");
 
@@ -175,7 +174,8 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby delete {layoutName}",
-            "Cannot delete");
+            "Cannot delete"
+        );
 
         Assert.True(hasResponse, "Should see cannot delete message");
 
@@ -200,15 +200,11 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         await Chat.SendAndWaitAsync($"!lobby create {layoutName}", "Created", "Editing mode");
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby save",
-            "Saved", layoutName);
+        var hasResponse = await Chat.AssertResponseAsync("!lobby save", "Saved", layoutName);
 
         Assert.True(hasResponse, "Should see saved message");
 
-        var listResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            layoutName);
+        var listResponse = await Chat.AssertResponseAsync("!lobby list", layoutName);
 
         Assert.True(listResponse, "Layout should appear in list after save");
 
@@ -227,13 +223,13 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby copy default {destName}",
-            "Copied", destName);
+            "Copied",
+            destName
+        );
 
         Assert.True(hasResponse, "Should see copied message");
 
-        var listResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            destName, "default");
+        var listResponse = await Chat.AssertResponseAsync("!lobby list", destName, "default");
 
         Assert.True(listResponse, "Both original and copy should appear in list");
 
@@ -256,7 +252,9 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             $"!lobby rename {originalName} {newName}",
-            "Renamed", newName);
+            "Renamed",
+            newName
+        );
 
         Assert.True(hasResponse, "Should see renamed message");
 
@@ -264,8 +262,11 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
         Assert.True(listResponse, "New name should appear in list");
 
         var chatHistory = await GameClient.GetChatHistory(20);
-        var hasOldName = chatHistory?.Messages.Any(m =>
-            m.Message.Contains($"- {originalName}", StringComparison.OrdinalIgnoreCase)) ?? false;
+        var hasOldName =
+            chatHistory?.Messages.Any(m =>
+                m.Message.Contains($"- {originalName}", StringComparison.OrdinalIgnoreCase)
+            )
+            ?? false;
         Assert.False(hasOldName, "Old name should not appear in list");
 
         _testLayouts.Remove(originalName);

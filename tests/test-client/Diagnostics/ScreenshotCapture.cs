@@ -28,11 +28,9 @@ public class ScreenshotCapture
     {
         if (_pendingCapture != null)
         {
-            return Task.FromResult(new ScreenshotResult
-            {
-                Success = false,
-                Error = "Screenshot already pending"
-            });
+            return Task.FromResult(
+                new ScreenshotResult { Success = false, Error = "Screenshot already pending" }
+            );
         }
 
         _pendingCapture = new TaskCompletionSource<ScreenshotResult>();
@@ -46,7 +44,10 @@ public class ScreenshotCapture
     /// </summary>
     public void OnPostRender()
     {
-        if (_pendingCapture == null) return;
+        if (_pendingCapture == null)
+        {
+            return;
+        }
 
         var tcs = _pendingCapture;
         _pendingCapture = null;
@@ -58,11 +59,7 @@ public class ScreenshotCapture
         }
         catch (Exception ex)
         {
-            tcs.SetResult(new ScreenshotResult
-            {
-                Success = false,
-                Error = ex.Message
-            });
+            tcs.SetResult(new ScreenshotResult { Success = false, Error = ex.Message });
         }
     }
 
@@ -91,7 +88,9 @@ public class ScreenshotCapture
         // Ensure screenshots directory exists
         var screenshotDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "StardewValley", "Screenshots", "TestClient"
+            "StardewValley",
+            "Screenshots",
+            "TestClient"
         );
         Directory.CreateDirectory(screenshotDir);
 
@@ -117,7 +116,7 @@ public class ScreenshotCapture
             Filename = filename,
             Width = width,
             Height = height,
-            SizeBytes = new FileInfo(filePath).Length
+            SizeBytes = new FileInfo(filePath).Length,
         };
     }
 
@@ -149,16 +148,12 @@ public class ScreenshotCapture
                 Width = width,
                 Height = height,
                 SizeBytes = stream.Length,
-                Base64Png = base64
+                Base64Png = base64,
             };
         }
         catch (Exception ex)
         {
-            return new ScreenshotResult
-            {
-                Success = false,
-                Error = ex.Message
-            };
+            return new ScreenshotResult { Success = false, Error = ex.Message };
         }
     }
 }

@@ -7,12 +7,12 @@
 // It was already found out that we strip the DLL from debug symbols, causing some issues
 // with `Space Core` mod, which in turn is needed for e.g. SDVE.
 
-using Mono.Cecil;
-using Mono.Cecil.Cil;
 using System;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using Mono.Cecil;
+using Mono.Cecil.Cil;
 
 // Constants
 var addLogStatement = true;
@@ -47,7 +47,10 @@ try
     var patchInfoPath = dllPath + ".patch-info";
 
     // Get the patcher executable path
-    var patcherExePath = Path.Combine(AppContext.BaseDirectory, AppDomain.CurrentDomain.FriendlyName);
+    var patcherExePath = Path.Combine(
+        AppContext.BaseDirectory,
+        AppDomain.CurrentDomain.FriendlyName
+    );
 
     if (string.IsNullOrEmpty(patcherExePath))
     {
@@ -114,11 +117,7 @@ try
     var resolver = new DefaultAssemblyResolver();
     resolver.AddSearchDirectory(gameDir);
 
-    var readerParams = new ReaderParameters
-    {
-        ReadWrite = true,
-        AssemblyResolver = resolver
-    };
+    var readerParams = new ReaderParameters { ReadWrite = true, AssemblyResolver = resolver };
 
     var module = ModuleDefinition.ReadModule(dllPath, readerParams);
 
@@ -175,24 +174,39 @@ try
     for (int i = 0; i < instructions.Count - 4; i++)
     {
         // Check for the 5-instruction pattern
-        if (i > 0 &&
-            instructions[i - 1].OpCode == OpCodes.Ldarg_0 &&    // 'this' for method call
-            instructions[i].OpCode == OpCodes.Ldarg_0 &&        // 'this' for delegate
-            instructions[i + 1].OpCode == OpCodes.Ldftn &&      // ldftn
-            instructions[i + 2].OpCode == OpCodes.Newobj &&     // ThreadStart
-            instructions[i + 3].OpCode == OpCodes.Call)         // DoThreadedInitTask
+        if (
+            i > 0
+            && instructions[i - 1].OpCode == OpCodes.Ldarg_0
+            && // 'this' for method call
+            instructions[i].OpCode == OpCodes.Ldarg_0
+            && // 'this' for delegate
+            instructions[i + 1].OpCode == OpCodes.Ldftn
+            && // ldftn
+            instructions[i + 2].OpCode == OpCodes.Newobj
+            && // ThreadStart
+            instructions[i + 3].OpCode == OpCodes.Call
+        ) // DoThreadedInitTask
         {
             var callMethod = instructions[i + 3].Operand as MethodReference;
             var ftnMethod = instructions[i + 1].Operand as MethodReference;
             var newobjMethod = instructions[i + 2].Operand as MethodReference;
 
-            if (ftnMethod?.Name == "InitializeSounds" &&
-                callMethod?.Name == "DoThreadedInitTask" &&
-                newobjMethod?.DeclaringType?.Name == "ThreadStart")
+            if (
+                ftnMethod?.Name == "InitializeSounds"
+                && callMethod?.Name == "DoThreadedInitTask"
+                && newobjMethod?.DeclaringType?.Name == "ThreadStart"
+            )
             {
                 Log($"Patching InitializeSounds call at IL offset {instructions[i - 1].Offset}:");
 
-                var toRemove = new[] { instructions[i - 1], instructions[i], instructions[i + 1], instructions[i + 2], instructions[i + 3] };
+                var toRemove = new[]
+                {
+                    instructions[i - 1],
+                    instructions[i],
+                    instructions[i + 1],
+                    instructions[i + 2],
+                    instructions[i + 3],
+                };
 
                 // Check if any instruction branches to one of these
                 Log("  Checking for branch targets...");
@@ -201,7 +215,9 @@ try
                 {
                     if (inst.Operand is Instruction target && toRemove.Contains(target))
                     {
-                        Log($"    WARNING: Instruction at {inst.Offset} branches to instruction we're removing!");
+                        Log(
+                            $"    WARNING: Instruction at {inst.Offset} branches to instruction we're removing!"
+                        );
                         hasBranchTarget = true;
                     }
                 }
@@ -212,10 +228,16 @@ try
                     Log("  Checking exception handlers...");
                     foreach (var handler in initMethod.Body.ExceptionHandlers)
                     {
-                        if (toRemove.Contains(handler.TryStart) || toRemove.Contains(handler.TryEnd) ||
-                            toRemove.Contains(handler.HandlerStart) || toRemove.Contains(handler.HandlerEnd))
+                        if (
+                            toRemove.Contains(handler.TryStart)
+                            || toRemove.Contains(handler.TryEnd)
+                            || toRemove.Contains(handler.HandlerStart)
+                            || toRemove.Contains(handler.HandlerEnd)
+                        )
                         {
-                            Log($"    WARNING: Exception handler references instruction we're removing!");
+                            Log(
+                                $"    WARNING: Exception handler references instruction we're removing!"
+                            );
                             hasBranchTarget = true;
                         }
                     }
@@ -253,7 +275,8 @@ try
                     var timestamp = DateTime.Now.ToString("HH:mm:ss");
 
                     var logFormat = "DLL patched successfully";
-                    var logMessage = $"{ansiBlack}[{timestamp} {logLevel} {logName}] {logFormat}{ansiReset}";
+                    var logMessage =
+                        $"{ansiBlack}[{timestamp} {logLevel} {logName}] {logFormat}{ansiReset}";
 
                     // Create instructions for insertion
                     var ldstr = processor.Create(OpCodes.Ldstr, logMessage);
@@ -266,7 +289,9 @@ try
                     Log($"  Inserted runtime log");
                 }
 
-                Log($"  After patching, Initialize method has {initMethod.Body.Instructions.Count} instructions");
+                Log(
+                    $"  After patching, Initialize method has {initMethod.Body.Instructions.Count} instructions"
+                );
 
                 // Dump instructions around the patched area for verification
                 Log("  IL after patch (instructions 35-45):");
@@ -276,9 +301,13 @@ try
                     var inst = afterInstructions[j];
                     string operandStr = "";
                     if (inst.Operand is MethodReference mr)
+                    {
                         operandStr = $" {mr.DeclaringType.Name}::{mr.Name}";
+                    }
                     else if (inst.Operand != null)
+                    {
                         operandStr = $" {inst.Operand}";
+                    }
 
                     Log($"    [{j}] {inst.OpCode}{operandStr}");
                 }

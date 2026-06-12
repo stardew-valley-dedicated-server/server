@@ -2,7 +2,6 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using JunimoServer.Shared;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
 
@@ -60,10 +59,16 @@ public class ConvenienceTweaks
         try
         {
             var originalMethod = AccessTools.Method(typeof(Game1), "SetWindowSize");
-            var transpiler = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(SetWindowSize_Transpiler));
+            var transpiler = new HarmonyMethod(
+                typeof(ConvenienceTweaks),
+                nameof(SetWindowSize_Transpiler)
+            );
 
             _harmony.Patch(originalMethod, transpiler: transpiler);
-            _monitor.Log("Patched SetWindowSize to remove minimum size restriction", LogLevel.Trace);
+            _monitor.Log(
+                "Patched SetWindowSize to remove minimum size restriction",
+                LogLevel.Trace
+            );
         }
         catch (Exception ex)
         {
@@ -76,7 +81,9 @@ public class ConvenienceTweaks
     /// The original code checks for 1280x720 minimum on Windows.
     /// We replace those constants with our smaller minimums.
     /// </summary>
-    private static IEnumerable<CodeInstruction> SetWindowSize_Transpiler(IEnumerable<CodeInstruction> instructions)
+    private static IEnumerable<CodeInstruction> SetWindowSize_Transpiler(
+        IEnumerable<CodeInstruction> instructions
+    )
     {
         var codes = new List<CodeInstruction>(instructions);
 
@@ -88,7 +95,11 @@ public class ConvenienceTweaks
                 codes[i].operand = AbsoluteMinWidth;
             }
             // Replace ldc.i4 720 with our minimum height
-            else if (codes[i].opcode == OpCodes.Ldc_I4 && codes[i].operand is int val2 && val2 == 720)
+            else if (
+                codes[i].opcode == OpCodes.Ldc_I4
+                && codes[i].operand is int val2
+                && val2 == 720
+            )
             {
                 codes[i].operand = AbsoluteMinHeight;
             }
@@ -114,14 +125,20 @@ public class ConvenienceTweaks
             // Forces alpha to overshoot value so the next frame's threshold check
             // in UpdateFade fires the completion callbacks immediately.
             var updateFadeAlpha = AccessTools.Method(typeof(ScreenFade), "UpdateFadeAlpha");
-            var fadeAlphaPostfix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateFadeAlpha_Postfix));
+            var fadeAlphaPostfix = new HarmonyMethod(
+                typeof(ConvenienceTweaks),
+                nameof(UpdateFadeAlpha_Postfix)
+            );
             _harmony.Patch(updateFadeAlpha, postfix: fadeAlphaPostfix);
 
             // Patch UpdateGlobalFade: global fades (menus, sleep, day end)
             // Forces alpha to the threshold value so the next frame fires the
             // afterFade callback immediately.
             var updateGlobalFade = AccessTools.Method(typeof(ScreenFade), "UpdateGlobalFade");
-            var globalFadePostfix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateGlobalFade_Postfix));
+            var globalFadePostfix = new HarmonyMethod(
+                typeof(ConvenienceTweaks),
+                nameof(UpdateGlobalFade_Postfix)
+            );
             _harmony.Patch(updateGlobalFade, postfix: globalFadePostfix);
 
             _monitor.Log("Patched ScreenFade for instant fades (skip animations)", LogLevel.Trace);
@@ -142,9 +159,13 @@ public class ConvenienceTweaks
     private static void UpdateFadeAlpha_Postfix(ScreenFade __instance)
     {
         if (__instance.fadeIn)
+        {
             __instance.fadeToBlackAlpha = 1.2f;
+        }
         else
+        {
             __instance.fadeToBlackAlpha = -0.2f;
+        }
     }
 
     /// <summary>
@@ -157,9 +178,13 @@ public class ConvenienceTweaks
     private static void UpdateGlobalFade_Postfix(ScreenFade __instance)
     {
         if (__instance.fadeIn)
+        {
             __instance.fadeToBlackAlpha = 0f;
+        }
         else
+        {
             __instance.fadeToBlackAlpha = 1f;
+        }
     }
 
     private void DisablePauseOnUnfocus()
@@ -216,7 +241,10 @@ public class ConvenienceTweaks
         {
             Game1.soundBank?.Dispose();
             Game1.soundBank = new DummySoundBank();
-            _monitor.Log("Replaced soundBank with DummySoundBank - all audio disabled", LogLevel.Trace);
+            _monitor.Log(
+                "Replaced soundBank with DummySoundBank - all audio disabled",
+                LogLevel.Trace
+            );
         }
     }
 
@@ -228,14 +256,26 @@ public class ConvenienceTweaks
             // Game1.player.currentLocation.Equals(this) without a null check.
             // During warps/day transitions, currentLocation is transiently null,
             // causing a NRE that SMAPI catches and logs as [ERROR game].
-            var original = AccessTools.Method(typeof(GameLocation), nameof(GameLocation.UpdateWhenCurrentLocation));
-            var prefix = new HarmonyMethod(typeof(ConvenienceTweaks), nameof(UpdateWhenCurrentLocation_Prefix));
+            var original = AccessTools.Method(
+                typeof(GameLocation),
+                nameof(GameLocation.UpdateWhenCurrentLocation)
+            );
+            var prefix = new HarmonyMethod(
+                typeof(ConvenienceTweaks),
+                nameof(UpdateWhenCurrentLocation_Prefix)
+            );
             _harmony.Patch(original, prefix: prefix);
-            _monitor.Log("Patched UpdateWhenCurrentLocation with null-safety guard", LogLevel.Trace);
+            _monitor.Log(
+                "Patched UpdateWhenCurrentLocation with null-safety guard",
+                LogLevel.Trace
+            );
         }
         catch (Exception ex)
         {
-            _monitor.Log($"Failed to patch UpdateWhenCurrentLocation: {ex.Message}", LogLevel.Error);
+            _monitor.Log(
+                $"Failed to patch UpdateWhenCurrentLocation: {ex.Message}",
+                LogLevel.Error
+            );
         }
     }
 

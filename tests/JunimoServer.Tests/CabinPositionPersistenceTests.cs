@@ -21,7 +21,11 @@ namespace JunimoServer.Tests;
 /// Exclusive + a fresh game per test (like CabinStrategyNoneTests) so the farm starts
 /// clean and assertions can be scoped to our single farmer.
 /// </summary>
-[TestServer(Isolation = IsolationMode.SharedAssembly, Exclusive = true, ExistingCabinBehavior = "MoveToStack")]
+[TestServer(
+    Isolation = IsolationMode.SharedAssembly,
+    Exclusive = true,
+    ExistingCabinBehavior = "MoveToStack"
+)]
 public class CabinPositionPersistenceTests : TestBase
 {
     public CabinPositionPersistenceTests() { }
@@ -32,8 +36,14 @@ public class CabinPositionPersistenceTests : TestBase
         // and any moved cabins don't leak into sibling tests.
         if (Lease != null)
         {
-            try { await CreateNewGameOnServerAsync(farmType: 0); }
-            catch (Exception ex) { LogWarning($"Server reset failed during cleanup: {ex.Message}"); }
+            try
+            {
+                await CreateNewGameOnServerAsync(farmType: 0);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Server reset failed during cleanup: {ex.Message}");
+            }
         }
         await base.DisposeAsync();
     }
@@ -60,8 +70,10 @@ public class CabinPositionPersistenceTests : TestBase
         await ReloadServerAsync();
 
         var afterReload = await GetOurCabinAsync(ownerId, ct);
-        Assert.False(afterReload.IsHidden,
-            $"Cabin reverted to hidden stack after reload (at {afterReload.TileX},{afterReload.TileY})");
+        Assert.False(
+            afterReload.IsHidden,
+            $"Cabin reverted to hidden stack after reload (at {afterReload.TileX},{afterReload.TileY})"
+        );
         Assert.Equal(movedTile, (afterReload.TileX, afterReload.TileY));
         Log($"Cabin survived reload at ({afterReload.TileX},{afterReload.TileY})");
     }
@@ -83,8 +95,10 @@ public class CabinPositionPersistenceTests : TestBase
         var before = await ServerApi.GetCabins(ct);
         Assert.NotNull(before);
         var visibleUnclaimed = before.Cabins.Where(c => !c.IsHidden && !c.IsAssigned).ToList();
-        Assert.True(visibleUnclaimed.Count > 0,
-            "Expected at least one visible unclaimed cabin under None strategy");
+        Assert.True(
+            visibleUnclaimed.Count > 0,
+            "Expected at least one visible unclaimed cabin under None strategy"
+        );
         Log($"Before reload: {visibleUnclaimed.Count} visible unclaimed cabin(s)");
 
         await SwitchCabinStrategyAsync("CabinStack", ct);
@@ -92,9 +106,13 @@ public class CabinPositionPersistenceTests : TestBase
 
         var after = await ServerApi.GetCabins(ct);
         Assert.NotNull(after);
-        var stillVisibleUnclaimed = after.Cabins.Count(c => !c.IsHidden && !c.IsAssigned && c.Type != "Lobby");
+        var stillVisibleUnclaimed = after.Cabins.Count(c =>
+            !c.IsHidden && !c.IsAssigned && c.Type != "Lobby"
+        );
         Assert.Equal(0, stillVisibleUnclaimed);
-        Log($"After reload: unclaimed cabins swept to hidden stack ({after.Cabins.Count(c => c.IsHidden)} hidden)");
+        Log(
+            $"After reload: unclaimed cabins swept to hidden stack ({after.Cabins.Count(c => c.IsHidden)} hidden)"
+        );
     }
 
     /// <summary>
@@ -120,8 +138,10 @@ public class CabinPositionPersistenceTests : TestBase
         await ReloadServerAsync();
 
         var afterReload = await GetOurCabinAsync(ownerId, ct);
-        Assert.False(afterReload.IsHidden,
-            $"Cabin swept by None→CabinStack migration (at {afterReload.TileX},{afterReload.TileY})");
+        Assert.False(
+            afterReload.IsHidden,
+            $"Cabin swept by None→CabinStack migration (at {afterReload.TileX},{afterReload.TileY})"
+        );
         Assert.Equal(movedTile, (afterReload.TileX, afterReload.TileY));
         Log($"Cabin survived strategy switch at ({afterReload.TileX},{afterReload.TileY})");
     }
@@ -151,8 +171,14 @@ public class CabinPositionPersistenceTests : TestBase
 
         // Delete the farmhand; this must also clear PlayerCabinPositions[ownerId].
         await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, ct);
-        var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(client.FarmerName, ct: ct);
-        Assert.True(deleteResult?.Success, $"Delete should succeed: {deleteResult?.Error ?? "timeout"}");
+        var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
+            client.FarmerName,
+            ct: ct
+        );
+        Assert.True(
+            deleteResult?.Success,
+            $"Delete should succeed: {deleteResult?.Error ?? "timeout"}"
+        );
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == ownerId);
 
         // /cabins is snapshot-backed, so the cleared intent can lag the deletion by a
@@ -163,9 +189,11 @@ public class CabinPositionPersistenceTests : TestBase
             async () =>
             {
                 afterDelete = await ServerApi.GetCabins(ct);
-                return afterDelete != null
-                    && !afterDelete.SavedPositionPlayerIds.Contains(ownerId);
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+                return afterDelete != null && !afterDelete.SavedPositionPlayerIds.Contains(ownerId);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
 
         Assert.True(cleared, $"Saved-position intent was not cleared for deleted owner {ownerId}");
         Log($"Intent cleared for deleted owner {ownerId}");
@@ -197,8 +225,12 @@ public class CabinPositionPersistenceTests : TestBase
             {
                 await GameClient.SendChat("!cabin");
                 moved = await GetOurCabinAsync(ownerId, ct);
-                return !moved.IsHidden && (moved.TileX, moved.TileY) != (before.TileX, before.TileY);
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
+                return !moved.IsHidden
+                    && (moved.TileX, moved.TileY) != (before.TileX, before.TileY);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
 
         Assert.True(ok, "Cabin did not move out of the hidden stack after !cabin");
         return (moved!.TileX, moved.TileY);
@@ -216,8 +248,10 @@ public class CabinPositionPersistenceTests : TestBase
         var script =
             $"sed -i 's/\"cabinStrategy\": \"[^\"]*\"/\"cabinStrategy\": \"{strategy}\"/' {ServerContainer.SettingsPath}";
         var result = await Server.Container.ExecAsync(new[] { "sh", "-c", script }, ct);
-        Assert.True(result.ExitCode == DockerExitCodes.Success,
-            $"Failed to rewrite settings cabinStrategy: {result.Stderr}");
+        Assert.True(
+            result.ExitCode == DockerExitCodes.Success,
+            $"Failed to rewrite settings cabinStrategy: {result.Stderr}"
+        );
         Log($"Switched in-container cabinStrategy to {strategy}");
     }
 

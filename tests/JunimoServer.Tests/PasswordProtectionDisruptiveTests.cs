@@ -1,4 +1,3 @@
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
@@ -20,7 +19,13 @@ namespace JunimoServer.Tests;
 public class PasswordProtectionDisruptiveTests : TestBase
 {
     private static readonly string[] WelcomeKeywords = { "PASSWORD", "!login" };
-    private static readonly string[] FailureKeywords = { "incorrect", "invalid", "wrong", "failed" };
+    private static readonly string[] FailureKeywords =
+    {
+        "incorrect",
+        "invalid",
+        "wrong",
+        "failed",
+    };
 
     public PasswordProtectionDisruptiveTests() { }
 
@@ -34,7 +39,8 @@ public class PasswordProtectionDisruptiveTests : TestBase
         // Join the server WITHOUT auto-login (to test wrong password manually)
         await Farmers.ConnectNewAsync(
             skipAutoLogin: true,
-            ct: TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken
+        );
 
         // Get initial location (should be lobby)
         var stateBefore = await GameClient.GetState();
@@ -42,19 +48,25 @@ public class PasswordProtectionDisruptiveTests : TestBase
         Log($"Initial location: {lobbyLocation}");
 
         // Wait for welcome message to appear
-        await GameClient.Chat.WaitForMessageContainingAsync(WelcomeKeywords, TestTimings.WelcomeMessageTimeout);
+        await GameClient.Chat.WaitForMessageContainingAsync(
+            WelcomeKeywords,
+            TestTimings.WelcomeMessageTimeout
+        );
 
         // Send login with wrong password
         await GameClient.Chat.Send("!login wrongpassword123");
 
         // Wait for failure message
         var chatHistory = await GameClient.Chat.WaitForMessageContainingAsync(
-            FailureKeywords, TestTimings.ChatCommandTimeout);
+            FailureKeywords,
+            TestTimings.ChatCommandTimeout
+        );
 
         Assert.NotNull(chatHistory);
 
         var hasFailureMessage = chatHistory.Messages.Any(m =>
-            FailureKeywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
+            FailureKeywords.Any(k => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+        );
 
         Assert.True(hasFailureMessage, "Should receive authentication failure message");
 
@@ -83,10 +95,15 @@ public class PasswordProtectionDisruptiveTests : TestBase
 
         // Join the server WITHOUT auto-login (to test manual wrong passwords)
         var client = await Farmers.ConnectNewAsync(
-            skipAutoLogin: true, ct: TestContext.Current.CancellationToken);
+            skipAutoLogin: true,
+            ct: TestContext.Current.CancellationToken
+        );
 
         // Wait for welcome message first
-        await GameClient.Chat.WaitForMessageContainingAsync(WelcomeKeywords, TestTimings.WelcomeMessageTimeout);
+        await GameClient.Chat.WaitForMessageContainingAsync(
+            WelcomeKeywords,
+            TestTimings.WelcomeMessageTimeout
+        );
 
         // Send wrong password maxAttempts times.
         for (int i = 1; i <= maxAttempts; i++)
@@ -96,8 +113,10 @@ public class PasswordProtectionDisruptiveTests : TestBase
             if (i < maxAttempts)
             {
                 var gotResponse = await GameClient.Chat.SendAndWaitForResponseAsync(
-                    $"!login wrongpassword{i}", FailureKeywords,
-                    ct: TestContext.Current.CancellationToken);
+                    $"!login wrongpassword{i}",
+                    FailureKeywords,
+                    ct: TestContext.Current.CancellationToken
+                );
                 Log($"Attempt {i} server response received: {gotResponse}");
             }
             else
@@ -105,11 +124,16 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 // Final attempt. Server kicks without sending a chat response,
                 // so we can't wait for one. Instead, verify the server saw our
                 // player BEFORE sending, then send and poll for disconnect.
-                var playersBefore = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+                var playersBefore = await ServerApi.GetPlayers(
+                    TestContext.Current.CancellationToken
+                );
                 var ourPlayer = playersBefore?.Players?.FirstOrDefault(p =>
-                    p.Name?.Contains(client.FarmerName, StringComparison.OrdinalIgnoreCase) == true);
-                Log($"Server player count before final attempt: {playersBefore?.Players?.Count ?? -1}, " +
-                    $"our player found: {ourPlayer != null} (name={ourPlayer?.Name})");
+                    p.Name?.Contains(client.FarmerName, StringComparison.OrdinalIgnoreCase) == true
+                );
+                Log(
+                    $"Server player count before final attempt: {playersBefore?.Players?.Count ?? -1}, "
+                        + $"our player found: {ourPlayer != null} (name={ourPlayer?.Name})"
+                );
 
                 await GameClient.Chat.Send($"!login wrongpassword{i}");
                 Log("Final attempt sent, waiting for disconnect...");
@@ -126,26 +150,40 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 var s = await GameClient.GetState();
                 pollCount++;
                 if (pollCount <= 3 || pollCount % 10 == 0)
-                    Log($"Poll #{pollCount}: IsConnected={s?.IsConnected}, Location={s?.Location}, IsInGame={s?.IsInGame}");
+                {
+                    Log(
+                        $"Poll #{pollCount}: IsConnected={s?.IsConnected}, Location={s?.Location}, IsInGame={s?.IsInGame}"
+                    );
+                }
+
                 return s?.IsConnected != true;
-            }, TestTimings.DisconnectedTimeout, cancellationToken: TestContext.Current.CancellationToken);
+            },
+            TestTimings.DisconnectedTimeout,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
 
         if (!kicked)
         {
             var finalState = await GameClient.GetState();
-            Log($"KICK FAILED: client state: IsConnected={finalState?.IsConnected}, " +
-                $"Location={finalState?.Location}, IsInGame={finalState?.IsInGame}");
+            Log(
+                $"KICK FAILED: client state: IsConnected={finalState?.IsConnected}, "
+                    + $"Location={finalState?.Location}, IsInGame={finalState?.IsInGame}"
+            );
 
             var serverPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
-            Log($"KICK FAILED: server players: {serverPlayers?.Players?.Count ?? -1} " +
-                $"[{string.Join(", ", serverPlayers?.Players?.Select(p => p.Name) ?? Array.Empty<string>())}]");
+            Log(
+                $"KICK FAILED: server players: {serverPlayers?.Players?.Count ?? -1} "
+                    + $"[{string.Join(", ", serverPlayers?.Players?.Select(p => p.Name) ?? Array.Empty<string>())}]"
+            );
 
             var chatHistory = await GameClient.Chat.GetHistory(20);
             if (chatHistory?.Messages != null)
             {
                 Log($"KICK FAILED: last {chatHistory.Messages.Count} chat messages:");
                 foreach (var msg in chatHistory.Messages.TakeLast(10))
+                {
                     Log($"  {msg.Message}");
+                }
             }
         }
 

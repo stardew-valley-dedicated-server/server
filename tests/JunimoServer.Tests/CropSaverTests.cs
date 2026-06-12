@@ -1,4 +1,3 @@
-using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
@@ -22,7 +21,7 @@ namespace JunimoServer.Tests;
 /// <c>KillCrop_Prefix</c>'s switch from a hardcoded <c>"Farm"</c> lookup to
 /// <c>dirt.Location.Name</c> suppresses vanilla <c>Crop.Kill()</c>'s
 /// out-of-season kill. Also exercises <c>SaverCrop.TryGetCoorespondingDirt</c>'s
-/// <see cref="StardewValley.Objects.IndoorPot"/> branch.
+/// <c>StardewValley.Objects.IndoorPot</c> branch.
 /// </description></item>
 /// </list>
 /// </summary>
@@ -90,7 +89,12 @@ public class CropSaverTests : TestBase
         const int ExtraDaysToBypassOnDayEndKill = 13;
         await ServerApi.SetDate("spring", 28, year: 1, ct);
         var armed = await ServerApi.SetSaverCrop(
-            "Farm", TileB_X, TileB_Y, extraDays: ExtraDaysToBypassOnDayEndKill, ct: ct);
+            "Farm",
+            TileB_X,
+            TileB_Y,
+            extraDays: ExtraDaysToBypassOnDayEndKill,
+            ct: ct
+        );
         Assert.NotNull(armed);
         Assert.True(armed.Success, $"SetSaverCrop failed: {armed.Error}");
         Assert.True(armed.Found, "SaverCrop entry must exist before pre-arming extraDays");
@@ -99,7 +103,10 @@ public class CropSaverTests : TestBase
         // when the owner is offline. With an online owner the prolong logic
         // would also keep extraDays steady (line 54: ownerId != 0 && offline).
         await Farmers.DisconnectAndWaitForSlotAsync(
-            farmhand.JoinResult.UniqueMultiplayerId, farmhand.FarmerName, ct);
+            farmhand.JoinResult.UniqueMultiplayerId,
+            farmhand.FarmerName,
+            ct
+        );
 
         // Trigger sleep-induced day-transition. SetClockSpeed(20) accelerates
         // the wait from minutes to seconds; same pattern as
@@ -111,7 +118,11 @@ public class CropSaverTests : TestBase
         try
         {
             var dayChanged = await DayChange.WaitAsync(
-                statusBefore.Day, statusBefore.Season, statusBefore.Year, ct);
+                statusBefore.Day,
+                statusBefore.Season,
+                statusBefore.Year,
+                ct
+            );
             Assert.True(dayChanged, "Day did not advance from Spring 28 → Summer 1");
         }
         finally
@@ -131,13 +142,16 @@ public class CropSaverTests : TestBase
         // therefore validates the full pot-aware code path end-to-end.
         var cropsAfter = await ServerApi.GetAllCrops(ct);
         Assert.NotNull(cropsAfter);
-        var stillThere = cropsAfter.Crops.SingleOrDefault(
-            c => c.IsInPot && c.LocationName == "Farm" && c.TileX == TileB_X && c.TileY == TileB_Y);
+        var stillThere = cropsAfter.Crops.SingleOrDefault(c =>
+            c.IsInPot && c.LocationName == "Farm" && c.TileX == TileB_X && c.TileY == TileB_Y
+        );
         Assert.NotNull(stillThere);
-        Assert.True(stillThere.IsAlive,
-            "Cauliflower in a Garden Pot must survive Spring 28 → Summer 1 with offline owner. " +
-            "Pre-fix: CropWatcher never registered the pot, so Crop.newDay's " +
-            "out-of-season Kill ran unsuppressed.");
+        Assert.True(
+            stillThere.IsAlive,
+            "Cauliflower in a Garden Pot must survive Spring 28 → Summer 1 with offline owner. "
+                + "Pre-fix: CropWatcher never registered the pot, so Crop.newDay's "
+                + "out-of-season Kill ran unsuppressed."
+        );
     }
 
     /// <summary>
@@ -148,7 +162,10 @@ public class CropSaverTests : TestBase
     /// <c>client_result.png</c>, captured from the farmhand's view.
     /// </summary>
     private async Task<Infrastructure.Fixture.FarmerTestHelper.ClientConnection> PlacePotAndPlantCauliflowerAsync(
-        int tileX, int tileY, CancellationToken ct)
+        int tileX,
+        int tileY,
+        CancellationToken ct
+    )
     {
         // Force Spring before planting. Cauliflower is Spring-only (HoeDirt.cs:592
         // checks data.Seasons.Contains(location.GetSeason())), and the sibling
@@ -196,18 +213,23 @@ public class CropSaverTests : TestBase
             async () =>
             {
                 var snapshot = await ServerApi.GetAllCrops(ct);
-                return snapshot?.Crops.Any(c => c.IsInPot
-                    && c.IsManaged
-                    && c.LocationName == "Farm"
-                    && c.TileX == tileX
-                    && c.TileY == tileY) == true;
+                return snapshot?.Crops.Any(c =>
+                        c.IsInPot
+                        && c.IsManaged
+                        && c.LocationName == "Farm"
+                        && c.TileX == tileX
+                        && c.TileY == tileY
+                    ) == true;
             },
             timeout: TimeSpan.FromSeconds(5),
-            cancellationToken: ct);
+            cancellationToken: ct
+        );
 
-        Assert.True(watcherRegisteredPot,
-            "CropWatcher should register the IndoorPot crop in CropSaverData within 5s. " +
-            "Pre-fix the watcher only scanned terrainFeatures on the Farm location and " +
-            "missed every Garden Pot crop.");
+        Assert.True(
+            watcherRegisteredPot,
+            "CropWatcher should register the IndoorPot crop in CropSaverData within 5s. "
+                + "Pre-fix the watcher only scanned terrainFeatures on the Farm location and "
+                + "missed every Garden Pot crop."
+        );
     }
 }

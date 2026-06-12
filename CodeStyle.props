@@ -1,0 +1,19 @@
+<Project>
+    <!--
+    Compile-strictness settings shared by every project. Imported by each
+    Directory.Build.props (the root one and shadowing ones like tests/test-client/)
+    so they are defined exactly once. Docker build stages COPY this file alongside
+    Directory.Build.props.
+    -->
+    <PropertyGroup>
+        <!-- Surface .editorconfig code-style rules (e.g. IDE0011 braces) as build diagnostics -->
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!-- IDE0005 (unused usings) only runs at build when doc-comment analysis is on.
+             Suppressed by policy: CS1591 missing docs, CS1573 partially documented params,
+             CS1587 docs on local functions (not exportable). Malformed XML (CS1570) and
+             broken cref/paramref references stay enforced. -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591;CS1573;CS1587</NoWarn>
+    </PropertyGroup>
+</Project>

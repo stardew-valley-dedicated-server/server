@@ -58,7 +58,10 @@ public static class TestTracing
 
     private static TestTracingLevel Resolve()
     {
-        var raw = Environment.GetEnvironmentVariable("SDVD_TEST_TRACING")?.Trim().ToLowerInvariant();
+        var raw = Environment
+            .GetEnvironmentVariable("SDVD_TEST_TRACING")
+            ?.Trim()
+            .ToLowerInvariant();
         return raw switch
         {
             null or "" or "none" => TestTracingLevel.None,

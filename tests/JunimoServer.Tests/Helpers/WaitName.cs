@@ -20,10 +20,13 @@ public enum WaitName
     // ---- ClientPool — multi-wait method (LeaseClientAsync) ----
     /// <summary>_returnSignal at MaxContainers (container-cap loop).</summary>
     ClientPool_LeaseAtCap,
+
     /// <summary>_returnSignal awaiting a Steam-capable returned client.</summary>
     ClientPool_LeaseSteamWait,
+
     /// <summary>Awaiting an in-flight pre-warm task.</summary>
     ClientPool_PrewarmInProgress,
+
     /// <summary>_returnSignal under-cap deadline; waits briefly for a return before creating a new client.</summary>
     ClientPool_LeasePatienceWait,
 

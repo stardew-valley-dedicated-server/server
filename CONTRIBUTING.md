@@ -4,7 +4,7 @@ Thank you for your interest in contributing to JunimoServer! ❤️
 
 ## Quick Start
 
-1. Run `make setup` to install development dependencies
+1. Run `make install` to install development dependencies
 2. Create a feature branch from `master`
 3. Make changes using [Conventional Commits](https://www.conventionalcommits.org/)
 4. Open a PR targeting `master`

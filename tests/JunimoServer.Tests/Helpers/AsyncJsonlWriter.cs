@@ -27,7 +27,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Pre-flight disk check:</b> <see cref="Initialize"/> writes a 64-byte
+/// <b>Pre-flight disk check:</b> <see cref="Open"/> writes a 64-byte
 /// canary and flushes it to surface disk-full / permission-denied errors at
 /// startup, where the failure mode is loud (the run does not start) rather
 /// than mid-run silent recording corruption.
@@ -47,7 +47,12 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     private int _faultReportedTimes;
     private int _completed;
 
-    private AsyncJsonlWriter(StreamWriter writer, string label, Action<Exception>? onFault, bool silentFault)
+    private AsyncJsonlWriter(
+        StreamWriter writer,
+        string label,
+        Action<Exception>? onFault,
+        bool silentFault
+    )
     {
         _writer = writer;
         _label = label;
@@ -56,18 +61,23 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
         // Unbounded so producers never block on disk I/O. Single-reader, multi-writer
         // for ordered drains. SingleWriter is false because Emit can be called from
         // any thread; SingleReader is true because the consumer task is the only reader.
-        _channel = Channel.CreateUnbounded<object>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            AllowSynchronousContinuations = false,
-        });
+        _channel = Channel.CreateUnbounded<object>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+            }
+        );
 
-        _consumerTask = Task.Factory.StartNew(
-            ConsumeLoop,
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
-            TaskScheduler.Default).Unwrap();
+        _consumerTask = Task
+            .Factory.StartNew(
+                ConsumeLoop,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+                TaskScheduler.Default
+            )
+            .Unwrap();
     }
 
     /// <summary>
@@ -75,7 +85,11 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     /// preflight, and starts the consumer thread. Throws on disk-full /
     /// permission-denied to fail the run loudly at startup.
     /// </summary>
-    public static AsyncJsonlWriter Open(string path, string label, Action<Exception>? onFault = null)
+    public static AsyncJsonlWriter Open(
+        string path,
+        string label,
+        Action<Exception>? onFault = null
+    )
     {
         // FileShare.Read so concurrent readers can copy/tar the live log.
         var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
@@ -106,7 +120,12 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     /// is not).
     /// </para>
     /// </summary>
-    public static AsyncJsonlWriter Wrap(StreamWriter writer, string label, Action<Exception>? onFault = null, bool silentFault = false)
+    public static AsyncJsonlWriter Wrap(
+        StreamWriter writer,
+        string label,
+        Action<Exception>? onFault = null,
+        bool silentFault = false
+    )
     {
         return new AsyncJsonlWriter(writer, label, onFault, silentFault);
     }
@@ -142,7 +161,11 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     /// </summary>
     public Task FlushAsync()
     {
-        if (_consumerFailed) return Task.CompletedTask;
+        if (_consumerFailed)
+        {
+            return Task.CompletedTask;
+        }
+
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _channel.Writer.TryWrite(new FlushMarker(tcs));
         return tcs.Task;
@@ -157,7 +180,13 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
         if (Interlocked.Exchange(ref _completed, 1) == 1)
         {
             // Already draining; just wait.
-            try { await _consumerTask.WaitAsync(timeout); } catch { /* best effort */ }
+            try
+            {
+                await _consumerTask.WaitAsync(timeout);
+            }
+            catch
+            { /* best effort */
+            }
             return;
         }
         _channel.Writer.TryComplete();
@@ -179,8 +208,20 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await DrainAsync(TimeSpan.FromSeconds(5));
-        try { _writer.Flush(); } catch { /* best effort */ }
-        try { _writer.Dispose(); } catch { /* best effort */ }
+        try
+        {
+            _writer.Flush();
+        }
+        catch
+        { /* best effort */
+        }
+        try
+        {
+            _writer.Dispose();
+        }
+        catch
+        { /* best effort */
+        }
     }
 
     private async Task ConsumeLoop()
@@ -221,7 +262,9 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
                 if (pendingFlushes != null)
                 {
                     foreach (var tcs in pendingFlushes)
+                    {
                         tcs.TrySetResult();
+                    }
                 }
             }
         }
@@ -235,30 +278,46 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
                 while (_channel.Reader.TryRead(out var item))
                 {
                     if (item is FlushMarker marker)
+                    {
                         marker.Tcs.TrySetException(ex);
+                    }
                 }
             }
-            catch { /* best effort */ }
+            catch
+            { /* best effort */
+            }
             ReportFaultOnce();
         }
     }
 
     private void ReportFaultOnce()
     {
-        if (Interlocked.Increment(ref _faultReportedTimes) != 1) return;
+        if (Interlocked.Increment(ref _faultReportedTimes) != 1)
+        {
+            return;
+        }
+
         var ex = _consumerFault;
         if (!_silentFault)
         {
             try
             {
                 Console.Error.WriteLine(
-                    $"[AsyncJsonlWriter:{_label}] FATAL: writer consumer faulted " +
-                    $"({ex?.GetType().Name}: {ex?.Message}). Subsequent emits dropped.");
+                    $"[AsyncJsonlWriter:{_label}] FATAL: writer consumer faulted "
+                        + $"({ex?.GetType().Name}: {ex?.Message}). Subsequent emits dropped."
+                );
             }
-            catch { /* stderr unavailable */ }
+            catch
+            { /* stderr unavailable */
+            }
         }
-        try { _onFault?.Invoke(ex ?? new InvalidOperationException("unknown writer fault")); }
-        catch { /* never let onFault throw out of the writer */ }
+        try
+        {
+            _onFault?.Invoke(ex ?? new InvalidOperationException("unknown writer fault"));
+        }
+        catch
+        { /* never let onFault throw out of the writer */
+        }
     }
 
     private sealed record FlushMarker(TaskCompletionSource Tcs);

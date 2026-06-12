@@ -4,32 +4,43 @@ using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+public static class JojaCommand
 {
-    public static class JojaCommand
+    public static void Register(
+        IModHelper helper,
+        ChatCommandsService chatCommandsService,
+        RoleService roleService,
+        AlwaysOnConfig alwaysOnConfig
+    )
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService, AlwaysOnConfig alwaysOnConfig)
-        {
-            chatCommandsService.RegisterCommand("joja",
-                "Type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" to enable joja and disable the standard community center forever.",
-                (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "joja",
+            "Type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" to enable joja and disable the standard community center forever.",
+            (args, msg) =>
+            {
+                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
-                    if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                    {
-                        helper.SendPrivateMessage(msg.SourceFarmer, "Only admins can enable Joja.");
-                        return;
-                    }
+                    helper.SendPrivateMessage(msg.SourceFarmer, "Only admins can enable Joja.");
+                    return;
+                }
 
-                    if (args.Length != 1 || (args.Length == 1 && args[0] != "IRREVERSIBLY_ENABLE_JOJA_RUN"))
-                    {
-                        helper.SendPrivateMessage(msg.SourceFarmer,
-                            "Invalid use of command. You must type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" exactly.");
-                        return;
-                    }
+                if (
+                    args.Length != 1
+                    || (args.Length == 1 && args[0] != "IRREVERSIBLY_ENABLE_JOJA_RUN")
+                )
+                {
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Invalid use of command. You must type \"!joja IRREVERSIBLY_ENABLE_JOJA_RUN\" exactly."
+                    );
+                    return;
+                }
 
-                    alwaysOnConfig.IsCommunityCenterRun = false;
-                    helper.SendPublicMessage("Joja run permanently enabled!");
-                });
-        }
+                alwaysOnConfig.IsCommunityCenterRun = false;
+                helper.SendPublicMessage("Joja run permanently enabled!");
+            }
+        );
     }
 }

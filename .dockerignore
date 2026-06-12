@@ -47,7 +47,6 @@ tests/test-ui/dist/
 
 # Project files
 .dockerignore
-.editorconfig
 docker-compose*.yml
 LICENSE
 Makefile

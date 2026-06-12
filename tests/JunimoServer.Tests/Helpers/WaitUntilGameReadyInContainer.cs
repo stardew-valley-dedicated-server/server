@@ -13,7 +13,7 @@ namespace JunimoServer.Tests.Helpers;
 /// <para>
 /// Used by both <see cref="Containers.ServerContainer"/> and
 /// <see cref="Containers.GameClientContainer"/>; the mod's <c>/health</c>
-/// response shape (<see cref="JunimoServer.Services.Api.ApiService.HealthResponse"/>)
+/// response shape (the mod's <c>ApiService.HealthResponse</c>)
 /// is identical for server and client so the same wait strategy works for both.
 /// </para>
 ///
@@ -68,12 +68,16 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
         string? collectionName = null,
         bool requireGalaxyResolved = false,
         bool useLongPoll = false,
-        Action<string?>? onGalaxyStateResolved = null)
+        Action<string?>? onGalaxyStateResolved = null
+    )
     {
         if (useLongPoll && requireGalaxyResolved)
+        {
             throw new ArgumentException(
                 "useLongPoll requires requireGalaxyResolved=false: server /health doesn't carry Galaxy fields.",
-                nameof(useLongPoll));
+                nameof(useLongPoll)
+            );
+        }
 
         _port = port;
         _label = label;
@@ -89,8 +93,12 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
 
         if (_attemptCount == 1)
         {
-            SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})", SetupStepStatus.Started,
-                collectionName: _collectionName);
+            SetupEventBus.EmitStep(
+                "Setup",
+                $"{StepName} ({_label})",
+                SetupStepStatus.Started,
+                collectionName: _collectionName
+            );
         }
 
         try
@@ -106,24 +114,33 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
                 : $"http://localhost:{_port}/health";
             var maxTimeSec = _useLongPoll ? (WaitMaxTimeoutSec + 2) : 5;
             var exec = _useLongPoll
-                ? await container.ExecAsync(new[]
-                {
-                    "curl", "-sS", "--max-time", maxTimeSec.ToString(),
-                    "-o", "/tmp/health.json",
-                    "-w", "%{http_code}",
-                    url
-                })
-                : await container.ExecAsync(new[]
-                {
-                    "curl", "-fsS", "--max-time", maxTimeSec.ToString(),
-                    url
-                });
+                ? await container.ExecAsync(
+                    new[]
+                    {
+                        "curl",
+                        "-sS",
+                        "--max-time",
+                        maxTimeSec.ToString(),
+                        "-o",
+                        "/tmp/health.json",
+                        "-w",
+                        "%{http_code}",
+                        url,
+                    }
+                )
+                : await container.ExecAsync(
+                    new[] { "curl", "-fsS", "--max-time", maxTimeSec.ToString(), url }
+                );
 
             if (exec.ExitCode != DockerExitCodes.Success)
             {
-                SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
-                    SetupStepStatus.InProgress, $"attempt #{_attemptCount}: curl exit={exec.ExitCode}",
-                    collectionName: _collectionName);
+                SetupEventBus.EmitStep(
+                    "Setup",
+                    $"{StepName} ({_label})",
+                    SetupStepStatus.InProgress,
+                    $"attempt #{_attemptCount}: curl exit={exec.ExitCode}",
+                    collectionName: _collectionName
+                );
                 return false;
             }
 
@@ -134,9 +151,13 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
                 var statusCode = exec.Stdout.Trim();
                 if (statusCode != "200")
                 {
-                    SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
-                        SetupStepStatus.InProgress, $"attempt #{_attemptCount}: /wait/health status={statusCode}",
-                        collectionName: _collectionName);
+                    SetupEventBus.EmitStep(
+                        "Setup",
+                        $"{StepName} ({_label})",
+                        SetupStepStatus.InProgress,
+                        $"attempt #{_attemptCount}: /wait/health status={statusCode}",
+                        collectionName: _collectionName
+                    );
                     return false;
                 }
                 var bodyExec = await container.ExecAsync(new[] { "cat", "/tmp/health.json" });
@@ -163,11 +184,17 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
             // them out for requireSteam=true leases. Only null (pending) blocks.
             bool? galaxyReady = null;
             string? galaxyState = null;
-            if (root.TryGetProperty("galaxyReady", out var gr) && gr.ValueKind != JsonValueKind.Null)
+            if (
+                root.TryGetProperty("galaxyReady", out var gr)
+                && gr.ValueKind != JsonValueKind.Null
+            )
             {
                 galaxyReady = gr.GetBoolean();
             }
-            if (root.TryGetProperty("galaxyState", out var gs) && gs.ValueKind != JsonValueKind.Null)
+            if (
+                root.TryGetProperty("galaxyState", out var gs)
+                && gs.ValueKind != JsonValueKind.Null
+            )
             {
                 galaxyState = gs.GetString();
             }
@@ -176,21 +203,30 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
                 ? $"attempt #{_attemptCount}: tickCount={tickCount}, isFrozen={isFrozen}, galaxyReady={(galaxyReady?.ToString() ?? "null")}, galaxyState={galaxyState ?? "null"}"
                 : $"attempt #{_attemptCount}: tickCount={tickCount}, isFrozen={isFrozen}";
 
-            SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
-                SetupStepStatus.InProgress, detail,
-                collectionName: _collectionName);
+            SetupEventBus.EmitStep(
+                "Setup",
+                $"{StepName} ({_label})",
+                SetupStepStatus.InProgress,
+                detail,
+                collectionName: _collectionName
+            );
 
             var galaxyResolved = !_requireGalaxyResolved || galaxyReady != null;
 
             if (tickCount > 0 && !isFrozen && galaxyResolved)
             {
                 if (_requireGalaxyResolved)
+                {
                     _onGalaxyStateResolved?.Invoke(galaxyState);
+                }
 
-                SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
+                SetupEventBus.EmitStep(
+                    "Setup",
+                    $"{StepName} ({_label})",
                     SetupStepStatus.Completed,
                     $"{_label} online and ticking after {_attemptCount} attempt(s)",
-                    collectionName: _collectionName);
+                    collectionName: _collectionName
+                );
                 return true;
             }
 
@@ -198,10 +234,13 @@ internal sealed class WaitUntilGameReadyInContainer : IWaitUntil
         }
         catch (Exception ex)
         {
-            SetupEventBus.EmitStep("Setup", $"{StepName} ({_label})",
+            SetupEventBus.EmitStep(
+                "Setup",
+                $"{StepName} ({_label})",
                 SetupStepStatus.InProgress,
                 $"attempt #{_attemptCount}: {ex.GetType().Name}: {ex.Message}",
-                collectionName: _collectionName);
+                collectionName: _collectionName
+            );
             return false;
         }
     }

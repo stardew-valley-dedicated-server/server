@@ -20,21 +20,30 @@ internal sealed class ChatTestHelper
     /// Uses sequence-based tracking to correctly handle duplicate response texts.
     /// </summary>
     public async Task<bool> PollForKeywordsAsync(
-        long seqBefore, string[] keywords,
+        long seqBefore,
+        string[] keywords,
         TimeSpan? timeout = null,
-        Action<ChatHistoryResult>? onPoll = null)
+        Action<ChatHistoryResult>? onPoll = null
+    )
     {
         return await PollingHelper.WaitUntilAsync(
             WaitName.Polling_TestBase_WaitForChatMessageAfter,
             async () =>
             {
                 var chat = await _testBase.GameClient.GetChatHistory(20);
-                if (chat?.Messages == null) return false;
+                if (chat?.Messages == null)
+                {
+                    return false;
+                }
+
                 onPoll?.Invoke(chat);
                 var newMessages = chat.Messages.Where(m => m.Seq > seqBefore).ToList();
                 return keywords.All(k =>
-                    newMessages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
-            }, timeout ?? TestTimings.ChatCommandTimeout);
+                    newMessages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+                );
+            },
+            timeout ?? TestTimings.ChatCommandTimeout
+        );
     }
 
     /// <summary>
@@ -63,35 +72,64 @@ internal sealed class ChatTestHelper
             var chatBefore = await _testBase.GameClient.GetChatHistory(20);
             var seqBefore = chatBefore?.TotalReceived ?? 0;
             await _testBase.GameClient.SendChat(command);
-            var found = await PollForKeywordsAsync(seqBefore, expectedContains, onPoll: h => chatHistory = h);
-            if (found) break;
+            var found = await PollForKeywordsAsync(
+                seqBefore,
+                expectedContains,
+                onPoll: h => chatHistory = h
+            );
+            if (found)
+            {
+                break;
+            }
+
             if (attempt == 0)
-                Log($"Command '{command}' response not found, retrying (server may have been in day transition)");
+            {
+                Log(
+                    $"Command '{command}' response not found, retrying (server may have been in day transition)"
+                );
+            }
         }
 
         Xunit.Assert.NotNull(chatHistory);
         Log($"Command: {command}");
         Log($"Response ({chatHistory.Messages.Count} messages):");
         foreach (var msg in chatHistory.Messages)
+        {
             Log($"  {msg.Message}");
+        }
 
         var allFound = AllChatKeywordsPresent(chatHistory, expectedContains);
         foreach (var expected in expectedContains)
         {
-            if (!chatHistory.Messages.Any(m =>
-                m.Message.Contains(expected, StringComparison.OrdinalIgnoreCase)))
+            if (
+                !chatHistory.Messages.Any(m =>
+                    m.Message.Contains(expected, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
                 Log($"  MISSING: '{expected}'");
+            }
         }
         return allFound;
     }
 
     private static bool AllChatKeywordsPresent(ChatHistoryResult? chat, string[] keywords)
     {
-        if (chat?.Messages == null) return false;
+        if (chat?.Messages == null)
+        {
+            return false;
+        }
+
         return keywords.All(k =>
-            chat.Messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)));
+            chat.Messages.Any(m => m.Message.Contains(k, StringComparison.OrdinalIgnoreCase))
+        );
     }
 
     private void Log(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName, AnnotationLevel.Info, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName,
+            AnnotationLevel.Info,
+            AnnotationSource.Body,
+            message
+        );
 }

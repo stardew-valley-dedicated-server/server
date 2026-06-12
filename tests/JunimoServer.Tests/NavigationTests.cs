@@ -35,11 +35,22 @@ public class NavigationTests : TestBase
             WaitName.Polling_Navigation_HasInviteCode,
             async (since, remaining) =>
             {
-                var status = await ServerApi.WaitForStatusAsync(since: since, timeout: remaining, ct: ct);
-                if (status == null) return new PollingHelper.LongPollResult(false, since);
+                var status = await ServerApi.WaitForStatusAsync(
+                    since: since,
+                    timeout: remaining,
+                    ct: ct
+                );
+                if (status == null)
+                {
+                    return new PollingHelper.LongPollResult(false, since);
+                }
+
                 var matched = status.IsOnline && !string.IsNullOrEmpty(status.InviteCode);
                 return new PollingHelper.LongPollResult(matched, status.Version);
-            }, TimeSpan.FromSeconds(10), cancellationToken: ct);
+            },
+            TimeSpan.FromSeconds(10),
+            cancellationToken: ct
+        );
         Assert.True(hasCode, "Server should have an invite code");
 
         // Connect with retry
@@ -80,13 +91,19 @@ public class NavigationTests : TestBase
             {
                 var r = await ServerApi.GetInviteCode(ct);
                 return r != null && !string.IsNullOrEmpty(r.InviteCode);
-            }, TimeSpan.FromSeconds(10), cancellationToken: ct);
+            },
+            TimeSpan.FromSeconds(10),
+            cancellationToken: ct
+        );
 
         Assert.True(hasCode, "Server must have a valid invite code (WithSteam=true)");
 
         var response = await ServerApi.GetInviteCode(ct);
         Assert.NotNull(response);
-        Assert.False(string.IsNullOrEmpty(response.InviteCode), "Should return a non-empty invite code");
+        Assert.False(
+            string.IsNullOrEmpty(response.InviteCode),
+            "Should return a non-empty invite code"
+        );
         Log($"Invite code: {response.InviteCode}");
     }
 
@@ -104,15 +121,25 @@ public class NavigationTests : TestBase
             WaitName.Polling_Navigation_HealthyOk,
             async (_, remaining) =>
             {
-                health = await ServerApi.WaitForHealthAsync(ready: true, timeout: remaining, ct: ct);
+                health = await ServerApi.WaitForHealthAsync(
+                    ready: true,
+                    timeout: remaining,
+                    ct: ct
+                );
                 // /wait/health is stateless: a 200 always satisfies the predicate,
                 // a 408 means the per-tick TCS didn't fire within the server-side
                 // window — re-issue without a cursor.
                 return new PollingHelper.LongPollResult(health?.Status == "ok", 0);
-            }, TestTimings.ServerReadyBetweenTests, cancellationToken: ct);
+            },
+            TestTimings.ServerReadyBetweenTests,
+            cancellationToken: ct
+        );
 
         Assert.NotNull(health);
-        Assert.True(healthy, $"Expected health 'ok' but got '{health.Status}' (lastTickMs={health.LastTickMs}, gameAvailable={health.GameAvailable})");
+        Assert.True(
+            healthy,
+            $"Expected health 'ok' but got '{health.Status}' (lastTickMs={health.LastTickMs}, gameAvailable={health.GameAvailable})"
+        );
         Assert.False(string.IsNullOrEmpty(health.Timestamp));
 
         Log($"Health status: {health.Status}");

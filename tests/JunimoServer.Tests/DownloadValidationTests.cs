@@ -78,10 +78,14 @@ public class DownloadValidationTests : IAsyncLifetime
         {
             try
             {
-                await ExecInContainer(_fixture.SteamAuthContainer,
-                    $"sh -c \"[ -f {BackupFilePath} ] && mv {BackupFilePath} {TestFilePath} || true\"");
+                await ExecInContainer(
+                    _fixture.SteamAuthContainer,
+                    $"sh -c \"[ -f {BackupFilePath} ] && mv {BackupFilePath} {TestFilePath} || true\""
+                );
             }
-            catch { /* ignore */ }
+            catch
+            { /* ignore */
+            }
         }
 
         // Print test footer
@@ -102,8 +106,9 @@ public class DownloadValidationTests : IAsyncLifetime
 
         // Game not downloaded - user needs to run setup first
         throw new Exception(
-            $"Test file not found: {TestFilePath}\n" +
-            $"Run 'make setup' first to download the game and save Steam session.");
+            $"Test file not found: {TestFilePath}\n"
+                + $"Run 'make setup' first to download the game and save Steam session."
+        );
     }
 
     /// <summary>
@@ -134,8 +139,10 @@ public class DownloadValidationTests : IAsyncLifetime
 
         // Step 3: Corrupt the file (overwrite first bytes with zeros, keeping size)
         var fileSize = await GetFileSize(container, TestFilePath);
-        await ExecInContainer(container,
-            $"dd if=/dev/zero of={TestFilePath} bs=1 count={fileSize} 2>/dev/null");
+        await ExecInContainer(
+            container,
+            $"dd if=/dev/zero of={TestFilePath} bs=1 count={fileSize} 2>/dev/null"
+        );
         LogDetail($"File corrupted ({fileSize} bytes overwritten with zeros)");
 
         // Verify corruption
@@ -203,9 +210,14 @@ public class DownloadValidationTests : IAsyncLifetime
 
         // Log download output for debugging
         if (!string.IsNullOrWhiteSpace(stdout))
+        {
             LogDetail($"Download stdout: {stdout}");
+        }
+
         if (!string.IsNullOrWhiteSpace(stderr))
+        {
             LogDetail($"Download stderr: {stderr}");
+        }
 
         // Step 5: Verify the file is re-downloaded and valid
         exists = await FileExists(container, TestFilePath);
@@ -246,20 +258,45 @@ public class DownloadValidationTests : IAsyncLifetime
 
     private string DisplayName => _currentTestName ?? $"{_testClassName}.???";
 
-    private void Log(string message)
-        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Info, AnnotationSource.Body, message);
+    private void Log(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            DisplayName,
+            AnnotationLevel.Info,
+            AnnotationSource.Body,
+            message
+        );
 
-    private void LogSuccess(string message)
-        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Success, AnnotationSource.Body, message);
+    private void LogSuccess(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            DisplayName,
+            AnnotationLevel.Success,
+            AnnotationSource.Body,
+            message
+        );
 
-    private void LogWarning(string message)
-        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Warning, AnnotationSource.Body, message);
+    private void LogWarning(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            DisplayName,
+            AnnotationLevel.Warning,
+            AnnotationSource.Body,
+            message
+        );
 
-    private void LogDetail(string message)
-        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Detail, AnnotationSource.Body, message);
+    private void LogDetail(string message) =>
+        SetupEventBus.EmitTestAnnotation(
+            DisplayName,
+            AnnotationLevel.Detail,
+            AnnotationSource.Body,
+            message
+        );
 
-    private void LogSection(string title)
-        => SetupEventBus.EmitTestAnnotation(DisplayName, AnnotationLevel.Section, AnnotationSource.Body, title);
+    private void LogSection(string title) =>
+        SetupEventBus.EmitTestAnnotation(
+            DisplayName,
+            AnnotationLevel.Section,
+            AnnotationSource.Body,
+            title
+        );
 
     #endregion
 
@@ -270,7 +307,9 @@ public class DownloadValidationTests : IAsyncLifetime
         var result = await container.ExecAsync(new[] { "sh", "-c", command });
         if (result.ExitCode != DockerExitCodes.Success)
         {
-            throw new Exception($"Command failed with exit code {result.ExitCode}: {command}\nStderr: {result.Stderr}");
+            throw new Exception(
+                $"Command failed with exit code {result.ExitCode}: {command}\nStderr: {result.Stderr}"
+            );
         }
         return result.Stdout.Trim();
     }
@@ -278,8 +317,9 @@ public class DownloadValidationTests : IAsyncLifetime
     private static async Task<string> GetFileHeader(IContainer container, string filePath)
     {
         // Get first 3 bytes as hex
-        var result = await container.ExecAsync(new[] { "sh", "-c",
-            $"head -c3 {filePath} | od -A n -t x1 | tr -d ' \\n'" });
+        var result = await container.ExecAsync(
+            new[] { "sh", "-c", $"head -c3 {filePath} | od -A n -t x1 | tr -d ' \\n'" }
+        );
         return result.Stdout.Trim();
     }
 
@@ -291,16 +331,20 @@ public class DownloadValidationTests : IAsyncLifetime
 
     private static async Task<bool> FileExists(IContainer container, string filePath)
     {
-        var result = await container.ExecAsync(new[] { "sh", "-c", $"[ -f {filePath} ] && echo 1 || echo 0" });
+        var result = await container.ExecAsync(
+            new[] { "sh", "-c", $"[ -f {filePath} ] && echo 1 || echo 0" }
+        );
         return result.Stdout.Trim() == "1";
     }
 
-    private async Task<(int exitCode, string stdout, string stderr)> TriggerDownloadWithLogs(IContainer container)
+    private async Task<(int exitCode, string stdout, string stderr)> TriggerDownloadWithLogs(
+        IContainer container
+    )
     {
         // Run the download command using the saved session
-        var result = await container.ExecAsync(new[] { "sh", "-c",
-            "dotnet SteamService.dll download"
-        });
+        var result = await container.ExecAsync(
+            new[] { "sh", "-c", "dotnet SteamService.dll download" }
+        );
 
         LogDetail($"Download exit code: {result.ExitCode}");
 

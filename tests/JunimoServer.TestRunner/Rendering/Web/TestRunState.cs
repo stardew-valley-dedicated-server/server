@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
@@ -65,11 +64,16 @@ public sealed class TestRunState
     // Flakiness over the last 20 runs (populated once at run end).
     private JsonElement? _flakyTests;
 
-
-
     #region Apply events (called from renderer thread, serializes JSON under lock)
 
-    public string ApplyPopulateTests(IReadOnlyList<(string Collection, string ClassName, string MethodName, string DisplayName)> tests)
+    public string ApplyPopulateTests(
+        IReadOnlyList<(
+            string Collection,
+            string ClassName,
+            string MethodName,
+            string DisplayName
+        )> tests
+    )
     {
         lock (_lock)
         {
@@ -86,7 +90,7 @@ public sealed class TestRunState
                         MethodName = methodName,
                         DisplayName = displayName,
                         Status = "pending",
-                        DiscoveryOrder = _nextDiscoveryOrder++
+                        DiscoveryOrder = _nextDiscoveryOrder++,
                     };
                 }
                 _classToCollection.TryAdd(className, collection);
@@ -96,23 +100,35 @@ public sealed class TestRunState
 
             // Include the full collections tree so late-connecting clients can
             // hydrate the test list from this event (not just from the snapshot).
-            var collectionsData = _collections.Values.Select(col => new
-            {
-                col.Name,
-                Classes = col.Classes.Values.Select(cls => new
+            var collectionsData = _collections
+                .Values.Select(col => new
                 {
-                    cls.Name,
-                    Tests = cls.Tests.Values.Select(t => new
-                    {
-                        t.ClassName,
-                        t.DisplayName,
-                        t.Status,
-                        t.DiscoveryOrder
-                    }).ToList()
-                }).ToList()
-            }).ToList();
+                    col.Name,
+                    Classes = col
+                        .Classes.Values.Select(cls => new
+                        {
+                            cls.Name,
+                            Tests = cls
+                                .Tests.Values.Select(t => new
+                                {
+                                    t.ClassName,
+                                    t.DisplayName,
+                                    t.Status,
+                                    t.DiscoveryOrder,
+                                })
+                                .ToList(),
+                        })
+                        .ToList(),
+                })
+                .ToList();
 
-            var evt = new { Event = "populate_tests", TestCount = tests.Count, Collections = collectionsData, Timestamp = DateTime.UtcNow };
+            var evt = new
+            {
+                Event = "populate_tests",
+                TestCount = tests.Count,
+                Collections = collectionsData,
+                Timestamp = DateTime.UtcNow,
+            };
             AddEventLog(evt);
             return Serialize(evt);
         }
@@ -125,9 +141,16 @@ public sealed class TestRunState
             _status = "running";
             _runStartTime = e.Timestamp;
             if (e.TestCasesToRun > 0)
+            {
                 _totalTests = e.TestCasesToRun;
+            }
 
-            var evt = new { Event = "run_started", e.Timestamp, TestCount = _totalTests };
+            var evt = new
+            {
+                Event = "run_started",
+                e.Timestamp,
+                TestCount = _totalTests,
+            };
             AddEventLog(evt);
             return Serialize(evt);
         }
@@ -139,7 +162,13 @@ public sealed class TestRunState
         {
             // Don't overwrite _totalTests. ApplyPopulateTests already set the correct
             // expanded count. Discovery reports unexpanded method count.
-            var evt = new { Event = "discovery_complete", e.Timestamp, e.TestCasesDiscovered, e.TestCasesToRun };
+            var evt = new
+            {
+                Event = "discovery_complete",
+                e.Timestamp,
+                e.TestCasesDiscovered,
+                e.TestCasesToRun,
+            };
             AddEventLog(evt);
             return Serialize(evt);
         }
@@ -162,7 +191,9 @@ public sealed class TestRunState
             // before the test process exits. Without enrichment, default to
             // canceled (genuine interruption: run aborted, Ctrl-C, etc.).
             foreach (var col in _collections.Values)
+            {
                 foreach (var cls in col.Classes.Values)
+                {
                     foreach (var test in cls.Tests.Values)
                     {
                         if (test.Status is "pending" or "queued")
@@ -173,7 +204,9 @@ public sealed class TestRunState
                         else if (test.Status == "running")
                         {
                             if (test.EnrichmentOutcome != null)
+                            {
                                 SetOutcome(test, test.EnrichmentOutcome, source: "enrichment");
+                            }
                             else
                             {
                                 SetOutcome(test, "canceled", source: "sweep");
@@ -181,6 +214,8 @@ public sealed class TestRunState
                             }
                         }
                     }
+                }
+            }
 
             // Recompute counts from the finalized tree; don't trust xUnit's summary
             // because it double-counts skipped tests that overlap with implicit skips.
@@ -189,22 +224,36 @@ public sealed class TestRunState
             _canceled = 0;
             _skipped = 0;
             foreach (var col in _collections.Values)
+            {
                 foreach (var cls in col.Classes.Values)
+                {
                     foreach (var test in cls.Tests.Values)
                     {
                         switch (test.Status)
                         {
-                            case "passed": _passed++; break;
-                            case "failed": _failed++; break;
-                            case "canceled": _canceled++; break;
-                            case "skipped": _skipped++; break;
+                            case "passed":
+                                _passed++;
+                                break;
+                            case "failed":
+                                _failed++;
+                                break;
+                            case "canceled":
+                                _canceled++;
+                                break;
+                            case "skipped":
+                                _skipped++;
+                                break;
                         }
                     }
+                }
+            }
 
             // Keep the larger of execution total and discovered total
             // (StopOnFail means xUnit's TotalTests only counts tests it actually ran)
             if (e.TotalTests > _totalTests)
+            {
                 _totalTests = e.TotalTests;
+            }
 
             // Finalize any still-running setup phases and steps
             var finalStatus = _failed > 0 ? "failed" : "completed";
@@ -217,7 +266,9 @@ public sealed class TestRunState
                     foreach (var step in phase.Steps)
                     {
                         if (step.Status is "started" or "in_progress")
+                        {
                             step.Status = "failed";
+                        }
                     }
                 }
             }
@@ -232,7 +283,7 @@ public sealed class TestRunState
                 Failed = _failed,
                 Canceled = _canceled,
                 Skipped = _skipped,
-                DurationMs = (long)e.Duration.TotalMilliseconds
+                DurationMs = (long)e.Duration.TotalMilliseconds,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -278,7 +329,7 @@ public sealed class TestRunState
                 e.TestClass,
                 e.TestMethod,
                 e.DisplayName,
-                test.ExecutionOrder
+                test.ExecutionOrder,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -295,7 +346,14 @@ public sealed class TestRunState
             var (className, methodName) = ParseDisplayName(e.DisplayName);
             var test = GetOrCreateTest(className, className, methodName, e.DisplayName);
 
-            test.Output.Add(new { Type = "line", Ts = e.Timestamp, Text = e.Line });
+            test.Output.Add(
+                new
+                {
+                    Type = "line",
+                    Ts = e.Timestamp,
+                    Text = e.Line,
+                }
+            );
 
             var evt = new
             {
@@ -304,7 +362,7 @@ public sealed class TestRunState
                 TestCollection = test.Collection,
                 TestClass = test.ClassName,
                 e.DisplayName,
-                e.Line
+                e.Line,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -320,14 +378,16 @@ public sealed class TestRunState
 
             var level = e.Level.ToString().ToLowerInvariant();
             var source = e.Source.ToString().ToLowerInvariant();
-            test.Output.Add(new
-            {
-                Type = "annotation",
-                Ts = e.Timestamp,
-                Level = level,
-                Source = source,
-                Message = e.Message
-            });
+            test.Output.Add(
+                new
+                {
+                    Type = "annotation",
+                    Ts = e.Timestamp,
+                    Level = level,
+                    Source = source,
+                    Message = e.Message,
+                }
+            );
 
             var evt = new
             {
@@ -338,7 +398,7 @@ public sealed class TestRunState
                 e.DisplayName,
                 Level = level,
                 Source = source,
-                Message = e.Message
+                Message = e.Message,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -368,7 +428,10 @@ public sealed class TestRunState
         var prior = test.Status;
         var priorSource = test.OutcomeSource;
 
-        if (prior == outcome) return;
+        if (prior == outcome)
+        {
+            return;
+        }
 
         // First terminal set, or normal lifecycle progression. The Status
         // before reaching here is one of "pending"/"queued"/"running" which
@@ -388,20 +451,29 @@ public sealed class TestRunState
 
         EmitOutcomeSourceDisagreement(
             displayName: test.DisplayName,
-            priorOutcome: prior, priorSource: priorSource ?? "(unset)",
-            newOutcome: outcome, newSource: source,
-            winningOutcome: winningOutcome ?? outcome);
+            priorOutcome: prior,
+            priorSource: priorSource ?? "(unset)",
+            newOutcome: outcome,
+            newSource: source,
+            winningOutcome: winningOutcome ?? outcome
+        );
 
         test.Status = winningOutcome ?? outcome;
         test.OutcomeSource = winningSource;
     }
 
     private static void EmitOutcomeSourceDisagreement(
-        string displayName, string priorOutcome, string priorSource,
-        string newOutcome, string newSource, string winningOutcome)
+        string displayName,
+        string priorOutcome,
+        string priorSource,
+        string newOutcome,
+        string newSource,
+        string winningOutcome
+    )
     {
         JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
-            "outcome_source_disagreement", new
+            "outcome_source_disagreement",
+            new
             {
                 testDisplayName = displayName,
                 priorOutcome,
@@ -409,7 +481,8 @@ public sealed class TestRunState
                 newOutcome,
                 newSource,
                 winningOutcome,
-            });
+            }
+        );
     }
 
     public string ApplyTestPassed(TestPassedEvent e)
@@ -430,7 +503,7 @@ public sealed class TestRunState
                 e.DisplayName,
                 DurationMs = test.DurationMs,
                 QueueDurationMs = test.QueueDurationMs,
-                Output = test.Output
+                Output = test.Output,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -442,8 +515,10 @@ public sealed class TestRunState
         lock (_lock)
         {
             var test = GetOrCreateTest(e.TestCollection, e.TestClass, e.TestMethod, e.DisplayName);
-            var isCanceled = e.ExceptionType is "System.OperationCanceledException"
-                or "System.Threading.Tasks.TaskCanceledException";
+            var isCanceled =
+                e.ExceptionType
+                is "System.OperationCanceledException"
+                    or "System.Threading.Tasks.TaskCanceledException";
             // The xUnit-side classifier reads the exception type to decide
             // canceled-vs-failed; if enrichment arrived first and disagrees,
             // SetOutcome's source policy (enrichment > xunit) overrides this
@@ -483,7 +558,7 @@ public sealed class TestRunState
                 e.ExceptionType,
                 StackTrace = RendererBase.SanitizeStackTrace(e.StackTrace ?? ""),
                 e.ScreenshotPath,
-                Output = test.Output
+                Output = test.Output,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -505,7 +580,7 @@ public sealed class TestRunState
                 e.TestCollection,
                 e.TestClass,
                 e.DisplayName,
-                e.Reason
+                e.Reason,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -522,7 +597,7 @@ public sealed class TestRunState
                 e.Timestamp,
                 Source = e.Source.ToString().ToLowerInvariant(),
                 Level = e.Level.ToString().ToLowerInvariant(),
-                e.Message
+                e.Message,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -533,19 +608,24 @@ public sealed class TestRunState
     {
         lock (_lock)
         {
-            _errors.Add(new ErrorState
-            {
-                Message = e.Message,
-                StackTrace = e.StackTrace != null ? RendererBase.SanitizeStackTrace(e.StackTrace) : null,
-                Timestamp = e.Timestamp
-            });
+            _errors.Add(
+                new ErrorState
+                {
+                    Message = e.Message,
+                    StackTrace =
+                        e.StackTrace != null ? RendererBase.SanitizeStackTrace(e.StackTrace) : null,
+                    Timestamp = e.Timestamp,
+                }
+            );
 
             var evt = new
             {
                 Event = "error",
                 e.Timestamp,
                 e.Message,
-                StackTrace = e.StackTrace != null ? RendererBase.SanitizeStackTrace(e.StackTrace) : null
+                StackTrace = e.StackTrace != null
+                    ? RendererBase.SanitizeStackTrace(e.StackTrace)
+                    : null,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -563,7 +643,7 @@ public sealed class TestRunState
                 PhaseName = e.PhaseName,
                 CollectionName = e.CollectionName,
                 Status = "running",
-                StartTime = e.Timestamp
+                StartTime = e.Timestamp,
             };
             _setupPhases.Add(phase);
             _activePhases[key] = phase;
@@ -574,7 +654,7 @@ public sealed class TestRunState
                 e.Timestamp,
                 e.Category,
                 Phase = e.PhaseName,
-                Collection = e.CollectionName
+                Collection = e.CollectionName,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -598,7 +678,9 @@ public sealed class TestRunState
                     foreach (var step in phase.Steps)
                     {
                         if (step.Status is "started" or "in_progress")
+                        {
                             step.Status = "failed";
+                        }
                     }
                 }
 
@@ -611,7 +693,9 @@ public sealed class TestRunState
                 foreach (var inst in _instances.Values)
                 {
                     if (inst.ServerKey == e.CollectionName || inst.InstanceId == e.CollectionName)
+                    {
                         inst.SetupStatus = e.Success ? "completed" : "failed";
+                    }
                 }
             }
 
@@ -623,7 +707,7 @@ public sealed class TestRunState
                 Phase = e.PhaseName,
                 e.Success,
                 Error = e.ErrorMessage,
-                Collection = e.CollectionName
+                Collection = e.CollectionName,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -647,18 +731,27 @@ public sealed class TestRunState
                     // Accumulate InProgress detail lines as output history
                     if (e.Status == SetupStepStatus.InProgress && !string.IsNullOrEmpty(e.Details))
                     {
-                        existing.Output.Add(new { Type = "line", Ts = e.Timestamp, Text = e.Details });
+                        existing.Output.Add(
+                            new
+                            {
+                                Type = "line",
+                                Ts = e.Timestamp,
+                                Text = e.Details,
+                            }
+                        );
                     }
                 }
                 else
                 {
-                    phase.Steps.Add(new SetupStepState
-                    {
-                        StepName = e.StepName,
-                        Status = e.Status.ToSnakeCase(),
-                        Details = e.Details,
-                        Timestamp = e.Timestamp
-                    });
+                    phase.Steps.Add(
+                        new SetupStepState
+                        {
+                            StepName = e.StepName,
+                            Status = e.Status.ToSnakeCase(),
+                            Details = e.Details,
+                            Timestamp = e.Timestamp,
+                        }
+                    );
                 }
             }
 
@@ -668,7 +761,10 @@ public sealed class TestRunState
                 foreach (var inst in _instances.Values)
                 {
                     if (inst.ServerKey != e.CollectionName && inst.InstanceId != e.CollectionName)
+                    {
                         continue;
+                    }
+
                     inst.SetupStatus ??= "running";
                     var existingInstStep = inst.SetupSteps.Find(s => s.StepName == e.StepName);
                     if (existingInstStep != null)
@@ -676,20 +772,32 @@ public sealed class TestRunState
                         existingInstStep.Status = e.Status.ToSnakeCase();
                         existingInstStep.Details = e.Details;
                         existingInstStep.Timestamp = e.Timestamp;
-                        if (e.Status == SetupStepStatus.InProgress && !string.IsNullOrEmpty(e.Details))
+                        if (
+                            e.Status == SetupStepStatus.InProgress
+                            && !string.IsNullOrEmpty(e.Details)
+                        )
                         {
-                            existingInstStep.Output.Add(new { Type = "line", Ts = e.Timestamp, Text = e.Details });
+                            existingInstStep.Output.Add(
+                                new
+                                {
+                                    Type = "line",
+                                    Ts = e.Timestamp,
+                                    Text = e.Details,
+                                }
+                            );
                         }
                     }
                     else
                     {
-                        inst.SetupSteps.Add(new SetupStepState
-                        {
-                            StepName = e.StepName,
-                            Status = e.Status.ToSnakeCase(),
-                            Details = e.Details,
-                            Timestamp = e.Timestamp
-                        });
+                        inst.SetupSteps.Add(
+                            new SetupStepState
+                            {
+                                StepName = e.StepName,
+                                Status = e.Status.ToSnakeCase(),
+                                Details = e.Details,
+                                Timestamp = e.Timestamp,
+                            }
+                        );
                     }
                 }
             }
@@ -702,7 +810,7 @@ public sealed class TestRunState
                 Step = e.StepName,
                 Status = e.Status.ToSnakeCase(),
                 e.Details,
-                Collection = e.CollectionName
+                Collection = e.CollectionName,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -717,7 +825,11 @@ public sealed class TestRunState
     {
         lock (_lock)
         {
-            if (_runMetadataData != null) return;
+            if (_runMetadataData != null)
+            {
+                return;
+            }
+
             _runMetadataRunDir = e.RunDir;
             _runMetadataData = e.Data;
         }
@@ -779,7 +891,9 @@ public sealed class TestRunState
     /// flag because those tests' typed callbacks never fired, so the renderer's
     /// canceled counter was never incremented.</para>
     /// </returns>
-    public (string? Json, bool ReclassifiedCanceledAsFailed) ApplyTestEnrichment(TestEnrichmentEvent e)
+    public (string? Json, bool ReclassifiedCanceledAsFailed) ApplyTestEnrichment(
+        TestEnrichmentEvent e
+    )
     {
         lock (_lock)
         {
@@ -804,7 +918,8 @@ public sealed class TestRunState
                 CleanupMs: e.CleanupMs,
                 ArtifactsMs: e.ArtifactsMs,
                 LastKeepDisposeMs: e.LastKeepDisposeMs,
-                LeaseReleaseMs: e.LeaseReleaseMs);
+                LeaseReleaseMs: e.LeaseReleaseMs
+            );
 
             // Cache the test-process outcome and route through SetOutcome.
             // SetOutcome's source policy makes enrichment authoritative when it
@@ -866,7 +981,15 @@ public sealed class TestRunState
                 {
                     if (cls.Tests.TryGetValue(e.DisplayName, out var test))
                     {
-                        test.Output.Add(new { Type = "screenshot", Ts = e.Timestamp, Source = e.Source, Path = e.ScreenshotPath });
+                        test.Output.Add(
+                            new
+                            {
+                                Type = "screenshot",
+                                Ts = e.Timestamp,
+                                Source = e.Source,
+                                Path = e.ScreenshotPath,
+                            }
+                        );
                         test.LatestScreenshotPath = e.ScreenshotPath;
                         break;
                     }
@@ -881,7 +1004,7 @@ public sealed class TestRunState
                 e.TestClass,
                 e.DisplayName,
                 e.ScreenshotPath,
-                e.Source
+                e.Source,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -902,8 +1025,14 @@ public sealed class TestRunState
                 {
                     if (cls.Tests.TryGetValue(e.DisplayName, out var test))
                     {
-                        test.Recordings.Add(new RecordingInfo(
-                            e.RecordingPath, e.Source, e.TimelineOffset, e.WallClockDuration));
+                        test.Recordings.Add(
+                            new RecordingInfo(
+                                e.RecordingPath,
+                                e.Source,
+                                e.TimelineOffset,
+                                e.WallClockDuration
+                            )
+                        );
                         break;
                     }
                 }
@@ -919,7 +1048,7 @@ public sealed class TestRunState
                 e.RecordingPath,
                 e.Source,
                 e.TimelineOffset,
-                e.WallClockDuration
+                e.WallClockDuration,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -928,7 +1057,7 @@ public sealed class TestRunState
 
     /// <summary>
     /// Applies a recording-skipped event. Updates the test's per-source
-    /// <see cref="Test.RecordingSkipReasons"/> map and broadcasts to clients.
+    /// <see cref="TestState.RecordingSkipReasons"/> map and broadcasts to clients.
     /// Mirrors <see cref="ApplyRecordingCaptured"/> for skip events.
     /// </summary>
     public string ApplyRecordingSkipped(RecordingSkippedEvent e)
@@ -977,10 +1106,24 @@ public sealed class TestRunState
             // Avoid duplicates
             if (!_vncUrls.Any(v => v.Url == url))
             {
-                _vncUrls.Add(new VncEndpointState { Label = label, Url = url, Collection = collection });
+                _vncUrls.Add(
+                    new VncEndpointState
+                    {
+                        Label = label,
+                        Url = url,
+                        Collection = collection,
+                    }
+                );
             }
 
-            var evt = new { Event = "vnc_url", Label = label, Url = url, Collection = collection, Timestamp = DateTime.UtcNow };
+            var evt = new
+            {
+                Event = "vnc_url",
+                Label = label,
+                Url = url,
+                Collection = collection,
+                Timestamp = DateTime.UtcNow,
+            };
             AddEventLog(evt);
             return Serialize(evt);
         }
@@ -1027,17 +1170,16 @@ public sealed class TestRunState
                 History = existingHistory ?? new List<InstanceHistoryEntry>(),
                 SetupSteps = existingSteps ?? new List<SetupStepState>(),
                 SetupStatus = existingSetupStatus,
-                RecordingPath = existingRecordingPath
+                RecordingPath = existingRecordingPath,
             };
 
             // Only add "created" history entry on first creation (not VNC URL updates)
             if (existingHistory == null)
             {
-                _instances[e.InstanceId].History.Add(new InstanceHistoryEntry
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = "created"
-                });
+                _instances[e.InstanceId]
+                    .History.Add(
+                        new InstanceHistoryEntry { Timestamp = DateTime.UtcNow, Event = "created" }
+                    );
             }
 
             var evt = new
@@ -1049,53 +1191,71 @@ public sealed class TestRunState
                 e.InstanceType,
                 e.ServerKey,
                 e.VncUrl,
-                e.Label
+                e.Label,
             };
             AddEventLog(evt);
             return Serialize(evt);
         }
     }
 
-    public string ApplyInstanceLeased(InstanceLeasedEvent e)
-        => ApplyInstanceStatus("instance_leased", e.InstanceId, testName: e.TestName, serverInstanceId: e.ServerInstanceId);
+    public string ApplyInstanceLeased(InstanceLeasedEvent e) =>
+        ApplyInstanceStatus(
+            "instance_leased",
+            e.InstanceId,
+            testName: e.TestName,
+            serverInstanceId: e.ServerInstanceId
+        );
 
-    public string ApplyInstanceClientAttached(InstanceClientAttachedEvent e)
-        => ApplyInstanceStatus("instance_client_attached", e.ServerInstanceId, clientInstanceId: e.ClientInstanceId);
+    public string ApplyInstanceClientAttached(InstanceClientAttachedEvent e) =>
+        ApplyInstanceStatus(
+            "instance_client_attached",
+            e.ServerInstanceId,
+            clientInstanceId: e.ClientInstanceId
+        );
 
-    public string ApplyInstanceReturned(InstanceReturnedEvent e)
-        => ApplyInstanceStatus("instance_returned", e.InstanceId);
+    public string ApplyInstanceReturned(InstanceReturnedEvent e) =>
+        ApplyInstanceStatus("instance_returned", e.InstanceId);
 
-    public string ApplyInstanceDisposed(InstanceDisposedEvent e)
-        => ApplyInstanceStatus("instance_disposed", e.InstanceId);
+    public string ApplyInstanceDisposed(InstanceDisposedEvent e) =>
+        ApplyInstanceStatus("instance_disposed", e.InstanceId);
 
-    public string ApplyInstancePoisoned(InstancePoisonedEvent e)
-        => ApplyInstanceStatus("instance_poisoned", e.InstanceId, reason: e.Reason);
+    public string ApplyInstancePoisoned(InstancePoisonedEvent e) =>
+        ApplyInstanceStatus("instance_poisoned", e.InstanceId, reason: e.Reason);
 
-    public string ApplyInstanceConnected(InstanceConnectedEvent e)
-        => ApplyInstanceStatus("instance_connected", e.InstanceId);
+    public string ApplyInstanceConnected(InstanceConnectedEvent e) =>
+        ApplyInstanceStatus("instance_connected", e.InstanceId);
 
-    public string ApplyInstanceDisconnected(InstanceDisconnectedEvent e)
-        => ApplyInstanceStatus("instance_disconnected", e.InstanceId);
+    public string ApplyInstanceDisconnected(InstanceDisconnectedEvent e) =>
+        ApplyInstanceStatus("instance_disconnected", e.InstanceId);
 
     /// <summary>
     /// Applies a generic instance status event (leased, returned, disposed, poisoned, connected, disconnected).
     /// </summary>
-    private string ApplyInstanceStatus(string eventName, string instanceId, string? testName = null, string? reason = null, string? serverInstanceId = null, string? clientInstanceId = null)
+    private string ApplyInstanceStatus(
+        string eventName,
+        string instanceId,
+        string? testName = null,
+        string? reason = null,
+        string? serverInstanceId = null,
+        string? clientInstanceId = null
+    )
     {
         lock (_lock)
         {
             if (_instances.TryGetValue(instanceId, out var inst))
             {
                 // Record history before applying state changes (so disposed captures before removal)
-                inst.History.Add(new InstanceHistoryEntry
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Event = eventName.Replace("instance_", ""),
-                    TestName = testName,
-                    Reason = reason,
-                    ServerInstanceId = serverInstanceId,
-                    ClientInstanceId = clientInstanceId
-                });
+                inst.History.Add(
+                    new InstanceHistoryEntry
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Event = eventName.Replace("instance_", ""),
+                        TestName = testName,
+                        Reason = reason,
+                        ServerInstanceId = serverInstanceId,
+                        ClientInstanceId = clientInstanceId,
+                    }
+                );
 
                 switch (eventName)
                 {
@@ -1107,10 +1267,18 @@ public sealed class TestRunState
                         if (testName != null)
                         {
                             foreach (var col in _collections.Values)
+                            {
                                 foreach (var cls in col.Classes.Values)
+                                {
                                     if (cls.Tests.TryGetValue(testName, out var test))
+                                    {
                                         if (!test.UsedInstances.Contains(instanceId))
+                                        {
                                             test.UsedInstances.Add(instanceId);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         break;
                     case "instance_returned":
@@ -1154,7 +1322,7 @@ public sealed class TestRunState
                 TestName = testName,
                 Reason = reason,
                 ServerInstanceId = serverInstanceId,
-                ClientInstanceId = clientInstanceId
+                ClientInstanceId = clientInstanceId,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -1169,14 +1337,16 @@ public sealed class TestRunState
         lock (_lock)
         {
             if (_instances.TryGetValue(e.InstanceId, out var inst))
+            {
                 inst.RecordingPath = e.RecordingPath;
+            }
 
             var evt = new
             {
                 Event = "instance_recording",
                 Timestamp = DateTime.UtcNow,
                 e.InstanceId,
-                e.RecordingPath
+                e.RecordingPath,
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -1192,11 +1362,17 @@ public sealed class TestRunState
     {
         lock (_lock)
         {
-            if (!_instances.TryGetValue(e.InstanceId, out var inst)) return null;
+            if (!_instances.TryGetValue(e.InstanceId, out var inst))
+            {
+                return null;
+            }
             // Backfill HostId on the existing InstanceState so late-connecting WS
             // clients receive correct placement info via BuildSnapshot, even if
             // they missed the original instance_created event.
-            if (!string.IsNullOrEmpty(e.HostId)) inst.HostId = e.HostId;
+            if (!string.IsNullOrEmpty(e.HostId))
+            {
+                inst.HostId = e.HostId;
+            }
 
             var d = e.Data;
             var timestamp = DateTime.UtcNow;
@@ -1205,38 +1381,54 @@ public sealed class TestRunState
             var roundedTotalMem = Math.Round(d.TotalMemoryMb, 0);
             var roundedFps = d.Fps.HasValue ? (double?)Math.Round(d.Fps.Value, 1) : null;
             var roundedTps = d.Tps.HasValue ? (double?)Math.Round(d.Tps.Value, 1) : null;
-            var roundedAvgTickMs = d.AvgTickMs.HasValue ? (double?)Math.Round(d.AvgTickMs.Value, 2) : null;
-            var roundedGameMem = d.GameMemoryMb.HasValue ? (double?)Math.Round(d.GameMemoryMb.Value, 1) : null;
+            var roundedAvgTickMs = d.AvgTickMs.HasValue
+                ? (double?)Math.Round(d.AvgTickMs.Value, 2)
+                : null;
+            var roundedGameMem = d.GameMemoryMb.HasValue
+                ? (double?)Math.Round(d.GameMemoryMb.Value, 1)
+                : null;
             var roundedGcRate = d.GcRate.HasValue ? (double?)Math.Round(d.GcRate.Value, 1) : null;
-            var roundedWait = d.GameThreadWaitMs.HasValue ? (double?)Math.Round(d.GameThreadWaitMs.Value, 2) : null;
-            var roundedNetRx = d.NetRxBytesPerSec.HasValue ? (double?)Math.Round(d.NetRxBytesPerSec.Value, 0) : null;
-            var roundedNetTx = d.NetTxBytesPerSec.HasValue ? (double?)Math.Round(d.NetTxBytesPerSec.Value, 0) : null;
-            var roundedBlkRead = d.BlkReadBytesPerSec.HasValue ? (double?)Math.Round(d.BlkReadBytesPerSec.Value, 0) : null;
-            var roundedBlkWrite = d.BlkWriteBytesPerSec.HasValue ? (double?)Math.Round(d.BlkWriteBytesPerSec.Value, 0) : null;
+            var roundedWait = d.GameThreadWaitMs.HasValue
+                ? (double?)Math.Round(d.GameThreadWaitMs.Value, 2)
+                : null;
+            var roundedNetRx = d.NetRxBytesPerSec.HasValue
+                ? (double?)Math.Round(d.NetRxBytesPerSec.Value, 0)
+                : null;
+            var roundedNetTx = d.NetTxBytesPerSec.HasValue
+                ? (double?)Math.Round(d.NetTxBytesPerSec.Value, 0)
+                : null;
+            var roundedBlkRead = d.BlkReadBytesPerSec.HasValue
+                ? (double?)Math.Round(d.BlkReadBytesPerSec.Value, 0)
+                : null;
+            var roundedBlkWrite = d.BlkWriteBytesPerSec.HasValue
+                ? (double?)Math.Round(d.BlkWriteBytesPerSec.Value, 0)
+                : null;
             var roundedMemLimit = Math.Round(d.MemoryLimitMb, 0);
 
-            inst.StatsHistory.Add(new InstanceStatsEntry
-            {
-                Timestamp = timestamp,
-                CpuPercent = roundedCpu,
-                MemoryMb = roundedMem,
-                CpuCount = d.CpuCount,
-                TotalMemoryMb = roundedTotalMem,
-                Fps = roundedFps,
-                Tps = roundedTps,
-                AvgTickMs = roundedAvgTickMs,
-                GameMemoryMb = roundedGameMem,
-                TargetTps = d.TargetTps,
-                TargetFps = d.TargetFps,
-                GcRate = roundedGcRate,
-                PendingActions = d.PendingActions,
-                GameThreadWaitMs = roundedWait,
-                NetRxBytesPerSec = roundedNetRx,
-                NetTxBytesPerSec = roundedNetTx,
-                BlkReadBytesPerSec = roundedBlkRead,
-                BlkWriteBytesPerSec = roundedBlkWrite,
-                MemoryLimitMb = roundedMemLimit
-            });
+            inst.StatsHistory.Add(
+                new InstanceStatsEntry
+                {
+                    Timestamp = timestamp,
+                    CpuPercent = roundedCpu,
+                    MemoryMb = roundedMem,
+                    CpuCount = d.CpuCount,
+                    TotalMemoryMb = roundedTotalMem,
+                    Fps = roundedFps,
+                    Tps = roundedTps,
+                    AvgTickMs = roundedAvgTickMs,
+                    GameMemoryMb = roundedGameMem,
+                    TargetTps = d.TargetTps,
+                    TargetFps = d.TargetFps,
+                    GcRate = roundedGcRate,
+                    PendingActions = d.PendingActions,
+                    GameThreadWaitMs = roundedWait,
+                    NetRxBytesPerSec = roundedNetRx,
+                    NetTxBytesPerSec = roundedNetTx,
+                    BlkReadBytesPerSec = roundedBlkRead,
+                    BlkWriteBytesPerSec = roundedBlkWrite,
+                    MemoryLimitMb = roundedMemLimit,
+                }
+            );
 
             var evt = new
             {
@@ -1261,7 +1453,7 @@ public sealed class TestRunState
                 NetTxBytesPerSec = roundedNetTx,
                 BlkReadBytesPerSec = roundedBlkRead,
                 BlkWriteBytesPerSec = roundedBlkWrite,
-                MemoryLimitMb = roundedMemLimit
+                MemoryLimitMb = roundedMemLimit,
             };
             // Not added to event log; stats are too frequent
             return Serialize(evt);
@@ -1305,29 +1497,48 @@ public sealed class TestRunState
             var canceled = 0;
             var skipped = 0;
             foreach (var col in _collections.Values)
+            {
                 foreach (var cls in col.Classes.Values)
+                {
                     foreach (var test in cls.Tests.Values)
                     {
                         switch (test.Status)
                         {
-                            case "passed": passed++; break;
-                            case "failed": failed++; break;
-                            case "canceled": canceled++; break;
-                            case "skipped": skipped++; break;
+                            case "passed":
+                                passed++;
+                                break;
+                            case "failed":
+                                failed++;
+                                break;
+                            case "canceled":
+                                canceled++;
+                                break;
+                            case "skipped":
+                                skipped++;
+                                break;
                         }
                     }
+                }
+            }
 
             string? gitBranch = null;
             string? gitSha = null;
-            if (_runMetadataData is { } meta
+            if (
+                _runMetadataData is { } meta
                 && meta.ValueKind == JsonValueKind.Object
                 && meta.TryGetProperty("git", out var git)
-                && git.ValueKind == JsonValueKind.Object)
+                && git.ValueKind == JsonValueKind.Object
+            )
             {
                 if (git.TryGetProperty("branch", out var b) && b.ValueKind == JsonValueKind.String)
+                {
                     gitBranch = b.GetString();
+                }
+
                 if (git.TryGetProperty("sha", out var s) && s.ValueKind == JsonValueKind.String)
+                {
                     gitSha = s.GetString();
+                }
             }
 
             return new RunSummary(
@@ -1339,7 +1550,8 @@ public sealed class TestRunState
                 Canceled: canceled,
                 DurationMs: _duration.HasValue ? (long)_duration.Value.TotalMilliseconds : null,
                 GitBranch: gitBranch,
-                GitSha: gitSha);
+                GitSha: gitSha
+            );
         }
     }
 
@@ -1355,47 +1567,67 @@ public sealed class TestRunState
         IReadOnlyList<string>? lostWorkers = null,
         long? rendererFailures = null,
         IReadOnlyList<string>? missingArtifacts = null,
-        IReadOnlyList<System.Text.Json.JsonElement>? workerRunMetadata = null)
+        IReadOnlyList<System.Text.Json.JsonElement>? workerRunMetadata = null
+    )
     {
         lock (_lock)
         {
             var tests = new List<TestArtifactView>();
             foreach (var col in _collections.Values)
+            {
                 foreach (var cls in col.Classes.Values)
+                {
                     foreach (var t in cls.Tests.Values)
                     {
-                        tests.Add(new TestArtifactView(
-                            Collection: t.Collection,
-                            ClassName: t.ClassName,
-                            DisplayName: t.DisplayName,
-                            Status: t.Status,
-                            DurationMs: t.DurationMs ?? 0,
-                            QueueDurationMs: t.QueueDurationMs ?? 0,
-                            FailedAt: t.FailedAt,
-                            ErrorMessage: t.ErrorMessage,
-                            ErrorType: t.ErrorType,
-                            // Broker-level failures (e.g. AcquireServerAsync queue
-                            // faults) never reach the test-side enrichment path, so
-                            // classify and build the repro here from the xUnit-native
-                            // fields. Enrichment-provided values win when present.
-                            FailureCategory: t.FailureCategory
-                                ?? (t.Status == "failed" && t.ErrorType != null
-                                    ? TestSummaryFixture.ClassifyFailureCategory(t.ErrorType)
-                                    : null),
-                            ErrorPreview: t.ErrorPreview,
-                            Phase: t.Phase,
-                            ReproCommand: t.ReproCommand
-                                ?? (t.Status == "failed"
-                                    ? TestSummaryFixture.BuildReproCommand(t.DisplayName)
-                                    : null),
-                            ServerKey: t.ServerKey,
-                            ServerInstanceId: t.ServerInstanceId,
-                            ScreenshotPath: t.LatestScreenshotPath,
-                            Lifecycle: t.Lifecycle is { } lc
-                                ? new LifecycleView(lc.TestMs, lc.CleanupMs, lc.ArtifactsMs, lc.LastKeepDisposeMs, lc.LeaseReleaseMs)
-                                : null,
-                            SkipReason: t.SkipReason));
+                        tests.Add(
+                            new TestArtifactView(
+                                Collection: t.Collection,
+                                ClassName: t.ClassName,
+                                DisplayName: t.DisplayName,
+                                Status: t.Status,
+                                DurationMs: t.DurationMs ?? 0,
+                                QueueDurationMs: t.QueueDurationMs ?? 0,
+                                FailedAt: t.FailedAt,
+                                ErrorMessage: t.ErrorMessage,
+                                ErrorType: t.ErrorType,
+                                // Broker-level failures (e.g. AcquireServerAsync queue
+                                // faults) never reach the test-side enrichment path, so
+                                // classify and build the repro here from the xUnit-native
+                                // fields. Enrichment-provided values win when present.
+                                FailureCategory: t.FailureCategory
+                                    ?? (
+                                        t.Status == "failed" && t.ErrorType != null
+                                            ? TestSummaryFixture.ClassifyFailureCategory(
+                                                t.ErrorType
+                                            )
+                                            : null
+                                    ),
+                                ErrorPreview: t.ErrorPreview,
+                                Phase: t.Phase,
+                                ReproCommand: t.ReproCommand
+                                    ?? (
+                                        t.Status == "failed"
+                                            ? TestSummaryFixture.BuildReproCommand(t.DisplayName)
+                                            : null
+                                    ),
+                                ServerKey: t.ServerKey,
+                                ServerInstanceId: t.ServerInstanceId,
+                                ScreenshotPath: t.LatestScreenshotPath,
+                                Lifecycle: t.Lifecycle is { } lc
+                                    ? new LifecycleView(
+                                        lc.TestMs,
+                                        lc.CleanupMs,
+                                        lc.ArtifactsMs,
+                                        lc.LastKeepDisposeMs,
+                                        lc.LeaseReleaseMs
+                                    )
+                                    : null,
+                                SkipReason: t.SkipReason
+                            )
+                        );
                     }
+                }
+            }
 
             return new RunArtifactView(
                 RunStartTime: _runStartTime ?? DateTime.UtcNow,
@@ -1414,66 +1646,82 @@ public sealed class TestRunState
                 LostWorkers: lostWorkers,
                 RendererFailures: rendererFailures,
                 MissingArtifacts: missingArtifacts,
-                WorkerRunMetadata: workerRunMetadata);
+                WorkerRunMetadata: workerRunMetadata
+            );
         }
     }
 
     private object BuildSnapshot()
     {
-        var collections = _collections.Values.Select(col => new
-        {
-            col.Name,
-            Classes = col.Classes.Values.Select(cls => new
+        var collections = _collections
+            .Values.Select(col => new
             {
-                cls.Name,
-                Tests = cls.Tests.Values.Select(t => new
-                {
-                    // Collection and MethodName are excluded — Collection is implicit
-                    // in the tree hierarchy (collection → class → tests), and the UI
-                    // derives the method name from displayName when needed.
-                    t.ClassName,
-                    t.DisplayName,
-                    t.Status,
-                    t.DurationMs,
-                    t.QueueDurationMs,
-                    Output = t.Output.Count > 0 ? t.Output : null,
-                    ErrorMessage = t.ErrorMessage,
-                    ErrorType = t.ErrorType,
-                    t.StackTrace,
-                    Recordings = t.Recordings.Count > 0 ? t.Recordings.Select(r => new
+                col.Name,
+                Classes = col
+                    .Classes.Values.Select(cls => new
                     {
-                        r.Path, r.Source, r.TimelineOffset, r.WallClockDuration
-                    }).ToList() : null,
-                    // Fresh dict copy so the projection doesn't leak the live
-                    // dict to a caller that serializes outside the lock.
-                    RecordingSkipReasons = t.RecordingSkipReasons.Count > 0
-                        ? new Dictionary<string, string>(t.RecordingSkipReasons)
-                        : null,
-                    Lifecycle = t.Lifecycle != null ? new
-                    {
-                        t.Lifecycle.TestMs,
-                        t.Lifecycle.CleanupMs,
-                        t.Lifecycle.ArtifactsMs,
-                        t.Lifecycle.LastKeepDisposeMs,
-                        t.Lifecycle.LeaseReleaseMs
-                    } : null,
-                    t.SkipReason,
-                    t.DiscoveryOrder,
-                    t.ExecutionOrder,
-                    t.StartTime,
-                    t.RunningStartTime,
-                    UsedInstances = t.UsedInstances.Count > 0 ? t.UsedInstances : null,
-                    // Enrichment fields (folded in by ApplyTestEnrichment).
-                    t.FailureCategory,
-                    t.ErrorPreview,
-                    t.Phase,
-                    t.ReproCommand,
-                    t.ServerKey,
-                    t.ServerInstanceId,
-                    t.FailureContext
-                }).ToList()
-            }).ToList()
-        }).ToList();
+                        cls.Name,
+                        Tests = cls
+                            .Tests.Values.Select(t => new
+                            {
+                                // Collection and MethodName are excluded — Collection is implicit
+                                // in the tree hierarchy (collection → class → tests), and the UI
+                                // derives the method name from displayName when needed.
+                                t.ClassName,
+                                t.DisplayName,
+                                t.Status,
+                                t.DurationMs,
+                                t.QueueDurationMs,
+                                Output = t.Output.Count > 0 ? t.Output : null,
+                                ErrorMessage = t.ErrorMessage,
+                                ErrorType = t.ErrorType,
+                                t.StackTrace,
+                                Recordings = t.Recordings.Count > 0
+                                    ? t
+                                        .Recordings.Select(r => new
+                                        {
+                                            r.Path,
+                                            r.Source,
+                                            r.TimelineOffset,
+                                            r.WallClockDuration,
+                                        })
+                                        .ToList()
+                                    : null,
+                                // Fresh dict copy so the projection doesn't leak the live
+                                // dict to a caller that serializes outside the lock.
+                                RecordingSkipReasons = t.RecordingSkipReasons.Count > 0
+                                    ? new Dictionary<string, string>(t.RecordingSkipReasons)
+                                    : null,
+                                Lifecycle = t.Lifecycle != null
+                                    ? new
+                                    {
+                                        t.Lifecycle.TestMs,
+                                        t.Lifecycle.CleanupMs,
+                                        t.Lifecycle.ArtifactsMs,
+                                        t.Lifecycle.LastKeepDisposeMs,
+                                        t.Lifecycle.LeaseReleaseMs,
+                                    }
+                                    : null,
+                                t.SkipReason,
+                                t.DiscoveryOrder,
+                                t.ExecutionOrder,
+                                t.StartTime,
+                                t.RunningStartTime,
+                                UsedInstances = t.UsedInstances.Count > 0 ? t.UsedInstances : null,
+                                // Enrichment fields (folded in by ApplyTestEnrichment).
+                                t.FailureCategory,
+                                t.ErrorPreview,
+                                t.Phase,
+                                t.ReproCommand,
+                                t.ServerKey,
+                                t.ServerInstanceId,
+                                t.FailureContext,
+                            })
+                            .ToList(),
+                    })
+                    .ToList(),
+            })
+            .ToList();
 
         // Compute counts from the test tree so late-connecting clients get accurate
         // values even mid-run (the _passed/_failed/_skipped fields are only set at
@@ -1483,36 +1731,52 @@ public sealed class TestRunState
         var snapshotCanceled = 0;
         var snapshotSkipped = 0;
         foreach (var col in _collections.Values)
+        {
             foreach (var cls in col.Classes.Values)
+            {
                 foreach (var test in cls.Tests.Values)
                 {
                     switch (test.Status)
                     {
-                        case "passed": snapshotPassed++; break;
-                        case "failed": snapshotFailed++; break;
-                        case "canceled": snapshotCanceled++; break;
-                        case "skipped": snapshotSkipped++; break;
+                        case "passed":
+                            snapshotPassed++;
+                            break;
+                        case "failed":
+                            snapshotFailed++;
+                            break;
+                        case "canceled":
+                            snapshotCanceled++;
+                            break;
+                        case "skipped":
+                            snapshotSkipped++;
+                            break;
                     }
                 }
+            }
+        }
 
-        var setupPhases = _setupPhases.Select(p => new
-        {
-            p.Category,
-            Phase = p.PhaseName,
-            p.CollectionName,
-            p.Status,
-            p.StartTime,
-            p.EndTime,
-            Error = p.ErrorMessage,
-            Steps = p.Steps.Select(s => new
+        var setupPhases = _setupPhases
+            .Select(p => new
             {
-                Step = s.StepName,
-                s.Status,
-                s.Details,
-                s.Output,
-                s.Timestamp
-            }).ToList()
-        }).ToList();
+                p.Category,
+                Phase = p.PhaseName,
+                p.CollectionName,
+                p.Status,
+                p.StartTime,
+                p.EndTime,
+                Error = p.ErrorMessage,
+                Steps = p
+                    .Steps.Select(s => new
+                    {
+                        Step = s.StepName,
+                        s.Status,
+                        s.Details,
+                        s.Output,
+                        s.Timestamp,
+                    })
+                    .ToList(),
+            })
+            .ToList();
 
         return new
         {
@@ -1525,71 +1789,101 @@ public sealed class TestRunState
             Failed = snapshotFailed,
             Canceled = snapshotCanceled,
             Skipped = snapshotSkipped,
-            DurationMs = _duration.HasValue ? (long?)((long)_duration.Value.TotalMilliseconds) : null,
+            DurationMs = _duration.HasValue
+                ? (long?)((long)_duration.Value.TotalMilliseconds)
+                : null,
             SetupPhases = setupPhases,
             Collections = collections,
             RunMetadata = _runMetadataData.HasValue
                 ? new { RunDir = _runMetadataRunDir, Data = _runMetadataData.Value }
                 : null,
             FlakyTests = _flakyTests,
-            Errors = _errors.Select(e => new { e.Message, e.StackTrace, e.Timestamp }).ToList(),
-            VncUrls = _vncUrls.Count > 0 ? _vncUrls.Select(v => new { v.Label, v.Url, v.Collection }).ToList() : null,
-            Instances = _instances.Count > 0 ? _instances.Values.Select(i => new
-            {
-                i.InstanceId,
-                i.HostId,
-                i.InstanceType,
-                i.ServerKey,
-                i.VncUrl,
-                i.Label,
-                i.Status,
-                i.Connected,
-                i.Disposed,
-                i.CurrentTest,
-                i.PoisonReason,
-                i.ConnectedServerId,
-                SetupSteps = i.SetupSteps.Select(s => new
+            Errors = _errors
+                .Select(e => new
                 {
-                    Step = s.StepName,
-                    s.Status,
-                    s.Details,
-                    Output = s.Output.Count > 0 ? s.Output : null,
-                    s.Timestamp
-                }).ToList(),
-                i.SetupStatus,
-                i.RecordingPath,
-                History = i.History.Select(h => new
-                {
-                    h.Timestamp,
-                    h.Event,
-                    h.TestName,
-                    h.Reason,
-                    h.ServerInstanceId,
-                    h.ClientInstanceId
-                }).ToList(),
-                StatsHistory = i.StatsHistory.Count > 0 ? i.StatsHistory.Select(s => new
-                {
-                    s.Timestamp,
-                    s.CpuPercent,
-                    s.MemoryMb,
-                    s.CpuCount,
-                    s.TotalMemoryMb,
-                    s.Fps,
-                    s.Tps,
-                    s.AvgTickMs,
-                    s.GameMemoryMb,
-                    s.TargetTps,
-                    s.TargetFps,
-                    s.GcRate,
-                    s.PendingActions,
-                    s.GameThreadWaitMs,
-                    s.NetRxBytesPerSec,
-                    s.NetTxBytesPerSec,
-                    s.BlkReadBytesPerSec,
-                    s.BlkWriteBytesPerSec,
-                    s.MemoryLimitMb
-                }).ToList() : null
-            }).ToList() : null
+                    e.Message,
+                    e.StackTrace,
+                    e.Timestamp,
+                })
+                .ToList(),
+            VncUrls = _vncUrls.Count > 0
+                ? _vncUrls
+                    .Select(v => new
+                    {
+                        v.Label,
+                        v.Url,
+                        v.Collection,
+                    })
+                    .ToList()
+                : null,
+            Instances = _instances.Count > 0
+                ? _instances
+                    .Values.Select(i => new
+                    {
+                        i.InstanceId,
+                        i.HostId,
+                        i.InstanceType,
+                        i.ServerKey,
+                        i.VncUrl,
+                        i.Label,
+                        i.Status,
+                        i.Connected,
+                        i.Disposed,
+                        i.CurrentTest,
+                        i.PoisonReason,
+                        i.ConnectedServerId,
+                        SetupSteps = i
+                            .SetupSteps.Select(s => new
+                            {
+                                Step = s.StepName,
+                                s.Status,
+                                s.Details,
+                                Output = s.Output.Count > 0 ? s.Output : null,
+                                s.Timestamp,
+                            })
+                            .ToList(),
+                        i.SetupStatus,
+                        i.RecordingPath,
+                        History = i
+                            .History.Select(h => new
+                            {
+                                h.Timestamp,
+                                h.Event,
+                                h.TestName,
+                                h.Reason,
+                                h.ServerInstanceId,
+                                h.ClientInstanceId,
+                            })
+                            .ToList(),
+                        StatsHistory = i.StatsHistory.Count > 0
+                            ? i
+                                .StatsHistory.Select(s => new
+                                {
+                                    s.Timestamp,
+                                    s.CpuPercent,
+                                    s.MemoryMb,
+                                    s.CpuCount,
+                                    s.TotalMemoryMb,
+                                    s.Fps,
+                                    s.Tps,
+                                    s.AvgTickMs,
+                                    s.GameMemoryMb,
+                                    s.TargetTps,
+                                    s.TargetFps,
+                                    s.GcRate,
+                                    s.PendingActions,
+                                    s.GameThreadWaitMs,
+                                    s.NetRxBytesPerSec,
+                                    s.NetTxBytesPerSec,
+                                    s.BlkReadBytesPerSec,
+                                    s.BlkWriteBytesPerSec,
+                                    s.MemoryLimitMb,
+                                })
+                                .ToList()
+                            : null,
+                    })
+                    .ToList()
+                : null,
         };
     }
 
@@ -1607,7 +1901,12 @@ public sealed class TestRunState
         return col;
     }
 
-    private TestState GetOrCreateTest(string collection, string className, string methodName, string displayName)
+    private TestState GetOrCreateTest(
+        string collection,
+        string className,
+        string methodName,
+        string displayName
+    )
     {
         // Resolve xUnit v3's verbose runtime collection name back to the short
         // name from reflection. e.g. "Test collection for Namespace.Class (id: hash)"
@@ -1625,7 +1924,7 @@ public sealed class TestRunState
                 MethodName = methodName,
                 DisplayName = displayName,
                 Status = "pending",
-                DiscoveryOrder = _nextDiscoveryOrder++
+                DiscoveryOrder = _nextDiscoveryOrder++,
             };
             cls.Tests[displayName] = test;
         }
@@ -1639,9 +1938,15 @@ public sealed class TestRunState
     private string ResolveCollectionName(string runtimeName, string className)
     {
         if (_collections.ContainsKey(runtimeName))
+        {
             return runtimeName;
+        }
+
         if (_classToCollection.TryGetValue(className, out var populated))
+        {
             return populated;
+        }
+
         return runtimeName;
     }
 
@@ -1660,7 +1965,9 @@ public sealed class TestRunState
             foreach (var key in _activePhases.Keys)
             {
                 if (key.StartsWith(collectionName + ":" + category + ":"))
+                {
                     return key;
+                }
             }
         }
 
@@ -1668,7 +1975,9 @@ public sealed class TestRunState
         foreach (var key in _activePhases.Keys)
         {
             if (key.Contains(":" + category + ":") || key.StartsWith(category + ":"))
+            {
                 return key;
+            }
         }
 
         // Fallback: any active phase
@@ -1685,7 +1994,10 @@ public sealed class TestRunState
         var searchUpTo = parenIdx >= 0 ? parenIdx : displayName.Length;
         var lastDot = displayName.LastIndexOf('.', searchUpTo - 1, searchUpTo);
         if (lastDot < 0)
+        {
             return ("Unknown", displayName);
+        }
+
         var methodName = displayName[(lastDot + 1)..];
         var classPath = displayName[..lastDot];
         var secondLastDot = classPath.LastIndexOf('.');
@@ -1696,7 +2008,10 @@ public sealed class TestRunState
     private void AddEventLog(object evt)
     {
         if (_eventLog.Count >= MaxEventLogSize)
+        {
             _eventLog.RemoveAt(0);
+        }
+
         _eventLog.Add(evt);
     }
 
@@ -1709,10 +2024,15 @@ public sealed class TestRunState
     private static void ApplyTestDuration(TestState test, TimeSpan xunitDuration)
     {
         var totalMs = (long)xunitDuration.TotalMilliseconds;
-        var queueMs = test.RunningStartTime != null && test.StartTime != null
-            ? (long)(test.RunningStartTime.Value - test.StartTime.Value).TotalMilliseconds
-            : 0L;
-        if (queueMs < 0) queueMs = 0;
+        var queueMs =
+            test.RunningStartTime != null && test.StartTime != null
+                ? (long)(test.RunningStartTime.Value - test.StartTime.Value).TotalMilliseconds
+                : 0L;
+        if (queueMs < 0)
+        {
+            queueMs = 0;
+        }
+
         test.DurationMs = totalMs - queueMs;
         test.QueueDurationMs = queueMs > 0 ? queueMs : null;
     }
@@ -1758,6 +2078,7 @@ public sealed class TestRunState
         public string? ErrorMessage { get; set; }
         public string? ErrorType { get; set; }
         public string? StackTrace { get; set; }
+
         /// <summary>
         /// Timestamp of the xUnit test_failed event. Projected into
         /// <c>summary.json.failures[].failedAt</c> so failure rows are orderable
@@ -1765,6 +2086,7 @@ public sealed class TestRunState
         /// never produced a failed/canceled xUnit callback.
         /// </summary>
         public DateTime? FailedAt { get; set; }
+
         /// <summary>
         /// The <c>Outcome</c> string carried by the most recent <c>test_enrichment</c>
         /// event for this test (<c>"passed"</c>, <c>"failed"</c>, <c>"canceled"</c>,
@@ -1800,6 +2122,7 @@ public sealed class TestRunState
         /// </summary>
         public string? OutcomeSource { get; set; }
         public List<RecordingInfo> Recordings { get; set; } = new();
+
         /// <summary>
         /// Per-source skip reasons. Key is the source slug emitted by
         /// <see cref="ApplyRecordingSkipped"/> — <c>"server"</c>, the un-indexed
@@ -1809,6 +2132,7 @@ public sealed class TestRunState
         /// the snake_case reason string from <see cref="RecordingSkipReason"/>.
         /// </summary>
         public Dictionary<string, string> RecordingSkipReasons { get; } = new();
+
         // Latest screenshot path appended via ApplyScreenshotCaptured. Internal —
         // not serialized into the live snapshot; the UI reads screenshots from
         // Output[]. Used by the runner-side artifact writer for CTRF attachments.
@@ -1828,6 +2152,7 @@ public sealed class TestRunState
         public string? ReproCommand { get; set; }
         public string? ServerKey { get; set; }
         public string? ServerInstanceId { get; set; }
+
         // Latest FailureContext.DumpAsync result for this test (server state at the
         // failure point, plus reason/extras). Null if no dump was captured.
         public JsonElement? FailureContext { get; set; }
@@ -1855,14 +2180,19 @@ public sealed class TestRunState
     }
 
     private sealed record RecordingInfo(
-        string Path, string Source, double TimelineOffset, double WallClockDuration);
+        string Path,
+        string Source,
+        double TimelineOffset,
+        double WallClockDuration
+    );
 
     private sealed record LifecycleInfo(
         long TestMs,
         long CleanupMs,
         long ArtifactsMs,
         long LastKeepDisposeMs = 0,
-        long LeaseReleaseMs = 0);
+        long LeaseReleaseMs = 0
+    );
 
     private sealed class ErrorState
     {
@@ -1881,6 +2211,7 @@ public sealed class TestRunState
     private sealed class InstanceState
     {
         public string InstanceId { get; set; } = "";
+
         /// <summary>
         /// Docker host this instance runs on (<c>local</c>, <c>vps-1</c>, etc.).
         /// Set by the producer (broker) and threaded through unchanged for UI
@@ -1895,6 +2226,7 @@ public sealed class TestRunState
         public string Label { get; set; } = "";
         public string Status { get; set; } = "idle";
         public bool Connected { get; set; }
+
         /// <summary>
         /// True once the container has been torn down. Orthogonal to Status so
         /// a poisoned container still reads as "poisoned" while it drains for
@@ -1902,6 +2234,7 @@ public sealed class TestRunState
         /// </summary>
         public bool Disposed { get; set; }
         public string? CurrentTest { get; set; }
+
         /// <summary>
         /// Reason this instance was poisoned (health check failure, etc.). Set once
         /// when the instance_poisoned event arrives; null otherwise. Orthogonal to

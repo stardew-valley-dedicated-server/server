@@ -119,11 +119,20 @@ public static class TestTimings
     /// (seconds); <c>0</c> disables the wait and reverts to eager creation.
     /// </summary>
     public static readonly TimeSpan ClientLeasePatience = ParseClientLeasePatience();
+
     private static TimeSpan ParseClientLeasePatience()
     {
         var raw = Environment.GetEnvironmentVariable("SDVD_CLIENT_LEASE_PATIENCE_S");
-        if (string.IsNullOrEmpty(raw)) return TimeSpan.FromSeconds(20);
-        if (int.TryParse(raw, out var s) && s >= 0) return TimeSpan.FromSeconds(s);
+        if (string.IsNullOrEmpty(raw))
+        {
+            return TimeSpan.FromSeconds(20);
+        }
+
+        if (int.TryParse(raw, out var s) && s >= 0)
+        {
+            return TimeSpan.FromSeconds(s);
+        }
+
         return TimeSpan.FromSeconds(20);
     }
 
@@ -307,7 +316,7 @@ public static class TestTimings
 
     /// <summary>
     /// Time to wait for chat message to be delivered via WebSocket API.
-    /// WebSocket delivery is async but typically completes in <1s.
+    /// WebSocket delivery is async but typically completes in &lt;1s.
     /// </summary>
     public static readonly TimeSpan ChatDeliveryDelay = TimeSpan.FromSeconds(1);
 

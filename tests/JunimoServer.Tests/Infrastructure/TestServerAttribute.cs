@@ -33,7 +33,11 @@ public class TestServerAttribute : Attribute
     public string? Password
     {
         get => _password;
-        set { _password = value; _passwordSet = true; }
+        set
+        {
+            _password = value;
+            _passwordSet = true;
+        }
     }
 
     /// <summary>
@@ -41,7 +45,11 @@ public class TestServerAttribute : Attribute
     /// only vanilla indices are expressible here; a modded farm is selected at runtime via
     /// <c>CreateNewGameOnServerAsync("&lt;Id&gt;")</c> (POST /newgame), not at boot.
     /// </summary>
-    public int FarmType { get => _farmType ?? 0; set => _farmType = value; }
+    public int FarmType
+    {
+        get => _farmType ?? 0;
+        set => _farmType = value;
+    }
 
     /// <summary>
     /// When true, the test's server loads the TestFarmMod fixture (adds a second
@@ -49,29 +57,75 @@ public class TestServerAttribute : Attribute
     /// changes which mods load, so it is part of the server reuse key — at most one extra
     /// pooled server for the test class that sets it.
     /// </summary>
-    public bool FixtureFarmMod { get => _fixtureFarmMod ?? false; set => _fixtureFarmMod = value; }
+    public bool FixtureFarmMod
+    {
+        get => _fixtureFarmMod ?? false;
+        set => _fixtureFarmMod = value;
+    }
 
-    public bool WithSteam { get => _withSteam ?? false; set => _withSteam = value; }
-    public int StartingCabins { get => _startingCabins ?? Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3); set => _startingCabins = value; }
-    public int MaxPlayers { get => _maxPlayers ?? Math.Max(10, StartingCabins + 1); set => _maxPlayers = value; }
-    public int Clients { get => _clients ?? 1; set => _clients = value; }
-    public string CabinStrategy { get => _cabinStrategy ?? "CabinStack"; set => _cabinStrategy = value; }
-    public string ExistingCabinBehavior { get => _existingCabinBehavior ?? "KeepExisting"; set => _existingCabinBehavior = value; }
-    public bool AllowIpConnections { get => _allowIpConnections ?? false; set => _allowIpConnections = value; }
-    public IsolationMode Isolation { get => _isolation ?? IsolationMode.SharedClass; set => _isolation = value; }
+    public bool WithSteam
+    {
+        get => _withSteam ?? false;
+        set => _withSteam = value;
+    }
+    public int StartingCabins
+    {
+        get =>
+            _startingCabins
+            ?? Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3);
+        set => _startingCabins = value;
+    }
+    public int MaxPlayers
+    {
+        get => _maxPlayers ?? Math.Max(10, StartingCabins + 1);
+        set => _maxPlayers = value;
+    }
+    public int Clients
+    {
+        get => _clients ?? 1;
+        set => _clients = value;
+    }
+    public string CabinStrategy
+    {
+        get => _cabinStrategy ?? "CabinStack";
+        set => _cabinStrategy = value;
+    }
+    public string ExistingCabinBehavior
+    {
+        get => _existingCabinBehavior ?? "KeepExisting";
+        set => _existingCabinBehavior = value;
+    }
+    public bool AllowIpConnections
+    {
+        get => _allowIpConnections ?? false;
+        set => _allowIpConnections = value;
+    }
+    public IsolationMode Isolation
+    {
+        get => _isolation ?? IsolationMode.SharedClass;
+        set => _isolation = value;
+    }
 
     /// <summary>
     /// When true, the test acquires exclusive access to the shared server.
     /// Other tests wait until the exclusive test completes before they can acquire the server.
     /// Use for tests that require specific server state (e.g., no players connected).
     /// </summary>
-    public bool Exclusive { get => _exclusive ?? false; set => _exclusive = value; }
+    public bool Exclusive
+    {
+        get => _exclusive ?? false;
+        set => _exclusive = value;
+    }
 
     /// <summary>
     /// Explicit scheduling priority override. Lower values run first.
     /// When not set (-1), priority is auto-assigned by TestCollectionOrderer based on isolation mode.
     /// </summary>
-    public int Priority { get => _priority ?? -1; set => _priority = value; }
+    public int Priority
+    {
+        get => _priority ?? -1;
+        set => _priority = value;
+    }
 
     /// <summary>Named group for SharedGroup isolation.</summary>
     public string? SharedGroup { get; set; }
@@ -98,7 +152,11 @@ public class TestServerAttribute : Attribute
     /// Defaults to true. Set to false for API-only tests where visual artifacts have
     /// no diagnostic value. Artifacts are always collected on test failure regardless.
     /// </summary>
-    public bool Artifacts { get => _artifacts ?? true; set => _artifacts = value; }
+    public bool Artifacts
+    {
+        get => _artifacts ?? true;
+        set => _artifacts = value;
+    }
 
     /// <summary>
     /// Merges this (class-level) attribute with a method-level attribute.
@@ -106,7 +164,11 @@ public class TestServerAttribute : Attribute
     /// </summary>
     public TestServerAttribute MergeWith(TestServerAttribute? method)
     {
-        if (method == null) return this;
+        if (method == null)
+        {
+            return this;
+        }
+
         var merged = new TestServerAttribute();
 
         merged._farmType = method._farmType ?? _farmType;
@@ -149,12 +211,18 @@ public class TestServerAttribute : Attribute
     /// </summary>
     public static TestServerAttribute Resolve(Type testClass, string? methodName)
     {
-        var classAttr = testClass.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
+        var classAttr =
+            testClass.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
 
-        if (methodName == null) return classAttr;
+        if (methodName == null)
+        {
+            return classAttr;
+        }
 
-        var methodInfo = testClass.GetMethod(methodName,
-            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        var methodInfo = testClass.GetMethod(
+            methodName,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+        );
         var methodAttr = methodInfo?.GetCustomAttribute<TestServerAttribute>();
 
         return classAttr.MergeWith(methodAttr);

@@ -9,7 +9,8 @@ namespace JunimoServer.Tests.Schema.Events;
 public sealed record DiagnosticEvent(
     [property: JsonPropertyName("source")] LogSource Source,
     [property: JsonPropertyName("level")] LogLevel Level,
-    [property: JsonPropertyName("message")] string Message) : IRendererEvent
+    [property: JsonPropertyName("message")] string Message
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.Diagnostic;
@@ -22,7 +23,8 @@ public sealed record DiagnosticEvent(
 /// </summary>
 public sealed record ErrorEvent(
     [property: JsonPropertyName("message")] string Message,
-    [property: JsonPropertyName("stack_trace")] string? StackTrace = null) : IRendererEvent
+    [property: JsonPropertyName("stack_trace")] string? StackTrace = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.Error;

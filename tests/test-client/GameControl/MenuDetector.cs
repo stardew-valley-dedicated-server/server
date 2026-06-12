@@ -25,10 +25,10 @@ public static class MenuDetector
                 {
                     Game1.playingGameMode => "InGame",
                     Game1.loadingMode => "Loading",
-                    _ => "None"
+                    _ => "None",
                 },
                 IsInGame = Context.IsWorldReady,
-                GameMode = Game1.gameMode
+                GameMode = Game1.gameMode,
             };
         }
 
@@ -37,7 +37,7 @@ public static class MenuDetector
             Type = GetMenuTypeName(activeMenu),
             FullType = activeMenu.GetType().FullName,
             IsInGame = Context.IsWorldReady,
-            GameMode = Game1.gameMode
+            GameMode = Game1.gameMode,
         };
 
         // Handle TitleMenu with submenus
@@ -65,12 +65,14 @@ public static class MenuDetector
     {
         var subMenu = TitleMenu.subMenu;
         if (subMenu == null)
+        {
             return null;
+        }
 
         var info = new SubMenuInfo
         {
             Type = GetMenuTypeName(subMenu),
-            FullType = subMenu.GetType().FullName
+            FullType = subMenu.GetType().FullName,
         };
 
         // If submenu is CoopMenu, get its details
@@ -86,7 +88,9 @@ public static class MenuDetector
     {
         // TitleMenu has different visual states
         if (TitleMenu.subMenu != null)
+        {
             return "SubMenuOpen";
+        }
 
         return "MainButtons";
     }
@@ -98,8 +102,10 @@ public static class MenuDetector
         try
         {
             // Use reflection to get internal state
-            var currentTabField = typeof(CoopMenu).GetField("currentTab",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var currentTabField = typeof(CoopMenu).GetField(
+                "currentTab",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
             if (currentTabField != null)
             {
                 info.CurrentTab = (int)(currentTabField.GetValue(coopMenu) ?? 0);
@@ -107,7 +113,7 @@ public static class MenuDetector
                 {
                     0 => "HostTab",
                     1 => "JoinTab",
-                    _ => "Unknown"
+                    _ => "Unknown",
                 };
             }
         }
@@ -133,7 +139,7 @@ public static class MenuDetector
             IsConnected = Game1.IsMultiplayer && (Game1.IsClient || Game1.IsServer),
             WorldReady = Context.IsWorldReady,
             HasLoadedGame = Context.IsWorldReady,
-            NumberOfPlayers = Game1.numberOfPlayers()
+            NumberOfPlayers = Game1.numberOfPlayers(),
         };
     }
 
@@ -143,7 +149,9 @@ public static class MenuDetector
     public static FarmerInfo? GetFarmerInfo()
     {
         if (!Context.IsWorldReady || Game1.player == null)
+        {
             return null;
+        }
 
         return new FarmerInfo
         {
@@ -152,7 +160,7 @@ public static class MenuDetector
             Money = Game1.player.Money,
             IsMainPlayer = Game1.player.IsMainPlayer,
             UniqueId = Game1.player.UniqueMultiplayerID.ToString(),
-            CurrentLocation = Game1.player.currentLocation?.NameOrUniqueName
+            CurrentLocation = Game1.player.currentLocation?.NameOrUniqueName,
         };
     }
 
@@ -175,23 +183,27 @@ public static class MenuDetector
         // Get allClickableComponents if available
         try
         {
-            var componentsField = typeof(IClickableMenu).GetField("allClickableComponents",
-                BindingFlags.Public | BindingFlags.Instance);
+            var componentsField = typeof(IClickableMenu).GetField(
+                "allClickableComponents",
+                BindingFlags.Public | BindingFlags.Instance
+            );
             if (componentsField?.GetValue(menu) is List<ClickableComponent> components)
             {
                 foreach (var comp in components)
                 {
-                    info.Buttons.Add(new ButtonInfo
-                    {
-                        Name = comp.name,
-                        Label = comp.label,
-                        Id = comp.myID,
-                        X = comp.bounds.X,
-                        Y = comp.bounds.Y,
-                        Width = comp.bounds.Width,
-                        Height = comp.bounds.Height,
-                        Visible = comp.visible
-                    });
+                    info.Buttons.Add(
+                        new ButtonInfo
+                        {
+                            Name = comp.name,
+                            Label = comp.label,
+                            Id = comp.myID,
+                            X = comp.bounds.X,
+                            Y = comp.bounds.Y,
+                            Width = comp.bounds.Width,
+                            Height = comp.bounds.Height,
+                            Visible = comp.visible,
+                        }
+                    );
                 }
             }
         }
@@ -213,21 +225,29 @@ public static class MenuDetector
     {
         try
         {
-            var field = menu.GetType().GetField(fieldName,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field?.GetValue(menu) is ClickableComponent comp && !info.Buttons.Any(b => b.Name == fieldName))
+            var field = menu.GetType()
+                .GetField(
+                    fieldName,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                );
+            if (
+                field?.GetValue(menu) is ClickableComponent comp
+                && !info.Buttons.Any(b => b.Name == fieldName)
+            )
             {
-                info.Buttons.Add(new ButtonInfo
-                {
-                    Name = fieldName,
-                    Label = comp.label ?? fieldName,
-                    Id = comp.myID,
-                    X = comp.bounds.X,
-                    Y = comp.bounds.Y,
-                    Width = comp.bounds.Width,
-                    Height = comp.bounds.Height,
-                    Visible = comp.visible
-                });
+                info.Buttons.Add(
+                    new ButtonInfo
+                    {
+                        Name = fieldName,
+                        Label = comp.label ?? fieldName,
+                        Id = comp.myID,
+                        X = comp.bounds.X,
+                        Y = comp.bounds.Y,
+                        Width = comp.bounds.Width,
+                        Height = comp.bounds.Height,
+                        Visible = comp.visible,
+                    }
+                );
             }
         }
         catch { }
@@ -254,22 +274,23 @@ public static class MenuDetector
         {
             try
             {
-                var slotsField = typeof(LoadGameMenu).GetField("menuSlots",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
+                var slotsField = typeof(LoadGameMenu).GetField(
+                    "menuSlots",
+                    BindingFlags.NonPublic | BindingFlags.Instance
+                );
                 if (slotsField?.GetValue(loadMenu) is List<LoadGameMenu.MenuSlot> slots)
                 {
                     for (int i = 0; i < slots.Count; i++)
                     {
                         var slot = slots[i];
-                        var slotInfo = new SlotInfo
-                        {
-                            Index = i,
-                            Type = slot.GetType().Name
-                        };
+                        var slotInfo = new SlotInfo { Index = i, Type = slot.GetType().Name };
 
                         // Try to get Farmer from slot
-                        var farmerField = slot.GetType().GetField("Farmer",
-                            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        var farmerField = slot.GetType()
+                            .GetField(
+                                "Farmer",
+                                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                            );
                         if (farmerField?.GetValue(slot) is Farmer farmer)
                         {
                             slotInfo.FarmerName = farmer.Name;

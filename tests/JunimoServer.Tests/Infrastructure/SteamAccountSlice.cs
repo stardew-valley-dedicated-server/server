@@ -17,7 +17,8 @@ public sealed record SteamAccountSlice(
     string HostId,
     int SliceSize,
     IReadOnlyList<int> GlobalIndices,
-    string? SliceJson)
+    string? SliceJson
+)
 {
     /// <summary>
     /// True iff this host's slice can serve any Steam test (≥1 server + ≥1 client account).

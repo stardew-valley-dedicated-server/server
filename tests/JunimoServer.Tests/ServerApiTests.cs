@@ -1,9 +1,8 @@
+using System.Net.WebSockets;
+using System.Text;
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
-
-using System.Net.WebSockets;
-using System.Text;
 using Xunit;
 
 namespace JunimoServer.Tests;
@@ -35,7 +34,10 @@ public class ServerApiTests : TestBase
             {
                 var players = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
                 return players?.Players?.Count == 0;
-            }, TestTimings.FarmerDeleteTimeout, cancellationToken: TestContext.Current.CancellationToken);
+            },
+            TestTimings.FarmerDeleteTimeout,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
         Assert.True(noPlayers, "Server should have no players connected");
         Log("Verified: no players connected");
     }
@@ -51,7 +53,10 @@ public class ServerApiTests : TestBase
 
         // Poll until player appears in the /players API
         PlayersResponse? response = null;
-        await ServerApi.WaitForPlayerByNameAsync(client.FarmerName, ct: TestContext.Current.CancellationToken);
+        await ServerApi.WaitForPlayerByNameAsync(
+            client.FarmerName,
+            ct: TestContext.Current.CancellationToken
+        );
         response = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
 
         Assert.NotNull(response);
@@ -59,7 +64,8 @@ public class ServerApiTests : TestBase
         Assert.NotEmpty(response.Players);
 
         var player = response.Players.FirstOrDefault(p =>
-            p.Name.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase));
+            p.Name.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase)
+        );
         Assert.NotNull(player);
         Assert.True(player.IsOnline);
         Assert.True(player.Id != 0);
@@ -78,7 +84,10 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task SetTime_WithValidValue_Succeeds()
     {
-        var response = await ServerApi.SetTime(TestTimings.Noon, TestContext.Current.CancellationToken);
+        var response = await ServerApi.SetTime(
+            TestTimings.Noon,
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(response);
         Assert.True(response.Success, response.Error ?? "SetTime failed");
@@ -115,7 +124,10 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task DeleteFarmhandByName_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.DeleteFarmhandByName("NonExistentFarmer12345", TestContext.Current.CancellationToken);
+        var response = await ServerApi.DeleteFarmhandByName(
+            "NonExistentFarmer12345",
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -131,7 +143,10 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task DeleteFarmhandById_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.DeleteFarmhandById(999999999L, TestContext.Current.CancellationToken);
+        var response = await ServerApi.DeleteFarmhandById(
+            999999999L,
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -147,7 +162,10 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task GrantAdminByName_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.GrantAdminByName("NonExistentAdmin12345", TestContext.Current.CancellationToken);
+        var response = await ServerApi.GrantAdminByName(
+            "NonExistentAdmin12345",
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -163,7 +181,10 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task GrantAdminById_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.GrantAdminById(999999999L, TestContext.Current.CancellationToken);
+        var response = await ServerApi.GrantAdminById(
+            999999999L,
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -194,8 +215,10 @@ public class ServerApiTests : TestBase
 
         // Verify basic OpenAPI structure
         var root = jsonDoc.RootElement;
-        Assert.True(root.TryGetProperty("openapi", out _) || root.TryGetProperty("swagger", out _),
-            "Should have openapi or swagger version property");
+        Assert.True(
+            root.TryGetProperty("openapi", out _) || root.TryGetProperty("swagger", out _),
+            "Should have openapi or swagger version property"
+        );
         Assert.True(root.TryGetProperty("paths", out _), "Should have paths property");
         Assert.True(root.TryGetProperty("info", out _), "Should have info property");
 
@@ -220,16 +243,19 @@ public class ServerApiTests : TestBase
             ServerApi.GetStatus(ct),
             ServerApi.GetStatus(ct),
             ServerApi.GetStatus(ct),
-            ServerApi.GetStatus(ct)
+            ServerApi.GetStatus(ct),
         };
 
         var results = await Task.WhenAll(tasks);
 
-        Assert.All(results, status =>
-        {
-            Assert.NotNull(status);
-            Assert.True(status.IsOnline);
-        });
+        Assert.All(
+            results,
+            status =>
+            {
+                Assert.NotNull(status);
+                Assert.True(status.IsOnline);
+            }
+        );
 
         Log($"Successfully handled {tasks.Count} concurrent requests");
     }
@@ -308,7 +334,8 @@ public class ServerApiTests : TestBase
         Assert.Equal(WebSocketState.Open, ws.State);
 
         var testMessage = $"WS-Test-{DateTime.UtcNow.Ticks % 10000}";
-        var chatJson = $"{{\"type\":\"chat_send\",\"payload\":{{\"author\":\"API\",\"message\":\"{testMessage}\"}}}}";
+        var chatJson =
+            $"{{\"type\":\"chat_send\",\"payload\":{{\"author\":\"API\",\"message\":\"{testMessage}\"}}}}";
         var chatBytes = Encoding.UTF8.GetBytes(chatJson);
         await ws.SendAsync(new ArraySegment<byte>(chatBytes), WebSocketMessageType.Text, true, ct);
         Log($"Sent chat_send message: {testMessage}");
@@ -323,8 +350,12 @@ public class ServerApiTests : TestBase
             {
                 chatHistory = await GameClient.GetChatHistory(20);
                 return chatHistory?.Messages?.Any(m =>
-                    m.Message.Contains(testMessage, StringComparison.OrdinalIgnoreCase)) == true;
-            }, TestTimings.ChatCommandTimeout, cancellationToken: TestContext.Current.CancellationToken);
+                        m.Message.Contains(testMessage, StringComparison.OrdinalIgnoreCase)
+                    ) == true;
+            },
+            TestTimings.ChatCommandTimeout,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
 
         Assert.NotNull(chatHistory);
         Log($"Chat history ({chatHistory.Messages.Count} messages):");
@@ -333,7 +364,10 @@ public class ServerApiTests : TestBase
             Log($"  {msg.Message}");
         }
 
-        Assert.True(messageDelivered, $"WebSocket chat message '{testMessage}' should appear in game chat");
+        Assert.True(
+            messageDelivered,
+            $"WebSocket chat message '{testMessage}' should appear in game chat"
+        );
 
         Log("WebSocket chat message successfully delivered to game");
     }

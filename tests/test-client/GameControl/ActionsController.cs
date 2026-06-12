@@ -1,11 +1,10 @@
+using System.Reflection;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Objects;
 using StardewValley.TerrainFeatures;
-using System;
-using System.Reflection;
 
 namespace JunimoTestClient.GameControl;
 
@@ -18,7 +17,10 @@ public class ActionsController
 
     private static readonly MethodInfo? StartSleepMethod =
         typeof(GameLocation).GetMethod("startSleep", BindingFlags.NonPublic | BindingFlags.Instance)
-        ?? typeof(FarmHouse).GetMethod("startSleep", BindingFlags.NonPublic | BindingFlags.Instance);
+        ?? typeof(FarmHouse).GetMethod(
+            "startSleep",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
 
     public ActionsController(IMonitor monitor)
     {
@@ -42,12 +44,20 @@ public class ActionsController
             var home = Utility.getHomeOfFarmer(Game1.player);
             if (home == null)
             {
-                return new SleepResult { Success = false, Error = "Could not find player's home location" };
+                return new SleepResult
+                {
+                    Success = false,
+                    Error = "Could not find player's home location",
+                };
             }
 
             if (StartSleepMethod == null)
             {
-                return new SleepResult { Success = false, Error = "Could not find startSleep method via reflection" };
+                return new SleepResult
+                {
+                    Success = false,
+                    Error = "Could not find startSleep method via reflection",
+                };
             }
 
             // Set sleep location data (mirrors what the server host bot does)
@@ -69,13 +79,16 @@ public class ActionsController
             // Trigger sleep via reflection (startSleep is private)
             StartSleepMethod.Invoke(home, null);
 
-            _monitor.Log($"Triggered sleep at {home.NameOrUniqueName} (bed @ {bedSpot})", LogLevel.Info);
+            _monitor.Log(
+                $"Triggered sleep at {home.NameOrUniqueName} (bed @ {bedSpot})",
+                LogLevel.Info
+            );
 
             return new SleepResult
             {
                 Success = true,
                 Message = $"Going to sleep at {home.NameOrUniqueName}",
-                Location = home.NameOrUniqueName
+                Location = home.NameOrUniqueName,
             };
         }
         catch (Exception ex)
@@ -94,14 +107,16 @@ public class ActionsController
     public WarpResult Warp(string locationName, int tileX, int tileY)
     {
         if (!Context.IsWorldReady)
+        {
             return new WarpResult { Success = false, Error = "Not in a game world" };
+        }
 
         Game1.warpFarmer(locationName, tileX, tileY, Game1.player.FacingDirection);
         return new WarpResult
         {
             Success = true,
             Message = $"Warp queued to {locationName} ({tileX},{tileY})",
-            LocationName = locationName
+            LocationName = locationName,
         };
     }
 
@@ -115,14 +130,19 @@ public class ActionsController
     public PlacePotResult PlacePot(string locationName, int tileX, int tileY, bool clearObstacles)
     {
         if (!Context.IsWorldReady)
+        {
             return new PlacePotResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new PlacePotResult
             {
                 Success = false,
-                Error = $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'"
+                Error =
+                    $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         var location = Game1.player.currentLocation;
         var tile = new Vector2(tileX, tileY);
@@ -139,11 +159,13 @@ public class ActionsController
         }
 
         if (location.Objects.ContainsKey(tile))
+        {
             return new PlacePotResult
             {
                 Success = false,
-                Error = $"Tile ({tileX},{tileY}) is occupied"
+                Error = $"Tile ({tileX},{tileY}) is occupied",
             };
+        }
 
         location.Objects.Add(tile, new IndoorPot(tile));
         return new PlacePotResult
@@ -151,7 +173,7 @@ public class ActionsController
             Success = true,
             LocationName = locationName,
             TileX = tileX,
-            TileY = tileY
+            TileY = tileY,
         };
     }
 
@@ -162,17 +184,28 @@ public class ActionsController
     /// debris-free footprint so cabin/building validation isn't tripped by spawn-time
     /// rocks/weeds/grass.
     /// </summary>
-    public ClearAreaResult ClearArea(string locationName, int tileX, int tileY, int width, int height)
+    public ClearAreaResult ClearArea(
+        string locationName,
+        int tileX,
+        int tileY,
+        int width,
+        int height
+    )
     {
         if (!Context.IsWorldReady)
+        {
             return new ClearAreaResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new ClearAreaResult
             {
                 Success = false,
-                Error = $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'"
+                Error =
+                    $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         Game1.player.currentLocation.removeObjectsAndSpawned(tileX, tileY, width, height);
         return new ClearAreaResult
@@ -182,7 +215,7 @@ public class ActionsController
             TileX = tileX,
             TileY = tileY,
             Width = width,
-            Height = height
+            Height = height,
         };
     }
 
@@ -194,27 +227,50 @@ public class ActionsController
     public PlantCropResult PlantCrop(string itemId, string locationName, int tileX, int tileY)
     {
         if (!Context.IsWorldReady)
+        {
             return new PlantCropResult { Success = false, Error = "Not in a game world" };
+        }
 
         if (Game1.player.currentLocation?.Name != locationName)
+        {
             return new PlantCropResult
             {
                 Success = false,
-                Error = $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'"
+                Error =
+                    $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
             };
+        }
 
         var location = Game1.player.currentLocation;
         var tile = new Vector2(tileX, tileY);
 
         HoeDirt? dirt = null;
-        if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt td) dirt = td;
-        else if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot) dirt = pot.hoeDirt.Value;
+        if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt td)
+        {
+            dirt = td;
+        }
+        else if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
+        {
+            dirt = pot.hoeDirt.Value;
+        }
 
         if (dirt == null)
-            return new PlantCropResult { Success = false, Error = $"No HoeDirt or IndoorPot at ({tileX},{tileY})" };
+        {
+            return new PlantCropResult
+            {
+                Success = false,
+                Error = $"No HoeDirt or IndoorPot at ({tileX},{tileY})",
+            };
+        }
 
         if (!dirt.plant(itemId, Game1.player, isFertilizer: false))
-            return new PlantCropResult { Success = false, Error = $"HoeDirt.plant rejected '{itemId}'" };
+        {
+            return new PlantCropResult
+            {
+                Success = false,
+                Error = $"HoeDirt.plant rejected '{itemId}'",
+            };
+        }
 
         return new PlantCropResult
         {
@@ -222,7 +278,7 @@ public class ActionsController
             LocationName = locationName,
             TileX = tileX,
             TileY = tileY,
-            SeedItemId = itemId
+            SeedItemId = itemId,
         };
     }
 }
@@ -265,6 +321,7 @@ public class PlacePotParams
     public string LocationName { get; set; } = "";
     public int TileX { get; set; }
     public int TileY { get; set; }
+
     /// <summary>If true, remove any existing Object or terrainFeature at the
     /// tile before placing the pot (handles spawn-time rocks/weeds/twigs).</summary>
     public bool ClearObstacles { get; set; }

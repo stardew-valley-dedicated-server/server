@@ -7,6 +7,20 @@ commit-msg:
     commitlint:
       run: npx commitlint --edit {1}
 
+# Format staged C# files and re-stage the result (CSharpier's documented lefthook
+# pattern). --no-cache: the cache keys whole-tree runs, which would mismatch the
+# staged-paths-only invocation here. CI's `csharpier check` is the safety net.
+# Partial staging (git add -p) is safe: lefthook hides unstaged changes during
+# pre-commit and restores them after (since 1.3.0), so stage_fixed only ever
+# stages the formatted staged content.
+pre-commit:
+  parallel: true
+  commands:
+    csharpier:
+      glob: "*.{cs,csx}"
+      run: dotnet csharpier format --no-cache {staged_files}
+      stage_fixed: true
+
 # Local guard against accidental direct pushes to master.
 #
 # The "master" ruleset requires a PR + approval for the normal case (fork/external PRs).

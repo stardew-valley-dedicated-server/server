@@ -1,13 +1,13 @@
 using JunimoServer.Services.CabinManager;
 
-namespace JunimoServer.Services.PersistentOption
+namespace JunimoServer.Services.PersistentOption;
+
+public class PersistentOptionsSaveData
 {
-    public class PersistentOptionsSaveData
-    {
-        public int MaxPlayers { get; set; } = 6;
+    public int MaxPlayers { get; set; } = 6;
 
-        public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
+    public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
 
-        public ExistingCabinBehavior ExistingCabinBehavior { get; set; } = ExistingCabinBehavior.KeepExisting;
-    }
+    public ExistingCabinBehavior ExistingCabinBehavior { get; set; } =
+        ExistingCabinBehavior.KeepExisting;
 }

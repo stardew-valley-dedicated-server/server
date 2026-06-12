@@ -33,13 +33,17 @@ internal static class DockerOps
         DockerClient client,
         string name,
         IDictionary<string, string> labels,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        await client.Volumes.CreateAsync(new VolumesCreateParameters
-        {
-            Name = name,
-            Labels = new Dictionary<string, string>(labels),
-        }, ct);
+        await client.Volumes.CreateAsync(
+            new VolumesCreateParameters
+            {
+                Name = name,
+                Labels = new Dictionary<string, string>(labels),
+            },
+            ct
+        );
     }
 
     /// <summary>
@@ -49,18 +53,23 @@ internal static class DockerOps
     public static async Task ForceRemoveContainerAsync(
         DockerClient client,
         string name,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            await client.Containers.RemoveContainerAsync(name, new ContainerRemoveParameters
-            {
-                Force = true,
-                RemoveVolumes = false,
-            }, ct);
+            await client.Containers.RemoveContainerAsync(
+                name,
+                new ContainerRemoveParameters { Force = true, RemoveVolumes = false },
+                ct
+            );
         }
-        catch (DockerContainerNotFoundException) { /* tolerable */ }
-        catch (DockerApiException ex) when ((int)ex.StatusCode == 404) { /* tolerable */ }
+        catch (DockerContainerNotFoundException)
+        { /* tolerable */
+        }
+        catch (DockerApiException ex) when ((int)ex.StatusCode == 404)
+        { /* tolerable */
+        }
     }
 
     /// <summary>Force-removes a named volume. Tolerates "not found".</summary>
@@ -68,13 +77,16 @@ internal static class DockerOps
         DockerClient client,
         string name,
         bool force = true,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
             await client.Volumes.RemoveAsync(name, force, ct);
         }
-        catch (DockerApiException ex) when ((int)ex.StatusCode == 404) { /* tolerable */ }
+        catch (DockerApiException ex) when ((int)ex.StatusCode == 404)
+        { /* tolerable */
+        }
     }
 
     /// <summary>
@@ -82,7 +94,9 @@ internal static class DockerOps
     /// fails. Used by <see cref="RunMetadata"/> for run-metadata.json reporting.
     /// </summary>
     public static async Task<string?> TryGetServerVersionAsync(
-        DockerClient client, CancellationToken ct = default)
+        DockerClient client,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -106,13 +120,17 @@ internal static class DockerOps
         string labelKey,
         string labelValue,
         TimeSpan? perCallTimeout = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var containers = await client.Containers.ListContainersAsync(new ContainersListParameters
-        {
-            All = true,
-            Filters = LabelFilter(labelKey, labelValue),
-        }, ct);
+        var containers = await client.Containers.ListContainersAsync(
+            new ContainersListParameters
+            {
+                All = true,
+                Filters = LabelFilter(labelKey, labelValue),
+            },
+            ct
+        );
 
         foreach (var c in containers)
         {
@@ -122,13 +140,15 @@ internal static class DockerOps
             cts?.CancelAfter(perCallTimeout!.Value);
             try
             {
-                await client.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters
-                {
-                    Force = true,
-                    RemoveVolumes = false,
-                }, cts?.Token ?? ct);
+                await client.Containers.RemoveContainerAsync(
+                    c.ID,
+                    new ContainerRemoveParameters { Force = true, RemoveVolumes = false },
+                    cts?.Token ?? ct
+                );
             }
-            catch { /* best effort */ }
+            catch
+            { /* best effort */
+            }
         }
         return containers.Count;
     }
@@ -142,12 +162,13 @@ internal static class DockerOps
         string labelKey,
         string labelValue,
         TimeSpan? perCallTimeout = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var networks = await client.Networks.ListNetworksAsync(new NetworksListParameters
-        {
-            Filters = LabelFilter(labelKey, labelValue),
-        }, ct);
+        var networks = await client.Networks.ListNetworksAsync(
+            new NetworksListParameters { Filters = LabelFilter(labelKey, labelValue) },
+            ct
+        );
 
         foreach (var n in networks)
         {
@@ -155,8 +176,13 @@ internal static class DockerOps
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : null;
             cts?.CancelAfter(perCallTimeout!.Value);
-            try { await client.Networks.DeleteNetworkAsync(n.ID, cts?.Token ?? ct); }
-            catch { /* best effort */ }
+            try
+            {
+                await client.Networks.DeleteNetworkAsync(n.ID, cts?.Token ?? ct);
+            }
+            catch
+            { /* best effort */
+            }
         }
         return networks.Count;
     }
@@ -170,22 +196,32 @@ internal static class DockerOps
         string labelKey,
         string labelValue,
         TimeSpan? perCallTimeout = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var listed = await client.Volumes.ListAsync(new VolumesListParameters
-        {
-            Filters = LabelFilter(labelKey, labelValue),
-        }, ct);
+        var listed = await client.Volumes.ListAsync(
+            new VolumesListParameters { Filters = LabelFilter(labelKey, labelValue) },
+            ct
+        );
 
-        if (listed?.Volumes == null) return 0;
+        if (listed?.Volumes == null)
+        {
+            return 0;
+        }
+
         foreach (var v in listed.Volumes)
         {
             using var cts = perCallTimeout is { } t
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : null;
             cts?.CancelAfter(perCallTimeout!.Value);
-            try { await client.Volumes.RemoveAsync(v.Name, force: true, cts?.Token ?? ct); }
-            catch { /* best effort */ }
+            try
+            {
+                await client.Volumes.RemoveAsync(v.Name, force: true, cts?.Token ?? ct);
+            }
+            catch
+            { /* best effort */
+            }
         }
         return listed.Volumes.Count;
     }
@@ -201,7 +237,9 @@ internal static class DockerOps
             using var cts = new CancellationTokenSource(SyncCeiling);
             ForceRemoveContainerAsync(client, name, cts.Token).GetAwaiter().GetResult();
         }
-        catch { /* best effort */ }
+        catch
+        { /* best effort */
+        }
     }
 
     /// <summary>Sync force-remove of a volume by name. Bounded.</summary>
@@ -212,10 +250,15 @@ internal static class DockerOps
             using var cts = new CancellationTokenSource(SyncCeiling);
             RemoveVolumeAsync(client, name, force: true, cts.Token).GetAwaiter().GetResult();
         }
-        catch { /* best effort */ }
+        catch
+        { /* best effort */
+        }
     }
 
-    private static IDictionary<string, IDictionary<string, bool>> LabelFilter(string key, string value)
+    private static IDictionary<string, IDictionary<string, bool>> LabelFilter(
+        string key,
+        string value
+    )
     {
         var k = $"{key}={value}";
         return new Dictionary<string, IDictionary<string, bool>>

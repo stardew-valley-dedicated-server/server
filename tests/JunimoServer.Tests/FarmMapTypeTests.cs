@@ -1,6 +1,3 @@
-using JunimoServer.Tests.Clients;
-using JunimoServer.Tests.Containers;
-using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
 
@@ -47,7 +44,10 @@ public class FarmMapTypeTests : TestBase
     [InlineData("Nonexistent.Farm", "Standard")]
     [InlineData(9, "Standard")]
     [InlineData("modded", "Standard")]
-    public async Task NewGame_WithFarmType_CabinsBuiltAndPlayerCanJoin(object farmType, string expectedFarmTypeKey)
+    public async Task NewGame_WithFarmType_CabinsBuiltAndPlayerCanJoin(
+        object farmType,
+        string expectedFarmTypeKey
+    )
     {
         var farmTypeSetting = FarmTypeSetting.FromObject(farmType);
         LogSection($"Testing {expectedFarmTypeKey} farm (type {farmTypeSetting})");
@@ -62,8 +62,10 @@ public class FarmMapTypeTests : TestBase
         var cabinsResponse = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
 
         Assert.NotNull(cabinsResponse);
-        Assert.True(cabinsResponse.TotalCount >= 1,
-            $"Expected at least 1 cabin, got {cabinsResponse.TotalCount}");
+        Assert.True(
+            cabinsResponse.TotalCount >= 1,
+            $"Expected at least 1 cabin, got {cabinsResponse.TotalCount}"
+        );
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
 
         // Verify actual loaded farm type via GetFarmTypeKey()
@@ -75,7 +77,8 @@ public class FarmMapTypeTests : TestBase
         // Join the server with a test farmer
         await Farmers.ConnectNewAsync(
             farmerName: $"Test_{expectedFarmTypeKey}",
-            ct: TestContext.Current.CancellationToken);
+            ct: TestContext.Current.CancellationToken
+        );
 
         Log($"Successfully joined {expectedFarmTypeKey} farm!");
     }

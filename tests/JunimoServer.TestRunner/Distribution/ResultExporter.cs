@@ -23,11 +23,20 @@ public static class ResultExporters
     public static IResultExporter SelectFromEnv()
     {
         var target = Environment.GetEnvironmentVariable(ArtifactExportEnv);
-        if (string.IsNullOrEmpty(target)) return new LocalExporter();
-        if (target.StartsWith("gh://", StringComparison.OrdinalIgnoreCase)) return new GitHubActionsExporter();
+        if (string.IsNullOrEmpty(target))
+        {
+            return new LocalExporter();
+        }
+
+        if (target.StartsWith("gh://", StringComparison.OrdinalIgnoreCase))
+        {
+            return new GitHubActionsExporter();
+        }
+
         throw new NotSupportedException(
-            $"{ArtifactExportEnv}='{target}' is not a supported export target. " +
-            "Supported: '' (default, local), 'gh://' (GitHub Actions artifact).");
+            $"{ArtifactExportEnv}='{target}' is not a supported export target. "
+                + "Supported: '' (default, local), 'gh://' (GitHub Actions artifact)."
+        );
     }
 }
 
@@ -46,7 +55,9 @@ public sealed class GitHubActionsExporter : IResultExporter
     public async Task ExportAsync(string runDir, CancellationToken ct = default)
     {
         if (!Directory.Exists(runDir))
+        {
             throw new InvalidOperationException($"Run directory does not exist: {runDir}");
+        }
 
         var artifactName = $"e2e-results-{Path.GetFileName(runDir)}";
         var psi = new ProcessStartInfo("gh")
@@ -62,13 +73,15 @@ public sealed class GitHubActionsExporter : IResultExporter
         psi.ArgumentList.Add(artifactName);
         psi.ArgumentList.Add(runDir);
 
-        using var proc = Process.Start(psi)
-                         ?? throw new InvalidOperationException("Failed to start gh CLI.");
+        using var proc =
+            Process.Start(psi) ?? throw new InvalidOperationException("Failed to start gh CLI.");
         await proc.WaitForExitAsync(ct);
         if (proc.ExitCode != 0)
         {
             var err = await proc.StandardError.ReadToEndAsync(CancellationToken.None);
-            throw new InvalidOperationException($"gh artifact upload failed (exit {proc.ExitCode}): {err}");
+            throw new InvalidOperationException(
+                $"gh artifact upload failed (exit {proc.ExitCode}): {err}"
+            );
         }
     }
 }

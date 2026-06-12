@@ -1,16 +1,16 @@
-using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Infrastructure;
+using System.Diagnostics;
+using System.Reflection;
 using JunimoServer.TestRunner;
 using JunimoServer.TestRunner.Distribution;
-using JunimoServer.Tests.Schema.Events;
-using JunimoServer.Tests.Schema.Json;
 using JunimoServer.TestRunner.IPC;
 using JunimoServer.TestRunner.Rendering;
 using JunimoServer.TestRunner.Rendering.Web;
 using JunimoServer.TestRunner.Setup;
 using JunimoServer.TestRunner.Sinks;
-using System.Diagnostics;
-using System.Reflection;
+using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Infrastructure;
+using JunimoServer.Tests.Schema.Events;
+using JunimoServer.Tests.Schema.Json;
 using Xunit.SimpleRunner;
 
 // Linear startup: parse SDVD_DOCKER_HOSTS, build HostPool (preflights all
@@ -33,7 +33,11 @@ JunimoServer.Tests.Helpers.EmergencyCleanup.EnsureRegistered();
 // container removal.
 JunimoServer.Tests.Helpers.EmergencyCleanup.RegisterDrainable(
     "infrastructure-event-log",
-    () => new ValueTask(JunimoServer.Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2))));
+    () =>
+        new ValueTask(
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2))
+        )
+);
 
 // Establish the run directory in the parent process so the parent and the xUnit
 // child both write to the same artifact root. We propagate via SDVD_RUN_DIR; the
@@ -47,7 +51,9 @@ Environment.SetEnvironmentVariable(RunArtifactNames.RunDirEnv, TestArtifacts.Run
 // Without this the child scans the full assembly and pre-provisions
 // containers for tests xUnit will never run.
 if (!string.IsNullOrEmpty(filter))
+{
     Environment.SetEnvironmentVariable("SDVD_TEST_FILTER", filter);
+}
 
 // Open the structured-event log so parent-process emits land in
 // {runDir}/diagnostics/infrastructure.parent.jsonl. We use a parent-specific
@@ -81,13 +87,15 @@ ITestRenderer baseRenderer = mode switch
 {
     OutputMode.LLM => new LLMRenderer(recorder, verbose),
     OutputMode.Web => new WebRenderer(recorder),
-    _ => new CIRenderer(verbose)
+    _ => new CIRenderer(verbose),
 };
 
 // Web mode is the only consumer of the broadcast callback: it pushes JSON to
 // connected WebSocket clients. CI/LLM modes pass null — they don't broadcast
 // state-mutation events live.
-Action<string?>? broadcast = baseRenderer is WebRenderer wrInit ? wrInit.EnqueueEventNullable : null;
+Action<string?>? broadcast = baseRenderer is WebRenderer wrInit
+    ? wrInit.EnqueueEventNullable
+    : null;
 ITestRenderer renderer = new RendererDispatchGuard(baseRenderer, recorder, broadcast);
 
 // Track cancellation for Ctrl+C and UI Stop.
@@ -120,15 +128,23 @@ void BeginAbort(string cause)
         // the kernel buffer (e.g. flaky_tests sitting unread when the child
         // hangs) land in TestRunState before we serialize. Bounded — a fully
         // hung child will return at the timeout, not block summary.json.
-        try { setupPipeRef?.DrainAsync(TimeSpan.FromMilliseconds(500)).GetAwaiter().GetResult(); }
-        catch { /* drain best-effort */ }
+        try
+        {
+            setupPipeRef?.DrainAsync(TimeSpan.FromMilliseconds(500)).GetAwaiter().GetResult();
+        }
+        catch
+        { /* drain best-effort */
+        }
 
         // Write summary.json / ctrf-report.json / latest.txt directly here
         // rather than relying on the outer finally — runner.Run() may never
         // return if a test method is hung in a non-cooperative wait. The
         // writer's _written latch makes the duplicate call from the outer
         // finally a no-op on the graceful path.
-        try { recorder.WriteRunArtifacts(); }
+        try
+        {
+            recorder.WriteRunArtifacts();
+        }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ArtifactWriter] abort-path write failed: {ex.Message}");
@@ -145,15 +161,19 @@ void BeginAbort(string cause)
         {
             try
             {
-                var abortEvt = DiagnosticEmitJson.Serialize(new
-                {
-                    Event = "run_aborted",
-                    Timestamp = DateTime.UtcNow,
-                    Cause = cause,
-                });
+                var abortEvt = DiagnosticEmitJson.Serialize(
+                    new
+                    {
+                        Event = "run_aborted",
+                        Timestamp = DateTime.UtcNow,
+                        Cause = cause,
+                    }
+                );
                 webRenderer.EnqueueEventNullable(abortEvt);
             }
-            catch { /* best-effort; don't let a serialization slip block abort */ }
+            catch
+            { /* best-effort; don't let a serialization slip block abort */
+            }
 
             // Signal WebRenderer to stop waiting for user review
             webRenderer.SignalShutdown();
@@ -180,10 +200,13 @@ void BeginAbort(string cause)
         // safety-net bulk sweep.
         var forceKillThread = new Thread(() =>
         {
-            var drained = JunimoServer.Tests.Helpers.ShutdownCoordinator
-                .WaitForGraceful(TimeSpan.FromSeconds(15));
+            var drained = JunimoServer.Tests.Helpers.ShutdownCoordinator.WaitForGraceful(
+                TimeSpan.FromSeconds(15)
+            );
             if (drained)
+            {
                 JunimoServer.Tests.Helpers.EmergencyCleanup.SkipBulkSweepOnExit();
+            }
             // Kill the xUnit child (and its grandchildren: per-container
             // `ssh -N -L` forwards) so it cannot outlive the parent. Idempotent
             // on already-exited processes — safe to call even on the drained
@@ -194,7 +217,7 @@ void BeginAbort(string cause)
         })
         {
             IsBackground = false,
-            Name = "ForceKillTimeout"
+            Name = "ForceKillTimeout",
         };
         forceKillThread.Start();
     }
@@ -205,8 +228,7 @@ void BeginAbort(string cause)
         // the graceful window — the operator asked twice. KillTestChildren
         // must precede RunAll so the child can't recreate Docker resources
         // mid-sweep.
-        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
-            "run_force_aborted", new { cause });
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_force_aborted", new { cause });
         KillTestChildren();
         JunimoServer.Tests.Helpers.EmergencyCleanup.RunAll();
         Environment.Exit(130);
@@ -275,29 +297,72 @@ void ForceExitNow(string cause)
         // and frees the Docker resources to be removed by step below.
         KillTestChildren();
 
-        try { JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(cause); } catch { }
-        try { JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_aborted", new { cause }); } catch { }
-        try { JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_force_aborted", new { cause }); } catch { }
-        try { JunimoServer.Tests.Helpers.ShutdownCoordinator.SignalShutdown(); } catch { }
+        try
+        {
+            JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(cause);
+        }
+        catch { }
+        try
+        {
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_aborted", new { cause });
+        }
+        catch { }
+        try
+        {
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "run_force_aborted",
+                new { cause }
+            );
+        }
+        catch { }
+        try
+        {
+            JunimoServer.Tests.Helpers.ShutdownCoordinator.SignalShutdown();
+        }
+        catch { }
 
         // Bulk-remove this run's Docker resources by sdvd.run-id label.
         // The child is dead; nothing recreates them. Bounded at 5 s overall.
         var bulkTask = Task.Run(() =>
         {
-            try { JunimoServer.Tests.Helpers.EmergencyCleanup.BulkCleanupLabeledResources(); }
-            catch { /* best effort */ }
+            try
+            {
+                JunimoServer.Tests.Helpers.EmergencyCleanup.BulkCleanupLabeledResources();
+            }
+            catch
+            { /* best effort */
+            }
         });
-        try { bulkTask.Wait(TimeSpan.FromSeconds(5)); }
-        catch { /* best effort */ }
+        try
+        {
+            bulkTask.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch
+        { /* best effort */
+        }
 
         // Drain the parent-side event log to disk (1 s) so run_aborted /
         // run_force_aborted survive the parent's exit.
-        try { JunimoServer.Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(1)).Wait(TimeSpan.FromSeconds(1)); }
-        catch { /* best effort */ }
+        try
+        {
+            JunimoServer
+                .Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(1))
+                .Wait(TimeSpan.FromSeconds(1));
+        }
+        catch
+        { /* best effort */
+        }
 
         // summary.json — idempotent via the writer's _written latch.
-        try { recorder.SetAbortReason(cause); } catch { }
-        try { recorder.WriteRunArtifacts(); }
+        try
+        {
+            recorder.SetAbortReason(cause);
+        }
+        catch { }
+        try
+        {
+            recorder.WriteRunArtifacts();
+        }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ArtifactWriter] force-exit write failed: {ex.Message}");
@@ -323,23 +388,51 @@ void ForceExitNow(string cause)
 void KillTestChildren()
 {
     DateTime ourStart;
-    try { ourStart = Process.GetCurrentProcess().StartTime; }
-    catch { return; }
+    try
+    {
+        ourStart = Process.GetCurrentProcess().StartTime;
+    }
+    catch
+    {
+        return;
+    }
 
     Process[] candidates;
-    try { candidates = Process.GetProcessesByName("JunimoServer.Tests"); }
-    catch { return; }
+    try
+    {
+        candidates = Process.GetProcessesByName("JunimoServer.Tests");
+    }
+    catch
+    {
+        return;
+    }
 
     foreach (var p in candidates)
     {
         try
         {
-            if (p.HasExited) { p.Dispose(); continue; }
-            if (p.StartTime < ourStart) { p.Dispose(); continue; }
-            try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            if (p.HasExited)
+            {
+                p.Dispose();
+                continue;
+            }
+            if (p.StartTime < ourStart)
+            {
+                p.Dispose();
+                continue;
+            }
+            try
+            {
+                p.Kill(entireProcessTree: true);
+            }
+            catch
+            { /* best effort */
+            }
             p.Dispose();
         }
-        catch { /* swallow per-candidate failures */ }
+        catch
+        { /* swallow per-candidate failures */
+        }
     }
 }
 
@@ -350,7 +443,9 @@ if (UnwrapRenderer(renderer) is WebRenderer wr)
     wr.OnCommand(cmd =>
     {
         if (cmd == "stop")
+        {
             ForceExitNow("ui_stop");
+        }
     });
 }
 
@@ -360,6 +455,7 @@ if (UnwrapRenderer(renderer) is WebRenderer wr)
 // in this process, so there is no contention for the pipe connection.
 // SDVD_SETUP_PIPE is exported just before xUnit dispatch.
 await using var setupPipe = new SetupPipeServer(renderer);
+
 // Expose the pipe to the Ctrl+C handler so the abort path can drain pending
 // child-side messages (e.g. flaky_tests) into TestRunState before summary.json
 // is written.
@@ -379,7 +475,9 @@ renderer.PopulateTests(discoveredTests);
 // feedback while a long remote-host transfer runs (~minutes for multi-GB
 // images).
 if (UnwrapRenderer(renderer) is WebRenderer webRendererReady)
+{
     webRendererReady.OpenBrowser();
+}
 
 // Preflight + image distribution emit setup events directly to the renderer.
 // (The parent process bypasses SetupEventBus's pipe channel — it owns the
@@ -396,14 +494,21 @@ try
     {
         // Detail is "remote"/"local" only — never host.SshDestination (the VPS
         // user@IP), which the CIRenderer prints to the public CI log.
-        renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Preflight {host.Id}",
-            SetupStepStatus.Started, host.SshDestination != null ? "remote" : "local"));
+        renderer.OnSetupStep(
+            new SetupStepEvent(
+                SetupCategory,
+                $"Preflight {host.Id}",
+                SetupStepStatus.Started,
+                host.SshDestination != null ? "remote" : "local"
+            )
+        );
     }
     await hostPool.PreflightAsync(tunnelManager, preflightCts.Token);
     foreach (var host in hostPool.Hosts)
     {
-        renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Preflight {host.Id}",
-            SetupStepStatus.Completed));
+        renderer.OnSetupStep(
+            new SetupStepEvent(SetupCategory, $"Preflight {host.Id}", SetupStepStatus.Completed)
+        );
     }
     renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Preflight", true));
 }
@@ -411,8 +516,13 @@ catch (Exception ex)
 {
     var preflightMsg = ScrubForLog(ex.Message);
     Console.Error.WriteLine($"[HostPool] Preflight failed: {preflightMsg}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "host_preflight", message = preflightMsg });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Preflight", false, preflightMsg));
+    InfrastructureEventLog.Emit(
+        "run_aborted",
+        new { cause = "host_preflight", message = preflightMsg }
+    );
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Preflight", false, preflightMsg)
+    );
     recorder.SetAbortReason("preflight");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -428,33 +538,59 @@ try
 {
     foreach (var host in hostPool.Hosts)
     {
-        renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {host.Id}",
-            SetupStepStatus.Started, host.SshDestination != null ? "remote" : "local"));
+        renderer.OnSetupStep(
+            new SetupStepEvent(
+                SetupCategory,
+                $"Cleanup {host.Id}",
+                SetupStepStatus.Started,
+                host.SshDestination != null ? "remote" : "local"
+            )
+        );
     }
-    await foreach (var result in JunimoServer.Tests.Helpers.EmergencyCleanup
-        .SweepStaleResourcesAsync(hostPool.Hosts))
+    await foreach (
+        var result in JunimoServer.Tests.Helpers.EmergencyCleanup.SweepStaleResourcesAsync(
+            hostPool.Hosts
+        )
+    )
     {
         if (result.Error != null)
         {
-            renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {result.HostId}",
-                SetupStepStatus.Warning, $"{result.Error.GetType().Name}: {ScrubForLog(result.Error.Message)}"));
+            renderer.OnSetupStep(
+                new SetupStepEvent(
+                    SetupCategory,
+                    $"Cleanup {result.HostId}",
+                    SetupStepStatus.Warning,
+                    $"{result.Error.GetType().Name}: {ScrubForLog(result.Error.Message)}"
+                )
+            );
         }
         else
         {
-            var detail = result.TotalRemoved == 0
-                ? "no leftovers"
-                : $"removed {result.ContainersRemoved} containers, {result.NetworksRemoved} networks, {result.VolumesRemoved} volumes";
-            renderer.OnSetupStep(new SetupStepEvent(SetupCategory, $"Cleanup {result.HostId}",
-                SetupStepStatus.Completed, detail));
+            var detail =
+                result.TotalRemoved == 0
+                    ? "no leftovers"
+                    : $"removed {result.ContainersRemoved} containers, {result.NetworksRemoved} networks, {result.VolumesRemoved} volumes";
+            renderer.OnSetupStep(
+                new SetupStepEvent(
+                    SetupCategory,
+                    $"Cleanup {result.HostId}",
+                    SetupStepStatus.Completed,
+                    detail
+                )
+            );
         }
     }
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", true));
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", true)
+    );
 }
 catch (Exception ex)
 {
     var cleanupMsg = ScrubForLog(ex.Message);
     Console.Error.WriteLine($"[Cleanup] Stale-resource sweep failed: {cleanupMsg}");
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", false, cleanupMsg));
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Cleanup leftovers", false, cleanupMsg)
+    );
     // Don't abort the run — sweep failure is recoverable; the run can still
     // execute against whatever leftover state exists, and process-exit cleanup
     // will mop up at the end.
@@ -475,7 +611,9 @@ var parentBuildProgress = new RendererBuildProgressSink(renderer, SetupCategory)
 try
 {
     await JunimoServer.Tests.Helpers.DockerImageBuilder.EnsureImagesExistAsync(
-        includeTestClient: true, parentBuildProgress);
+        includeTestClient: true,
+        parentBuildProgress
+    );
 
     // Tell the child broker to skip its own build — the freshly-built images
     // we just produced are exactly what tests should run against. Without this,
@@ -502,29 +640,53 @@ renderer.OnSetupPhaseStarted(new SetupPhaseStartedEvent(SetupCategory, "Image di
 try
 {
     var imageTag = TestEnvLoader.Get("SDVD_IMAGE_TAG") ?? "local";
-    using var distributor = new ImageDistributor(imageTag, JunimoServer.Tests.Helpers.DockerImageBuilder.DistributableImageNames);
+    using var distributor = new ImageDistributor(
+        imageTag,
+        JunimoServer.Tests.Helpers.DockerImageBuilder.DistributableImageNames
+    );
     var transferResults = await distributor.DistributeAsync(hostPool.Hosts, renderer);
     var transferFailures = transferResults.Where(r => !r.Success).ToList();
     if (transferFailures.Count > 0)
     {
         foreach (var f in transferFailures)
-            Console.Error.WriteLine($"[ImageTransfer] host '{f.HostId}' failed: {f.Error ?? "unknown"}");
-        InfrastructureEventLog.Emit("run_aborted", new { cause = "image_transfer", failures = transferFailures.Count });
-        renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Image distribution",
-            false, $"{transferFailures.Count} host(s) failed"));
+        {
+            Console.Error.WriteLine(
+                $"[ImageTransfer] host '{f.HostId}' failed: {f.Error ?? "unknown"}"
+            );
+        }
+
+        InfrastructureEventLog.Emit(
+            "run_aborted",
+            new { cause = "image_transfer", failures = transferFailures.Count }
+        );
+        renderer.OnSetupPhaseCompleted(
+            new SetupPhaseCompletedEvent(
+                SetupCategory,
+                "Image distribution",
+                false,
+                $"{transferFailures.Count} host(s) failed"
+            )
+        );
         recorder.SetAbortReason("image_transfer");
         recorder.WriteRunArtifacts();
         await renderer.DisposeAsync();
         return 2;
     }
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", true));
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", true)
+    );
 }
 catch (Exception ex)
 {
     var transferMsg = ScrubForLog(ex.Message);
     Console.Error.WriteLine($"[ImageTransfer] aborted: {transferMsg}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_transfer_exception", message = transferMsg });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", false, transferMsg));
+    InfrastructureEventLog.Emit(
+        "run_aborted",
+        new { cause = "image_transfer_exception", message = transferMsg }
+    );
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", false, transferMsg)
+    );
     recorder.SetAbortReason("image_transfer_exception");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -547,23 +709,42 @@ try
     if (gdFailures.Count > 0)
     {
         foreach (var f in gdFailures)
+        {
             Console.Error.WriteLine($"[GameData] host '{f.HostId}' failed: {f.Error ?? "unknown"}");
-        InfrastructureEventLog.Emit("run_aborted", new { cause = "game_data_transfer", failures = gdFailures.Count });
-        renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution",
-            false, $"{gdFailures.Count} host(s) failed"));
+        }
+
+        InfrastructureEventLog.Emit(
+            "run_aborted",
+            new { cause = "game_data_transfer", failures = gdFailures.Count }
+        );
+        renderer.OnSetupPhaseCompleted(
+            new SetupPhaseCompletedEvent(
+                SetupCategory,
+                "Game data distribution",
+                false,
+                $"{gdFailures.Count} host(s) failed"
+            )
+        );
         recorder.SetAbortReason("game_data_transfer");
         recorder.WriteRunArtifacts();
         await renderer.DisposeAsync();
         return 2;
     }
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", true));
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", true)
+    );
 }
 catch (Exception ex)
 {
     var gameDataMsg = ScrubForLog(ex.Message);
     Console.Error.WriteLine($"[GameData] aborted: {gameDataMsg}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "game_data_transfer_exception", message = gameDataMsg });
-    renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", false, gameDataMsg));
+    InfrastructureEventLog.Emit(
+        "run_aborted",
+        new { cause = "game_data_transfer_exception", message = gameDataMsg }
+    );
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", false, gameDataMsg)
+    );
     recorder.SetAbortReason("game_data_transfer_exception");
     recorder.WriteRunArtifacts();
     await renderer.DisposeAsync();
@@ -586,15 +767,23 @@ try
     // - SDVD_PARALLEL=false (explicit opt-out)
     var hostClient = string.Equals(
         Environment.GetEnvironmentVariable("SDVD_HOST_CLIENT"),
-        "true", StringComparison.OrdinalIgnoreCase);
-    var parallel = !hostClient && !string.Equals(
-        Environment.GetEnvironmentVariable("SDVD_PARALLEL"),
-        "false", StringComparison.OrdinalIgnoreCase);
+        "true",
+        StringComparison.OrdinalIgnoreCase
+    );
+    var parallel =
+        !hostClient
+        && !string.Equals(
+            Environment.GetEnvironmentVariable("SDVD_PARALLEL"),
+            "false",
+            StringComparison.OrdinalIgnoreCase
+        );
 
     // SDVD_STOP_ON_FAIL: defaults to true (stop on first failure).
     var stopOnFail = !string.Equals(
         Environment.GetEnvironmentVariable("SDVD_STOP_ON_FAIL"),
-        "false", StringComparison.OrdinalIgnoreCase);
+        "false",
+        StringComparison.OrdinalIgnoreCase
+    );
 
     var options = new AssemblyRunnerOptions(testAssemblyPath)
     {
@@ -646,12 +835,15 @@ catch (Exception ex)
 {
     var runMsg = ScrubForLog(ex.Message);
     JunimoServer.Tests.Fixtures.TestSummaryFixture.Instance?.SetAborted(runMsg);
-    JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_aborted", new
-    {
-        cause = "exception",
-        exceptionType = ex.GetType().Name,
-        message = runMsg
-    });
+    JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+        "run_aborted",
+        new
+        {
+            cause = "exception",
+            exceptionType = ex.GetType().Name,
+            message = runMsg,
+        }
+    );
     recorder.SetAbortReason("exception");
     throw;
 }
@@ -663,20 +855,33 @@ finally
     // awaits the natural EOF (child closes the write end on exit), so all
     // dispatched events are folded into TestRunState before the artifact
     // writer projects it. (drain-before-consume-disposal.md)
-    try { await setupPipe.DrainAsync(TimeSpan.FromSeconds(5)); }
-    catch { /* never block disposal on a pipe drain failure */ }
+    try
+    {
+        await setupPipe.DrainAsync(TimeSpan.FromSeconds(5));
+    }
+    catch
+    { /* never block disposal on a pipe drain failure */
+    }
 
     // Drain SSH tunnels before the renderer disposes — every per-container
     // forward closed in parallel with bounded concurrency, then masters
     // exited. drain-before-consume-disposal.md applied to TunnelManager.
-    try { await tunnelManager.DrainAsync(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(2)); }
-    catch { /* drain best effort */ }
+    try
+    {
+        await tunnelManager.DrainAsync(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(2));
+    }
+    catch
+    { /* drain best effort */
+    }
 
     // Write the durable run artifacts BEFORE renderer disposal so a throw
     // from the renderer's Dispose can't poison the artifact write. Idempotent
     // via the writer's _written latch — a setup-phase failure / Ctrl+C /
     // ForceExitNow that already wrote skips this call as a no-op.
-    try { recorder.WriteRunArtifacts(); }
+    try
+    {
+        recorder.WriteRunArtifacts();
+    }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"[ArtifactWriter] finally-path write failed: {ex.Message}");
@@ -688,24 +893,36 @@ finally
     // CI. No-ops with a warning when the SPA hasn't been built. Requires the
     // final state, so it runs after WriteRunArtifacts.
     if (generateReport || IsCIEnvironment())
+    {
         ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir, CollectKnownSecrets());
+    }
 
     // Dev-mode Web runs that completed normally: hold the browser open
     // until the operator presses a key (or signals shutdown). Skipped on
     // CI, on aborted runs, and on non-Web modes. The wait is here — after
     // artifact write, before renderer disposal — so the browser stays live
     // and /api/state continues to serve while waiting.
-    if (baseRenderer is WebRenderer webRendererFinish
+    if (
+        baseRenderer is WebRenderer webRendererFinish
         && recorder.IsRunFinished
-        && !IsCIEnvironment())
+        && !IsCIEnvironment()
+    )
     {
-        try { await webRendererFinish.WaitForKeypressOrShutdownAsync(); }
-        catch { /* keypress wait is best-effort */ }
+        try
+        {
+            await webRendererFinish.WaitForKeypressOrShutdownAsync();
+        }
+        catch
+        { /* keypress wait is best-effort */
+        }
     }
 
     // Wrap renderer disposal so a thrown DisposeAsync can't skip the
     // remaining shutdown steps (log drain, graceful signal).
-    try { await renderer.DisposeAsync(); }
+    try
+    {
+        await renderer.DisposeAsync();
+    }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"[Renderer] dispose failed: {ex.Message}");
@@ -724,18 +941,22 @@ finally
     // (Ctrl+C, UI Stop, force-exit) intentionally never set this — they
     // need the safety net because in-flight DisposeAsyncs were cancelled.
     if (abortCount == 0)
+    {
         JunimoServer.Tests.Helpers.EmergencyCleanup.SkipBulkSweepOnExit();
+    }
 
     if (abortCount > 0)
+    {
         exitCode = 130; // Standard exit code for Ctrl+C / UI Stop
+    }
 }
 
 return exitCode;
 
-static bool IsCIEnvironment()
-    => Environment.GetEnvironmentVariable("CI") != null
-       || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null
-       || Environment.GetEnvironmentVariable("TF_BUILD") != null;
+static bool IsCIEnvironment() =>
+    Environment.GetEnvironmentVariable("CI") != null
+    || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != null
+    || Environment.GetEnvironmentVariable("TF_BUILD") != null;
 
 /// <summary>
 /// Masks secrets/infra out of a free-text setup error before it reaches the CI log —
@@ -743,8 +964,7 @@ static bool IsCIEnvironment()
 /// to the same <see cref="ReportRedactor"/> + <see cref="CollectKnownSecrets"/> used for the
 /// published report, so masking is consistent everywhere (e.g. <c>***.***.***.188</c>).
 /// </summary>
-static string ScrubForLog(string message)
-    => ReportRedactor.Scrub(message, CollectKnownSecrets());
+static string ScrubForLog(string message) => ReportRedactor.Scrub(message, CollectKnownSecrets());
 
 /// <summary>
 /// Collects the sensitive values the runner knows, for the report redactor to mask out
@@ -759,27 +979,46 @@ static IReadOnlyCollection<string> CollectKnownSecrets()
     try
     {
         var accountsJson = Environment.GetEnvironmentVariable("STEAM_ACCOUNTS");
-        foreach (var account in JunimoServer.Tests.Schema.Json.UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", accountsJson))
+        foreach (
+            var account in JunimoServer.Tests.Schema.Json.UserConfigJson.ParseArrayStrict(
+                "STEAM_ACCOUNTS",
+                accountsJson
+            )
+        )
         {
             foreach (var field in new[] { "user", "pass", "refreshToken" })
+            {
                 if (account?[field]?.GetValue<string>() is { Length: > 0 } v)
+                {
                     secrets.Add(v);
+                }
+            }
         }
     }
-    catch { /* malformed STEAM_ACCOUNTS — rely on regex + host values */ }
+    catch
+    { /* malformed STEAM_ACCOUNTS — rely on regex + host values */
+    }
 
     try
     {
         foreach (var host in HostPool.Instance.Hosts)
         {
-            if (string.IsNullOrEmpty(host.SshDestination)) continue;
-            secrets.Add(host.SshDestination);                       // user@host
+            if (string.IsNullOrEmpty(host.SshDestination))
+            {
+                continue;
+            }
+
+            secrets.Add(host.SshDestination); // user@host
             var at = host.SshDestination.IndexOf('@');
             if (at >= 0 && at < host.SshDestination.Length - 1)
-                secrets.Add(host.SshDestination[(at + 1)..]);       // bare host / IP
+            {
+                secrets.Add(host.SshDestination[(at + 1)..]); // bare host / IP
+            }
         }
     }
-    catch { /* host pool unavailable — rely on regex + steam values */ }
+    catch
+    { /* host pool unavailable — rely on regex + steam values */
+    }
 
     return secrets;
 }
@@ -789,8 +1028,8 @@ static IReadOnlyCollection<string> CollectKnownSecrets()
 /// checks (e.g. casting to <see cref="WebRenderer"/>). Returns the input as-is
 /// when not wrapped.
 /// </summary>
-static ITestRenderer UnwrapRenderer(ITestRenderer renderer)
-    => renderer is RendererDispatchGuard guard ? guard.Inner : renderer;
+static ITestRenderer UnwrapRenderer(ITestRenderer renderer) =>
+    renderer is RendererDispatchGuard guard ? guard.Inner : renderer;
 
 /// <summary>
 /// Parse --filter argument from command line. Returns null if no filter specified.
@@ -800,12 +1039,16 @@ static string? ParseFilter(string[] args)
     for (var i = 0; i < args.Length - 1; i++)
     {
         if (args[i].Equals("--filter", StringComparison.OrdinalIgnoreCase))
+        {
             return args[i + 1];
+        }
     }
     foreach (var arg in args)
     {
         if (arg.StartsWith("--filter=", StringComparison.OrdinalIgnoreCase))
+        {
             return arg[9..];
+        }
     }
     return null;
 }
@@ -818,34 +1061,48 @@ static string? ParseFilter(string[] args)
 /// entries matching xUnit's runtime display names. If expansion fails, the method
 /// falls back to a single entry per method.
 /// </summary>
-static List<(string Collection, string ClassName, string MethodName, string DisplayName)> DiscoverTestsViaReflection(Assembly assembly, string? filter)
+static List<(
+    string Collection,
+    string ClassName,
+    string MethodName,
+    string DisplayName
+)> DiscoverTestsViaReflection(Assembly assembly, string? filter)
 {
     var tests = new List<(string, string, string, string)>();
 
-    var factType = Type.GetType("Xunit.FactAttribute, xunit.v3.core")
-                   ?? Type.GetType("Xunit.FactAttribute, xunit.core");
-    var theoryType = Type.GetType("Xunit.TheoryAttribute, xunit.v3.core")
-                     ?? Type.GetType("Xunit.TheoryAttribute, xunit.core");
-    var collectionType = Type.GetType("Xunit.CollectionAttribute, xunit.v3.core")
-                         ?? Type.GetType("Xunit.CollectionAttribute, xunit.core");
+    var factType =
+        Type.GetType("Xunit.FactAttribute, xunit.v3.core")
+        ?? Type.GetType("Xunit.FactAttribute, xunit.core");
+    var theoryType =
+        Type.GetType("Xunit.TheoryAttribute, xunit.v3.core")
+        ?? Type.GetType("Xunit.TheoryAttribute, xunit.core");
+    var collectionType =
+        Type.GetType("Xunit.CollectionAttribute, xunit.v3.core")
+        ?? Type.GetType("Xunit.CollectionAttribute, xunit.core");
 
     if (factType == null && theoryType == null)
+    {
         return tests;
+    }
 
     foreach (var type in assembly.GetTypes())
     {
         if (!type.IsClass || type.IsAbstract || !type.IsPublic)
+        {
             continue;
+        }
 
         var collectionAttr = type.GetCustomAttribute(collectionType!);
-        var collectionName = collectionAttr?.GetType().GetProperty("Name")?.GetValue(collectionAttr)?.ToString()
-                             ?? $"Test collection for {type.Name}";
+        var collectionName =
+            collectionAttr?.GetType().GetProperty("Name")?.GetValue(collectionAttr)?.ToString()
+            ?? $"Test collection for {type.Name}";
 
         var className = type.Name;
         var classFullName = type.FullName ?? type.Name;
 
-        var classMatchesFilter = string.IsNullOrEmpty(filter) ||
-            classFullName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+        var classMatchesFilter =
+            string.IsNullOrEmpty(filter)
+            || classFullName.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
         {
@@ -863,9 +1120,17 @@ static List<(string Collection, string ClassName, string MethodName, string Disp
                     {
                         foreach (var theoryDisplayName in expanded)
                         {
-                            if (!classMatchesFilter &&
-                                !theoryDisplayName.Contains(filter!, StringComparison.OrdinalIgnoreCase))
+                            if (
+                                !classMatchesFilter
+                                && !theoryDisplayName.Contains(
+                                    filter!,
+                                    StringComparison.OrdinalIgnoreCase
+                                )
+                            )
+                            {
                                 continue;
+                            }
+
                             tests.Add((collectionName, className, methodName, theoryDisplayName));
                         }
                         continue;
@@ -873,8 +1138,14 @@ static List<(string Collection, string ClassName, string MethodName, string Disp
                 }
 
                 var displayName = $"{classFullName}.{methodName}";
-                if (!classMatchesFilter && !displayName.Contains(filter!, StringComparison.OrdinalIgnoreCase))
+                if (
+                    !classMatchesFilter
+                    && !displayName.Contains(filter!, StringComparison.OrdinalIgnoreCase)
+                )
+                {
                     continue;
+                }
+
                 tests.Add((collectionName, className, methodName, displayName));
             }
         }
@@ -899,31 +1170,46 @@ static List<string> ExpandTheoryDataRows(MethodInfo method, string classFullName
         {
             if (attrData.AttributeType.Name == "InlineDataAttribute")
             {
-                if (attrData.ConstructorArguments.Count > 0 &&
-                    attrData.ConstructorArguments[0].Value is IReadOnlyCollection<CustomAttributeTypedArgument> items)
+                if (
+                    attrData.ConstructorArguments.Count > 0
+                    && attrData.ConstructorArguments[0].Value
+                        is IReadOnlyCollection<CustomAttributeTypedArgument> items
+                )
                 {
                     var values = items.Select(a => a.Value).ToArray();
-                    results.Add(FormatTheoryDisplayName(classFullName, method.Name, parameters, values));
+                    results.Add(
+                        FormatTheoryDisplayName(classFullName, method.Name, parameters, values)
+                    );
                 }
             }
         }
 
-        var memberDataType = Type.GetType("Xunit.MemberDataAttribute, xunit.v3.core")
-                             ?? Type.GetType("Xunit.MemberDataAttribute, xunit.core");
+        var memberDataType =
+            Type.GetType("Xunit.MemberDataAttribute, xunit.v3.core")
+            ?? Type.GetType("Xunit.MemberDataAttribute, xunit.core");
         if (memberDataType != null)
         {
             foreach (var attr in method.GetCustomAttributes(memberDataType))
             {
                 var memberName = (string?)attr.GetType().GetProperty("MemberName")?.GetValue(attr);
-                if (string.IsNullOrEmpty(memberName)) continue;
+                if (string.IsNullOrEmpty(memberName))
+                {
+                    continue;
+                }
 
                 var declaringType = method.DeclaringType!;
-                var prop = declaringType.GetProperty(memberName,
-                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+                var prop = declaringType.GetProperty(
+                    memberName,
+                    BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy
+                );
                 if (prop?.GetValue(null) is IEnumerable<object[]> dataRows)
                 {
                     foreach (var row in dataRows)
-                        results.Add(FormatTheoryDisplayName(classFullName, method.Name, parameters, row));
+                    {
+                        results.Add(
+                            FormatTheoryDisplayName(classFullName, method.Name, parameters, row)
+                        );
+                    }
                 }
             }
         }
@@ -940,8 +1226,12 @@ static List<string> ExpandTheoryDataRows(MethodInfo method, string classFullName
 /// Format a Theory display name matching xUnit's runtime format:
 /// "Namespace.Class.Method(paramName: value1, paramName: value2)"
 /// </summary>
-static string FormatTheoryDisplayName(string classFullName, string methodName,
-    ParameterInfo[] parameters, object?[] data)
+static string FormatTheoryDisplayName(
+    string classFullName,
+    string methodName,
+    ParameterInfo[] parameters,
+    object?[] data
+)
 {
     var args = new List<string>();
     for (var i = 0; i < parameters.Length && i < data.Length; i++)
@@ -951,7 +1241,7 @@ static string FormatTheoryDisplayName(string classFullName, string methodName,
         {
             null => "null",
             string s => $"\"{s}\"",
-            _ => value.ToString() ?? "null"
+            _ => value.ToString() ?? "null",
         };
         args.Add($"{parameters[i].Name}: {formatted}");
     }

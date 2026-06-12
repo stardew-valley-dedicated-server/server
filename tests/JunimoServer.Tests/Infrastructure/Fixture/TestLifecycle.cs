@@ -1,5 +1,3 @@
-using JunimoServer.Tests.Clients;
-using JunimoServer.Tests.Containers;
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
@@ -66,7 +64,10 @@ internal sealed class TestLifecycle
 
         // Deferred mode: skip acquisition. Test method will call AcquireServerAsync().
         // DeferAcquisition classes are excluded from ServerConfigDiscovery, so no demand tracking needed.
-        if (attr.DeferAcquisition) return;
+        if (attr.DeferAcquisition)
+        {
+            return;
+        }
 
         // Pre-compute server key AND collection name before any await.
         // This ensures: (a) ExpectedServerKey is available for demand
@@ -74,24 +75,42 @@ internal sealed class TestLifecycle
         // summary fixture even if canceled during acquisition.
         if (attr.Isolation != IsolationMode.PerTest)
         {
-            var earlyReqs = ResourceRequirements.FromAttribute(attr, _testBase.GetType().Name, methodName);
+            var earlyReqs = ResourceRequirements.FromAttribute(
+                attr,
+                _testBase.GetType().Name,
+                methodName
+            );
             _testBase.PersistentSession.RecordExpectedServerKey(earlyReqs.GetServerKey());
             _testBase.SetCollectionNameInternal(earlyReqs.GetDisplayLabel());
         }
-        _testBase.FailureReporter.RecordDispatched(_testBase.CollectionNameInternal ?? _testClassName, _testClassName);
+        _testBase.FailureReporter.RecordDispatched(
+            _testBase.CollectionNameInternal ?? _testClassName,
+            _testClassName
+        );
 
         // When KeepConnected is enabled, serialize test execution via a per-class turn lock.
         // xUnit v3 starts all test instances within a class concurrently, but KeepConnected
         // tests share a single client connection, so only one test can run at a time.
         if (attr.KeepConnected)
         {
-            await _testBase.PersistentSession.InitializeKeepConnectedAsync(attr, _testBase.TestCtInternal);
+            await _testBase.PersistentSession.InitializeKeepConnectedAsync(
+                attr,
+                _testBase.TestCtInternal
+            );
             return;
         }
 
-        var requirements2 = ResourceRequirements.FromAttribute(attr, _testBase.GetType().Name, methodName);
+        var requirements2 = ResourceRequirements.FromAttribute(
+            attr,
+            _testBase.GetType().Name,
+            methodName
+        );
         var priority2 = TestCollectionOrderer.GetPriorityForClass(_testBase.GetType().FullName);
-        await _testBase.AcquireServerAsyncInternal(requirements2, _testBase.TestCtInternal, priority2);
+        await _testBase.AcquireServerAsyncInternal(
+            requirements2,
+            _testBase.TestCtInternal,
+            priority2
+        );
     }
 
     public async ValueTask FinalizeAsync()
@@ -101,14 +120,14 @@ internal sealed class TestLifecycle
         var testStartTime = _testBase.TestStartTimeInternal;
         var activeStartTime = _testBase.ActiveStartTimeInternal;
 
-        var queueDuration = activeStartTime != null
-            ? TimeSpan.FromTicks(Math.Max(0, (activeStartTime.Value - testStartTime).Ticks))
-            : TimeSpan.Zero;
+        var queueDuration =
+            activeStartTime != null
+                ? TimeSpan.FromTicks(Math.Max(0, (activeStartTime.Value - testStartTime).Ticks))
+                : TimeSpan.Zero;
 
         // Test body = time from acquisition to DisposeAsync entry.
-        var testBodyDuration = activeStartTime != null
-            ? disposeStart - activeStartTime.Value
-            : TimeSpan.Zero;
+        var testBodyDuration =
+            activeStartTime != null ? disposeStart - activeStartTime.Value : TimeSpan.Zero;
 
         var artifactsDuration = TimeSpan.Zero;
         var cleanupDuration = TimeSpan.Zero;
@@ -117,7 +136,11 @@ internal sealed class TestLifecycle
         TestPhaseBreakdown? breakdown = null;
 
         if (activeStartTime == null)
-            LogWarning("DisposeAsync called without active start time; test may not have acquired a server");
+        {
+            LogWarning(
+                "DisposeAsync called without active start time; test may not have acquired a server"
+            );
+        }
 
         // If stopOnFail triggered, xUnit cancels the CT for dispatched tests.
         // Skipped (never-dispatched) tests never run DisposeAsync, so their
@@ -133,17 +156,20 @@ internal sealed class TestLifecycle
         {
             // Auto-check for uncaught server/client exceptions at end of every test.
             // Only fires when the test passed; avoids masking real failures.
-            if (_testBase.LeaseInternal != null
+            if (
+                _testBase.LeaseInternal != null
                 && !_testBase.TestFailedInternal
                 && TestContext.Current?.TestState?.Result != TestResult.Failed
-                && !_testBase.TestCtInternal.IsCancellationRequested)
+                && !_testBase.TestCtInternal.IsCancellationRequested
+            )
             {
                 await _testBase.AssertNoExceptionsAsyncInternal("at end of test (auto)");
             }
 
             // For KeepConnected tests: check if this is the last test, BEFORE cleanup.
             // We need this flag to decide whether to dispose the session or just notify.
-            var isLastKeepConnectedTest = _testBase.PersistentSession.IsLastKeepConnectedTestAndIncrement();
+            var isLastKeepConnectedTest =
+                _testBase.PersistentSession.IsLastKeepConnectedTestAndIncrement();
 
             // ── Artifacts phase: screenshots + video clip extraction ──
             // Runs while containers are still alive and client is connected,
@@ -156,12 +182,15 @@ internal sealed class TestLifecycle
             long recordingMs = 0;
             try
             {
-                var isTestFailing = _testBase.TestFailedInternal
+                var isTestFailing =
+                    _testBase.TestFailedInternal
                     || TestContext.Current?.TestState?.Result == TestResult.Failed;
 
                 if (_testBase.CollectArtifactsInternal || isTestFailing)
                 {
-                    screenshotMs = await _testBase.Artifacts.CollectAsync(_testBase.TestFailedInternal);
+                    screenshotMs = await _testBase.Artifacts.CollectAsync(
+                        _testBase.TestFailedInternal
+                    );
 
                     var recordingSw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -172,13 +201,19 @@ internal sealed class TestLifecycle
                     // sampled yet. Sized as three frame intervals: one for the
                     // sample to happen, one for encode, one for segment rotation.
                     // Removing this delay causes final-frame loss at 1 FPS.
-                    if ((RecordingPolicy.RecordServerEnabled || RecordingPolicy.RecordClientEnabled)
-                        && (RecordingPolicy.Mode == TestRecordingMode.All || isTestFailing))
+                    if (
+                        (RecordingPolicy.RecordServerEnabled || RecordingPolicy.RecordClientEnabled)
+                        && (RecordingPolicy.Mode == TestRecordingMode.All || isTestFailing)
+                    )
                     {
                         // Size the delay by the slowest recording type. A type that
                         // isn't recording (fps=0) is excluded so it doesn't dominate.
-                        var serverFps = RecordingPolicy.RecordServerEnabled ? RecordingPolicy.ServerFps : int.MaxValue;
-                        var clientFps = RecordingPolicy.RecordClientEnabled ? RecordingPolicy.ClientFps : int.MaxValue;
+                        var serverFps = RecordingPolicy.RecordServerEnabled
+                            ? RecordingPolicy.ServerFps
+                            : int.MaxValue;
+                        var clientFps = RecordingPolicy.RecordClientEnabled
+                            ? RecordingPolicy.ClientFps
+                            : int.MaxValue;
                         var slowestFps = Math.Min(serverFps, clientFps);
                         await Task.Delay(3 * (1000 / slowestFps));
                     }
@@ -195,12 +230,22 @@ internal sealed class TestLifecycle
                     // test cleanup" forever. Emit explicit per-source skips so
                     // the placeholder explains the opt-out.
                     var displayName = _testBase.TestDisplayNameInternal ?? _testClassName;
-                    SetupEventBus.EmitRecordingSkipped(_testClassName, _testClassName, displayName,
-                        "server", RecordingSkipReason.ArtifactsOptedOut);
+                    SetupEventBus.EmitRecordingSkipped(
+                        _testClassName,
+                        _testClassName,
+                        displayName,
+                        "server",
+                        RecordingSkipReason.ArtifactsOptedOut
+                    );
                     if (_testBase.PrimaryClientLeaseInternal != null)
                     {
-                        SetupEventBus.EmitRecordingSkipped(_testClassName, _testClassName, displayName,
-                            "client", RecordingSkipReason.ArtifactsOptedOut);
+                        SetupEventBus.EmitRecordingSkipped(
+                            _testClassName,
+                            _testClassName,
+                            displayName,
+                            "client",
+                            RecordingSkipReason.ArtifactsOptedOut
+                        );
                     }
                 }
             }
@@ -221,9 +266,15 @@ internal sealed class TestLifecycle
             long leaseReleaseMs = 0;
             try
             {
-                if (_testBase.PersistentSession.IsUsingPersistentSession && _testBase.PersistentSession.Session != null)
+                if (
+                    _testBase.PersistentSession.IsUsingPersistentSession
+                    && _testBase.PersistentSession.Session != null
+                )
                 {
-                    lastKeepDisposeMs = await _testBase.PersistentSession.FinalizeSessionAsync(isLastKeepConnectedTest, _testBase.TestCtInternal);
+                    lastKeepDisposeMs = await _testBase.PersistentSession.FinalizeSessionAsync(
+                        isLastKeepConnectedTest,
+                        _testBase.TestCtInternal
+                    );
                 }
                 else
                 {
@@ -233,7 +284,11 @@ internal sealed class TestLifecycle
                     var primaryClientLease = _testBase.PrimaryClientLeaseInternal;
                     if (primaryClientLease != null)
                     {
-                        try { await primaryClientLease.DisposeAsync(); } catch { }
+                        try
+                        {
+                            await primaryClientLease.DisposeAsync();
+                        }
+                        catch { }
                     }
 
                     // Release per-host client capacity slot early. The client
@@ -250,7 +305,11 @@ internal sealed class TestLifecycle
                     if (_testBase.LeaseInternal != null && _testBase.PersistentSession.OwnsLease)
                     {
                         var leaseSw = System.Diagnostics.Stopwatch.StartNew();
-                        try { await _testBase.LeaseInternal.DisposeAsync(); } catch { }
+                        try
+                        {
+                            await _testBase.LeaseInternal.DisposeAsync();
+                        }
+                        catch { }
                         leaseReleaseMs = leaseSw.ElapsedMilliseconds;
                     }
 
@@ -258,10 +317,17 @@ internal sealed class TestLifecycle
                     // but never acquired resources (e.g., cancelled during
                     // InitializeAsync), decrement _remainingDemand so the server
                     // can eventually be evicted.
-                    if (_testBase.LeaseInternal == null && _testBase.PersistentSession.ExpectedServerKey != null)
+                    if (
+                        _testBase.LeaseInternal == null
+                        && _testBase.PersistentSession.ExpectedServerKey != null
+                    )
                     {
-                        TestResourceBroker.Instance.NotifyTestCompleted(_testBase.PersistentSession.ExpectedServerKey);
-                        LogTrace($"Fallback demand decrement for cancelled test (key={_testBase.PersistentSession.ExpectedServerKey})");
+                        TestResourceBroker.Instance.NotifyTestCompleted(
+                            _testBase.PersistentSession.ExpectedServerKey
+                        );
+                        LogTrace(
+                            $"Fallback demand decrement for cancelled test (key={_testBase.PersistentSession.ExpectedServerKey})"
+                        );
                     }
 
                     // If this is the last KeepConnected test AND a session
@@ -270,7 +336,8 @@ internal sealed class TestLifecycle
                     // dispose it now.
                     if (isLastKeepConnectedTest)
                     {
-                        lastKeepDisposeMs = await _testBase.PersistentSession.DisposeOrphanedSessionAsync();
+                        lastKeepDisposeMs =
+                            await _testBase.PersistentSession.DisposeOrphanedSessionAsync();
                     }
                 }
 
@@ -287,7 +354,8 @@ internal sealed class TestLifecycle
                     _testBase.RecordTestFailureInternal(
                         error: $"Test timed out ({budgetSec:F0}s)",
                         phase: "test_body",
-                        exceptionType: "System.TimeoutException");
+                        exceptionType: "System.TimeoutException"
+                    );
                 }
 
                 // Detect uncaught test failures via xUnit's TestContext.
@@ -300,9 +368,12 @@ internal sealed class TestLifecycle
                     if (testState?.Result == TestResult.Failed)
                     {
                         var exType = testState.ExceptionTypes?.FirstOrDefault();
-                        var isCancellation = exType != null && (
-                            exType.Contains("OperationCanceledException") ||
-                            exType.Contains("TaskCanceledException"));
+                        var isCancellation =
+                            exType != null
+                            && (
+                                exType.Contains("OperationCanceledException")
+                                || exType.Contains("TaskCanceledException")
+                            );
 
                         if (isCancellation)
                         {
@@ -310,9 +381,14 @@ internal sealed class TestLifecycle
                         }
                         else
                         {
-                            var errorMessage = testState.ExceptionMessages?.FirstOrDefault()
+                            var errorMessage =
+                                testState.ExceptionMessages?.FirstOrDefault()
                                 ?? "Test failed (no message)";
-                            _testBase.RecordTestFailureInternal(errorMessage, phase: "test_body", exceptionType: exType);
+                            _testBase.RecordTestFailureInternal(
+                                errorMessage,
+                                phase: "test_body",
+                                exceptionType: exType
+                            );
                             LogError(errorMessage);
                         }
                     }
@@ -326,39 +402,64 @@ internal sealed class TestLifecycle
                     ArtifactsMs: (long)artifactsDuration.TotalMilliseconds,
                     CleanupMs: (long)preliminaryCleanup.TotalMilliseconds,
                     LastKeepDisposeMs: lastKeepDisposeMs,
-                    LeaseReleaseMs: leaseReleaseMs);
+                    LeaseReleaseMs: leaseReleaseMs
+                );
 
                 // Report completion to assembly-level test summary
                 var collectionName = _testBase.CollectionNameInternal ?? _testClassName;
                 var displayName = _testBase.TestDisplayNameInternal;
                 var lease = _testBase.LeaseInternal;
                 TestSummaryFixture.Instance?.SetServerContext(
-                    collectionName, _testClassName, displayName,
-                    lease?.ServerKey, lease?.ServerInstanceId);
+                    collectionName,
+                    _testClassName,
+                    displayName,
+                    lease?.ServerKey,
+                    lease?.ServerInstanceId
+                );
                 TestSummaryFixture.Instance?.MarkCompleted(
-                    collectionName, _testClassName, displayName,
-                    activeDuration, queueDuration, breakdown);
+                    collectionName,
+                    _testClassName,
+                    displayName,
+                    activeDuration,
+                    queueDuration,
+                    breakdown
+                );
 
-                InfrastructureEventLog.Emit("test_completed", new
-                {
-                    passed = !_testBase.TestFailedInternal,
-                    activeDurationMs = (long)activeDuration.TotalMilliseconds,
-                    queueDurationMs = (long)queueDuration.TotalMilliseconds,
-                    testBodyMs = breakdown.TestBodyMs,
-                    artifactsMs = breakdown.ArtifactsMs,
-                    cleanupMs = breakdown.CleanupMs,
-                    lastKeepDisposeMs = breakdown.LastKeepDisposeMs,
-                    leaseReleaseMs = breakdown.LeaseReleaseMs
-                });
+                InfrastructureEventLog.Emit(
+                    "test_completed",
+                    new
+                    {
+                        passed = !_testBase.TestFailedInternal,
+                        activeDurationMs = (long)activeDuration.TotalMilliseconds,
+                        queueDurationMs = (long)queueDuration.TotalMilliseconds,
+                        testBodyMs = breakdown.TestBodyMs,
+                        artifactsMs = breakdown.ArtifactsMs,
+                        cleanupMs = breakdown.CleanupMs,
+                        lastKeepDisposeMs = breakdown.LastKeepDisposeMs,
+                        leaseReleaseMs = breakdown.LeaseReleaseMs,
+                    }
+                );
 
-                var doneTree = BuildDoneTree(activeDuration, queueDuration, testBodyDuration,
-                    artifactsDuration, artifactTimings, preliminaryCleanup, cleanupTimings,
-                    lastKeepDisposeMs, leaseReleaseMs,
-                    failed: _testBase.TestFailedInternal);
+                var doneTree = BuildDoneTree(
+                    activeDuration,
+                    queueDuration,
+                    testBodyDuration,
+                    artifactsDuration,
+                    artifactTimings,
+                    preliminaryCleanup,
+                    cleanupTimings,
+                    lastKeepDisposeMs,
+                    leaseReleaseMs,
+                    failed: _testBase.TestFailedInternal
+                );
                 if (_testBase.TestFailedInternal)
+                {
                     LogError(doneTree);
+                }
                 else
+                {
                     LogSuccess(doneTree);
+                }
             }
             finally
             {
@@ -384,16 +485,25 @@ internal sealed class TestLifecycle
                     artifactsDuration,
                     cleanupDuration,
                     lastKeepDisposeMs,
-                    leaseReleaseMs);
+                    leaseReleaseMs
+                );
             }
 
             // Flush the infrastructure event log so failure_context, screenshot,
             // and recording events for this test are on disk before xUnit's
             // pipeline emits the test_failed / test_passed result. Bounded; a
             // hung writer must not block the broker's turn-lock release below.
-            try { await InfrastructureEventLog.FlushAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
-            catch (TimeoutException) { /* writer slow; skip rather than block */ }
-            catch (Exception ex) { LogWarning($"InfrastructureEventLog.FlushAsync threw: {ex.Message}"); }
+            try
+            {
+                await InfrastructureEventLog.FlushAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (TimeoutException)
+            { /* writer slow; skip rather than block */
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"InfrastructureEventLog.FlushAsync threw: {ex.Message}");
+            }
         }
         finally
         {
@@ -425,7 +535,9 @@ internal sealed class TestLifecycle
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            LogWarning($"Cleanup timed out after {TestTimings.CleanupTimeout.TotalSeconds}s, aborting cleanup");
+            LogWarning(
+                $"Cleanup timed out after {TestTimings.CleanupTimeout.TotalSeconds}s, aborting cleanup"
+            );
             return null;
         }
     }
@@ -433,7 +545,8 @@ internal sealed class TestLifecycle
     private async Task<CleanupTimings> RunCleanupCoreAsync(CancellationToken ct)
     {
         var cleanupSw = System.Diagnostics.Stopwatch.StartNew();
-        long disconnectMs = 0, farmerDeleteMs = 0;
+        long disconnectMs = 0,
+            farmerDeleteMs = 0;
 
         if (_testBase.PersistentSession.DidConnect && _testBase.PrimaryClientLeaseInternal != null)
         {
@@ -442,7 +555,9 @@ internal sealed class TestLifecycle
             {
                 await _testBase.GameClient.Navigate("title");
                 await _testBase.GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
-                SetupEventBus.EmitInstanceDisconnected(_testBase.PrimaryClientLeaseInternal.InstanceId);
+                SetupEventBus.EmitInstanceDisconnected(
+                    _testBase.PrimaryClientLeaseInternal.InstanceId
+                );
                 _testBase.PrimaryClientLeaseInternal.AlreadyDisconnected = true;
 
                 // Wait for THIS test's farmer(s) to leave. Don't wait for all
@@ -454,12 +569,22 @@ internal sealed class TestLifecycle
                 if (_testBase.Farmers.CreatedFarmers.Count > 0)
                 {
                     var myUids = _testBase.Farmers.CreatedFarmers.Select(f => f.Uid).ToHashSet();
-                    var ok = await _testBase.ServerApi.WaitForPlayersRemovedByIdAsync(myUids, ct: ct);
+                    var ok = await _testBase.ServerApi.WaitForPlayersRemovedByIdAsync(
+                        myUids,
+                        ct: ct
+                    );
                     if (!ok && !ct.IsCancellationRequested)
-                        LogWarning($"Cleanup disconnect wait timed out; {myUids.Count} farmer(s) still online");
+                    {
+                        LogWarning(
+                            $"Cleanup disconnect wait timed out; {myUids.Count} farmer(s) still online"
+                        );
+                    }
                 }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 LogWarning($"Failed to return to title [{ex.GetType().Name}]: {ex}");
@@ -478,7 +603,10 @@ internal sealed class TestLifecycle
                 {
                     ct.ThrowIfCancellationRequested();
                     if (!await DeleteFarmerAsync(farmer))
+                    {
                         failedCount++;
+                    }
+
                     processed++;
                 }
             }
@@ -507,35 +635,38 @@ internal sealed class TestLifecycle
             {
                 await exceptions.CheckGameClientErrorsAsync(diagCts.Token);
                 var captured = exceptions.GetExceptions();
-                InfrastructureEventLog.Emit("exception_check", new
-                {
-                    capturedCount = captured.Count,
-                    exceptions = captured.Count > 0 ? captured : null,
-                    error = (string?)null
-                });
+                InfrastructureEventLog.Emit(
+                    "exception_check",
+                    new
+                    {
+                        capturedCount = captured.Count,
+                        exceptions = captured.Count > 0 ? captured : null,
+                        error = (string?)null,
+                    }
+                );
                 if (captured.Count > 0)
                 {
                     LogWarning($"{captured.Count} exception(s) occurred during test:");
                     foreach (var ex in captured)
+                    {
                         LogDetail(ex.ToString());
+                    }
                 }
             }
             catch (OperationCanceledException) when (diagCts.IsCancellationRequested)
             {
-                InfrastructureEventLog.Emit("exception_check", new
-                {
-                    capturedCount = -1,
-                    error = "timeout_10s"
-                });
+                InfrastructureEventLog.Emit(
+                    "exception_check",
+                    new { capturedCount = -1, error = "timeout_10s" }
+                );
                 LogWarning("[ExceptionMonitor] Diagnostic check timed out after 10s");
             }
             catch (Exception ex)
             {
-                InfrastructureEventLog.Emit("exception_check", new
-                {
-                    capturedCount = -1,
-                    error = $"{ex.GetType().Name}: {ex.Message}"
-                });
+                InfrastructureEventLog.Emit(
+                    "exception_check",
+                    new { capturedCount = -1, error = $"{ex.GetType().Name}: {ex.Message}" }
+                );
                 LogWarning($"Failed to check for exceptions during cleanup: {ex.Message}");
             }
         }
@@ -545,18 +676,34 @@ internal sealed class TestLifecycle
 
     private void PoisonOnCleanupFailureIfNeeded(int failedCount)
     {
-        if (failedCount <= 0) return;
-        if (_testBase.LeaseInternal is not { IsPoisoned: false } lease) return;
-        if (ShutdownCoordinator.IsShuttingDown) return;
+        if (failedCount <= 0)
+        {
+            return;
+        }
+
+        if (_testBase.LeaseInternal is not { IsPoisoned: false } lease)
+        {
+            return;
+        }
+
+        if (ShutdownCoordinator.IsShuttingDown)
+        {
+            return;
+        }
 
         lease.Managed.PoisonServer(
             $"DeleteFarmerAsync failed for {failedCount} farmer(s) in cleanup",
-            ManagedServer.PoisonReasonCode.CleanupFarmerDeleteFailed);
+            ManagedServer.PoisonReasonCode.CleanupFarmerDeleteFailed
+        );
     }
 
     private async Task<bool> DeleteFarmerAsync(TrackedFarmer farmer)
     {
-        if (_testBase.LeaseInternal == null) return true;
+        if (_testBase.LeaseInternal == null)
+        {
+            return true;
+        }
+
         var deadline = DateTime.UtcNow + TestTimings.FarmerDeleteTimeout;
         var label = $"'{farmer.Name}' (uid={farmer.Uid})";
 
@@ -570,12 +717,15 @@ internal sealed class TestLifecycle
                     LogDetail($"Deleted: {label}");
                     return true;
                 }
-                if (result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+                if (
+                    result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true
+                )
                 {
                     LogDetail($"Not found (ok): {label}");
                     return true;
                 }
-                var isRetryable = result?.Error?.Contains("online", StringComparison.OrdinalIgnoreCase) == true
+                var isRetryable =
+                    result?.Error?.Contains("online", StringComparison.OrdinalIgnoreCase) == true
                     || result?.Error?.Contains("save", StringComparison.OrdinalIgnoreCase) == true;
                 if (isRetryable && DateTime.UtcNow < deadline)
                 {
@@ -594,6 +744,7 @@ internal sealed class TestLifecycle
     }
 
     internal record ArtifactTimings(long ScreenshotMs, long RecordingMs);
+
     internal record CleanupTimings(TimeSpan Total, long DisconnectMs, long FarmerDeleteMs);
 
     private static string FormatSec(TimeSpan d) =>
@@ -603,20 +754,32 @@ internal sealed class TestLifecycle
 
     private static string FormatQueued(TimeSpan d) =>
         d.TotalSeconds >= 60
-            ? string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F1}m", d.TotalMinutes)
+            ? string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:F1}m",
+                d.TotalMinutes
+            )
             : FormatSec(d);
 
     private static string BuildDoneTree(
-        TimeSpan active, TimeSpan queued, TimeSpan test,
-        TimeSpan artifacts, ArtifactTimings? at,
-        TimeSpan cleanup, CleanupTimings? ct,
-        long lastKeepDisposeMs, long leaseReleaseMs,
-        bool failed = false)
+        TimeSpan active,
+        TimeSpan queued,
+        TimeSpan test,
+        TimeSpan artifacts,
+        ArtifactTimings? at,
+        TimeSpan cleanup,
+        CleanupTimings? ct,
+        long lastKeepDisposeMs,
+        long leaseReleaseMs,
+        bool failed = false
+    )
     {
         var items = new List<(int depth, string dur, string label)>();
 
         if (queued.TotalSeconds >= 1)
+        {
             items.Add((0, FormatQueued(queued), "queued"));
+        }
 
         items.Add((0, FormatSec(test), "test"));
 
@@ -625,8 +788,15 @@ internal sealed class TestLifecycle
             items.Add((0, FormatSec(artifacts), "artifacts"));
             if (at != null)
             {
-                if (at.ScreenshotMs > 0) items.Add((1, FormatSec(at.ScreenshotMs), "screenshot"));
-                if (at.RecordingMs > 0) items.Add((1, FormatSec(at.RecordingMs), "recording"));
+                if (at.ScreenshotMs > 0)
+                {
+                    items.Add((1, FormatSec(at.ScreenshotMs), "screenshot"));
+                }
+
+                if (at.RecordingMs > 0)
+                {
+                    items.Add((1, FormatSec(at.RecordingMs), "recording"));
+                }
             }
         }
 
@@ -635,11 +805,25 @@ internal sealed class TestLifecycle
             items.Add((0, FormatSec(cleanup), "cleanup"));
             if (ct != null)
             {
-                if (ct.DisconnectMs > 0) items.Add((1, FormatSec(ct.DisconnectMs), "disconnect"));
-                if (ct.FarmerDeleteMs > 0) items.Add((1, FormatSec(ct.FarmerDeleteMs), "farmerDelete"));
+                if (ct.DisconnectMs > 0)
+                {
+                    items.Add((1, FormatSec(ct.DisconnectMs), "disconnect"));
+                }
+
+                if (ct.FarmerDeleteMs > 0)
+                {
+                    items.Add((1, FormatSec(ct.FarmerDeleteMs), "farmerDelete"));
+                }
             }
-            if (leaseReleaseMs > 0) items.Add((1, FormatSec(leaseReleaseMs), "leaseRelease"));
-            if (lastKeepDisposeMs > 0) items.Add((1, FormatSec(lastKeepDisposeMs), "lastKeepDispose"));
+            if (leaseReleaseMs > 0)
+            {
+                items.Add((1, FormatSec(leaseReleaseMs), "leaseRelease"));
+            }
+
+            if (lastKeepDisposeMs > 0)
+            {
+                items.Add((1, FormatSec(lastKeepDisposeMs), "lastKeepDispose"));
+            }
         }
 
         var sb = new System.Text.StringBuilder();
@@ -651,23 +835,36 @@ internal sealed class TestLifecycle
             var foundLaterSibling = false;
             for (var j = i + 1; j < items.Count; j++)
             {
-                if (items[j].depth == items[i].depth) { foundLaterSibling = true; break; }
-                if (items[j].depth < items[i].depth) break;
+                if (items[j].depth == items[i].depth)
+                {
+                    foundLaterSibling = true;
+                    break;
+                }
+                if (items[j].depth < items[i].depth)
+                {
+                    break;
+                }
             }
             isLast[i] = !foundLaterSibling;
         }
 
         var maxDurLen = 0;
         foreach (var item in items)
-            if (item.dur.Length > maxDurLen) maxDurLen = item.dur.Length;
+        {
+            if (item.dur.Length > maxDurLen)
+            {
+                maxDurLen = item.dur.Length;
+            }
+        }
 
         for (var i = 0; i < items.Count; i++)
         {
             var (depth, dur, label) = items[i];
             var connector = isLast[i] ? "└" : "├";
-            var prefix = depth == 0
-                ? $"  {dur.PadRight(maxDurLen)} {connector} "
-                : $"  {dur.PadRight(maxDurLen)} │  {connector} ";
+            var prefix =
+                depth == 0
+                    ? $"  {dur.PadRight(maxDurLen)} {connector} "
+                    : $"  {dur.PadRight(maxDurLen)} │  {connector} ";
             sb.Append('\n');
             sb.Append(prefix);
             sb.Append(label);
@@ -676,26 +873,45 @@ internal sealed class TestLifecycle
         return sb.ToString();
     }
 
-    private string DisplayNameOrFallback =>
-        _testBase.TestDisplayNameInternal ?? _testClassName;
+    private string DisplayNameOrFallback => _testBase.TestDisplayNameInternal ?? _testClassName;
 
     private void LogSuccess(string message) =>
-        SetupEventBus.EmitTestAnnotation(DisplayNameOrFallback,
-            AnnotationLevel.Success, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            DisplayNameOrFallback,
+            AnnotationLevel.Success,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogWarning(string message) =>
-        SetupEventBus.EmitTestAnnotation(DisplayNameOrFallback,
-            AnnotationLevel.Warning, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            DisplayNameOrFallback,
+            AnnotationLevel.Warning,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogError(string message) =>
-        SetupEventBus.EmitTestAnnotation(DisplayNameOrFallback,
-            AnnotationLevel.Error, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            DisplayNameOrFallback,
+            AnnotationLevel.Error,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogDetail(string message) =>
-        SetupEventBus.EmitTestAnnotation(DisplayNameOrFallback,
-            AnnotationLevel.Detail, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            DisplayNameOrFallback,
+            AnnotationLevel.Detail,
+            AnnotationSource.Body,
+            message
+        );
 
     private void LogTrace(string message) =>
-        SetupEventBus.EmitTestAnnotation(DisplayNameOrFallback,
-            AnnotationLevel.Trace, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            DisplayNameOrFallback,
+            AnnotationLevel.Trace,
+            AnnotationSource.Body,
+            message
+        );
 }

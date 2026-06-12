@@ -21,7 +21,7 @@ namespace JunimoServer.Tests.Clients;
 /// </list>
 ///
 /// <para>
-/// <paramref name="clientKind"/> distinguishes calls to the server mod ("server")
+/// <c>clientKind</c> distinguishes calls to the server mod ("server")
 /// from calls to the test-client mod ("test-client").
 /// </para>
 /// </summary>
@@ -41,7 +41,9 @@ internal sealed class TracingHandler : DelegatingHandler
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request, CancellationToken cancellationToken)
+        HttpRequestMessage request,
+        CancellationToken cancellationToken
+    )
     {
         var method = request.Method.Method;
         var path = request.RequestUri?.AbsolutePath ?? "?";
@@ -68,7 +70,9 @@ internal sealed class TracingHandler : DelegatingHandler
             request.Headers.Remove(RequestIdHeader);
             request.Headers.Add(RequestIdHeader, requestId);
             if (ambient == null)
+            {
                 scope = CorrelationContext.BeginWithId(requestId);
+            }
         }
 
         long? reqBytes = null;
@@ -76,7 +80,9 @@ internal sealed class TracingHandler : DelegatingHandler
         {
             // Cheap size read for known-bounded content types.
             if (request.Content.Headers.ContentLength is long cl)
+            {
                 reqBytes = cl;
+            }
         }
 
         var sw = Stopwatch.StartNew();
@@ -94,12 +100,18 @@ internal sealed class TracingHandler : DelegatingHandler
             if (response.Headers.TryGetValues(SnapshotAgeHeader, out var ageValues))
             {
                 var first = ageValues.FirstOrDefault();
-                if (long.TryParse(first, out var parsed)) snapshotAgeMs = parsed;
+                if (long.TryParse(first, out var parsed))
+                {
+                    snapshotAgeMs = parsed;
+                }
             }
             if (response.Headers.TryGetValues(PredicateChangedAtHeader, out var predValues))
             {
                 var first = predValues.FirstOrDefault();
-                if (long.TryParse(first, out var parsed)) predicateChangedMsAgo = parsed;
+                if (long.TryParse(first, out var parsed))
+                {
+                    predicateChangedMsAgo = parsed;
+                }
             }
 
             // Publish to the ambient diagnostic slot so a polling helper can
@@ -111,38 +123,46 @@ internal sealed class TracingHandler : DelegatingHandler
 
             // respBytes is Full-only — at None / Basic we drop the field. At
             // Full, respBytes is read from the Content-Length response header.
-            if (_level == TestTracingLevel.Full
-                && response.Content?.Headers?.ContentLength is long bodyLen)
+            if (
+                _level == TestTracingLevel.Full
+                && response.Content?.Headers?.ContentLength is long bodyLen
+            )
             {
                 respBytes = bodyLen;
             }
 
-            InfrastructureEventLog.Emit("http_request", new
-            {
-                clientKind = _clientKind,
-                method,
-                path = pathAndQuery,
-                status = (int)response.StatusCode,
-                durationMs = sw.ElapsedMilliseconds,
-                reqBytes,
-                respBytes,
-                snapshotAgeMs,
-                predicateChangedMsAgo
-            });
+            InfrastructureEventLog.Emit(
+                "http_request",
+                new
+                {
+                    clientKind = _clientKind,
+                    method,
+                    path = pathAndQuery,
+                    status = (int)response.StatusCode,
+                    durationMs = sw.ElapsedMilliseconds,
+                    reqBytes,
+                    respBytes,
+                    snapshotAgeMs,
+                    predicateChangedMsAgo,
+                }
+            );
             return response;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             sw.Stop();
-            InfrastructureEventLog.Emit("http_request", new
-            {
-                clientKind = _clientKind,
-                method,
-                path = pathAndQuery,
-                error = $"{ex.GetType().Name}: {ex.Message}",
-                durationMs = sw.ElapsedMilliseconds,
-                reqBytes
-            });
+            InfrastructureEventLog.Emit(
+                "http_request",
+                new
+                {
+                    clientKind = _clientKind,
+                    method,
+                    path = pathAndQuery,
+                    error = $"{ex.GetType().Name}: {ex.Message}",
+                    durationMs = sw.ElapsedMilliseconds,
+                    reqBytes,
+                }
+            );
             throw;
         }
         finally
@@ -151,8 +171,8 @@ internal sealed class TracingHandler : DelegatingHandler
         }
     }
 
-    private static bool IsMutationMethod(string method)
-        => method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
+    private static bool IsMutationMethod(string method) =>
+        method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
 
     private static string NewRequestId()
     {

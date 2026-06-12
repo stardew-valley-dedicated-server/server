@@ -3,7 +3,7 @@ namespace JunimoServer.Tests.Helpers;
 /// <summary>
 /// Ambient per-async-scope correlation identifier used to group a logical
 /// operation (e.g. <c>JoinWorld(farmerName=NoPwd20)</c>) across the many
-/// inner HTTP calls it issues. <see cref="TracingHandler"/> reads
+/// inner HTTP calls it issues. <see cref="Clients.TracingHandler"/> reads
 /// <see cref="Current"/> and — if set — reuses it as the <c>X-Request-Id</c>
 /// header for every outbound request inside that scope, so all of those
 /// calls share one <c>requestId</c> in <c>infrastructure.jsonl</c>.
@@ -25,7 +25,7 @@ public static class CorrelationContext
     public static string? Current => _current.Value;
 
     /// <summary>
-    /// Begins a scope with a caller-supplied id. Used by <see cref="TracingHandler"/>
+    /// Begins a scope with a caller-supplied id. Used by <see cref="Clients.TracingHandler"/>
     /// to re-enter a scope after receiving an id over the wire.
     /// </summary>
     public static IDisposable BeginWithId(string id)
@@ -40,11 +40,18 @@ public static class CorrelationContext
         private readonly string? _previous;
         private bool _disposed;
 
-        public Scope(string? previous) { _previous = previous; }
+        public Scope(string? previous)
+        {
+            _previous = previous;
+        }
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _current.Value = _previous;
         }

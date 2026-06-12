@@ -3,13 +3,20 @@ using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+public static class RoleCommands
 {
-    public static class RoleCommands
+    public static void Register(
+        IModHelper helper,
+        ChatCommandsService chatCommandsService,
+        RoleService roleService
+    )
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
-        {
-            chatCommandsService.RegisterCommand("admin", "\"farmerName|userName\" to assign admin status to the player.", (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "admin",
+            "\"farmerName|userName\" to assign admin status to the player.",
+            (args, msg) =>
             {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
@@ -18,7 +25,10 @@ namespace JunimoServer.Services.Commands
                 }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Invalid use of command. Correct format is !admin name");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Invalid use of command. Correct format is !admin name"
+                    );
                     return;
                 }
 
@@ -27,15 +37,25 @@ namespace JunimoServer.Services.Commands
 
                 if (farmerToAdmin == null)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Player not found: " + nameFromCommand);
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Player not found: " + nameFromCommand
+                    );
                     return;
                 }
 
                 roleService.AssignAdmin(farmerToAdmin.UniqueMultiplayerID);
-                helper.SendPrivateMessage(msg.SourceFarmer, "Assigned Admin to: " + farmerToAdmin.Name);
-            });
+                helper.SendPrivateMessage(
+                    msg.SourceFarmer,
+                    "Assigned Admin to: " + farmerToAdmin.Name
+                );
+            }
+        );
 
-            chatCommandsService.RegisterCommand("unadmin", "\"farmerName|userName\" to take away admin status from the player.", (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "unadmin",
+            "\"farmerName|userName\" to take away admin status from the player.",
+            (args, msg) =>
             {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
@@ -45,7 +65,10 @@ namespace JunimoServer.Services.Commands
 
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Invalid use of command. Correct format is !unadmin name");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Invalid use of command. Correct format is !unadmin name"
+                    );
                     return;
                 }
 
@@ -54,19 +77,28 @@ namespace JunimoServer.Services.Commands
 
                 if (farmerToUnadmin == null)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Player not found: " + nameFromCommand);
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Player not found: " + nameFromCommand
+                    );
                     return;
                 }
 
                 if (farmerToUnadmin.UniqueMultiplayerID == helper.GetServerHostId())
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You can't unadmin the server host.");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "You can't unadmin the server host."
+                    );
                     return;
                 }
 
                 roleService.UnassignAdmin(farmerToUnadmin.UniqueMultiplayerID);
-                helper.SendPrivateMessage(msg.SourceFarmer, "Took away admin from: " + farmerToUnadmin.Name);
-            });
-        }
+                helper.SendPrivateMessage(
+                    msg.SourceFarmer,
+                    "Took away admin from: " + farmerToUnadmin.Name
+                );
+            }
+        );
     }
 }

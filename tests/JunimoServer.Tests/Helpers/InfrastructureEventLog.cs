@@ -10,7 +10,7 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// Envelope schema: see docs/developers/events-schema.md
 ///
-/// Always on once <see cref="Initialize"/> is called. Overhead is negligible
+/// Always on once <see cref="Initialize()"/> is called. Overhead is negligible
 /// (~1600-2000 events over a 6.5-minute run, microsecond writes per emit).
 /// I/O errors propagate rather than being swallowed so a broken log surfaces
 /// as an infra failure instead of silently losing diagnostics.
@@ -335,10 +335,10 @@ public static class InfrastructureEventLog
     private static readonly object _lock = new();
 
     /// <summary>
-    /// Buffer for events emitted before <see cref="Initialize"/> has opened the
+    /// Buffer for events emitted before <see cref="Initialize()"/> has opened the
     /// log file. Pre-init events are stashed as their already-serialized JSON
     /// lines (so ts / requestId capture the true emit-time values),
-    /// then flushed in order when <see cref="Initialize"/> runs. Prevents
+    /// then flushed in order when <see cref="Initialize()"/> runs. Prevents
     /// observability gaps caused by static-field initializer ordering races
     /// or by callers that legitimately need to emit during construction (e.g.
     /// <c>DockerImageBuilder</c> called via a <c>Lazy&lt;Task&gt;</c> factory
@@ -349,7 +349,7 @@ public static class InfrastructureEventLog
 
     /// <summary>
     /// Hard cap on pre-Initialize events. A stuck test that never calls
-    /// <see cref="Initialize"/> must not grow memory unboundedly; at the cap
+    /// <see cref="Initialize()"/> must not grow memory unboundedly; at the cap
     /// we drop additional events (with one stderr warning) rather than leak.
     /// </summary>
     private const int PreInitBufferCap = 1000;
@@ -357,7 +357,10 @@ public static class InfrastructureEventLog
     /// <summary>Exception types already reported on stderr from
     /// <see cref="ForwardRaw"/>. Used to emit the first failure of each
     /// type and suppress the rest.</summary>
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, byte> _reportedForwardFailures = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        Type,
+        byte
+    > _reportedForwardFailures = new();
 
     /// <summary>
     /// Opens the infrastructure log file. Called from
@@ -369,7 +372,7 @@ public static class InfrastructureEventLog
     /// are flushed to the log, in order, before this method returns. Callers
     /// therefore never need to worry about emit-vs-initialize ordering — an
     /// <see cref="Emit"/> call anywhere in the process graph reaches the log
-    /// as long as <see cref="Initialize"/> runs before <see cref="Shutdown"/>.
+    /// as long as <see cref="Initialize()"/> runs before <see cref="Shutdown"/>.
     /// </para>
     /// </summary>
     public static void Initialize() => Initialize(RunArtifactNames.InfrastructureJsonl);
@@ -384,7 +387,11 @@ public static class InfrastructureEventLog
     {
         lock (_lock)
         {
-            if (_asyncWriter != null) return;
+            if (_asyncWriter != null)
+            {
+                return;
+            }
+
             var path = Path.Combine(TestArtifacts.GetDiagnosticsDir(), fileName);
             // Disk preflight + consumer thread spawn happen inside Open. A failure
             // here (disk full, permission denied) throws synchronously and aborts
@@ -414,11 +421,20 @@ public static class InfrastructureEventLog
         try
         {
             Console.Error.WriteLine(
-                $"[InfrastructureEventLog] FATAL: writer fault ({ex.GetType().Name}: {ex.Message}); " +
-                "aborting run.");
+                $"[InfrastructureEventLog] FATAL: writer fault ({ex.GetType().Name}: {ex.Message}); "
+                    + "aborting run."
+            );
         }
-        catch { /* stderr unavailable */ }
-        try { ShutdownCoordinator.SignalShutdown(); } catch { /* already shutting down */ }
+        catch
+        { /* stderr unavailable */
+        }
+        try
+        {
+            ShutdownCoordinator.SignalShutdown();
+        }
+        catch
+        { /* already shutting down */
+        }
     }
 
     /// <summary>
@@ -431,7 +447,10 @@ public static class InfrastructureEventLog
     public static Task FlushAsync()
     {
         AsyncJsonlWriter? writer;
-        lock (_lock) { writer = _asyncWriter; }
+        lock (_lock)
+        {
+            writer = _asyncWriter;
+        }
         return writer?.FlushAsync() ?? Task.CompletedTask;
     }
 
@@ -443,7 +462,10 @@ public static class InfrastructureEventLog
     public static Task DrainAsync(TimeSpan timeout)
     {
         AsyncJsonlWriter? writer;
-        lock (_lock) { writer = _asyncWriter; }
+        lock (_lock)
+        {
+            writer = _asyncWriter;
+        }
         return writer?.DrainAsync(timeout) ?? Task.CompletedTask;
     }
 
@@ -473,8 +495,8 @@ public static class InfrastructureEventLog
     /// </para>
     ///
     /// <para>
-    /// If <see cref="Initialize"/> has not yet opened the log file, the event
-    /// is buffered in-memory and flushed when <see cref="Initialize"/> runs.
+    /// If <see cref="Initialize()"/> has not yet opened the log file, the event
+    /// is buffered in-memory and flushed when <see cref="Initialize()"/> runs.
     /// The buffer is capped at <see cref="PreInitBufferCap"/>; overflow drops
     /// events with a single stderr warning.
     /// </para>
@@ -490,7 +512,7 @@ public static class InfrastructureEventLog
             test = TestIdentityContext.Current,
             phase = TestIdentityContext.Phase,
             @event = eventType,
-            data
+            data,
         };
         var json = DiagnosticEmitJson.Serialize(entry);
         WriteSerialized(json, eventType);
@@ -504,9 +526,14 @@ public static class InfrastructureEventLog
     /// <see cref="TestIdentityContext.Phase"/>.
     /// </summary>
     public static void EmitWait(
-        WaitName name, WaitPhase phase, long? durationMs,
-        object? snapshot, string? snapshotError = null,
-        string? errorType = null, string? errorMessage = null)
+        WaitName name,
+        WaitPhase phase,
+        long? durationMs,
+        object? snapshot,
+        string? snapshotError = null,
+        string? errorType = null,
+        string? errorMessage = null
+    )
     {
         var data = new
         {
@@ -516,7 +543,7 @@ public static class InfrastructureEventLog
             snapshot,
             snapshotError,
             errorType,
-            errorMessage
+            errorMessage,
         };
         Emit("wait", data);
     }
@@ -543,8 +570,13 @@ public static class InfrastructureEventLog
         }
         if (node is not JsonObject obj)
         {
-            ReportForwardFailure(forwardedVia, "shape", new InvalidOperationException(
-                $"SDVD_EVENT payload was valid JSON but not an object (got {node?.GetType().Name ?? "null"})"));
+            ReportForwardFailure(
+                forwardedVia,
+                "shape",
+                new InvalidOperationException(
+                    $"SDVD_EVENT payload was valid JSON but not an object (got {node?.GetType().Name ?? "null"})"
+                )
+            );
             return;
         }
 
@@ -556,8 +588,14 @@ public static class InfrastructureEventLog
         string eventType = "<unknown>";
         try
         {
-            if (obj["event"] is JsonValue ev && ev.TryGetValue(out string? name) && !string.IsNullOrEmpty(name))
+            if (
+                obj["event"] is JsonValue ev
+                && ev.TryGetValue(out string? name)
+                && !string.IsNullOrEmpty(name)
+            )
+            {
                 eventType = name;
+            }
         }
         catch (Exception ex)
         {
@@ -578,9 +616,10 @@ public static class InfrastructureEventLog
             if (_reportedForwardFailures.TryAdd(ex.GetType(), 0))
             {
                 Console.Error.WriteLine(
-                    $"[InfrastructureEventLog] ForwardRaw {stage} failed " +
-                    $"({ex.GetType().Name}: {ex.Message}) from '{forwardedVia}'. " +
-                    $"Further '{ex.GetType().Name}' failures will be silent.");
+                    $"[InfrastructureEventLog] ForwardRaw {stage} failed "
+                        + $"({ex.GetType().Name}: {ex.Message}) from '{forwardedVia}'. "
+                        + $"Further '{ex.GetType().Name}' failures will be silent."
+                );
             }
         }
         catch
@@ -613,10 +652,11 @@ public static class InfrastructureEventLog
                     {
                         _preInitOverflowWarned = true;
                         Console.Error.WriteLine(
-                            $"[InfrastructureEventLog] WARNING: pre-Initialize buffer full " +
-                            $"({PreInitBufferCap} events); dropping further events until Initialize() runs. " +
-                            $"First event type dropped: '{eventType}'. " +
-                            "This usually means Initialize() was never called or an emit loop fired before the broker started.");
+                            $"[InfrastructureEventLog] WARNING: pre-Initialize buffer full "
+                                + $"({PreInitBufferCap} events); dropping further events until Initialize() runs. "
+                                + $"First event type dropped: '{eventType}'. "
+                                + "This usually means Initialize() was never called or an emit loop fired before the broker started."
+                        );
                     }
                     return;
                 }
@@ -640,7 +680,7 @@ public static class InfrastructureEventLog
     /// </para>
     ///
     /// <para>
-    /// If <see cref="Initialize"/> was never called (crash before pre-start),
+    /// If <see cref="Initialize()"/> was never called (crash before pre-start),
     /// any events that were buffered in memory are dumped to stderr so they
     /// aren't silently lost.
     /// </para>
@@ -667,8 +707,9 @@ public static class InfrastructureEventLog
                 if (_preInitBuffer.Count > 0)
                 {
                     Console.Error.WriteLine(
-                        $"[InfrastructureEventLog] WARNING: Shutdown called without Initialize. " +
-                        $"Dumping {_preInitBuffer.Count} buffered event(s) to stderr:");
+                        $"[InfrastructureEventLog] WARNING: Shutdown called without Initialize. "
+                            + $"Dumping {_preInitBuffer.Count} buffered event(s) to stderr:"
+                    );
                     while (_preInitBuffer.Count > 0)
                     {
                         Console.Error.WriteLine(_preInitBuffer.Dequeue());
@@ -682,8 +723,13 @@ public static class InfrastructureEventLog
 
         // DisposeAsync drains the channel (5s cap inside the writer), flushes
         // the underlying file, and disposes the stream.
-        try { await toDispose.DisposeAsync(); }
-        catch { /* best effort on shutdown */ }
+        try
+        {
+            await toDispose.DisposeAsync();
+        }
+        catch
+        { /* best effort on shutdown */
+        }
 
         // Post-close: sample the file size and emit a warning if it exceeds
         // the advisory budget. Done outside the lock since we no longer hold
@@ -692,16 +738,22 @@ public static class InfrastructureEventLog
         _writerPath = null;
         try
         {
-            var path = sampledPath ?? Path.Combine(TestArtifacts.GetDiagnosticsDir(), RunArtifactNames.InfrastructureJsonl);
+            var path =
+                sampledPath
+                ?? Path.Combine(
+                    TestArtifacts.GetDiagnosticsDir(),
+                    RunArtifactNames.InfrastructureJsonl
+                );
             if (File.Exists(path))
             {
                 var size = new FileInfo(path).Length;
                 if (size > SoftSizeLimitBytes)
                 {
                     Console.Error.WriteLine(
-                        $"[InfrastructureEventLog] WARNING: infrastructure.jsonl is {size / (1024 * 1024)} MB, " +
-                        $"exceeds advisory limit of {SoftSizeLimitBytes / (1024 * 1024)} MB. " +
-                        "A new emitter is likely missing dedup/throttle — investigate before shipping.");
+                        $"[InfrastructureEventLog] WARNING: infrastructure.jsonl is {size / (1024 * 1024)} MB, "
+                            + $"exceeds advisory limit of {SoftSizeLimitBytes / (1024 * 1024)} MB. "
+                            + "A new emitter is likely missing dedup/throttle — investigate before shipping."
+                    );
                 }
             }
         }
@@ -730,5 +782,5 @@ public enum WaitPhase
     Started,
     Completed,
     Cancelled,
-    Failed
+    Failed,
 }

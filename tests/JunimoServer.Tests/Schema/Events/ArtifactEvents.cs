@@ -12,7 +12,8 @@ public sealed record ScreenshotCapturedEvent(
     string TestClass,
     string DisplayName,
     string ScreenshotPath,
-    string Source = "server") : IRendererEvent
+    string Source = "server"
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.Screenshot;
@@ -31,7 +32,8 @@ public sealed record RecordingCapturedEvent(
     string RecordingPath,
     string Source = "server",
     double TimelineOffset = 0,
-    double WallClockDuration = 0) : IRendererEvent
+    double WallClockDuration = 0
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.Recording;
@@ -50,18 +52,25 @@ public enum RecordingSkipReason
 {
     /// <summary>Class-level <c>[TestServer(Artifacts = false)]</c> on a passing test.</summary>
     ArtifactsOptedOut,
+
     /// <summary><c>SDVD_TEST_RECORDING=failure</c> + test passed → clip discarded by retention.</summary>
     RetentionPassed,
+
     /// <summary>Recorder produced no end timestamp; can't compute clip bounds.</summary>
     EndTimeMissing,
+
     /// <summary>Recorder existed but never reached running state.</summary>
     RecorderNeverStarted,
+
     /// <summary>No recorder registered for the marked container.</summary>
     RecorderMissing,
+
     /// <summary>Computed clip duration was non-positive.</summary>
     ZeroDuration,
+
     /// <summary>Per-clip ffmpeg extraction returned null / threw.</summary>
     ExtractionFailed,
+
     /// <summary>Deferred orchestrator finalize threw on the broker's background queue.</summary>
     FinalizeDeferredFailed,
 }
@@ -93,7 +102,8 @@ public sealed record RecordingSkippedEvent(
     string TestClass,
     string DisplayName,
     string Source,
-    RecordingSkipReason Reason) : IRendererEvent
+    RecordingSkipReason Reason
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.RecordingSkipped;
@@ -111,8 +121,7 @@ internal sealed class SnakeCaseRecordingSkipReasonConverter
     : JsonStringEnumConverter<RecordingSkipReason>
 {
     public SnakeCaseRecordingSkipReasonConverter()
-        : base(namingPolicy: JsonNamingPolicy.SnakeCaseLower)
-    { }
+        : base(namingPolicy: JsonNamingPolicy.SnakeCaseLower) { }
 }
 
 /// <summary>
@@ -121,7 +130,8 @@ internal sealed class SnakeCaseRecordingSkipReasonConverter
 public sealed record VncUrlEvent(
     string Label,
     string Url,
-    [property: JsonPropertyName("collection")] string? CollectionName = null) : IRendererEvent
+    [property: JsonPropertyName("collection")] string? CollectionName = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.VncUrl;

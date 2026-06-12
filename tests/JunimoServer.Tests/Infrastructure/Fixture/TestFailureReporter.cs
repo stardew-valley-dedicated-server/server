@@ -1,6 +1,5 @@
 using JunimoServer.Tests.Fixtures;
 using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Infrastructure.Fixture;
 
@@ -29,20 +28,39 @@ internal sealed class TestFailureReporter
         TestSummaryFixture.Instance?.MarkDispatched(collectionName, className, _displayName);
     }
 
-    internal void RecordFailure(string collectionName, string className,
-        string error, string? phase, string? screenshotPath,
-        string? serverKey, string? serverInstanceId, string? exceptionType,
-        string? failureCategory = null)
+    internal void RecordFailure(
+        string collectionName,
+        string className,
+        string error,
+        string? phase,
+        string? screenshotPath,
+        string? serverKey,
+        string? serverInstanceId,
+        string? exceptionType,
+        string? failureCategory = null
+    )
     {
         TestSummaryFixture.Instance?.MarkFailed(
-            collectionName, className, _displayName, error, phase, screenshotPath,
-            serverKey, serverInstanceId, exceptionType, failureCategory);
-        InfrastructureEventLog.Emit("test_error", new
-        {
-            phase,
+            collectionName,
+            className,
+            _displayName,
             error,
+            phase,
             screenshotPath,
-        });
+            serverKey,
+            serverInstanceId,
+            exceptionType,
+            failureCategory
+        );
+        InfrastructureEventLog.Emit(
+            "test_error",
+            new
+            {
+                phase,
+                error,
+                screenshotPath,
+            }
+        );
     }
 
     internal void RecordCancellation(string collectionName, string className)
@@ -70,10 +88,14 @@ internal sealed class TestFailureReporter
         TimeSpan artifactsDuration,
         TimeSpan cleanupDuration,
         long lastKeepDisposeMs,
-        long leaseReleaseMs)
+        long leaseReleaseMs
+    )
     {
         var snap = TestSummaryFixture.Instance?.GetEnrichmentSnapshot(
-            collectionName, className, _displayName);
+            collectionName,
+            className,
+            _displayName
+        );
         var outcome = snap?.Outcome switch
         {
             TestSummaryFixture.TestOutcome.Failed => "failed",
@@ -82,26 +104,32 @@ internal sealed class TestFailureReporter
         };
         // The record's stamped category (host-poison stamp) wins over the
         // exception-type classification.
-        var failureCategory = snap?.Outcome == TestSummaryFixture.TestOutcome.Failed
-            ? snap.FailureCategory ?? TestSummaryFixture.ClassifyFailureCategory(snap.ExceptionType)
-            : null;
-        SetupEventBus.EmitTestEnrichment(_displayName, new TestEnrichmentData(
-            Outcome: outcome,
-            FailureCategory: failureCategory,
-            ErrorPreview: TestSummaryFixture.BuildErrorPreview(snap?.Error),
-            Phase: snap?.Phase,
-            ReproCommand: TestSummaryFixture.BuildReproCommand(_displayName),
-            ServerKey: snap?.ServerKey ?? serverKey,
-            ServerInstanceId: snap?.ServerInstanceId ?? serverInstanceId,
-            ScreenshotPath: snap?.ScreenshotPath,
-            // Breakdown is null if the inner try threw before the breakdown is
-            // populated. Use zeros for the timing fields so failure metadata
-            // still surfaces.
-            TestBodyMs: breakdown?.TestBodyMs ?? (long)testBodyDuration.TotalMilliseconds,
-            ArtifactsMs: breakdown?.ArtifactsMs ?? (long)artifactsDuration.TotalMilliseconds,
-            CleanupMs: (long)cleanupDuration.TotalMilliseconds,
-            LastKeepDisposeMs: breakdown?.LastKeepDisposeMs ?? lastKeepDisposeMs,
-            LeaseReleaseMs: breakdown?.LeaseReleaseMs ?? leaseReleaseMs,
-            FailureContext: FailureContext.LatestForCurrentTest));
+        var failureCategory =
+            snap?.Outcome == TestSummaryFixture.TestOutcome.Failed
+                ? snap.FailureCategory
+                    ?? TestSummaryFixture.ClassifyFailureCategory(snap.ExceptionType)
+                : null;
+        SetupEventBus.EmitTestEnrichment(
+            _displayName,
+            new TestEnrichmentData(
+                Outcome: outcome,
+                FailureCategory: failureCategory,
+                ErrorPreview: TestSummaryFixture.BuildErrorPreview(snap?.Error),
+                Phase: snap?.Phase,
+                ReproCommand: TestSummaryFixture.BuildReproCommand(_displayName),
+                ServerKey: snap?.ServerKey ?? serverKey,
+                ServerInstanceId: snap?.ServerInstanceId ?? serverInstanceId,
+                ScreenshotPath: snap?.ScreenshotPath,
+                // Breakdown is null if the inner try threw before the breakdown is
+                // populated. Use zeros for the timing fields so failure metadata
+                // still surfaces.
+                TestBodyMs: breakdown?.TestBodyMs ?? (long)testBodyDuration.TotalMilliseconds,
+                ArtifactsMs: breakdown?.ArtifactsMs ?? (long)artifactsDuration.TotalMilliseconds,
+                CleanupMs: (long)cleanupDuration.TotalMilliseconds,
+                LastKeepDisposeMs: breakdown?.LastKeepDisposeMs ?? lastKeepDisposeMs,
+                LeaseReleaseMs: breakdown?.LeaseReleaseMs ?? leaseReleaseMs,
+                FailureContext: FailureContext.LatestForCurrentTest
+            )
+        );
     }
 }

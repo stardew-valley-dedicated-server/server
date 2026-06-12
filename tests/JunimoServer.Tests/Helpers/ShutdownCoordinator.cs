@@ -36,7 +36,13 @@ public static class ShutdownCoordinator
     public static void SignalShutdown()
     {
         _isShuttingDown = true;
-        try { ShutdownCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            ShutdownCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
     }
 
     /// <summary>
@@ -46,7 +52,11 @@ public static class ShutdownCoordinator
     /// </summary>
     public static void NotifyDockerDown(string reason)
     {
-        if (_dockerDown || _isShuttingDown) return;
+        if (_dockerDown || _isShuttingDown)
+        {
+            return;
+        }
+
         _dockerDown = true;
         SignalShutdown();
         TestLog.Server($"Docker daemon failure detected: {reason}");

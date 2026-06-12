@@ -1,5 +1,4 @@
 using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Schema.Events;
 using Xunit;
 
 namespace JunimoServer.Tests.Infrastructure.Fixture;
@@ -34,13 +33,23 @@ internal sealed class ConnectionRetryHelper
     {
         await _testBase.GetClientAsyncInternal(ct);
         using var _phase = TestIdentityContext.PushPhase("connect");
-        InfrastructureEventLog.Emit("connect_started", new { inviteCode = _testBase.InviteCodeInternal });
+        InfrastructureEventLog.Emit(
+            "connect_started",
+            new { inviteCode = _testBase.InviteCodeInternal }
+        );
         try
         {
             var lease = _testBase.LeaseInternal!;
             var result = lease.RequiresSteamConnection
-                ? await _testBase.ConnectionInternal.ConnectToServerAsync(_testBase.InviteCodeInternal, ct)
-                : await _testBase.ConnectionInternal.ConnectViaLanAsync(lease.ServerLanAddress, lease.ServerLanPort, ct);
+                ? await _testBase.ConnectionInternal.ConnectToServerAsync(
+                    _testBase.InviteCodeInternal,
+                    ct
+                )
+                : await _testBase.ConnectionInternal.ConnectViaLanAsync(
+                    lease.ServerLanAddress,
+                    lease.ServerLanPort,
+                    ct
+                );
             if (result.Success)
             {
                 _testBase.PersistentSession.DidConnect = true;
@@ -62,7 +71,8 @@ internal sealed class ConnectionRetryHelper
         string farmerName,
         string favoriteThing = "Testing",
         bool preferExistingFarmer = true,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         await _testBase.GetClientAsyncInternal(ct);
         using var _phase = TestIdentityContext.PushPhase("connect");
@@ -73,22 +83,40 @@ internal sealed class ConnectionRetryHelper
         try
         {
             var result = lease.RequiresSteamConnection
-                ? await _testBase.ConnectionInternal.JoinWorldAsync(_testBase.InviteCodeInternal, farmerName, favoriteThing, preferExistingFarmer, skipAutoLogin: false, ct)
+                ? await _testBase.ConnectionInternal.JoinWorldAsync(
+                    _testBase.InviteCodeInternal,
+                    farmerName,
+                    favoriteThing,
+                    preferExistingFarmer,
+                    skipAutoLogin: false,
+                    ct
+                )
                 : await _testBase.ConnectionInternal.JoinWorldViaLanAsync(
-                    lease.ServerLanAddress, lease.ServerLanPort,
-                    farmerName, favoriteThing, preferExistingFarmer, skipAutoLogin: false, ct);
+                    lease.ServerLanAddress,
+                    lease.ServerLanPort,
+                    farmerName,
+                    favoriteThing,
+                    preferExistingFarmer,
+                    skipAutoLogin: false,
+                    ct
+                );
             if (result.Success)
             {
                 _testBase.PersistentSession.DidConnect = true;
-                InfrastructureEventLog.Emit("connect_completed", new
-                {
-                    farmerName,
-                    durationMs = joinSw.ElapsedMilliseconds,
-                    attempts = result.AttemptsUsed
-                });
+                InfrastructureEventLog.Emit(
+                    "connect_completed",
+                    new
+                    {
+                        farmerName,
+                        durationMs = joinSw.ElapsedMilliseconds,
+                        attempts = result.AttemptsUsed,
+                    }
+                );
                 var primaryClientLease = _testBase.PrimaryClientLeaseInternal;
                 if (primaryClientLease != null)
+                {
                     SetupEventBus.EmitInstanceConnected(primaryClientLease.InstanceId);
+                }
             }
             return result;
         }
@@ -110,7 +138,8 @@ internal sealed class ConnectionRetryHelper
         string farmerName,
         string favoriteThing = "Testing",
         bool preferExistingFarmer = true,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         await _testBase.GetClientAsyncInternal(ct);
         var joinSw = System.Diagnostics.Stopwatch.StartNew();
@@ -119,19 +148,35 @@ internal sealed class ConnectionRetryHelper
         try
         {
             var result = lease.RequiresSteamConnection
-                ? await _testBase.ConnectionInternal.JoinWorldAsync(_testBase.InviteCodeInternal, farmerName, favoriteThing, preferExistingFarmer, skipAutoLogin: true, ct)
+                ? await _testBase.ConnectionInternal.JoinWorldAsync(
+                    _testBase.InviteCodeInternal,
+                    farmerName,
+                    favoriteThing,
+                    preferExistingFarmer,
+                    skipAutoLogin: true,
+                    ct
+                )
                 : await _testBase.ConnectionInternal.JoinWorldViaLanAsync(
-                    lease.ServerLanAddress, lease.ServerLanPort,
-                    farmerName, favoriteThing, preferExistingFarmer, skipAutoLogin: true, ct);
+                    lease.ServerLanAddress,
+                    lease.ServerLanPort,
+                    farmerName,
+                    favoriteThing,
+                    preferExistingFarmer,
+                    skipAutoLogin: true,
+                    ct
+                );
             if (result.Success)
             {
                 _testBase.PersistentSession.DidConnect = true;
-                InfrastructureEventLog.Emit("connect_completed", new
-                {
-                    farmerName,
-                    durationMs = joinSw.ElapsedMilliseconds,
-                    attempts = result.AttemptsUsed
-                });
+                InfrastructureEventLog.Emit(
+                    "connect_completed",
+                    new
+                    {
+                        farmerName,
+                        durationMs = joinSw.ElapsedMilliseconds,
+                        attempts = result.AttemptsUsed,
+                    }
+                );
             }
             return result;
         }
@@ -149,11 +194,16 @@ internal sealed class ConnectionRetryHelper
     public async Task<bool> EnsureDisconnectedAsync(TimeSpan? timeout = null)
     {
         var connection = _testBase.ConnectionInternalOrNull;
-        if (connection == null) return true;
+        if (connection == null)
+        {
+            return true;
+        }
 
         try
         {
-            return await connection.EnsureDisconnectedAsync(timeout ?? TestTimings.DisconnectedTimeout);
+            return await connection.EnsureDisconnectedAsync(
+                timeout ?? TestTimings.DisconnectedTimeout
+            );
         }
         catch (OperationCanceledException ex)
         {
@@ -165,17 +215,33 @@ internal sealed class ConnectionRetryHelper
     public void AssertConnectionSuccess(ConnectionResult result)
     {
         if (!result.Success)
-            _testBase.RecordTestFailureInternal($"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}", "connect");
-        Assert.True(result.Success,
-            $"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}");
+        {
+            _testBase.RecordTestFailureInternal(
+                $"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}",
+                "connect"
+            );
+        }
+
+        Assert.True(
+            result.Success,
+            $"Connection failed after {result.AttemptsUsed} attempt(s): {result.Error}"
+        );
     }
 
     public void AssertJoinSuccess(JoinWorldResult result)
     {
         if (!result.Success)
-            _testBase.RecordTestFailureInternal($"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}", "connect");
-        Assert.True(result.Success,
-            $"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}");
+        {
+            _testBase.RecordTestFailureInternal(
+                $"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}",
+                "connect"
+            );
+        }
+
+        Assert.True(
+            result.Success,
+            $"Join world failed after {result.AttemptsUsed} attempt(s): {result.Error}"
+        );
     }
 
     /// <summary>
@@ -190,19 +256,26 @@ internal sealed class ConnectionRetryHelper
         if (result.WasInLobby && !result.IsAuthenticated)
         {
             var lease = _testBase.LeaseInternal;
-            if (result.ServerUnhealthy || lease?.IsPoisoned == true
-                || lease?.ErrorToken.IsCancellationRequested == true)
+            if (
+                result.ServerUnhealthy
+                || lease?.IsPoisoned == true
+                || lease?.ErrorToken.IsCancellationRequested == true
+            )
             {
-                var reason = lease?.IsPoisoned == true
-                    ? $"Server poisoned: {lease.AbortReason ?? "unknown"}"
-                    : result.ServerUnhealthy
-                        ? "Server API unhealthy during auth"
-                        : "Server error detected during auth";
+                var reason =
+                    lease?.IsPoisoned == true ? $"Server poisoned: {lease.AbortReason ?? "unknown"}"
+                    : result.ServerUnhealthy ? "Server API unhealthy during auth"
+                    : "Server error detected during auth";
                 throw new TestRunAbortedException(reason);
             }
 
-            _testBase.RecordTestFailureInternal("Player was placed in lobby but authentication failed", "auth");
-            Assert.Fail("Player must be authenticated (was placed in lobby but authentication failed)");
+            _testBase.RecordTestFailureInternal(
+                "Player was placed in lobby but authentication failed",
+                "auth"
+            );
+            Assert.Fail(
+                "Player must be authenticated (was placed in lobby but authentication failed)"
+            );
         }
     }
 }

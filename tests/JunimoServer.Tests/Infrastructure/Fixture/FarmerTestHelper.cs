@@ -1,5 +1,4 @@
 using JunimoServer.Tests.Helpers;
-using JunimoServer.Tests.Schema.Events;
 using Xunit;
 
 namespace JunimoServer.Tests.Infrastructure.Fixture;
@@ -52,23 +51,42 @@ internal sealed class FarmerTestHelper
         bool skipAutoLogin = false,
         bool assertAuthenticated = false,
         bool breakSession = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (breakSession)
+        {
             await _testBase.PersistentSession.BreakSessionAsync();
+        }
         else
+        {
             await _testBase.Connect.EnsureDisconnectedAsync();
+        }
 
         var name = farmerName ?? GenerateName(namePrefix);
 
         var result = skipAutoLogin
-            ? await _testBase.Connect.JoinWithoutAuthAsync(name, favoriteThing, preferExistingFarmer, ct)
-            : await _testBase.Connect.JoinWithRetryAsync(name, favoriteThing, preferExistingFarmer, ct);
+            ? await _testBase.Connect.JoinWithoutAuthAsync(
+                name,
+                favoriteThing,
+                preferExistingFarmer,
+                ct
+            )
+            : await _testBase.Connect.JoinWithRetryAsync(
+                name,
+                favoriteThing,
+                preferExistingFarmer,
+                ct
+            );
 
         if (assertAuthenticated)
+        {
             _testBase.Connect.AssertAuthenticated(result);
+        }
         else
+        {
             _testBase.Connect.AssertJoinSuccess(result);
+        }
 
         // Track only after join has succeeded — AssertJoinSuccess guarantees UID is set.
         TrackFarmer(name, result.UniqueMultiplayerId);
@@ -84,16 +102,21 @@ internal sealed class FarmerTestHelper
         string farmerName,
         bool skipAutoLogin = false,
         bool assertAuthenticated = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var result = skipAutoLogin
             ? await _testBase.Connect.JoinWithoutAuthAsync(farmerName, ct: ct)
             : await _testBase.Connect.JoinWithRetryAsync(farmerName, ct: ct);
 
         if (assertAuthenticated)
+        {
             _testBase.Connect.AssertAuthenticated(result);
+        }
         else
+        {
             _testBase.Connect.AssertJoinSuccess(result);
+        }
 
         return new ClientConnection(farmerName, result);
     }
@@ -103,12 +126,17 @@ internal sealed class FarmerTestHelper
     /// from its active player list, freeing the farmhand slot for reconnection.
     /// </summary>
     public async Task DisconnectAndWaitForSlotAsync(
-        long farmerUid, string? farmerNameForLog = null, CancellationToken ct = default)
+        long farmerUid,
+        string? farmerNameForLog = null,
+        CancellationToken ct = default
+    )
     {
         await _testBase.DisconnectAsyncInternal();
         var removed = await _testBase.ServerApi.WaitForPlayerRemovedByIdAsync(farmerUid, ct: ct);
-        Assert.True(removed,
-            $"Server should have removed uid={farmerUid} ({farmerNameForLog ?? "?"}) from active players after disconnect");
+        Assert.True(
+            removed,
+            $"Server should have removed uid={farmerUid} ({farmerNameForLog ?? "?"}) from active players after disconnect"
+        );
     }
 
     /// <summary>
@@ -123,17 +151,29 @@ internal sealed class FarmerTestHelper
     /// customization visible server-side must wait for it explicitly here.
     /// </summary>
     public async Task DisconnectAndWaitForPersistenceAsync(
-        string farmerName, CancellationToken ct = default)
+        string farmerName,
+        CancellationToken ct = default
+    )
     {
         var customized = await _testBase.ServerApi.WaitForFarmhandByNameAsync(
-            farmerName, requireCustomized: true, ct: ct);
-        Assert.True(customized,
-            $"Farmhand '{farmerName}' should appear customized in /farmhands before disconnect");
+            farmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        Assert.True(
+            customized,
+            $"Farmhand '{farmerName}' should appear customized in /farmhands before disconnect"
+        );
 
         await _testBase.DisconnectAsyncInternal();
         var persisted = await _testBase.ServerApi.WaitForFarmhandByNameAsync(
-            farmerName, requireCustomized: true, ct: ct);
-        Assert.True(persisted,
-            $"Farmhand '{farmerName}' should appear in /farmhands after disconnect");
+            farmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        Assert.True(
+            persisted,
+            $"Farmhand '{farmerName}' should appear in /farmhands after disconnect"
+        );
     }
 }

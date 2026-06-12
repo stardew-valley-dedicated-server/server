@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -52,28 +50,59 @@ public class GodTool
 
             // Patch Pickaxe.DoFunction to boost pickaxe power
             var pickaxeDoFunction = AccessTools.Method(typeof(Pickaxe), nameof(Pickaxe.DoFunction));
-            var pickaxePrefix = new HarmonyMethod(typeof(GodTool), nameof(Pickaxe_DoFunction_Prefix));
-            var pickaxePostfix = new HarmonyMethod(typeof(GodTool), nameof(Pickaxe_DoFunction_Postfix));
+            var pickaxePrefix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(Pickaxe_DoFunction_Prefix)
+            );
+            var pickaxePostfix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(Pickaxe_DoFunction_Postfix)
+            );
             _harmony.Patch(pickaxeDoFunction, prefix: pickaxePrefix, postfix: pickaxePostfix);
 
             // Patch Tree.performToolAction to instantly destroy trees
-            var treePerformToolAction = AccessTools.Method(typeof(Tree), nameof(Tree.performToolAction));
-            var treePrefix = new HarmonyMethod(typeof(GodTool), nameof(Tree_performToolAction_Prefix));
+            var treePerformToolAction = AccessTools.Method(
+                typeof(Tree),
+                nameof(Tree.performToolAction)
+            );
+            var treePrefix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(Tree_performToolAction_Prefix)
+            );
             _harmony.Patch(treePerformToolAction, prefix: treePrefix);
 
             // Patch ResourceClump.performToolAction to instantly destroy stumps/boulders/logs
-            var resourceClumpPerformToolAction = AccessTools.Method(typeof(ResourceClump), nameof(ResourceClump.performToolAction));
-            var resourceClumpPrefix = new HarmonyMethod(typeof(GodTool), nameof(ResourceClump_performToolAction_Prefix));
+            var resourceClumpPerformToolAction = AccessTools.Method(
+                typeof(ResourceClump),
+                nameof(ResourceClump.performToolAction)
+            );
+            var resourceClumpPrefix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(ResourceClump_performToolAction_Prefix)
+            );
             _harmony.Patch(resourceClumpPerformToolAction, prefix: resourceClumpPrefix);
 
             // Patch Object.performToolAction to allow cross-tool destruction (axe breaks stones, pickaxe breaks twigs)
-            var objectPerformToolAction = AccessTools.Method(typeof(SObject), nameof(SObject.performToolAction), new[] { typeof(Tool) });
-            var objectPrefix = new HarmonyMethod(typeof(GodTool), nameof(Object_performToolAction_Prefix));
+            var objectPerformToolAction = AccessTools.Method(
+                typeof(SObject),
+                nameof(SObject.performToolAction),
+                new[] { typeof(Tool) }
+            );
+            var objectPrefix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(Object_performToolAction_Prefix)
+            );
             _harmony.Patch(objectPerformToolAction, prefix: objectPrefix);
 
             // Patch MeleeWeapon.DoDamage to make scythe clear 10x10 area
-            var meleeWeaponDoDamage = AccessTools.Method(typeof(MeleeWeapon), nameof(MeleeWeapon.DoDamage));
-            var scythePrefix = new HarmonyMethod(typeof(GodTool), nameof(MeleeWeapon_DoDamage_Prefix));
+            var meleeWeaponDoDamage = AccessTools.Method(
+                typeof(MeleeWeapon),
+                nameof(MeleeWeapon.DoDamage)
+            );
+            var scythePrefix = new HarmonyMethod(
+                typeof(GodTool),
+                nameof(MeleeWeapon_DoDamage_Prefix)
+            );
             _harmony.Patch(meleeWeaponDoDamage, prefix: scythePrefix);
 
             _monitor.Log("God Tool patches applied - one-hit destruction enabled!", LogLevel.Info);
@@ -89,7 +118,10 @@ public class GodTool
     /// </summary>
     private static void Axe_DoFunction_Prefix(Axe __instance, ref int __state)
     {
-        if (!_enabled) return;
+        if (!_enabled)
+        {
+            return;
+        }
 
         // Store original value
         __state = __instance.additionalPower.Value;
@@ -102,7 +134,11 @@ public class GodTool
     /// </summary>
     private static void Axe_DoFunction_Postfix(Axe __instance, int __state)
     {
-        if (!_enabled) return;
+        if (!_enabled)
+        {
+            return;
+        }
+
         __instance.additionalPower.Value = __state;
     }
 
@@ -111,7 +147,10 @@ public class GodTool
     /// </summary>
     private static void Pickaxe_DoFunction_Prefix(Pickaxe __instance, ref int __state)
     {
-        if (!_enabled) return;
+        if (!_enabled)
+        {
+            return;
+        }
 
         // Store original value
         __state = __instance.additionalPower.Value;
@@ -124,7 +163,11 @@ public class GodTool
     /// </summary>
     private static void Pickaxe_DoFunction_Postfix(Pickaxe __instance, int __state)
     {
-        if (!_enabled) return;
+        if (!_enabled)
+        {
+            return;
+        }
+
         __instance.additionalPower.Value = __state;
     }
 
@@ -135,13 +178,29 @@ public class GodTool
     /// Prefix for Tree.performToolAction - destroys tree AND stump in one hit.
     /// Works with both Axe and Pickaxe for universal destruction.
     /// </summary>
-    private static bool Tree_performToolAction_Prefix(Tree __instance, Tool t, int explosion, Vector2 tileLocation, ref bool __result)
+    private static bool Tree_performToolAction_Prefix(
+        Tree __instance,
+        Tool t,
+        int explosion,
+        Vector2 tileLocation,
+        ref bool __result
+    )
     {
-        if (!_enabled) return true; // Run original
-        if (t is not Axe && t is not Pickaxe) return true; // Run original for other tools
+        if (!_enabled)
+        {
+            return true; // Run original
+        }
+
+        if (t is not Axe && t is not Pickaxe)
+        {
+            return true; // Run original for other tools
+        }
 
         var location = __instance.Location;
-        if (location == null) return true;
+        if (location == null)
+        {
+            return true;
+        }
 
         var farmer = t.getLastFarmerToUse();
 
@@ -175,9 +234,16 @@ public class GodTool
     /// Prefix for ResourceClump.performToolAction - sets health to minimum.
     /// ResourceClumps include large stumps, hollow logs, boulders, and meteorites.
     /// </summary>
-    private static void ResourceClump_performToolAction_Prefix(ResourceClump __instance, Tool t, int damage)
+    private static void ResourceClump_performToolAction_Prefix(
+        ResourceClump __instance,
+        Tool t,
+        int damage
+    )
     {
-        if (!_enabled) return;
+        if (!_enabled)
+        {
+            return;
+        }
 
         // ResourceClumps (stumps, logs, boulders) have varying health
         // Set to minimum so one hit destroys them
@@ -188,13 +254,27 @@ public class GodTool
     /// Prefix for Object.performToolAction - handles cross-tool destruction.
     /// Allows axes to break stones and pickaxes to break twigs.
     /// </summary>
-    private static bool Object_performToolAction_Prefix(SObject __instance, Tool t, ref bool __result)
+    private static bool Object_performToolAction_Prefix(
+        SObject __instance,
+        Tool t,
+        ref bool __result
+    )
     {
-        if (!_enabled) return true; // Run original
-        if (t is not Axe && t is not Pickaxe) return true; // Run original for other tools
+        if (!_enabled)
+        {
+            return true; // Run original
+        }
+
+        if (t is not Axe && t is not Pickaxe)
+        {
+            return true; // Run original for other tools
+        }
 
         var location = __instance.Location;
-        if (location == null) return true;
+        if (location == null)
+        {
+            return true;
+        }
 
         // Handle stones with axe (normally only pickaxe works)
         if (__instance.IsBreakableStone() && t is Axe)
@@ -202,10 +282,22 @@ public class GodTool
             // Instantly destroy the stone
             __instance.MinutesUntilReady = 0;
             location.playSound("stoneCrack", __instance.TileLocation);
-            Game1.createRadialDebris(location, 14, (int)__instance.TileLocation.X, (int)__instance.TileLocation.Y, Game1.random.Next(2, 5), resource: false);
+            Game1.createRadialDebris(
+                location,
+                14,
+                (int)__instance.TileLocation.X,
+                (int)__instance.TileLocation.Y,
+                Game1.random.Next(2, 5),
+                resource: false
+            );
 
             // Trigger stone destruction logic
-            location.OnStoneDestroyed(__instance.ItemId, (int)__instance.TileLocation.X, (int)__instance.TileLocation.Y, t.getLastFarmerToUse());
+            location.OnStoneDestroyed(
+                __instance.ItemId,
+                (int)__instance.TileLocation.X,
+                (int)__instance.TileLocation.Y,
+                t.getLastFarmerToUse()
+            );
             __instance.performRemoveAction();
             location.Objects.Remove(__instance.TileLocation);
             Game1.stats.RocksCrushed++;
@@ -219,8 +311,17 @@ public class GodTool
         {
             __instance.Fragility = 2;
             location.playSound("axchop", __instance.TileLocation);
-            location.debris.Add(new Debris(ItemRegistry.Create("(O)388"), __instance.TileLocation * 64f));
-            Game1.createRadialDebris(location, 12, (int)__instance.TileLocation.X, (int)__instance.TileLocation.Y, Game1.random.Next(4, 10), resource: false);
+            location.debris.Add(
+                new Debris(ItemRegistry.Create("(O)388"), __instance.TileLocation * 64f)
+            );
+            Game1.createRadialDebris(
+                location,
+                12,
+                (int)__instance.TileLocation.X,
+                (int)__instance.TileLocation.Y,
+                Game1.random.Next(4, 10),
+                resource: false
+            );
             t.getLastFarmerToUse()?.gainExperience(2, 1);
 
             __instance.performRemoveAction();
@@ -237,10 +338,25 @@ public class GodTool
     /// Prefix for MeleeWeapon.DoDamage - makes scythe destroy everything in a 10x10 area.
     /// Clears trees, stumps, stones, twigs, and other debris.
     /// </summary>
-    private static void MeleeWeapon_DoDamage_Prefix(MeleeWeapon __instance, GameLocation location, int x, int y, int facingDirection, int power, Farmer who)
+    private static void MeleeWeapon_DoDamage_Prefix(
+        MeleeWeapon __instance,
+        GameLocation location,
+        int x,
+        int y,
+        int facingDirection,
+        int power,
+        Farmer who
+    )
     {
-        if (!_enabled) return;
-        if (!__instance.isScythe()) return;
+        if (!_enabled)
+        {
+            return;
+        }
+
+        if (!__instance.isScythe())
+        {
+            return;
+        }
 
         var playerTile = who.Tile;
         var radius = 5; // 10x10 area = 5 tiles in each direction
@@ -254,10 +370,18 @@ public class GodTool
         foreach (var kvp in location.Objects.Pairs)
         {
             var tile = kvp.Key;
-            if (Math.Abs(tile.X - playerTile.X) <= radius && Math.Abs(tile.Y - playerTile.Y) <= radius)
+            if (
+                Math.Abs(tile.X - playerTile.X) <= radius
+                && Math.Abs(tile.Y - playerTile.Y) <= radius
+            )
             {
                 var obj = kvp.Value;
-                if (obj.IsBreakableStone() || obj.IsTwig() || obj.Name.Contains("Weed") || obj.Name.Contains("Stone"))
+                if (
+                    obj.IsBreakableStone()
+                    || obj.IsTwig()
+                    || obj.Name.Contains("Weed")
+                    || obj.Name.Contains("Stone")
+                )
                 {
                     objectsToRemove.Add(tile);
                 }
@@ -268,7 +392,10 @@ public class GodTool
         foreach (var kvp in location.terrainFeatures.Pairs)
         {
             var tile = kvp.Key;
-            if (Math.Abs(tile.X - playerTile.X) <= radius && Math.Abs(tile.Y - playerTile.Y) <= radius)
+            if (
+                Math.Abs(tile.X - playerTile.X) <= radius
+                && Math.Abs(tile.Y - playerTile.Y) <= radius
+            )
             {
                 var feature = kvp.Value;
                 if (feature is Tree || feature is Grass || feature is Bush)
@@ -288,14 +415,18 @@ public class GodTool
                 for (int dy = 0; dy < clump.height.Value; dy++)
                 {
                     var checkTile = new Vector2(clumpTile.X + dx, clumpTile.Y + dy);
-                    if (Math.Abs(checkTile.X - playerTile.X) <= radius && Math.Abs(checkTile.Y - playerTile.Y) <= radius)
+                    if (
+                        Math.Abs(checkTile.X - playerTile.X) <= radius
+                        && Math.Abs(checkTile.Y - playerTile.Y) <= radius
+                    )
                     {
                         resourceClumpsToRemove.Add(clump);
                         goto nextClump;
                     }
                 }
             }
-            nextClump:;
+            nextClump:
+            ;
         }
 
         // Remove objects

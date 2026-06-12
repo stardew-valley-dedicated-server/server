@@ -66,5 +66,5 @@ public enum ConnectionMethod
     /// Connect via direct IP/LAN using Lidgren networking.
     /// More reliable for testing, doesn't require multiple Steam accounts.
     /// </summary>
-    Lan
+    Lan,
 }

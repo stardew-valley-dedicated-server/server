@@ -4,13 +4,20 @@ using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+public class ListBansCommand
 {
-    public class ListBansCommand
+    public static void Register(
+        IModHelper helper,
+        ChatCommandsService chatCommandsService,
+        RoleService roleService
+    )
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
-        {
-            chatCommandsService.RegisterCommand("listbans", "list bans", (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "listbans",
+            "list bans",
+            (args, msg) =>
             {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
@@ -30,8 +37,7 @@ namespace JunimoServer.Services.Commands
                 {
                     helper.SendPrivateMessage(msg.SourceFarmer, $"{k} | {v} ");
                 }
-            });
-        }
-
+            }
+        );
     }
 }

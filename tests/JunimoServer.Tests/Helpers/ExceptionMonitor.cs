@@ -1,6 +1,5 @@
-using DotNet.Testcontainers.Containers;
-using JunimoServer.Tests.Clients;
 using System.Text.RegularExpressions;
+using JunimoServer.Tests.Clients;
 
 namespace JunimoServer.Tests.Helpers;
 
@@ -19,7 +18,10 @@ public class CapturedException
     {
         var result = $"[{Source}] {ExceptionType ?? "Exception"}: {Message}";
         if (!string.IsNullOrEmpty(StackTrace))
+        {
             result += $"\n{StackTrace}";
+        }
+
         return result;
     }
 }
@@ -80,14 +82,18 @@ public class ExceptionMonitor
     public ExceptionMonitor(
         GameTestClient gameClient,
         ExceptionMonitorOptions? options = null,
-        Action<string>? logOutput = null)
+        Action<string>? logOutput = null
+    )
     {
         _gameClient = gameClient;
         _options = options ?? ExceptionMonitorOptions.Default;
         _logOutput = logOutput;
 
-        _ignorePatterns = _options.IgnorePatterns
-            .Select(p => new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled))
+        _ignorePatterns = _options
+            .IgnorePatterns.Select(p => new Regex(
+                p,
+                RegexOptions.IgnoreCase | RegexOptions.Compiled
+            ))
             .ToList();
     }
 
@@ -105,7 +111,8 @@ public class ExceptionMonitor
     /// </summary>
     public void SetTestContext(
         Func<IReadOnlyList<string>>? serverErrorsGetter,
-        Action<string, string?>? recordFailure)
+        Action<string, string?>? recordFailure
+    )
     {
         _serverErrorsGetter = serverErrorsGetter;
         _recordFailure = recordFailure;
@@ -116,12 +123,18 @@ public class ExceptionMonitor
     /// </summary>
     public async Task CheckGameClientErrorsAsync(CancellationToken ct = default)
     {
-        if (!_options.MonitorGameClient) return;
+        if (!_options.MonitorGameClient)
+        {
+            return;
+        }
 
         try
         {
             var errors = await _gameClient.GetErrors(ct: ct);
-            if (errors?.Errors == null || errors.Errors.Count == 0) return;
+            if (errors?.Errors == null || errors.Errors.Count == 0)
+            {
+                return;
+            }
 
             lock (_lock)
             {
@@ -129,7 +142,9 @@ public class ExceptionMonitor
                 {
                     // Skip if we've already seen this error
                     if (_seenClientErrorIds.Contains(error.Id))
+                    {
                         continue;
+                    }
 
                     _seenClientErrorIds.Add(error.Id);
 
@@ -137,24 +152,37 @@ public class ExceptionMonitor
                     // from async teardown in Galaxy SDK / Steam networking when tasks are
                     // abandoned during disconnect. ErrorCapture on the client side filters
                     // these too, but older images may not have that filter yet.
-                    if (string.Equals(error.Source, "UnobservedTaskException", StringComparison.Ordinal)
-                        && error.Message.Contains("Operation canceled", StringComparison.OrdinalIgnoreCase))
+                    if (
+                        string.Equals(
+                            error.Source,
+                            "UnobservedTaskException",
+                            StringComparison.Ordinal
+                        )
+                        && error.Message.Contains(
+                            "Operation canceled",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                     {
-                        _logOutput?.Invoke($"[Game] (ignored) UnobservedTaskException: {error.Message}");
+                        _logOutput?.Invoke(
+                            $"[Game] (ignored) UnobservedTaskException: {error.Message}"
+                        );
                         continue;
                     }
 
                     // Log to output
                     _logOutput?.Invoke($"[Game] EXCEPTION: {error}");
 
-                    _capturedExceptions.Add(new CapturedException
-                    {
-                        Source = "GameClient",
-                        Timestamp = error.Timestamp,
-                        Message = error.Message,
-                        ExceptionType = error.ExceptionType,
-                        StackTrace = error.StackTrace
-                    });
+                    _capturedExceptions.Add(
+                        new CapturedException
+                        {
+                            Source = "GameClient",
+                            Timestamp = error.Timestamp,
+                            Message = error.Message,
+                            ExceptionType = error.ExceptionType,
+                            StackTrace = error.StackTrace,
+                        }
+                    );
                 }
             }
         }
@@ -164,7 +192,9 @@ public class ExceptionMonitor
         }
         catch (Exception ex)
         {
-            _logOutput?.Invoke($"[ExceptionMonitor] Failed to check game client errors: {ex.Message}");
+            _logOutput?.Invoke(
+                $"[ExceptionMonitor] Failed to check game client errors: {ex.Message}"
+            );
         }
     }
 
@@ -236,9 +266,10 @@ public class ExceptionMonitor
         if (serverErrors is { Count: > 0 })
         {
             var errorList = string.Join("\n", serverErrors);
-            var message = context != null
-                ? $"Server error during: {context}\n\n{errorList}"
-                : $"Server error detected\n\n{errorList}";
+            var message =
+                context != null
+                    ? $"Server error during: {context}\n\n{errorList}"
+                    : $"Server error detected\n\n{errorList}";
             _recordFailure?.Invoke(message, context);
             throw new ExceptionMonitorException(message, Array.Empty<CapturedException>());
         }
@@ -246,7 +277,10 @@ public class ExceptionMonitor
         // First check game client for new errors
         await CheckGameClientErrorsAsync();
 
-        if (!_options.AbortOnException) return;
+        if (!_options.AbortOnException)
+        {
+            return;
+        }
 
         ExceptionMonitorException? toThrow = null;
         lock (_lock)
@@ -254,9 +288,10 @@ public class ExceptionMonitor
             if (_capturedExceptions.Count > 0)
             {
                 var exceptions = string.Join("\n\n", _capturedExceptions.Select(e => e.ToString()));
-                var message = context != null
-                    ? $"Exceptions detected during: {context}\n\n{exceptions}"
-                    : $"Exceptions detected:\n\n{exceptions}";
+                var message =
+                    context != null
+                        ? $"Exceptions detected during: {context}\n\n{exceptions}"
+                        : $"Exceptions detected:\n\n{exceptions}";
 
                 toThrow = new ExceptionMonitorException(message, _capturedExceptions.ToList());
             }
@@ -268,7 +303,6 @@ public class ExceptionMonitor
             throw toThrow;
         }
     }
-
 }
 
 /// <summary>

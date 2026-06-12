@@ -16,7 +16,8 @@ public sealed record TestStartedEvent(
     [property: JsonPropertyName("test_collection")] string TestCollection,
     [property: JsonPropertyName("test_class")] string TestClass,
     [property: JsonPropertyName("test_method")] string TestMethod,
-    [property: JsonPropertyName("display_name")] string DisplayName) : IRendererEvent
+    [property: JsonPropertyName("display_name")] string DisplayName
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestStarted;
@@ -33,7 +34,8 @@ public sealed record TestRunningEvent(
     string TestCollection,
     string TestClass,
     string TestMethod,
-    string DisplayName) : IRendererEvent
+    string DisplayName
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestRunning;
@@ -49,9 +51,12 @@ public sealed record TestPassedEvent(
     [property: JsonPropertyName("test_class")] string TestClass,
     [property: JsonPropertyName("test_method")] string TestMethod,
     [property: JsonPropertyName("display_name")] string DisplayName,
-    [property: JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
-     JsonPropertyName("duration_ms")]
-    TimeSpan Duration) : IRendererEvent
+    [property:
+        JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
+        JsonPropertyName("duration_ms")
+    ]
+        TimeSpan Duration
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestPassed;
@@ -67,14 +72,17 @@ public sealed record TestFailedEvent(
     [property: JsonPropertyName("test_class")] string TestClass,
     [property: JsonPropertyName("test_method")] string TestMethod,
     [property: JsonPropertyName("display_name")] string DisplayName,
-    [property: JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
-     JsonPropertyName("duration_ms")]
-    TimeSpan Duration,
+    [property:
+        JsonConverter(typeof(TimeSpanMillisecondsJsonConverter)),
+        JsonPropertyName("duration_ms")
+    ]
+        TimeSpan Duration,
     [property: JsonPropertyName("exception_type")] string ExceptionType,
     [property: JsonPropertyName("message")] string Message,
     [property: JsonPropertyName("stack_trace")] string? StackTrace,
     [property: JsonPropertyName("screenshot_path")] string? ScreenshotPath = null,
-    [property: JsonPropertyName("artifact_id")] string? ArtifactId = null) : IRendererEvent
+    [property: JsonPropertyName("artifact_id")] string? ArtifactId = null
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestFailed;
@@ -90,7 +98,8 @@ public sealed record TestSkippedEvent(
     [property: JsonPropertyName("test_class")] string TestClass,
     [property: JsonPropertyName("test_method")] string TestMethod,
     [property: JsonPropertyName("display_name")] string DisplayName,
-    [property: JsonPropertyName("reason")] string Reason) : IRendererEvent
+    [property: JsonPropertyName("reason")] string Reason
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestSkipped;
@@ -101,9 +110,7 @@ public sealed record TestSkippedEvent(
 /// <summary>
 /// A single output line from a running test, streamed in real-time via named pipe IPC.
 /// </summary>
-public sealed record TestOutputEvent(
-    string DisplayName,
-    string Line) : IRendererEvent
+public sealed record TestOutputEvent(string DisplayName, string Line) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestOutput;
@@ -121,7 +128,8 @@ public sealed record TestAnnotationEvent(
     string DisplayName,
     AnnotationLevel Level,
     AnnotationSource Source,
-    string Message) : IRendererEvent
+    string Message
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestAnnotation;
@@ -147,7 +155,8 @@ public sealed record TestEnrichmentEvent(
     long CleanupMs,
     long LastKeepDisposeMs,
     long LeaseReleaseMs,
-    JsonElement? FailureContext) : IRendererEvent
+    JsonElement? FailureContext
+) : IRendererEvent
 {
     [JsonPropertyName("event")]
     public string EventName => EventNames.TestEnrichment;
@@ -167,9 +176,18 @@ public sealed record TestEnrichmentEvent(
 /// </summary>
 public sealed class TimeSpanMillisecondsJsonConverter : JsonConverter<TimeSpan>
 {
-    public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => TimeSpan.FromMilliseconds(reader.GetDouble());
+    public override TimeSpan Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) => TimeSpan.FromMilliseconds(reader.GetDouble());
 
-    public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
-        => writer.WriteNumberValue((long)Math.Round(value.TotalMilliseconds, MidpointRounding.AwayFromZero));
+    public override void Write(
+        Utf8JsonWriter writer,
+        TimeSpan value,
+        JsonSerializerOptions options
+    ) =>
+        writer.WriteNumberValue(
+            (long)Math.Round(value.TotalMilliseconds, MidpointRounding.AwayFromZero)
+        );
 }

@@ -25,30 +25,30 @@ public static class DiagnosticEmitJson
     };
 
     /// <summary>Untyped emit for ad-hoc anonymous-object events.</summary>
-    public static string Serialize(object? value)
-        => JsonSerializer.Serialize(value, Options);
+    public static string Serialize(object? value) => JsonSerializer.Serialize(value, Options);
 
     /// <summary>
     /// Serialize an already-built <see cref="JsonNode"/> tree (used by
     /// pass-through forwarders that mutate a parsed JSON object before
     /// emission).
     /// </summary>
-    public static string Serialize(JsonNode? node)
-        => node is null ? "null" : node.ToJsonString(Options);
+    public static string Serialize(JsonNode? node) =>
+        node is null ? "null" : node.ToJsonString(Options);
 
     /// <summary>
     /// Typed emit for <see cref="IRendererEvent"/> records. Encodes
     /// <c>evt.GetType()</c> so derived records keep their wire-format
     /// polymorphism.
     /// </summary>
-    public static string Serialize<T>(T evt) where T : IRendererEvent
-        => JsonSerializer.Serialize(evt, evt!.GetType(), Options);
+    public static string Serialize<T>(T evt)
+        where T : IRendererEvent => JsonSerializer.Serialize(evt, evt!.GetType(), Options);
 
-    public static byte[] SerializeToUtf8Bytes<T>(T evt) where T : IRendererEvent
-        => JsonSerializer.SerializeToUtf8Bytes(evt, evt!.GetType(), Options);
+    public static byte[] SerializeToUtf8Bytes<T>(T evt)
+        where T : IRendererEvent =>
+        JsonSerializer.SerializeToUtf8Bytes(evt, evt!.GetType(), Options);
 
-    public static JsonElement SerializeToElement(object? value)
-        => JsonSerializer.SerializeToElement(value, Options);
+    public static JsonElement SerializeToElement(object? value) =>
+        JsonSerializer.SerializeToElement(value, Options);
 
     public static T? Deserialize<T>(JsonElement el) => el.Deserialize<T>(Options);
 }

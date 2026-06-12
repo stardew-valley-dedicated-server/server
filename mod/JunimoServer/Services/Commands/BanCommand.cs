@@ -4,13 +4,20 @@ using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+public class BanCommand
 {
-    public class BanCommand
+    public static void Register(
+        IModHelper helper,
+        ChatCommandsService chatCommandsService,
+        RoleService roleService
+    )
     {
-        public static void Register(IModHelper helper, ChatCommandsService chatCommandsService, RoleService roleService)
-        {
-            chatCommandsService.RegisterCommand("ban", "\"farmerName|userName\" to ban the player.", (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "ban",
+            "\"farmerName|userName\" to ban the player.",
+            (args, msg) =>
             {
                 if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
                 {
@@ -19,7 +26,10 @@ namespace JunimoServer.Services.Commands
                 }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Invalid use of command. Correct format is !ban name");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Invalid use of command. Correct format is !ban name"
+                    );
                     return;
                 }
 
@@ -28,7 +38,10 @@ namespace JunimoServer.Services.Commands
 
                 if (targetFarmer == null)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Player not found: " + nameFromCommand);
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Player not found: " + nameFromCommand
+                    );
                     return;
                 }
 
@@ -40,8 +53,7 @@ namespace JunimoServer.Services.Commands
 
                 Game1.server.ban(targetFarmer.UniqueMultiplayerID);
                 helper.SendPrivateMessage(msg.SourceFarmer, "Banned: " + targetFarmer.Name);
-            });
-        }
-
+            }
+        );
     }
 }

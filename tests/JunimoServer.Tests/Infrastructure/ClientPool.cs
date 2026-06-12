@@ -24,6 +24,7 @@ internal sealed class ClientPool : IAsyncDisposable
     private readonly string _gameDataVolume;
     private readonly string? _steamAuthUrl;
     private readonly ISteamAccountAllocator? _accountAllocator;
+
     // Process-wide so the artifact slug `client-{N}` and InstanceId stay unique
     // across multiple per-host pools. With per-pool counters, two pools each
     // emit `client-0`, colliding on `containers/client-0/container.log`
@@ -32,6 +33,7 @@ internal sealed class ClientPool : IAsyncDisposable
     // a single TestResourceBroker counter.
     private static int s_nextClientIndex;
     private int _inFlightCreations;
+
     // Counts in-flight CreateClientAsync calls that have already taken a Steam
     // account from the allocator but haven't yet added the container to _allClients.
     // PoolHasAnySteamBearingClient must include these so a second Steam lease
@@ -73,8 +75,14 @@ internal sealed class ClientPool : IAsyncDisposable
     /// </summary>
     private readonly SemaphoreSlim _steamAvailable = new(0);
 
-    public ClientPool(DockerHost host, INetwork network, string imageTag, string gameDataVolume,
-        string? steamAuthUrl = null, ISteamAccountAllocator? accountAllocator = null)
+    public ClientPool(
+        DockerHost host,
+        INetwork network,
+        string imageTag,
+        string gameDataVolume,
+        string? steamAuthUrl = null,
+        ISteamAccountAllocator? accountAllocator = null
+    )
     {
         _host = host;
         _network = network;
@@ -87,7 +95,7 @@ internal sealed class ClientPool : IAsyncDisposable
 
     /// <summary>
     /// Leases a client from the pool. Reuses an available client or creates a new one.
-    /// Global concurrency is bounded by <see cref="ClientCapacity"/>.
+    /// Global concurrency is bounded by <see cref="DockerHost.ClientCapacity"/>.
     /// <para>
     /// Steam-account ownership is bound to the lease, not the container. The Steam
     /// account index stays pinned to its container for the container's lifetime
@@ -108,15 +116,27 @@ internal sealed class ClientPool : IAsyncDisposable
     /// client when that's all the bag has.
     /// </para>
     /// </summary>
-    public async Task<ClientLease> LeaseClientAsync(string serverKey, CancellationToken ct, bool requireSteam = false)
+    public async Task<ClientLease> LeaseClientAsync(
+        string serverKey,
+        CancellationToken ct,
+        bool requireSteam = false
+    )
     {
-        TestLog.Client($"Lease requested ({_available.Count} in pool, requireSteam={requireSteam})");
+        TestLog.Client(
+            $"Lease requested ({_available.Count} in pool, requireSteam={requireSteam})"
+        );
 
         // Fast path: take from the bag if a suitable client is present.
         if (TryTakeClient(requireSteam, out var client))
         {
-            if (client!.SteamAccountIndex >= 0) ConsumeSteamTicket();
-            TestLog.Client($"client-{client.ClientIndex} reused (steam={client.SteamAccountIndex})");
+            if (client!.SteamAccountIndex >= 0)
+            {
+                ConsumeSteamTicket();
+            }
+
+            TestLog.Client(
+                $"client-{client.ClientIndex} reused (steam={client.SteamAccountIndex})"
+            );
             return new ClientLease(this, client, serverKey);
         }
 
@@ -131,15 +151,24 @@ internal sealed class ClientPool : IAsyncDisposable
                     WaitName.ClientPool_PrewarmInProgress,
                     () => preWarm,
                     ct,
-                    snapshot: () => new { preWarmRunning = !preWarm.IsCompleted });
+                    snapshot: () => new { preWarmRunning = !preWarm.IsCompleted }
+                );
             }
-            catch { /* pre-warm failure is non-fatal */ }
+            catch
+            { /* pre-warm failure is non-fatal */
+            }
 
             // Retry; pre-warm should have put a client in _available
             if (TryTakeClient(requireSteam, out client))
             {
-                if (client!.SteamAccountIndex >= 0) ConsumeSteamTicket();
-                TestLog.Client($"client-{client.ClientIndex} reused (pre-warmed, steam={client.SteamAccountIndex})");
+                if (client!.SteamAccountIndex >= 0)
+                {
+                    ConsumeSteamTicket();
+                }
+
+                TestLog.Client(
+                    $"client-{client.ClientIndex} reused (pre-warmed, steam={client.SteamAccountIndex})"
+                );
                 return new ClientLease(this, client, serverKey);
             }
         }
@@ -157,14 +186,22 @@ internal sealed class ClientPool : IAsyncDisposable
             {
                 steamBearingTotal = 0;
                 foreach (var c in _allClients)
-                    if (c.SteamAccountIndex >= 0) steamBearingTotal++;
+                {
+                    if (c.SteamAccountIndex >= 0)
+                    {
+                        steamBearingTotal++;
+                    }
+                }
             }
-            InfrastructureEventLog.Emit("steam_pool_lease_wait_started", new
-            {
-                availableInBag = _available.Count,
-                steamBearingClients = steamBearingTotal,
-                steamSliceSize = _accountAllocator.ClientPoolSize,
-            });
+            InfrastructureEventLog.Emit(
+                "steam_pool_lease_wait_started",
+                new
+                {
+                    availableInBag = _available.Count,
+                    steamBearingClients = steamBearingTotal,
+                    steamSliceSize = _accountAllocator.ClientPoolSize,
+                }
+            );
             var sw = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
@@ -172,7 +209,8 @@ internal sealed class ClientPool : IAsyncDisposable
                     WaitName.ClientPool_LeaseSteamWait,
                     () => _steamAvailable.WaitAsync(ct),
                     ct,
-                    snapshot: () => new { available = _available.Count });
+                    snapshot: () => new { available = _available.Count }
+                );
 
                 // Ticket acquired: a Steam-bearing client is in the bag (or just was).
                 // Race-tolerant retry: a different waiter or a non-Steam fast-path may
@@ -180,7 +218,9 @@ internal sealed class ClientPool : IAsyncDisposable
                 if (TryTakeClient(requireSteam: true, out client))
                 {
                     sw.Stop();
-                    TestLog.Client($"client-{client!.ClientIndex} reused (after steam wait, steam={client.SteamAccountIndex}, awaitedMs={sw.ElapsedMilliseconds})");
+                    TestLog.Client(
+                        $"client-{client!.ClientIndex} reused (after steam wait, steam={client.SteamAccountIndex}, awaitedMs={sw.ElapsedMilliseconds})"
+                    );
                     return new ClientLease(this, client, serverKey);
                 }
                 // Lost the race; the ticket we just consumed corresponded to an item
@@ -193,29 +233,44 @@ internal sealed class ClientPool : IAsyncDisposable
         // Include in-flight creations (from pre-warm or concurrent on-demand)
         // that haven't registered in _allClients yet.
         int currentCount;
-        lock (_allClientsLock) { currentCount = _allClients.Count + _inFlightCreations; }
+        lock (_allClientsLock)
+        {
+            currentCount = _allClients.Count + _inFlightCreations;
+        }
 
         while (currentCount >= _maxContainers)
         {
-            TestLog.Client($"At container cap ({currentCount}/{_maxContainers}), waiting for return...");
+            TestLog.Client(
+                $"At container cap ({currentCount}/{_maxContainers}), waiting for return..."
+            );
             // NOTE: snapshot avoids _allClients.Count — guarded by _allClientsLock and unsafe to read outside.
             // _available is ConcurrentBag (thread-safe Count); _maxContainers is set once in ctor.
             await WaitTrace.RunAsync(
                 WaitName.ClientPool_LeaseAtCap,
                 () => _returnSignal.WaitAsync(ct),
                 ct,
-                snapshot: () => new { available = _available.Count, max = _maxContainers });
+                snapshot: () => new { available = _available.Count, max = _maxContainers }
+            );
 
             // A client was returned or discarded; try to grab it
             if (TryTakeClient(requireSteam, out client))
             {
-                if (client!.SteamAccountIndex >= 0) ConsumeSteamTicket();
-                TestLog.Client($"client-{client.ClientIndex} reused (after cap wait, steam={client.SteamAccountIndex})");
+                if (client!.SteamAccountIndex >= 0)
+                {
+                    ConsumeSteamTicket();
+                }
+
+                TestLog.Client(
+                    $"client-{client.ClientIndex} reused (after cap wait, steam={client.SteamAccountIndex})"
+                );
                 return new ClientLease(this, client, serverKey);
             }
 
             // Discard freed a slot; break to create a new one
-            lock (_allClientsLock) { currentCount = _allClients.Count + _inFlightCreations; }
+            lock (_allClientsLock)
+            {
+                currentCount = _allClients.Count + _inFlightCreations;
+            }
         }
 
         // Patience window: an outstanding client may return faster than a new
@@ -228,10 +283,15 @@ internal sealed class ClientPool : IAsyncDisposable
         if (patience > TimeSpan.Zero)
         {
             int outstandingClients;
-            lock (_allClientsLock) { outstandingClients = _allClients.Count - _available.Count; }
+            lock (_allClientsLock)
+            {
+                outstandingClients = _allClients.Count - _available.Count;
+            }
             if (outstandingClients > 0)
             {
-                TestLog.Client($"No idle client, {outstandingClients} in use; waiting up to {patience.TotalSeconds:0}s for a return before creating");
+                TestLog.Client(
+                    $"No idle client, {outstandingClients} in use; waiting up to {patience.TotalSeconds:0}s for a return before creating"
+                );
                 using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 deadlineCts.CancelAfter(patience);
                 try
@@ -240,12 +300,25 @@ internal sealed class ClientPool : IAsyncDisposable
                         WaitName.ClientPool_LeasePatienceWait,
                         () => _returnSignal.WaitAsync(deadlineCts.Token),
                         deadlineCts.Token,
-                        snapshot: () => new { available = _available.Count, outstanding = outstandingClients, patienceSec = (int)patience.TotalSeconds });
+                        snapshot: () =>
+                            new
+                            {
+                                available = _available.Count,
+                                outstanding = outstandingClients,
+                                patienceSec = (int)patience.TotalSeconds,
+                            }
+                    );
 
                     if (TryTakeClient(requireSteam, out client))
                     {
-                        if (client!.SteamAccountIndex >= 0) ConsumeSteamTicket();
-                        TestLog.Client($"client-{client.ClientIndex} reused (after patience wait, steam={client.SteamAccountIndex})");
+                        if (client!.SteamAccountIndex >= 0)
+                        {
+                            ConsumeSteamTicket();
+                        }
+
+                        TestLog.Client(
+                            $"client-{client.ClientIndex} reused (after patience wait, steam={client.SteamAccountIndex})"
+                        );
                         return new ClientLease(this, client, serverKey);
                     }
                 }
@@ -262,7 +335,12 @@ internal sealed class ClientPool : IAsyncDisposable
         // inside CreateClientAsync via _accountAllocator and binds the account to this
         // new container for its lifetime — the lease-availability gate above
         // (_steamAvailable) is the source of truth thereafter.
-        client = await CreateClientGuardedAsync(requireSteam, reason: "lease_demand", StartPriority.Normal, ct);
+        client = await CreateClientGuardedAsync(
+            requireSteam,
+            reason: "lease_demand",
+            StartPriority.Normal,
+            ct
+        );
         return new ClientLease(this, client, serverKey);
     }
 
@@ -292,8 +370,11 @@ internal sealed class ClientPool : IAsyncDisposable
             // failure state — they bear a Steam account but cannot complete a
             // Steam-path JoinLobby. Non-Steam (LAN) leases on the same client are
             // still fine, so the client stays in the bag for that path.
-            if (requireSteam && isSteam &&
-                (candidate.GalaxyState == "failed" || candidate.GalaxyState == "lost"))
+            if (
+                requireSteam
+                && isSteam
+                && (candidate.GalaxyState == "failed" || candidate.GalaxyState == "lost")
+            )
             {
                 others.Add(candidate);
                 continue;
@@ -320,12 +401,24 @@ internal sealed class ClientPool : IAsyncDisposable
         if (preferred == null && fallback != null)
         {
             client = fallback;
-            foreach (var c in others) _available.Add(c);
+            foreach (var c in others)
+            {
+                _available.Add(c);
+            }
+
             return true;
         }
 
-        if (fallback != null) others.Add(fallback);
-        foreach (var c in others) _available.Add(c);
+        if (fallback != null)
+        {
+            others.Add(fallback);
+        }
+
+        foreach (var c in others)
+        {
+            _available.Add(c);
+        }
+
         client = preferred;
         return preferred != null;
     }
@@ -358,16 +451,31 @@ internal sealed class ClientPool : IAsyncDisposable
     /// </summary>
     private bool PoolHasAnySteamBearingClient()
     {
-        if (Volatile.Read(ref _inFlightSteamCreations) > 0) return true;
+        if (Volatile.Read(ref _inFlightSteamCreations) > 0)
+        {
+            return true;
+        }
+
         lock (_allClientsLock)
         {
             foreach (var c in _allClients)
-                if (c.SteamAccountIndex >= 0) return true;
+            {
+                if (c.SteamAccountIndex >= 0)
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
     }
 
-    private async Task<GameClientContainer> CreateClientGuardedAsync(bool requireSteam, string reason, StartPriority priority, CancellationToken ct)
+    private async Task<GameClientContainer> CreateClientGuardedAsync(
+        bool requireSteam,
+        string reason,
+        StartPriority priority,
+        CancellationToken ct
+    )
     {
         // Increment _inFlightSteamCreations BEFORE _inFlightCreations so a concurrent
         // PoolHasAnySteamBearingClient observer that sees _inFlightSteamCreations > 0
@@ -376,7 +484,11 @@ internal sealed class ClientPool : IAsyncDisposable
         // visible in the roster by the time the in-flight count drops to 0 — closing
         // the otherwise-tiny race window where neither signal would be true.
         var willAllocateSteam = requireSteam && _steamAuthUrl != null && _accountAllocator != null;
-        if (willAllocateSteam) Interlocked.Increment(ref _inFlightSteamCreations);
+        if (willAllocateSteam)
+        {
+            Interlocked.Increment(ref _inFlightSteamCreations);
+        }
+
         Interlocked.Increment(ref _inFlightCreations);
         // Tracks whether the in-flight counters have been decremented yet, so the
         // catch/outer-finally don't double-decrement. Decremented on the success path
@@ -402,19 +514,33 @@ internal sealed class ClientPool : IAsyncDisposable
                 // invariant noted at the increment site. Doing it here (rather than the outer
                 // finally) means the client is counted exactly once during StartRecordingAsync.
                 Interlocked.Decrement(ref _inFlightCreations);
-                if (willAllocateSteam) Interlocked.Decrement(ref _inFlightSteamCreations);
-                inFlightDecremented = true;
-                InfrastructureEventLog.Emit("client_created", new
+                if (willAllocateSteam)
                 {
-                    clientIndex = client.ClientIndex,
-                    durationMs = sw.ElapsedMilliseconds,
-                    reason,
-                });
+                    Interlocked.Decrement(ref _inFlightSteamCreations);
+                }
+
+                inFlightDecremented = true;
+                InfrastructureEventLog.Emit(
+                    "client_created",
+                    new
+                    {
+                        clientIndex = client.ClientIndex,
+                        durationMs = sw.ElapsedMilliseconds,
+                        reason,
+                    }
+                );
             }
             catch (Exception ex)
             {
                 TestLog.Client($"Client creation failed: {ex.GetType().Name}: {ex.Message}");
-                InfrastructureEventLog.Emit("client_create_failed", new { error = $"{ex.GetType().Name}: {ex.Message}", ctCancelled = ct.IsCancellationRequested });
+                InfrastructureEventLog.Emit(
+                    "client_create_failed",
+                    new
+                    {
+                        error = $"{ex.GetType().Name}: {ex.Message}",
+                        ctCancelled = ct.IsCancellationRequested,
+                    }
+                );
                 // Client leasing is a separate mid-run path from server creation;
                 // a tunnel death here must poison too, else it's a blind spot.
                 await _host.PoisonIfTransportFaultAsync(ex);
@@ -437,12 +563,18 @@ internal sealed class ClientPool : IAsyncDisposable
             if (!inFlightDecremented)
             {
                 Interlocked.Decrement(ref _inFlightCreations);
-                if (willAllocateSteam) Interlocked.Decrement(ref _inFlightSteamCreations);
+                if (willAllocateSteam)
+                {
+                    Interlocked.Decrement(ref _inFlightSteamCreations);
+                }
             }
         }
     }
 
-    private async Task<GameClientContainer> CreateClientAsync(bool requireSteam, CancellationToken ct)
+    private async Task<GameClientContainer> CreateClientAsync(
+        bool requireSteam,
+        CancellationToken ct
+    )
     {
         var clientIndex = Interlocked.Increment(ref s_nextClientIndex) - 1;
 
@@ -450,7 +582,7 @@ internal sealed class ClientPool : IAsyncDisposable
         {
             ImageTag = _imageTag,
             GameDataVolume = _gameDataVolume,
-            ExposeVnc = true
+            ExposeVnc = true,
         };
 
         // Allocate a Steam account only when the caller actually needs Steam.
@@ -475,7 +607,14 @@ internal sealed class ClientPool : IAsyncDisposable
             // Register instance in UI immediately (before container starts).
             // VNC URL is null until StartAsync publishes ports.
             var instanceId = $"client-{clientIndex}";
-            SetupEventBus.EmitInstanceCreated(instanceId, "client", "shared", null, $"client-{clientIndex}", _host.Id);
+            SetupEventBus.EmitInstanceCreated(
+                instanceId,
+                "client",
+                "shared",
+                null,
+                $"client-{clientIndex}",
+                _host.Id
+            );
             SetupEventBus.EmitPhaseStarted("Setup", $"client-{clientIndex}", instanceId);
 
             var client = await GameClientContainer.CreateAsync(
@@ -485,7 +624,8 @@ internal sealed class ClientPool : IAsyncDisposable
                 msg => TestLog.Client($"client-{clientIndex} {msg}"),
                 ct,
                 host: _host,
-                requireGalaxyResolved: allocateSteam);
+                requireGalaxyResolved: allocateSteam
+            );
 
             await client.StartAsync(ct);
 
@@ -499,11 +639,29 @@ internal sealed class ClientPool : IAsyncDisposable
             TestLog.Client($"client-{clientIndex} ready ({client.BaseUrl})");
 
             // Update UI with VNC URL now that ports are published
-            SetupEventBus.EmitInstanceCreated(instanceId, "client", "shared", client.VncUrl, $"client-{clientIndex}", _host.Id);
-            SetupEventBus.EmitPhaseCompleted("Setup", $"client-{clientIndex}", true, collectionName: instanceId);
+            SetupEventBus.EmitInstanceCreated(
+                instanceId,
+                "client",
+                "shared",
+                client.VncUrl,
+                $"client-{clientIndex}",
+                _host.Id
+            );
+            SetupEventBus.EmitPhaseCompleted(
+                "Setup",
+                $"client-{clientIndex}",
+                true,
+                collectionName: instanceId
+            );
 
             // Register for stats tracking now that the container is running
-            ContainerStatsCollector.Register(instanceId, client.Container.Id, client.Container.Name, _host, client.BaseUrl);
+            ContainerStatsCollector.Register(
+                instanceId,
+                client.Container.Id,
+                client.Container.Name,
+                _host,
+                client.BaseUrl
+            );
 
             return client;
         }
@@ -513,7 +671,9 @@ internal sealed class ClientPool : IAsyncDisposable
             // (StartAsync threw, CreateAsync threw, etc.). When the assignment above runs,
             // steamAccountIndex is reset to -1 so this is a no-op on success.
             if (steamAccountIndex >= 0 && _accountAllocator != null)
+            {
                 _accountAllocator.Release(steamAccountIndex);
+            }
         }
     }
 
@@ -537,15 +697,23 @@ internal sealed class ClientPool : IAsyncDisposable
         // via TryTakeClient (the non-Steam path prefers non-Steam-bearing clients but
         // falls back to Steam-bearing when the bag has nothing else). Each successful
         // prewarm signals _steamAvailable so the first Steam-required lease can wake.
-        var tasks = Enumerable.Range(0, count)
+        var tasks = Enumerable
+            .Range(0, count)
             .Select(async i =>
             {
                 try
                 {
-                    var client = await CreateClientGuardedAsync(requireSteam: true, reason: "prewarm", StartPriority.Low, ct);
+                    var client = await CreateClientGuardedAsync(
+                        requireSteam: true,
+                        reason: "prewarm",
+                        StartPriority.Low,
+                        ct
+                    );
                     _available.Add(client);
                     if (client.SteamAccountIndex >= 0)
+                    {
                         _steamAvailable.Release();
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
                 catch (Exception ex)
@@ -568,15 +736,20 @@ internal sealed class ClientPool : IAsyncDisposable
     {
         _available.Add(client);
         TestLog.Client($"client-{client.ClientIndex} returned to pool");
-        InfrastructureEventLog.Emit("client_returned", new
-        {
-            clientIndex = client.ClientIndex,
-            serverKey,
-            poolAvailable = _available.Count,
-        });
+        InfrastructureEventLog.Emit(
+            "client_returned",
+            new
+            {
+                clientIndex = client.ClientIndex,
+                serverKey,
+                poolAvailable = _available.Count,
+            }
+        );
         _returnSignal.Release();
         if (client.SteamAccountIndex >= 0)
+        {
             _steamAvailable.Release();
+        }
     }
 
     /// <summary>
@@ -596,8 +769,13 @@ internal sealed class ClientPool : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            TestLog.Client($"Failed to release Steam account for client-{client.ClientIndex}: {ex.Message}");
-            InfrastructureEventLog.Emit("steam_account_release_error", new { clientIndex = client.ClientIndex, error = ex.Message });
+            TestLog.Client(
+                $"Failed to release Steam account for client-{client.ClientIndex}: {ex.Message}"
+            );
+            InfrastructureEventLog.Emit(
+                "steam_account_release_error",
+                new { clientIndex = client.ClientIndex, error = ex.Message }
+            );
         }
         int remaining;
         lock (_allClientsLock)
@@ -606,7 +784,10 @@ internal sealed class ClientPool : IAsyncDisposable
             remaining = _allClients.Count;
         }
         TestLog.Client($"client-{client.ClientIndex} discarded (dead)");
-        InfrastructureEventLog.Emit("client_discarded", new { clientIndex = client.ClientIndex, totalContainers = remaining });
+        InfrastructureEventLog.Emit(
+            "client_discarded",
+            new { clientIndex = client.ClientIndex, totalContainers = remaining }
+        );
         _returnSignal.Release();
     }
 
@@ -624,8 +805,13 @@ internal sealed class ClientPool : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            TestLog.Client($"Failed to release Steam account for client-{client.ClientIndex}: {ex.Message}");
-            InfrastructureEventLog.Emit("steam_account_release_error", new { clientIndex = client.ClientIndex, error = ex.Message });
+            TestLog.Client(
+                $"Failed to release Steam account for client-{client.ClientIndex}: {ex.Message}"
+            );
+            InfrastructureEventLog.Emit(
+                "steam_account_release_error",
+                new { clientIndex = client.ClientIndex, error = ex.Message }
+            );
         }
         // Keep in _allClients; DisposeAsync will handle cleanup + recording extraction
         TestLog.Client($"client-{client.ClientIndex} marked dead (kept for recording extraction)");
@@ -647,20 +833,25 @@ internal sealed class ClientPool : IAsyncDisposable
         // unbounded concurrency here is safe. SteamAccountAllocator.Release,
         // ContainerStatsCollector.Unregister (ConcurrentDictionary), and the
         // event emitters are already concurrency-safe.
-        var disposeTasks = clients.Select(async client =>
-        {
-            ReleaseClientSteamAccount(client);
-            var instanceId = $"client-{client.ClientIndex}";
-            ContainerStatsCollector.Unregister(instanceId);
-            SetupEventBus.EmitInstanceDisposed(instanceId);
-            // Recording emit lives inside GameClientContainer.DisposeAsync (scoped to the
-            // point where the full recording file is written).
-            try { await client.DisposeAsync(); }
-            catch (Exception ex)
+        var disposeTasks = clients
+            .Select(async client =>
             {
-                TestLog.Client($"Failed to dispose client-{client.ClientIndex}: {ex.Message}");
-            }
-        }).ToArray();
+                ReleaseClientSteamAccount(client);
+                var instanceId = $"client-{client.ClientIndex}";
+                ContainerStatsCollector.Unregister(instanceId);
+                SetupEventBus.EmitInstanceDisposed(instanceId);
+                // Recording emit lives inside GameClientContainer.DisposeAsync (scoped to the
+                // point where the full recording file is written).
+                try
+                {
+                    await client.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    TestLog.Client($"Failed to dispose client-{client.ClientIndex}: {ex.Message}");
+                }
+            })
+            .ToArray();
         await Task.WhenAll(disposeTasks);
     }
 

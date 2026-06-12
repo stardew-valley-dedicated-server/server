@@ -19,12 +19,11 @@ public static class ArtifactPrettyJson
         WriteIndented = true,
     };
 
-    public static string Serialize(object? value)
-        => JsonSerializer.Serialize(value, Options);
+    public static string Serialize(object? value) => JsonSerializer.Serialize(value, Options);
 
-    public static Task WriteAsync(string path, object? value)
-        => File.WriteAllTextAsync(path, Serialize(value));
+    public static Task WriteAsync(string path, object? value) =>
+        File.WriteAllTextAsync(path, Serialize(value));
 
-    public static void Write(string path, object? value)
-        => File.WriteAllText(path, Serialize(value));
+    public static void Write(string path, object? value) =>
+        File.WriteAllText(path, Serialize(value));
 }

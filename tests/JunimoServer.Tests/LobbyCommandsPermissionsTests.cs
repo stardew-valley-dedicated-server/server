@@ -20,9 +20,7 @@ public class LobbyCommandsPermissionsTests : LobbyCommandsTestBase
     {
         await SetupAsNonAdmin();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            "admin");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby list", "admin");
 
         Assert.True(hasResponse, "Should receive permission denied message");
 
@@ -39,9 +37,7 @@ public class LobbyCommandsPermissionsTests : LobbyCommandsTestBase
     {
         await EnsureAdminSessionAsync();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby list",
-            "Lobby Layouts", "default");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby list", "Lobby Layouts", "default");
 
         Assert.True(hasResponse, "Should see layouts list with default layout");
 
@@ -58,7 +54,11 @@ public class LobbyCommandsPermissionsTests : LobbyCommandsTestBase
 
         var hasResponse = await Chat.AssertResponseAsync(
             "!lobby help",
-            "Lobby Commands", "!lobby create", "!lobby save", "!lobby list");
+            "Lobby Commands",
+            "!lobby create",
+            "!lobby save",
+            "!lobby list"
+        );
 
         Assert.True(hasResponse, "Should see help with commands listed");
 
@@ -73,9 +73,7 @@ public class LobbyCommandsPermissionsTests : LobbyCommandsTestBase
     {
         await EnsureAdminSessionAsync();
 
-        var hasResponse = await Chat.AssertResponseAsync(
-            "!lobby frobnicate",
-            "Unknown", "help");
+        var hasResponse = await Chat.AssertResponseAsync("!lobby frobnicate", "Unknown", "help");
 
         Assert.True(hasResponse, "Should see unknown command error");
 

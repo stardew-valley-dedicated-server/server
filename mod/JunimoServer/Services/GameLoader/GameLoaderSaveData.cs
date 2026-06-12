@@ -1,7 +1,6 @@
-namespace JunimoServer.Services.GameLoader
+namespace JunimoServer.Services.GameLoader;
+
+class GameLoaderSaveData
 {
-    class GameLoaderSaveData
-    {
-        public string SaveNameToLoad { get; set; } = null;
-    }
+    public string SaveNameToLoad { get; set; } = null;
 }

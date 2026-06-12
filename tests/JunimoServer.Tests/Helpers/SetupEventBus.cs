@@ -11,7 +11,7 @@ namespace JunimoServer.Tests.Helpers;
 /// Static event bus for fixture setup progress.
 ///
 /// Producers call <c>EmitX</c>; this builds a typed <see cref="IRendererEvent"/>
-/// record and hands it to the parent <see cref="JunimoServer.TestRunner"/>'s
+/// record and hands it to the parent <c>JunimoServer.TestRunner</c>'s
 /// renderer over a named pipe. The pipe is the only sink — the test assembly
 /// must be invoked through the runner.
 ///
@@ -34,42 +34,90 @@ public static class SetupEventBus
     {
         var pipeName = Environment.GetEnvironmentVariable("SDVD_SETUP_PIPE");
         if (string.IsNullOrEmpty(pipeName))
+        {
             throw new InvalidOperationException(
-                "JunimoServer.Tests must be run via the JunimoServer.TestRunner " +
-                "(`make test`); SDVD_SETUP_PIPE is not set.");
+                "JunimoServer.Tests must be run via the JunimoServer.TestRunner "
+                    + "(`make test`); SDVD_SETUP_PIPE is not set."
+            );
+        }
 
         var sink = NamedPipeSink.TryCreate(pipeName);
         if (sink == null)
+        {
             throw new InvalidOperationException(
-                $"JunimoServer.Tests could not connect to the parent runner's setup pipe " +
-                $"'{pipeName}'. Ensure the assembly is launched by JunimoServer.TestRunner " +
-                "(`make test`).");
+                $"JunimoServer.Tests could not connect to the parent runner's setup pipe "
+                    + $"'{pipeName}'. Ensure the assembly is launched by JunimoServer.TestRunner "
+                    + "(`make test`)."
+            );
+        }
 
         return sink;
     }
 
     // ── Static facade — each EmitX builds a typed record and forwards to Sink ──
 
-    public static void EmitPhaseStarted(string category, string phaseName, string? collectionName = null)
-        => Sink.Value.Emit(new SetupPhaseStartedEvent(category, phaseName, collectionName));
+    public static void EmitPhaseStarted(
+        string category,
+        string phaseName,
+        string? collectionName = null
+    ) => Sink.Value.Emit(new SetupPhaseStartedEvent(category, phaseName, collectionName));
 
-    public static void EmitPhaseCompleted(string category, string phaseName, bool success,
-        string? errorMessage = null, string? collectionName = null)
-        => Sink.Value.Emit(new SetupPhaseCompletedEvent(category, phaseName, success, errorMessage, collectionName));
+    public static void EmitPhaseCompleted(
+        string category,
+        string phaseName,
+        bool success,
+        string? errorMessage = null,
+        string? collectionName = null
+    ) =>
+        Sink.Value.Emit(
+            new SetupPhaseCompletedEvent(category, phaseName, success, errorMessage, collectionName)
+        );
 
-    public static void EmitStep(string category, string stepName, SetupStepStatus status,
-        string? details = null, string? collectionName = null)
-        => Sink.Value.Emit(new SetupStepEvent(category, stepName, status, details, collectionName));
+    public static void EmitStep(
+        string category,
+        string stepName,
+        SetupStepStatus status,
+        string? details = null,
+        string? collectionName = null
+    ) => Sink.Value.Emit(new SetupStepEvent(category, stepName, status, details, collectionName));
 
-    public static void EmitScreenshot(string testCollection, string testClass,
-        string displayName, string screenshotPath, string source = "server")
-        => Sink.Value.Emit(new ScreenshotCapturedEvent(testCollection, testClass, displayName, screenshotPath, source));
+    public static void EmitScreenshot(
+        string testCollection,
+        string testClass,
+        string displayName,
+        string screenshotPath,
+        string source = "server"
+    ) =>
+        Sink.Value.Emit(
+            new ScreenshotCapturedEvent(
+                testCollection,
+                testClass,
+                displayName,
+                screenshotPath,
+                source
+            )
+        );
 
-    public static void EmitRecording(string testCollection, string testClass,
-        string displayName, string recordingPath, string source = "server",
-        double timelineOffset = 0, double wallClockDuration = 0)
-        => Sink.Value.Emit(new RecordingCapturedEvent(
-            testCollection, testClass, displayName, recordingPath, source, timelineOffset, wallClockDuration));
+    public static void EmitRecording(
+        string testCollection,
+        string testClass,
+        string displayName,
+        string recordingPath,
+        string source = "server",
+        double timelineOffset = 0,
+        double wallClockDuration = 0
+    ) =>
+        Sink.Value.Emit(
+            new RecordingCapturedEvent(
+                testCollection,
+                testClass,
+                displayName,
+                recordingPath,
+                source,
+                timelineOffset,
+                wallClockDuration
+            )
+        );
 
     /// <summary>
     /// Announce that a per-test recording was NOT produced for a given source.
@@ -77,14 +125,23 @@ public static class SetupEventBus
     /// because most callers run deferred under <c>ExecutionContext.SuppressFlow</c>.
     /// Pipe-write failures are swallowed by <see cref="NamedPipeSink.Emit"/>.
     /// </summary>
-    public static void EmitRecordingSkipped(string testCollection, string testClass,
-        string displayName, string source, RecordingSkipReason reason)
-        => Sink.Value.Emit(new RecordingSkippedEvent(
-            testCollection, testClass, displayName, source, reason));
+    public static void EmitRecordingSkipped(
+        string testCollection,
+        string testClass,
+        string displayName,
+        string source,
+        RecordingSkipReason reason
+    ) =>
+        Sink.Value.Emit(
+            new RecordingSkippedEvent(testCollection, testClass, displayName, source, reason)
+        );
 
-    public static void EmitTestAnnotation(string displayName, AnnotationLevel level,
-        AnnotationSource source, string message)
-        => Sink.Value.Emit(new TestAnnotationEvent(displayName, level, source, message));
+    public static void EmitTestAnnotation(
+        string displayName,
+        AnnotationLevel level,
+        AnnotationSource source,
+        string message
+    ) => Sink.Value.Emit(new TestAnnotationEvent(displayName, level, source, message));
 
     public static void EmitRunMetadata(RunMetadata.RunMetadataJson metadata)
     {
@@ -104,66 +161,89 @@ public static class SetupEventBus
 
     public static void EmitTestEnrichment(string displayName, TestEnrichmentData data)
     {
-        var failureContext = data.FailureContext != null
-            ? (JsonElement?)DiagnosticEmitJson.SerializeToElement(data.FailureContext)
-            : null;
-        Sink.Value.Emit(new TestEnrichmentEvent(
-            DisplayName: displayName,
-            Outcome: data.Outcome,
-            FailureCategory: data.FailureCategory,
-            ErrorPreview: data.ErrorPreview,
-            Phase: data.Phase,
-            ReproCommand: data.ReproCommand,
-            ServerKey: data.ServerKey,
-            ServerInstanceId: data.ServerInstanceId,
-            ScreenshotPath: data.ScreenshotPath,
-            TestBodyMs: data.TestBodyMs,
-            ArtifactsMs: data.ArtifactsMs,
-            CleanupMs: data.CleanupMs,
-            LastKeepDisposeMs: data.LastKeepDisposeMs,
-            LeaseReleaseMs: data.LeaseReleaseMs,
-            FailureContext: failureContext));
+        var failureContext =
+            data.FailureContext != null
+                ? (JsonElement?)DiagnosticEmitJson.SerializeToElement(data.FailureContext)
+                : null;
+        Sink.Value.Emit(
+            new TestEnrichmentEvent(
+                DisplayName: displayName,
+                Outcome: data.Outcome,
+                FailureCategory: data.FailureCategory,
+                ErrorPreview: data.ErrorPreview,
+                Phase: data.Phase,
+                ReproCommand: data.ReproCommand,
+                ServerKey: data.ServerKey,
+                ServerInstanceId: data.ServerInstanceId,
+                ScreenshotPath: data.ScreenshotPath,
+                TestBodyMs: data.TestBodyMs,
+                ArtifactsMs: data.ArtifactsMs,
+                CleanupMs: data.CleanupMs,
+                LastKeepDisposeMs: data.LastKeepDisposeMs,
+                LeaseReleaseMs: data.LeaseReleaseMs,
+                FailureContext: failureContext
+            )
+        );
     }
 
-    public static void EmitVncUrl(string label, string url, string? collectionName = null)
-        => Sink.Value.Emit(new VncUrlEvent(label, url, collectionName));
+    public static void EmitVncUrl(string label, string url, string? collectionName = null) =>
+        Sink.Value.Emit(new VncUrlEvent(label, url, collectionName));
 
-    public static void EmitTestRunning(string testCollection, string testClass,
-        string testMethod, string displayName)
-        => Sink.Value.Emit(new TestRunningEvent(testCollection, testClass, testMethod, displayName));
+    public static void EmitTestRunning(
+        string testCollection,
+        string testClass,
+        string testMethod,
+        string displayName
+    ) => Sink.Value.Emit(new TestRunningEvent(testCollection, testClass, testMethod, displayName));
 
     // ── Instance lifecycle ──
 
-    public static void EmitInstanceCreated(string instanceId, string instanceType,
-        string serverKey, string? vncUrl, string? label, string hostId)
-        => Sink.Value.Emit(new InstanceCreatedEvent(instanceId, instanceType, serverKey, vncUrl, label, hostId));
+    public static void EmitInstanceCreated(
+        string instanceId,
+        string instanceType,
+        string serverKey,
+        string? vncUrl,
+        string? label,
+        string hostId
+    ) =>
+        Sink.Value.Emit(
+            new InstanceCreatedEvent(instanceId, instanceType, serverKey, vncUrl, label, hostId)
+        );
 
-    public static void EmitInstanceLeased(string instanceId, string testName, string? serverInstanceId = null)
-        => Sink.Value.Emit(new InstanceLeasedEvent(instanceId, testName, serverInstanceId));
+    public static void EmitInstanceLeased(
+        string instanceId,
+        string testName,
+        string? serverInstanceId = null
+    ) => Sink.Value.Emit(new InstanceLeasedEvent(instanceId, testName, serverInstanceId));
 
-    public static void EmitInstanceClientAttached(string serverInstanceId, string clientInstanceId)
-        => Sink.Value.Emit(new InstanceClientAttachedEvent(serverInstanceId, clientInstanceId));
+    public static void EmitInstanceClientAttached(
+        string serverInstanceId,
+        string clientInstanceId
+    ) => Sink.Value.Emit(new InstanceClientAttachedEvent(serverInstanceId, clientInstanceId));
 
-    public static void EmitInstanceReturned(string instanceId)
-        => Sink.Value.Emit(new InstanceReturnedEvent(instanceId));
+    public static void EmitInstanceReturned(string instanceId) =>
+        Sink.Value.Emit(new InstanceReturnedEvent(instanceId));
 
-    public static void EmitInstanceDisposed(string instanceId)
-        => Sink.Value.Emit(new InstanceDisposedEvent(instanceId));
+    public static void EmitInstanceDisposed(string instanceId) =>
+        Sink.Value.Emit(new InstanceDisposedEvent(instanceId));
 
-    public static void EmitInstanceRecording(string instanceId, string recordingPath)
-        => Sink.Value.Emit(new InstanceRecordingEvent(instanceId, recordingPath));
+    public static void EmitInstanceRecording(string instanceId, string recordingPath) =>
+        Sink.Value.Emit(new InstanceRecordingEvent(instanceId, recordingPath));
 
-    public static void EmitInstancePoisoned(string instanceId, string reason)
-        => Sink.Value.Emit(new InstancePoisonedEvent(instanceId, reason));
+    public static void EmitInstancePoisoned(string instanceId, string reason) =>
+        Sink.Value.Emit(new InstancePoisonedEvent(instanceId, reason));
 
-    public static void EmitInstanceConnected(string instanceId)
-        => Sink.Value.Emit(new InstanceConnectedEvent(instanceId));
+    public static void EmitInstanceConnected(string instanceId) =>
+        Sink.Value.Emit(new InstanceConnectedEvent(instanceId));
 
-    public static void EmitInstanceDisconnected(string instanceId)
-        => Sink.Value.Emit(new InstanceDisconnectedEvent(instanceId));
+    public static void EmitInstanceDisconnected(string instanceId) =>
+        Sink.Value.Emit(new InstanceDisconnectedEvent(instanceId));
 
-    public static void EmitInstanceStats(string instanceId, InstanceStatsData data, string hostId)
-        => Sink.Value.Emit(new InstanceStatsEvent(instanceId, hostId, data));
+    public static void EmitInstanceStats(
+        string instanceId,
+        InstanceStatsData data,
+        string hostId
+    ) => Sink.Value.Emit(new InstanceStatsEvent(instanceId, hostId, data));
 
     // ── Display helpers (used by the runner-side renderer) ──
 
@@ -173,28 +253,60 @@ public static class SetupEventBus
     /// </summary>
     public static string ToPastTense(string stepName)
     {
-        if (string.IsNullOrEmpty(stepName)) return stepName;
+        if (string.IsNullOrEmpty(stepName))
+        {
+            return stepName;
+        }
 
         if (stepName.StartsWith("Starting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Started " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Building ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Built " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Preparing ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Prepared " + stepName[10..];
+        }
+
         if (stepName.StartsWith("Checking ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Checked " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Waiting for ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Waited for " + stepName[12..];
+        }
+
         if (stepName.StartsWith("Cleaning ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Cleaned " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Loading ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Loaded " + stepName[8..];
+        }
+
         if (stepName.StartsWith("Creating ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Created " + stepName[9..];
+        }
+
         if (stepName.StartsWith("Inspecting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Inspected " + stepName[11..];
+        }
+
         if (stepName.StartsWith("Connecting ", StringComparison.OrdinalIgnoreCase))
+        {
             return "Connected " + stepName[11..];
+        }
 
         return stepName;
     }
@@ -203,17 +315,36 @@ public static class SetupEventBus
     public static string FormatDuration(TimeSpan duration)
     {
         if (duration.TotalMinutes >= 1)
-            return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F1}m", duration.TotalMinutes);
+        {
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:F1}m",
+                duration.TotalMinutes
+            );
+        }
+
         if (duration.TotalSeconds >= 1)
-            return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F2}s", duration.TotalSeconds);
-        return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F0}ms", duration.TotalMilliseconds);
+        {
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:F2}s",
+                duration.TotalSeconds
+            );
+        }
+
+        return string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0:F0}ms",
+            duration.TotalMilliseconds
+        );
     }
 
     // ── Sink interface ──
 
     private interface ISetupSink
     {
-        void Emit<T>(T evt) where T : IRendererEvent;
+        void Emit<T>(T evt)
+            where T : IRendererEvent;
     }
 
     // ── NamedPipeSink: writes serialized UTF-8 bytes directly to the pipe ──
@@ -247,28 +378,37 @@ public static class SetupEventBus
         private NamedPipeSink(NamedPipeClientStream pipe)
         {
             _pipe = pipe;
-            _channel = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false,
-            });
+            _channel = Channel.CreateUnbounded<byte[]>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    AllowSynchronousContinuations = false,
+                }
+            );
 
             // Suppress flow so the long-lived consumer task does not inherit
             // the EC of whichever test happened to first wake the bus.
             // Per .claude/rules/asynclocal-pitfalls.md.
             using (ExecutionContext.SuppressFlow())
             {
-                _consumerTask = Task.Factory.StartNew(
-                    ConsumeLoop,
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
-                    TaskScheduler.Default).Unwrap();
+                _consumerTask = Task
+                    .Factory.StartNew(
+                        ConsumeLoop,
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap();
             }
 
             AppDomain.CurrentDomain.ProcessExit += (_, _) =>
             {
-                try { DrainAsync(TimeSpan.FromSeconds(2)).Wait(); } catch { }
+                try
+                {
+                    DrainAsync(TimeSpan.FromSeconds(2)).Wait();
+                }
+                catch { }
             };
         }
 
@@ -276,7 +416,12 @@ public static class SetupEventBus
         {
             try
             {
-                var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.Asynchronous);
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.Out,
+                    PipeOptions.Asynchronous
+                );
                 pipe.Connect(timeout: 5000);
                 return new NamedPipeSink(pipe);
             }
@@ -286,7 +431,8 @@ public static class SetupEventBus
             }
         }
 
-        public void Emit<T>(T evt) where T : IRendererEvent
+        public void Emit<T>(T evt)
+            where T : IRendererEvent
         {
             try
             {
@@ -321,18 +467,33 @@ public static class SetupEventBus
 
         private async Task DrainAsync(TimeSpan timeout)
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
 
             _channel.Writer.TryComplete();
             try
             {
                 await _consumerTask.WaitAsync(timeout).ConfigureAwait(false);
             }
-            catch (TimeoutException) { /* drain budget exceeded; proceed with dispose */ }
-            catch { /* consumer faulted; nothing more to do */ }
+            catch (TimeoutException)
+            { /* drain budget exceeded; proceed with dispose */
+            }
+            catch
+            { /* consumer faulted; nothing more to do */
+            }
 
-            try { await _pipe.FlushAsync().ConfigureAwait(false); } catch { }
-            try { await _pipe.DisposeAsync().ConfigureAwait(false); } catch { }
+            try
+            {
+                await _pipe.FlushAsync().ConfigureAwait(false);
+            }
+            catch { }
+            try
+            {
+                await _pipe.DisposeAsync().ConfigureAwait(false);
+            }
+            catch { }
             _cts.Dispose();
         }
     }
@@ -358,7 +519,8 @@ public sealed record TestEnrichmentData(
     long CleanupMs,
     long LastKeepDisposeMs,
     long LeaseReleaseMs,
-    IReadOnlyDictionary<string, object?>? FailureContext);
+    IReadOnlyDictionary<string, object?>? FailureContext
+);
 
 /// <summary>Status of a setup step.</summary>
 public enum SetupStepStatus
@@ -373,13 +535,14 @@ public enum SetupStepStatus
 /// <summary>Extension to serialize <see cref="SetupStepStatus"/> as snake_case.</summary>
 public static class SetupStepStatusExtensions
 {
-    public static string ToSnakeCase(this SetupStepStatus status) => status switch
-    {
-        SetupStepStatus.Started => "started",
-        SetupStepStatus.InProgress => "in_progress",
-        SetupStepStatus.Completed => "completed",
-        SetupStepStatus.Failed => "failed",
-        SetupStepStatus.Warning => "warning",
-        _ => status.ToString().ToLowerInvariant(),
-    };
+    public static string ToSnakeCase(this SetupStepStatus status) =>
+        status switch
+        {
+            SetupStepStatus.Started => "started",
+            SetupStepStatus.InProgress => "in_progress",
+            SetupStepStatus.Completed => "completed",
+            SetupStepStatus.Failed => "failed",
+            SetupStepStatus.Warning => "warning",
+            _ => status.ToString().ToLowerInvariant(),
+        };
 }

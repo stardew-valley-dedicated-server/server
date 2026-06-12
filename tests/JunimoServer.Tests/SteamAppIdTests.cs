@@ -41,7 +41,9 @@ public class SteamAppIdTests : TestBase
     public async Task Server_HasCorrectSteamAppId()
     {
         // Get container logs. Use a timeout since GetLogsAsync can hang on disposed containers.
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken
+        );
         cts.CancelAfter(TimeSpan.FromSeconds(30));
         var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
         var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
@@ -63,7 +65,10 @@ public class SteamAppIdTests : TestBase
                 // Extract the AppID number
                 var parts = line.Split('=');
                 if (parts.Length >= 2)
+                {
                     detectedAppId = parts[^1].Trim();
+                }
+
                 break;
             }
         }
@@ -109,7 +114,9 @@ public class SteamAppIdTests : TestBase
             WaitName.Polling_SteamAppId_SdrStatusLine,
             async () =>
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+                    TestContext.Current.CancellationToken
+                );
                 cts.CancelAfter(TimeSpan.FromSeconds(10));
                 var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
                 var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
@@ -123,7 +130,10 @@ public class SteamAppIdTests : TestBase
                     }
                 }
                 return false;
-            }, TimeSpan.FromSeconds(30), cancellationToken: TestContext.Current.CancellationToken);
+            },
+            TimeSpan.FromSeconds(30),
+            cancellationToken: TestContext.Current.CancellationToken
+        );
 
         Assert.True(found, "SDR relay status line should appear in server logs");
         Log("Found SDR relay log line:");
@@ -141,10 +151,14 @@ public class SteamAppIdTests : TestBase
         // Accept Waiting, Attempting, or Current; all prove the SDK initialized.
         // In Docker test containers, "Waiting" is expected because there's no
         // internet route to Valve's relay servers.
-        var isValid = sdrStatusLine.Contains("Current")
+        var isValid =
+            sdrStatusLine.Contains("Current")
             || sdrStatusLine.Contains("Attempting")
             || sdrStatusLine.Contains("Waiting");
-        Assert.True(isValid, $"SDR status should be Current, Attempting, or Waiting, got: {sdrStatusLine}");
+        Assert.True(
+            isValid,
+            $"SDR status should be Current, Attempting, or Waiting, got: {sdrStatusLine}"
+        );
 
         LogSuccess($"SDR relay status: {statusValue}");
     }

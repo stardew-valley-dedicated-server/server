@@ -78,14 +78,24 @@ public class AbandonedClaimTests : TestBase
             async () =>
             {
                 var state = await ServerApi.GetDiagnosticsState(ct);
-                var stuck = state?.Cabins.FirstOrDefault(
-                    c => c.OwnerHasUserId && !c.OwnerIsCustomized);
-                if (stuck == null) return false;
+                var stuck = state?.Cabins.FirstOrDefault(c =>
+                    c.OwnerHasUserId && !c.OwnerIsCustomized
+                );
+                if (stuck == null)
+                {
+                    return false;
+                }
+
                 stuckUid = stuck.OwnerId;
                 return true;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
-        Assert.True(reproduced,
-            "Expected a cabin owner with userID set but isCustomized=false (abandoned claim) before disconnect");
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            reproduced,
+            "Expected a cabin owner with userID set but isCustomized=false (abandoned claim) before disconnect"
+        );
         Log($"Reproduced abandoned claim on uid={stuckUid}");
 
         // Disconnect mid-customization (ExitToTitle works from the character menu).
@@ -93,7 +103,10 @@ public class AbandonedClaimTests : TestBase
 
         // Wait past removeDisconnectedFarmers so cabin.owner now resolves to the PERSISTED entry.
         var removed = await ServerApi.WaitForPlayerRemovedByIdAsync(stuckUid, ct: ct);
-        Assert.True(removed, $"Player uid={stuckUid} was not removed from /players after disconnect");
+        Assert.True(
+            removed,
+            $"Player uid={stuckUid} was not removed from /players after disconnect"
+        );
 
         // Regression gate: the persisted entry's userID must be cleared. A pre-fix
         // cabin.owner-only clear (live copy) leaves the persisted entry stuck and fails here.
@@ -102,18 +115,29 @@ public class AbandonedClaimTests : TestBase
             async () =>
             {
                 var state = await ServerApi.GetDiagnosticsState(ct);
-                if (state == null) return false; // transient null must not read as "healed"
+                if (state == null)
+                {
+                    return false; // transient null must not read as "healed"
+                }
+
                 var cabin = state.Cabins.FirstOrDefault(c => c.OwnerId == stuckUid);
-                var entry = state.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
+                var entry = state.FarmhandData.FirstOrDefault(f =>
+                    f.UniqueMultiplayerId == stuckUid
+                );
                 // Healed when no surviving view of the slot still carries the userID claim.
                 var cabinClear = cabin == null || !cabin.OwnerHasUserId;
                 var farmhandClear = entry == null || !entry.HasUserId;
                 return cabinClear && farmhandClear;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
-        Assert.True(healed,
-            $"Abandoned claim on uid={stuckUid} was not cleared on the persisted farmhandData " +
-            $"entry after disconnect (the disconnect hook must clear farmhandData, not just the " +
-            $"discarded live otherFarmers copy)");
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            healed,
+            $"Abandoned claim on uid={stuckUid} was not cleared on the persisted farmhandData "
+                + $"entry after disconnect (the disconnect hook must clear farmhandData, not just the "
+                + $"discarded live otherFarmers copy)"
+        );
         Log($"Disconnect heal confirmed durable for uid={stuckUid}");
     }
 
@@ -137,7 +161,11 @@ public class AbandonedClaimTests : TestBase
     public async Task AbandonedClaim_SweptOnReload()
     {
         var ct = TestContext.Current.CancellationToken;
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack", startingCabins: 2);
+        await CreateNewGameOnServerAsync(
+            farmType: 0,
+            cabinStrategy: "CabinStack",
+            startingCabins: 2
+        );
 
         // A customized in-world player is needed to trigger the day-transition save (the stuck slot
         // itself can't sleep). Its own entry must survive the sweep untouched (isCustomized guard).
@@ -149,8 +177,14 @@ public class AbandonedClaimTests : TestBase
         // (see FarmerTestHelper.DisconnectAndWaitForPersistenceAsync). Without this wait, /test/stamp_claim
         // sees A's slot as still-uncustomized and stamps A itself instead of the spare slot.
         var customized = await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName, requireCustomized: true, ct: ct);
-        Assert.True(customized, $"Player '{client.FarmerName}' should be customized server-side before stamping");
+            client.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        Assert.True(
+            customized,
+            $"Player '{client.FarmerName}' should be customized server-side before stamping"
+        );
 
         // Construct the stuck-but-homed claim on a spare uncustomized slot, server-side.
         var stamp = await ServerApi.StampClaim(ct);
@@ -158,16 +192,25 @@ public class AbandonedClaimTests : TestBase
         var stuckUid = stamp!.StampedUid;
         Assert.NotEqual(0, stuckUid);
         Assert.NotEqual(customizedUid, stuckUid); // must be a different slot than the real player
-        Assert.False(string.IsNullOrEmpty(stamp.HomeLocation),
-            "Stamped slot must be homed (homeLocation resolving to a cabin) to exercise the homed sweep path");
-        Log($"Stamped abandoned claim on uid={stuckUid} (userId='{stamp.StampedUserId}', home='{stamp.HomeLocation}')");
+        Assert.False(
+            string.IsNullOrEmpty(stamp.HomeLocation),
+            "Stamped slot must be homed (homeLocation resolving to a cabin) to exercise the homed sweep path"
+        );
+        Log(
+            $"Stamped abandoned claim on uid={stuckUid} (userId='{stamp.StampedUserId}', home='{stamp.HomeLocation}')"
+        );
 
         // Confirm the stuck state is present server-side before the save.
         var preState = await ServerApi.GetDiagnosticsState(ct);
-        var preEntry = preState?.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
+        var preEntry = preState?.FarmhandData.FirstOrDefault(f =>
+            f.UniqueMultiplayerId == stuckUid
+        );
         Assert.NotNull(preEntry);
         Assert.True(preEntry!.HasUserId, "Stamped slot should carry a userId before save");
-        Assert.False(preEntry.IsCustomized, "Stamped slot must be uncustomized (abandoned-claim shape)");
+        Assert.False(
+            preEntry.IsCustomized,
+            "Stamped slot must be uncustomized (abandoned-claim shape)"
+        );
 
         // Flush the stuck claim to disk via a day-transition save, then disconnect (/reload needs 0
         // clients) and reload — which loads the on-disk save and re-runs OnSaveLoaded → the sweep.
@@ -183,21 +226,36 @@ public class AbandonedClaimTests : TestBase
             async () =>
             {
                 postState = await ServerApi.GetDiagnosticsState(ct);
-                if (postState == null) return false; // transient null must not read as "swept"
-                var entry = postState.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == stuckUid);
+                if (postState == null)
+                {
+                    return false; // transient null must not read as "swept"
+                }
+
+                var entry = postState.FarmhandData.FirstOrDefault(f =>
+                    f.UniqueMultiplayerId == stuckUid
+                );
                 // Cleared when the slot's entry is gone or no longer carries the userID claim.
                 return entry == null || !entry.HasUserId;
-            }, TestTimings.CabinAssignmentTimeout, cancellationToken: ct);
-        Assert.True(swept,
-            $"Abandoned claim on uid={stuckUid} was not released by the save-load sweep after reload " +
-            $"(ClearAbandonedCabinClaimsOnLoad must clear a stuck-but-homed claim that vanilla's " +
-            $"load-time ResetFarmhandState leaves intact)");
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            swept,
+            $"Abandoned claim on uid={stuckUid} was not released by the save-load sweep after reload "
+                + $"(ClearAbandonedCabinClaimsOnLoad must clear a stuck-but-homed claim that vanilla's "
+                + $"load-time ResetFarmhandState leaves intact)"
+        );
         Log($"Save-load sweep confirmed for uid={stuckUid}");
 
         // Guard: the sweep must NOT touch the real customized player's entry (isCustomized guard).
-        var survivor = postState?.FarmhandData.FirstOrDefault(f => f.UniqueMultiplayerId == customizedUid);
+        var survivor = postState?.FarmhandData.FirstOrDefault(f =>
+            f.UniqueMultiplayerId == customizedUid
+        );
         Assert.NotNull(survivor);
-        Assert.True(survivor!.IsCustomized,
-            $"Customized player uid={customizedUid} must survive the sweep as a customized farmhand");
+        Assert.True(
+            survivor!.IsCustomized,
+            $"Customized player uid={customizedUid} must survive the sweep as a customized farmhand"
+        );
     }
 }

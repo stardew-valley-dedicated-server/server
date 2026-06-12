@@ -2,7 +2,6 @@ using System.Diagnostics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
-using Microsoft.Xna.Framework;
 
 namespace JunimoTestClient.Diagnostics;
 
@@ -72,7 +71,9 @@ public class PerformanceStats
         // Track history for averaging
         _tickHistory.Enqueue(_lastTickMs);
         if (_tickHistory.Count > TickHistorySize)
+        {
             _tickHistory.Dequeue();
+        }
 
         _avgTickMs = _tickHistory.Average();
         _maxTickMs = Math.Max(_maxTickMs, _lastTickMs);
@@ -117,7 +118,6 @@ public class PerformanceStats
             _frameCount = 0;
             _lastFpsUpdate = now;
         }
-
     }
 
     /// <summary>
@@ -140,7 +140,7 @@ public class PerformanceStats
             GcGen0 = GC.CollectionCount(0),
             GcGen1 = GC.CollectionCount(1),
             GcGen2 = GC.CollectionCount(2),
-            TickHistorySize = _tickHistory.Count
+            TickHistorySize = _tickHistory.Count,
         };
     }
 

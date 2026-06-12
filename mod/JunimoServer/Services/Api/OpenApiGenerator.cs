@@ -4,226 +4,252 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using NJsonSchema;
-using NJsonSchema.Generation;
 using NSwag;
 
-namespace JunimoServer.Services.Api
+namespace JunimoServer.Services.Api;
+
+/// <summary>
+/// Generates OpenAPI specification from methods decorated with API attributes.
+/// </summary>
+public static class OpenApiGenerator
 {
     /// <summary>
-    /// Generates OpenAPI specification from methods decorated with API attributes.
+    /// Generates an OpenAPI document from a type's methods decorated with ApiEndpoint attributes.
     /// </summary>
-    public static class OpenApiGenerator
+    /// <param name="includeMethod">
+    /// Optional predicate to filter which endpoint methods are emitted. When null, all
+    /// decorated methods are included. Used to omit test-only endpoints from the
+    /// production spec (gated on <c>Env.IsTest</c> at the call site).
+    /// </param>
+    public static OpenApiDocument Generate(
+        Type serviceType,
+        string title,
+        string version,
+        string? description = null,
+        Func<MethodInfo, bool>? includeMethod = null
+    )
     {
-        /// <summary>
-        /// Generates an OpenAPI document from a type's methods decorated with ApiEndpoint attributes.
-        /// </summary>
-        /// <param name="includeMethod">
-        /// Optional predicate to filter which endpoint methods are emitted. When null, all
-        /// decorated methods are included. Used to omit test-only endpoints from the
-        /// production spec (gated on <c>Env.IsTest</c> at the call site).
-        /// </param>
-        public static OpenApiDocument Generate(Type serviceType, string title, string version, string? description = null, Func<MethodInfo, bool>? includeMethod = null)
+        var document = new OpenApiDocument
         {
-            var document = new OpenApiDocument
+            SchemaType = SchemaType.OpenApi3,
+            Info = new OpenApiInfo
             {
-                SchemaType = SchemaType.OpenApi3,
-                Info = new OpenApiInfo
-                {
-                    Title = title,
-                    Version = version,
-                    Description = description
-                }
+                Title = title,
+                Version = version,
+                Description = description,
+            },
+        };
+
+        var methods = serviceType
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+            .Where(m =>
+                m.GetCustomAttribute<ApiEndpointAttribute>() != null
+                && (includeMethod == null || includeMethod(m))
+            );
+
+        foreach (var method in methods)
+        {
+            var endpoint = method.GetCustomAttribute<ApiEndpointAttribute>()!;
+            var responses = method.GetCustomAttributes<ApiResponseAttribute>().ToList();
+
+            var operation = new OpenApiOperation
+            {
+                Summary = endpoint.Summary,
+                Description = endpoint.Description,
+                OperationId = method.Name,
             };
 
-            var methods = serviceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                .Where(m => m.GetCustomAttribute<ApiEndpointAttribute>() != null
-                            && (includeMethod == null || includeMethod(m)));
-
-            foreach (var method in methods)
+            if (!string.IsNullOrEmpty(endpoint.Tag))
             {
-                var endpoint = method.GetCustomAttribute<ApiEndpointAttribute>()!;
-                var responses = method.GetCustomAttributes<ApiResponseAttribute>().ToList();
+                operation.Tags.Add(endpoint.Tag);
+            }
 
-                var operation = new OpenApiOperation
+            // Add responses
+            foreach (var response in responses)
+            {
+                var apiResponse = new OpenApiResponse
                 {
-                    Summary = endpoint.Summary,
-                    Description = endpoint.Description,
-                    OperationId = method.Name
+                    Description =
+                        response.Description ?? GetDefaultDescription(response.StatusCode),
                 };
 
-                if (!string.IsNullOrEmpty(endpoint.Tag))
+                if (response.ResponseType != typeof(void))
                 {
-                    operation.Tags.Add(endpoint.Tag);
-                }
-
-                // Add responses
-                foreach (var response in responses)
-                {
-                    var apiResponse = new OpenApiResponse
+                    var schema = GenerateSchema(response.ResponseType, document);
+                    apiResponse.Content["application/json"] = new OpenApiMediaType
                     {
-                        Description = response.Description ?? GetDefaultDescription(response.StatusCode)
+                        Schema = schema,
                     };
-
-                    if (response.ResponseType != typeof(void))
-                    {
-                        var schema = GenerateSchema(response.ResponseType, document);
-                        apiResponse.Content["application/json"] = new OpenApiMediaType
-                        {
-                            Schema = schema
-                        };
-                    }
-
-                    operation.Responses[response.StatusCode.ToString()] = apiResponse;
                 }
 
-                // Ensure at least one response
-                if (!operation.Responses.Any())
-                {
-                    operation.Responses["200"] = new OpenApiResponse { Description = "Success" };
-                }
-
-                // Add to document
-                if (!document.Paths.ContainsKey(endpoint.Path))
-                {
-                    document.Paths[endpoint.Path] = new OpenApiPathItem();
-                }
-
-                var pathItem = document.Paths[endpoint.Path];
-                var operationMethod = endpoint.Method switch
-                {
-                    "GET" => OpenApiOperationMethod.Get,
-                    "POST" => OpenApiOperationMethod.Post,
-                    "PUT" => OpenApiOperationMethod.Put,
-                    "DELETE" => OpenApiOperationMethod.Delete,
-                    "PATCH" => OpenApiOperationMethod.Patch,
-                    "HEAD" => OpenApiOperationMethod.Head,
-                    "OPTIONS" => OpenApiOperationMethod.Options,
-                    _ => OpenApiOperationMethod.Get
-                };
-                pathItem[operationMethod] = operation;
+                operation.Responses[response.StatusCode.ToString()] = apiResponse;
             }
 
-            return document;
-        }
-
-        private static JsonSchema GenerateSchema(Type type, OpenApiDocument document)
-        {
-            var schemaName = type.Name;
-
-            // Check if schema already exists
-            if (document.Components.Schemas.TryGetValue(schemaName, out var existingSchema))
+            // Ensure at least one response
+            if (!operation.Responses.Any())
             {
-                return new JsonSchema { Reference = existingSchema };
+                operation.Responses["200"] = new OpenApiResponse { Description = "Success" };
             }
 
-            var schema = new JsonSchema
+            // Add to document
+            if (!document.Paths.ContainsKey(endpoint.Path))
             {
-                Type = JsonObjectType.Object
+                document.Paths[endpoint.Path] = new OpenApiPathItem();
+            }
+
+            var pathItem = document.Paths[endpoint.Path];
+            var operationMethod = endpoint.Method switch
+            {
+                "GET" => OpenApiOperationMethod.Get,
+                "POST" => OpenApiOperationMethod.Post,
+                "PUT" => OpenApiOperationMethod.Put,
+                "DELETE" => OpenApiOperationMethod.Delete,
+                "PATCH" => OpenApiOperationMethod.Patch,
+                "HEAD" => OpenApiOperationMethod.Head,
+                "OPTIONS" => OpenApiOperationMethod.Options,
+                _ => OpenApiOperationMethod.Get,
             };
-
-            // Get XML documentation if available (from DescriptionAttribute)
-            var typeDescription = type.GetCustomAttribute<DescriptionAttribute>();
-            if (typeDescription != null)
-            {
-                schema.Description = typeDescription.Description;
-            }
-
-            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                var propSchema = GetPropertySchema(prop.PropertyType);
-
-                // Get description from XML doc summary or DescriptionAttribute
-                var descAttr = prop.GetCustomAttribute<DescriptionAttribute>();
-                if (descAttr != null)
-                {
-                    propSchema.Description = descAttr.Description;
-                }
-
-                // Use camelCase for property names
-                var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name.Substring(1);
-                schema.Properties[propName] = propSchema;
-            }
-
-            // Register schema in components
-            document.Components.Schemas[schemaName] = schema;
-
-            // Return a reference to the schema
-            return new JsonSchema { Reference = schema };
+            pathItem[operationMethod] = operation;
         }
 
-        private static JsonSchemaProperty GetPropertySchema(Type type)
+        return document;
+    }
+
+    private static JsonSchema GenerateSchema(Type type, OpenApiDocument document)
+    {
+        var schemaName = type.Name;
+
+        // Check if schema already exists
+        if (document.Components.Schemas.TryGetValue(schemaName, out var existingSchema))
         {
-            // Handle nullable types
-            var underlyingType = Nullable.GetUnderlyingType(type);
-            if (underlyingType != null)
+            return new JsonSchema { Reference = existingSchema };
+        }
+
+        var schema = new JsonSchema { Type = JsonObjectType.Object };
+
+        // Get XML documentation if available (from DescriptionAttribute)
+        var typeDescription = type.GetCustomAttribute<DescriptionAttribute>();
+        if (typeDescription != null)
+        {
+            schema.Description = typeDescription.Description;
+        }
+
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var propSchema = GetPropertySchema(prop.PropertyType);
+
+            // Get description from XML doc summary or DescriptionAttribute
+            var descAttr = prop.GetCustomAttribute<DescriptionAttribute>();
+            if (descAttr != null)
             {
-                var innerSchema = GetPropertySchema(underlyingType);
-                innerSchema.IsNullableRaw = true;
-                return innerSchema;
+                propSchema.Description = descAttr.Description;
             }
 
-            // Emit the union scalar explicitly: without this, the fall-through "complex type"
-            // branch would expose FarmTypeSetting's Index/Id/IsModded members as object properties.
-            if (type == typeof(GameCreator.FarmTypeSetting))
+            // Use camelCase for property names
+            var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name.Substring(1);
+            schema.Properties[propName] = propSchema;
+        }
+
+        // Register schema in components
+        document.Components.Schemas[schemaName] = schema;
+
+        // Return a reference to the schema
+        return new JsonSchema { Reference = schema };
+    }
+
+    private static JsonSchemaProperty GetPropertySchema(Type type)
+    {
+        // Handle nullable types
+        var underlyingType = Nullable.GetUnderlyingType(type);
+        if (underlyingType != null)
+        {
+            var innerSchema = GetPropertySchema(underlyingType);
+            innerSchema.IsNullableRaw = true;
+            return innerSchema;
+        }
+
+        // Emit the union scalar explicitly: without this, the fall-through "complex type"
+        // branch would expose FarmTypeSetting's Index/Id/IsModded members as object properties.
+        if (type == typeof(GameCreator.FarmTypeSetting))
+        {
+            return new JsonSchemaProperty
             {
-                return new JsonSchemaProperty
+                Description =
+                    "A built-in farm index (0-7) or name, or a Data/AdditionalFarms farm Id.",
+                OneOf =
                 {
-                    Description = "A built-in farm index (0-7) or name, or a Data/AdditionalFarms farm Id.",
-                    OneOf =
-                    {
-                        new JsonSchema { Type = JsonObjectType.Integer },
-                        new JsonSchema { Type = JsonObjectType.String }
-                    }
-                };
-            }
+                    new JsonSchema { Type = JsonObjectType.Integer },
+                    new JsonSchema { Type = JsonObjectType.String },
+                },
+            };
+        }
 
-            // Handle common types
-            if (type == typeof(string))
-                return new JsonSchemaProperty { Type = JsonObjectType.String };
-            if (type == typeof(int) || type == typeof(long) || type == typeof(short))
-                return new JsonSchemaProperty { Type = JsonObjectType.Integer };
-            if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
-                return new JsonSchemaProperty { Type = JsonObjectType.Number };
-            if (type == typeof(bool))
-                return new JsonSchemaProperty { Type = JsonObjectType.Boolean };
-            if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return new JsonSchemaProperty { Type = JsonObjectType.String, Format = "date-time" };
+        // Handle common types
+        if (type == typeof(string))
+        {
+            return new JsonSchemaProperty { Type = JsonObjectType.String };
+        }
 
-            // Handle arrays and lists
-            if (type.IsArray)
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short))
+        {
+            return new JsonSchemaProperty { Type = JsonObjectType.Integer };
+        }
+
+        if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+        {
+            return new JsonSchemaProperty { Type = JsonObjectType.Number };
+        }
+
+        if (type == typeof(bool))
+        {
+            return new JsonSchemaProperty { Type = JsonObjectType.Boolean };
+        }
+
+        if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
+        {
+            return new JsonSchemaProperty { Type = JsonObjectType.String, Format = "date-time" };
+        }
+
+        // Handle arrays and lists
+        if (type.IsArray)
+        {
+            return new JsonSchemaProperty
+            {
+                Type = JsonObjectType.Array,
+                Item = GetPropertySchema(type.GetElementType()!),
+            };
+        }
+
+        if (type.IsGenericType)
+        {
+            var genericDef = type.GetGenericTypeDefinition();
+            if (
+                genericDef == typeof(List<>)
+                || genericDef == typeof(IList<>)
+                || genericDef == typeof(IEnumerable<>)
+                || genericDef == typeof(ICollection<>)
+            )
             {
                 return new JsonSchemaProperty
                 {
                     Type = JsonObjectType.Array,
-                    Item = GetPropertySchema(type.GetElementType()!)
+                    Item = GetPropertySchema(type.GetGenericArguments()[0]),
                 };
             }
-
-            if (type.IsGenericType)
-            {
-                var genericDef = type.GetGenericTypeDefinition();
-                if (genericDef == typeof(List<>) || genericDef == typeof(IList<>) ||
-                    genericDef == typeof(IEnumerable<>) || genericDef == typeof(ICollection<>))
-                {
-                    return new JsonSchemaProperty
-                    {
-                        Type = JsonObjectType.Array,
-                        Item = GetPropertySchema(type.GetGenericArguments()[0])
-                    };
-                }
-            }
-
-            // For complex types, generate inline schema
-            var schema = new JsonSchemaProperty { Type = JsonObjectType.Object };
-            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name.Substring(1);
-                schema.Properties[propName] = GetPropertySchema(prop.PropertyType);
-            }
-            return schema;
         }
 
-        private static string GetDefaultDescription(int statusCode) => statusCode switch
+        // For complex types, generate inline schema
+        var schema = new JsonSchemaProperty { Type = JsonObjectType.Object };
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name.Substring(1);
+            schema.Properties[propName] = GetPropertySchema(prop.PropertyType);
+        }
+        return schema;
+    }
+
+    private static string GetDefaultDescription(int statusCode) =>
+        statusCode switch
         {
             200 => "Success",
             201 => "Created",
@@ -233,7 +259,6 @@ namespace JunimoServer.Services.Api
             403 => "Forbidden",
             404 => "Not Found",
             500 => "Internal Server Error",
-            _ => "Response"
+            _ => "Response",
         };
-    }
 }

@@ -8,7 +8,7 @@ We use GitHub Actions for automated building, testing, and deployment.
 |----------|---------|---------|
 | [Build Release](#build-release-pipeline) | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
 | [Build Preview](#build-preview-pipeline) | Manual `workflow_dispatch`, or push to `master` when `AUTO_BUILD_PREVIEW=true` | Builds and publishes preview Docker images |
-| [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, and line endings |
+| [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, formatting, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
 | [E2E Tests](#e2e-tests-pipeline) | Manual: `workflow_dispatch`, or a maintainer's `/run-tests-e2e` PR comment / re-run checkbox | Runs the Docker E2E suite on a remote VPS (never a required check) |
@@ -137,18 +137,19 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 - **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject the merge queue lints — checking it here fails a bad title on the PR rather than cryptically in the queue.
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
+- **Formatting** - Runs `dotnet csharpier check .` over the whole tree; fails on any C# formatting drift (fix locally with `make format`)
 - **Line endings** - Fails if a file with CRLF line endings reached the index, bypassing the LF normalization `.gitattributes` enforces
 
-These surface as required status checks — `Validate PR Title`, `Validate Build`, `Validate Commits`, and `Validate Line Endings` — that must pass before a PR can merge.
+These surface as required status checks — `Validate PR Title`, `Validate Build`, `Validate Commits`, `Validate Formatting`, and `Validate Line Endings` — that must pass before a PR can merge.
 
 ### Trigger & Security Model
 
 The pipeline triggers on `pull_request_target`. Unlike `pull_request`, this event runs the workflow file and grants secrets from the **base** repository, not the PR head — which is what lets fork PRs be built with the Steam credentials the Docker image needs. It also means fork code is running in a privileged context, so access is gated:
 
 1. **`authorize`** — runs first. Its `environment:` is chosen by an expression: fork PRs resolve to **`fork-pr`** (a required reviewer must approve before the job — and therefore the rest of the pipeline — proceeds); same-repo and Renovate PRs resolve to an empty string, i.e. **no environment**, so the job passes instantly with no approval.
-2. **`validate-commits`** and **`validate-build`** declare `needs: authorize`, so neither starts until the gate passes. For a fork PR this means a maintainer reviews the diff before fork code is checked out or secrets are exposed.
+2. **`validate-commits`**, **`validate-line-endings`**, **`validate-format`**, and **`validate-build`** declare `needs: authorize`, so none starts until the gate passes. For a fork PR this means a maintainer reviews the diff before fork code is checked out or secrets are exposed.
 
-`validate-commits` only reads commit metadata and base-repo files (it never checks out the fork head), so it is safe under the privileged trigger. `validate-build` checks out the fork head and uses the Steam secrets — which is exactly why it sits behind the `authorize` gate.
+`validate-commits` only reads commit metadata and base-repo files (it never checks out the fork head), so it is safe under the privileged trigger. The other three check out the fork head — and `validate-build` additionally uses the Steam secrets — which is exactly why they sit behind the `authorize` gate.
 
 ::: warning
 Keep this a single `pull_request_target` trigger. Adding `pull_request` back produces duplicate check entries (one per event), and the build job must keep `needs: authorize` rather than its own `environment:` — otherwise fork PRs are gated twice.
@@ -179,12 +180,12 @@ A PR sitting in the queue shows **`AWAITING_CHECKS`** while its merge-group buil
 
 ### Why Validate Merge Group is a separate workflow
 
-The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, `Validate Line Endings`, and `Validate PR Title` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all four under the same names. The first three run the same commitlint, Docker build, and line-ending scan, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
+The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate Line Endings`, and `Validate PR Title` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all five under the same names. All but the title check run the same commitlint, Docker build, CSharpier, and line-ending scans, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
 
 `Validate PR Title` is the exception: there is nothing to re-lint in the queue. The `merge_group` payload carries no `pull_request.title`, the title is immutable once a PR is queued (it was already linted at PR time), and the queue branch holds the PR's original commits — not the squash subject — so `Validate Commits` doesn't cover it either. Its merge-group job is therefore a no-op that exists only to report the required status; without it the queue would wait on the title check forever.
 
 ::: warning
-All four required checks (`Validate Build`, `Validate Commits`, `Validate Line Endings`, `Validate PR Title`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too — even if, like the title check, the merge-group job is only a stub that satisfies the contract.
+All five required checks (`Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate Line Endings`, `Validate PR Title`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too — even if, like the title check, the merge-group job is only a stub that satisfies the contract.
 :::
 
 ## CodeQL Pipeline

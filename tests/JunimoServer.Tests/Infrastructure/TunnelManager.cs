@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -56,7 +55,10 @@ public sealed class TunnelManager : IAsyncDisposable
     public void SetSshPath(string sshPath)
     {
         if (string.IsNullOrWhiteSpace(sshPath))
+        {
             throw new ArgumentException("ssh path must be non-empty", nameof(sshPath));
+        }
+
         _sshPath = sshPath;
     }
 
@@ -71,14 +73,23 @@ public sealed class TunnelManager : IAsyncDisposable
         string hostId,
         string sshDestination,
         string? sshKeyPath,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (string.IsNullOrEmpty(sshDestination))
-            throw new ArgumentException("RegisterHostMasterAsync requires a remote SSH destination.", nameof(sshDestination));
+        {
+            throw new ArgumentException(
+                "RegisterHostMasterAsync requires a remote SSH destination.",
+                nameof(sshDestination)
+            );
+        }
 
         lock (_lock)
         {
-            if (_masters.ContainsKey(hostId)) return;
+            if (_masters.ContainsKey(hostId))
+            {
+                return;
+            }
         }
 
         var controlPath = ComputeControlPath(hostId);
@@ -96,49 +107,64 @@ public sealed class TunnelManager : IAsyncDisposable
 
         var spawnedAt = Stopwatch.GetTimestamp();
         var (spawnExit, spawnStderr) = await SpawnMasterAsync(
-            sshDestination, sshKeyPath, controlPath, logPath, ct);
+            sshDestination,
+            sshKeyPath,
+            controlPath,
+            logPath,
+            ct
+        );
 
         if (spawnExit != 0)
         {
             // -E moved ssh's stderr to the log, so the parent pipe may be empty
             // even on a real failure — fall back to the log tail.
             var spawnDiag = string.IsNullOrEmpty(spawnStderr)
-                ? ReadMasterLogTail(logPath, MaxLogTailBytes) : spawnStderr;
-            EmitSafe("ssh_master_spawn_failed", new
-            {
-                host_id = hostId,
-                exitCode = spawnExit,
-                stderr = spawnDiag,
-                durationMs = ElapsedMs(spawnedAt)
-            });
+                ? ReadMasterLogTail(logPath, MaxLogTailBytes)
+                : spawnStderr;
+            EmitSafe(
+                "ssh_master_spawn_failed",
+                new
+                {
+                    host_id = hostId,
+                    exitCode = spawnExit,
+                    stderr = spawnDiag,
+                    durationMs = ElapsedMs(spawnedAt),
+                }
+            );
             throw new InvalidOperationException(
-                $"ssh -M spawn failed for {hostId} (exit {spawnExit}): {spawnDiag}");
+                $"ssh -M spawn failed for {hostId} (exit {spawnExit}): {spawnDiag}"
+            );
         }
 
         var (checkExit, checkStderr) = await RunCheckAsync(controlPath, sshDestination, ct);
-        var masterRunning = checkExit == 0
-            && checkStderr.Contains("Master running", StringComparison.Ordinal);
+        var masterRunning =
+            checkExit == 0 && checkStderr.Contains("Master running", StringComparison.Ordinal);
 
         if (!masterRunning)
         {
             // Same -E-moves-stderr fallback as the spawn path.
             var spawnDiag = string.IsNullOrEmpty(spawnStderr)
-                ? ReadMasterLogTail(logPath, MaxLogTailBytes) : spawnStderr;
-            EmitSafe("ssh_master_check_failed", new
-            {
-                host_id = hostId,
-                exitCode = checkExit,
-                stderr = checkStderr,
-                spawnStderr = spawnDiag,
-                durationMs = ElapsedMs(spawnedAt)
-            });
+                ? ReadMasterLogTail(logPath, MaxLogTailBytes)
+                : spawnStderr;
+            EmitSafe(
+                "ssh_master_check_failed",
+                new
+                {
+                    host_id = hostId,
+                    exitCode = checkExit,
+                    stderr = checkStderr,
+                    spawnStderr = spawnDiag,
+                    durationMs = ElapsedMs(spawnedAt),
+                }
+            );
             // Best-effort cleanup of whatever the spawn left behind so a retry
             // (or the next run with the same path) doesn't trip the "socket
             // already exists" branch.
             TryDeleteFile(controlPath);
             throw new InvalidOperationException(
-                $"ssh -M did not produce a usable master for {hostId}. " +
-                $"spawn stderr: {spawnDiag}; -O check stderr: {checkStderr}");
+                $"ssh -M did not produce a usable master for {hostId}. "
+                    + $"spawn stderr: {spawnDiag}; -O check stderr: {checkStderr}"
+            );
         }
 
         lock (_lock)
@@ -154,17 +180,25 @@ public sealed class TunnelManager : IAsyncDisposable
             };
         }
 
-        EmitSafe("ssh_master_ready", new
-        {
-            host_id = hostId,
-            controlPath,
-            logPath,
-            durationMs = ElapsedMs(spawnedAt)
-        });
+        EmitSafe(
+            "ssh_master_ready",
+            new
+            {
+                host_id = hostId,
+                controlPath,
+                logPath,
+                durationMs = ElapsedMs(spawnedAt),
+            }
+        );
     }
 
     private async Task<(int ExitCode, string Stderr)> SpawnMasterAsync(
-        string sshDestination, string? sshKeyPath, string controlPath, string logPath, CancellationToken ct)
+        string sshDestination,
+        string? sshKeyPath,
+        string controlPath,
+        string logPath,
+        CancellationToken ct
+    )
     {
         // -f forks ssh after auth; the parent exits 0 and the forked child
         // becomes the long-lived master. The Process handle returned by
@@ -177,35 +211,50 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-M");
         psi.ArgumentList.Add("-N");
         psi.ArgumentList.Add("-f");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ControlMaster=auto");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={controlPath}");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ControlPersist=10m");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("Compression=yes");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ServerAliveInterval=15");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("ControlMaster=auto");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add($"ControlPath={controlPath}");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("ControlPersist=10m");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("Compression=yes");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("ServerAliveInterval=15");
         // 2 (not OpenSSH's default 3) → master self-exits ~30s after a silent
         // drop instead of ~45s, shrinking the IsMasterAliveAsync self-heal window.
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ServerAliveCountMax=2");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("TCPKeepAlive=yes");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("BatchMode=yes");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("ServerAliveCountMax=2");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("TCPKeepAlive=yes");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("BatchMode=yes");
         // INFO, not ERROR: the silent-drop line "Timeout, server not responding."
         // is LOG_INFO, so ERROR would suppress the one line this log exists for.
         // A healthy -N master stays at 0 bytes, so the happy path stays lean.
         // -E *moves* ssh's stderr to the file (parent pipe goes empty), so the
         // spawn/check failure paths read the tail instead. Only the silent-timeout
         // drop lands here; an RST drop leaves it empty (caught by the classifier).
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("LogLevel=INFO");
-        psi.ArgumentList.Add("-E"); psi.ArgumentList.Add(logPath);
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("LogLevel=INFO");
+        psi.ArgumentList.Add("-E");
+        psi.ArgumentList.Add(logPath);
         psi.ArgumentList.Add(sshDestination);
 
         return await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(15), ct);
     }
 
     private async Task<(int ExitCode, string Stderr)> RunCheckAsync(
-        string controlPath, string sshDestination, CancellationToken ct)
+        string controlPath,
+        string sshDestination,
+        CancellationToken ct
+    )
     {
         var psi = NewSshPsi();
-        psi.ArgumentList.Add("-O"); psi.ArgumentList.Add("check");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={controlPath}");
+        psi.ArgumentList.Add("-O");
+        psi.ArgumentList.Add("check");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add($"ControlPath={controlPath}");
         psi.ArgumentList.Add(sshDestination);
         return await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
     }
@@ -232,7 +281,10 @@ public sealed class TunnelManager : IAsyncDisposable
             HydrateFromEnvIfPresent();
             master = TryGetMaster(hostId);
         }
-        if (master is null) return false;
+        if (master is null)
+        {
+            return false;
+        }
 
         try
         {
@@ -263,7 +315,11 @@ public sealed class TunnelManager : IAsyncDisposable
     /// </summary>
     private static void AddIdentityArg(ProcessStartInfo psi, string? keyPath)
     {
-        if (string.IsNullOrEmpty(keyPath)) return;
+        if (string.IsNullOrEmpty(keyPath))
+        {
+            return;
+        }
+
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(keyPath);
         psi.ArgumentList.Add("-o");
@@ -281,16 +337,24 @@ public sealed class TunnelManager : IAsyncDisposable
         string? sshDestination,
         string? sshKeyPath,
         int mappedPort,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (string.IsNullOrEmpty(sshDestination))
         {
-            return Task.FromResult(new ForwardLease(this, hostId, mappedPort, mappedPort, isRemote: false));
+            return Task.FromResult(
+                new ForwardLease(this, hostId, mappedPort, mappedPort, isRemote: false)
+            );
         }
 
         return OpenForwardCoreAsync(
-            hostId, sshDestination!, sshKeyPath,
-            mappedPort: mappedPort, remoteSocketPath: null, ct);
+            hostId,
+            sshDestination!,
+            sshKeyPath,
+            mappedPort: mappedPort,
+            remoteSocketPath: null,
+            ct
+        );
     }
 
     /// <summary>
@@ -305,14 +369,25 @@ public sealed class TunnelManager : IAsyncDisposable
         string sshDestination,
         string? sshKeyPath,
         string remoteSocketPath,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (string.IsNullOrEmpty(sshDestination))
-            throw new ArgumentException("OpenSocketForwardAsync requires a remote SSH destination.", nameof(sshDestination));
+        {
+            throw new ArgumentException(
+                "OpenSocketForwardAsync requires a remote SSH destination.",
+                nameof(sshDestination)
+            );
+        }
 
         return OpenForwardCoreAsync(
-            hostId, sshDestination, sshKeyPath,
-            mappedPort: 0, remoteSocketPath: remoteSocketPath, ct);
+            hostId,
+            sshDestination,
+            sshKeyPath,
+            mappedPort: 0,
+            remoteSocketPath: remoteSocketPath,
+            ct
+        );
     }
 
     private async Task<ForwardLease> OpenForwardCoreAsync(
@@ -321,7 +396,8 @@ public sealed class TunnelManager : IAsyncDisposable
         string? sshKeyPath,
         int mappedPort,
         string? remoteSocketPath,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         const int maxAttempts = 5;
         Exception? lastFailure = null;
@@ -337,7 +413,12 @@ public sealed class TunnelManager : IAsyncDisposable
             try
             {
                 await OpenForwardOnMasterAsync(
-                    master, coordinatorPort, mappedPort, remoteSocketPath, ct);
+                    master,
+                    coordinatorPort,
+                    mappedPort,
+                    remoteSocketPath,
+                    ct
+                );
 
                 // Safety net: -O forward returns 0 once ssh has set up the
                 // forward, but kernel listener readiness is technically
@@ -359,63 +440,75 @@ public sealed class TunnelManager : IAsyncDisposable
                     };
                 }
 
-                EmitSafe("tunnel_forward_opened", new
-                {
-                    host_id = hostId,
-                    coordinator_port = coordinatorPort,
-                    mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
-                    remote_socket = remoteSocketPath,
-                    durationMs = ElapsedMs(openStartedAt),
-                    attempts = attempt
-                });
+                EmitSafe(
+                    "tunnel_forward_opened",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = coordinatorPort,
+                        mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
+                        remote_socket = remoteSocketPath,
+                        durationMs = ElapsedMs(openStartedAt),
+                        attempts = attempt,
+                    }
+                );
 
                 return new ForwardLease(this, hostId, coordinatorPort, mappedPort, isRemote: true);
             }
             catch (PortCollisionException ex)
             {
-                EmitSafe("tunnel_forward_failed", new
-                {
-                    host_id = hostId,
-                    coordinator_port = (int?)coordinatorPort,
-                    mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
-                    remote_socket = remoteSocketPath,
-                    reason = "port_collision_retry",
-                    message = ex.Message,
-                    attempt,
-                    attempts = maxAttempts
-                });
+                EmitSafe(
+                    "tunnel_forward_failed",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = (int?)coordinatorPort,
+                        mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
+                        remote_socket = remoteSocketPath,
+                        reason = "port_collision_retry",
+                        message = ex.Message,
+                        attempt,
+                        attempts = maxAttempts,
+                    }
+                );
                 lastFailure = ex;
                 // fall through to next attempt
             }
             catch (OperationCanceledException ex)
             {
-                EmitSafe("tunnel_forward_failed", new
-                {
-                    host_id = hostId,
-                    coordinator_port = (int?)coordinatorPort,
-                    mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
-                    remote_socket = remoteSocketPath,
-                    reason = "cancelled",
-                    message = ex.Message,
-                    attempt,
-                    attempts = maxAttempts
-                });
+                EmitSafe(
+                    "tunnel_forward_failed",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = (int?)coordinatorPort,
+                        mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
+                        remote_socket = remoteSocketPath,
+                        reason = "cancelled",
+                        message = ex.Message,
+                        attempt,
+                        attempts = maxAttempts,
+                    }
+                );
                 throw;
             }
             catch (Exception ex)
             {
                 var reason = ex is ProbeTimeoutException ? "probe_timeout" : "forward_failed";
-                EmitSafe("tunnel_forward_failed", new
-                {
-                    host_id = hostId,
-                    coordinator_port = (int?)coordinatorPort,
-                    mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
-                    remote_socket = remoteSocketPath,
-                    reason,
-                    message = ex.Message,
-                    attempt,
-                    attempts = maxAttempts
-                });
+                EmitSafe(
+                    "tunnel_forward_failed",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = (int?)coordinatorPort,
+                        mapped_port = remoteSocketPath is null ? (int?)mappedPort : null,
+                        remote_socket = remoteSocketPath,
+                        reason,
+                        message = ex.Message,
+                        attempt,
+                        attempts = maxAttempts,
+                    }
+                );
                 throw;
             }
         }
@@ -423,7 +516,8 @@ public sealed class TunnelManager : IAsyncDisposable
         var label = remoteSocketPath ?? $"127.0.0.1:{mappedPort}";
         throw new InvalidOperationException(
             $"Failed to open ssh -O forward for {hostId} → {label} after {maxAttempts} attempts: {lastFailure?.Message}",
-            lastFailure);
+            lastFailure
+        );
     }
 
     private async Task OpenForwardOnMasterAsync(
@@ -431,39 +525,60 @@ public sealed class TunnelManager : IAsyncDisposable
         int coordinatorPort,
         int mappedPort,
         string? remoteSocketPath,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var target = remoteSocketPath ?? $"127.0.0.1:{mappedPort}";
         var psi = NewSshPsi();
-        psi.ArgumentList.Add("-O"); psi.ArgumentList.Add("forward");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add("ExitOnForwardFailure=yes");
+        psi.ArgumentList.Add("-O");
+        psi.ArgumentList.Add("forward");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add("ExitOnForwardFailure=yes");
         psi.ArgumentList.Add("-L");
         psi.ArgumentList.Add($"127.0.0.1:{coordinatorPort}:{target}");
         psi.ArgumentList.Add(master.SshDestination);
 
         var (exit, stderr) = await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
-        if (exit == 0) return;
+        if (exit == 0)
+        {
+            return;
+        }
 
         if (LooksLikePortCollision(stderr))
+        {
             throw new PortCollisionException(
-                $"ssh -O forward exited (code {exit}); local bind collision on {coordinatorPort}: {stderr}");
+                $"ssh -O forward exited (code {exit}); local bind collision on {coordinatorPort}: {stderr}"
+            );
+        }
 
         throw new InvalidOperationException(
-            $"ssh -O forward failed (exit {exit}) for {master.HostId} → {target}: {stderr}");
+            $"ssh -O forward failed (exit {exit}) for {master.HostId} → {target}: {stderr}"
+        );
     }
 
-    private static async Task ProbeListenerAsync(int coordinatorPort, TimeSpan timeout, CancellationToken ct)
+    private static async Task ProbeListenerAsync(
+        int coordinatorPort,
+        TimeSpan timeout,
+        CancellationToken ct
+    )
     {
         using var deadline = new CancellationTokenSource(timeout);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             if (deadline.IsCancellationRequested)
+            {
                 throw new ProbeTimeoutException(
-                    $"127.0.0.1:{coordinatorPort} did not accept within {timeout.TotalMilliseconds:F0}ms after ssh -O forward returned 0.");
+                    $"127.0.0.1:{coordinatorPort} did not accept within {timeout.TotalMilliseconds:F0}ms after ssh -O forward returned 0."
+                );
+            }
 
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(
+                ct,
+                deadline.Token
+            );
             attemptCts.CancelAfter(TimeSpan.FromMilliseconds(200));
             try
             {
@@ -471,13 +586,28 @@ public sealed class TunnelManager : IAsyncDisposable
                 await client.ConnectAsync(IPAddress.Loopback, coordinatorPort, attemptCts.Token);
                 return;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (OperationCanceledException) { /* deadline or per-attempt cap; loop */ }
-            catch (SocketException) { /* not yet listening; loop */ }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            { /* deadline or per-attempt cap; loop */
+            }
+            catch (SocketException)
+            { /* not yet listening; loop */
+            }
 
-            try { await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token); }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (OperationCanceledException) { /* deadline tripped; next iter handles */ }
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            { /* deadline tripped; next iter handles */
+            }
         }
     }
 
@@ -498,7 +628,9 @@ public sealed class TunnelManager : IAsyncDisposable
         lock (_lock)
         {
             if (!_forwards.Remove(new ForwardKey(hostId, coordinatorPort), out entry))
+            {
                 return;
+            }
         }
 
         await CancelForwardAsync(entry, TimeSpan.FromSeconds(2), via: "dispose");
@@ -539,9 +671,7 @@ public sealed class TunnelManager : IAsyncDisposable
         var ownedMasters = masterSnapshot.Where(m => m.Owned).ToArray();
         if (ownedMasters.Length > 0)
         {
-            var tasks = ownedMasters
-                .Select(m => ExitMasterAsync(m, perCancelTimeout))
-                .ToArray();
+            var tasks = ownedMasters.Select(m => ExitMasterAsync(m, perCancelTimeout)).ToArray();
             await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(timeout));
         }
     }
@@ -570,20 +700,25 @@ public sealed class TunnelManager : IAsyncDisposable
             }
             if (firstForHost)
             {
-                EmitSafe("tunnel_forwards_skipped", new
-                {
-                    host_id = entry.HostId,
-                    reason = "control_socket_gone",
-                    controlPath = entry.ControlPath,
-                    via
-                });
+                EmitSafe(
+                    "tunnel_forwards_skipped",
+                    new
+                    {
+                        host_id = entry.HostId,
+                        reason = "control_socket_gone",
+                        controlPath = entry.ControlPath,
+                        via,
+                    }
+                );
             }
             return;
         }
 
         var psi = NewSshPsi();
-        psi.ArgumentList.Add("-O"); psi.ArgumentList.Add("cancel");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={entry.ControlPath}");
+        psi.ArgumentList.Add("-O");
+        psi.ArgumentList.Add("cancel");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add($"ControlPath={entry.ControlPath}");
         psi.ArgumentList.Add("-L");
         psi.ArgumentList.Add($"127.0.0.1:{entry.CoordinatorPort}:{target}");
         psi.ArgumentList.Add(entry.SshDestination);
@@ -593,31 +728,40 @@ public sealed class TunnelManager : IAsyncDisposable
         string stderr;
         try
         {
-            (exit, stderr) = await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
+            (exit, stderr) = await RunSshToCompletionAsync(
+                psi,
+                perCancelTimeout,
+                CancellationToken.None
+            );
         }
         catch (Exception ex)
         {
             (exit, stderr) = (-1, ex.Message);
         }
 
-        EmitSafe("tunnel_forward_closed", new
-        {
-            host_id = entry.HostId,
-            coordinator_port = entry.CoordinatorPort,
-            via,
-            exitCode = exit,
-            // Happy path stays lean: no stderr field on a clean close.
-            stderr = exit != 0 ? stderr : null,
-            durationMs = ElapsedMs(startedAt)
-        });
+        EmitSafe(
+            "tunnel_forward_closed",
+            new
+            {
+                host_id = entry.HostId,
+                coordinator_port = entry.CoordinatorPort,
+                via,
+                exitCode = exit,
+                // Happy path stays lean: no stderr field on a clean close.
+                stderr = exit != 0 ? stderr : null,
+                durationMs = ElapsedMs(startedAt),
+            }
+        );
     }
 
     private async Task ExitMasterAsync(HostMaster master, TimeSpan perCancelTimeout)
     {
         var startedAt = Stopwatch.GetTimestamp();
         var psi = NewSshPsi();
-        psi.ArgumentList.Add("-O"); psi.ArgumentList.Add("exit");
-        psi.ArgumentList.Add("-o"); psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
+        psi.ArgumentList.Add("-O");
+        psi.ArgumentList.Add("exit");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
         psi.ArgumentList.Add(master.SshDestination);
 
         // Best-effort, but record why the exit failed instead of discarding it.
@@ -625,7 +769,11 @@ public sealed class TunnelManager : IAsyncDisposable
         string stderr;
         try
         {
-            (exit, stderr) = await RunSshToCompletionAsync(psi, perCancelTimeout, CancellationToken.None);
+            (exit, stderr) = await RunSshToCompletionAsync(
+                psi,
+                perCancelTimeout,
+                CancellationToken.None
+            );
         }
         catch (Exception ex)
         {
@@ -637,14 +785,17 @@ public sealed class TunnelManager : IAsyncDisposable
         // a future run on the same path doesn't hit the silent-disable trap.
         TryDeleteFile(master.ControlPath);
 
-        EmitSafe("ssh_master_exited", new
-        {
-            host_id = master.HostId,
-            exitCode = exit,
-            // Happy path stays lean: no stderr field on a clean exit.
-            stderr = exit != 0 ? stderr : null,
-            durationMs = ElapsedMs(startedAt)
-        });
+        EmitSafe(
+            "ssh_master_exited",
+            new
+            {
+                host_id = master.HostId,
+                exitCode = exit,
+                // Happy path stays lean: no stderr field on a clean exit.
+                stderr = exit != 0 ? stderr : null,
+                durationMs = ElapsedMs(startedAt),
+            }
+        );
 
         // Fold the master's own -E death line into the log. Read AFTER -O exit
         // (final line flushed); emit only when non-empty (a stable master logs
@@ -653,14 +804,23 @@ public sealed class TunnelManager : IAsyncDisposable
         if (tail.Length > 0)
         {
             long byteLength = 0;
-            try { byteLength = new FileInfo(master.LogPath!).Length; } catch { /* size is advisory */ }
-            EmitSafe("ssh_master_log", new
+            try
             {
-                host_id = master.HostId,
-                logPath = master.LogPath,
-                byteLength,
-                tail
-            });
+                byteLength = new FileInfo(master.LogPath!).Length;
+            }
+            catch
+            { /* size is advisory */
+            }
+            EmitSafe(
+                "ssh_master_log",
+                new
+                {
+                    host_id = master.HostId,
+                    logPath = master.LogPath,
+                    byteLength,
+                    tail,
+                }
+            );
         }
     }
 
@@ -690,13 +850,18 @@ public sealed class TunnelManager : IAsyncDisposable
         }
     }
 
-    private static long ElapsedMs(long startTicks)
-        => (long)Stopwatch.GetElapsedTime(startTicks).TotalMilliseconds;
+    private static long ElapsedMs(long startTicks) =>
+        (long)Stopwatch.GetElapsedTime(startTicks).TotalMilliseconds;
 
     private static void EmitSafe(string name, object payload)
     {
-        try { InfrastructureEventLog.Emit(name, payload); }
-        catch { /* event log must never be load-bearing on tunnel teardown */ }
+        try
+        {
+            InfrastructureEventLog.Emit(name, payload);
+        }
+        catch
+        { /* event log must never be load-bearing on tunnel teardown */
+        }
     }
 
     private ProcessStartInfo NewSshPsi()
@@ -712,11 +877,16 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     private static async Task<(int ExitCode, string Stderr)> RunSshToCompletionAsync(
-        ProcessStartInfo psi, TimeSpan timeout, CancellationToken ct)
+        ProcessStartInfo psi,
+        TimeSpan timeout,
+        CancellationToken ct
+    )
     {
-        using var process = Process.Start(psi)
+        using var process =
+            Process.Start(psi)
             ?? throw new InvalidOperationException(
-                $"Failed to start ssh process: {psi.FileName} {string.Join(' ', psi.ArgumentList)}");
+                $"Failed to start ssh process: {psi.FileName} {string.Join(' ', psi.ArgumentList)}"
+            );
 
         var stderr = new StringBuilder();
 
@@ -730,18 +900,31 @@ public sealed class TunnelManager : IAsyncDisposable
             try
             {
                 string? line;
-                while ((line = await process.StandardError.ReadLineAsync().ConfigureAwait(false)) != null)
+                while (
+                    (line = await process.StandardError.ReadLineAsync().ConfigureAwait(false))
+                    != null
+                )
                 {
-                    lock (stderr) stderr.AppendLine(line);
+                    lock (stderr)
+                    {
+                        stderr.AppendLine(line);
+                    }
                 }
             }
-            catch { /* diagnostic-only */ }
+            catch
+            { /* diagnostic-only */
+            }
         }
 
         async Task ReadStdoutAsync()
         {
-            try { _ = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false); }
-            catch { /* diagnostic-only */ }
+            try
+            {
+                _ = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            }
+            catch
+            { /* diagnostic-only */
+            }
         }
 
         var stderrTask = ReadStderrAsync();
@@ -755,21 +938,65 @@ public sealed class TunnelManager : IAsyncDisposable
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-            catch { /* best effort */ }
-            try { await process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token); }
-            catch { /* bounded */ }
-            try { await stderrTask.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
-            try { await stdoutTask.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            { /* best effort */
+            }
+            try
+            {
+                await process.WaitForExitAsync(
+                    new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token
+                );
+            }
+            catch
+            { /* bounded */
+            }
+            try
+            {
+                await stderrTask.WaitAsync(TimeSpan.FromSeconds(1));
+            }
+            catch { }
+            try
+            {
+                await stdoutTask.WaitAsync(TimeSpan.FromSeconds(1));
+            }
+            catch { }
             string captured;
-            lock (stderr) captured = stderr.ToString().TrimEnd();
-            return (124, captured + (captured.Length > 0 ? "\n" : "") + $"[timeout after {timeout.TotalMilliseconds:F0}ms]");
+            lock (stderr)
+            {
+                captured = stderr.ToString().TrimEnd();
+            }
+
+            return (
+                124,
+                captured
+                    + (captured.Length > 0 ? "\n" : "")
+                    + $"[timeout after {timeout.TotalMilliseconds:F0}ms]"
+            );
         }
 
-        try { await stderrTask.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
-        try { await stdoutTask.WaitAsync(TimeSpan.FromSeconds(1)); } catch { }
+        try
+        {
+            await stderrTask.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch { }
+        try
+        {
+            await stdoutTask.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch { }
         string captured2;
-        lock (stderr) captured2 = stderr.ToString().TrimEnd();
+        lock (stderr)
+        {
+            captured2 = stderr.ToString().TrimEnd();
+        }
+
         return (process.ExitCode, captured2);
     }
 
@@ -777,7 +1004,10 @@ public sealed class TunnelManager : IAsyncDisposable
     {
         lock (_lock)
         {
-            if (_masters.TryGetValue(hostId, out var m)) return m;
+            if (_masters.TryGetValue(hostId, out var m))
+            {
+                return m;
+            }
         }
 
         // Child-process path: xUnit's AssemblyRunner spawns the test assembly
@@ -790,11 +1020,16 @@ public sealed class TunnelManager : IAsyncDisposable
 
         lock (_lock)
         {
-            if (_masters.TryGetValue(hostId, out var m)) return m;
+            if (_masters.TryGetValue(hostId, out var m))
+            {
+                return m;
+            }
+
             throw new InvalidOperationException(
-                $"No SSH ControlMaster registered for host '{hostId}'. " +
-                $"HostPool.PreflightAsync must run RegisterHostMasterAsync before any forward open " +
-                $"(or {RunArtifactNames.SshHostMastersEnv} must be inherited from the parent).");
+                $"No SSH ControlMaster registered for host '{hostId}'. "
+                    + $"HostPool.PreflightAsync must run RegisterHostMasterAsync before any forward open "
+                    + $"(or {RunArtifactNames.SshHostMastersEnv} must be inherited from the parent)."
+            );
         }
     }
 
@@ -802,29 +1037,50 @@ public sealed class TunnelManager : IAsyncDisposable
     {
         var sshPathEnv = Environment.GetEnvironmentVariable(RunArtifactNames.SshPathEnv);
         if (!string.IsNullOrWhiteSpace(sshPathEnv) && _sshPath == "ssh")
+        {
             _sshPath = sshPathEnv;
+        }
 
         var raw = Environment.GetEnvironmentVariable(RunArtifactNames.SshHostMastersEnv);
-        if (string.IsNullOrWhiteSpace(raw)) return;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
 
         Dictionary<string, HostMasterEnvEntry>? map;
         try
         {
-            map = JsonSerializer.Deserialize<Dictionary<string, HostMasterEnvEntry>>(raw, HostMasterEnvJson);
+            map = JsonSerializer.Deserialize<Dictionary<string, HostMasterEnvEntry>>(
+                raw,
+                HostMasterEnvJson
+            );
         }
         catch
         {
             return;
         }
-        if (map is null) return;
+        if (map is null)
+        {
+            return;
+        }
 
         lock (_lock)
         {
             foreach (var (hostId, entry) in map)
             {
-                if (_masters.ContainsKey(hostId)) continue;
-                if (string.IsNullOrEmpty(entry.SshDestination) || string.IsNullOrEmpty(entry.ControlPath))
+                if (_masters.ContainsKey(hostId))
+                {
                     continue;
+                }
+
+                if (
+                    string.IsNullOrEmpty(entry.SshDestination)
+                    || string.IsNullOrEmpty(entry.ControlPath)
+                )
+                {
+                    continue;
+                }
+
                 _masters[hostId] = new HostMaster
                 {
                     HostId = hostId,
@@ -856,17 +1112,20 @@ public sealed class TunnelManager : IAsyncDisposable
                     SshDestination = kv.Value.SshDestination,
                     SshKeyPath = kv.Value.SshKeyPath,
                     ControlPath = kv.Value.ControlPath,
-                });
+                }
+            );
         }
         return JsonSerializer.Serialize(snapshot, HostMasterEnvJson);
     }
 
     private static string ComputeControlPath(string hostId)
     {
-        var runId = RunMetadata.RunId
+        var runId =
+            RunMetadata.RunId
             ?? throw new InvalidOperationException(
-                "RunMetadata.RunId is null when computing ControlPath. " +
-                "RunMetadata.BeginRun must run before HostPool.PreflightAsync.");
+                "RunMetadata.RunId is null when computing ControlPath. "
+                    + "RunMetadata.BeginRun must run before HostPool.PreflightAsync."
+            );
         var pid = Process.GetCurrentProcess().Id;
         // pid is the load-bearing third term: it keeps two concurrent
         // coordinator processes (e.g. `make test` invoked twice on the same
@@ -903,21 +1162,41 @@ public sealed class TunnelManager : IAsyncDisposable
             try
             {
                 var info = new FileInfo(file);
-                if (!info.Exists) continue;
-                if (info.LastWriteTimeUtc > cutoff) continue;
+                if (!info.Exists)
+                {
+                    continue;
+                }
+
+                if (info.LastWriteTimeUtc > cutoff)
+                {
+                    continue;
+                }
+
                 info.Delete();
                 deleted++;
             }
-            catch (UnauthorizedAccessException) { /* shared /tmp on Linux: not ours */ }
-            catch (IOException) { /* in use by another live master, or transient */ }
+            catch (UnauthorizedAccessException)
+            { /* shared /tmp on Linux: not ours */
+            }
+            catch (IOException)
+            { /* in use by another live master, or transient */
+            }
         }
         return deleted;
     }
 
     private static void TryDeleteFile(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* best effort */ }
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        { /* best effort */
+        }
     }
 
     /// <summary>Max bytes of the master log tail attached to any event.</summary>
@@ -933,14 +1212,30 @@ public sealed class TunnelManager : IAsyncDisposable
     /// </summary>
     private static string ReadMasterLogTail(string? logPath, int maxBytes)
     {
-        if (string.IsNullOrEmpty(logPath)) return "";
+        if (string.IsNullOrEmpty(logPath))
+        {
+            return "";
+        }
+
         try
         {
-            if (!File.Exists(logPath)) return "";
+            if (!File.Exists(logPath))
+            {
+                return "";
+            }
+
             using var stream = new FileStream(
-                logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                logPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite
+            );
             var length = stream.Length;
-            if (length == 0) return "";
+            if (length == 0)
+            {
+                return "";
+            }
+
             var take = (int)Math.Min(length, maxBytes);
             stream.Seek(-take, SeekOrigin.End);
             var buffer = new byte[take];
@@ -959,8 +1254,8 @@ public sealed class TunnelManager : IAsyncDisposable
     /// (including the xUnit child that poisons the host) can locate the file the
     /// parent's master wrote on the shared filesystem.
     /// </summary>
-    private static string ComputeMasterLogPath(string hostId)
-        => Path.Combine(TestArtifacts.GetDiagnosticsDir(), $"ssh-master-{hostId}.log");
+    private static string ComputeMasterLogPath(string hostId) =>
+        Path.Combine(TestArtifacts.GetDiagnosticsDir(), $"ssh-master-{hostId}.log");
 
     /// <summary>
     /// Reads the tail of a host's master log by host id (recomputing the path),
@@ -968,8 +1263,8 @@ public sealed class TunnelManager : IAsyncDisposable
     /// <c>sshMasterLogTail</c> enrichment. Returns "" when the log is missing or
     /// empty — e.g. an RST drop, where the reset line never reaches <c>-E</c>.
     /// </summary>
-    public static string ReadMasterLogTailForHost(string hostId)
-        => ReadMasterLogTail(ComputeMasterLogPath(hostId), MaxLogTailBytes);
+    public static string ReadMasterLogTailForHost(string hostId) =>
+        ReadMasterLogTail(ComputeMasterLogPath(hostId), MaxLogTailBytes);
 
     private readonly record struct ForwardKey(string HostId, int CoordinatorPort);
 
@@ -990,6 +1285,7 @@ public sealed class TunnelManager : IAsyncDisposable
         public required string SshDestination { get; init; }
         public required string? SshKeyPath { get; init; }
         public required string ControlPath { get; init; }
+
         /// <summary>
         /// Path to the master's <c>-E</c> error log. Set only on owned masters
         /// (the parent that spawned them); null on adopted masters in the xUnit
@@ -998,6 +1294,7 @@ public sealed class TunnelManager : IAsyncDisposable
         /// emit there always has a path.
         /// </summary>
         public string? LogPath { get; init; }
+
         /// <summary>
         /// True in the parent process where <see cref="RegisterHostMasterAsync"/>
         /// spawned this master; false in the xUnit child where the master was
@@ -1010,9 +1307,14 @@ public sealed class TunnelManager : IAsyncDisposable
 
     private sealed class HostMasterEnvEntry
     {
-        [JsonPropertyName("sshDestination")] public string SshDestination { get; set; } = "";
-        [JsonPropertyName("sshKeyPath")] public string? SshKeyPath { get; set; }
-        [JsonPropertyName("controlPath")] public string ControlPath { get; set; } = "";
+        [JsonPropertyName("sshDestination")]
+        public string SshDestination { get; set; } = "";
+
+        [JsonPropertyName("sshKeyPath")]
+        public string? SshKeyPath { get; set; }
+
+        [JsonPropertyName("controlPath")]
+        public string ControlPath { get; set; } = "";
     }
 
     private static readonly JsonSerializerOptions HostMasterEnvJson = new()
@@ -1022,12 +1324,14 @@ public sealed class TunnelManager : IAsyncDisposable
 
     private sealed class PortCollisionException : Exception
     {
-        public PortCollisionException(string message) : base(message) { }
+        public PortCollisionException(string message)
+            : base(message) { }
     }
 
     private sealed class ProbeTimeoutException : Exception
     {
-        public ProbeTimeoutException(string message) : base(message) { }
+        public ProbeTimeoutException(string message)
+            : base(message) { }
     }
 }
 
@@ -1046,7 +1350,13 @@ public sealed class ForwardLease : IAsyncDisposable
     /// <summary>The coordinator-side port a caller can connect to.</summary>
     public int CoordinatorPort { get; }
 
-    public ForwardLease(TunnelManager owner, string hostId, int coordinatorPort, int mappedPort, bool isRemote)
+    public ForwardLease(
+        TunnelManager owner,
+        string hostId,
+        int coordinatorPort,
+        int mappedPort,
+        bool isRemote
+    )
     {
         _owner = owner;
         _hostId = hostId;
@@ -1057,9 +1367,15 @@ public sealed class ForwardLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         if (_isRemote)
+        {
             await _owner.CloseAsync(_hostId, CoordinatorPort, _mappedPort);
+        }
     }
 }

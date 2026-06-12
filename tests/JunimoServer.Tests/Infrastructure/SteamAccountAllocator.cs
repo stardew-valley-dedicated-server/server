@@ -40,8 +40,10 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
     private readonly Func<int, CancellationToken, Task<bool>>? _readinessProbe;
     private static readonly TimeSpan AllocationReadinessBudget = TimeSpan.FromSeconds(90);
 
-    public SteamAccountAllocator(int accountCount,
-        Func<int, CancellationToken, Task<bool>>? readinessProbe = null)
+    public SteamAccountAllocator(
+        int accountCount,
+        Func<int, CancellationToken, Task<bool>>? readinessProbe = null
+    )
     {
         _totalAccounts = accountCount;
         _clientPoolSize = accountCount >= 1 ? accountCount - 1 : 0;
@@ -71,24 +73,35 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
 
     public int ClientPoolSize => _clientPoolSize;
 
-    public Task<int> AllocateServerAsync(CancellationToken ct)
-        => AllocateAsync(_serverSem, _serverAccounts, kind: "server", poolSize: _totalAccounts >= 1 ? 1 : 0, ct);
+    public Task<int> AllocateServerAsync(CancellationToken ct) =>
+        AllocateAsync(
+            _serverSem,
+            _serverAccounts,
+            kind: "server",
+            poolSize: _totalAccounts >= 1 ? 1 : 0,
+            ct
+        );
 
-    public Task<int> AllocateClientAsync(CancellationToken ct)
-        => AllocateAsync(_clientSem, _clientAccounts, kind: "client", poolSize: _clientPoolSize, ct);
+    public Task<int> AllocateClientAsync(CancellationToken ct) =>
+        AllocateAsync(_clientSem, _clientAccounts, kind: "client", poolSize: _clientPoolSize, ct);
 
-    private async Task<int> AllocateAsync(SemaphoreSlim sem, Queue<int> queue, string kind, int poolSize, CancellationToken ct)
+    private async Task<int> AllocateAsync(
+        SemaphoreSlim sem,
+        Queue<int> queue,
+        string kind,
+        int poolSize,
+        CancellationToken ct
+    )
     {
         // Fast path: try to acquire immediately. If the pool is exhausted, emit a
         // wait-start telemetry event before blocking so operators can see queue depth.
         long awaitedMs = 0;
         if (!sem.Wait(0, ct))
         {
-            InfrastructureEventLog.Emit("steam_account_pool_insufficient", new
-            {
-                kind,
-                totalSize = poolSize,
-            });
+            InfrastructureEventLog.Emit(
+                "steam_account_pool_insufficient",
+                new { kind, totalSize = poolSize }
+            );
             var sw = Stopwatch.StartNew();
             await sem.WaitAsync(ct);
             sw.Stop();
@@ -99,7 +112,9 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         {
             var head = PeekHeadUnderLock(queue);
             if (head.HasValue)
+            {
                 await WaitForHeadHealthyAsync(head.Value, kind, ct);
+            }
         }
 
         return Dequeue(queue, kind, awaitedMs);
@@ -107,7 +122,10 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
 
     private int? PeekHeadUnderLock(Queue<int> queue)
     {
-        lock (_lock) { return queue.TryPeek(out var i) ? i : (int?)null; }
+        lock (_lock)
+        {
+            return queue.TryPeek(out var i) ? i : (int?)null;
+        }
     }
 
     private async Task WaitForHeadHealthyAsync(int idx, string kind, CancellationToken ct)
@@ -121,26 +139,62 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         while (DateTime.UtcNow < deadline)
         {
             bool ok;
-            try { ok = await _readinessProbe!(idx, ct); }
-            catch { ok = false; }
+            try
+            {
+                ok = await _readinessProbe!(idx, ct);
+            }
+            catch
+            {
+                ok = false;
+            }
             if (ok)
             {
                 if (emittedWait)
-                    InfrastructureEventLog.Emit("steam_account_allocation_recovered",
-                        new { kind, index = idx, waitedMs = startedSw.ElapsedMilliseconds });
+                {
+                    InfrastructureEventLog.Emit(
+                        "steam_account_allocation_recovered",
+                        new
+                        {
+                            kind,
+                            index = idx,
+                            waitedMs = startedSw.ElapsedMilliseconds,
+                        }
+                    );
+                }
+
                 return;
             }
             if (!emittedWait)
             {
-                InfrastructureEventLog.Emit("steam_account_allocation_waiting",
-                    new { kind, index = idx, budgetSec = AllocationReadinessBudget.TotalSeconds });
+                InfrastructureEventLog.Emit(
+                    "steam_account_allocation_waiting",
+                    new
+                    {
+                        kind,
+                        index = idx,
+                        budgetSec = AllocationReadinessBudget.TotalSeconds,
+                    }
+                );
                 emittedWait = true;
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(3), ct); }
-            catch (OperationCanceledException) { return; }
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
-        InfrastructureEventLog.Emit("steam_account_allocation_unhealthy",
-            new { kind, index = idx, waitedMs = startedSw.ElapsedMilliseconds });
+        InfrastructureEventLog.Emit(
+            "steam_account_allocation_unhealthy",
+            new
+            {
+                kind,
+                index = idx,
+                waitedMs = startedSw.ElapsedMilliseconds,
+            }
+        );
         // Fall through and dequeue anyway — the mod's VerifyServiceReady will throw
         // with a per-account diagnostic that pinpoints the disconnected index.
     }
@@ -157,28 +211,38 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         }
 
         if (kind == "server")
-            TestLog.Server($"Steam server account {index} allocated");
-        else
-            TestLog.Client($"Steam client account {index} allocated ({remaining} remaining)");
-
-        if (awaitedMs > 0)
         {
-            InfrastructureEventLog.Emit("steam_account_allocated", new
-            {
-                kind,
-                index,
-                remaining,
-                awaitedMs,
-            });
+            TestLog.Server($"Steam server account {index} allocated");
         }
         else
         {
-            InfrastructureEventLog.Emit("steam_account_allocated", new
-            {
-                kind,
-                index,
-                remaining,
-            });
+            TestLog.Client($"Steam client account {index} allocated ({remaining} remaining)");
+        }
+
+        if (awaitedMs > 0)
+        {
+            InfrastructureEventLog.Emit(
+                "steam_account_allocated",
+                new
+                {
+                    kind,
+                    index,
+                    remaining,
+                    awaitedMs,
+                }
+            );
+        }
+        else
+        {
+            InfrastructureEventLog.Emit(
+                "steam_account_allocated",
+                new
+                {
+                    kind,
+                    index,
+                    remaining,
+                }
+            );
         }
         return index;
     }
@@ -189,7 +253,10 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
     /// </summary>
     public void Release(int index)
     {
-        if (!_knownIndices.Contains(index)) return;
+        if (!_knownIndices.Contains(index))
+        {
+            return;
+        }
 
         int available;
         bool isServer = index == _serverIndex;
@@ -211,13 +278,29 @@ public sealed class SteamAccountAllocator : ISteamAccountAllocator
         {
             _serverSem.Release();
             TestLog.Server($"Steam server account {index} released");
-            InfrastructureEventLog.Emit("steam_account_released", new { kind = "server", index, available });
+            InfrastructureEventLog.Emit(
+                "steam_account_released",
+                new
+                {
+                    kind = "server",
+                    index,
+                    available,
+                }
+            );
         }
         else
         {
             _clientSem.Release();
             TestLog.Client($"Steam client account {index} released ({available} available)");
-            InfrastructureEventLog.Emit("steam_account_released", new { kind = "client", index, available });
+            InfrastructureEventLog.Emit(
+                "steam_account_released",
+                new
+                {
+                    kind = "client",
+                    index,
+                    available,
+                }
+            );
         }
     }
 

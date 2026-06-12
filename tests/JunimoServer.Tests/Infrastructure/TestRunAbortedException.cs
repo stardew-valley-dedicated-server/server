@@ -12,5 +12,6 @@ public class TestRunAbortedException : Exception
     /// </summary>
     private const string XunitSkipPrefix = "$XunitDynamicSkip$";
 
-    public TestRunAbortedException(string message) : base($"{XunitSkipPrefix}{message}") { }
+    public TestRunAbortedException(string message)
+        : base($"{XunitSkipPrefix}{message}") { }
 }

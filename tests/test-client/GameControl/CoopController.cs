@@ -29,11 +29,15 @@ public class CoopController
     {
         // Check if it's a submenu of TitleMenu
         if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is CoopMenu coopSub)
+        {
             return coopSub;
+        }
 
         // Check if it's the active menu directly
         if (Game1.activeClickableMenu is CoopMenu coopDirect)
+        {
             return coopDirect;
+        }
 
         return null;
     }
@@ -44,10 +48,14 @@ public class CoopController
     private FarmhandMenu? GetFarmhandMenu()
     {
         if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is FarmhandMenu farmhandSub)
+        {
             return farmhandSub;
+        }
 
         if (Game1.activeClickableMenu is FarmhandMenu farmhandDirect)
+        {
             return farmhandDirect;
+        }
 
         return null;
     }
@@ -57,11 +65,18 @@ public class CoopController
     /// </summary>
     private TitleTextInputMenu? GetTextInputMenu()
     {
-        if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is TitleTextInputMenu inputSub)
+        if (
+            Game1.activeClickableMenu is TitleMenu
+            && TitleMenu.subMenu is TitleTextInputMenu inputSub
+        )
+        {
             return inputSub;
+        }
 
         if (Game1.activeClickableMenu is TitleTextInputMenu inputDirect)
+        {
             return inputDirect;
+        }
 
         return null;
     }
@@ -87,8 +102,10 @@ public class CoopController
             }
 
             // Find the InviteCodeSlot in the menu slots
-            var menuSlotsField = typeof(LoadGameMenu).GetField("menuSlots",
-                BindingFlags.NonPublic | BindingFlags.Instance);
+            var menuSlotsField = typeof(LoadGameMenu).GetField(
+                "menuSlots",
+                BindingFlags.NonPublic | BindingFlags.Instance
+            );
 
             if (menuSlotsField?.GetValue(coopMenu) is not List<LoadGameMenu.MenuSlot> slots)
             {
@@ -99,7 +116,11 @@ public class CoopController
             var inviteSlot = slots.FirstOrDefault(s => s.GetType().Name == "InviteCodeSlot");
             if (inviteSlot == null)
             {
-                return new JoinResult { Success = false, Error = "Invite code slot not found in menu" };
+                return new JoinResult
+                {
+                    Success = false,
+                    Error = "Invite code slot not found in menu",
+                };
             }
 
             // Activate it - this opens TitleTextInputMenu
@@ -107,11 +128,7 @@ public class CoopController
 
             _monitor.Log("Opened invite code input menu", LogLevel.Trace);
 
-            return new JoinResult
-            {
-                Success = true,
-                Message = "Invite code menu opened"
-            };
+            return new JoinResult { Success = true, Message = "Invite code menu opened" };
         }
         catch (Exception ex)
         {
@@ -143,11 +160,7 @@ public class CoopController
             // Submit by calling textBoxEnter (same as pressing Enter or clicking OK)
             inputMenu.textBoxEnter(inputMenu.textBox);
 
-            return new JoinResult
-            {
-                Success = true,
-                Message = "Connecting to lobby..."
-            };
+            return new JoinResult { Success = true, Message = "Connecting to lobby..." };
         }
         catch (Exception ex)
         {
@@ -159,7 +172,6 @@ public class CoopController
     /// <summary>
     /// Enter an invite code and attempt to join the game.
     /// </summary>
-
     /// <summary>
     /// Enter a LAN/IP address and attempt to join.
     /// Requires CoopMenu to be active.
@@ -186,11 +198,7 @@ public class CoopController
 
             _monitor.Log($"Connecting to LAN address: {address}", LogLevel.Trace);
 
-            return new JoinResult
-            {
-                Success = true,
-                Message = $"Connecting to {address}..."
-            };
+            return new JoinResult { Success = true, Message = $"Connecting to {address}..." };
         }
         catch (Exception ex)
         {
@@ -218,11 +226,7 @@ public class CoopController
 
             _monitor.Log($"Direct LAN connect to: {address}", LogLevel.Trace);
 
-            return new JoinResult
-            {
-                Success = true,
-                Message = $"Connecting to {address}..."
-            };
+            return new JoinResult { Success = true, Message = $"Connecting to {address}..." };
         }
         catch (Exception ex)
         {
@@ -242,7 +246,7 @@ public class CoopController
             return new FarmhandSelectionInfo
             {
                 InFarmhandMenu = false,
-                Error = "Not in farmhand selection menu"
+                Error = "Not in farmhand selection menu",
             };
         }
 
@@ -250,12 +254,14 @@ public class CoopController
         {
             InFarmhandMenu = true,
             IsConnecting = farmhandMenu.gettingFarmhands || farmhandMenu.approvingFarmhand,
-            Farmhands = new List<FarmhandSlotInfo>()
+            Farmhands = new List<FarmhandSlotInfo>(),
         };
 
         // Get menu slots via reflection
-        var menuSlotsField = typeof(LoadGameMenu).GetField("menuSlots",
-            BindingFlags.NonPublic | BindingFlags.Instance);
+        var menuSlotsField = typeof(LoadGameMenu).GetField(
+            "menuSlots",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
 
         if (menuSlotsField?.GetValue(farmhandMenu) is List<LoadGameMenu.MenuSlot> slots)
         {
@@ -278,7 +284,10 @@ public class CoopController
                         }
                         catch (Exception ex)
                         {
-                            _monitor.Log($"Error reading farmer slot {i}: {ex.Message}", LogLevel.Trace);
+                            _monitor.Log(
+                                $"Error reading farmer slot {i}: {ex.Message}",
+                                LogLevel.Trace
+                            );
                             // Slot exists but farmer data couldn't be read
                             slotInfo.Name = "(error reading)";
                         }
@@ -311,8 +320,10 @@ public class CoopController
             }
 
             // Get menu slots via reflection
-            var menuSlotsField = typeof(LoadGameMenu).GetField("menuSlots",
-                BindingFlags.NonPublic | BindingFlags.Instance);
+            var menuSlotsField = typeof(LoadGameMenu).GetField(
+                "menuSlots",
+                BindingFlags.NonPublic | BindingFlags.Instance
+            );
 
             if (menuSlotsField?.GetValue(farmhandMenu) is not List<LoadGameMenu.MenuSlot> slots)
             {
@@ -321,7 +332,11 @@ public class CoopController
 
             if (slotIndex < 0 || slotIndex >= slots.Count)
             {
-                return new JoinResult { Success = false, Error = $"Invalid slot index: {slotIndex}. Available: 0-{slots.Count - 1}" };
+                return new JoinResult
+                {
+                    Success = false,
+                    Error = $"Invalid slot index: {slotIndex}. Available: 0-{slots.Count - 1}",
+                };
             }
 
             // Activate the slot
@@ -333,7 +348,7 @@ public class CoopController
             return new JoinResult
             {
                 Success = true,
-                Message = $"Selected farmhand slot {slotIndex}, joining game..."
+                Message = $"Selected farmhand slot {slotIndex}, joining game...",
             };
         }
         catch (Exception ex)
@@ -392,7 +407,16 @@ public class CoopController
 
             for (int i = 0; i < dataCount; i++)
             {
-                if (SteamMatchmaking.GetLobbyDataByIndex(steamLobby, i, out string key, 256, out string value, 8192))
+                if (
+                    SteamMatchmaking.GetLobbyDataByIndex(
+                        steamLobby,
+                        i,
+                        out string key,
+                        256,
+                        out string value,
+                        8192
+                    )
+                )
                 {
                     diag.LobbyData[key] = value;
                 }
@@ -402,7 +426,12 @@ public class CoopController
             diag.ProtocolVersion = SteamMatchmaking.GetLobbyData(steamLobby, "protocolVersion");
 
             // Try GetLobbyGameServer - this is the failing call
-            bool hasGameServer = SteamMatchmaking.GetLobbyGameServer(steamLobby, out uint gameServerIP, out ushort gameServerPort, out CSteamID gameServerSteamID);
+            bool hasGameServer = SteamMatchmaking.GetLobbyGameServer(
+                steamLobby,
+                out uint gameServerIP,
+                out ushort gameServerPort,
+                out CSteamID gameServerSteamID
+            );
             diag.HasGameServer = hasGameServer;
             diag.GameServerIP = gameServerIP;
             diag.GameServerPort = gameServerPort;
@@ -411,7 +440,10 @@ public class CoopController
 
             _monitor.Log($"Steam Lobby Diagnostics for {lobbyId}:", LogLevel.Info);
             _monitor.Log($"  Valid: {diag.IsValid}, IsLobby: {diag.IsLobby}", LogLevel.Info);
-            _monitor.Log($"  Owner: {diag.LobbyOwner} (valid: {diag.LobbyOwnerValid})", LogLevel.Info);
+            _monitor.Log(
+                $"  Owner: {diag.LobbyOwner} (valid: {diag.LobbyOwnerValid})",
+                LogLevel.Info
+            );
             _monitor.Log($"  Members: {diag.MemberCount}", LogLevel.Info);
             _monitor.Log($"  Data entries: {diag.DataCount}", LogLevel.Info);
             foreach (var kv in diag.LobbyData)
@@ -419,8 +451,14 @@ public class CoopController
                 _monitor.Log($"    {kv.Key} = {kv.Value}", LogLevel.Info);
             }
             _monitor.Log($"  HasGameServer: {diag.HasGameServer}", LogLevel.Info);
-            _monitor.Log($"  GameServer IP: {diag.GameServerIP}, Port: {diag.GameServerPort}", LogLevel.Info);
-            _monitor.Log($"  GameServer SteamID: {diag.GameServerSteamID} (valid: {diag.GameServerSteamIDValid})", LogLevel.Info);
+            _monitor.Log(
+                $"  GameServer IP: {diag.GameServerIP}, Port: {diag.GameServerPort}",
+                LogLevel.Info
+            );
+            _monitor.Log(
+                $"  GameServer SteamID: {diag.GameServerSteamID} (valid: {diag.GameServerSteamIDValid})",
+                LogLevel.Info
+            );
         }
         catch (Exception ex)
         {
@@ -449,30 +487,38 @@ public class CoopController
             var joinCall = SteamMatchmaking.JoinLobby(steamLobby);
 
             // Set up callback
-            var callResult = CallResult<LobbyEnter_t>.Create((result, failure) =>
-            {
-                if (failure)
+            var callResult = CallResult<LobbyEnter_t>.Create(
+                (result, failure) =>
                 {
-                    _monitor.Log("Failed to join lobby (IO failure)", LogLevel.Error);
-                    return;
-                }
+                    if (failure)
+                    {
+                        _monitor.Log("Failed to join lobby (IO failure)", LogLevel.Error);
+                        return;
+                    }
 
-                _monitor.Log($"Joined lobby, response: {result.m_EChatRoomEnterResponse}", LogLevel.Info);
+                    _monitor.Log(
+                        $"Joined lobby, response: {result.m_EChatRoomEnterResponse}",
+                        LogLevel.Info
+                    );
 
-                if (result.m_EChatRoomEnterResponse == 1) // Success
-                {
-                    // Now diagnose
-                    DiagnoseSteamLobby(lobbyId);
+                    if (result.m_EChatRoomEnterResponse == 1) // Success
+                    {
+                        // Now diagnose
+                        DiagnoseSteamLobby(lobbyId);
 
-                    // Leave the lobby
-                    SteamMatchmaking.LeaveLobby(steamLobby);
-                    _monitor.Log("Left lobby after diagnostics", LogLevel.Info);
+                        // Leave the lobby
+                        SteamMatchmaking.LeaveLobby(steamLobby);
+                        _monitor.Log("Left lobby after diagnostics", LogLevel.Info);
+                    }
+                    else
+                    {
+                        _monitor.Log(
+                            $"Lobby join failed with response: {result.m_EChatRoomEnterResponse}",
+                            LogLevel.Error
+                        );
+                    }
                 }
-                else
-                {
-                    _monitor.Log($"Lobby join failed with response: {result.m_EChatRoomEnterResponse}", LogLevel.Error);
-                }
-            });
+            );
 
             callResult.Set(joinCall);
         }

@@ -1,6 +1,6 @@
+using JunimoServer.TestRunner.Rendering;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
-using JunimoServer.TestRunner.Rendering;
 
 namespace JunimoServer.TestRunner.Setup;
 
@@ -19,19 +19,32 @@ public sealed class RendererBuildProgressSink : IBuildProgressSink
     public RendererBuildProgressSink(
         ITestRenderer renderer,
         string category,
-        string? collectionName = null)
+        string? collectionName = null
+    )
     {
         _renderer = renderer;
         _category = category;
         _collectionName = collectionName;
     }
 
-    public void PhaseStarted(string phaseName)
-        => _renderer.OnSetupPhaseStarted(new SetupPhaseStartedEvent(_category, phaseName, _collectionName));
+    public void PhaseStarted(string phaseName) =>
+        _renderer.OnSetupPhaseStarted(
+            new SetupPhaseStartedEvent(_category, phaseName, _collectionName)
+        );
 
-    public void Step(string stepName, SetupStepStatus status, string? details = null)
-        => _renderer.OnSetupStep(new SetupStepEvent(_category, stepName, status, details, _collectionName));
+    public void Step(string stepName, SetupStepStatus status, string? details = null) =>
+        _renderer.OnSetupStep(
+            new SetupStepEvent(_category, stepName, status, details, _collectionName)
+        );
 
-    public void PhaseCompleted(string phaseName, bool success, string? errorMessage = null)
-        => _renderer.OnSetupPhaseCompleted(new SetupPhaseCompletedEvent(_category, phaseName, success, errorMessage, _collectionName));
+    public void PhaseCompleted(string phaseName, bool success, string? errorMessage = null) =>
+        _renderer.OnSetupPhaseCompleted(
+            new SetupPhaseCompletedEvent(
+                _category,
+                phaseName,
+                success,
+                errorMessage,
+                _collectionName
+            )
+        );
 }

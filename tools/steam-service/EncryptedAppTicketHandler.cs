@@ -19,7 +19,9 @@ public class EncryptedAppTicketHandler : ClientMsgHandler
     {
         if (packetMsg.MsgType == EMsg.ClientRequestEncryptedAppTicketResponse)
         {
-            var response = new ClientMsgProtobuf<CMsgClientRequestEncryptedAppTicketResponse>(packetMsg);
+            var response = new ClientMsgProtobuf<CMsgClientRequestEncryptedAppTicketResponse>(
+                packetMsg
+            );
 
             var result = (EResult)response.Body.eresult;
             var appId = response.Body.app_id;

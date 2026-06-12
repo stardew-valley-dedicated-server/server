@@ -31,12 +31,22 @@ public static class PollingHelper
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null)
+        Func<Task<object?>>? onTimeoutAsync = null
+    )
     {
         return WaitTrace.RunAsync<bool>(
             name,
-            () => WaitUntilCoreAsync(name, condition, timeout, pollInterval, cancellationToken, onTimeoutAsync),
-            cancellationToken);
+            () =>
+                WaitUntilCoreAsync(
+                    name,
+                    condition,
+                    timeout,
+                    pollInterval,
+                    cancellationToken,
+                    onTimeoutAsync
+                ),
+            cancellationToken
+        );
     }
 
     private static async Task<bool> WaitUntilCoreAsync(
@@ -45,7 +55,8 @@ public static class PollingHelper
         TimeSpan timeout,
         TimeSpan? pollInterval,
         CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync)
+        Func<Task<object?>>? onTimeoutAsync
+    )
     {
         var interval = pollInterval ?? TestTimings.FastPollInterval;
         var sw = Stopwatch.StartNew();
@@ -86,9 +97,14 @@ public static class PollingHelper
 
             // Surface the last exception if polling timed out due to repeated failures
             if (lastException != null)
+            {
                 throw new TimeoutException(
-                    FormattableString.Invariant($"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). ") +
-                    $"Last error: {lastException.Message}", lastException);
+                    FormattableString.Invariant(
+                        $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
+                    ) + $"Last error: {lastException.Message}",
+                    lastException
+                );
+            }
 
             return false;
         }
@@ -98,21 +114,26 @@ public static class PollingHelper
             string? onTimeoutError = null;
             if (!succeeded && onTimeoutAsync != null)
             {
-                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(onTimeoutAsync);
+                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
+                    onTimeoutAsync
+                );
             }
 
-            InfrastructureEventLog.Emit("poll_completed", new
-            {
-                label,
-                succeeded,
-                iterations,
-                durationMs = sw.ElapsedMilliseconds,
-                timeoutMs = (long)timeout.TotalMilliseconds,
-                error = lastException?.Message,
-                ctCancelled = cancellationToken.IsCancellationRequested,
-                diagnostics,
-                onTimeoutError
-            });
+            InfrastructureEventLog.Emit(
+                "poll_completed",
+                new
+                {
+                    label,
+                    succeeded,
+                    iterations,
+                    durationMs = sw.ElapsedMilliseconds,
+                    timeoutMs = (long)timeout.TotalMilliseconds,
+                    error = lastException?.Message,
+                    ctCancelled = cancellationToken.IsCancellationRequested,
+                    diagnostics,
+                    onTimeoutError,
+                }
+            );
         }
     }
 
@@ -145,13 +166,20 @@ public static class PollingHelper
     internal static void EmitWaitMatched(string label)
     {
         var msAgo = HttpResponseDiagnostics.LastPredicateChangedMsAgo;
-        if (msAgo is not long ago) return;
+        if (msAgo is not long ago)
+        {
+            return;
+        }
+
         var producerTime = new InfrastructureEventLog.EventTime(
             DateTime.UtcNow - TimeSpan.FromMilliseconds(ago),
-            RunMetadata.GetRunMs() - ago);
-        InfrastructureEventLog.Emit("wait_matched",
+            RunMetadata.GetRunMs() - ago
+        );
+        InfrastructureEventLog.Emit(
+            "wait_matched",
             new { label, predicateChangedMsAgo = ago },
-            eventTime: producerTime);
+            eventTime: producerTime
+        );
     }
 
     /// <summary>
@@ -167,12 +195,23 @@ public static class PollingHelper
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null) where T : class
+        Func<Task<object?>>? onTimeoutAsync = null
+    )
+        where T : class
     {
         return WaitTrace.RunAsync<T?>(
             name,
-            () => WaitForResultCoreAsync<T>(name, producer, timeout, pollInterval, cancellationToken, onTimeoutAsync),
-            cancellationToken);
+            () =>
+                WaitForResultCoreAsync<T>(
+                    name,
+                    producer,
+                    timeout,
+                    pollInterval,
+                    cancellationToken,
+                    onTimeoutAsync
+                ),
+            cancellationToken
+        );
     }
 
     private static async Task<T?> WaitForResultCoreAsync<T>(
@@ -181,7 +220,9 @@ public static class PollingHelper
         TimeSpan timeout,
         TimeSpan? pollInterval,
         CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync) where T : class
+        Func<Task<object?>>? onTimeoutAsync
+    )
+        where T : class
     {
         var interval = pollInterval ?? TestTimings.FastPollInterval;
         var sw = Stopwatch.StartNew();
@@ -220,9 +261,14 @@ public static class PollingHelper
             }
 
             if (lastException != null)
+            {
                 throw new TimeoutException(
-                    FormattableString.Invariant($"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). ") +
-                    $"Last error: {lastException.Message}", lastException);
+                    FormattableString.Invariant(
+                        $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
+                    ) + $"Last error: {lastException.Message}",
+                    lastException
+                );
+            }
 
             return default;
         }
@@ -232,21 +278,26 @@ public static class PollingHelper
             string? onTimeoutError = null;
             if (!succeeded && onTimeoutAsync != null)
             {
-                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(onTimeoutAsync);
+                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
+                    onTimeoutAsync
+                );
             }
 
-            InfrastructureEventLog.Emit("poll_completed", new
-            {
-                label,
-                succeeded,
-                iterations,
-                durationMs = sw.ElapsedMilliseconds,
-                timeoutMs = (long)timeout.TotalMilliseconds,
-                error = lastException?.Message,
-                ctCancelled = cancellationToken.IsCancellationRequested,
-                diagnostics,
-                onTimeoutError
-            });
+            InfrastructureEventLog.Emit(
+                "poll_completed",
+                new
+                {
+                    label,
+                    succeeded,
+                    iterations,
+                    durationMs = sw.ElapsedMilliseconds,
+                    timeoutMs = (long)timeout.TotalMilliseconds,
+                    error = lastException?.Message,
+                    ctCancelled = cancellationToken.IsCancellationRequested,
+                    diagnostics,
+                    onTimeoutError,
+                }
+            );
         }
     }
 
@@ -304,12 +355,14 @@ public static class PollingHelper
         Func<long, TimeSpan, Task<LongPollResult>> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null)
+        Func<Task<object?>>? onTimeoutAsync = null
+    )
     {
         return WaitTrace.RunAsync<bool>(
             name,
             () => LongPollCoreAsync(name, condition, timeout, cancellationToken, onTimeoutAsync),
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     private static async Task<bool> LongPollCoreAsync(
@@ -317,7 +370,8 @@ public static class PollingHelper
         Func<long, TimeSpan, Task<LongPollResult>> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync)
+        Func<Task<object?>>? onTimeoutAsync
+    )
     {
         var sw = Stopwatch.StartNew();
         Exception? lastException = null;
@@ -334,7 +388,10 @@ public static class PollingHelper
             while (true)
             {
                 var remaining = timeout - sw.Elapsed;
-                if (remaining <= TimeSpan.Zero) break;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    break;
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 iterations++;
@@ -355,7 +412,10 @@ public static class PollingHelper
                     // return the same stale snapshot on the next round-trip.
                     // 408 responses with no observed version leave Version
                     // unchanged from `since`, so this guard is a no-op there.
-                    if (result.Version > since) since = result.Version;
+                    if (result.Version > since)
+                    {
+                        since = result.Version;
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -364,9 +424,14 @@ public static class PollingHelper
             }
 
             if (lastException != null)
+            {
                 throw new TimeoutException(
-                    FormattableString.Invariant($"Long-poll [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). ") +
-                    $"Last error: {lastException.Message}", lastException);
+                    FormattableString.Invariant(
+                        $"Long-poll [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
+                    ) + $"Last error: {lastException.Message}",
+                    lastException
+                );
+            }
 
             return false;
         }
@@ -376,22 +441,27 @@ public static class PollingHelper
             string? onTimeoutError = null;
             if (!succeeded && onTimeoutAsync != null)
             {
-                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(onTimeoutAsync);
+                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
+                    onTimeoutAsync
+                );
             }
 
-            InfrastructureEventLog.Emit("long_poll_completed", new
-            {
-                label,
-                succeeded,
-                iterations,
-                durationMs = sw.ElapsedMilliseconds,
-                timeoutMs = (long)timeout.TotalMilliseconds,
-                snapshotVersionAtMatch,
-                error = lastException?.Message,
-                ctCancelled = cancellationToken.IsCancellationRequested,
-                diagnostics,
-                onTimeoutError
-            });
+            InfrastructureEventLog.Emit(
+                "long_poll_completed",
+                new
+                {
+                    label,
+                    succeeded,
+                    iterations,
+                    durationMs = sw.ElapsedMilliseconds,
+                    timeoutMs = (long)timeout.TotalMilliseconds,
+                    snapshotVersionAtMatch,
+                    error = lastException?.Message,
+                    ctCancelled = cancellationToken.IsCancellationRequested,
+                    diagnostics,
+                    onTimeoutError,
+                }
+            );
         }
     }
 
@@ -400,14 +470,19 @@ public static class PollingHelper
     /// so a broken or slow collector cannot extend the test's failure path.
     /// Returns <c>(diagnostics, errorMessage)</c> with exactly one non-null.
     /// </summary>
-    private static async Task<(object? diagnostics, string? onTimeoutError)> CollectTimeoutDiagnosticsAsync(
-        Func<Task<object?>> onTimeoutAsync)
+    private static async Task<(
+        object? diagnostics,
+        string? onTimeoutError
+    )> CollectTimeoutDiagnosticsAsync(Func<Task<object?>> onTimeoutAsync)
     {
         try
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var task = onTimeoutAsync();
-            var done = await Task.WhenAny(task, Task.Delay(Timeout.InfiniteTimeSpan, deadline.Token));
+            var done = await Task.WhenAny(
+                task,
+                Task.Delay(Timeout.InfiniteTimeSpan, deadline.Token)
+            );
             if (done != task)
             {
                 return (null, "onTimeoutAsync exceeded 2s deadline");

@@ -9,7 +9,7 @@ namespace JunimoServer.Tests.Containers;
 
 /// <summary>
 /// Streams a container's stdout+stderr via the daemon's <c>follow=true</c> log
-/// endpoint and forwards each fully-formed line to <paramref name="onLine"/>.
+/// endpoint and forwards each fully-formed line to <c>onLine</c>.
 /// One persistent <see cref="MultiplexedStream"/> per container replaces the
 /// 500 ms <c>GetLogsAsync</c> poll loops the per-container types used to run.
 ///
@@ -21,7 +21,7 @@ namespace JunimoServer.Tests.Containers;
 /// <para>Reconnect cursor: when <c>Timestamps=true</c> the daemon prefixes
 /// each line with an RFC3339Nano timestamp. The reader parses the prefix to
 /// advance <see cref="_sinceCursor"/>, then strips it before invoking
-/// <paramref name="onLine"/>. On reconnect the cursor is passed back via
+/// <c>onLine</c>. On reconnect the cursor is passed back via
 /// <see cref="ContainerLogsParameters.Since"/> so the daemon resumes
 /// immediately after the last emitted line — no double-emit, no replay
 /// window.</para>
@@ -39,13 +39,16 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     // separator between the timestamp and the line content.
     private static readonly Regex DaemonTimestampPrefix = new(
         @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled
+    );
 
     // Matches jlesage/baseimage-gui logmonitor process tag: "[app         ] "
     // or "[init        ] ". The logmonitor pads process names to 12 characters
     // inside brackets.
     private static readonly Regex LogmonitorProcessTag = new(
-        @"^\[\w+\s*\]\s*", RegexOptions.Compiled);
+        @"^\[\w+\s*\]\s*",
+        RegexOptions.Compiled
+    );
 
     private readonly DockerClient _client;
     private readonly IContainer _container;
@@ -56,6 +59,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _runTask;
     private string? _sinceCursor;
+
     // The last raw (pre-strip) line emitted, including the timestamp prefix.
     // Used to dedup a single line of overlap on reconnect: Docker's `Since`
     // filter is inclusive, so a follow=true reopen with Since = lastTimestamp
@@ -89,14 +93,15 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// </param>
     /// <param name="diagnosticCallback">
     /// Optional sink for human-readable status messages
-    /// (e.g. consecutive-error counts). Off-band from <paramref name="onLine"/>.
+    /// (e.g. consecutive-error counts). Off-band from <c>onLine</c>.
     /// </param>
     public ContainerLogStreamReader(
         DockerClient client,
         IContainer container,
         string diagnosticLabel,
         LineHandler onLine,
-        Action<string>? diagnosticCallback = null)
+        Action<string>? diagnosticCallback = null
+    )
     {
         _client = client;
         _container = container;
@@ -113,7 +118,11 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// </summary>
     public Task RunAsync(CancellationToken ct)
     {
-        if (_runTask != null) return _runTask;
+        if (_runTask != null)
+        {
+            return _runTask;
+        }
+
         _runTask = RunWithLinkedCtsAsync(ct);
         return _runTask;
     }
@@ -127,7 +136,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// <summary>
     /// Cancels the read loop and awaits its completion up to
     /// <paramref name="timeout"/>, so any fully-formed lines already split out
-    /// of the in-flight chunk are flushed through <paramref name="onLine"/>
+    /// of the in-flight chunk are flushed through <c>onLine</c>
     /// (and into the per-site sink) before the consumer's
     /// <see cref="IAsyncDisposable.DisposeAsync"/> closes that sink.
     /// Per <c>drain-before-consume-disposal.md</c> — call this before
@@ -135,15 +144,31 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// </summary>
     public async Task DrainAsync(TimeSpan timeout)
     {
-        try { _cts.Cancel(); } catch (ObjectDisposedException) { }
-        if (_runTask == null) return;
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException) { }
+        if (_runTask == null)
+        {
+            return;
+        }
+
         await Task.WhenAny(_runTask, Task.Delay(timeout));
     }
 
     public ValueTask DisposeAsync()
     {
-        try { _cts.Cancel(); } catch (ObjectDisposedException) { }
-        try { _cts.Dispose(); } catch { }
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException) { }
+        try
+        {
+            _cts.Dispose();
+        }
+        catch { }
         return ValueTask.CompletedTask;
     }
 
@@ -167,7 +192,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 };
 
                 stream = await _client.Containers.GetContainerLogsAsync(
-                    _container.Id, parameters, ct);
+                    _container.Id,
+                    parameters,
+                    ct
+                );
 
                 // Reconnecting with a non-null cursor: Docker's Since filter
                 // is inclusive, so the first line it returns is the one
@@ -202,9 +230,19 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 //    transitions to running. Without this, the very first
                 //    Tty=false open after container creation would terminate
                 //    the reader before any logs flow.
-                if (hasReadAny) return;
-                try { await Task.Delay(1000, ct); }
-                catch (OperationCanceledException) { return; }
+                if (hasReadAny)
+                {
+                    return;
+                }
+
+                try
+                {
+                    await Task.Delay(1000, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
                 continue;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -213,8 +251,15 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                if (ct.IsCancellationRequested) return;
-                if (ShutdownCoordinator.IsShuttingDown) return;
+                if (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (ShutdownCoordinator.IsShuttingDown)
+                {
+                    return;
+                }
 
                 // Docker daemon restart (OOM, WSL crash) returns
                 // InternalServerError for every active stream. Match the
@@ -222,7 +267,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 if (ex.Message.Contains("InternalServerError"))
                 {
                     ShutdownCoordinator.NotifyDockerDown(
-                        $"{_diagnosticLabel} log stream: {ex.Message}");
+                        $"{_diagnosticLabel} log stream: {ex.Message}"
+                    );
                     return;
                 }
 
@@ -232,8 +278,14 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                     // and client containers start log streaming before
                     // StartAsync. Retry without counting toward the strike
                     // threshold.
-                    try { await Task.Delay(1000, ct); }
-                    catch (OperationCanceledException) { return; }
+                    try
+                    {
+                        await Task.Delay(1000, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
                     continue;
                 }
 
@@ -243,16 +295,24 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 if (++consecutiveOpenFailures >= MaxConsecutiveOpenFailures)
                 {
                     _diagnosticCallback?.Invoke(
-                        $"{_diagnosticLabel} log stream failed " +
-                        $"{MaxConsecutiveOpenFailures} consecutive times: {ex.Message}");
+                        $"{_diagnosticLabel} log stream failed "
+                            + $"{MaxConsecutiveOpenFailures} consecutive times: {ex.Message}"
+                    );
                     return;
                 }
                 _diagnosticCallback?.Invoke(
-                    $"{_diagnosticLabel} log stream error " +
-                    $"({consecutiveOpenFailures}/{MaxConsecutiveOpenFailures}): {ex.Message}");
+                    $"{_diagnosticLabel} log stream error "
+                        + $"({consecutiveOpenFailures}/{MaxConsecutiveOpenFailures}): {ex.Message}"
+                );
 
-                try { await Task.Delay(1000, ct); }
-                catch (OperationCanceledException) { return; }
+                try
+                {
+                    await Task.Delay(1000, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
             finally
             {
@@ -261,10 +321,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         }
     }
 
-    private async Task PumpAsync(
-        MultiplexedStream stream,
-        Action onFirstRead,
-        CancellationToken ct)
+    private async Task PumpAsync(MultiplexedStream stream, Action onFirstRead, CancellationToken ct)
     {
         // Per-target line buffers: the daemon delivers chunks tagged stdout
         // or stderr, and a chunk boundary may fall mid-line on either target.
@@ -291,7 +348,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 return;
             }
 
-            if (result.Count == 0) continue;
+            if (result.Count == 0)
+            {
+                continue;
+            }
 
             if (firstRead)
             {
@@ -299,9 +359,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 firstRead = false;
             }
 
-            var sb = result.Target == MultiplexedStream.TargetStream.StandardError
-                ? stderrBuffer
-                : stdoutBuffer;
+            var sb =
+                result.Target == MultiplexedStream.TargetStream.StandardError
+                    ? stderrBuffer
+                    : stdoutBuffer;
 
             sb.Append(Encoding.UTF8.GetString(readBuffer, 0, result.Count));
 
@@ -321,14 +382,21 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     {
         for (var i = 0; i < sb.Length; i++)
         {
-            if (sb[i] == '\n') return i;
+            if (sb[i] == '\n')
+            {
+                return i;
+            }
         }
         return -1;
     }
 
     private void FlushPartial(StringBuilder sb)
     {
-        if (sb.Length == 0) return;
+        if (sb.Length == 0)
+        {
+            return;
+        }
+
         var tail = sb.ToString();
         sb.Clear();
         EmitLine(tail);
@@ -339,7 +407,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         // Trim the trailing CR a Windows-style line might carry, plus any
         // stray whitespace; LF was already consumed by the splitter.
         var trimmed = raw.TrimEnd();
-        if (trimmed.Length == 0) return;
+        if (trimmed.Length == 0)
+        {
+            return;
+        }
 
         // Dedup the single inclusive replay produced by reconnecting with
         // Since = lastTimestamp. The first emit after a reconnect is the
@@ -349,7 +420,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         if (_expectDedupNextEmit)
         {
             _expectDedupNextEmit = false;
-            if (trimmed == _lastRawEmitted) return;
+            if (trimmed == _lastRawEmitted)
+            {
+                return;
+            }
         }
 
         _lastRawEmitted = trimmed;
@@ -368,7 +442,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         }
 
         line = LogmonitorProcessTag.Replace(line, "");
-        if (line.Length == 0) return;
+        if (line.Length == 0)
+        {
+            return;
+        }
 
         _onLine(line);
     }

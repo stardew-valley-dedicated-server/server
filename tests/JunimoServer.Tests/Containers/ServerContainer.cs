@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -7,9 +10,6 @@ using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
-using System.Diagnostics;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace JunimoServer.Tests.Containers;
 
@@ -172,7 +172,8 @@ public class ServerContainer : IAsyncDisposable
         ServerContainerOptions options,
         Action<string>? logCallback,
         string? instanceId,
-        Infrastructure.DockerHost host)
+        Infrastructure.DockerHost host
+    )
     {
         _serverContainer = serverContainer;
         _network = network;
@@ -201,16 +202,20 @@ public class ServerContainer : IAsyncDisposable
         CancellationToken ct = default,
         SharedSteamAuth? sharedSteamAuth = null,
         int? steamAccountIndex = null,
-        string? instanceId = null)
+        string? instanceId = null
+    )
     {
         // Pre-start invariant: a steam-auth source must exist before any Steam-enabled
         // server is created. The broker creates a SharedSteamAuth container per host
         // and threads it here; if it's missing when options.WithSteam is true, that's
         // a broker bug.
         if (options.WithSteam && sharedSteamAuth == null)
+        {
             throw new InvalidOperationException(
-                "Pre-start invariant violated: SharedSteamAuth is required when options.WithSteam is true. " +
-                "TestResourceBroker should initialize it before any server creation.");
+                "Pre-start invariant violated: SharedSteamAuth is required when options.WithSteam is true. "
+                    + "TestResourceBroker should initialize it before any server creation."
+            );
+        }
 
         var runId = Guid.NewGuid().ToString("N")[..8];
         TestRunRegistry.Register(runId);
@@ -226,11 +231,12 @@ public class ServerContainer : IAsyncDisposable
         // Create the labeled saves volume on the chosen host's daemon.
         try
         {
-            await DockerOps.CreateVolumeAsync(host.ApiClient, savesVolume, new Dictionary<string, string>
-            {
-                ["sdvd.test"] = "true",
-                ["sdvd.run-id"] = runId,
-            }, ct);
+            await DockerOps.CreateVolumeAsync(
+                host.ApiClient,
+                savesVolume,
+                new Dictionary<string, string> { ["sdvd.test"] = "true", ["sdvd.run-id"] = runId },
+                ct
+            );
         }
         catch (Exception ex)
         {
@@ -241,7 +247,9 @@ public class ServerContainer : IAsyncDisposable
         var serverBuilder = new ContainerBuilder($"sdvd/server:{options.ImageTag}")
             .WithDockerEndpoint(host.EndpointConfig)
             .WithLogger(NullLogger.Instance)
-            .WithImagePullPolicy(options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
+            .WithImagePullPolicy(
+                options.ImageTag == "local" ? PullPolicy.Never : PullPolicy.Missing
+            )
             .WithName(containerName)
             .WithNetwork(network)
             .WithNetworkAliases($"server-{runId}")
@@ -272,7 +280,10 @@ public class ServerContainer : IAsyncDisposable
             .WithEnvironment("SDVD_ENV", "test")
             // Opt-in: copy the image-staged TestFarmMod fixture into /data/Mods at startup
             // (adds a second Data/AdditionalFarms entry for the by-Id disambiguation test).
-            .WithEnvironment("SDVD_TEST_FIXTURE_FARM_MOD", options.FixtureFarmMod.ToString().ToLowerInvariant())
+            .WithEnvironment(
+                "SDVD_TEST_FIXTURE_FARM_MOD",
+                options.FixtureFarmMod.ToString().ToLowerInvariant()
+            )
             // GPU passthrough — per-host, no-op on hosts without GPU
             .WithGpuIfEnabled(host)
             // SYS_TIME capability for GOG Galaxy auth + Docker labels for ownership
@@ -294,13 +305,19 @@ public class ServerContainer : IAsyncDisposable
             // HTTP listener is up but whose game loop has stalled (tickCount
             // unchanging or isFrozen=true) — the previous strategy returned
             // ready as soon as the listener answered.
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .AddCustomWaitStrategy(new WaitUntilGameReadyInContainer(
-                    ContainerApiPort, label: $"server-{serverIndex}",
-                    // Server containers don't need Galaxy-resolution gating — that
-                    // lives on the test-client mod's /health. /wait/health collapses
-                    // ~25 cold-start probes into 1–3 round-trips on remote VPS hosts.
-                    useLongPoll: true)));
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .AddCustomWaitStrategy(
+                        new WaitUntilGameReadyInContainer(
+                            ContainerApiPort,
+                            label: $"server-{serverIndex}",
+                            // Server containers don't need Galaxy-resolution gating — that
+                            // lives on the test-client mod's /health. /wait/health collapses
+                            // ~25 cold-start probes into 1–3 round-trips on remote VPS hosts.
+                            useLongPoll: true
+                        )
+                    )
+            );
 
         // Tests run without VNC/API passwords by default
         serverBuilder = serverBuilder.WithEnvironment("ALLOW_INSECURE_SETUP", "true");
@@ -310,20 +327,39 @@ public class ServerContainer : IAsyncDisposable
         // The mod reaches steam-auth via the host-internal Docker network alias.
         if (options.WithSteam)
         {
-            serverBuilder = serverBuilder.WithEnvironment("STEAM_AUTH_URL", sharedSteamAuth!.GetUrlForServer());
+            serverBuilder = serverBuilder.WithEnvironment(
+                "STEAM_AUTH_URL",
+                sharedSteamAuth!.GetUrlForServer()
+            );
 
             // Pass Steam account index so the mod uses the correct account via ?account=N
             if (steamAccountIndex.HasValue)
-                serverBuilder = serverBuilder.WithEnvironment("SDVD_TEST_STEAM_ACCOUNT_INDEX", steamAccountIndex.Value.ToString());
+            {
+                serverBuilder = serverBuilder.WithEnvironment(
+                    "SDVD_TEST_STEAM_ACCOUNT_INDEX",
+                    steamAccountIndex.Value.ToString()
+                );
+            }
         }
 
         // Pass non-Steam env vars to server (Steam credentials are handled by steam-auth service)
         if (envVars != null)
         {
-            if (envVars.TryGetValue("VNC_PASSWORD", out var vncPass) && !string.IsNullOrEmpty(vncPass))
+            if (
+                envVars.TryGetValue("VNC_PASSWORD", out var vncPass)
+                && !string.IsNullOrEmpty(vncPass)
+            )
+            {
                 serverBuilder = serverBuilder.WithEnvironment("VNC_PASSWORD", vncPass);
-            if (envVars.TryGetValue("SERVER_PASSWORD", out var serverPassword) && !string.IsNullOrEmpty(serverPassword))
+            }
+
+            if (
+                envVars.TryGetValue("SERVER_PASSWORD", out var serverPassword)
+                && !string.IsNullOrEmpty(serverPassword)
+            )
+            {
                 serverBuilder = serverBuilder.WithEnvironment("SERVER_PASSWORD", serverPassword);
+            }
         }
 
         var serverContainer = serverBuilder.Build();
@@ -338,7 +374,8 @@ public class ServerContainer : IAsyncDisposable
             options,
             logCallback,
             instanceId,
-            host);
+            host
+        );
     }
 
     /// <summary>
@@ -347,7 +384,10 @@ public class ServerContainer : IAsyncDisposable
     /// temp file, which keeps remote-host runs honest: remote daemons cannot read
     /// coordinator-side paths.
     /// </summary>
-    private static byte[] BuildSettingsFileBytes(ServerContainerOptions options, Action<string>? logCallback)
+    private static byte[] BuildSettingsFileBytes(
+        ServerContainerOptions options,
+        Action<string>? logCallback
+    )
     {
         var settings = new
         {
@@ -357,7 +397,7 @@ public class ServerContainer : IAsyncDisposable
                 farmType = options.FarmType.ToJsonValue(),
                 profitMargin = options.ProfitMargin,
                 startingCabins = options.StartingCabins,
-                spawnMonstersAtNight = options.SpawnMonstersAtNight
+                spawnMonstersAtNight = options.SpawnMonstersAtNight,
             },
             server = new
             {
@@ -366,13 +406,15 @@ public class ServerContainer : IAsyncDisposable
                 separateWallets = options.SeparateWallets,
                 existingCabinBehavior = options.ExistingCabinBehavior,
                 verboseLogging = false,
-                allowIpConnections = options.AllowIpConnections
-            }
+                allowIpConnections = options.AllowIpConnections,
+            },
         };
 
         var json = JsonConvert.SerializeObject(settings, Formatting.Indented);
 
-        logCallback?.Invoke($"Settings: FarmType={options.FarmType}, Cabins={options.StartingCabins}");
+        logCallback?.Invoke(
+            $"Settings: FarmType={options.FarmType}, Cabins={options.StartingCabins}"
+        );
 
         return Encoding.UTF8.GetBytes(json);
     }
@@ -383,7 +425,10 @@ public class ServerContainer : IAsyncDisposable
     public async Task StartAsync(CancellationToken ct = default, Action<string>? onProgress = null)
     {
         var sw = Stopwatch.StartNew();
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _errorCancellation!.Token);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ct,
+            _errorCancellation!.Token
+        );
         timeoutCts.CancelAfter(_options.StartupTimeout);
 
         try
@@ -412,13 +457,16 @@ public class ServerContainer : IAsyncDisposable
             // any further wall time goes to Testcontainers (docker create + start
             // on the daemon, then the wait strategies). Pairs with container_started
             // to localize slow phases.
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_invoked", new
-            {
-                role = "server",
-                name = _containerName,
-                index = _serverIndex,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_start_invoked",
+                new
+                {
+                    role = "server",
+                    name = _containerName,
+                    index = _serverIndex,
+                    host_id = HostId,
+                }
+            );
 
             // WaitAsync(ct) makes cancellation prompt: when the CT fires we throw
             // OperationCanceledException within milliseconds, even if Testcontainers'
@@ -428,15 +476,18 @@ public class ServerContainer : IAsyncDisposable
             await _serverContainer.StartAsync(timeoutCts.Token).WaitAsync(timeoutCts.Token);
             _logCallback?.Invoke($"Game server started");
 
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_started", new
-            {
-                role = "server",
-                name = _containerName,
-                image = $"sdvd/server:{_options.ImageTag}",
-                index = _serverIndex,
-                startupMs = sw.ElapsedMilliseconds,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_started",
+                new
+                {
+                    role = "server",
+                    name = _containerName,
+                    image = $"sdvd/server:{_options.ImageTag}",
+                    index = _serverIndex,
+                    startupMs = sw.ElapsedMilliseconds,
+                    host_id = HostId,
+                }
+            );
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -449,7 +500,9 @@ public class ServerContainer : IAsyncDisposable
             // TimeoutException when the CT is cancelled (not OperationCanceledException),
             // which disguises cancellation as a timeout.
             throw new OperationCanceledException(
-                $"server-{_serverIndex} startup cancelled (caller CT fired after {sw.ElapsedMilliseconds}ms)", ct);
+                $"server-{_serverIndex} startup cancelled (caller CT fired after {sw.ElapsedMilliseconds}ms)",
+                ct
+            );
         }
         catch (Exception ex)
         {
@@ -462,24 +515,29 @@ public class ServerContainer : IAsyncDisposable
             var detectedErrors = Errors;
             var logHint = $"See containers/server-{_serverIndex}/container.log.";
 
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_failed", new
-            {
-                role = "server",
-                name = _containerName,
-                image = $"sdvd/server:{_options.ImageTag}",
-                index = _serverIndex,
-                elapsedMs = sw.ElapsedMilliseconds,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message,
-                detectedErrorCount = detectedErrors.Count,
-                host_id = HostId
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_start_failed",
+                new
+                {
+                    role = "server",
+                    name = _containerName,
+                    image = $"sdvd/server:{_options.ImageTag}",
+                    index = _serverIndex,
+                    elapsedMs = sw.ElapsedMilliseconds,
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                    detectedErrorCount = detectedErrors.Count,
+                    host_id = HostId,
+                }
+            );
 
             if (detectedErrors.Count > 0)
             {
                 var errorSummary = string.Join("\n", detectedErrors);
                 throw new InvalidOperationException(
-                    $"server-{_serverIndex} crashed during startup: {errorSummary}. {logHint}", ex);
+                    $"server-{_serverIndex} crashed during startup: {errorSummary}. {logHint}",
+                    ex
+                );
             }
 
             if (ex is TimeoutException or OperationCanceledException)
@@ -487,13 +545,21 @@ public class ServerContainer : IAsyncDisposable
                 var elapsedSec = sw.Elapsed.TotalSeconds;
                 var trigger = detectedErrors.Count > 0 ? "log-detected error" : "timeout";
                 throw new TimeoutException(
-                    FormattableString.Invariant($"server-{_serverIndex} startup cancelled after {elapsedSec:F1}s ") +
-                    FormattableString.Invariant($"(configured timeout: {_options.StartupTimeout.TotalSeconds}s). ") +
-                    $"Trigger: {trigger}. {logHint}", ex);
+                    FormattableString.Invariant(
+                        $"server-{_serverIndex} startup cancelled after {elapsedSec:F1}s "
+                    )
+                        + FormattableString.Invariant(
+                            $"(configured timeout: {_options.StartupTimeout.TotalSeconds}s). "
+                        )
+                        + $"Trigger: {trigger}. {logHint}",
+                    ex
+                );
             }
 
             throw new InvalidOperationException(
-                $"server-{_serverIndex} failed to start: {ex.Message}. {logHint}", ex);
+                $"server-{_serverIndex} failed to start: {ex.Message}. {logHint}",
+                ex
+            );
         }
 
         // Resolve coordinator-visible ports through TunnelManager so callers
@@ -518,15 +584,20 @@ public class ServerContainer : IAsyncDisposable
         var runId = _runId;
         var containerName = _containerName;
         var host = _host;
-        EmergencyCleanup.Register($"ServerContainer-{runId}", () =>
-        {
-            try
+        EmergencyCleanup.Register(
+            $"ServerContainer-{runId}",
+            () =>
             {
-                DockerOps.ForceRemoveContainerSync(host.ApiClient, containerName);
-                DockerOps.RemoveVolumeSync(host.ApiClient, savesVolume);
+                try
+                {
+                    DockerOps.ForceRemoveContainerSync(host.ApiClient, containerName);
+                    DockerOps.RemoveVolumeSync(host.ApiClient, savesVolume);
+                }
+                catch
+                { /* best effort */
+                }
             }
-            catch { /* best effort */ }
-        });
+        );
     }
 
     /// <summary>
@@ -538,14 +609,26 @@ public class ServerContainer : IAsyncDisposable
     /// </summary>
     public async Task StartRecordingAsync(CancellationToken ct = default)
     {
-        if (!RecordingPolicy.RecordServerEnabled) return;
+        if (!RecordingPolicy.RecordServerEnabled)
+        {
+            return;
+        }
 
-        SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Started,
-            collectionName: $"server-{_serverIndex}");
+        SetupEventBus.EmitStep(
+            "Setup",
+            "Starting video recording",
+            SetupStepStatus.Started,
+            collectionName: $"server-{_serverIndex}"
+        );
         _recorder = new ContainerRecorder(
-            _serverContainer, _host, $"server-{_serverIndex}", RecordingPolicy.ServerFps,
-            msg => _logCallback?.Invoke(msg), useGpu: _host.HasGpu,
-            extractLimiter: _host.ExtractLimiter);
+            _serverContainer,
+            _host,
+            $"server-{_serverIndex}",
+            RecordingPolicy.ServerFps,
+            msg => _logCallback?.Invoke(msg),
+            useGpu: _host.HasGpu,
+            extractLimiter: _host.ExtractLimiter
+        );
         if (await _recorder.StartAsync(ct))
         {
             // Keys the recorder by Testcontainers' daemon-prefixed name ("/sdvd-…")
@@ -553,13 +636,23 @@ public class ServerContainer : IAsyncDisposable
             // Lease.Server.Container.Name. Reachable only after a successful
             // StartAsync, so the read does not throw ResourceNotFound.
             RecordingOrchestrator.RegisterRecorder(_serverContainer.Name, _recorder);
-            SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Completed,
-                $"recording segments to /recordings/seg_*.ts", collectionName: $"server-{_serverIndex}");
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting video recording",
+                SetupStepStatus.Completed,
+                $"recording segments to /recordings/seg_*.ts",
+                collectionName: $"server-{_serverIndex}"
+            );
         }
         else
         {
-            SetupEventBus.EmitStep("Setup", "Starting video recording", SetupStepStatus.Failed,
-                "ffmpeg failed to start", collectionName: $"server-{_serverIndex}");
+            SetupEventBus.EmitStep(
+                "Setup",
+                "Starting video recording",
+                SetupStepStatus.Failed,
+                "ffmpeg failed to start",
+                collectionName: $"server-{_serverIndex}"
+            );
             _recorder = null;
         }
     }
@@ -567,7 +660,10 @@ public class ServerContainer : IAsyncDisposable
     /// <summary>
     /// Waits for the server to be fully ready with a valid invite code.
     /// </summary>
-    public async Task<bool> WaitForReadyAsync(CancellationToken ct = default, Action<string>? onProgress = null)
+    public async Task<bool> WaitForReadyAsync(
+        CancellationToken ct = default,
+        Action<string>? onProgress = null
+    )
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(_options.ReadyTimeout);
@@ -587,7 +683,8 @@ public class ServerContainer : IAsyncDisposable
                     _logCallback?.Invoke(msg);
                     onProgress?.Invoke(msg);
                 },
-                requireInviteCode);
+                requireInviteCode
+            );
 
             if (status == null)
             {
@@ -648,7 +745,9 @@ public class ServerContainer : IAsyncDisposable
     // Matches SMAPI log line prefix: [HH:MM:SS LEVEL Source]
     // Lines WITHOUT this prefix are continuation lines (exception details, stack traces).
     private static readonly Regex SmapiLogLinePrefix = new(
-        @"^\[[\d:]+\s+\w+\s+", RegexOptions.Compiled);
+        @"^\[[\d:]+\s+\w+\s+",
+        RegexOptions.Compiled
+    );
 
     // Error-block accumulation across log lines. A SMAPI ERROR/FATAL header
     // arrives on its own log line; continuation lines (stack traces, exception
@@ -666,7 +765,8 @@ public class ServerContainer : IAsyncDisposable
             _serverContainer,
             $"server-{_serverIndex}",
             HandleLine,
-            msg => _logCallback?.Invoke(msg));
+            msg => _logCallback?.Invoke(msg)
+        );
 
         try
         {
@@ -689,10 +789,16 @@ public class ServerContainer : IAsyncDisposable
         // Error detection still runs unconditionally: a SDVD_EVENT line is JSON,
         // so SmapiLogLinePrefix never matches it, and leaving the block
         // unguarded preserves error-continuation accounting exactly.
-        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(line, $"server-{_serverIndex}");
+        var isEvent = SimpleContainerLogStreamer.TryForwardSdvdEvent(
+            line,
+            $"server-{_serverIndex}"
+        );
 
         // Emit to UI during startup phases (callback is null post-startup)
-        if (!isEvent) _startupLogCallback?.Invoke(line);
+        if (!isEvent)
+        {
+            _startupLogCallback?.Invoke(line);
+        }
 
         var isNewLogLine = SmapiLogLinePrefix.IsMatch(line);
 
@@ -705,7 +811,8 @@ public class ServerContainer : IAsyncDisposable
             if (Regex.IsMatch(line, @"\b(ERROR|FATAL)\b"))
             {
                 var isIgnored = IgnoredErrorPatterns.Any(pattern =>
-                    line.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+                    line.Contains(pattern, StringComparison.OrdinalIgnoreCase)
+                );
 
                 if (!isIgnored)
                 {
@@ -722,18 +829,26 @@ public class ServerContainer : IAsyncDisposable
 
     private void FlushError()
     {
-        if (_currentErrorHeader == null) return;
+        if (_currentErrorHeader == null)
+        {
+            return;
+        }
 
-        var fullError = _currentErrorDetails.Count > 0
-            ? $"{_currentErrorHeader}\n{string.Join("\n", _currentErrorDetails)}"
-            : _currentErrorHeader;
+        var fullError =
+            _currentErrorDetails.Count > 0
+                ? $"{_currentErrorHeader}\n{string.Join("\n", _currentErrorDetails)}"
+                : _currentErrorHeader;
 
         lock (_serverErrorsLock)
         {
             _serverErrors.Add(fullError);
         }
         _logCallback?.Invoke($"ERROR: {fullError}");
-        try { _errorCancellation?.Cancel(); } catch { }
+        try
+        {
+            _errorCancellation?.Cancel();
+        }
+        catch { }
 
         _currentErrorHeader = null;
         _currentErrorDetails.Clear();
@@ -743,8 +858,24 @@ public class ServerContainer : IAsyncDisposable
     {
         // Close any open forwards immediately so lingering OS handles don't
         // outlive the test. Local hosts treat this as a no-op.
-        if (_apiForward != null) { try { await _apiForward.DisposeAsync(); } catch { } _apiForward = null; }
-        if (_vncForward != null) { try { await _vncForward.DisposeAsync(); } catch { } _vncForward = null; }
+        if (_apiForward != null)
+        {
+            try
+            {
+                await _apiForward.DisposeAsync();
+            }
+            catch { }
+            _apiForward = null;
+        }
+        if (_vncForward != null)
+        {
+            try
+            {
+                await _vncForward.DisposeAsync();
+            }
+            catch { }
+            _vncForward = null;
+        }
 
         // Drain the log-stream reader before closing the file sink so any
         // fully-formed lines already split out of the in-flight chunk land in
@@ -753,20 +884,39 @@ public class ServerContainer : IAsyncDisposable
         // only releases the CTS.
         if (_logStreamReader != null)
         {
-            try { await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2)); } catch { }
-            try { await _logStreamReader.DisposeAsync(); } catch { }
+            try
+            {
+                await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2));
+            }
+            catch { }
+            try
+            {
+                await _logStreamReader.DisposeAsync();
+            }
+            catch { }
         }
         if (_logStreamCts != null)
         {
-            try { _logStreamCts.Cancel(); } catch { }
+            try
+            {
+                _logStreamCts.Cancel();
+            }
+            catch { }
             if (_logStreamTask != null)
             {
-                try { await _logStreamTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                try
+                {
+                    await _logStreamTask.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch { }
             }
             _logStreamCts.Dispose();
         }
 
-        if (_containerLog != null) await _containerLog.DisposeAsync();
+        if (_containerLog != null)
+        {
+            await _containerLog.DisposeAsync();
+        }
 
         _errorCancellation?.Dispose();
 
@@ -779,10 +929,14 @@ public class ServerContainer : IAsyncDisposable
             try
             {
                 if (_recorder.IsRecording)
+                {
                     await _recorder.StopAsync(ct);
+                }
 
                 var destPath = Path.Combine(
-                    TestArtifacts.GetContainerDir($"server-{_serverIndex}"), "full_recording.mp4");
+                    TestArtifacts.GetContainerDir($"server-{_serverIndex}"),
+                    "full_recording.mp4"
+                );
 
                 // Heavy I/O (in-container ffmpeg concat + tar pull) is gated by the
                 // host's ExtractLimiter so N containers tearing down in parallel don't
@@ -796,7 +950,10 @@ public class ServerContainer : IAsyncDisposable
                     await _recorder.ConvertToMp4Async(ct);
                     await _recorder.RetrieveFullRecordingAsync(destPath, ct);
                 }
-                finally { _host.ExtractLimiter.Release(); }
+                finally
+                {
+                    _host.ExtractLimiter.Release();
+                }
                 if (File.Exists(destPath))
                 {
                     // Announce to the UI immediately — right where the file becomes available.
@@ -804,21 +961,29 @@ public class ServerContainer : IAsyncDisposable
                     try
                     {
                         if (InstanceId != null)
+                        {
                             SetupEventBus.EmitInstanceRecording(InstanceId, destPath);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logCallback?.Invoke($"[Recording] server-{_serverIndex} emit failed: {ex.Message}");
+                        _logCallback?.Invoke(
+                            $"[Recording] server-{_serverIndex} emit failed: {ex.Message}"
+                        );
                     }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _logCallback?.Invoke($"[Recording] server-{_serverIndex} recording extraction cancelled (shutdown)");
+                _logCallback?.Invoke(
+                    $"[Recording] server-{_serverIndex} recording extraction cancelled (shutdown)"
+                );
             }
             catch (Exception ex)
             {
-                _logCallback?.Invoke($"[Recording] WARNING: server-{_serverIndex} recording retrieval error: {ex.Message}");
+                _logCallback?.Invoke(
+                    $"[Recording] WARNING: server-{_serverIndex} recording retrieval error: {ex.Message}"
+                );
             }
             RecordingOrchestrator.UnregisterRecorder(_serverContainer.Name);
             await _recorder.DisposeAsync();
@@ -833,8 +998,13 @@ public class ServerContainer : IAsyncDisposable
         // OOMKill — surface it as its own event so capacity-related flakiness
         // is diagnosable without a separate docker inspect.
         string? preDisposeState = null;
-        try { preDisposeState = _serverContainer.State.ToString(); }
-        catch { /* defensive — property is cheap */ }
+        try
+        {
+            preDisposeState = _serverContainer.State.ToString();
+        }
+        catch
+        { /* defensive — property is cheap */
+        }
 
         long? exitCode = null;
         try
@@ -842,32 +1012,40 @@ public class ServerContainer : IAsyncDisposable
             using var ecCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             exitCode = await _serverContainer.GetExitCodeAsync(ecCts.Token);
         }
-        catch { /* exit code is advisory */ }
+        catch
+        { /* exit code is advisory */
+        }
 
         var stopStopwatch = Stopwatch.StartNew();
         await DisposeContainerSafely(_serverContainer, _containerName, "server");
         stopStopwatch.Stop();
 
-        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_stopped", new
-        {
-            role = "server",
-            name = _containerName,
-            index = _serverIndex,
-            preDisposeState,
-            exitCode,
-            disposeDurationMs = stopStopwatch.ElapsedMilliseconds,
-            host_id = HostId
-        });
-
-        if (exitCode == DockerExitCodes.SigKill)
-        {
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+            "container_stopped",
+            new
             {
                 role = "server",
                 name = _containerName,
                 index = _serverIndex,
-                host_id = HostId
-            });
+                preDisposeState,
+                exitCode,
+                disposeDurationMs = stopStopwatch.ElapsedMilliseconds,
+                host_id = HostId,
+            }
+        );
+
+        if (exitCode == DockerExitCodes.SigKill)
+        {
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_oom_killed",
+                new
+                {
+                    role = "server",
+                    name = _containerName,
+                    index = _serverIndex,
+                    host_id = HostId,
+                }
+            );
         }
 
         // Remove test saves volume
@@ -882,7 +1060,11 @@ public class ServerContainer : IAsyncDisposable
         _logCallback?.Invoke($"server-{_serverIndex} shut down");
     }
 
-    private async Task DisposeContainerSafely(IContainer container, string containerName, string label)
+    private async Task DisposeContainerSafely(
+        IContainer container,
+        string containerName,
+        string label
+    )
     {
         try
         {
@@ -890,14 +1072,18 @@ public class ServerContainer : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logCallback?.Invoke($"server-{_serverIndex} {label} dispose failed ({ex.Message}), force-removing");
+            _logCallback?.Invoke(
+                $"server-{_serverIndex} {label} dispose failed ({ex.Message}), force-removing"
+            );
             try
             {
                 await DockerOps.ForceRemoveContainerAsync(_host.ApiClient, containerName);
             }
             catch (Exception rmEx)
             {
-                _logCallback?.Invoke($"server-{_serverIndex} force-remove {label} also failed: {rmEx.Message}");
+                _logCallback?.Invoke(
+                    $"server-{_serverIndex} force-remove {label} also failed: {rmEx.Message}"
+                );
             }
         }
     }

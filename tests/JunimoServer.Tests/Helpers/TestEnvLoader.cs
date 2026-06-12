@@ -21,7 +21,10 @@ public static class TestEnvLoader
         // than CWD so the file is found regardless of how the binary was
         // launched (`dotnet run` may set CWD to the bin output directory).
         var envFile = Path.Combine(ProjectRoot.Path, ".env.test");
-        if (!File.Exists(envFile)) return true;
+        if (!File.Exists(envFile))
+        {
+            return true;
+        }
 
         DotNetEnv.Env.Load(envFile);
         return true;

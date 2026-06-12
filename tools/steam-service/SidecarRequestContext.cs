@@ -37,11 +37,18 @@ public static class SidecarRequestContext
         private readonly string? _previous;
         private bool _disposed;
 
-        public Scope(string? previous) { _previous = previous; }
+        public Scope(string? previous)
+        {
+            _previous = previous;
+        }
 
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _requestId.Value = _previous;
         }

@@ -14,10 +14,14 @@ public class CharacterController
     private readonly IMonitor _monitor;
 
     // Cached reflection info for private fields
-    private static readonly FieldInfo? NameBoxField = typeof(CharacterCustomization)
-        .GetField("nameBox", BindingFlags.NonPublic | BindingFlags.Instance);
-    private static readonly FieldInfo? FavThingBoxField = typeof(CharacterCustomization)
-        .GetField("favThingBox", BindingFlags.NonPublic | BindingFlags.Instance);
+    private static readonly FieldInfo? NameBoxField = typeof(CharacterCustomization).GetField(
+        "nameBox",
+        BindingFlags.NonPublic | BindingFlags.Instance
+    );
+    private static readonly FieldInfo? FavThingBoxField = typeof(CharacterCustomization).GetField(
+        "favThingBox",
+        BindingFlags.NonPublic | BindingFlags.Instance
+    );
 
     public CharacterController(IMonitor monitor)
     {
@@ -30,12 +34,19 @@ public class CharacterController
     private CharacterCustomization? GetCharacterMenu()
     {
         // Check if it's a submenu of TitleMenu
-        if (Game1.activeClickableMenu is TitleMenu && TitleMenu.subMenu is CharacterCustomization charSub)
+        if (
+            Game1.activeClickableMenu is TitleMenu
+            && TitleMenu.subMenu is CharacterCustomization charSub
+        )
+        {
             return charSub;
+        }
 
         // Check if it's the active menu directly
         if (Game1.activeClickableMenu is CharacterCustomization charDirect)
+        {
             return charDirect;
+        }
 
         return null;
     }
@@ -67,7 +78,7 @@ public class CharacterController
             return new CharacterInfo
             {
                 InCharacterMenu = false,
-                Error = "Not in character customization menu"
+                Error = "Not in character customization menu",
             };
         }
 
@@ -79,7 +90,7 @@ public class CharacterController
             InCharacterMenu = true,
             Name = nameBox?.Text ?? "",
             FavoriteThing = favThingBox?.Text ?? "",
-            CanConfirm = menu.canLeaveMenu()
+            CanConfirm = menu.canLeaveMenu(),
         };
     }
 
@@ -93,7 +104,11 @@ public class CharacterController
             var menu = GetCharacterMenu();
             if (menu == null)
             {
-                return new CustomizeResult { Success = false, Error = "Not in character customization menu" };
+                return new CustomizeResult
+                {
+                    Success = false,
+                    Error = "Not in character customization menu",
+                };
             }
 
             var nameBox = GetNameBox(menu);
@@ -101,7 +116,11 @@ public class CharacterController
 
             if (nameBox == null || favThingBox == null)
             {
-                return new CustomizeResult { Success = false, Error = "Text boxes not available (reflection failed)" };
+                return new CustomizeResult
+                {
+                    Success = false,
+                    Error = "Text boxes not available (reflection failed)",
+                };
             }
 
             // Bypass the TextBox pixel-width truncation; it's a client-side UI constraint only.
@@ -122,7 +141,10 @@ public class CharacterController
             Game1.player.Name = name;
             Game1.player.favoriteThing.Value = favoriteThing;
 
-            _monitor.Log($"Set character data - Name: {name}, FavoriteThing: {favoriteThing}", LogLevel.Trace);
+            _monitor.Log(
+                $"Set character data - Name: {name}, FavoriteThing: {favoriteThing}",
+                LogLevel.Trace
+            );
 
             return new CustomizeResult { Success = true };
         }
@@ -143,7 +165,11 @@ public class CharacterController
             var menu = GetCharacterMenu();
             if (menu == null)
             {
-                return new CustomizeResult { Success = false, Error = "Not in character customization menu" };
+                return new CustomizeResult
+                {
+                    Success = false,
+                    Error = "Not in character customization menu",
+                };
             }
 
             if (!menu.canLeaveMenu())
@@ -151,7 +177,7 @@ public class CharacterController
                 return new CustomizeResult
                 {
                     Success = false,
-                    Error = "Cannot confirm - name or favorite thing may be empty"
+                    Error = "Cannot confirm - name or favorite thing may be empty",
                 };
             }
 

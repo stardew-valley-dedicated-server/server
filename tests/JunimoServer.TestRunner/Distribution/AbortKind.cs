@@ -29,10 +29,11 @@ internal static class AbortKindExtensions
     /// that string verbatim. <c>"dispatch_fault"</c> is additive — no
     /// breaking change.
     /// </summary>
-    public static string ToReasonString(this AbortKind kind) => kind switch
-    {
-        AbortKind.CtrlC => "ctrl_c",
-        AbortKind.DispatchFault => "dispatch_fault",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unhandled AbortKind"),
-    };
+    public static string ToReasonString(this AbortKind kind) =>
+        kind switch
+        {
+            AbortKind.CtrlC => "ctrl_c",
+            AbortKind.DispatchFault => "dispatch_fault",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unhandled AbortKind"),
+        };
 }

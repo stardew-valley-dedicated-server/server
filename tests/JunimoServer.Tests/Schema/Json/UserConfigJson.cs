@@ -46,14 +46,20 @@ public static class UserConfigJson
     /// input without consulting docs.
     /// </param>
     public static IReadOnlyList<JsonNode> ParseArrayStrict(
-        string envVarName, string? json, string? expectedShapeHint = null)
+        string envVarName,
+        string? json,
+        string? expectedShapeHint = null
+    )
     {
         if (string.IsNullOrWhiteSpace(json))
+        {
             return Array.Empty<JsonNode>();
+        }
 
-        var hint = expectedShapeHint != null
-            ? $" Expected a JSON array of {expectedShapeHint} objects."
-            : "";
+        var hint =
+            expectedShapeHint != null
+                ? $" Expected a JSON array of {expectedShapeHint} objects."
+                : "";
 
         JsonNode? node;
         try
@@ -63,19 +69,27 @@ public static class UserConfigJson
         catch (JsonException ex)
         {
             throw new InvalidOperationException(
-                $"{envVarName} is set but is not valid JSON: {ex.Message}.{hint} " +
-                "Trailing commas and // comments are allowed.", ex);
+                $"{envVarName} is set but is not valid JSON: {ex.Message}.{hint} "
+                    + "Trailing commas and // comments are allowed.",
+                ex
+            );
         }
 
         if (node is not JsonArray arr)
+        {
             throw new InvalidOperationException(
-                $"{envVarName} is set but is not a JSON array.{hint}");
+                $"{envVarName} is set but is not a JSON array.{hint}"
+            );
+        }
 
         var nodes = new List<JsonNode>(arr.Count);
         for (var i = 0; i < arr.Count; i++)
         {
             var entry = arr[i];
-            if (entry != null) nodes.Add(entry);
+            if (entry != null)
+            {
+                nodes.Add(entry);
+            }
         }
         return nodes;
     }
@@ -86,14 +100,22 @@ public static class UserConfigJson
     /// </summary>
     public static int CountArrayTolerant(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return 0;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return 0;
+        }
+
         try
         {
             using var doc = JsonDocument.Parse(json, Document);
             return doc.RootElement.ValueKind == JsonValueKind.Array
-                ? doc.RootElement.GetArrayLength() : 0;
+                ? doc.RootElement.GetArrayLength()
+                : 0;
         }
-        catch { return 0; }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>
@@ -106,12 +128,18 @@ public static class UserConfigJson
     /// <c>"{id, serverSlots, clientSlots, [endpoint], [sshKey]}"</c>.
     /// </param>
     public static T[]? DeserializeArrayStrict<T>(
-        string envVarName, string? json, string? expectedShapeHint = null)
+        string envVarName,
+        string? json,
+        string? expectedShapeHint = null
+    )
     {
-        if (string.IsNullOrWhiteSpace(json)) return null;
-        var hint = expectedShapeHint != null
-            ? $" Expected: an array of {expectedShapeHint} objects."
-            : "";
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        var hint =
+            expectedShapeHint != null ? $" Expected: an array of {expectedShapeHint} objects." : "";
         try
         {
             return JsonSerializer.Deserialize<T[]>(json, Serializer);
@@ -119,7 +147,9 @@ public static class UserConfigJson
         catch (JsonException ex)
         {
             throw new InvalidOperationException(
-                $"{envVarName} is not valid JSON: {ex.Message}.{hint}", ex);
+                $"{envVarName} is not valid JSON: {ex.Message}.{hint}",
+                ex
+            );
         }
     }
 }

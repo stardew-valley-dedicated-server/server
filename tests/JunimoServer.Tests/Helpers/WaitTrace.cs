@@ -11,7 +11,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Snapshot delegate rules</b>: the optional <paramref name="snapshot"/>
+/// <b>Snapshot delegate rules</b>: the optional <c>snapshot</c> delegate
 /// runs at start AND completion. It MUST follow these rules:
 /// <list type="bullet">
 ///   <item>No locks — never acquire a lock the wait path itself holds.</item>
@@ -29,7 +29,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Pre-init waits</b>: events emitted before <see cref="InfrastructureEventLog.Initialize"/>
+/// <b>Pre-init waits</b>: events emitted before <see cref="InfrastructureEventLog.Initialize()"/>
 /// land in <c>infrastructure.jsonl</c> via the pre-init buffer.
 /// </para>
 /// </summary>
@@ -43,13 +43,19 @@ internal static class WaitTrace
     private static bool EmitStarted => TestTracing.Level == TestTracingLevel.Full;
 
     public static async Task RunAsync(
-        WaitName name, Func<Task> body,
-        CancellationToken ct, Func<object>? snapshot = null)
+        WaitName name,
+        Func<Task> body,
+        CancellationToken ct,
+        Func<object>? snapshot = null
+    )
     {
         var startMs = RunMetadata.RunClock.ElapsedMilliseconds;
         var (snap, snapErr) = SafeSnapshot(snapshot);
         if (EmitStarted)
+        {
             InfrastructureEventLog.EmitWait(name, WaitPhase.Started, null, snap, snapErr);
+        }
+
         try
         {
             await body();
@@ -72,20 +78,33 @@ internal static class WaitTrace
         {
             var duration = RunMetadata.RunClock.ElapsedMilliseconds - startMs;
             (snap, snapErr) = SafeSnapshot(snapshot);
-            InfrastructureEventLog.EmitWait(name, WaitPhase.Failed, duration, snap, snapErr,
-                errorType: ex.GetType().FullName, errorMessage: ex.Message);
+            InfrastructureEventLog.EmitWait(
+                name,
+                WaitPhase.Failed,
+                duration,
+                snap,
+                snapErr,
+                errorType: ex.GetType().FullName,
+                errorMessage: ex.Message
+            );
             throw;
         }
     }
 
     public static async Task<T> RunAsync<T>(
-        WaitName name, Func<Task<T>> body,
-        CancellationToken ct, Func<object>? snapshot = null)
+        WaitName name,
+        Func<Task<T>> body,
+        CancellationToken ct,
+        Func<object>? snapshot = null
+    )
     {
         var startMs = RunMetadata.RunClock.ElapsedMilliseconds;
         var (snap, snapErr) = SafeSnapshot(snapshot);
         if (EmitStarted)
+        {
             InfrastructureEventLog.EmitWait(name, WaitPhase.Started, null, snap, snapErr);
+        }
+
         try
         {
             var result = await body();
@@ -105,16 +124,33 @@ internal static class WaitTrace
         {
             var duration = RunMetadata.RunClock.ElapsedMilliseconds - startMs;
             (snap, snapErr) = SafeSnapshot(snapshot);
-            InfrastructureEventLog.EmitWait(name, WaitPhase.Failed, duration, snap, snapErr,
-                errorType: ex.GetType().FullName, errorMessage: ex.Message);
+            InfrastructureEventLog.EmitWait(
+                name,
+                WaitPhase.Failed,
+                duration,
+                snap,
+                snapErr,
+                errorType: ex.GetType().FullName,
+                errorMessage: ex.Message
+            );
             throw;
         }
     }
 
     private static (object? value, string? error) SafeSnapshot(Func<object>? f)
     {
-        if (f == null) return (null, null);
-        try { return (f(), null); }
-        catch (Exception ex) { return (null, $"{ex.GetType().Name}: {ex.Message}"); }
+        if (f == null)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            return (f(), null);
+        }
+        catch (Exception ex)
+        {
+            return (null, $"{ex.GetType().Name}: {ex.Message}");
+        }
     }
 }

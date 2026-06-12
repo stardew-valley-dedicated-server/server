@@ -19,7 +19,7 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// <para>
 /// <b>Poison semantics</b>: a host-scoped <see cref="CancellationTokenSource"/>
-/// is linked into every <see cref="WaitAsync"/>. When <see cref="DockerHost.Poison"/>
+/// is linked into every <see cref="WaitAsync"/>. When <see cref="Infrastructure.DockerHost.Poison"/>
 /// fires, the source is cancelled and pending waiters return promptly with
 /// <see cref="OperationCanceledException"/> instead of hanging until outer
 /// cancellation.
@@ -61,25 +61,37 @@ internal sealed class DockerExtractLimiter : IDisposable
                 }
             },
             ct,
-            snapshot: () => new { host_id = _hostId, maxConcurrent = _maxConcurrent });
+            snapshot: () => new { host_id = _hostId, maxConcurrent = _maxConcurrent }
+        );
     }
 
     public void Release() => _semaphore.Release();
 
     /// <summary>
     /// Cancels the host-scoped CTS, unblocking any pending <see cref="WaitAsync"/>
-    /// callers. Idempotent. Called from <see cref="DockerHost.Poison"/>.
+    /// callers. Idempotent. Called from <see cref="Infrastructure.DockerHost.Poison"/>.
     /// </summary>
     public void CancelPending()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
     }
 
     public void Dispose()
     {
-        try { _poisonCts.Cancel(); } catch (ObjectDisposedException) { /* already disposed */ }
+        try
+        {
+            _poisonCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        { /* already disposed */
+        }
         _poisonCts.Dispose();
         _semaphore.Dispose();
     }
-
 }

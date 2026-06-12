@@ -10,6 +10,9 @@
     Priority: command line > local .env > server .env > environment variable
     -->
 
+    <!-- This file shadows the root Directory.Build.props; pull in the shared strictness settings. -->
+    <Import Project="$(MSBuildThisFileDirectory)..\..\CodeStyle.props" />
+
     <PropertyGroup>
         <!-- Try local .env first -->
         <DotEnvPath>$(MSBuildThisFileDirectory).env</DotEnvPath>

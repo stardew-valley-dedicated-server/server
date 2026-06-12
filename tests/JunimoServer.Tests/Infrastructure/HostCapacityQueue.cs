@@ -39,7 +39,11 @@ internal sealed class HostCapacityQueue
 
     public HostCapacityQueue(string name, int capacity)
     {
-        if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+        if (capacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity));
+        }
+
         Name = name;
         Capacity = capacity;
         _available = capacity;
@@ -51,7 +55,13 @@ internal sealed class HostCapacityQueue
     /// <summary>Diagnostic snapshot — current waiter count (racy).</summary>
     public int WaitingCount
     {
-        get { lock (_lock) { return _waiters.Count; } }
+        get
+        {
+            lock (_lock)
+            {
+                return _waiters.Count;
+            }
+        }
     }
 
     /// <summary>
@@ -60,16 +70,24 @@ internal sealed class HostCapacityQueue
     /// </summary>
     public async Task AcquireAsync(int count, string testName, int priority, CancellationToken ct)
     {
-        if (count <= 0) return;
+        if (count <= 0)
+        {
+            return;
+        }
+
         var shortName = TestLog.Short(testName);
         Waiter waiter;
         lock (_lock)
         {
-            TestLog.Test($"{shortName} requesting {count} {Name} slot(s) (priority {priority}, {_available}/{Capacity} available)");
+            TestLog.Test(
+                $"{shortName} requesting {count} {Name} slot(s) (priority {priority}, {_available}/{Capacity} available)"
+            );
 
             waiter = new Waiter(priority, _sequence++, count, testName);
             _waiters.Add(waiter);
-            TestLog.Test($"{shortName} queued (priority {priority}, position {GetQueuePosition(waiter)}/{_waiters.Count})");
+            TestLog.Test(
+                $"{shortName} queued (priority {priority}, position {GetQueuePosition(waiter)}/{_waiters.Count})"
+            );
 
             if (_available > 0 && !_drainScheduled)
             {
@@ -84,7 +102,9 @@ internal sealed class HostCapacityQueue
             {
                 if (_waiters.Remove(waiter))
                 {
-                    TestLog.Test($"{TestLog.Short(waiter.TestName)} cancelled (priority {waiter.Priority})");
+                    TestLog.Test(
+                        $"{TestLog.Short(waiter.TestName)} cancelled (priority {waiter.Priority})"
+                    );
                     waiter.Tcs.TrySetCanceled(ct);
                 }
             }
@@ -94,20 +114,30 @@ internal sealed class HostCapacityQueue
             WaitName.ClientCapacity_Acquire,
             () => waiter.Tcs.Task,
             ct,
-            snapshot: () => new
+            snapshot: () =>
+                new
+                {
+                    test = testName,
+                    count,
+                    priority,
+                    available = _available,
+                    max = Capacity,
+                    queue = Name,
+                }
+        );
+        TestLog.Test($"{shortName} got {count} {Name} slot(s) ({_available}/{Capacity} available)");
+        InfrastructureEventLog.Emit(
+            "capacity_acquired",
+            new
             {
                 test = testName,
                 count,
-                priority,
                 available = _available,
                 max = Capacity,
-                queue = Name
-            });
-        TestLog.Test($"{shortName} got {count} {Name} slot(s) ({_available}/{Capacity} available)");
-        InfrastructureEventLog.Emit("capacity_acquired", new
-        {
-            test = testName, count, available = _available, max = Capacity, priority, queue = Name
-        });
+                priority,
+                queue = Name,
+            }
+        );
     }
 
     /// <summary>Default-priority overload (50, the project-wide default).</summary>
@@ -117,20 +147,33 @@ internal sealed class HostCapacityQueue
     /// <summary>Releases <paramref name="count"/> slots, draining waiters in priority order.</summary>
     public void Release(int count)
     {
-        if (count <= 0) return;
+        if (count <= 0)
+        {
+            return;
+        }
+
         lock (_lock)
         {
             _available += count;
             if (_available > Capacity)
             {
-                TestLog.Test($"WARNING: available ({_available}) exceeds {Name} capacity ({Capacity}), clamping (double-release bug?)");
+                TestLog.Test(
+                    $"WARNING: available ({_available}) exceeds {Name} capacity ({Capacity}), clamping (double-release bug?)"
+                );
                 _available = Capacity;
             }
             TestLog.Test($"Released {count} {Name} slot(s) ({_available}/{Capacity} available)");
-            InfrastructureEventLog.Emit("capacity_released", new
-            {
-                count, available = _available, max = Capacity, waiters = _waiters.Count, queue = Name
-            });
+            InfrastructureEventLog.Emit(
+                "capacity_released",
+                new
+                {
+                    count,
+                    available = _available,
+                    max = Capacity,
+                    waiters = _waiters.Count,
+                    queue = Name,
+                }
+            );
             DrainQueue();
         }
     }
@@ -140,19 +183,34 @@ internal sealed class HostCapacityQueue
     /// so the reacquire is serviced ahead of any waiter that would block on the
     /// caller's gate.
     /// </summary>
-    public async Task ReleaseAndReacquireAsync(int count, string testName, int priority, CancellationToken ct)
+    public async Task ReleaseAndReacquireAsync(
+        int count,
+        string testName,
+        int priority,
+        CancellationToken ct
+    )
     {
-        if (count <= 0) return;
+        if (count <= 0)
+        {
+            return;
+        }
+
         var shortName = TestLog.Short(testName);
         Waiter waiter;
         lock (_lock)
         {
             waiter = new Waiter(priority, _sequence++, count, testName);
             _waiters.Add(waiter);
-            TestLog.Test($"{shortName} release-and-reacquire on {Name}: enqueued (priority {priority}), releasing {count} slot(s)");
+            TestLog.Test(
+                $"{shortName} release-and-reacquire on {Name}: enqueued (priority {priority}), releasing {count} slot(s)"
+            );
 
             _available += count;
-            if (_available > Capacity) _available = Capacity;
+            if (_available > Capacity)
+            {
+                _available = Capacity;
+            }
+
             DrainQueue();
         }
 
@@ -162,7 +220,9 @@ internal sealed class HostCapacityQueue
             {
                 if (_waiters.Remove(waiter))
                 {
-                    TestLog.Test($"{TestLog.Short(waiter.TestName)} reacquire cancelled (priority {waiter.Priority})");
+                    TestLog.Test(
+                        $"{TestLog.Short(waiter.TestName)} reacquire cancelled (priority {waiter.Priority})"
+                    );
                     waiter.Tcs.TrySetCanceled(ct);
                 }
             }
@@ -172,16 +232,20 @@ internal sealed class HostCapacityQueue
             WaitName.ClientCapacity_ReleaseAndReacquire,
             () => waiter.Tcs.Task,
             ct,
-            snapshot: () => new
-            {
-                test = testName,
-                count,
-                priority,
-                available = _available,
-                max = Capacity,
-                queue = Name
-            });
-        TestLog.Test($"{shortName} reacquired {count} {Name} slot(s) ({_available}/{Capacity} available)");
+            snapshot: () =>
+                new
+                {
+                    test = testName,
+                    count,
+                    priority,
+                    available = _available,
+                    max = Capacity,
+                    queue = Name,
+                }
+        );
+        TestLog.Test(
+            $"{shortName} reacquired {count} {Name} slot(s) ({_available}/{Capacity} available)"
+        );
     }
 
     /// <summary>Fail-fast: throws if a test requires more slots than the cap allows.</summary>
@@ -190,18 +254,24 @@ internal sealed class HostCapacityQueue
         if (needed > Capacity)
         {
             throw new InvalidOperationException(
-                $"Test '{testName}' requires {needed} {Name} slot(s) but capacity={Capacity} on this host.");
+                $"Test '{testName}' requires {needed} {Name} slot(s) but capacity={Capacity} on this host."
+            );
         }
     }
 
     private async Task SettleAndDrainAsync()
     {
         if (!_steadyState)
+        {
             await Task.Delay(SettleDelay);
+        }
+
         lock (_lock)
         {
             _drainScheduled = false;
-            TestLog.Test($"Scheduling {_waiters.Count} queued test(s) ({_available}/{Capacity} {Name} slots available)");
+            TestLog.Test(
+                $"Scheduling {_waiters.Count} queued test(s) ({_available}/{Capacity} {Name} slots available)"
+            );
             DrainQueue();
         }
     }
@@ -212,15 +282,22 @@ internal sealed class HostCapacityQueue
         {
             var head = _waiters.Min!;
             if (_available < head.Count)
+            {
                 break;
+            }
+
             _waiters.Remove(head);
             _available -= head.Count;
-            TestLog.Test($"{TestLog.Short(head.TestName)} granted {head.Count} {Name} slot(s) (priority {head.Priority})");
+            TestLog.Test(
+                $"{TestLog.Short(head.TestName)} granted {head.Count} {Name} slot(s) (priority {head.Priority})"
+            );
             head.Tcs.TrySetResult();
         }
 
         if (!_steadyState && _available <= 0)
+        {
             _steadyState = true;
+        }
     }
 
     private int GetQueuePosition(Waiter waiter)
@@ -229,7 +306,10 @@ internal sealed class HostCapacityQueue
         foreach (var w in _waiters)
         {
             pos++;
-            if (w == waiter) return pos;
+            if (w == waiter)
+            {
+                return pos;
+            }
         }
         return pos;
     }
@@ -240,18 +320,30 @@ internal sealed class HostCapacityQueue
         public long Sequence { get; }
         public int Count { get; }
         public string TestName { get; }
-        public TaskCompletionSource Tcs { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Tcs { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Waiter(int priority, long sequence, int count, string testName)
         {
-            Priority = priority; Sequence = sequence; Count = count; TestName = testName;
+            Priority = priority;
+            Sequence = sequence;
+            Count = count;
+            TestName = testName;
         }
 
         public int CompareTo(Waiter? other)
         {
-            if (other is null) return -1;
+            if (other is null)
+            {
+                return -1;
+            }
+
             var cmp = Priority.CompareTo(other.Priority);
-            if (cmp != 0) return cmp;
+            if (cmp != 0)
+            {
+                return cmp;
+            }
+
             return Sequence.CompareTo(other.Sequence);
         }
     }

@@ -35,11 +35,15 @@ public static class TestIdentityContext
             var testMethod = ctx?.TestMethod;
             var displayName = ctx?.Test?.TestDisplayName;
             if (testClass == null || testMethod == null || string.IsNullOrEmpty(displayName))
+            {
                 return null;
+            }
+
             return new TestIdentity(
                 Class: testClass.TestClassSimpleName,
                 Method: testMethod.MethodName,
-                DisplayName: displayName);
+                DisplayName: displayName
+            );
         }
     }
 
@@ -78,10 +82,19 @@ public static class TestIdentityContext
     {
         private readonly string? _prior;
         private bool _disposed;
-        public PhaseScope(string? prior) { _prior = prior; }
+
+        public PhaseScope(string? prior)
+        {
+            _prior = prior;
+        }
+
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _phase.Value = _prior;
         }

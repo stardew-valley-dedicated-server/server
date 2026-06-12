@@ -74,10 +74,11 @@ public class ReflectionHelper
     /// </summary>
     public void SendChatMessage(string message)
     {
-        GetMultiplayer().sendChatMessage(
-            LocalizedContentManager.CurrentLanguageCode,
-            message,
-            Multiplayer.AllPlayers
-        );
+        GetMultiplayer()
+            .sendChatMessage(
+                LocalizedContentManager.CurrentLanguageCode,
+                message,
+                Multiplayer.AllPlayers
+            );
     }
 }

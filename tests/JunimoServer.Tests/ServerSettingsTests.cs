@@ -31,7 +31,9 @@ public class ServerSettingsTests : TestBase
         Assert.NotNull(settings);
         Assert.NotNull(settings.Game);
         Assert.NotNull(settings.Server);
-        Log($"Settings loaded: FarmName={settings.Game.FarmName}, Strategy={settings.Server.CabinStrategy}");
+        Log(
+            $"Settings loaded: FarmName={settings.Game.FarmName}, Strategy={settings.Server.CabinStrategy}"
+        );
     }
 
     /// <summary>
@@ -47,10 +49,21 @@ public class ServerSettingsTests : TestBase
             new object[] { "Game.FarmName", "Junimo" },
             new object[] { "Game.FarmType", "0" },
             new object[] { "Game.ProfitMargin", 1.0f },
-            new object[] { "Game.StartingCabins", Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) },
+            new object[]
+            {
+                "Game.StartingCabins",
+                Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3),
+            },
             new object[] { "Game.SpawnMonstersAtNight", "auto" },
             // Server settings
-            new object[] { "Server.MaxPlayers", Math.Max(10, Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) + 1) },
+            new object[]
+            {
+                "Server.MaxPlayers",
+                Math.Max(
+                    10,
+                    Math.Max(4, HostPool.Instance.Hosts.Max(h => h.ClientCapacity.Capacity) * 3) + 1
+                ),
+            },
             new object[] { "Server.CabinStrategy", "CabinStack" },
             new object[] { "Server.SeparateWallets", false },
             new object[] { "Server.ExistingCabinBehavior", "KeepExisting" },
@@ -85,7 +98,7 @@ public class ServerSettingsTests : TestBase
             "Server.CabinStrategy" => settings.Server.CabinStrategy,
             "Server.SeparateWallets" => settings.Server.SeparateWallets,
             "Server.ExistingCabinBehavior" => settings.Server.ExistingCabinBehavior,
-            _ => throw new ArgumentException($"Unknown setting path: {path}")
+            _ => throw new ArgumentException($"Unknown setting path: {path}"),
         };
     }
 

@@ -40,7 +40,10 @@ public static class OgImageGenerator
     /// </summary>
     public static byte[] Render(RunSummary summary)
     {
-        var accent = summary.Status == "aborted" ? Grey : summary.Failed > 0 ? Fail : Pass;
+        var accent =
+            summary.Status == "aborted" ? Grey
+            : summary.Failed > 0 ? Fail
+            : Pass;
 
         using var image = new Image<Rgba32>(Width, Height, Bg.ToPixel<Rgba32>());
 
@@ -57,15 +60,33 @@ public static class OgImageGenerator
             DrawDot(ctx, 72, 86, 14, Junimo);
             ctx.DrawText("SDVD E2E Report", wordmark, Muted, new PointF(98, 70));
 
-            var headlineText = summary.Status == "aborted"
-                ? "Run aborted"
-                : $"{summary.Passed} passed · {summary.Failed} failed";
-            ctx.DrawText(headlineText, headline, summary.Failed > 0 ? Fail : Text, new PointF(72, 220));
+            var headlineText =
+                summary.Status == "aborted"
+                    ? "Run aborted"
+                    : $"{summary.Passed} passed · {summary.Failed} failed";
+            ctx.DrawText(
+                headlineText,
+                headline,
+                summary.Failed > 0 ? Fail : Text,
+                new PointF(72, 220)
+            );
 
             var counts = new List<string> { $"{summary.TotalTests} tests" };
-            if (summary.Skipped > 0) counts.Add($"{summary.Skipped} skipped");
-            if (summary.Canceled > 0) counts.Add($"{summary.Canceled} canceled");
-            if (summary.DurationMs is { } ms) counts.Add(FormatDuration(ms));
+            if (summary.Skipped > 0)
+            {
+                counts.Add($"{summary.Skipped} skipped");
+            }
+
+            if (summary.Canceled > 0)
+            {
+                counts.Add($"{summary.Canceled} canceled");
+            }
+
+            if (summary.DurationMs is { } ms)
+            {
+                counts.Add(FormatDuration(ms));
+            }
+
             ctx.DrawText(string.Join("  ·  ", counts), sub, Muted, new PointF(72, 360));
 
             var branch = summary.GitBranch ?? "unknown";
@@ -79,7 +100,13 @@ public static class OgImageGenerator
         return png.ToArray();
     }
 
-    private static void DrawDot(IImageProcessingContext ctx, float cx, float cy, float r, Color color)
+    private static void DrawDot(
+        IImageProcessingContext ctx,
+        float cx,
+        float cy,
+        float r,
+        Color color
+    )
     {
         var circle = new SixLabors.ImageSharp.Drawing.EllipsePolygon(cx, cy, r);
         ctx.Fill(color, circle);
@@ -88,8 +115,16 @@ public static class OgImageGenerator
     private static string FormatDuration(long ms)
     {
         var t = TimeSpan.FromMilliseconds(ms);
-        if (t.TotalHours >= 1) return $"{(int)t.TotalHours}h {t.Minutes}m";
-        if (t.TotalMinutes >= 1) return $"{t.Minutes}m {t.Seconds}s";
+        if (t.TotalHours >= 1)
+        {
+            return $"{(int)t.TotalHours}h {t.Minutes}m";
+        }
+
+        if (t.TotalMinutes >= 1)
+        {
+            return $"{t.Minutes}m {t.Seconds}s";
+        }
+
         return $"{t.Seconds}s";
     }
 }

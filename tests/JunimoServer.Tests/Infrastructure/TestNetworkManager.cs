@@ -1,6 +1,5 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Networks;
-using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -24,12 +23,16 @@ public static class TestNetworkManager
     /// hosts use the OS-default daemon; remote hosts use <c>host.EndpointConfig</c>.
     /// </summary>
     public static async Task<INetwork> GetOrCreateNetworkAsync(
-        Infrastructure.DockerHost host, CancellationToken ct)
+        Infrastructure.DockerHost host,
+        CancellationToken ct
+    )
     {
         lock (_networks)
         {
             if (_networks.TryGetValue(host.Id, out var existing))
+            {
                 return existing;
+            }
         }
 
         await _lock.WaitAsync(ct);
@@ -38,7 +41,9 @@ public static class TestNetworkManager
             lock (_networks)
             {
                 if (_networks.TryGetValue(host.Id, out var existing))
+                {
                     return existing;
+                }
             }
 
             var networkId = Guid.NewGuid().ToString("N")[..8];
@@ -77,7 +82,11 @@ public static class TestNetworkManager
         }
         foreach (var n in toDispose)
         {
-            try { await n.DisposeAsync(); } catch { }
+            try
+            {
+                await n.DisposeAsync();
+            }
+            catch { }
         }
     }
 }

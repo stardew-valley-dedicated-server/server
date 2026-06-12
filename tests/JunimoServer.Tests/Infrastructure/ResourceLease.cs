@@ -18,6 +18,7 @@ public sealed class ResourceLease : IAsyncDisposable
 
     public ServerContainer Server => _managed.Server;
     public string ServerKey => _managed.Key;
+
     /// <summary>
     /// The Docker host the underlying server runs on. Test cleanup paths read this
     /// to release the per-host <see cref="DockerHost.ClientCapacity"/> slots that
@@ -56,8 +57,12 @@ public sealed class ResourceLease : IAsyncDisposable
     private readonly bool _exclusive;
     private int _disposed;
 
-    internal ResourceLease(ManagedServer managed, ResourceRequirements requirements, string testName,
-        ClientPool clientPool)
+    internal ResourceLease(
+        ManagedServer managed,
+        ResourceRequirements requirements,
+        string testName,
+        ClientPool clientPool
+    )
     {
         _managed = managed;
         _requirements = requirements;
@@ -71,24 +76,42 @@ public sealed class ResourceLease : IAsyncDisposable
     public async Task<ClientLease> LeaseClientAsync(CancellationToken ct = default)
     {
         if (_managed.IsPoisoned)
-            throw new InvalidOperationException($"Server {_managed.Key} is poisoned: {_managed.AbortReason}");
-        var lease = await _clientPool.LeaseClientAsync(_managed.Key, ct, requireSteam: _requirements.WithSteam);
+        {
+            throw new InvalidOperationException(
+                $"Server {_managed.Key} is poisoned: {_managed.AbortReason}"
+            );
+        }
+
+        var lease = await _clientPool.LeaseClientAsync(
+            _managed.Key,
+            ct,
+            requireSteam: _requirements.WithSteam
+        );
         lease.EmitLeased(_testName, _managed.InstanceId);
         if (_managed.InstanceId != null)
+        {
             SetupEventBus.EmitInstanceClientAttached(_managed.InstanceId, lease.InstanceId);
+        }
+
         _activeLeases.Add(lease);
         var shortTest = TestLog.Short(_testName);
         var displayLabel = _requirements.GetDisplayLabel();
-        TestLog.Test($"{shortTest} leased client-{lease.Container.ClientIndex} ({displayLabel}, {_managed.RefCount} active tests)");
+        TestLog.Test(
+            $"{shortTest} leased client-{lease.Container.ClientIndex} ({displayLabel}, {_managed.RefCount} active tests)"
+        );
         return lease;
     }
 
     /// <summary>
     /// Creates a new game on the server, suspending health checks during the transition.
     /// </summary>
-    public async Task CreateNewGameAsync(FarmTypeSetting farmType, string farmName = "Junimo",
-        int startingCabins = 1, string cabinStrategy = "CabinStack",
-        CancellationToken ct = default)
+    public async Task CreateNewGameAsync(
+        FarmTypeSetting farmType,
+        string farmName = "Junimo",
+        int startingCabins = 1,
+        string cabinStrategy = "CabinStack",
+        CancellationToken ct = default
+    )
     {
         await _managed.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, ct);
     }
@@ -114,11 +137,12 @@ public sealed class ResourceLease : IAsyncDisposable
     /// </summary>
     internal ManagedServer Managed => _managed;
 
-
-
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
 
         // Dispose every active lease even if one throws; rethrow the
         // aggregated errors at the end so infra failures surface loudly
@@ -126,15 +150,23 @@ public sealed class ResourceLease : IAsyncDisposable
         List<Exception>? disposeErrors = null;
         foreach (var lease in _activeLeases)
         {
-            try { await lease.DisposeAsync(); }
-            catch (Exception ex) { (disposeErrors ??= new()).Add(ex); }
+            try
+            {
+                await lease.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                (disposeErrors ??= new()).Add(ex);
+            }
         }
         _activeLeases.Clear();
 
         // Release exclusive access before releasing the ref, so waiting tests
         // can proceed as soon as our ref is gone.
         if (_exclusive)
+        {
             _managed.ReleaseExclusive();
+        }
 
         try
         {
@@ -149,6 +181,11 @@ public sealed class ResourceLease : IAsyncDisposable
         }
 
         if (disposeErrors is { Count: > 0 })
-            throw new AggregateException("One or more ClientLeases failed to dispose.", disposeErrors);
+        {
+            throw new AggregateException(
+                "One or more ClientLeases failed to dispose.",
+                disposeErrors
+            );
+        }
     }
 }

@@ -84,15 +84,16 @@ public static class FailureContext
         ServerApiClient? apiClient,
         string reason,
         IReadOnlyDictionary<string, object?>? extras = null,
-        TimeSpan? fetchTimeout = null)
+        TimeSpan? fetchTimeout = null
+    )
     {
-        var result = new Dictionary<string, object?>
-        {
-            ["reason"] = reason
-        };
+        var result = new Dictionary<string, object?> { ["reason"] = reason };
         if (extras != null)
         {
-            foreach (var kv in extras) result[kv.Key] = kv.Value;
+            foreach (var kv in extras)
+            {
+                result[kv.Key] = kv.Value;
+            }
         }
 
         DiagnosticsStateResponse? serverState = null;
@@ -111,16 +112,26 @@ public static class FailureContext
             }
         }
 
-        if (serverState != null) result["serverState"] = serverState;
-        if (diagnosticsError != null) result["diagnosticsError"] = diagnosticsError;
-
-        InfrastructureEventLog.Emit("failure_context", new
+        if (serverState != null)
         {
-            reason,
-            extras,
-            serverState,
-            diagnosticsError
-        });
+            result["serverState"] = serverState;
+        }
+
+        if (diagnosticsError != null)
+        {
+            result["diagnosticsError"] = diagnosticsError;
+        }
+
+        InfrastructureEventLog.Emit(
+            "failure_context",
+            new
+            {
+                reason,
+                extras,
+                serverState,
+                diagnosticsError,
+            }
+        );
 
         // Stash for TestFailureReporter's enrichment-event emit. Writes go
         // through the Stash reference installed by ClearForTest at test start
@@ -130,7 +141,10 @@ public static class FailureContext
         // most recent one. If no test scope is active (Stash == null), the
         // write is a no-op rather than throwing — DumpAsync is called from
         // pre-test prewarm paths too.
-        if (_stash.Value is { } stash) stash.Value = result;
+        if (_stash.Value is { } stash)
+        {
+            stash.Value = result;
+        }
 
         return result;
     }

@@ -1,14 +1,13 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using JunimoServer.TestRunner.Rendering.Web;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
-using JunimoServer.TestRunner.Rendering.Web;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -35,11 +34,14 @@ public sealed class WebRenderer : RendererBase
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
-            SingleWriter = false
-        });
+            SingleWriter = false,
+        }
+    );
 
     private readonly ConcurrentDictionary<string, WebSocket> _wsClients = new();
-    private readonly TaskCompletionSource _shutdownSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _shutdownSignal = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private readonly CancellationTokenSource _connectionsCts = new();
 
     private WebApplication? _app;
@@ -51,9 +53,11 @@ public sealed class WebRenderer : RendererBase
     // A second registration replaces the first — switch to event semantics if
     // a chaining use case appears.
     private Action<string>? _onCommand;
+
     public void OnCommand(Action<string> handler) => _onCommand = handler;
 
-    public WebRenderer(RunRecorder recorder) : base(verbose: true)
+    public WebRenderer(RunRecorder recorder)
+        : base(verbose: true)
     {
         _recorder = recorder;
         _state = recorder.State;
@@ -67,17 +71,21 @@ public sealed class WebRenderer : RendererBase
     /// </summary>
     public void EnqueueEventNullable(string? json)
     {
-        if (json != null) _eventChannel.Writer.TryWrite(json);
+        if (json != null)
+        {
+            _eventChannel.Writer.TryWrite(json);
+        }
     }
 
     public override async ValueTask InitializeAsync()
     {
-        var spaDistPath = ReportGenerator.FindSpaProjectPath() is { } proj ? Path.Combine(proj, "dist") : null;
+        var spaDistPath = ReportGenerator.FindSpaProjectPath() is { } proj
+            ? Path.Combine(proj, "dist")
+            : null;
 
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
-        {
-            Args = Array.Empty<string>()
-        });
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { Args = Array.Empty<string>() }
+        );
 
         // Suppress noisy Kestrel logs
         builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
@@ -87,10 +95,7 @@ public sealed class WebRenderer : RendererBase
 
         _app = builder.Build();
 
-        _app.UseWebSockets(new WebSocketOptions
-        {
-            KeepAliveInterval = TimeSpan.FromSeconds(30)
-        });
+        _app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
         // Serve SPA static files if dist directory exists
         if (spaDistPath != null && Directory.Exists(spaDistPath))
@@ -101,114 +106,144 @@ public sealed class WebRenderer : RendererBase
         }
 
         // API endpoints
-        _app.MapGet("/api/state", () => Results.Content(_state.ToSnapshotJson(), "application/json"));
+        _app.MapGet(
+            "/api/state",
+            () => Results.Content(_state.ToSnapshotJson(), "application/json")
+        );
 
         // Command channel — REST fallback when the WebSocket is mid-reconnect.
         // Accepts the same {"cmd":"stop"} payload as the WS path.
-        _app.MapPost("/api/command", async (HttpContext ctx) =>
-        {
-            using var reader = new StreamReader(ctx.Request.Body);
-            var body = await reader.ReadToEndAsync();
-            TryHandleCommand(body);
-            return Results.Ok();
-        });
+        _app.MapPost(
+            "/api/command",
+            async (HttpContext ctx) =>
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                TryHandleCommand(body);
+                return Results.Ok();
+            }
+        );
 
         // Artifact serving with directory traversal protection
-        _app.MapGet("/artifacts/{**path}", (string path) =>
-        {
-            var testResultsDir = Path.GetFullPath("TestResults");
-            var resolvedPath = Path.GetFullPath(Path.Combine(testResultsDir, path));
-
-            if (!resolvedPath.StartsWith(testResultsDir + Path.DirectorySeparatorChar)
-                && resolvedPath != testResultsDir)
-                return Results.NotFound();
-
-            if (!File.Exists(resolvedPath))
-                return Results.NotFound();
-
-            var contentType = Path.GetExtension(resolvedPath).ToLowerInvariant() switch
+        _app.MapGet(
+            "/artifacts/{**path}",
+            (string path) =>
             {
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".gif" => "image/gif",
-                ".mp4" => "video/mp4",
-                ".mkv" => "video/x-matroska",
-                ".webm" => "video/webm",
-                ".json" => "application/json",
-                ".txt" or ".log" => "text/plain",
-                _ => "application/octet-stream"
-            };
+                var testResultsDir = Path.GetFullPath("TestResults");
+                var resolvedPath = Path.GetFullPath(Path.Combine(testResultsDir, path));
 
-            return Results.File(resolvedPath, contentType);
-        });
+                if (
+                    !resolvedPath.StartsWith(testResultsDir + Path.DirectorySeparatorChar)
+                    && resolvedPath != testResultsDir
+                )
+                {
+                    return Results.NotFound();
+                }
+
+                if (!File.Exists(resolvedPath))
+                {
+                    return Results.NotFound();
+                }
+
+                var contentType = Path.GetExtension(resolvedPath).ToLowerInvariant() switch
+                {
+                    ".png" => "image/png",
+                    ".jpg" or ".jpeg" => "image/jpeg",
+                    ".gif" => "image/gif",
+                    ".mp4" => "video/mp4",
+                    ".mkv" => "video/x-matroska",
+                    ".webm" => "video/webm",
+                    ".json" => "application/json",
+                    ".txt" or ".log" => "text/plain",
+                    _ => "application/octet-stream",
+                };
+
+                return Results.File(resolvedPath, contentType);
+            }
+        );
 
         // WebSocket endpoint
-        _app.Map("/ws", async (HttpContext context) =>
-        {
-            if (!context.WebSockets.IsWebSocketRequest)
+        _app.Map(
+            "/ws",
+            async (HttpContext context) =>
             {
-                context.Response.StatusCode = 400;
-                return;
-            }
-
-            var ws = await context.WebSockets.AcceptWebSocketAsync();
-            var connectionId = Guid.NewGuid().ToString("N");
-            Console.Error.WriteLine($"[WebUI] Client connected: {connectionId}");
-
-            try
-            {
-                // Send full state snapshot BEFORE registering with BroadcastLoop.
-                // This prevents a race where BroadcastLoop sends a regular event
-                // before the snapshot. The client treats the first message as the
-                // snapshot, so receiving an event first would corrupt hydration.
-                var snapshot = _state.ToSnapshotJson();
-                await SendToSocket(ws, snapshot);
-
-                // Now register for live event broadcast
-                _wsClients[connectionId] = ws;
-
-                // Read until close. Dead-connection detection is handled at the
-                // protocol layer by KeepAliveInterval (server→client pings); a
-                // broken transport surfaces as WebSocketException from ReceiveAsync.
-                var buffer = new byte[1024];
-                while (ws.State == WebSocketState.Open)
+                if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    var result = await ws.ReceiveAsync(buffer, _connectionsCts.Token);
-                    if (result.MessageType == WebSocketMessageType.Close)
-                        break;
-                    if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
+                    context.Response.StatusCode = 400;
+                    return;
+                }
+
+                var ws = await context.WebSockets.AcceptWebSocketAsync();
+                var connectionId = Guid.NewGuid().ToString("N");
+                Console.Error.WriteLine($"[WebUI] Client connected: {connectionId}");
+
+                try
+                {
+                    // Send full state snapshot BEFORE registering with BroadcastLoop.
+                    // This prevents a race where BroadcastLoop sends a regular event
+                    // before the snapshot. The client treats the first message as the
+                    // snapshot, so receiving an event first would corrupt hydration.
+                    var snapshot = _state.ToSnapshotJson();
+                    await SendToSocket(ws, snapshot);
+
+                    // Now register for live event broadcast
+                    _wsClients[connectionId] = ws;
+
+                    // Read until close. Dead-connection detection is handled at the
+                    // protocol layer by KeepAliveInterval (server→client pings); a
+                    // broken transport surfaces as WebSocketException from ReceiveAsync.
+                    var buffer = new byte[1024];
+                    while (ws.State == WebSocketState.Open)
                     {
-                        // Commands are tiny ({"cmd":"stop"} ≈ 15 bytes). Drop
-                        // fragmented frames — the only client (sendCommand)
-                        // sends single-frame text.
-                        if (result.EndOfMessage)
+                        var result = await ws.ReceiveAsync(buffer, _connectionsCts.Token);
+                        if (result.MessageType == WebSocketMessageType.Close)
                         {
-                            var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                            TryHandleCommand(msg);
+                            break;
+                        }
+
+                        if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
+                        {
+                            // Commands are tiny ({"cmd":"stop"} ≈ 15 bytes). Drop
+                            // fragmented frames — the only client (sendCommand)
+                            // sends single-frame text.
+                            if (result.EndOfMessage)
+                            {
+                                var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                                TryHandleCommand(msg);
+                            }
                         }
                     }
                 }
-            }
-            catch (WebSocketException)
-            {
-                // Client disconnected
-            }
-            catch (OperationCanceledException)
-            {
-                // Server shutting down (_connectionsCts canceled)
-            }
-            finally
-            {
-                _wsClients.TryRemove(connectionId, out _);
-                Console.Error.WriteLine($"[WebUI] Client disconnected: {connectionId}");
-                if (ws.State != WebSocketState.Closed && ws.State != WebSocketState.Aborted)
+                catch (WebSocketException)
                 {
-                    try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }
-                    catch { /* ignore */ }
+                    // Client disconnected
                 }
-                ws.Dispose();
+                catch (OperationCanceledException)
+                {
+                    // Server shutting down (_connectionsCts canceled)
+                }
+                finally
+                {
+                    _wsClients.TryRemove(connectionId, out _);
+                    Console.Error.WriteLine($"[WebUI] Client disconnected: {connectionId}");
+                    if (ws.State != WebSocketState.Closed && ws.State != WebSocketState.Aborted)
+                    {
+                        try
+                        {
+                            await ws.CloseAsync(
+                                WebSocketCloseStatus.NormalClosure,
+                                null,
+                                CancellationToken.None
+                            );
+                        }
+                        catch
+                        { /* ignore */
+                        }
+                    }
+                    ws.Dispose();
+                }
             }
-        });
+        );
 
         // SPA fallback: serve index.html for client-side routes
         if (spaDistPath != null && Directory.Exists(spaDistPath))
@@ -227,7 +262,8 @@ public sealed class WebRenderer : RendererBase
         await _app.StartAsync();
 
         // Extract bound port
-        var serverAddresses = _app.Services.GetRequiredService<IServer>()
+        var serverAddresses = _app
+            .Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>();
         _serverUrl = serverAddresses?.Addresses.FirstOrDefault() ?? "http://127.0.0.1:0";
 
@@ -249,7 +285,10 @@ public sealed class WebRenderer : RendererBase
     /// </summary>
     public void OpenBrowser()
     {
-        if (_serverUrl == null || IsCI()) return;
+        if (_serverUrl == null || IsCI())
+        {
+            return;
+        }
 
         try
         {
@@ -268,7 +307,9 @@ public sealed class WebRenderer : RendererBase
         // OnRunFinished path below already wrote it with instances still
         // present.
         if (!_recorder.IsRunFinished)
+        {
             WriteMockData();
+        }
 
         // The static report bundle is assembled from Program.cs's finally (one
         // site, runs in every mode incl. CIRenderer) — not here, which only ran
@@ -280,8 +321,13 @@ public sealed class WebRenderer : RendererBase
 
         if (_broadcastTask != null)
         {
-            try { await _broadcastTask.WaitAsync(TimeSpan.FromSeconds(3)); }
-            catch { /* ignore timeout */ }
+            try
+            {
+                await _broadcastTask.WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            catch
+            { /* ignore timeout */
+            }
         }
 
         // Break WebSocket handler loops. The CTS stays cancelled, so any
@@ -310,8 +356,13 @@ public sealed class WebRenderer : RendererBase
 
         var keyTask = Task.Run(() =>
         {
-            try { Console.ReadKey(intercept: true); }
-            catch { /* stdin not available */ }
+            try
+            {
+                Console.ReadKey(intercept: true);
+            }
+            catch
+            { /* stdin not available */
+            }
         });
         await Task.WhenAny(keyTask, _shutdownSignal.Task);
     }
@@ -326,9 +377,17 @@ public sealed class WebRenderer : RendererBase
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("cmd", out var cmdEl)) return;
+            if (!doc.RootElement.TryGetProperty("cmd", out var cmdEl))
+            {
+                return;
+            }
+
             var cmd = cmdEl.GetString();
-            if (cmd is null) return;
+            if (cmd is null)
+            {
+                return;
+            }
+
             Dispatch(cmd);
         }
         catch (JsonException)
@@ -346,7 +405,11 @@ public sealed class WebRenderer : RendererBase
                 // the handler (Program.cs's ForceExitNow), which kills the
                 // xUnit child + bulk-removes Docker resources before exit.
                 var handler = _onCommand;
-                if (handler != null) Task.Run(() => handler("stop"));
+                if (handler != null)
+                {
+                    Task.Run(() => handler("stop"));
+                }
+
                 break;
         }
     }
@@ -354,6 +417,7 @@ public sealed class WebRenderer : RendererBase
     #region ITestRenderer implementation
 
     public override void OnDiscoveryComplete(DiscoveryCompleteEvent e) { }
+
     public override void OnRunStarted(RunStartedEvent e) { }
 
     public override void OnRunFinished(RunFinishedEvent e)
@@ -375,8 +439,11 @@ public sealed class WebRenderer : RendererBase
     public override void OnFlakyTests(FlakyTestsEvent e) { }
 
     public override void OnTestStarted(TestStartedEvent e) { }
+
     public override void OnTestRunning(TestRunningEvent e) { }
+
     public override void OnTestOutput(TestOutputEvent e) => base.OnTestOutput(e);
+
     public override void OnTestAnnotation(TestAnnotationEvent e) { }
 
     public override void OnTestEnrichment(TestEnrichmentEvent e)
@@ -389,15 +456,21 @@ public sealed class WebRenderer : RendererBase
         // _classifiedAsCanceled set (idempotent — no-op when the test was
         // never classified as canceled).
         if (e.Outcome == "failed")
+        {
             ReclassifyCanceledAsFailed(e.DisplayName);
+        }
     }
 
     protected override void OnTestPassedCore(TestPassedEvent e) { }
+
     protected override void OnTestFailedCore(TestFailedEvent e) { }
+
     protected override void OnTestSkippedCore(TestSkippedEvent e) { }
 
     public override void OnScreenshotCaptured(ScreenshotCapturedEvent e) { }
+
     public override void OnRecordingCaptured(RecordingCapturedEvent e) { }
+
     public override void OnRecordingSkipped(RecordingSkippedEvent e) { }
 
     public override void OnDiagnostic(DiagnosticEvent e)
@@ -413,7 +486,9 @@ public sealed class WebRenderer : RendererBase
     public override void OnError(ErrorEvent e) { }
 
     public override void OnSetupPhaseStarted(SetupPhaseStartedEvent e) { }
+
     public override void OnSetupPhaseCompleted(SetupPhaseCompletedEvent e) { }
+
     public override void OnSetupStep(SetupStepEvent e) { }
 
     public override void OnVncUrl(VncUrlEvent e) => EmitVncUrl(e.Label, e.Url, e.CollectionName);
@@ -432,7 +507,10 @@ public sealed class WebRenderer : RendererBase
         {
             await foreach (var json in _eventChannel.Reader.ReadAllAsync())
             {
-                if (_wsClients.IsEmpty) continue;
+                if (_wsClients.IsEmpty)
+                {
+                    continue;
+                }
 
                 var toRemove = new List<string>();
                 foreach (var (id, ws) in _wsClients)
@@ -450,7 +528,9 @@ public sealed class WebRenderer : RendererBase
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"[WebUI] Send failed for client {id}: {ex.Message}");
+                        Console.Error.WriteLine(
+                            $"[WebUI] Send failed for client {id}: {ex.Message}"
+                        );
                         toRemove.Add(id);
                     }
                 }
@@ -484,16 +564,25 @@ public sealed class WebRenderer : RendererBase
             // Write snapshot and artifacts to public/mock-artifacts/ for frontend development.
             // Vite serves public/ as static files, so the dev server can load mock data directly.
             var projectDir = ReportGenerator.FindSpaProjectPath();
-            if (projectDir == null) return;
+            if (projectDir == null)
+            {
+                return;
+            }
 
             var mockArtifactsDir = Path.Combine(projectDir, "public", "mock-artifacts");
             var mockPath = Path.Combine(mockArtifactsDir, "mock-data.json");
             var testResultsPath = Path.GetFullPath("TestResults");
 
             var snapshot = _state.ToSnapshotJson();
-            snapshot = ReportGenerator.ExportMockArtifacts(snapshot, mockArtifactsDir, testResultsPath);
+            snapshot = ReportGenerator.ExportMockArtifacts(
+                snapshot,
+                mockArtifactsDir,
+                testResultsPath
+            );
             File.WriteAllText(mockPath, snapshot);
-            Console.Error.WriteLine($"[WebUI] Mock data written to {PathDisplay.ScrubMessage(mockPath)}");
+            Console.Error.WriteLine(
+                $"[WebUI] Mock data written to {PathDisplay.ScrubMessage(mockPath)}"
+            );
         }
         catch (Exception ex)
         {
@@ -511,17 +600,22 @@ public sealed class WebRenderer : RendererBase
     // Matches "Label VNC: http://..." patterns in log messages
     private static readonly Regex VncUrlPattern = new(
         @"(?<label>[\w\s]+?)\s*VNC:\s*(?<url>https?://\S+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled
+    );
 
     /// <summary>
     /// Adds a VNC endpoint URL to the state and broadcasts to clients.
     /// </summary>
-    public void EmitVncUrl(string label, string url, string? collection = null)
-        => _eventChannel.Writer.TryWrite(_state.AddVncUrl(label, url, collection));
+    public void EmitVncUrl(string label, string url, string? collection = null) =>
+        _eventChannel.Writer.TryWrite(_state.AddVncUrl(label, url, collection));
 
     private void ExtractAndEmitVncUrl(string? message)
     {
-        if (string.IsNullOrEmpty(message)) return;
+        if (string.IsNullOrEmpty(message))
+        {
+            return;
+        }
+
         var match = VncUrlPattern.Match(message);
         if (match.Success)
         {

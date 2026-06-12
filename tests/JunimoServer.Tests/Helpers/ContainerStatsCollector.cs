@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Docker.DotNet;
@@ -30,15 +29,19 @@ public sealed record InstanceStatsData
 
     // GC rate (computed from mod's gcGen0/1/2 deltas)
     public double? GcRate { get; init; }
+
     // Game thread queue
     public int? PendingActions { get; init; }
     public double? GameThreadWaitMs { get; init; }
+
     // Network I/O rates
     public double? NetRxBytesPerSec { get; init; }
     public double? NetTxBytesPerSec { get; init; }
+
     // Block I/O rates
     public double? BlkReadBytesPerSec { get; init; }
     public double? BlkWriteBytesPerSec { get; init; }
+
     // Container memory limit (0 = no limit set)
     public double MemoryLimitMb { get; init; }
 }
@@ -109,12 +112,16 @@ public static class ContainerStatsCollector
         string containerId,
         string containerName,
         Infrastructure.DockerHost host,
-        string? apiBaseUrl = null)
+        string? apiBaseUrl = null
+    )
     {
         // SDVD_TEST_STATS=none disables the entire collector — neither the
         // Docker stats stream nor the /stats HTTP poll fires. The UI's
         // instance_stats graphs render empty arrays gracefully.
-        if (TestStats.Level == TestStatsLevel.None) return;
+        if (TestStats.Level == TestStatsLevel.None)
+        {
+            return;
+        }
 
         var entry = new InstanceEntry
         {
@@ -131,23 +138,40 @@ public static class ContainerStatsCollector
         _instances[instanceId] = entry;
 
         if (_started)
+        {
             entry.StreamTask = StartStreamAsync(entry);
+        }
     }
 
     public static void Unregister(string instanceId)
     {
         if (_instances.TryRemove(instanceId, out var entry))
         {
-            try { entry.Cts.Cancel(); } catch { }
-            try { entry.Cts.Dispose(); } catch { }
+            try
+            {
+                entry.Cts.Cancel();
+            }
+            catch { }
+            try
+            {
+                entry.Cts.Dispose();
+            }
+            catch { }
         }
     }
 
     public static void Start()
     {
-        if (_started) return;
+        if (_started)
+        {
+            return;
+        }
         // No stream, no emission loop, no HTTP poller when stats are off.
-        if (TestStats.Level == TestStatsLevel.None) return;
+        if (TestStats.Level == TestStatsLevel.None)
+        {
+            return;
+        }
+
         _started = true;
         _cts = new CancellationTokenSource();
         // SuppressFlow: the emission loop runs for the whole process and emits
@@ -164,19 +188,35 @@ public static class ContainerStatsCollector
     {
         _started = false;
 
-        try { _cts?.Cancel(); } catch { }
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch { }
 
         foreach (var (_, entry) in _instances)
         {
-            try { entry.Cts.Cancel(); } catch { }
-            try { entry.Cts.Dispose(); } catch { }
+            try
+            {
+                entry.Cts.Cancel();
+            }
+            catch { }
+            try
+            {
+                entry.Cts.Dispose();
+            }
+            catch { }
         }
         _instances.Clear();
 
         // Note: per-host DockerClients are owned by HostPool, not by this
         // collector — disposing them here would break other consumers.
 
-        try { _cts?.Dispose(); } catch { }
+        try
+        {
+            _cts?.Dispose();
+        }
+        catch { }
         _cts = null;
     }
 
@@ -195,7 +235,9 @@ public static class ContainerStatsCollector
             foreach (var (_, entry) in _instances)
             {
                 if (entry.StreamTask == null)
+                {
                     entry.StreamTask = StartStreamAsync(entry);
+                }
             }
 
             _emissionLoop = EmissionLoopAsync(ct);
@@ -215,8 +257,8 @@ public static class ContainerStatsCollector
     // (3) but per-instance instead of per-renderer.
     private const int FailureStrikeLimit = 3;
 
-    private static bool ShouldEmitStrike(ref int counter)
-        => Interlocked.Increment(ref counter) <= FailureStrikeLimit;
+    private static bool ShouldEmitStrike(ref int counter) =>
+        Interlocked.Increment(ref counter) <= FailureStrikeLimit;
 
     private static Task StartStreamAsync(InstanceEntry entry)
     {
@@ -236,29 +278,38 @@ public static class ContainerStatsCollector
                         // The daemon omits these blocks for a container that has no
                         // CPU/memory accounting yet (just-created, or between restarts);
                         // skip the sample rather than synthesize zeroes.
-                        if (response.CPUStats is null || response.PreCPUStats is null
-                            || response.MemoryStats is null)
+                        if (
+                            response.CPUStats is null
+                            || response.PreCPUStats is null
+                            || response.MemoryStats is null
+                        )
+                        {
                             return;
+                        }
 
-                        var cpuDelta = response.CPUStats.CPUUsage.TotalUsage
-                                     - response.PreCPUStats.CPUUsage.TotalUsage;
-                        var systemDelta = (response.CPUStats.SystemUsage ?? 0)
-                                        - (response.PreCPUStats.SystemUsage ?? 0);
+                        var cpuDelta =
+                            response.CPUStats.CPUUsage.TotalUsage
+                            - response.PreCPUStats.CPUUsage.TotalUsage;
+                        var systemDelta =
+                            (response.CPUStats.SystemUsage ?? 0)
+                            - (response.PreCPUStats.SystemUsage ?? 0);
                         var onlineCpus = response.CPUStats.OnlineCPUs ?? 0;
 
                         double cpuPercent = 0;
                         if (systemDelta > 0 && onlineCpus > 0)
                         {
-                            cpuPercent = (double)cpuDelta / systemDelta
-                                       * onlineCpus * 100.0;
+                            cpuPercent = (double)cpuDelta / systemDelta * onlineCpus * 100.0;
                         }
 
                         var memBytes = response.MemoryStats.Usage ?? 0;
                         if (response.MemoryStats.Stats?.TryGetValue("cache", out var cache) == true)
+                        {
                             memBytes -= cache;
+                        }
 
                         // Network I/O: sum all interfaces
-                        double netRx = 0, netTx = 0;
+                        double netRx = 0,
+                            netTx = 0;
                         if (response.Networks != null)
                         {
                             foreach (var net in response.Networks.Values)
@@ -269,25 +320,31 @@ public static class ContainerStatsCollector
                         }
 
                         // Block I/O: sum read/write ops (-1 sentinel when cgroup v2 provides no data)
-                        double blkRead = -1, blkWrite = -1;
+                        double blkRead = -1,
+                            blkWrite = -1;
                         var blkioEntries = response.BlkioStats?.IoServiceBytesRecursive;
                         if (blkioEntries is { Count: > 0 })
                         {
-                            blkRead = 0; blkWrite = 0;
+                            blkRead = 0;
+                            blkWrite = 0;
                             foreach (var e in blkioEntries)
                             {
                                 if (string.Equals(e.Op, "read", StringComparison.OrdinalIgnoreCase))
+                                {
                                     blkRead += e.Value;
-                                else if (string.Equals(e.Op, "write", StringComparison.OrdinalIgnoreCase))
+                                }
+                                else if (
+                                    string.Equals(e.Op, "write", StringComparison.OrdinalIgnoreCase)
+                                )
+                                {
                                     blkWrite += e.Value;
+                                }
                             }
                         }
 
                         // Memory limit
                         var memLimit = response.MemoryStats.Limit ?? 0;
-                        double memLimitMb = memLimit > 0
-                            ? memLimit / (1024.0 * 1024.0)
-                            : 0;
+                        double memLimitMb = memLimit > 0 ? memLimit / (1024.0 * 1024.0) : 0;
 
                         entry.Latest = new StatsSnapshot
                         {
@@ -303,8 +360,12 @@ public static class ContainerStatsCollector
                     catch (Exception ex)
                     {
                         if (ShouldEmitStrike(ref entry.DockerStatsFailureStreak))
-                            InfrastructureEventLog.Emit("docker_stats_snapshot_failed",
-                                new { instanceId = entry.InstanceId, error = ex.Message });
+                        {
+                            InfrastructureEventLog.Emit(
+                                "docker_stats_snapshot_failed",
+                                new { instanceId = entry.InstanceId, error = ex.Message }
+                            );
+                        }
                     }
                 });
 
@@ -312,7 +373,8 @@ public static class ContainerStatsCollector
                     entry.ContainerId,
                     new ContainerStatsParameters { Stream = true },
                     progress,
-                    entry.Cts.Token);
+                    entry.Cts.Token
+                );
             }
             catch (OperationCanceledException) { }
             catch { }
@@ -328,7 +390,10 @@ public static class ContainerStatsCollector
             {
                 try
                 {
-                    if (_instances.IsEmpty) continue;
+                    if (_instances.IsEmpty)
+                    {
+                        continue;
+                    }
 
                     var mappings = _instances.ToArray();
 
@@ -339,15 +404,26 @@ public static class ContainerStatsCollector
                         {
                             try
                             {
-                                var json = await _statsHttp.GetStringAsync($"{m.Value.ApiBaseUrl}/stats", ct);
-                                var gameStats = JsonSerializer.Deserialize<GameStatsResponse>(json, GameStatsJsonOptions);
+                                var json = await _statsHttp.GetStringAsync(
+                                    $"{m.Value.ApiBaseUrl}/stats",
+                                    ct
+                                );
+                                var gameStats = JsonSerializer.Deserialize<GameStatsResponse>(
+                                    json,
+                                    GameStatsJsonOptions
+                                );
                                 return (m.Key, Stats: gameStats);
                             }
                             catch (JsonException ex)
                             {
                                 if (ShouldEmitStrike(ref m.Value.GameStatsFailureStreak))
-                                    InfrastructureEventLog.Emit("game_stats_parse_failed",
-                                        new { instanceId = m.Key, error = ex.Message });
+                                {
+                                    InfrastructureEventLog.Emit(
+                                        "game_stats_parse_failed",
+                                        new { instanceId = m.Key, error = ex.Message }
+                                    );
+                                }
+
                                 return (m.Key, Stats: (GameStatsResponse?)null);
                             }
                             catch
@@ -367,35 +443,56 @@ public static class ContainerStatsCollector
                         var docker = entry.Latest;
                         gameStats.TryGetValue(instanceId, out var game);
 
-                        if (docker == null && game == null) continue;
+                        if (docker == null && game == null)
+                        {
+                            continue;
+                        }
 
                         var now = DateTime.UtcNow;
-                        var elapsed = entry.PreviousTimestamp != default
-                            ? (now - entry.PreviousTimestamp).TotalSeconds
-                            : 0;
+                        var elapsed =
+                            entry.PreviousTimestamp != default
+                                ? (now - entry.PreviousTimestamp).TotalSeconds
+                                : 0;
 
                         // Compute rates from deltas (only with a previous sample and reasonable elapsed time)
-                        double? netRxRate = null, netTxRate = null;
-                        double? blkReadRate = null, blkWriteRate = null;
+                        double? netRxRate = null,
+                            netTxRate = null;
+                        double? blkReadRate = null,
+                            blkWriteRate = null;
                         double? gcRate = null;
 
                         if (elapsed > 0.1 && docker != null && entry.Previous != null)
                         {
-                            netRxRate = Math.Max(0, (docker.NetRxBytes - entry.Previous.NetRxBytes) / elapsed);
-                            netTxRate = Math.Max(0, (docker.NetTxBytes - entry.Previous.NetTxBytes) / elapsed);
+                            netRxRate = Math.Max(
+                                0,
+                                (docker.NetRxBytes - entry.Previous.NetRxBytes) / elapsed
+                            );
+                            netTxRate = Math.Max(
+                                0,
+                                (docker.NetTxBytes - entry.Previous.NetTxBytes) / elapsed
+                            );
 
                             // Block I/O: only compute rate if data is available (not -1 sentinel)
                             if (docker.BlkReadBytes >= 0 && entry.Previous.BlkReadBytes >= 0)
                             {
-                                blkReadRate = Math.Max(0, (docker.BlkReadBytes - entry.Previous.BlkReadBytes) / elapsed);
-                                blkWriteRate = Math.Max(0, (docker.BlkWriteBytes - entry.Previous.BlkWriteBytes) / elapsed);
+                                blkReadRate = Math.Max(
+                                    0,
+                                    (docker.BlkReadBytes - entry.Previous.BlkReadBytes) / elapsed
+                                );
+                                blkWriteRate = Math.Max(
+                                    0,
+                                    (docker.BlkWriteBytes - entry.Previous.BlkWriteBytes) / elapsed
+                                );
                             }
                         }
 
                         if (elapsed > 0.1 && game != null && entry.PreviousGame != null)
                         {
                             var totalGcNow = game.GcGen0 + game.GcGen1 + game.GcGen2;
-                            var totalGcPrev = entry.PreviousGame.GcGen0 + entry.PreviousGame.GcGen1 + entry.PreviousGame.GcGen2;
+                            var totalGcPrev =
+                                entry.PreviousGame.GcGen0
+                                + entry.PreviousGame.GcGen1
+                                + entry.PreviousGame.GcGen2;
                             gcRate = Math.Max(0, (totalGcNow - totalGcPrev) / elapsed);
                         }
 
@@ -440,30 +537,40 @@ public static class ContainerStatsCollector
     {
         [JsonPropertyName("fps")]
         public double Fps { get; set; }
+
         [JsonPropertyName("tps")]
         public double Tps { get; set; }
+
         [JsonPropertyName("avgTickMs")]
         public double AvgTickMs { get; set; }
+
         [JsonPropertyName("memoryMb")]
         public double MemoryMb { get; set; }
+
         [JsonPropertyName("targetTps")]
         public int TargetTps { get; set; }
+
         [JsonPropertyName("targetFps")]
         public int TargetFps { get; set; }
+
         [JsonPropertyName("gcGen0")]
         public int GcGen0 { get; set; }
+
         [JsonPropertyName("gcGen1")]
         public int GcGen1 { get; set; }
+
         [JsonPropertyName("gcGen2")]
         public int GcGen2 { get; set; }
+
         [JsonPropertyName("pendingActions")]
         public int? PendingActions { get; set; }
+
         [JsonPropertyName("gameThreadWaitMs")]
         public double? GameThreadWaitMs { get; set; }
     }
 
     private static readonly JsonSerializerOptions GameStatsJsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
     };
 }

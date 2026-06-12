@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
@@ -30,7 +28,13 @@ public class TestSummaryFixture : IAsyncLifetime
     /// </summary>
     public static TestSummaryFixture? Instance
     {
-        get { lock (_instanceLock) { return _instance; } }
+        get
+        {
+            lock (_instanceLock)
+            {
+                return _instance;
+            }
+        }
     }
 
     // Test run timing
@@ -40,7 +44,8 @@ public class TestSummaryFixture : IAsyncLifetime
     private int _expectedTestCount;
 
     // Test tracking: Collection -> Class -> Test records
-    private readonly Dictionary<string, Dictionary<string, List<TestRecord>>> _testsByCollection = new();
+    private readonly Dictionary<string, Dictionary<string, List<TestRecord>>> _testsByCollection =
+        new();
     private readonly object _testLock = new();
 
     /// <summary>
@@ -50,10 +55,10 @@ public class TestSummaryFixture : IAsyncLifetime
     /// </summary>
     internal enum TestOutcome
     {
-        Running,    // MarkDispatched fired; test in progress
+        Running, // MarkDispatched fired; test in progress
         Passed,
         Failed,
-        Canceled,   // dispatched then cancelled (StopOnFail, server poison, etc.)
+        Canceled, // dispatched then cancelled (StopOnFail, server poison, etc.)
     }
 
     /// <summary>
@@ -68,6 +73,7 @@ public class TestSummaryFixture : IAsyncLifetime
         public TestOutcome Outcome { get; set; } = TestOutcome.Running;
         public string? Error { get; set; }
         public string? ExceptionType { get; set; }
+
         /// <summary>
         /// Explicit category stamp (e.g. <c>"infrastructure"</c> when the lease's
         /// host was poisoned). Wins over the exception-type classification in
@@ -106,7 +112,11 @@ public class TestSummaryFixture : IAsyncLifetime
     {
         lock (_abortLock)
         {
-            if (_testRunAborted) return;
+            if (_testRunAborted)
+            {
+                return;
+            }
+
             _testRunAborted = true;
             _abortReason = reason;
         }
@@ -140,8 +150,20 @@ public class TestSummaryFixture : IAsyncLifetime
     /// Records the duration for a completed test (no queue-duration / breakdown context).
     /// Used by callers outside the TestBase pipeline (e.g. DownloadValidationFixture).
     /// </summary>
-    public void MarkCompleted(string collectionName, string className, string? testName, TimeSpan duration)
-        => MarkCompleted(collectionName, className, testName, duration, queueDuration: null, breakdown: null);
+    public void MarkCompleted(
+        string collectionName,
+        string className,
+        string? testName,
+        TimeSpan duration
+    ) =>
+        MarkCompleted(
+            collectionName,
+            className,
+            testName,
+            duration,
+            queueDuration: null,
+            breakdown: null
+        );
 
     /// <summary>
     /// Marks a test as completed: records active duration + queue duration + phase breakdown.
@@ -149,21 +171,43 @@ public class TestSummaryFixture : IAsyncLifetime
     /// If a prior <see cref="MarkFailed"/> or <see cref="MarkCanceled"/> already terminalized
     /// the record, leaves the outcome alone and only fills in duration metadata.
     /// </summary>
-    public void MarkCompleted(string collectionName, string className, string? testName,
-        TimeSpan activeDuration, TimeSpan? queueDuration,
-        Infrastructure.TestPhaseBreakdown? breakdown = null)
+    public void MarkCompleted(
+        string collectionName,
+        string className,
+        string? testName,
+        TimeSpan activeDuration,
+        TimeSpan? queueDuration,
+        Infrastructure.TestPhaseBreakdown? breakdown = null
+    )
     {
         lock (_testLock)
         {
-            var record = FindRecord(collectionName, className, testName, requireUnsetDuration: true);
-            if (record == null) return;
+            var record = FindRecord(
+                collectionName,
+                className,
+                testName,
+                requireUnsetDuration: true
+            );
+            if (record == null)
+            {
+                return;
+            }
 
             record.Duration = activeDuration;
-            if (queueDuration != null) record.QueueDuration = queueDuration;
-            if (breakdown != null) record.Breakdown = breakdown;
+            if (queueDuration != null)
+            {
+                record.QueueDuration = queueDuration;
+            }
+
+            if (breakdown != null)
+            {
+                record.Breakdown = breakdown;
+            }
 
             if (record.Outcome == TestOutcome.Running)
+            {
                 record.Outcome = TestOutcome.Passed;
+            }
         }
     }
 
@@ -171,13 +215,22 @@ public class TestSummaryFixture : IAsyncLifetime
     /// Sets server context on a test record. Called from TestBase.DisposeAsync()
     /// after server acquisition (serverKey is unknown at MarkDispatched time).
     /// </summary>
-    public void SetServerContext(string collectionName, string className, string? testName,
-        string? serverKey, string? serverInstanceId)
+    public void SetServerContext(
+        string collectionName,
+        string className,
+        string? testName,
+        string? serverKey,
+        string? serverInstanceId
+    )
     {
         lock (_testLock)
         {
             var record = FindRecord(collectionName, className, testName);
-            if (record == null) return;
+            if (record == null)
+            {
+                return;
+            }
+
             record.ServerKey = serverKey;
             record.ServerInstanceId = serverInstanceId;
         }
@@ -186,20 +239,32 @@ public class TestSummaryFixture : IAsyncLifetime
     /// <summary>
     /// Marks a test as failed. <c>Running → Failed</c>. No-op-with-warning if already terminal.
     /// </summary>
-    public void MarkFailed(string collectionName, string className, string? testName,
-        string error, string? phase = null, string? screenshotPath = null,
-        string? serverKey = null, string? serverInstanceId = null, string? exceptionType = null,
-        string? failureCategory = null)
+    public void MarkFailed(
+        string collectionName,
+        string className,
+        string? testName,
+        string error,
+        string? phase = null,
+        string? screenshotPath = null,
+        string? serverKey = null,
+        string? serverInstanceId = null,
+        string? exceptionType = null,
+        string? failureCategory = null
+    )
     {
         lock (_testLock)
         {
             var record = FindRecord(collectionName, className, testName);
-            if (record == null) return;
+            if (record == null)
+            {
+                return;
+            }
 
             if (record.Outcome != TestOutcome.Running)
             {
                 Infrastructure.TestLog.Test(
-                    $"MarkFailed on {record.Name}: outcome was already {record.Outcome}, ignoring");
+                    $"MarkFailed on {record.Name}: outcome was already {record.Outcome}, ignoring"
+                );
                 return;
             }
 
@@ -209,8 +274,15 @@ public class TestSummaryFixture : IAsyncLifetime
             record.ScreenshotPath = screenshotPath;
             record.ExceptionType = exceptionType;
             record.FailureCategory = failureCategory;
-            if (serverKey != null) record.ServerKey = serverKey;
-            if (serverInstanceId != null) record.ServerInstanceId = serverInstanceId;
+            if (serverKey != null)
+            {
+                record.ServerKey = serverKey;
+            }
+
+            if (serverInstanceId != null)
+            {
+                record.ServerInstanceId = serverInstanceId;
+            }
         }
     }
 
@@ -223,12 +295,16 @@ public class TestSummaryFixture : IAsyncLifetime
         lock (_testLock)
         {
             var record = FindRecord(collectionName, className, testName);
-            if (record == null) return;
+            if (record == null)
+            {
+                return;
+            }
 
             if (record.Outcome != TestOutcome.Running)
             {
                 Infrastructure.TestLog.Test(
-                    $"MarkCanceled on {record.Name}: outcome was already {record.Outcome}, ignoring");
+                    $"MarkCanceled on {record.Name}: outcome was already {record.Outcome}, ignoring"
+                );
                 return;
             }
 
@@ -236,17 +312,36 @@ public class TestSummaryFixture : IAsyncLifetime
         }
     }
 
-    private TestRecord? FindRecord(string collectionName, string className, string? testName,
-        bool requireUnsetDuration = false)
+    private TestRecord? FindRecord(
+        string collectionName,
+        string className,
+        string? testName,
+        bool requireUnsetDuration = false
+    )
     {
-        if (!_testsByCollection.TryGetValue(collectionName, out var testsByClass)) return null;
-        if (!testsByClass.TryGetValue(className, out var tests)) return null;
+        if (!_testsByCollection.TryGetValue(collectionName, out var testsByClass))
+        {
+            return null;
+        }
+
+        if (!testsByClass.TryGetValue(className, out var tests))
+        {
+            return null;
+        }
 
         var name = testName ?? "(unknown)";
         for (var i = tests.Count - 1; i >= 0; i--)
         {
-            if (tests[i].Name != name) continue;
-            if (requireUnsetDuration && tests[i].Duration != null) continue;
+            if (tests[i].Name != name)
+            {
+                continue;
+            }
+
+            if (requireUnsetDuration && tests[i].Duration != null)
+            {
+                continue;
+            }
+
             return tests[i];
         }
         return null;
@@ -258,12 +353,20 @@ public class TestSummaryFixture : IAsyncLifetime
     /// MarkFailed/MarkCompleted have populated the record. Returns null if no
     /// matching record exists (e.g. test never dispatched through TestBase).
     /// </summary>
-    internal TestEnrichmentSnapshot? GetEnrichmentSnapshot(string collectionName, string className, string? testName)
+    internal TestEnrichmentSnapshot? GetEnrichmentSnapshot(
+        string collectionName,
+        string className,
+        string? testName
+    )
     {
         lock (_testLock)
         {
             var r = FindRecord(collectionName, className, testName);
-            if (r == null) return null;
+            if (r == null)
+            {
+                return null;
+            }
+
             return new TestEnrichmentSnapshot(
                 Outcome: r.Outcome,
                 Error: r.Error,
@@ -272,7 +375,8 @@ public class TestSummaryFixture : IAsyncLifetime
                 Phase: r.Phase,
                 ScreenshotPath: r.ScreenshotPath,
                 ServerKey: r.ServerKey,
-                ServerInstanceId: r.ServerInstanceId);
+                ServerInstanceId: r.ServerInstanceId
+            );
         }
     }
 
@@ -287,14 +391,16 @@ public class TestSummaryFixture : IAsyncLifetime
         string? Phase,
         string? ScreenshotPath,
         string? ServerKey,
-        string? ServerInstanceId);
+        string? ServerInstanceId
+    );
 
     /// <summary>
     /// Classification of an exception type into a coarse failure category.
     /// Public so producers (TestBase enrichment emit) can label the event consistently
     /// with what summary.json would record.
     /// </summary>
-    public static string ClassifyFailureCategory(string? exceptionType) => ClassifyFailure(exceptionType);
+    public static string ClassifyFailureCategory(string? exceptionType) =>
+        ClassifyFailure(exceptionType);
 
     /// <summary>
     /// First-line preview of a failure message, capped at 120 chars.
@@ -320,8 +426,8 @@ public class TestSummaryFixture : IAsyncLifetime
         {
             lock (_testLock)
             {
-                return _testsByCollection.Values
-                    .SelectMany(c => c.Values)
+                return _testsByCollection
+                    .Values.SelectMany(c => c.Values)
                     .Sum(tests => tests.Count);
             }
         }
@@ -339,7 +445,10 @@ public class TestSummaryFixture : IAsyncLifetime
         // instead of the default TestResults root.
         RunMetadata.BeginRun();
 
-        lock (_instanceLock) { _instance = this; }
+        lock (_instanceLock)
+        {
+            _instance = this;
+        }
         _testRunStartTime = DateTime.UtcNow;
 
         // Compute expected test count for canceled-detection. In distributed
@@ -348,7 +457,10 @@ public class TestSummaryFixture : IAsyncLifetime
         // skip DiscoverRequiredConfigs entirely -- using the global count would
         // make canceled = (full_suite - worker_share) every run.
         var workerTestCountEnv = Environment.GetEnvironmentVariable("SDVD_WORKER_TEST_COUNT");
-        if (!string.IsNullOrEmpty(workerTestCountEnv) && int.TryParse(workerTestCountEnv, out var workerCount))
+        if (
+            !string.IsNullOrEmpty(workerTestCountEnv)
+            && int.TryParse(workerTestCountEnv, out var workerCount)
+        )
         {
             _expectedTestCount = workerCount;
         }
@@ -361,12 +473,15 @@ public class TestSummaryFixture : IAsyncLifetime
                 // suite's count wins and every non-matched test is recorded
                 // as canceled in summary.json (per not-dispatched-derivation).
                 var methodFilter = Environment.GetEnvironmentVariable("SDVD_TEST_FILTER");
-                _expectedTestCount = ServerConfigDiscovery.DiscoverRequiredConfigs(methodFilter: methodFilter)
+                _expectedTestCount = ServerConfigDiscovery
+                    .DiscoverRequiredConfigs(methodFilter: methodFilter)
                     .Sum(d => d.TestCount);
             }
             catch (Exception ex)
             {
-                Infrastructure.TestLog.Server($"TestSummaryFixture: discovery failed for expected-count seed: {ex.GetType().Name}: {ex.Message}");
+                Infrastructure.TestLog.Server(
+                    $"TestSummaryFixture: discovery failed for expected-count seed: {ex.GetType().Name}: {ex.Message}"
+                );
                 // If discovery fails, fall back to registered count (no canceled detection)
             }
         }
@@ -384,13 +499,22 @@ public class TestSummaryFixture : IAsyncLifetime
         // Client pool is disposed first (inside DisposeAsync), then remaining servers.
         // Servers that self-disposed via ReleaseAsync are safely skipped (Interlocked guard).
         // This catches servers that weren't naturally released (e.g., demand counting mismatch).
-        try { await TestResourceBroker.Instance.DisposeAsync(); }
-        catch (Exception ex) { Console.Error.WriteLine($"[TestSummaryFixture] Broker dispose crashed: {ex}"); }
+        try
+        {
+            await TestResourceBroker.Instance.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[TestSummaryFixture] Broker dispose crashed: {ex}");
+        }
 
         FinalizeRun();
 
         Helpers.EmergencyCleanup.Unregister("TestSummaryFixture");
-        lock (_instanceLock) { _instance = null; }
+        lock (_instanceLock)
+        {
+            _instance = null;
+        }
     }
 
     /// <summary>
@@ -401,7 +525,11 @@ public class TestSummaryFixture : IAsyncLifetime
     /// </summary>
     private void FinalizeRun()
     {
-        if (_finalized) return;
+        if (_finalized)
+        {
+            return;
+        }
+
         _finalized = true;
 
         // Sweep records still in Running. Only happens on hard process kill where
@@ -410,11 +538,17 @@ public class TestSummaryFixture : IAsyncLifetime
         lock (_testLock)
         {
             foreach (var testsByClass in _testsByCollection.Values)
-            foreach (var classTests in testsByClass.Values)
-            foreach (var test in classTests)
             {
-                if (test.Outcome == TestOutcome.Running)
-                    test.Outcome = TestOutcome.Canceled;
+                foreach (var classTests in testsByClass.Values)
+                {
+                    foreach (var test in classTests)
+                    {
+                        if (test.Outcome == TestOutcome.Running)
+                        {
+                            test.Outcome = TestOutcome.Canceled;
+                        }
+                    }
+                }
             }
         }
 
@@ -425,15 +559,24 @@ public class TestSummaryFixture : IAsyncLifetime
         // ORDERING INVARIANT: RecordRun (file append) must complete before
         // ComputeFlakiness (file read) so the current run is included in its own
         // flakiness window. Then the IPC emission ferries the result to the UI.
-        try { FlakinessTracker.RecordRun(this); }
-        catch (Exception ex) { Console.Error.WriteLine($"[TestSummaryFixture] FlakinessTracker crashed: {ex}"); }
+        try
+        {
+            FlakinessTracker.RecordRun(this);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[TestSummaryFixture] FlakinessTracker crashed: {ex}");
+        }
 
         try
         {
             var flaky = FlakinessTracker.ComputeFlakiness();
             SetupEventBus.EmitFlakyTests(flaky);
         }
-        catch (Exception ex) { Console.Error.WriteLine($"[TestSummaryFixture] Flaky emit crashed: {ex}"); }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[TestSummaryFixture] Flaky emit crashed: {ex}");
+        }
     }
 
     /// <summary>
@@ -443,8 +586,16 @@ public class TestSummaryFixture : IAsyncLifetime
     /// </summary>
     private void EmergencyFlush()
     {
-        if (_finalized) return;
-        if (!_testRunAborted) SetAborted("emergency-shutdown");
+        if (_finalized)
+        {
+            return;
+        }
+
+        if (!_testRunAborted)
+        {
+            SetAborted("emergency-shutdown");
+        }
+
         FinalizeRun();
     }
 
@@ -452,28 +603,45 @@ public class TestSummaryFixture : IAsyncLifetime
 
     private static string ClassifyFailure(string? exceptionType)
     {
-        if (string.IsNullOrEmpty(exceptionType)) return "crash";
+        if (string.IsNullOrEmpty(exceptionType))
+        {
+            return "crash";
+        }
 
         if (exceptionType.StartsWith("Xunit.Sdk.") || exceptionType.Contains("AssertException"))
+        {
             return "assertion";
+        }
 
-        if (exceptionType.Contains("TimeoutException") ||
-            exceptionType.Contains("OperationCanceledException") ||
-            exceptionType.Contains("TaskCanceledException"))
+        if (
+            exceptionType.Contains("TimeoutException")
+            || exceptionType.Contains("OperationCanceledException")
+            || exceptionType.Contains("TaskCanceledException")
+        )
+        {
             return "timeout";
+        }
 
-        if (exceptionType.Contains("Docker") ||
-            exceptionType.Contains("Testcontainers") ||
-            exceptionType.Contains("ServerUnavailableException") ||
-            exceptionType.Contains("TestRunAbortedException"))
+        if (
+            exceptionType.Contains("Docker")
+            || exceptionType.Contains("Testcontainers")
+            || exceptionType.Contains("ServerUnavailableException")
+            || exceptionType.Contains("TestRunAbortedException")
+        )
+        {
             return "infrastructure";
+        }
 
         return "crash";
     }
 
     private static string? ErrorPreview(string? error)
     {
-        if (string.IsNullOrEmpty(error)) return null;
+        if (string.IsNullOrEmpty(error))
+        {
+            return null;
+        }
+
         var firstLine = error.Split('\n', 2)[0].Trim();
         return firstLine.Length > 120 ? firstLine[..117] + "..." : firstLine;
     }
@@ -506,17 +674,20 @@ public class TestSummaryFixture : IAsyncLifetime
                 {
                     foreach (var test in classTests)
                     {
-                        results.Add(new FlakinessTestResult(
-                            ClassName: className,
-                            TestName: test.Name,
-                            Outcome: test.Outcome,
-                            DurationMs: (long)(test.Duration?.TotalMilliseconds ?? 0),
-                            // Same category the enrichment event carries: explicit
-                            // stamp first, exception-type classification otherwise.
-                            FailureCategory: test.Outcome == TestOutcome.Failed
-                                ? test.FailureCategory ?? ClassifyFailure(test.ExceptionType)
-                                : null,
-                            Breakdown: test.Breakdown));
+                        results.Add(
+                            new FlakinessTestResult(
+                                ClassName: className,
+                                TestName: test.Name,
+                                Outcome: test.Outcome,
+                                DurationMs: (long)(test.Duration?.TotalMilliseconds ?? 0),
+                                // Same category the enrichment event carries: explicit
+                                // stamp first, exception-type classification otherwise.
+                                FailureCategory: test.Outcome == TestOutcome.Failed
+                                    ? test.FailureCategory ?? ClassifyFailure(test.ExceptionType)
+                                    : null,
+                                Breakdown: test.Breakdown
+                            )
+                        );
                     }
                 }
             }
@@ -530,7 +701,8 @@ public class TestSummaryFixture : IAsyncLifetime
         TestOutcome Outcome,
         long DurationMs,
         string? FailureCategory,
-        Infrastructure.TestPhaseBreakdown? Breakdown);
+        Infrastructure.TestPhaseBreakdown? Breakdown
+    );
 
     #endregion
 }

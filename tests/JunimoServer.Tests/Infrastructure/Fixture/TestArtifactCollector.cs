@@ -33,7 +33,11 @@ internal sealed class TestArtifactCollector
     /// acquisition paths on TestBase (server acquire, client lease) and from
     /// <see cref="PersistentSessionCoordinator"/> when reusing a session.
     /// </summary>
-    internal async Task MarkContainerUsedAsync(string containerName, string kind, CancellationToken ct)
+    internal async Task MarkContainerUsedAsync(
+        string containerName,
+        string kind,
+        CancellationToken ct
+    )
     {
         _recordingOrchestrator ??= new RecordingOrchestrator();
         await _recordingOrchestrator.MarkContainerUsedAsync(containerName, kind, ct);
@@ -55,12 +59,18 @@ internal sealed class TestArtifactCollector
             var label = testFailed ? "failure" : "result";
             var screenshotPath = await CaptureScreenshotAsync(label);
             if (testFailed)
-                InfrastructureEventLog.Emit("test_error", new
-                {
-                    phase = "artifacts",
-                    error = "Test failed",
-                    screenshotPath,
-                });
+            {
+                InfrastructureEventLog.Emit(
+                    "test_error",
+                    new
+                    {
+                        phase = "artifacts",
+                        error = "Test failed",
+                        screenshotPath,
+                    }
+                );
+            }
+
             screenshotMs = phaseSw.ElapsedMilliseconds;
         }
 
@@ -73,7 +83,11 @@ internal sealed class TestArtifactCollector
     public async Task<string?> CaptureScreenshotAsync(string label)
     {
         var lease = _testBase.LeaseInternal;
-        if (lease?.Server?.Container == null) return null;
+        if (lease?.Server?.Container == null)
+        {
+            return null;
+        }
+
         var method = TestBase.ExtractMethodNameInternal(_displayName)!;
         var hash = TestBase.ParamsHashInternal(_displayName);
         var testMethod = hash != null ? $"{method}_{hash}" : method;
@@ -87,7 +101,9 @@ internal sealed class TestArtifactCollector
         {
             try
             {
-                using var attemptCts = new CancellationTokenSource(TestTimings.ScreenshotAttemptTimeout);
+                using var attemptCts = new CancellationTokenSource(
+                    TestTimings.ScreenshotAttemptTimeout
+                );
                 var result = await _testBase.ServerApi.GetScreenshot(attemptCts.Token);
                 if (result?.Success == true && result.Base64Png != null)
                 {
@@ -95,43 +111,61 @@ internal sealed class TestArtifactCollector
                     serverPath = Path.Combine(dir, $"{label}.png");
                     var bytes = Convert.FromBase64String(result.Base64Png);
                     await File.WriteAllBytesAsync(serverPath, bytes);
-                    SetupEventBus.EmitScreenshot(_testClassName, _testClassName, displayName, serverPath, "server");
+                    SetupEventBus.EmitScreenshot(
+                        _testClassName,
+                        _testClassName,
+                        displayName,
+                        serverPath,
+                        "server"
+                    );
                     break;
                 }
                 else if (attempt < 3)
                 {
-                    LogWarning($"Server screenshot attempt {attempt}/3 failed: {result?.Error ?? "null response"}, retrying in {TestTimings.ScreenshotRetryDelay.TotalSeconds}s");
+                    LogWarning(
+                        $"Server screenshot attempt {attempt}/3 failed: {result?.Error ?? "null response"}, retrying in {TestTimings.ScreenshotRetryDelay.TotalSeconds}s"
+                    );
                     await Task.Delay(TestTimings.ScreenshotRetryDelay);
                 }
                 else
                 {
-                    LogWarning($"Server screenshot failed after 3 attempts: {result?.Error ?? "null response"}");
-                    InfrastructureEventLog.Emit("screenshot_failed", new
-                    {
-                        source = "server",
-                        label,
-                        reason = result?.Error ?? "null response",
-                        attempts = 3
-                    });
+                    LogWarning(
+                        $"Server screenshot failed after 3 attempts: {result?.Error ?? "null response"}"
+                    );
+                    InfrastructureEventLog.Emit(
+                        "screenshot_failed",
+                        new
+                        {
+                            source = "server",
+                            label,
+                            reason = result?.Error ?? "null response",
+                            attempts = 3,
+                        }
+                    );
                 }
             }
             catch (Exception ex) when (attempt < 3)
             {
-                LogWarning($"Server screenshot attempt {attempt}/3 failed: {ex.Message}, retrying in {TestTimings.ScreenshotRetryDelay.TotalSeconds}s");
+                LogWarning(
+                    $"Server screenshot attempt {attempt}/3 failed: {ex.Message}, retrying in {TestTimings.ScreenshotRetryDelay.TotalSeconds}s"
+                );
                 await Task.Delay(TestTimings.ScreenshotRetryDelay);
             }
             catch (Exception ex)
             {
                 LogWarning($"Server screenshot failed after 3 attempts: {ex.Message}");
-                InfrastructureEventLog.Emit("screenshot_failed", new
-                {
-                    source = "server",
-                    label,
-                    reason = "exception",
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message,
-                    attempts = 3
-                });
+                InfrastructureEventLog.Emit(
+                    "screenshot_failed",
+                    new
+                    {
+                        source = "server",
+                        label,
+                        reason = "exception",
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message,
+                        attempts = 3,
+                    }
+                );
             }
         }
 
@@ -147,25 +181,36 @@ internal sealed class TestArtifactCollector
                     var clientPath = Path.Combine(dir, $"client_{label}.png");
                     var bytes = Convert.FromBase64String(result.Base64Png);
                     await File.WriteAllBytesAsync(clientPath, bytes);
-                    SetupEventBus.EmitScreenshot(_testClassName, _testClassName, displayName, clientPath, "client");
+                    SetupEventBus.EmitScreenshot(
+                        _testClassName,
+                        _testClassName,
+                        displayName,
+                        clientPath,
+                        "client"
+                    );
                 }
             }
             catch (Exception ex)
             {
                 LogWarning($"Failed to capture client screenshot: {ex.Message}");
-                InfrastructureEventLog.Emit("screenshot_failed", new
-                {
-                    source = "client",
-                    label,
-                    reason = "exception",
-                    exceptionType = ex.GetType().Name,
-                    message = ex.Message
-                });
+                InfrastructureEventLog.Emit(
+                    "screenshot_failed",
+                    new
+                    {
+                        source = "client",
+                        label,
+                        reason = "exception",
+                        exceptionType = ex.GetType().Name,
+                        message = ex.Message,
+                    }
+                );
             }
         }
 
         if (serverPath != null)
+        {
             InfrastructureEventLog.Emit("screenshot_captured", new { label, path = serverPath });
+        }
 
         return serverPath;
     }
@@ -189,10 +234,13 @@ internal sealed class TestArtifactCollector
     /// </summary>
     internal async Task FinalizeRecordingAsync(bool testFailed)
     {
-        if (_recordingOrchestrator == null) return;
+        if (_recordingOrchestrator == null)
+        {
+            return;
+        }
 
-        var recordingTestFailed = testFailed
-            || TestContext.Current?.TestState?.Result == TestResult.Failed;
+        var recordingTestFailed =
+            testFailed || TestContext.Current?.TestState?.Result == TestResult.Failed;
 
         // Capture every value the deferred lambda needs into locals at the
         // deferral boundary. The background pump runs without ExecutionContext
@@ -220,7 +268,8 @@ internal sealed class TestArtifactCollector
         // failure event so the runbook can find it. In "failure" mode for a
         // passing test, FinalizeAsync short-circuits via retention_passed
         // so the await is essentially free; deferring would gain nothing.
-        var canDefer = !recordingTestFailed
+        var canDefer =
+            !recordingTestFailed
             && RecordingPolicy.IsEnabled
             && RecordingPolicy.Mode == TestRecordingMode.All;
 
@@ -238,12 +287,19 @@ internal sealed class TestArtifactCollector
                 try
                 {
                     await orchestrator.FinalizeAsync(
-                        className, testMethod, displayName, testFailed: false, recCts.Token);
+                        className,
+                        testMethod,
+                        displayName,
+                        testFailed: false,
+                        recCts.Token
+                    );
                 }
                 catch (Exception ex)
                 {
-                    InfrastructureEventLog.Emit("recording_finalize_deferred_failed",
-                        new { test = displayName, error = ex.Message });
+                    InfrastructureEventLog.Emit(
+                        "recording_finalize_deferred_failed",
+                        new { test = displayName, error = ex.Message }
+                    );
                     // Emit per-source skip so the UI shows a real placeholder
                     // instead of an eternal "Recordings appear after test
                     // cleanup". Source is the un-indexed "client" — this skip
@@ -253,15 +309,27 @@ internal sealed class TestArtifactCollector
                     // only emitted if the test actually leased one.
                     try
                     {
-                        SetupEventBus.EmitRecordingSkipped(className, className, displayName,
-                            "server", RecordingSkipReason.FinalizeDeferredFailed);
+                        SetupEventBus.EmitRecordingSkipped(
+                            className,
+                            className,
+                            displayName,
+                            "server",
+                            RecordingSkipReason.FinalizeDeferredFailed
+                        );
                         if (hadClient)
                         {
-                            SetupEventBus.EmitRecordingSkipped(className, className, displayName,
-                                "client", RecordingSkipReason.FinalizeDeferredFailed);
+                            SetupEventBus.EmitRecordingSkipped(
+                                className,
+                                className,
+                                displayName,
+                                "client",
+                                RecordingSkipReason.FinalizeDeferredFailed
+                            );
                         }
                     }
-                    catch { /* IPC sink already swallows; defensive */ }
+                    catch
+                    { /* IPC sink already swallows; defensive */
+                    }
                 }
             });
             return;
@@ -274,7 +342,12 @@ internal sealed class TestArtifactCollector
         try
         {
             await orchestrator.FinalizeAsync(
-                className, testMethod, displayName, recordingTestFailed, syncCts.Token);
+                className,
+                testMethod,
+                displayName,
+                recordingTestFailed,
+                syncCts.Token
+            );
         }
         catch (Exception ex)
         {
@@ -283,6 +356,10 @@ internal sealed class TestArtifactCollector
     }
 
     private void LogWarning(string message) =>
-        SetupEventBus.EmitTestAnnotation(_displayName.Length > 0 ? _displayName : _testClassName,
-            AnnotationLevel.Warning, AnnotationSource.Body, message);
+        SetupEventBus.EmitTestAnnotation(
+            _displayName.Length > 0 ? _displayName : _testClassName,
+            AnnotationLevel.Warning,
+            AnnotationSource.Body,
+            message
+        );
 }

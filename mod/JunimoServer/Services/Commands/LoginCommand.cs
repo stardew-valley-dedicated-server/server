@@ -3,22 +3,33 @@ using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Util;
 using StardewModdingAPI;
 
-namespace JunimoServer.Services.Commands
+namespace JunimoServer.Services.Commands;
+
+/// <summary>
+/// Chat command for player authentication.
+/// Usage: !login &lt;password&gt;
+/// </summary>
+public class LoginCommand
 {
-    /// <summary>
-    /// Chat command for player authentication.
-    /// Usage: !login <password>
-    /// </summary>
-    public class LoginCommand
+    public static void Register(
+        IModHelper helper,
+        IMonitor monitor,
+        ChatCommandsService chatCommandsService,
+        PasswordProtectionService passwordProtectionService
+    )
     {
-        public static void Register(IModHelper helper, IMonitor monitor, ChatCommandsService chatCommandsService, PasswordProtectionService passwordProtectionService)
-        {
-            chatCommandsService.RegisterCommand("login", "<password> - Authenticate with the server password.", (args, msg) =>
+        chatCommandsService.RegisterCommand(
+            "login",
+            "<password> - Authenticate with the server password.",
+            (args, msg) =>
             {
                 // Check if password protection is enabled
                 if (!passwordProtectionService.IsEnabled)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Password protection is not enabled on this server.");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        "Password protection is not enabled on this server."
+                    );
                     return;
                 }
 
@@ -49,12 +60,15 @@ namespace JunimoServer.Services.Commands
 
                     if (result.Success)
                     {
-                        monitor.Log($"[LoginCommand] Player {msg.SourceFarmer} authenticated successfully", LogLevel.Info);
+                        monitor.Log(
+                            $"[LoginCommand] Player {msg.SourceFarmer} authenticated successfully",
+                            LogLevel.Info
+                        );
                     }
                 }
-            });
+            }
+        );
 
-            monitor.Log("[LoginCommand] Registered !login command", LogLevel.Trace);
-        }
+        monitor.Log("[LoginCommand] Registered !login command", LogLevel.Trace);
     }
 }

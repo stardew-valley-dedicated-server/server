@@ -1,4 +1,5 @@
-using Docker.DotNet;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -7,9 +8,6 @@ using DotNet.Testcontainers.Networks;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Json;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 
 namespace JunimoServer.Tests.Containers;
 
@@ -52,7 +50,12 @@ public class SharedSteamAuth : IAsyncDisposable
     private const int ContainerPort = 3001;
     public const string NetworkAlias = "steam-auth";
 
-    private SharedSteamAuth(IContainer container, string runId, string containerName, Infrastructure.DockerHost host)
+    private SharedSteamAuth(
+        IContainer container,
+        string runId,
+        string containerName,
+        Infrastructure.DockerHost host
+    )
     {
         _container = container;
         _runId = runId;
@@ -63,7 +66,8 @@ public class SharedSteamAuth : IAsyncDisposable
             _host.ApiClient,
             _container,
             "steam-auth-shared",
-            HandleLine);
+            HandleLine
+        );
         // SuppressFlow: shared-steam log streaming runs for the whole process and
         // emits across every test. Inheriting the constructing test's
         // TestContext.Current poisons every later log line.
@@ -103,7 +107,8 @@ public class SharedSteamAuth : IAsyncDisposable
         string steamSessionVolume,
         CancellationToken ct,
         Infrastructure.DockerHost host,
-        string? steamAccountsJson)
+        string? steamAccountsJson
+    )
     {
         var runId = Guid.NewGuid().ToString("N")[..8];
         TestRunRegistry.Register(runId);
@@ -141,13 +146,14 @@ public class SharedSteamAuth : IAsyncDisposable
             // status, so this works for both local and remote daemons without
             // needing curl/wget inside the container (the steam-service runtime
             // image has neither).
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilContainerIsHealthy());
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilContainerIsHealthy());
 
         // Inject the host's slice. The global STEAM_ACCOUNTS is intentionally NOT
         // forwarded — each host gets its disjoint slice instead.
         if (!string.IsNullOrEmpty(steamAccountsJson))
+        {
             builder = builder.WithEnvironment("STEAM_ACCOUNTS", steamAccountsJson);
+        }
 
         // Steam allows only one live login per account: a second SteamKit2 client
         // logging in with a username we already plan to use will kick our login with
@@ -162,11 +168,17 @@ public class SharedSteamAuth : IAsyncDisposable
         var emergencyKey = $"SharedSteamAuth-{host.Id}-{runId}";
         var capturedHost = host;
         var capturedName = containerName;
-        EmergencyCleanup.Register(emergencyKey, () =>
-        {
-            try { DockerOps.ForceRemoveContainerSync(capturedHost.ApiClient, capturedName); }
-            catch { }
-        });
+        EmergencyCleanup.Register(
+            emergencyKey,
+            () =>
+            {
+                try
+                {
+                    DockerOps.ForceRemoveContainerSync(capturedHost.ApiClient, capturedName);
+                }
+                catch { }
+            }
+        );
 
         // Instantiate first so the streaming loop is running before StartAsync;
         // the streamer gracefully retries while the container is not yet created.
@@ -175,29 +187,35 @@ public class SharedSteamAuth : IAsyncDisposable
         try
         {
             await container.StartAsync(ct);
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_started", new
-            {
-                role = "steam-auth-shared",
-                name = containerName,
-                image = $"sdvd/steam-service:{imageTag}",
-                runId,
-                startupMs = startSw.ElapsedMilliseconds,
-                host_id = host.Id
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_started",
+                new
+                {
+                    role = "steam-auth-shared",
+                    name = containerName,
+                    image = $"sdvd/steam-service:{imageTag}",
+                    runId,
+                    startupMs = startSw.ElapsedMilliseconds,
+                    host_id = host.Id,
+                }
+            );
         }
         catch (Exception ex)
         {
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_start_failed", new
-            {
-                role = "steam-auth-shared",
-                name = containerName,
-                image = $"sdvd/steam-service:{imageTag}",
-                runId,
-                elapsedMs = startSw.ElapsedMilliseconds,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message,
-                host_id = host.Id
-            });
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_start_failed",
+                new
+                {
+                    role = "steam-auth-shared",
+                    name = containerName,
+                    image = $"sdvd/steam-service:{imageTag}",
+                    runId,
+                    elapsedMs = startSw.ElapsedMilliseconds,
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                    host_id = host.Id,
+                }
+            );
             throw;
         }
 
@@ -205,7 +223,12 @@ public class SharedSteamAuth : IAsyncDisposable
         // hosts: pass-through. Remote hosts: opens a per-forward `ssh -N -L`.
         var mapped = container.GetMappedPublicPort(ContainerPort);
         instance._apiForward = await instance._tunnels.OpenAsync(
-            instance.HostId, instance.SshDestination, instance.SshKeyPath, mapped, ct);
+            instance.HostId,
+            instance.SshDestination,
+            instance.SshKeyPath,
+            mapped,
+            ct
+        );
 
         return instance;
     }
@@ -223,7 +246,12 @@ public class SharedSteamAuth : IAsyncDisposable
     public int GetHostPort()
     {
         if (_apiForward == null)
-            throw new InvalidOperationException("SharedSteamAuth not started yet — host port unavailable.");
+        {
+            throw new InvalidOperationException(
+                "SharedSteamAuth not started yet — host port unavailable."
+            );
+        }
+
         return _apiForward.CoordinatorPort;
     }
 
@@ -239,7 +267,10 @@ public class SharedSteamAuth : IAsyncDisposable
     /// </summary>
     public async Task WaitForAccountsLoggedInAsync(int accountCount, CancellationToken ct)
     {
-        if (accountCount <= 0) return;
+        if (accountCount <= 0)
+        {
+            return;
+        }
 
         var hostUrl = GetHostUrl();
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -253,13 +284,16 @@ public class SharedSteamAuth : IAsyncDisposable
             },
             timeout: TestTimings.SteamAccountReadyTimeout,
             pollInterval: TimeSpan.FromSeconds(2),
-            cancellationToken: ct);
+            cancellationToken: ct
+        );
 
         if (!ok)
         {
             var snapshot = await TryGetHealthSnapshotAsync(http, hostUrl, ct);
             var notReady = ComputeNotReady(accountCount, snapshot);
-            throw new InvalidOperationException(BuildPreflightFailureMessage(notReady, hostUrl, snapshot is null));
+            throw new InvalidOperationException(
+                BuildPreflightFailureMessage(notReady, hostUrl, snapshot is null)
+            );
         }
     }
 
@@ -279,7 +313,10 @@ public class SharedSteamAuth : IAsyncDisposable
     private string GetHostUrl() => $"http://localhost:{GetHostPort()}";
 
     private static async Task<HealthResponse?> TryGetHealthSnapshotAsync(
-        HttpClient http, string hostUrl, CancellationToken ct)
+        HttpClient http,
+        string hostUrl,
+        CancellationToken ct
+    )
     {
         try
         {
@@ -294,11 +331,18 @@ public class SharedSteamAuth : IAsyncDisposable
 
     private static bool AllAccountsReady(int accountCount, HealthResponse? snapshot)
     {
-        if (snapshot?.Accounts == null) return false;
+        if (snapshot?.Accounts == null)
+        {
+            return false;
+        }
+
         for (var i = 0; i < accountCount; i++)
         {
             var entry = snapshot.Accounts.FirstOrDefault(a => a.Index == i);
-            if (entry == null || !entry.LoggedIn) return false;
+            if (entry == null || !entry.LoggedIn)
+            {
+                return false;
+            }
         }
         return true;
     }
@@ -309,26 +353,33 @@ public class SharedSteamAuth : IAsyncDisposable
         for (var i = 0; i < accountCount; i++)
         {
             var entry = snapshot?.Accounts?.FirstOrDefault(a => a.Index == i);
-            if (entry == null || !entry.LoggedIn) notReady.Add(i);
+            if (entry == null || !entry.LoggedIn)
+            {
+                notReady.Add(i);
+            }
         }
         return notReady;
     }
 
-    private static string BuildPreflightFailureMessage(List<int> notReady, string hostUrl, bool noResponse)
+    private static string BuildPreflightFailureMessage(
+        List<int> notReady,
+        string hostUrl,
+        bool noResponse
+    )
     {
         if (noResponse)
         {
-            return $"Steam preflight failed: no response from steam-auth at {hostUrl} within " +
-                $"{TestTimings.SteamAccountReadyTimeout.TotalSeconds:F0}s. " +
-                "The steam-auth container may have crashed during startup. " +
-                "Check container logs and run `make setup` to re-authenticate.";
+            return $"Steam preflight failed: no response from steam-auth at {hostUrl} within "
+                + $"{TestTimings.SteamAccountReadyTimeout.TotalSeconds:F0}s. "
+                + "The steam-auth container may have crashed during startup. "
+                + "Check container logs and run `make setup` to re-authenticate.";
         }
 
         var indices = string.Join(", ", notReady);
-        return $"Steam preflight failed: account(s) [{indices}] not logged in within " +
-            $"{TestTimings.SteamAccountReadyTimeout.TotalSeconds:F0}s. " +
-            "This usually means a saved Steam session is missing or invalid. " +
-            "Run `make setup` to re-authenticate, then retry the test run.";
+        return $"Steam preflight failed: account(s) [{indices}] not logged in within "
+            + $"{TestTimings.SteamAccountReadyTimeout.TotalSeconds:F0}s. "
+            + "This usually means a saved Steam session is missing or invalid. "
+            + "Run `make setup` to re-authenticate, then retry the test run.";
     }
 
     /// <summary>
@@ -341,70 +392,107 @@ public class SharedSteamAuth : IAsyncDisposable
     private static async Task AssertNoSteamAccountConflictAsync(
         Infrastructure.DockerHost host,
         string? steamAccountsJson,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var planned = ExtractUsernames(steamAccountsJson);
-        if (planned.Count == 0) return;
+        if (planned.Count == 0)
+        {
+            return;
+        }
 
         IList<ContainerListResponse> containers;
         try
         {
-            containers = await host.ApiClient.Containers.ListContainersAsync(new ContainersListParameters
-            {
-                All = false, // running only — paused/exited containers don't hold Steam sessions
-            }, ct);
+            containers = await host.ApiClient.Containers.ListContainersAsync(
+                new ContainersListParameters
+                {
+                    All = false, // running only — paused/exited containers don't hold Steam sessions
+                },
+                ct
+            );
         }
         catch (Exception ex)
         {
             // Daemon unreachable here means StartAsync below would fail anyway with a clearer
             // error; don't double-throw with a confusing conflict-probe message.
-            InfrastructureEventLog.Emit("steam_conflict_probe_skipped", new
-            {
-                host_id = host.Id,
-                exceptionType = ex.GetType().Name,
-                message = ex.Message,
-            });
+            InfrastructureEventLog.Emit(
+                "steam_conflict_probe_skipped",
+                new
+                {
+                    host_id = host.Id,
+                    exceptionType = ex.GetType().Name,
+                    message = ex.Message,
+                }
+            );
             return;
         }
 
         foreach (var c in containers)
         {
             var image = c.Image ?? "";
-            if (!image.StartsWith("sdvd/steam-service", StringComparison.OrdinalIgnoreCase)) continue;
-            if (c.Labels != null && c.Labels.TryGetValue("sdvd.test", out var testLabel) && testLabel == "true") continue;
+            if (!image.StartsWith("sdvd/steam-service", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (
+                c.Labels != null
+                && c.Labels.TryGetValue("sdvd.test", out var testLabel)
+                && testLabel == "true"
+            )
+            {
+                continue;
+            }
 
             ContainerInspectResponse inspect;
             try
             {
                 inspect = await host.ApiClient.Containers.InspectContainerAsync(c.ID, ct);
             }
-            catch { continue; }
+            catch
+            {
+                continue;
+            }
 
             var existing = ExtractUsernamesFromEnv(inspect.Config?.Env);
             var overlap = planned.Intersect(existing, StringComparer.OrdinalIgnoreCase).ToList();
-            if (overlap.Count == 0) continue;
+            if (overlap.Count == 0)
+            {
+                continue;
+            }
 
-            var name = (c.Names != null && c.Names.Count > 0 ? c.Names[0].TrimStart('/') : c.ID[..12]);
+            var name = (
+                c.Names != null && c.Names.Count > 0 ? c.Names[0].TrimStart('/') : c.ID[..12]
+            );
             var overlapList = string.Join(", ", overlap);
             throw new InvalidOperationException(
-                $"Steam account conflict on host '{host.Id}': container '{name}' " +
-                $"(image '{image}') is already configured to use Steam username(s) [{overlapList}]. " +
-                "Steam allows only one live login per account; running the test sidecar with the same " +
-                "username(s) would kick the existing login (LogonSessionReplaced). " +
-                $"Fix: remove [{overlapList}] from the test's STEAM_ACCOUNTS env (typically in .env.test) " +
-                $"so the test sidecar uses a disjoint set, or stop container '{name}' if it is no longer needed. " +
-                "The test harness will not stop non-test containers automatically.");
+                $"Steam account conflict on host '{host.Id}': container '{name}' "
+                    + $"(image '{image}') is already configured to use Steam username(s) [{overlapList}]. "
+                    + "Steam allows only one live login per account; running the test sidecar with the same "
+                    + "username(s) would kick the existing login (LogonSessionReplaced). "
+                    + $"Fix: remove [{overlapList}] from the test's STEAM_ACCOUNTS env (typically in .env.test) "
+                    + $"so the test sidecar uses a disjoint set, or stop container '{name}' if it is no longer needed. "
+                    + "The test harness will not stop non-test containers automatically."
+            );
         }
     }
 
     private static HashSet<string> ExtractUsernames(string? steamAccountsJson)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(steamAccountsJson)) return set;
+        if (string.IsNullOrWhiteSpace(steamAccountsJson))
+        {
+            return set;
+        }
+
         foreach (var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccountsJson))
         {
             var user = node["user"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(user)) set.Add(user);
+            if (!string.IsNullOrWhiteSpace(user))
+            {
+                set.Add(user);
+            }
         }
         return set;
     }
@@ -412,19 +500,36 @@ public class SharedSteamAuth : IAsyncDisposable
     private static HashSet<string> ExtractUsernamesFromEnv(IList<string>? env)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (env == null) return set;
+        if (env == null)
+        {
+            return set;
+        }
 
         string? steamAccounts = null;
         string? steamUsername = null;
         foreach (var line in env)
         {
             var eq = line.IndexOf('=');
-            if (eq <= 0) continue;
+            if (eq <= 0)
+            {
+                continue;
+            }
+
             var key = line[..eq];
             var val = line[(eq + 1)..].Trim();
-            if (val.Length == 0) continue;
-            if (key.Equals("STEAM_ACCOUNTS", StringComparison.OrdinalIgnoreCase)) steamAccounts = val;
-            else if (key.Equals("STEAM_USERNAME", StringComparison.OrdinalIgnoreCase)) steamUsername = val;
+            if (val.Length == 0)
+            {
+                continue;
+            }
+
+            if (key.Equals("STEAM_ACCOUNTS", StringComparison.OrdinalIgnoreCase))
+            {
+                steamAccounts = val;
+            }
+            else if (key.Equals("STEAM_USERNAME", StringComparison.OrdinalIgnoreCase))
+            {
+                steamUsername = val;
+            }
         }
 
         // Mirror tools/steam-service/Program.cs DiscoverAccounts — STEAM_ACCOUNTS wins;
@@ -433,23 +538,34 @@ public class SharedSteamAuth : IAsyncDisposable
         {
             try
             {
-                foreach (var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccounts))
+                foreach (
+                    var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccounts)
+                )
                 {
                     var user = node["user"]?.GetValue<string>();
-                    if (!string.IsNullOrWhiteSpace(user)) set.Add(user);
+                    if (!string.IsNullOrWhiteSpace(user))
+                    {
+                        set.Add(user);
+                    }
                 }
                 return set;
             }
-            catch { /* malformed JSON in the *other* container's env — fall through to legacy */ }
+            catch
+            { /* malformed JSON in the *other* container's env — fall through to legacy */
+            }
         }
 
-        if (steamUsername != null) set.Add(steamUsername);
+        if (steamUsername != null)
+        {
+            set.Add(steamUsername);
+        }
+
         return set;
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
     };
 
     private class HealthResponse
@@ -469,21 +585,45 @@ public class SharedSteamAuth : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_apiForward != null) { try { await _apiForward.DisposeAsync(); } catch { } _apiForward = null; }
+        if (_apiForward != null)
+        {
+            try
+            {
+                await _apiForward.DisposeAsync();
+            }
+            catch { }
+            _apiForward = null;
+        }
 
         // Drain the log-stream reader before closing the file sink so any
         // fully-formed lines already split out of the in-flight chunk land in
         // container.log / infrastructure.jsonl. Per drain-before-consume-
         // disposal.md.
-        try { await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2)); } catch { }
-        try { await _logStreamReader.DisposeAsync(); } catch { }
+        try
+        {
+            await _logStreamReader.DrainAsync(TimeSpan.FromSeconds(2));
+        }
+        catch { }
+        try
+        {
+            await _logStreamReader.DisposeAsync();
+        }
+        catch { }
         _logStreamCts.Cancel();
-        try { await _logStreamTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+        try
+        {
+            await _logStreamTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch { }
         _logStreamCts.Dispose();
         await _containerLog.DisposeAsync();
 
         string? preDisposeState = null;
-        try { preDisposeState = _container.State.ToString(); } catch { }
+        try
+        {
+            preDisposeState = _container.State.ToString();
+        }
+        catch { }
 
         long? exitCode = null;
         try
@@ -491,7 +631,9 @@ public class SharedSteamAuth : IAsyncDisposable
             using var ecCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             exitCode = await _container.GetExitCodeAsync(ecCts.Token);
         }
-        catch { /* exit code is advisory */ }
+        catch
+        { /* exit code is advisory */
+        }
 
         var stopSw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -501,31 +643,40 @@ public class SharedSteamAuth : IAsyncDisposable
         }
         catch
         {
-            try { await DockerOps.ForceRemoveContainerAsync(_host.ApiClient, _containerName); }
+            try
+            {
+                await DockerOps.ForceRemoveContainerAsync(_host.ApiClient, _containerName);
+            }
             catch { }
         }
 
         stopSw.Stop();
-        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_stopped", new
-        {
-            role = "steam-auth-shared",
-            name = _containerName,
-            runId = _runId,
-            preDisposeState,
-            exitCode,
-            disposeDurationMs = stopSw.ElapsedMilliseconds,
-            host_id = HostId
-        });
-
-        if (exitCode == DockerExitCodes.SigKill)
-        {
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("container_oom_killed", new
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+            "container_stopped",
+            new
             {
                 role = "steam-auth-shared",
                 name = _containerName,
                 runId = _runId,
-                host_id = HostId
-            });
+                preDisposeState,
+                exitCode,
+                disposeDurationMs = stopSw.ElapsedMilliseconds,
+                host_id = HostId,
+            }
+        );
+
+        if (exitCode == DockerExitCodes.SigKill)
+        {
+            JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                "container_oom_killed",
+                new
+                {
+                    role = "steam-auth-shared",
+                    name = _containerName,
+                    runId = _runId,
+                    host_id = HostId,
+                }
+            );
         }
 
         EmergencyCleanup.Unregister($"SharedSteamAuth-{HostId}-{_runId}");

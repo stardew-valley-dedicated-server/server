@@ -70,12 +70,18 @@ public class TestApiServer : IDisposable
     /// <summary>
     /// Register a GET endpoint that returns raw content (not JSON-wrapped).
     /// </summary>
-    public void GetRaw(string path, Func<HttpListenerRequest, (string content, string contentType)> handler)
+    public void GetRaw(
+        string path,
+        Func<HttpListenerRequest, (string content, string contentType)> handler
+    )
     {
         _rawGetRoutes[path.TrimStart('/')] = handler;
     }
 
-    private readonly Dictionary<string, Func<HttpListenerRequest, (string content, string contentType)>> _rawGetRoutes = new();
+    private readonly Dictionary<
+        string,
+        Func<HttpListenerRequest, (string content, string contentType)>
+    > _rawGetRoutes = new();
 
     /// <summary>
     /// Start listening for HTTP requests.
@@ -98,13 +104,20 @@ public class TestApiServer : IDisposable
             {
                 _monitor.Log(
                     $"Failed to start HTTP server (attempt {attempt}/{MaxStartRetries}): {ex.Message}",
-                    LogLevel.Error);
+                    LogLevel.Error
+                );
 
                 // Close the failed listener and create a fresh instance.
                 // The old listener's internal state is corrupted; reusing it
                 // won't help, and its dangling async accept callback will fire
                 // harmlessly against the closed socket.
-                try { _listener.Close(); } catch { /* best effort */ }
+                try
+                {
+                    _listener.Close();
+                }
+                catch
+                { /* best effort */
+                }
 
                 if (attempt < MaxStartRetries)
                 {
@@ -148,7 +161,7 @@ public class TestApiServer : IDisposable
     // High-frequency polling endpoints that should not be logged
     private static readonly HashSet<string> QuietEndpoints = new(StringComparer.OrdinalIgnoreCase)
     {
-        "chat/history"
+        "chat/history",
     };
 
     private void HandleRequest(HttpListenerContext context)
@@ -164,8 +177,13 @@ public class TestApiServer : IDisposable
         var requestId = request.Headers["X-Request-Id"];
         if (!string.IsNullOrEmpty(requestId))
         {
-            try { response.Headers["X-Request-Id"] = requestId; }
-            catch { /* best effort — never fail a request to echo a header */ }
+            try
+            {
+                response.Headers["X-Request-Id"] = requestId;
+            }
+            catch
+            { /* best effort — never fail a request to echo a header */
+            }
         }
 
         using var _correlationScope = ClientRequestContext.Bind(requestId);
@@ -232,17 +250,28 @@ public class TestApiServer : IDisposable
                 {
                     servedStopwatch.Stop();
                     int statusCode;
-                    try { statusCode = response.StatusCode; }
-                    catch { statusCode = 0; } // response already closed/disposed
-                    ClientEventLog.Emit("http_served", new
+                    try
                     {
-                        method,
-                        path = "/" + path,
-                        status = statusCode,
-                        durationMs = servedStopwatch.ElapsedMilliseconds
-                    });
+                        statusCode = response.StatusCode;
+                    }
+                    catch
+                    {
+                        statusCode = 0;
+                    } // response already closed/disposed
+                    ClientEventLog.Emit(
+                        "http_served",
+                        new
+                        {
+                            method,
+                            path = "/" + path,
+                            status = statusCode,
+                            durationMs = servedStopwatch.ElapsedMilliseconds,
+                        }
+                    );
                 }
-                catch { /* never let instrumentation fail a request close */ }
+                catch
+                { /* never let instrumentation fail a request close */
+                }
             }
         }
     }
@@ -253,11 +282,14 @@ public class TestApiServer : IDisposable
         response.ContentType = "application/json";
         response.Headers.Add("Access-Control-Allow-Origin", "*");
 
-        var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        });
+        var json = JsonSerializer.Serialize(
+            data,
+            new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true,
+            }
+        );
         var bytes = Encoding.UTF8.GetBytes(json);
 
         response.ContentLength64 = bytes.Length;
@@ -265,7 +297,12 @@ public class TestApiServer : IDisposable
         response.OutputStream.Close();
     }
 
-    private static void SendRaw(HttpListenerResponse response, string content, string contentType, int statusCode = 200)
+    private static void SendRaw(
+        HttpListenerResponse response,
+        string content,
+        string contentType,
+        int statusCode = 200
+    )
     {
         response.StatusCode = statusCode;
         response.ContentType = contentType;
@@ -284,10 +321,10 @@ public class TestApiServer : IDisposable
     {
         using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
         var body = reader.ReadToEnd();
-        return JsonSerializer.Deserialize<T>(body, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        return JsonSerializer.Deserialize<T>(
+            body,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        );
     }
 
     public void Stop()
@@ -298,8 +335,13 @@ public class TestApiServer : IDisposable
         // Await the listen task so its exceptions are observed
         if (_listenTask != null)
         {
-            try { _listenTask.GetAwaiter().GetResult(); }
-            catch { /* expected; listener was stopped */ }
+            try
+            {
+                _listenTask.GetAwaiter().GetResult();
+            }
+            catch
+            { /* expected; listener was stopped */
+            }
             _listenTask = null;
         }
 

@@ -9,5 +9,6 @@ namespace JunimoServer.Tests.Infrastructure;
 /// </summary>
 public sealed class ServerUnavailableException : Exception
 {
-    public ServerUnavailableException(string message) : base(message) { }
+    public ServerUnavailableException(string message)
+        : base(message) { }
 }

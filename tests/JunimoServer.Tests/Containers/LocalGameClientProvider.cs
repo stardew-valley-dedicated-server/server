@@ -1,9 +1,9 @@
-using JunimoServer.Tests.Helpers;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.Tests.Containers;
 
@@ -26,11 +26,13 @@ public class LocalGameClientProvider : IGameClientProvider
     private static Action<string>? _activeLogCallback;
 
     private static readonly string ServerRepoDir = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-    private static readonly string ProjectParentDir = Path.GetFullPath(
-        Path.Combine(ServerRepoDir, "..")) + Path.DirectorySeparatorChar;
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")
+    );
+    private static readonly string ProjectParentDir =
+        Path.GetFullPath(Path.Combine(ServerRepoDir, "..")) + Path.DirectorySeparatorChar;
     private static readonly string TestClientDir = Path.GetFullPath(
-        Path.Combine(ServerRepoDir, "tools", "test-client"));
+        Path.Combine(ServerRepoDir, "tools", "test-client")
+    );
 
     public string BaseUrl => $"http://localhost:{_port}";
 
@@ -49,10 +51,11 @@ public class LocalGameClientProvider : IGameClientProvider
                 {
                     _refCount--;
                     throw new InvalidOperationException(
-                        "Steam is not running!\n\n" +
-                        "The E2E tests require Steam to be running and logged in for invite code connections.\n" +
-                        "Please start Steam, log in, and run the tests again.\n\n" +
-                        "Alternatively, unset SDVD_HOST_CLIENT to use containerized clients with LAN connections instead.");
+                        "Steam is not running!\n\n"
+                            + "The E2E tests require Steam to be running and logged in for invite code connections.\n"
+                            + "Please start Steam, log in, and run the tests again.\n\n"
+                            + "Alternatively, unset SDVD_HOST_CLIENT to use containerized clients with LAN connections instead."
+                    );
                 }
 
                 // Kill any existing game client processes so we start fresh.
@@ -60,7 +63,9 @@ public class LocalGameClientProvider : IGameClientProvider
                 // previous run on a dynamic port won't be responding on 5123.
                 if (IsGameClientProcessRunning())
                 {
-                    logCallback?.Invoke("Stale game client process found, killing for fresh start...");
+                    logCallback?.Invoke(
+                        "Stale game client process found, killing for fresh start..."
+                    );
                     await KillGameProcesses(logCallback);
                     await Task.Delay(TestTimings.ProcessExitDelay, ct);
                 }
@@ -146,7 +151,9 @@ public class LocalGameClientProvider : IGameClientProvider
             foreach (var name in names)
             {
                 if (Process.GetProcessesByName(name).Length > 0)
+                {
                     return true;
+                }
             }
             return false;
         }
@@ -183,7 +190,7 @@ public class LocalGameClientProvider : IGameClientProvider
             UseShellExecute = false,
             RedirectStandardOutput = false,
             RedirectStandardError = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
         };
 
         // Enable fail-fast mode and set dynamic port
@@ -211,7 +218,8 @@ public class LocalGameClientProvider : IGameClientProvider
         _logTailTask = BackgroundTaskRunner.RunLongLived(
             ct => Task.Run(() => TailLogFile(_logFile, ct, logCallback), ct),
             label: "local-game-client-log-tail",
-            _logTailCts.Token);
+            _logTailCts.Token
+        );
     }
 
     private static async Task WaitForReady(Action<string>? logCallback, CancellationToken ct)
@@ -233,15 +241,18 @@ public class LocalGameClientProvider : IGameClientProvider
             if (pollAttempt % 10 == 0)
             {
                 var remaining = deadline - DateTime.UtcNow;
-                logCallback?.Invoke($"Waiting for game client on port {_port}... attempt {pollAttempt}, {remaining.TotalSeconds:0}s remaining");
+                logCallback?.Invoke(
+                    $"Waiting for game client on port {_port}... attempt {pollAttempt}, {remaining.TotalSeconds:0}s remaining"
+                );
             }
 
             await Task.Delay(TestTimings.GameClientStartupPollDelay, ct);
         }
 
         throw new TimeoutException(
-            $"Game client did not become ready within {TestTimings.GameReadyTimeout.TotalSeconds} seconds on port {_port}.\n" +
-            $"Output:\n{_outputLog}");
+            $"Game client did not become ready within {TestTimings.GameReadyTimeout.TotalSeconds} seconds on port {_port}.\n"
+                + $"Output:\n{_outputLog}"
+        );
     }
 
     private static async Task StopGameClient(Action<string>? logCallback)
@@ -351,11 +362,14 @@ public class LocalGameClientProvider : IGameClientProvider
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
             };
 
             using var stopProcess = Process.Start(stopInfo);
-            if (stopProcess == null) return false;
+            if (stopProcess == null)
+            {
+                return false;
+            }
 
             using var cts = new CancellationTokenSource(TestTimings.ContainerStopTimeout);
             try
@@ -366,7 +380,11 @@ public class LocalGameClientProvider : IGameClientProvider
             catch (OperationCanceledException)
             {
                 logCallback?.Invoke("make stop timed out");
-                try { stopProcess.Kill(); } catch { }
+                try
+                {
+                    stopProcess.Kill();
+                }
+                catch { }
                 return false;
             }
         }
@@ -389,7 +407,9 @@ public class LocalGameClientProvider : IGameClientProvider
                 {
                     try
                     {
-                        logCallback?.Invoke($"Killing process: {proc.ProcessName} (PID: {proc.Id})");
+                        logCallback?.Invoke(
+                            $"Killing process: {proc.ProcessName} (PID: {proc.Id})"
+                        );
                         proc.Kill(entireProcessTree: true);
                         await proc.WaitForExitAsync();
                     }
@@ -438,7 +458,11 @@ public class LocalGameClientProvider : IGameClientProvider
         }
     }
 
-    private static void TailLogFile(string filePath, CancellationToken ct, Action<string>? logCallback)
+    private static void TailLogFile(
+        string filePath,
+        CancellationToken ct,
+        Action<string>? logCallback
+    )
     {
         try
         {
@@ -447,9 +471,17 @@ public class LocalGameClientProvider : IGameClientProvider
                 Thread.Sleep(100);
             }
 
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
 
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var fs = new FileStream(
+                filePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite
+            );
             using var sr = new StreamReader(fs);
 
             while (!ct.IsCancellationRequested)
@@ -477,15 +509,25 @@ public class LocalGameClientProvider : IGameClientProvider
 
     private static string CleanLine(string? input)
     {
-        if (string.IsNullOrEmpty(input)) return "";
+        if (string.IsNullOrEmpty(input))
+        {
+            return "";
+        }
 
         var result = Regex.Replace(input, @"\x1B\[[0-9;]*[a-zA-Z]", "");
         result = result.Replace("\r", "").Replace("\n", "");
         result = new string(result.Where(c => !char.IsControl(c)).ToArray());
         result = Regex.Replace(result, @"\d{2}:\d{2}:\d{2}(\.\d+)?\s*", "");
-        result = Regex.Replace(result, @"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?\s*", "");
+        result = Regex.Replace(
+            result,
+            @"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?\s*",
+            ""
+        );
         result = Regex.Replace(result, @"\[(\S+)\s+\]", "[$1]");
-        result = result.Replace(@"D:\GitlabRunner\builds\Gq5qA5P4\0\ConcernedApe\stardewvalley", "StardewValley");
+        result = result.Replace(
+            @"D:\GitlabRunner\builds\Gq5qA5P4\0\ConcernedApe\stardewvalley",
+            "StardewValley"
+        );
         result = result.Replace(ProjectParentDir, "");
 
         return result.TrimEnd();

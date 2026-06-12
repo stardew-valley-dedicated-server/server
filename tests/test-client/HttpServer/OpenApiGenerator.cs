@@ -14,7 +14,12 @@ public static class OpenApiGenerator
     /// <summary>
     /// Generates an OpenAPI document from a type's methods decorated with ApiEndpoint attributes.
     /// </summary>
-    public static OpenApiDocument Generate(Type serviceType, string title, string version, string? description = null)
+    public static OpenApiDocument Generate(
+        Type serviceType,
+        string title,
+        string version,
+        string? description = null
+    )
     {
         var document = new OpenApiDocument
         {
@@ -23,14 +28,17 @@ public static class OpenApiGenerator
                 Title = title,
                 Version = version,
                 Description = description,
-                Contact = new OpenApiContact { Name = "JunimoHost" }
+                Contact = new OpenApiContact { Name = "JunimoHost" },
             },
             Servers = new List<OpenApiServer>
             {
-                new() { Url = "http://localhost:5123", Description = "Local test server" }
+                new() { Url = "http://localhost:5123", Description = "Local test server" },
             },
             Paths = new OpenApiPaths(),
-            Components = new OpenApiComponents { Schemas = new Dictionary<string, OpenApiSchema>() }
+            Components = new OpenApiComponents
+            {
+                Schemas = new Dictionary<string, OpenApiSchema>(),
+            },
         };
 
         // Add common error schema
@@ -40,11 +48,12 @@ public static class OpenApiGenerator
             Properties = new Dictionary<string, OpenApiSchema>
             {
                 ["error"] = new() { Type = "string" },
-                ["path"] = new() { Type = "string" }
-            }
+                ["path"] = new() { Type = "string" },
+            },
         };
 
-        var methods = serviceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+        var methods = serviceType
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
             .Where(m => m.GetCustomAttribute<ApiEndpointAttribute>() != null);
 
         foreach (var method in methods)
@@ -59,7 +68,7 @@ public static class OpenApiGenerator
                 Summary = endpoint.Summary,
                 Description = endpoint.Description,
                 OperationId = method.Name,
-                Responses = new OpenApiResponses()
+                Responses = new OpenApiResponses(),
             };
 
             if (!string.IsNullOrEmpty(endpoint.Tag))
@@ -70,14 +79,16 @@ public static class OpenApiGenerator
             // Add query parameters
             foreach (var param in queryParams)
             {
-                operation.Parameters.Add(new OpenApiParameter
-                {
-                    Name = param.Name,
-                    In = ParameterLocation.Query,
-                    Required = param.Required,
-                    Description = param.Description,
-                    Schema = GetSchemaForType(param.Type)
-                });
+                operation.Parameters.Add(
+                    new OpenApiParameter
+                    {
+                        Name = param.Name,
+                        In = ParameterLocation.Query,
+                        Required = param.Required,
+                        Description = param.Description,
+                        Schema = GetSchemaForType(param.Type),
+                    }
+                );
             }
 
             // Add request body
@@ -90,8 +101,8 @@ public static class OpenApiGenerator
                     Description = requestBody.Description,
                     Content = new Dictionary<string, OpenApiMediaType>
                     {
-                        ["application/json"] = new OpenApiMediaType { Schema = bodySchema }
-                    }
+                        ["application/json"] = new OpenApiMediaType { Schema = bodySchema },
+                    },
                 };
             }
 
@@ -100,7 +111,8 @@ public static class OpenApiGenerator
             {
                 var apiResponse = new OpenApiResponse
                 {
-                    Description = response.Description ?? GetDefaultDescription(response.StatusCode)
+                    Description =
+                        response.Description ?? GetDefaultDescription(response.StatusCode),
                 };
 
                 if (response.ResponseType != typeof(void))
@@ -108,7 +120,7 @@ public static class OpenApiGenerator
                     var schema = GenerateSchema(response.ResponseType, document);
                     apiResponse.Content = new Dictionary<string, OpenApiMediaType>
                     {
-                        ["application/json"] = new OpenApiMediaType { Schema = schema }
+                        ["application/json"] = new OpenApiMediaType { Schema = schema },
                     };
                 }
 
@@ -131,10 +143,14 @@ public static class OpenApiGenerator
                     {
                         Schema = new OpenApiSchema
                         {
-                            Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = "ErrorResponse" }
-                        }
-                    }
-                }
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.Schema,
+                                Id = "ErrorResponse",
+                            },
+                        },
+                    },
+                },
             };
 
             // Add to document
@@ -153,7 +169,7 @@ public static class OpenApiGenerator
                 "PATCH" => OperationType.Patch,
                 "HEAD" => OperationType.Head,
                 "OPTIONS" => OperationType.Options,
-                _ => OperationType.Get
+                _ => OperationType.Get,
             };
             pathItem.Operations[operationType] = operation;
         }
@@ -161,13 +177,23 @@ public static class OpenApiGenerator
         return document;
     }
 
-    public static string GenerateJson(Type serviceType, string title, string version, string? description = null)
+    public static string GenerateJson(
+        Type serviceType,
+        string title,
+        string version,
+        string? description = null
+    )
     {
         var document = Generate(serviceType, title, version, description);
         return document.SerializeAsJson(OpenApiSpecVersion.OpenApi3_0);
     }
 
-    public static string GenerateYaml(Type serviceType, string title, string version, string? description = null)
+    public static string GenerateYaml(
+        Type serviceType,
+        string title,
+        string version,
+        string? description = null
+    )
     {
         var document = Generate(serviceType, title, version, description);
         return document.SerializeAsYaml(OpenApiSpecVersion.OpenApi3_0);
@@ -182,14 +208,14 @@ public static class OpenApiGenerator
         {
             return new OpenApiSchema
             {
-                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = schemaName }
+                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = schemaName },
             };
         }
 
         var schema = new OpenApiSchema
         {
             Type = "object",
-            Properties = new Dictionary<string, OpenApiSchema>()
+            Properties = new Dictionary<string, OpenApiSchema>(),
         };
 
         // Get description from DescriptionAttribute
@@ -221,7 +247,7 @@ public static class OpenApiGenerator
         // Return a reference to the schema
         return new OpenApiSchema
         {
-            Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = schemaName }
+            Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = schemaName },
         };
     }
 
@@ -238,15 +264,29 @@ public static class OpenApiGenerator
 
         // Handle common types
         if (type == typeof(string))
+        {
             return new OpenApiSchema { Type = "string" };
+        }
+
         if (type == typeof(int) || type == typeof(long) || type == typeof(short))
+        {
             return new OpenApiSchema { Type = "integer" };
+        }
+
         if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+        {
             return new OpenApiSchema { Type = "number" };
+        }
+
         if (type == typeof(bool))
+        {
             return new OpenApiSchema { Type = "boolean" };
+        }
+
         if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
+        {
             return new OpenApiSchema { Type = "string", Format = "date-time" };
+        }
 
         // Handle arrays
         if (type.IsArray)
@@ -254,7 +294,7 @@ public static class OpenApiGenerator
             return new OpenApiSchema
             {
                 Type = "array",
-                Items = GetPropertySchema(type.GetElementType()!, document)
+                Items = GetPropertySchema(type.GetElementType()!, document),
             };
         }
 
@@ -262,13 +302,17 @@ public static class OpenApiGenerator
         if (type.IsGenericType)
         {
             var genericDef = type.GetGenericTypeDefinition();
-            if (genericDef == typeof(List<>) || genericDef == typeof(IList<>) ||
-                genericDef == typeof(IEnumerable<>) || genericDef == typeof(ICollection<>))
+            if (
+                genericDef == typeof(List<>)
+                || genericDef == typeof(IList<>)
+                || genericDef == typeof(IEnumerable<>)
+                || genericDef == typeof(ICollection<>)
+            )
             {
                 return new OpenApiSchema
                 {
                     Type = "array",
-                    Items = GetPropertySchema(type.GetGenericArguments()[0], document)
+                    Items = GetPropertySchema(type.GetGenericArguments()[0], document),
                 };
             }
         }
@@ -280,26 +324,39 @@ public static class OpenApiGenerator
     private static OpenApiSchema GetSchemaForType(Type type)
     {
         if (type == typeof(string))
+        {
             return new OpenApiSchema { Type = "string" };
+        }
+
         if (type == typeof(int) || type == typeof(long))
+        {
             return new OpenApiSchema { Type = "integer" };
+        }
+
         if (type == typeof(bool))
+        {
             return new OpenApiSchema { Type = "boolean" };
+        }
+
         if (type == typeof(float) || type == typeof(double))
+        {
             return new OpenApiSchema { Type = "number" };
+        }
+
         return new OpenApiSchema { Type = "string" };
     }
 
-    private static string GetDefaultDescription(int statusCode) => statusCode switch
-    {
-        200 => "Success",
-        201 => "Created",
-        204 => "No Content",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        _ => "Response"
-    };
+    private static string GetDefaultDescription(int statusCode) =>
+        statusCode switch
+        {
+            200 => "Success",
+            201 => "Created",
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            _ => "Response",
+        };
 }

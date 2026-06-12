@@ -49,7 +49,10 @@ public static class ServerConfigDiscovery
     /// </para>
     /// </summary>
     public static List<ServerDemand> DiscoverRequiredConfigs(
-        bool skipValidation = false, string[]? keyFilter = null, string? methodFilter = null)
+        bool skipValidation = false,
+        string[]? keyFilter = null,
+        string? methodFilter = null
+    )
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -59,28 +62,39 @@ public static class ServerConfigDiscovery
         foreach (var type in assembly.GetTypes())
         {
             if (type.IsAbstract || !type.IsSubclassOf(typeof(TestBase)))
+            {
                 continue;
+            }
 
-            var classAttr = type.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
+            var classAttr =
+                type.GetCustomAttribute<TestServerAttribute>() ?? new TestServerAttribute();
 
             // Skip classes that defer acquisition (they create servers dynamically)
             if (classAttr.DeferAcquisition)
+            {
                 continue;
+            }
 
             // Skip PerTest isolation (each test creates its own server)
             if (classAttr.Isolation == IsolationMode.PerTest)
+            {
                 continue;
+            }
 
             // Resolve each method's effective (merged) attribute and group by key.
             // Methods with [TestServer] overrides that change server-affecting properties
             // (e.g., WithSteam, Password) produce a different key than the class default.
             var methodDemands = DiscoverMethodDemands(type, classAttr, methodFilter);
             if (methodDemands.Count == 0)
+            {
                 continue;
+            }
 
             foreach (var md in methodDemands)
             {
-                Log($"  {type.Name}: {md.Total} test case(s) ({md.Exclusive} exclusive) -> key={md.Key}");
+                Log(
+                    $"  {type.Name}: {md.Total} test case(s) ({md.Exclusive} exclusive) -> key={md.Key}"
+                );
 
                 if (demands.TryGetValue(md.Key, out var existing))
                 {
@@ -99,15 +113,13 @@ public static class ServerConfigDiscovery
                         ClassCount = 1,
                         TestCount = md.Total,
                         ExclusiveTestCount = md.Exclusive,
-                        ClassNames = { type.Name }
+                        ClassNames = { type.Name },
                     };
                 }
             }
         }
 
-        var result = demands.Values
-            .OrderByDescending(d => d.ClassCount)
-            .ToList();
+        var result = demands.Values.OrderByDescending(d => d.ClassCount).ToList();
 
         // Worker mode: filter to assigned keys *before* validation and demand
         // counters are computed, so _remainingDemand on the worker reflects only
@@ -128,9 +140,12 @@ public static class ServerConfigDiscovery
             foreach (var demand in result)
             {
                 if (demand.Requirements.Clients > maxHostCap)
+                {
                     throw new InvalidOperationException(
-                        $"Test '{demand.ClassNames.First()}' requires {demand.Requirements.Clients} client(s) " +
-                        $"but the largest host's client capacity is {maxHostCap}.");
+                        $"Test '{demand.ClassNames.First()}' requires {demand.Requirements.Clients} client(s) "
+                            + $"but the largest host's client capacity is {maxHostCap}."
+                    );
+                }
             }
 
             // Fail-fast: tests with WithSteam=true need at least one Steam-capable
@@ -144,15 +159,19 @@ public static class ServerConfigDiscovery
                 var slices = SteamAccountSlicer.Slice(json, HostPool.Instance.Hosts);
                 if (!slices.Any(s => s.IsSteamCapable))
                 {
-                    var testNames = string.Join(", ", steamDemands.SelectMany(d => d.ClassNames).Distinct());
+                    var testNames = string.Join(
+                        ", ",
+                        steamDemands.SelectMany(d => d.ClassNames).Distinct()
+                    );
                     var totalTests = steamDemands.Sum(d => d.TestCount);
                     var configuredAccounts = UserConfigJson.CountArrayTolerant(json);
                     var hostCount = HostPool.Instance.Hosts.Count;
                     throw new InvalidOperationException(
-                        $"Requirements not satisfied: {totalTests} test(s) in [{testNames}] require " +
-                        $"WithSteam=true, but no host's slice has ≥2 Steam accounts (1 server + ≥1 client). " +
-                        $"Configured: {configuredAccounts} account(s) across {hostCount} host(s) — grow STEAM_ACCOUNTS or " +
-                        $"reduce remote-host count. See docs/developers/testing/remote-host-setup.md.");
+                        $"Requirements not satisfied: {totalTests} test(s) in [{testNames}] require "
+                            + $"WithSteam=true, but no host's slice has ≥2 Steam accounts (1 server + ≥1 client). "
+                            + $"Configured: {configuredAccounts} account(s) across {hostCount} host(s) — grow STEAM_ACCOUNTS or "
+                            + $"reduce remote-host count. See docs/developers/testing/remote-host-setup.md."
+                    );
                 }
 
                 // Diagnostic: when a Steam-capable host's slice has fewer client
@@ -165,15 +184,30 @@ public static class ServerConfigDiscovery
                 var slicesByHost = slices.ToDictionary(s => s.HostId, StringComparer.Ordinal);
                 foreach (var host in HostPool.Instance.Hosts)
                 {
-                    if (!slicesByHost.TryGetValue(host.Id, out var slice)) continue;
-                    if (!slice.IsSteamCapable) continue;
-                    if (slice.ClientPoolSize >= host.ClientSlots) continue;
-                    InfrastructureEventLog.Emit("steam_slice_undersized", new
+                    if (!slicesByHost.TryGetValue(host.Id, out var slice))
                     {
-                        host_id = host.Id,
-                        steamClientAccounts = slice.ClientPoolSize,
-                        clientSlots = host.ClientSlots,
-                    });
+                        continue;
+                    }
+
+                    if (!slice.IsSteamCapable)
+                    {
+                        continue;
+                    }
+
+                    if (slice.ClientPoolSize >= host.ClientSlots)
+                    {
+                        continue;
+                    }
+
+                    InfrastructureEventLog.Emit(
+                        "steam_slice_undersized",
+                        new
+                        {
+                            host_id = host.Id,
+                            steamClientAccounts = slice.ClientPoolSize,
+                            clientSlots = host.ClientSlots,
+                        }
+                    );
                 }
             }
         }
@@ -184,17 +218,22 @@ public static class ServerConfigDiscovery
         // latch so we don't emit the same event twice.
         if (Interlocked.CompareExchange(ref _discoveryEmitted, 1, 0) == 0)
         {
-            InfrastructureEventLog.Emit("config_discovery_completed", new
-            {
-                configCount = result.Count,
-                configs = result.Select(d => new
+            InfrastructureEventLog.Emit(
+                "config_discovery_completed",
+                new
                 {
-                    key = d.Key,
-                    classCount = d.ClassCount,
-                    testCount = d.TestCount
-                }).ToArray(),
-                durationMs = sw.ElapsedMilliseconds
-            });
+                    configCount = result.Count,
+                    configs = result
+                        .Select(d => new
+                        {
+                            key = d.Key,
+                            classCount = d.ClassCount,
+                            testCount = d.TestCount,
+                        })
+                        .ToArray(),
+                    durationMs = sw.ElapsedMilliseconds,
+                }
+            );
         }
 
         return result;
@@ -206,7 +245,12 @@ public static class ServerConfigDiscovery
     /// Per-key demand from a single test class, computed by resolving the merged
     /// (class + method) attribute for each test method.
     /// </summary>
-    private record MethodDemand(string Key, ResourceRequirements Requirements, int Total, int Exclusive);
+    private record MethodDemand(
+        string Key,
+        ResourceRequirements Requirements,
+        int Total,
+        int Exclusive
+    );
 
     /// <summary>
     /// Resolves each test method's effective attribute (class + method merge) and
@@ -219,13 +263,18 @@ public static class ServerConfigDiscovery
     /// (case-insensitive). Null/empty means "no filter".
     /// </summary>
     private static List<MethodDemand> DiscoverMethodDemands(
-        Type type, TestServerAttribute classAttr, string? methodFilter)
+        Type type,
+        TestServerAttribute classAttr,
+        string? methodFilter
+    )
     {
         // Accumulate (total, exclusive) per key
-        var perKey = new Dictionary<string, (ResourceRequirements reqs, int total, int exclusive)>();
+        var perKey =
+            new Dictionary<string, (ResourceRequirements reqs, int total, int exclusive)>();
 
         var classFull = type.FullName ?? type.Name;
-        var classMatches = string.IsNullOrEmpty(methodFilter)
+        var classMatches =
+            string.IsNullOrEmpty(methodFilter)
             || classFull.Contains(methodFilter, StringComparison.OrdinalIgnoreCase);
 
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
@@ -235,18 +284,30 @@ public static class ServerConfigDiscovery
             var isTheory = attrs.Any(a => a.GetType().Name == "TheoryAttribute");
 
             if (!isFact && !isTheory)
+            {
                 continue;
+            }
 
-            var skipValue = (attrs.FirstOrDefault(a => a.GetType().Name == "FactAttribute") as FactAttribute)?.Skip
-                         ?? (attrs.FirstOrDefault(a => a.GetType().Name == "TheoryAttribute") as TheoryAttribute)?.Skip;
+            var skipValue =
+                (
+                    attrs.FirstOrDefault(a => a.GetType().Name == "FactAttribute") as FactAttribute
+                )?.Skip
+                ?? (
+                    attrs.FirstOrDefault(a => a.GetType().Name == "TheoryAttribute")
+                    as TheoryAttribute
+                )?.Skip;
             if (!string.IsNullOrEmpty(skipValue))
+            {
                 continue;
+            }
 
             if (!classMatches)
             {
                 var displayName = $"{classFull}.{method.Name}";
                 if (!displayName.Contains(methodFilter!, StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
             }
 
             var cases = (isFact && !isTheory) ? 1 : CountTheoryDataRows(type, method, attrs);
@@ -261,8 +322,11 @@ public static class ServerConfigDiscovery
 
             if (perKey.TryGetValue(key, out var existing))
             {
-                perKey[key] = (existing.reqs, existing.total + cases,
-                    existing.exclusive + (isExclusive ? cases : 0));
+                perKey[key] = (
+                    existing.reqs,
+                    existing.total + cases,
+                    existing.exclusive + (isExclusive ? cases : 0)
+                );
             }
             else
             {
@@ -270,8 +334,13 @@ public static class ServerConfigDiscovery
             }
         }
 
-        return perKey.Select(kv =>
-            new MethodDemand(kv.Key, kv.Value.reqs, kv.Value.total, kv.Value.exclusive))
+        return perKey
+            .Select(kv => new MethodDemand(
+                kv.Key,
+                kv.Value.reqs,
+                kv.Value.total,
+                kv.Value.exclusive
+            ))
             .ToList();
     }
 
@@ -294,13 +363,19 @@ public static class ServerConfigDiscovery
             {
                 var rows = GetMemberDataCount(memberType, memberName);
                 if (rows > 0)
+                {
                     total += rows;
+                }
                 else
+                {
                     total += 1; // Fallback: count as at least 1
+                }
             }
             catch (Exception ex)
             {
-                Log($"Could not evaluate MemberData '{memberName}' on {type.Name}.{method.Name}: {ex.Message}");
+                Log(
+                    $"Could not evaluate MemberData '{memberName}' on {type.Name}.{method.Name}: {ex.Message}"
+                );
                 total += 1; // Fallback
             }
         }
@@ -311,9 +386,13 @@ public static class ServerConfigDiscovery
             try
             {
                 if (Activator.CreateInstance(classData.Class) is IEnumerable enumerable)
+                {
                     total += enumerable.Cast<object>().Count();
+                }
                 else
+                {
                     total += 1;
+                }
             }
             catch
             {
@@ -331,19 +410,34 @@ public static class ServerConfigDiscovery
     private static int GetMemberDataCount(Type type, string memberName)
     {
         // Try property
-        var prop = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        var prop = type.GetProperty(
+            memberName,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+        );
         if (prop?.GetValue(null) is IEnumerable propEnum)
+        {
             return propEnum.Cast<object>().Count();
+        }
 
         // Try method
-        var methodInfo = type.GetMethod(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        var methodInfo = type.GetMethod(
+            memberName,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+        );
         if (methodInfo?.Invoke(null, null) is IEnumerable methodEnum)
+        {
             return methodEnum.Cast<object>().Count();
+        }
 
         // Try field
-        var field = type.GetField(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        var field = type.GetField(
+            memberName,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+        );
         if (field?.GetValue(null) is IEnumerable fieldEnum)
+        {
             return fieldEnum.Cast<object>().Count();
+        }
 
         return 0;
     }
