@@ -137,7 +137,7 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 - **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject the merge queue lints — checking it here fails a bad title on the PR rather than cryptically in the queue.
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
-- **Formatting** - Runs `dotnet csharpier check .` over the whole tree; fails on any C# formatting drift (fix locally with `make format`)
+- **Formatting** - Runs `dotnet csharpier check .` over the whole tree; fails on any C# formatting drift (fix locally with `make lint-fix`)
 - **Line endings** - Fails if a file with CRLF line endings reached the index, bypassing the LF normalization `.gitattributes` enforces
 
 These surface as required status checks — `Validate PR Title`, `Validate Build`, `Validate Commits`, `Validate Formatting`, and `Validate Line Endings` — that must pass before a PR can merge.

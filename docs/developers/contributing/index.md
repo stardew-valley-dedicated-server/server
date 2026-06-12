@@ -54,9 +54,8 @@ C# code is formatted by [CSharpier](https://csharpier.com/), and style rules (br
 Manual targets:
 
 ```bash
-make format     # format all C# files (fast, CSharpier only)
-make lint-check # verify formatting + analyzer style rules without writing (builds the solution)
-make lint-fix   # auto-fix analyzer style violations, then format (builds the solution)
+make lint-check # verify analyzer style rules + formatting without writing (builds the solution)
+make lint-fix   # auto-fix analyzer style violations, then re-format (builds the solution)
 ```
 
 CI's `Validate Formatting` runs the CSharpier half of `lint-check`; the analyzer rules are enforced as build errors wherever the code compiles.
