@@ -100,7 +100,6 @@ export function annotationSourceIcon(source: AnnotationSource): string {
             return "lucide:puzzle";
         case "setup":
             return "lucide:hammer";
-        case "body":
         default:
             return "lucide:chevron-right";
     }
@@ -123,7 +122,6 @@ export function annotationLevelClass(level: AnnotationLevel): string {
             return "text-base-content/35";
         case "section":
             return "text-info font-semibold";
-        case "info":
         default:
             return "text-base-content/75";
     }
@@ -141,7 +139,6 @@ export function annotationSourceClass(source: AnnotationSource): string {
             return "text-success/70";
         case "setup":
             return "text-base-content/40";
-        case "body":
         default:
             return "text-base-content/30";
     }

@@ -150,7 +150,9 @@ onUnmounted(() => {
     window.removeEventListener("keydown", onKeyDown);
     // Remove tooltip DOM elements created by leaseLinePlugin
     const tooltips = document.querySelectorAll(".lease-marker-tip");
-    tooltips.forEach((el) => el.remove());
+    tooltips.forEach((el) => {
+        el.remove();
+    });
 });
 
 // ── Scrub-to-history (driven by InfrastructureTimeline click) ──

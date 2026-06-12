@@ -213,8 +213,7 @@ export function useChartPipeline(params: {
             // For each grid point, find the most recent history entry at or before it.
             const sampled: (StatsSnapshotEntry | null)[] = [];
             let hi = 0;
-            for (let gi = 0; gi < gridEpochs.length; gi++) {
-                const t = gridEpochs[gi];
+            for (const t of gridEpochs) {
                 if (t < instStart || t > instEnd + GRID_STEP) {
                     sampled.push(null);
                     continue;

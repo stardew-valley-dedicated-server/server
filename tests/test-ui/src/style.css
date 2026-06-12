@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /* Inter font, bundled locally for offline/air-gapped environments */
 @font-face {
     font-family: "Inter";
@@ -27,8 +29,6 @@
     font-display: swap;
     src: url("/fonts/inter-latin-700.woff2") format("woff2");
 }
-
-@import "tailwindcss";
 
 @plugin "daisyui" {
     themes:

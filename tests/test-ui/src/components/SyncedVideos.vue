@@ -952,7 +952,9 @@ async function downloadVideo(index: number) {
 }
 
 function downloadAll() {
-    props.videos.forEach((_, i) => downloadVideo(i));
+    props.videos.forEach((_, i) => {
+        downloadVideo(i);
+    });
 }
 
 // ── Debug: detect stuck videos ──
