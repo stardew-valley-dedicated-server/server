@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { withBase, useData } from "vitepress";
+import { useData, withBase } from "vitepress";
 import DefaultTheme from "vitepress/theme";
+import { computed, onMounted, ref } from "vue";
+import BuildStamp from "./BuildStamp.vue";
 import ThemeSelector from "./ThemeSelector.vue";
 import VersionSwitcher from "./VersionSwitcher.vue";
-import BuildStamp from "./BuildStamp.vue";
 
 const { Layout } = DefaultTheme;
 

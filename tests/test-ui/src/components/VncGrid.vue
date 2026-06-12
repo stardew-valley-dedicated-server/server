@@ -1,280 +1,298 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import type { InstanceSnapshot } from '../types/state'
-import InstanceCard from './InstanceCard.vue'
-import SectionHeader from './SectionHeader.vue'
-import CombinedCharts from './CombinedCharts.vue'
-import InfrastructureTimeline from './InfrastructureTimeline.vue'
-import { Icon } from '@iconify/vue'
-import { animateTransition, setClipHost } from '../composables/useIframeLayer'
-import { useTestUI } from '../composables/useTestUI'
-import { useTopologyLines, type TopologyGroup } from '../composables/useTopologyLines'
-import { useVncInteractive } from '../composables/useVncInteractive'
-import { instanceStatusDotClass, instanceStatusLabel } from '../utils/instance-status'
+import { Icon } from "@iconify/vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { animateTransition, setClipHost } from "../composables/useIframeLayer";
+import { useTestUI } from "../composables/useTestUI";
+import { type TopologyGroup, useTopologyLines } from "../composables/useTopologyLines";
+import { useVncInteractive } from "../composables/useVncInteractive";
+import type { InstanceSnapshot } from "../types/state";
+import { instanceStatusDotClass, instanceStatusLabel } from "../utils/instance-status";
+import CombinedCharts from "./CombinedCharts.vue";
+import InfrastructureTimeline from "./InfrastructureTimeline.vue";
+import InstanceCard from "./InstanceCard.vue";
+import SectionHeader from "./SectionHeader.vue";
 
-const { store, inspect } = useTestUI()
-const { interactive } = useVncInteractive()
+const { store, inspect } = useTestUI();
+const { interactive } = useVncInteractive();
 
 // ── localStorage persistence ──
-const LS_KEY = 'vnc-grid-prefs'
-const DEFAULT_SPLIT = 0.6
+const LS_KEY = "vnc-grid-prefs";
+const DEFAULT_SPLIT = 0.6;
 
 interface VncGridPrefs {
-  layout: 'grid' | 'split' | 'topology' | 'charts'
-  splitFraction: number
+    layout: "grid" | "split" | "topology" | "charts";
+    splitFraction: number;
 }
 
 function loadPrefs(): VncGridPrefs {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      const validLayouts = ['grid', 'split', 'topology', 'charts']
-      return {
-        layout: validLayouts.includes(parsed.layout) ? parsed.layout : 'grid',
-        splitFraction: typeof parsed.splitFraction === 'number'
-          ? Math.max(0.15, Math.min(0.85, parsed.splitFraction))
-          : DEFAULT_SPLIT
-      }
+    try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const validLayouts = ["grid", "split", "topology", "charts"];
+            return {
+                layout: validLayouts.includes(parsed.layout) ? parsed.layout : "grid",
+                splitFraction:
+                    typeof parsed.splitFraction === "number"
+                        ? Math.max(0.15, Math.min(0.85, parsed.splitFraction))
+                        : DEFAULT_SPLIT,
+            };
+        }
+    } catch {
+        /* ignore corrupt data */
     }
-  } catch { /* ignore corrupt data */ }
-  return { layout: 'grid', splitFraction: DEFAULT_SPLIT }
+    return { layout: "grid", splitFraction: DEFAULT_SPLIT };
 }
 
 function savePrefs() {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    parsed.layout = layout.value
-    parsed.splitFraction = splitFraction.value
-    localStorage.setItem(LS_KEY, JSON.stringify(parsed))
-  } catch { /* ignore */ }
+    try {
+        const raw = localStorage.getItem(LS_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        parsed.layout = layout.value;
+        parsed.splitFraction = splitFraction.value;
+        localStorage.setItem(LS_KEY, JSON.stringify(parsed));
+    } catch {
+        /* ignore */
+    }
 }
 
-const prefs = loadPrefs()
-type LayoutMode = 'grid' | 'split' | 'topology' | 'charts'
-const layout = ref<LayoutMode>(prefs.layout)
-const expandedId = ref<string | null>(null)
+const prefs = loadPrefs();
+type LayoutMode = "grid" | "split" | "topology" | "charts";
+const layout = ref<LayoutMode>(prefs.layout);
+const expandedId = ref<string | null>(null);
 
-const instances = computed(() => store.state.instances ?? [])
-const { openInspect } = inspect
-const servers = computed(() => instances.value.filter(i => i.instanceType === 'server'))
-const clients = computed(() => instances.value.filter(i => i.instanceType === 'client'))
-const hasAnyEndpoints = computed(() => instances.value.length > 0)
-const hasStoppedInstances = computed(() => store.stoppedInstances.length > 0)
-const stoppedServers = computed(() => store.stoppedInstances.filter(i => i.instanceType === 'server'))
-const stoppedClients = computed(() => store.stoppedInstances.filter(i => i.instanceType === 'client'))
+const instances = computed(() => store.state.instances ?? []);
+const { openInspect } = inspect;
+const servers = computed(() => instances.value.filter((i) => i.instanceType === "server"));
+const clients = computed(() => instances.value.filter((i) => i.instanceType === "client"));
+const hasAnyEndpoints = computed(() => instances.value.length > 0);
+const hasStoppedInstances = computed(() => store.stoppedInstances.length > 0);
+const stoppedServers = computed(() => store.stoppedInstances.filter((i) => i.instanceType === "server"));
+const stoppedClients = computed(() => store.stoppedInstances.filter((i) => i.instanceType === "client"));
 
 // ── Active VNC layout: expanded overrides layout ──
-const activeLayout = computed<'expanded' | LayoutMode>(() =>
-  expandedId.value ? 'expanded' : layout.value
-)
+const activeLayout = computed<"expanded" | LayoutMode>(() => (expandedId.value ? "expanded" : layout.value));
 
 // ── Root ref: hosts the iframe overlay layer ──
-const rootRef = ref<HTMLElement | null>(null)
+const rootRef = ref<HTMLElement | null>(null);
 
 // ── Layout container refs ──
 // For 'grid' / 'split' / 'topology' the slot container IS the scroll panel
 // (overflow-auto and the `data-slot-id` children sit on the same element).
 // For 'expanded' they differ: the outer panel scrolls, the inner div hosts the slot.
-const gridContainerRef = ref<HTMLElement | null>(null)
-const splitContainerRef = ref<HTMLElement | null>(null)
-const topologyContainerRef = ref<HTMLElement | null>(null)
-const expandedPanelRef = ref<HTMLElement | null>(null)
-const expandedContainerRef = ref<HTMLElement | null>(null)
+const gridContainerRef = ref<HTMLElement | null>(null);
+const splitContainerRef = ref<HTMLElement | null>(null);
+const topologyContainerRef = ref<HTMLElement | null>(null);
+const expandedPanelRef = ref<HTMLElement | null>(null);
+const expandedContainerRef = ref<HTMLElement | null>(null);
 
 function activeContainerRef(): HTMLElement | null {
-  if (expandedId.value) return expandedContainerRef.value
-  switch (layout.value) {
-    case 'grid': return gridContainerRef.value
-    case 'split': return splitContainerRef.value
-    case 'topology': return topologyContainerRef.value
-    case 'charts': return null
-  }
+    if (expandedId.value) return expandedContainerRef.value;
+    switch (layout.value) {
+        case "grid":
+            return gridContainerRef.value;
+        case "split":
+            return splitContainerRef.value;
+        case "topology":
+            return topologyContainerRef.value;
+        case "charts":
+            return null;
+    }
 }
 
 // The active scrollable panel — used as the iframe-overlay clip host so VNC
 // tiles disappear at the panel's top edge instead of painting over the toolbar
 // and Infrastructure Timeline above it when the panel is scrolled.
 function activeScrollPanelRef(): HTMLElement | null {
-  if (expandedId.value) return expandedPanelRef.value
-  switch (layout.value) {
-    case 'grid': return gridContainerRef.value
-    case 'split': return splitContainerRef.value
-    case 'topology': return topologyContainerRef.value
-    case 'charts': return null
-  }
+    if (expandedId.value) return expandedPanelRef.value;
+    switch (layout.value) {
+        case "grid":
+            return gridContainerRef.value;
+        case "split":
+            return splitContainerRef.value;
+        case "topology":
+            return topologyContainerRef.value;
+        case "charts":
+            return null;
+    }
 }
 
 // ── Slot map: instanceId → placeholder HTMLElement in active layout ──
-const slotMap = ref<Record<string, HTMLElement>>({})
-const slotVersion = ref(0)
+const slotMap = ref<Record<string, HTMLElement>>({});
+const slotVersion = ref(0);
 
 function syncSlots() {
-  const container = activeContainerRef()
-  const map: Record<string, HTMLElement> = {}
-  if (container) {
-    for (const el of container.querySelectorAll<HTMLElement>('[data-slot-id]')) {
-      map[el.dataset.slotId!] = el
+    const container = activeContainerRef();
+    const map: Record<string, HTMLElement> = {};
+    if (container) {
+        for (const el of container.querySelectorAll<HTMLElement>("[data-slot-id]")) {
+            map[el.dataset.slotId!] = el;
+        }
     }
-  }
-  slotMap.value = map
-  slotVersion.value++
+    slotMap.value = map;
+    slotVersion.value++;
 }
 
 // Re-sync when layout/expand changes or instances change
-watch([activeLayout, instances], () => {
-  nextTick(syncSlots)
-}, { deep: true })
+watch(
+    [activeLayout, instances],
+    () => {
+        nextTick(syncSlots);
+    },
+    { deep: true },
+);
 
 // ── Connection counts for server badges ──
 const serverConnectionCounts = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const c of clients.value) {
-    if (c.connectedServerId)
-      counts[c.connectedServerId] = (counts[c.connectedServerId] || 0) + 1
-  }
-  return counts
-})
+    const counts: Record<string, number> = {};
+    for (const c of clients.value) {
+        if (c.connectedServerId) counts[c.connectedServerId] = (counts[c.connectedServerId] || 0) + 1;
+    }
+    return counts;
+});
 
 function getServerLabel(serverInstanceId: string | null): string | null {
-  if (!serverInstanceId) return null
-  const srv = servers.value.find(s => s.instanceId === serverInstanceId)
-  return srv?.label ?? serverInstanceId
+    if (!serverInstanceId) return null;
+    const srv = servers.value.find((s) => s.instanceId === serverInstanceId);
+    return srv?.label ?? serverInstanceId;
 }
 
 // ── Topology grouping ──
 const topologyGroups = computed((): TopologyGroup[] =>
-  servers.value.map(srv => ({
-    server: srv,
-    clients: clients.value.filter(c => c.connectedServerId === srv.instanceId)
-  }))
-)
-const unconnectedClients = computed(() =>
-  clients.value.filter(c => !c.connectedServerId)
-)
+    servers.value.map((srv) => ({
+        server: srv,
+        clients: clients.value.filter((c) => c.connectedServerId === srv.instanceId),
+    })),
+);
+const unconnectedClients = computed(() => clients.value.filter((c) => !c.connectedServerId));
 
 function toggleExpand(id: string) {
-  expandedId.value = expandedId.value === id ? null : id
+    expandedId.value = expandedId.value === id ? null : id;
 }
 
 const expandedInstance = computed(() =>
-  expandedId.value ? instances.value.find(i => i.instanceId === expandedId.value) ?? null : null
-)
+    expandedId.value ? (instances.value.find((i) => i.instanceId === expandedId.value) ?? null) : null,
+);
 
 function switchLayout(newLayout: LayoutMode) {
-  // 1. Snapshot current positions (animateTransition freezes them)
-  animateTransition()
-  // 2. Switch the layout. Vue updates the DOM on next tick.
-  layout.value = newLayout
-  expandedId.value = null
-  // 3. Sync slot map immediately after DOM update so wrappers animate to new positions
-  nextTick(() => {
-    syncSlots()
-  })
+    // 1. Snapshot current positions (animateTransition freezes them)
+    animateTransition();
+    // 2. Switch the layout. Vue updates the DOM on next tick.
+    layout.value = newLayout;
+    expandedId.value = null;
+    // 3. Sync slot map immediately after DOM update so wrappers animate to new positions
+    nextTick(() => {
+        syncSlots();
+    });
 }
 
 // ── Helper: props for an InstanceCard ──
 function cardProps(inst: InstanceSnapshot) {
-  void slotVersion.value // reactive dep
-  const isServer = inst.instanceType === 'server'
-  return {
-    instance: inst,
-    interactive: interactive.value,
-    spinnerColor: isServer ? 'text-success' : 'text-info',
-    connectionCount: isServer ? serverConnectionCounts.value[inst.instanceId] : undefined,
-    connectedServerLabel: !isServer ? getServerLabel(inst.connectedServerId) : undefined,
-    instanceCount: instances.value.length,
-    stats: store.instanceStats.get(inst.instanceId),
-    setupSteps: inst.setupSteps,
-    setupStatus: inst.setupStatus,
-    stopped: store.runDone,
-    retained: inst.disposed,
-    expanded: expandedId.value === inst.instanceId,
-    placeholderEl: slotMap.value[inst.instanceId] ?? null
-  }
+    void slotVersion.value; // reactive dep
+    const isServer = inst.instanceType === "server";
+    return {
+        instance: inst,
+        interactive: interactive.value,
+        spinnerColor: isServer ? "text-success" : "text-info",
+        connectionCount: isServer ? serverConnectionCounts.value[inst.instanceId] : undefined,
+        connectedServerLabel: !isServer ? getServerLabel(inst.connectedServerId) : undefined,
+        instanceCount: instances.value.length,
+        stats: store.instanceStats.get(inst.instanceId),
+        setupSteps: inst.setupSteps,
+        setupStatus: inst.setupStatus,
+        stopped: store.runDone,
+        retained: inst.disposed,
+        expanded: expandedId.value === inst.instanceId,
+        placeholderEl: slotMap.value[inst.instanceId] ?? null,
+    };
 }
 
 // ── Split resizing ──
-const splitFraction = ref(prefs.splitFraction)
-const isResizing = ref(false)
+const splitFraction = ref(prefs.splitFraction);
+const isResizing = ref(false);
 
-const viewportWidth = ref(window.innerWidth)
+const viewportWidth = ref(window.innerWidth);
 
 const { updateConnectionLines, linesForGroup, linePath } = useTopologyLines({
-  topologyContainerRef,
-  topologyGroups,
-  unconnectedClients,
-  layout,
-  viewportWidth,
-})
+    topologyContainerRef,
+    topologyGroups,
+    unconnectedClients,
+    layout,
+    viewportWidth,
+});
 
 function onWindowResize() {
-  viewportWidth.value = window.innerWidth
+    viewportWidth.value = window.innerWidth;
 }
 
 // Re-bind the iframe-overlay clip host to the active scrollable panel whenever
 // the layout (or expanded state) changes. nextTick lets v-show / v-if mount the
 // new panel before we read its ref. Falls back to rootRef for 'charts' mode.
-watch(activeLayout, () => {
-  nextTick(() => {
-    setClipHost(activeScrollPanelRef() ?? rootRef.value)
-  })
-}, { immediate: true })
+watch(
+    activeLayout,
+    () => {
+        nextTick(() => {
+            setClipHost(activeScrollPanelRef() ?? rootRef.value);
+        });
+    },
+    { immediate: true },
+);
 
 onMounted(() => {
-  onWindowResize()
-  nextTick(syncSlots)
-  window.addEventListener('resize', onWindowResize)
-  window.addEventListener('resize', updateConnectionLines)
-})
+    onWindowResize();
+    nextTick(syncSlots);
+    window.addEventListener("resize", onWindowResize);
+    window.addEventListener("resize", updateConnectionLines);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('resize', onWindowResize)
-  window.removeEventListener('resize', updateConnectionLines)
-})
+    window.removeEventListener("resize", onWindowResize);
+    window.removeEventListener("resize", updateConnectionLines);
+});
 
-watch(layout, savePrefs)
+watch(layout, savePrefs);
 
 // Close expanded VNC view when run ends (VNC iframes are stale), but keep inspect available
-watch(() => store.runDone, (over) => {
-  if (over) {
-    expandedId.value = null
-  }
-})
+watch(
+    () => store.runDone,
+    (over) => {
+        if (over) {
+            expandedId.value = null;
+        }
+    },
+);
 
 function onSplitResizeStart(e: PointerEvent) {
-  if (!splitContainerRef.value) return
-  isResizing.value = true
-  const target = e.currentTarget as HTMLElement
-  target.setPointerCapture(e.pointerId)
+    if (!splitContainerRef.value) return;
+    isResizing.value = true;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
 
-  const containerRect = splitContainerRef.value.getBoundingClientRect()
-  const padding = 12 // p-3
-  const handleWidth = 12
+    const containerRect = splitContainerRef.value.getBoundingClientRect();
+    const padding = 12; // p-3
+    const handleWidth = 12;
 
-  function onMove(ev: PointerEvent) {
-    const totalW = containerRect.width - padding * 2 - handleWidth
-    const fraction = (ev.clientX - containerRect.left - padding) / totalW
-    splitFraction.value = Math.max(0.15, Math.min(0.85, fraction))
-  }
+    function onMove(ev: PointerEvent) {
+        const totalW = containerRect.width - padding * 2 - handleWidth;
+        const fraction = (ev.clientX - containerRect.left - padding) / totalW;
+        splitFraction.value = Math.max(0.15, Math.min(0.85, fraction));
+    }
 
-  function onUp() {
-    isResizing.value = false
-    savePrefs()
-    target.removeEventListener('pointermove', onMove)
-    target.removeEventListener('pointerup', onUp)
-  }
+    function onUp() {
+        isResizing.value = false;
+        savePrefs();
+        target.removeEventListener("pointermove", onMove);
+        target.removeEventListener("pointerup", onUp);
+    }
 
-  target.addEventListener('pointermove', onMove)
-  target.addEventListener('pointerup', onUp)
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
 }
 
 function onSplitDoubleClick() {
-  splitFraction.value = DEFAULT_SPLIT
-  savePrefs()
+    splitFraction.value = DEFAULT_SPLIT;
+    savePrefs();
 }
-
 </script>
 
 <template>

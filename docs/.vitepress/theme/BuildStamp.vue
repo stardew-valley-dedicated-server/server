@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { onMounted, ref } from "vue";
 import { formatDateTime } from "./formatDate";
 
 // Baked in at build time via vite `define` in config.ts.

@@ -1,18 +1,18 @@
 {
-  "name": "sdvd-discord-bot",
-  "version": "1.0.0",
-  "description": "Discord bot that displays Stardew Valley dedicated server status",
-  "type": "module",
-  "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun run --watch src/index.ts",
-    "lint": "npx @biomejs/biome check .",
-    "lint:fix": "npx @biomejs/biome check --write ."
-  },
-  "dependencies": {
-    "discord.js": "^14.25.1"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.2.5"
-  }
+    "name": "sdvd-discord-bot",
+    "version": "1.0.0",
+    "description": "Discord bot that displays Stardew Valley dedicated server status",
+    "type": "module",
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "dev": "bun run --watch src/index.ts",
+        "lint": "npx @biomejs/biome check .",
+        "lint:fix": "npx @biomejs/biome check --write ."
+    },
+    "dependencies": {
+        "discord.js": "^14.25.1"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.2.5"
+    }
 }

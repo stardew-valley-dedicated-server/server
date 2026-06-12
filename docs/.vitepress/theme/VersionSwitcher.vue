@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed, ref } from "vue";
 import { useNavBarExtra } from "./useNavBarExtra";
 
 interface Version {
@@ -20,7 +20,7 @@ const versions: Version[] = [
     { id: "preview", name: "Preview", path: "/server/preview/", badge: "unstable", badgeType: "warning" },
 ];
 
-const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra('__versionSwitcherObserver');
+const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra("__versionSwitcherObserver");
 const isOpen = ref(false);
 
 const currentVersion = computed(() => {

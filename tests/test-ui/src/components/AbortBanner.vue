@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
-import { useTestUI } from '../composables/useTestUI'
+import { Icon } from "@iconify/vue";
+import { ref } from "vue";
+import { useTestUI } from "../composables/useTestUI";
 
-const { store } = useTestUI()
-const dismissed = ref(false)
+const { store } = useTestUI();
+const dismissed = ref(false);
 </script>
 
 <template>

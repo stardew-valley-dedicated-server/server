@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { provide, ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { Icon } from '@iconify/vue';
-import { useTestStore } from "./composables/useTestStore";
-import { useInspectNavigation } from "./composables/useInspectNavigation";
-import { useRouteSync } from "./composables/useRouteSync";
-import TestTree from "./components/TestTree.vue";
-import StatusBar from "./components/StatusBar.vue";
+import { Icon } from "@iconify/vue";
+import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import AbortBanner from "./components/AbortBanner.vue";
+import InstanceInspect from "./components/InstanceInspect.vue";
 import OutputPanel from "./components/OutputPanel.vue";
+import StatusBar from "./components/StatusBar.vue";
+import TestTree from "./components/TestTree.vue";
 import VncGrid from "./components/VncGrid.vue";
 import VncIframePool from "./components/VncIframePool.vue";
-import InstanceInspect from "./components/InstanceInspect.vue";
+import { useInspectNavigation } from "./composables/useInspectNavigation";
+import { useRouteSync } from "./composables/useRouteSync";
+import { useTestStore } from "./composables/useTestStore";
 
 const store = useTestStore();
 provide("store", store);
@@ -22,13 +22,13 @@ provide("inspect", inspect);
 
 function getServerLabel(serverInstanceId: string | null): string | null {
     if (!serverInstanceId) return null;
-    const srv = instances.value.find(i => i.instanceId === serverInstanceId && i.instanceType === 'server');
+    const srv = instances.value.find((i) => i.instanceId === serverInstanceId && i.instanceType === "server");
     return srv?.label ?? serverInstanceId;
 }
 
 function resolveLabel(id: string): string {
     const all = [...instances.value, ...store.stoppedInstances];
-    return all.find(i => i.instanceId === id)?.label ?? id;
+    return all.find((i) => i.instanceId === id)?.label ?? id;
 }
 
 function navigateToTest(testName: string) {
@@ -71,10 +71,7 @@ function loadLayoutPrefs(): LayoutPrefs {
         if (raw) {
             const p = JSON.parse(raw);
             return {
-                sidebarWidth:
-                    typeof p.sidebarWidth === "number"
-                        ? Math.max(0, Math.min(p.sidebarWidth, 600))
-                        : 260,
+                sidebarWidth: typeof p.sidebarWidth === "number" ? Math.max(0, Math.min(p.sidebarWidth, 600)) : 260,
                 sidebarCollapsed: p.sidebarCollapsed === true,
                 activeView: p.activeView === "vnc" ? "vnc" : "tests",
             };

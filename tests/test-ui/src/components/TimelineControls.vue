@@ -1,26 +1,26 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import { formatTimeShort } from '../utils/time'
+import { Icon } from "@iconify/vue";
+import { formatTimeShort } from "../utils/time";
 
 defineProps<{
-  playing: boolean
-  stopped: boolean
-  loop: boolean
-  playbackSpeed: number
-  zoomLevel: number
-  timelinePos: number
-  totalDuration: number
-}>()
+    playing: boolean;
+    stopped: boolean;
+    loop: boolean;
+    playbackSpeed: number;
+    zoomLevel: number;
+    timelinePos: number;
+    totalDuration: number;
+}>();
 
 const emit = defineEmits<{
-  'toggle-play': []
-  'stop': []
-  'toggle-loop': []
-  'set-speed': [speed: number]
-  'zoom-in': []
-  'zoom-out': []
-  'download-all': []
-}>()
+    "toggle-play": [];
+    stop: [];
+    "toggle-loop": [];
+    "set-speed": [speed: number];
+    "zoom-in": [];
+    "zoom-out": [];
+    "download-all": [];
+}>();
 </script>
 
 <template>

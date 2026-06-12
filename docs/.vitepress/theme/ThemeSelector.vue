@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useTheme } from "./useTheme";
+import { computed, onMounted, ref } from "vue";
 import { useNavBarExtra } from "./useNavBarExtra";
+import { useTheme } from "./useTheme";
 
 defineProps<{
     /** When true, renders inline for mobile nav screen (no dropdown) */
@@ -9,7 +9,7 @@ defineProps<{
 }>();
 
 const { themes, currentThemeId, setTheme, initTheme } = useTheme();
-const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra('__themeSelectorObserver');
+const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra("__themeSelectorObserver");
 const isOpen = ref(false);
 
 const currentTheme = computed(() => {

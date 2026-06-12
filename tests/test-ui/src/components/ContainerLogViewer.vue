@@ -1,61 +1,61 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Icon } from '@iconify/vue'
-import type { InstanceHistoryEntry } from '../types/state'
-import { useTestUI } from '../composables/useTestUI'
-import { useLogFile } from '../composables/useLogFile'
-import { relativeRunPath } from '../composables/useTestStore'
-import { shortTestName } from '../utils/format'
+import { Icon } from "@iconify/vue";
+import { computed, ref } from "vue";
+import { useLogFile } from "../composables/useLogFile";
+import { relativeRunPath } from "../composables/useTestStore";
+import { useTestUI } from "../composables/useTestUI";
+import type { InstanceHistoryEntry } from "../types/state";
+import { shortTestName } from "../utils/format";
 
 const props = defineProps<{
-  instanceId: string
-  history?: InstanceHistoryEntry[]
-}>()
+    instanceId: string;
+    history?: InstanceHistoryEntry[];
+}>();
 
-const { store } = useTestUI()
+const { store } = useTestUI();
 
-const expanded = ref(false)
-const search = ref('')
+const expanded = ref(false);
+const search = ref("");
 
-const live = computed(() => store.state.status === 'running')
+const live = computed(() => store.state.status === "running");
 
 // container.log path is null when no runMetadata yet; useLogFile gates on that.
 const logPath = computed<string | null>(() => {
-  const runDir = store.state.runMetadata?.runDir
-  if (!runDir) return null
-  const rel = relativeRunPath(runDir)
-  if (!rel) return null
-  return `/artifacts/${rel}/containers/${props.instanceId}/container.log`
-})
+    const runDir = store.state.runMetadata?.runDir;
+    if (!runDir) return null;
+    const rel = relativeRunPath(runDir);
+    if (!rel) return null;
+    return `/artifacts/${rel}/containers/${props.instanceId}/container.log`;
+});
 
 // Only mount the composable while the panel is open. Pass a path ref that flips
 // to null when collapsed so useLogFile stops fetching.
-const activePath = computed<string | null>(() => (expanded.value ? logPath.value : null))
-const { lines, loading, error, refresh } = useLogFile(activePath, { live })
+const activePath = computed<string | null>(() => (expanded.value ? logPath.value : null));
+const { lines, loading, error, refresh } = useLogFile(activePath, { live });
 
 // Filtered view (case-insensitive substring match).
 const filteredLines = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return lines.value
-  return lines.value.filter(l => l.toLowerCase().includes(q))
-})
+    const q = search.value.trim().toLowerCase();
+    if (!q) return lines.value;
+    return lines.value.filter((l) => l.toLowerCase().includes(q));
+});
 
 // Container.log is written without inline timestamps (timestampsEnabled: false
 // in StreamLogsAsync). We can't draw per-line gutters; instead, surface the
 // instance's leased/returned history above the table so the user can correlate
 // by wall-clock time. Filter to test-window events with a testName.
 const leaseEvents = computed(() => {
-  const h = props.history ?? []
-  return h.filter(e => e.event === 'leased' || e.event === 'returned')
-})
+    const h = props.history ?? [];
+    return h.filter((e) => e.event === "leased" || e.event === "returned");
+});
 
 function fmtTime(iso: string): string {
-  try {
-    const d = new Date(iso)
-    return d.toLocaleTimeString([], { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0')
-  } catch {
-    return iso
-  }
+    try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    } catch {
+        return iso;
+    }
 }
 </script>
 

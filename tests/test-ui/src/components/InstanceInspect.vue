@@ -1,522 +1,654 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { Line } from 'vue-chartjs'
-import type { InstanceSnapshot, InstanceHistoryEntry, SetupStepSnapshot, StatsSnapshotEntry } from '../types/state'
-import { medianOf } from '../utils/stats'
-import { registerChartPlugins, niceCeil, smooth, formatTimeLabel, chartElementDefaults, chartScaleDefaults, chartLayoutDefaults, buildZoomConfig, pctTickCallback, memTickCallback } from '../utils/chart'
-import { shortTestName } from '../utils/format'
-import { formatEntryTimestamp, anchorTimestampMs, nextTimestampMode, isSuccessLine, annotationSourceIcon, annotationLevelClass, annotationSourceClass, type TimestampMode } from '../utils/output'
-import { useLinkedCharts } from '../composables/useLinkedCharts'
-import { useSyncedZoom } from '../composables/useSyncedZoom'
-import StatusIcon from './StatusIcon.vue'
-import ContainerLogViewer from './ContainerLogViewer.vue'
-import { Icon } from '@iconify/vue'
-import { useTestUI } from '../composables/useTestUI'
-import { DEFAULT_TARGET_TPS, TPS_PEAK_HEADROOM, TPS_TARGET_HEADROOM, METRIC_COLORS, formatBytesPerSec } from '../utils/metrics'
-import { instanceStatusDotClass, instanceStatusLabel } from '../utils/instance-status'
+import { Icon } from "@iconify/vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { Line } from "vue-chartjs";
+import { useLinkedCharts } from "../composables/useLinkedCharts";
+import { useSyncedZoom } from "../composables/useSyncedZoom";
+import { useTestUI } from "../composables/useTestUI";
+import type { InstanceHistoryEntry, InstanceSnapshot, SetupStepSnapshot, StatsSnapshotEntry } from "../types/state";
+import {
+    buildZoomConfig,
+    chartElementDefaults,
+    chartLayoutDefaults,
+    chartScaleDefaults,
+    formatTimeLabel,
+    memTickCallback,
+    niceCeil,
+    pctTickCallback,
+    registerChartPlugins,
+    smooth,
+} from "../utils/chart";
+import { shortTestName } from "../utils/format";
+import { instanceStatusDotClass, instanceStatusLabel } from "../utils/instance-status";
+import {
+    DEFAULT_TARGET_TPS,
+    formatBytesPerSec,
+    METRIC_COLORS,
+    TPS_PEAK_HEADROOM,
+    TPS_TARGET_HEADROOM,
+} from "../utils/metrics";
+import {
+    anchorTimestampMs,
+    annotationLevelClass,
+    annotationSourceClass,
+    annotationSourceIcon,
+    formatEntryTimestamp,
+    isSuccessLine,
+    nextTimestampMode,
+    type TimestampMode,
+} from "../utils/output";
+import { medianOf } from "../utils/stats";
+import ContainerLogViewer from "./ContainerLogViewer.vue";
+import StatusIcon from "./StatusIcon.vue";
 
-registerChartPlugins()
+registerChartPlugins();
 
-const { plugin: linkedPlugin, setChartRef: setLinkedChartRef } = useLinkedCharts()
+const { plugin: linkedPlugin, setChartRef: setLinkedChartRef } = useLinkedCharts();
 
-const props = withDefaults(defineProps<{
-  instance: InstanceSnapshot
-  stats?: { cpuPercent: number; memoryMb: number; cpuCount: number; totalMemoryMb: number; fps: number | null; tps: number | null; avgTickMs: number | null; gameMemoryMb: number | null; targetTps: number | null; targetFps: number | null; gcRate: number | null; pendingActions: number | null; gameThreadWaitMs: number | null; netRxBytesPerSec: number | null; netTxBytesPerSec: number | null; blkReadBytesPerSec: number | null; blkWriteBytesPerSec: number | null; memoryLimitMb: number }
-  statsHistory: StatsSnapshotEntry[]
-  instanceCount: number
-  setupSteps: SetupStepSnapshot[]
-  setupStatus: 'pending' | 'running' | 'completed' | 'failed' | null
-  stopped?: boolean
-  serverLabel?: string | null
-  connectedPeers?: { instanceId: string; label: string; instanceType: 'server' | 'client' }[]
-  resolveLabel?: (id: string) => string
-  canGoBack?: boolean
-  hasPrev?: boolean
-  hasNext?: boolean
-  screenshotSrc?: (path: string) => string
-}>(), { stopped: false, serverLabel: null, connectedPeers: undefined, resolveLabel: undefined, canGoBack: false, hasPrev: false, hasNext: false, screenshotSrc: (p: string) => `/artifacts/${p}` })
+const props = withDefaults(
+    defineProps<{
+        instance: InstanceSnapshot;
+        stats?: {
+            cpuPercent: number;
+            memoryMb: number;
+            cpuCount: number;
+            totalMemoryMb: number;
+            fps: number | null;
+            tps: number | null;
+            avgTickMs: number | null;
+            gameMemoryMb: number | null;
+            targetTps: number | null;
+            targetFps: number | null;
+            gcRate: number | null;
+            pendingActions: number | null;
+            gameThreadWaitMs: number | null;
+            netRxBytesPerSec: number | null;
+            netTxBytesPerSec: number | null;
+            blkReadBytesPerSec: number | null;
+            blkWriteBytesPerSec: number | null;
+            memoryLimitMb: number;
+        };
+        statsHistory: StatsSnapshotEntry[];
+        instanceCount: number;
+        setupSteps: SetupStepSnapshot[];
+        setupStatus: "pending" | "running" | "completed" | "failed" | null;
+        stopped?: boolean;
+        serverLabel?: string | null;
+        connectedPeers?: { instanceId: string; label: string; instanceType: "server" | "client" }[];
+        resolveLabel?: (id: string) => string;
+        canGoBack?: boolean;
+        hasPrev?: boolean;
+        hasNext?: boolean;
+        screenshotSrc?: (path: string) => string;
+    }>(),
+    {
+        stopped: false,
+        serverLabel: null,
+        connectedPeers: undefined,
+        resolveLabel: undefined,
+        canGoBack: false,
+        hasPrev: false,
+        hasNext: false,
+        screenshotSrc: (p: string) => `/artifacts/${p}`,
+    },
+);
 
 const emit = defineEmits<{
-  close: []
-  back: []
-  prev: []
-  next: []
-  'navigate-instance': [instanceId: string]
-  'navigate-test': [testName: string]
-}>()
+    close: [];
+    back: [];
+    prev: [];
+    next: [];
+    "navigate-instance": [instanceId: string];
+    "navigate-test": [testName: string];
+}>();
 
-const expandedSteps = ref<Set<string>>(new Set())
-const timestampMode = ref<TimestampMode>('off')
+const expandedSteps = ref<Set<string>>(new Set());
+const timestampMode = ref<TimestampMode>("off");
 const timestampTooltip = computed(() =>
-  timestampMode.value === 'off' ? 'Show absolute timestamps'
-  : timestampMode.value === 'absolute' ? 'Show relative timestamps'
-  : 'Hide timestamps')
+    timestampMode.value === "off"
+        ? "Show absolute timestamps"
+        : timestampMode.value === "absolute"
+          ? "Show relative timestamps"
+          : "Hide timestamps",
+);
 
 const {
-  charts: chartRefs,
-  trackChartRef: trackZoomRef,
-  syncAllAxes,
-  resetAll: resetChartZoom,
-  isZoomed,
-  ctrlHeld,
-} = useSyncedZoom()
+    charts: chartRefs,
+    trackChartRef: trackZoomRef,
+    syncAllAxes,
+    resetAll: resetChartZoom,
+    isZoomed,
+    ctrlHeld,
+} = useSyncedZoom();
 
 function setChartRef(el: any) {
-  if (!el) return
-  setLinkedChartRef(el)
-  trackZoomRef(el)
+    if (!el) return;
+    setLinkedChartRef(el);
+    trackZoomRef(el);
 }
 
 function toggleStep(step: string) {
-  if (expandedSteps.value.has(step)) expandedSteps.value.delete(step)
-  else expandedSteps.value.add(step)
+    if (expandedSteps.value.has(step)) expandedSteps.value.delete(step);
+    else expandedSteps.value.add(step);
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'ArrowLeft' && props.hasPrev) {
-    e.preventDefault()
-    emit('prev')
-  } else if (e.key === 'ArrowRight' && props.hasNext) {
-    e.preventDefault()
-    emit('next')
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    emit('close')
-  }
+    if (e.key === "ArrowLeft" && props.hasPrev) {
+        e.preventDefault();
+        emit("prev");
+    } else if (e.key === "ArrowRight" && props.hasNext) {
+        e.preventDefault();
+        emit("next");
+    } else if (e.key === "Escape") {
+        e.preventDefault();
+        emit("close");
+    }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeyDown))
+onMounted(() => window.addEventListener("keydown", onKeyDown));
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeyDown)
-  // Remove tooltip DOM elements created by leaseLinePlugin
-  const tooltips = document.querySelectorAll('.lease-marker-tip')
-  tooltips.forEach(el => el.remove())
-})
+    window.removeEventListener("keydown", onKeyDown);
+    // Remove tooltip DOM elements created by leaseLinePlugin
+    const tooltips = document.querySelectorAll(".lease-marker-tip");
+    tooltips.forEach((el) => el.remove());
+});
 
 // ── Scrub-to-history (driven by InfrastructureTimeline click) ──
-const { store } = useTestUI()
-const historyRows = ref<HTMLElement[]>([])
+const { store } = useTestUI();
+const historyRows = ref<HTMLElement[]>([]);
 function setHistoryRow(el: Element | null, idx: number) {
-  if (el instanceof HTMLElement) historyRows.value[idx] = el
+    if (el instanceof HTMLElement) historyRows.value[idx] = el;
 }
 
-watch(() => store.state.currentRunMs, async (ms) => {
-  if (ms == null) return
-  const startIso = store.state.runStartTime
-  const history = props.instance.history
-  if (!startIso || !history || history.length === 0) return
-  const runStart = new Date(startIso).getTime()
-  if (Number.isNaN(runStart)) return
-  let bestIdx = -1
-  let bestDelta = Infinity
-  for (let i = 0; i < history.length; i++) {
-    const t = new Date(history[i].timestamp).getTime()
-    if (Number.isNaN(t)) continue
-    const delta = Math.abs((t - runStart) - ms)
-    if (delta < bestDelta) {
-      bestDelta = delta
-      bestIdx = i
-    }
-  }
-  if (bestIdx < 0) return
-  // Wait one tick so freshly-mounted history rows are populated before scroll.
-  await nextTick()
-  const el = historyRows.value[bestIdx]
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}, { immediate: true })
+watch(
+    () => store.state.currentRunMs,
+    async (ms) => {
+        if (ms == null) return;
+        const startIso = store.state.runStartTime;
+        const history = props.instance.history;
+        if (!startIso || !history || history.length === 0) return;
+        const runStart = new Date(startIso).getTime();
+        if (Number.isNaN(runStart)) return;
+        let bestIdx = -1;
+        let bestDelta = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < history.length; i++) {
+            const t = new Date(history[i].timestamp).getTime();
+            if (Number.isNaN(t)) continue;
+            const delta = Math.abs(t - runStart - ms);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0) return;
+        // Wait one tick so freshly-mounted history rows are populated before scroll.
+        await nextTick();
+        const el = historyRows.value[bestIdx];
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    { immediate: true },
+);
 
-const isServer = computed(() => props.instance.instanceType === 'server')
+const isServer = computed(() => props.instance.instanceType === "server");
 
-const medianCpu = computed(() => medianOf(props.statsHistory, s => s.cpuPercent))
-const medianMem = computed(() => medianOf(props.statsHistory, s => s.gameMemoryMb ?? s.memoryMb))
-const medianTps = computed(() => medianOf(props.statsHistory, s => s.tps))
-const medianFps = computed(() => medianOf(props.statsHistory, s => s.fps))
-const medianQueue = computed(() => medianOf(props.statsHistory, s => s.pendingActions))
-const medianWait = computed(() => medianOf(props.statsHistory, s => s.gameThreadWaitMs))
-const medianGcRate = computed(() => medianOf(props.statsHistory, s => s.gcRate))
-const medianNetRx = computed(() => medianOf(props.statsHistory, s => s.netRxBytesPerSec))
-const medianNetTx = computed(() => medianOf(props.statsHistory, s => s.netTxBytesPerSec))
+const medianCpu = computed(() => medianOf(props.statsHistory, (s) => s.cpuPercent));
+const medianMem = computed(() => medianOf(props.statsHistory, (s) => s.gameMemoryMb ?? s.memoryMb));
+const medianTps = computed(() => medianOf(props.statsHistory, (s) => s.tps));
+const medianFps = computed(() => medianOf(props.statsHistory, (s) => s.fps));
+const medianQueue = computed(() => medianOf(props.statsHistory, (s) => s.pendingActions));
+const medianWait = computed(() => medianOf(props.statsHistory, (s) => s.gameThreadWaitMs));
+const medianGcRate = computed(() => medianOf(props.statsHistory, (s) => s.gcRate));
+const medianNetRx = computed(() => medianOf(props.statsHistory, (s) => s.netRxBytesPerSec));
+const medianNetTx = computed(() => medianOf(props.statsHistory, (s) => s.netTxBytesPerSec));
 
-const medianSampleCount = computed(() => props.statsHistory.length)
-const medianTooltip = computed(() => `Median of ${medianSampleCount.value} sample${medianSampleCount.value === 1 ? '' : 's'}`)
+const medianSampleCount = computed(() => props.statsHistory.length);
+const medianTooltip = computed(
+    () => `Median of ${medianSampleCount.value} sample${medianSampleCount.value === 1 ? "" : "s"}`,
+);
 
 // Chart options shared across all charts (built from shared defaults)
 const chartOptions = {
-  ...chartLayoutDefaults,
-  interaction: {
-    mode: 'index' as const,
-    intersect: false,
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      titleFont: { size: 11 },
-      bodyFont: { size: 11 },
-      callbacks: {
-        label: (ctx: any) => {
-          const v = ctx.raw as number | null
-          if (v == null) return ''
-          return `${Math.round(v * 10) / 10}`
-        },
-      },
+    ...chartLayoutDefaults,
+    interaction: {
+        mode: "index" as const,
+        intersect: false,
     },
-    zoom: buildZoomConfig({ ctrlHeld, onSync: syncAllAxes }),
-  },
-  scales: { ...chartScaleDefaults },
-  elements: { ...chartElementDefaults },
-}
+    plugins: {
+        legend: { display: false },
+        tooltip: {
+            backgroundColor: "rgba(0,0,0,0.8)",
+            titleFont: { size: 11 },
+            bodyFont: { size: 11 },
+            callbacks: {
+                label: (ctx: any) => {
+                    const v = ctx.raw as number | null;
+                    if (v == null) return "";
+                    return `${Math.round(v * 10) / 10}`;
+                },
+            },
+        },
+        zoom: buildZoomConfig({ ctrlHeld, onSync: syncAllAxes }),
+    },
+    scales: { ...chartScaleDefaults },
+    elements: { ...chartElementDefaults },
+};
 
-const labels = computed(() => props.statsHistory.map(s => formatTimeLabel(s.timestamp)))
+const labels = computed(() => props.statsHistory.map((s) => formatTimeLabel(s.timestamp)));
 
 function makeDataset(data: number[], color: string) {
-  return {
-    data,
-    borderColor: color,
-    backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
-    fill: true,
-    borderWidth: 1.5,
-  }
+    return {
+        data,
+        borderColor: color,
+        backgroundColor: color.replace(")", ", 0.1)").replace("rgb", "rgba"),
+        fill: true,
+        borderWidth: 1.5,
+    };
 }
 
 // ── Scale helpers ──
 // Track the highest value seen per metric so scales only grow (no jitter).
 // Snap to nice round ceilings with generous headroom.
-const peakCpu = ref(0)
-const peakMem = ref(0)
-const peakTps = ref(0)
-const peakFps = ref(0)
-const peakQueue = ref(0)
-const peakWait = ref(0)
-const peakGcRate = ref(0)
-const peakNetRx = ref(0)
-const peakNetTx = ref(0)
-
-
+const peakCpu = ref(0);
+const peakMem = ref(0);
+const peakTps = ref(0);
+const peakFps = ref(0);
+const peakQueue = ref(0);
+const peakWait = ref(0);
+const peakGcRate = ref(0);
+const peakNetRx = ref(0);
+const peakNetTx = ref(0);
 
 // Update peaks incrementally. Only check latest entry when history grows.
 // Reset and recompute when length shrinks (instance switched).
-let lastPeakLength = 0
+let lastPeakLength = 0;
 function updatePeaksFromEntry(s: StatsSnapshotEntry) {
-  if (s.cpuPercent > peakCpu.value) peakCpu.value = s.cpuPercent
-  const mem = s.gameMemoryMb ?? s.memoryMb
-  if (mem > peakMem.value) peakMem.value = mem
-  if (s.tps != null && s.tps > peakTps.value) peakTps.value = s.tps
-  if (s.fps != null && s.fps > peakFps.value) peakFps.value = s.fps
-  if (s.pendingActions != null && s.pendingActions > peakQueue.value) peakQueue.value = s.pendingActions
-  if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value) peakWait.value = s.gameThreadWaitMs
-  if (s.gcRate != null && s.gcRate > peakGcRate.value) peakGcRate.value = s.gcRate
-  if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value) peakNetRx.value = s.netRxBytesPerSec
-  if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value) peakNetTx.value = s.netTxBytesPerSec
+    if (s.cpuPercent > peakCpu.value) peakCpu.value = s.cpuPercent;
+    const mem = s.gameMemoryMb ?? s.memoryMb;
+    if (mem > peakMem.value) peakMem.value = mem;
+    if (s.tps != null && s.tps > peakTps.value) peakTps.value = s.tps;
+    if (s.fps != null && s.fps > peakFps.value) peakFps.value = s.fps;
+    if (s.pendingActions != null && s.pendingActions > peakQueue.value) peakQueue.value = s.pendingActions;
+    if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value) peakWait.value = s.gameThreadWaitMs;
+    if (s.gcRate != null && s.gcRate > peakGcRate.value) peakGcRate.value = s.gcRate;
+    if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value) peakNetRx.value = s.netRxBytesPerSec;
+    if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value) peakNetTx.value = s.netTxBytesPerSec;
 }
 
-watch(() => props.statsHistory.length, (len) => {
-  if (len < lastPeakLength) {
-    // History shrank (different instance); full recompute
-    peakCpu.value = 0; peakMem.value = 0; peakTps.value = 0; peakFps.value = 0
-    peakQueue.value = 0; peakWait.value = 0; peakGcRate.value = 0; peakNetRx.value = 0; peakNetTx.value = 0
-    for (const s of props.statsHistory) updatePeaksFromEntry(s)
-  } else if (len > lastPeakLength) {
-    updatePeaksFromEntry(props.statsHistory[len - 1])
-  }
-  lastPeakLength = len
-}, { immediate: true })
+watch(
+    () => props.statsHistory.length,
+    (len) => {
+        if (len < lastPeakLength) {
+            // History shrank (different instance); full recompute
+            peakCpu.value = 0;
+            peakMem.value = 0;
+            peakTps.value = 0;
+            peakFps.value = 0;
+            peakQueue.value = 0;
+            peakWait.value = 0;
+            peakGcRate.value = 0;
+            peakNetRx.value = 0;
+            peakNetTx.value = 0;
+            for (const s of props.statsHistory) updatePeaksFromEntry(s);
+        } else if (len > lastPeakLength) {
+            updatePeaksFromEntry(props.statsHistory[len - 1]);
+        }
+        lastPeakLength = len;
+    },
+    { immediate: true },
+);
 
 // ── CPU chart ──
 const cpuChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.cpuPercent)) as number[], METRIC_COLORS.cpu)],
-}))
+    labels: labels.value,
+    datasets: [makeDataset(smooth(props.statsHistory.map((s) => s.cpuPercent)) as number[], METRIC_COLORS.cpu)],
+}));
 
 const cpuOptions = computed(() => {
-  // Match badge logic: fair share = (cpuCount * 100) / instanceCount
-  // Badge fallback: cpuCount defaults to 4 when 0/unknown
-  const cpuCount = (props.stats?.cpuCount ?? 0) > 0 ? props.stats!.cpuCount! : 4
-  const fairShare = (cpuCount * 100) / Math.max(props.instanceCount, 1)
-  // Badge turns red at 1.5x fair share, so show that range comfortably
-  const max = niceCeil(Math.max(peakCpu.value * 1.15, fairShare * 1.5), 50)
-  return {
-    ...chartOptions,
-    scales: {
-      ...chartOptions.scales,
-      y: { ...chartOptions.scales.y, min: 0, max, ticks: { ...chartOptions.scales.y.ticks, callback: pctTickCallback } },
-    },
-  }
-})
+    // Match badge logic: fair share = (cpuCount * 100) / instanceCount
+    // Badge fallback: cpuCount defaults to 4 when 0/unknown
+    const cpuCount = (props.stats?.cpuCount ?? 0) > 0 ? props.stats!.cpuCount! : 4;
+    const fairShare = (cpuCount * 100) / Math.max(props.instanceCount, 1);
+    // Badge turns red at 1.5x fair share, so show that range comfortably
+    const max = niceCeil(Math.max(peakCpu.value * 1.15, fairShare * 1.5), 50);
+    return {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: {
+                ...chartOptions.scales.y,
+                min: 0,
+                max,
+                ticks: { ...chartOptions.scales.y.ticks, callback: pctTickCallback },
+            },
+        },
+    };
+});
 
 // ── Memory chart ──
 const memChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.gameMemoryMb ?? s.memoryMb)) as number[], METRIC_COLORS.mem)],
-}))
+    labels: labels.value,
+    datasets: [
+        makeDataset(smooth(props.statsHistory.map((s) => s.gameMemoryMb ?? s.memoryMb)) as number[], METRIC_COLORS.mem),
+    ],
+}));
 
 const memOptions = computed(() => {
-  // Match badge logic: fair share = totalMem / instanceCount
-  // Badge fallback: totalMem defaults to 16384 when 0/unknown
-  const totalMem = (props.stats?.totalMemoryMb ?? 0) > 0 ? props.stats!.totalMemoryMb! : 16384
-  const fairShare = totalMem / Math.max(props.instanceCount, 1)
-  // Badge turns red at 1.5x fair share, so show that range comfortably
-  const ceiling = niceCeil(Math.max(peakMem.value * 1.15, fairShare * 1.5), 512)
-  return {
-    ...chartOptions,
-    scales: {
-      ...chartOptions.scales,
-      y: {
-        ...chartOptions.scales.y,
-        min: 0,
-        max: ceiling,
-        ticks: { ...chartOptions.scales.y.ticks, callback: memTickCallback },
-      },
-    },
-  }
-})
+    // Match badge logic: fair share = totalMem / instanceCount
+    // Badge fallback: totalMem defaults to 16384 when 0/unknown
+    const totalMem = (props.stats?.totalMemoryMb ?? 0) > 0 ? props.stats!.totalMemoryMb! : 16384;
+    const fairShare = totalMem / Math.max(props.instanceCount, 1);
+    // Badge turns red at 1.5x fair share, so show that range comfortably
+    const ceiling = niceCeil(Math.max(peakMem.value * 1.15, fairShare * 1.5), 512);
+    return {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: {
+                ...chartOptions.scales.y,
+                min: 0,
+                max: ceiling,
+                ticks: { ...chartOptions.scales.y.ticks, callback: memTickCallback },
+            },
+        },
+    };
+});
 
 // ── TPS chart ──
 const tpsChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.tps ?? 0)) as number[], METRIC_COLORS.tps)],
-}))
+    labels: labels.value,
+    datasets: [makeDataset(smooth(props.statsHistory.map((s) => s.tps ?? 0)) as number[], METRIC_COLORS.tps)],
+}));
 
 const tpsOptions = computed(() => {
-  const target = props.stats?.targetTps ?? DEFAULT_TARGET_TPS
-  const max = niceCeil(Math.max(peakTps.value * TPS_PEAK_HEADROOM, target * TPS_TARGET_HEADROOM), 10)
-  return {
-    ...chartOptions,
-    scales: {
-      ...chartOptions.scales,
-      y: { ...chartOptions.scales.y, min: 0, max },
-    },
-  }
-})
+    const target = props.stats?.targetTps ?? DEFAULT_TARGET_TPS;
+    const max = niceCeil(Math.max(peakTps.value * TPS_PEAK_HEADROOM, target * TPS_TARGET_HEADROOM), 10);
+    return {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: { ...chartOptions.scales.y, min: 0, max },
+        },
+    };
+});
 
 // ── FPS chart ──
 const fpsChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.fps ?? 0)) as number[], METRIC_COLORS.fps)],
-}))
+    labels: labels.value,
+    datasets: [makeDataset(smooth(props.statsHistory.map((s) => s.fps ?? 0)) as number[], METRIC_COLORS.fps)],
+}));
 
 const fpsOptions = computed(() => {
-  const target = props.stats?.targetFps ?? props.stats?.targetTps ?? DEFAULT_TARGET_TPS
-  const max = niceCeil(Math.max(peakFps.value * TPS_PEAK_HEADROOM, target * TPS_TARGET_HEADROOM), 10)
-  return {
-    ...chartOptions,
-    scales: {
-      ...chartOptions.scales,
-      y: { ...chartOptions.scales.y, min: 0, max },
-    },
-  }
-})
+    const target = props.stats?.targetFps ?? props.stats?.targetTps ?? DEFAULT_TARGET_TPS;
+    const max = niceCeil(Math.max(peakFps.value * TPS_PEAK_HEADROOM, target * TPS_TARGET_HEADROOM), 10);
+    return {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: { ...chartOptions.scales.y, min: 0, max },
+        },
+    };
+});
 
 // ── Game Thread Queue chart ──
 const queueChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.pendingActions ?? 0)) as number[], METRIC_COLORS.queue)],
-}))
+    labels: labels.value,
+    datasets: [
+        makeDataset(smooth(props.statsHistory.map((s) => s.pendingActions ?? 0)) as number[], METRIC_COLORS.queue),
+    ],
+}));
 
 const queueOptions = computed(() => {
-  const max = niceCeil(Math.max(peakQueue.value * 1.15, 10), 5)
-  return { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max } } }
-})
+    const max = niceCeil(Math.max(peakQueue.value * 1.15, 10), 5);
+    return { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max } } };
+});
 
 // ── Thread Wait chart ──
 const waitChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.gameThreadWaitMs ?? 0)) as number[], METRIC_COLORS.wait)],
-}))
+    labels: labels.value,
+    datasets: [
+        makeDataset(smooth(props.statsHistory.map((s) => s.gameThreadWaitMs ?? 0)) as number[], METRIC_COLORS.wait),
+    ],
+}));
 
 const waitOptions = computed(() => {
-  const max = niceCeil(Math.max(peakWait.value * 1.15, 100), 50)
-  return {
-    ...chartOptions,
-    scales: {
-      ...chartOptions.scales,
-      y: { ...chartOptions.scales.y, min: 0, max, ticks: { ...chartOptions.scales.y.ticks, callback: (v: number) => `${v}ms` } },
-    },
-  }
-})
+    const max = niceCeil(Math.max(peakWait.value * 1.15, 100), 50);
+    return {
+        ...chartOptions,
+        scales: {
+            ...chartOptions.scales,
+            y: {
+                ...chartOptions.scales.y,
+                min: 0,
+                max,
+                ticks: { ...chartOptions.scales.y.ticks, callback: (v: number) => `${v}ms` },
+            },
+        },
+    };
+});
 
 // ── GC Rate chart ──
 const gcRateChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [makeDataset(smooth(props.statsHistory.map(s => s.gcRate ?? 0)) as number[], METRIC_COLORS.gc)],
-}))
+    labels: labels.value,
+    datasets: [makeDataset(smooth(props.statsHistory.map((s) => s.gcRate ?? 0)) as number[], METRIC_COLORS.gc)],
+}));
 
 const gcRateOptions = computed(() => {
-  const max = niceCeil(Math.max(peakGcRate.value * 1.15, 5), 2)
-  return { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max } } }
-})
+    const max = niceCeil(Math.max(peakGcRate.value * 1.15, 5), 2);
+    return { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max } } };
+});
 
 // ── Network I/O chart (2-line: RX + TX) ──
 const netChartData = computed(() => ({
-  labels: labels.value,
-  datasets: [
-    { ...makeDataset(smooth(props.statsHistory.map(s => s.netRxBytesPerSec ?? 0)) as number[], METRIC_COLORS.netRx), label: 'RX' },
-    { ...makeDataset(smooth(props.statsHistory.map(s => s.netTxBytesPerSec ?? 0)) as number[], METRIC_COLORS.netTx), label: 'TX' },
-  ],
-}))
+    labels: labels.value,
+    datasets: [
+        {
+            ...makeDataset(
+                smooth(props.statsHistory.map((s) => s.netRxBytesPerSec ?? 0)) as number[],
+                METRIC_COLORS.netRx,
+            ),
+            label: "RX",
+        },
+        {
+            ...makeDataset(
+                smooth(props.statsHistory.map((s) => s.netTxBytesPerSec ?? 0)) as number[],
+                METRIC_COLORS.netTx,
+            ),
+            label: "TX",
+        },
+    ],
+}));
 
 const netOptions = computed(() => {
-  const peakNet = Math.max(peakNetRx.value, peakNetTx.value)
-  const max = niceCeil(Math.max(peakNet * 1.15, 1024), 1024)
-  return {
-    ...chartOptions,
-    plugins: {
-      ...chartOptions.plugins,
-      legend: { display: true, position: 'top' as const, labels: { color: 'rgba(255,255,255,0.5)', font: { size: 9 }, boxWidth: 12, boxHeight: 2, padding: 4 } },
-      tooltip: {
-        ...chartOptions.plugins.tooltip,
-        callbacks: {
-          label: (ctx: any) => {
-            const v = ctx.raw as number | null
-            if (v == null) return ''
-            return `${ctx.dataset.label}: ${formatBytesPerSec(v)}`
-          },
+    const peakNet = Math.max(peakNetRx.value, peakNetTx.value);
+    const max = niceCeil(Math.max(peakNet * 1.15, 1024), 1024);
+    return {
+        ...chartOptions,
+        plugins: {
+            ...chartOptions.plugins,
+            legend: {
+                display: true,
+                position: "top" as const,
+                labels: { color: "rgba(255,255,255,0.5)", font: { size: 9 }, boxWidth: 12, boxHeight: 2, padding: 4 },
+            },
+            tooltip: {
+                ...chartOptions.plugins.tooltip,
+                callbacks: {
+                    label: (ctx: any) => {
+                        const v = ctx.raw as number | null;
+                        if (v == null) return "";
+                        return `${ctx.dataset.label}: ${formatBytesPerSec(v)}`;
+                    },
+                },
+            },
         },
-      },
-    },
-    scales: {
-      ...chartOptions.scales,
-      y: { ...chartOptions.scales.y, min: 0, max, ticks: { ...chartOptions.scales.y.ticks, callback: (v: number) => formatBytesPerSec(v) } },
-    },
-  }
-})
+        scales: {
+            ...chartOptions.scales,
+            y: {
+                ...chartOptions.scales.y,
+                min: 0,
+                max,
+                ticks: { ...chartOptions.scales.y.ticks, callback: (v: number) => formatBytesPerSec(v) },
+            },
+        },
+    };
+});
 
 // ── Lease event markers for charts ──
-const showLeaseMarkers = ref(true)
+const showLeaseMarkers = ref(true);
 
 watch(showLeaseMarkers, () => {
-  for (const c of chartRefs) {
-    c?.chart?.update('none')
-  }
-})
+    for (const c of chartRefs) {
+        c?.chart?.update("none");
+    }
+});
 
 const leaseMarkers = computed(() => {
-  if (props.statsHistory.length === 0) return []
-  const markers: { index: number; label: string }[] = []
-  for (const entry of props.instance.history) {
-    if (entry.event !== 'leased') continue
-    const entryTime = new Date(entry.timestamp).getTime()
-    let closest = -1, minDiff = Infinity
-    for (let i = 0; i < props.statsHistory.length; i++) {
-      const diff = Math.abs(new Date(props.statsHistory[i].timestamp).getTime() - entryTime)
-      if (diff < minDiff) { minDiff = diff; closest = i }
+    if (props.statsHistory.length === 0) return [];
+    const markers: { index: number; label: string }[] = [];
+    for (const entry of props.instance.history) {
+        if (entry.event !== "leased") continue;
+        const entryTime = new Date(entry.timestamp).getTime();
+        let closest = -1,
+            minDiff = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < props.statsHistory.length; i++) {
+            const diff = Math.abs(new Date(props.statsHistory[i].timestamp).getTime() - entryTime);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = i;
+            }
+        }
+        if (closest >= 0 && minDiff < 30000) {
+            markers.push({ index: closest, label: entry.testName ?? "Leased" });
+        }
     }
-    if (closest >= 0 && minDiff < 30000) {
-      markers.push({ index: closest, label: entry.testName ?? 'Leased' })
-    }
-  }
-  return markers
-})
+    return markers;
+});
 
 const leaseLinePlugin = {
-  id: 'leaseLines',
-  afterDraw(chart: any) {
-    if (!showLeaseMarkers.value) return
-    const meta = chart.getDatasetMeta(0)
-    if (!meta?.data?.length) return
-    const ctx = chart.ctx
-    const yScale = chart.scales.y
-    const mouseX = (chart as any)._leaseMouseX as number | undefined
+    id: "leaseLines",
+    afterDraw(chart: any) {
+        if (!showLeaseMarkers.value) return;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta?.data?.length) return;
+        const ctx = chart.ctx;
+        const yScale = chart.scales.y;
+        const mouseX = (chart as any)._leaseMouseX as number | undefined;
 
-    // First pass: find nearest marker within hover tolerance (6px).
-    let nearestIndex = -1
-    let nearestDist = Infinity
-    if (mouseX != null) {
-      for (let i = 0; i < leaseMarkers.value.length; i++) {
-        const m = leaseMarkers.value[i]
-        if (m.index >= meta.data.length) continue
-        const dist = Math.abs(mouseX - meta.data[m.index].x)
-        if (dist < 6 && dist < nearestDist) {
-          nearestDist = dist
-          nearestIndex = i
+        // First pass: find nearest marker within hover tolerance (6px).
+        let nearestIndex = -1;
+        let nearestDist = Number.POSITIVE_INFINITY;
+        if (mouseX != null) {
+            for (let i = 0; i < leaseMarkers.value.length; i++) {
+                const m = leaseMarkers.value[i];
+                if (m.index >= meta.data.length) continue;
+                const dist = Math.abs(mouseX - meta.data[m.index].x);
+                if (dist < 6 && dist < nearestDist) {
+                    nearestDist = dist;
+                    nearestIndex = i;
+                }
+            }
         }
-      }
-    }
 
-    let hoveredMarker: { label: string; x: number } | null = null
-    for (let i = 0; i < leaseMarkers.value.length; i++) {
-      const m = leaseMarkers.value[i]
-      if (m.index >= meta.data.length) continue
-      const x = meta.data[m.index].x
-      const isHovered = i === nearestIndex
-      if (isHovered) hoveredMarker = { label: m.label, x }
-      ctx.save()
-      ctx.strokeStyle = isHovered ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.28)'
-      ctx.lineWidth = isHovered ? 2.5 : 1.5
-      ctx.setLineDash([4, 3])
-      ctx.beginPath()
-      ctx.moveTo(x, yScale.top)
-      ctx.lineTo(x, yScale.bottom)
-      ctx.stroke()
-      ctx.restore()
-    }
-    // Position HTML tooltip (managed as a child of the canvas wrapper)
-    const wrapper = chart.canvas?.parentElement
-    if (!wrapper) return
-    let tip = wrapper.querySelector('.lease-marker-tip') as HTMLElement | null
-    if (hoveredMarker) {
-      if (!tip) {
-        tip = document.createElement('div')
-        tip.className = 'lease-marker-tip'
-        Object.assign(tip.style, {
-          position: 'absolute', pointerEvents: 'none', zIndex: '10',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.8)', color: 'rgba(255,255,255,0.9)',
-          fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
-          whiteSpace: 'nowrap', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-        })
-        wrapper.appendChild(tip)
-      }
-      tip.textContent = hoveredMarker.label
-      tip.style.left = hoveredMarker.x + 'px'
-      tip.style.top = (yScale.top - 4) + 'px'
-      tip.style.display = ''
-    } else if (tip) {
-      tip.style.display = 'none'
-    }
-  },
-  afterEvent(chart: any, args: any) {
-    if (args.event.type === 'mousemove') {
-      (chart as any)._leaseMouseX = args.event.x
-      chart.draw()
-    } else if (args.event.type === 'mouseout') {
-      (chart as any)._leaseMouseX = undefined
-      const tip = chart.canvas?.parentElement?.querySelector('.lease-marker-tip') as HTMLElement | null
-      if (tip) tip.style.display = 'none'
-      chart.draw()
-    }
-  }
-}
+        let hoveredMarker: { label: string; x: number } | null = null;
+        for (let i = 0; i < leaseMarkers.value.length; i++) {
+            const m = leaseMarkers.value[i];
+            if (m.index >= meta.data.length) continue;
+            const x = meta.data[m.index].x;
+            const isHovered = i === nearestIndex;
+            if (isHovered) hoveredMarker = { label: m.label, x };
+            ctx.save();
+            ctx.strokeStyle = isHovered ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.28)";
+            ctx.lineWidth = isHovered ? 2.5 : 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x, yScale.top);
+            ctx.lineTo(x, yScale.bottom);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // Position HTML tooltip (managed as a child of the canvas wrapper)
+        const wrapper = chart.canvas?.parentElement;
+        if (!wrapper) return;
+        let tip = wrapper.querySelector(".lease-marker-tip") as HTMLElement | null;
+        if (hoveredMarker) {
+            if (!tip) {
+                tip = document.createElement("div");
+                tip.className = "lease-marker-tip";
+                Object.assign(tip.style, {
+                    position: "absolute",
+                    pointerEvents: "none",
+                    zIndex: "10",
+                    transform: "translateX(-50%)",
+                    background: "rgba(0,0,0,0.8)",
+                    color: "rgba(255,255,255,0.9)",
+                    fontSize: "10px",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    whiteSpace: "nowrap",
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+                });
+                wrapper.appendChild(tip);
+            }
+            tip.textContent = hoveredMarker.label;
+            tip.style.left = hoveredMarker.x + "px";
+            tip.style.top = yScale.top - 4 + "px";
+            tip.style.display = "";
+        } else if (tip) {
+            tip.style.display = "none";
+        }
+    },
+    afterEvent(chart: any, args: any) {
+        if (args.event.type === "mousemove") {
+            (chart as any)._leaseMouseX = args.event.x;
+            chart.draw();
+        } else if (args.event.type === "mouseout") {
+            (chart as any)._leaseMouseX = undefined;
+            const tip = chart.canvas?.parentElement?.querySelector(".lease-marker-tip") as HTMLElement | null;
+            if (tip) tip.style.display = "none";
+            chart.draw();
+        }
+    },
+};
 
 function statusDotClass(): string {
-  return instanceStatusDotClass(props.instance.status, props.instance.connected, props.stopped, 'md')
+    return instanceStatusDotClass(props.instance.status, props.instance.connected, props.stopped, "md");
 }
 
 function statusLabel(): string {
-  return instanceStatusLabel(props.instance.status, props.instance.connected, props.stopped, true)
+    return instanceStatusLabel(props.instance.status, props.instance.connected, props.stopped, true);
 }
 
 function historyLabel(entry: InstanceHistoryEntry): string {
-  switch (entry.event) {
-    case 'created': return 'Created'
-    case 'leased': return entry.testName ? 'Leased for' : 'Leased'
-    case 'returned': return 'Returned to pool'
-    case 'connected': return 'Connected'
-    case 'disconnected': return 'Disconnected'
-    case 'client_attached': return 'Client attached'
-    case 'poisoned': return entry.reason ? `Poisoned: ${entry.reason}` : 'Poisoned'
-    case 'disposed': return 'Disposed'
-    default: return entry.event
-  }
+    switch (entry.event) {
+        case "created":
+            return "Created";
+        case "leased":
+            return entry.testName ? "Leased for" : "Leased";
+        case "returned":
+            return "Returned to pool";
+        case "connected":
+            return "Connected";
+        case "disconnected":
+            return "Disconnected";
+        case "client_attached":
+            return "Client attached";
+        case "poisoned":
+            return entry.reason ? `Poisoned: ${entry.reason}` : "Poisoned";
+        case "disposed":
+            return "Disposed";
+        default:
+            return entry.event;
+    }
 }
 
 function formatHistoryTime(timestamp: string): string {
-  const d = new Date(timestamp)
-  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    + '.' + String(d.getMilliseconds()).padStart(3, '0')
+    const d = new Date(timestamp);
+    return (
+        d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+        "." +
+        String(d.getMilliseconds()).padStart(3, "0")
+    );
 }
-
-
 </script>
 
 <template>

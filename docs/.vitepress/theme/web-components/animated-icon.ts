@@ -261,7 +261,7 @@ export default class AnimatedIcon extends AnimatedIcons {
         // Small trick to have dynamic colors without recreating each AnimatedIcon.
         // Targets the SVG path with known stroke color, and just overrides it.
         const sheet = new CSSStyleSheet();
-            sheet.replaceSync(`
+        sheet.replaceSync(`
             g path[stroke="rgb(255,0,0)"] {
                 stroke: var(--vp-c-brand-1) !important;
                 transition: stroke 0.3s ease !important;
@@ -291,11 +291,11 @@ export default class AnimatedIcon extends AnimatedIcons {
         const rootStyles = getComputedStyle(root);
 
         // Get the value of the CSS variable
-        const c1 = rootStyles.getPropertyValue('--vp-c-brand-2').trim();
-        const c2 = rootStyles.getPropertyValue('--vp-c-brand-3').trim();
+        const c1 = rootStyles.getPropertyValue("--vp-c-brand-2").trim();
+        const c2 = rootStyles.getPropertyValue("--vp-c-brand-3").trim();
 
         // Randomly pick a color and remember which one
-        this.colorGroup = Math.random() >= 0.5 ? 'c1' : 'c2';
+        this.colorGroup = Math.random() >= 0.5 ? "c1" : "c2";
 
         // Default attributes
         const defaultAttributes = {
@@ -323,7 +323,6 @@ export default class AnimatedIcon extends AnimatedIcons {
 
         // Call the parent connectedCallback to handle Lottie initialization
         super.connectedCallback();
-
 
         // Uncomment in case we remove all the customization for external play,
         // and load "https://animatedicons.co/scripts/embed-animated-icons.js"

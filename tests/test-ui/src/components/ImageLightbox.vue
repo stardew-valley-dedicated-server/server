@@ -1,57 +1,63 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
-const props = withDefaults(defineProps<{
-  images: { src: string; alt: string; source: string }[]
-  initialIndex?: number
-}>(), {
-  initialIndex: 0,
-})
+const props = withDefaults(
+    defineProps<{
+        images: { src: string; alt: string; source: string }[];
+        initialIndex?: number;
+    }>(),
+    {
+        initialIndex: 0,
+    },
+);
 
 const emit = defineEmits<{
-  close: []
-}>()
+    close: [];
+}>();
 
-const currentIndex = ref(props.initialIndex)
-const loaded = ref(false)
+const currentIndex = ref(props.initialIndex);
+const loaded = ref(false);
 
-const currentSource = computed(() => props.images[currentIndex.value]?.source ?? '')
+const currentSource = computed(() => props.images[currentIndex.value]?.source ?? "");
 
-watch(() => props.initialIndex, (val) => {
-  currentIndex.value = val
-  loaded.value = false
-})
+watch(
+    () => props.initialIndex,
+    (val) => {
+        currentIndex.value = val;
+        loaded.value = false;
+    },
+);
 
 function prev() {
-  const len = props.images.length
-  if (len === 0) return
-  currentIndex.value = currentIndex.value > 0 ? currentIndex.value - 1 : len - 1
-  loaded.value = false
+    const len = props.images.length;
+    if (len === 0) return;
+    currentIndex.value = currentIndex.value > 0 ? currentIndex.value - 1 : len - 1;
+    loaded.value = false;
 }
 
 function next() {
-  const len = props.images.length
-  if (len === 0) return
-  currentIndex.value = currentIndex.value < len - 1 ? currentIndex.value + 1 : 0
-  loaded.value = false
+    const len = props.images.length;
+    if (len === 0) return;
+    currentIndex.value = currentIndex.value < len - 1 ? currentIndex.value + 1 : 0;
+    loaded.value = false;
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    emit('close')
-  } else if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    prev()
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    next()
-  }
+    if (e.key === "Escape") {
+        e.preventDefault();
+        emit("close");
+    } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        prev();
+    } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        next();
+    }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>

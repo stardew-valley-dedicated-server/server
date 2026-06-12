@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
 interface ServerStatus {
     serverName: string;
@@ -36,7 +36,6 @@ const statusText = computed(() => {
     if (status.value.currentPlayers >= status.value.maxPlayers) return "Full";
     return "Online";
 });
-
 
 async function fetchStatus() {
     // TODO: Replace mock with real API call

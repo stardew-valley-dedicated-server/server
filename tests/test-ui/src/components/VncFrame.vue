@@ -1,206 +1,221 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps<{
-  src: string
-  title: string
-  interactive: boolean
-  /** Base VNC URL without query params, used as stable iframe key to preserve connections. */
-  baseUrl?: string
-  /** When true, immediately stop all retries, health checks, and show a disconnected state. */
-  stopped?: boolean
-  /** Container disposed mid-run. Halt reconnects, show overlay, but remain non-terminal so runDone can still finalize. */
-  retained?: boolean
-  /** Overlay message shown when retained. */
-  retainedMessage?: string
-  /** True while the retained overlay should show a spinner (work still in progress, e.g. recording finalizing). */
-  retainedBusy?: boolean
-}>()
+    src: string;
+    title: string;
+    interactive: boolean;
+    /** Base VNC URL without query params, used as stable iframe key to preserve connections. */
+    baseUrl?: string;
+    /** When true, immediately stop all retries, health checks, and show a disconnected state. */
+    stopped?: boolean;
+    /** Container disposed mid-run. Halt reconnects, show overlay, but remain non-terminal so runDone can still finalize. */
+    retained?: boolean;
+    /** Overlay message shown when retained. */
+    retainedMessage?: string;
+    /** True while the retained overlay should show a spinner (work still in progress, e.g. recording finalizing). */
+    retainedBusy?: boolean;
+}>();
 
-type LoadState = 'loading' | 'connected' | 'error'
+type LoadState = "loading" | "connected" | "error";
 
-const RETRY_DELAY_S = 5
+const RETRY_DELAY_S = 5;
 
-const state = ref<LoadState>('loading')
-const errorMessage = ref('')
-const retryCountdown = ref(0)
-const iframeRef = ref<HTMLIFrameElement | null>(null)
-let retryTimer: ReturnType<typeof setInterval> | null = null
-let healthTimer: ReturnType<typeof setInterval> | null = null
-let aborted = false
+const state = ref<LoadState>("loading");
+const errorMessage = ref("");
+const retryCountdown = ref(0);
+const iframeRef = ref<HTMLIFrameElement | null>(null);
+let retryTimer: ReturnType<typeof setInterval> | null = null;
+let healthTimer: ReturnType<typeof setInterval> | null = null;
+let aborted = false;
 
 function onIframeLoad() {
-  if (aborted) return
-  // While retained, ignore any in-flight load events from the previous src.
-  if (props.retained) return
-  // Ignore load events from about:blank
-  const currentSrc = iframeRef.value?.src ?? ''
-  if (!currentSrc || currentSrc === 'about:blank') return
-  state.value = 'connected'
-  errorMessage.value = ''
-  cancelRetry()
-  startHealthCheck()
+    if (aborted) return;
+    // While retained, ignore any in-flight load events from the previous src.
+    if (props.retained) return;
+    // Ignore load events from about:blank
+    const currentSrc = iframeRef.value?.src ?? "";
+    if (!currentSrc || currentSrc === "about:blank") return;
+    state.value = "connected";
+    errorMessage.value = "";
+    cancelRetry();
+    startHealthCheck();
 }
 
 /** Periodically verify the VNC endpoint is still reachable while connected. */
 function startHealthCheck() {
-  stopHealthCheck()
-  healthTimer = setInterval(async () => {
-    if (aborted || state.value !== 'connected') {
-      stopHealthCheck()
-      return
-    }
-    try {
-      await fetch(props.src, { mode: 'no-cors', signal: AbortSignal.timeout(5000) })
-    } catch {
-      if (aborted) return
-      state.value = 'error'
-      errorMessage.value = 'Connection lost'
-      stopHealthCheck()
-      scheduleRetry()
-    }
-  }, 5000)
+    stopHealthCheck();
+    healthTimer = setInterval(async () => {
+        if (aborted || state.value !== "connected") {
+            stopHealthCheck();
+            return;
+        }
+        try {
+            await fetch(props.src, { mode: "no-cors", signal: AbortSignal.timeout(5000) });
+        } catch {
+            if (aborted) return;
+            state.value = "error";
+            errorMessage.value = "Connection lost";
+            stopHealthCheck();
+            scheduleRetry();
+        }
+    }, 5000);
 }
 
 function stopHealthCheck() {
-  if (healthTimer) {
-    clearInterval(healthTimer)
-    healthTimer = null
-  }
+    if (healthTimer) {
+        clearInterval(healthTimer);
+        healthTimer = null;
+    }
 }
 
 function scheduleRetry() {
-  cancelRetry()
-  if (aborted) return
-  retryCountdown.value = RETRY_DELAY_S
-  retryTimer = setInterval(() => {
-    retryCountdown.value--
-    if (retryCountdown.value <= 0) {
-      cancelRetry()
-      reload()
-    }
-  }, 1000)
+    cancelRetry();
+    if (aborted) return;
+    retryCountdown.value = RETRY_DELAY_S;
+    retryTimer = setInterval(() => {
+        retryCountdown.value--;
+        if (retryCountdown.value <= 0) {
+            cancelRetry();
+            reload();
+        }
+    }, 1000);
 }
 
 function cancelRetry() {
-  if (retryTimer) {
-    clearInterval(retryTimer)
-    retryTimer = null
-  }
-  retryCountdown.value = 0
+    if (retryTimer) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+    }
+    retryCountdown.value = 0;
 }
 
 function reload() {
-  if (aborted) return
-  cancelRetry()
-  state.value = 'loading'
-  errorMessage.value = ''
-  if (iframeRef.value) {
-    iframeRef.value.src = 'about:blank'
-    requestAnimationFrame(() => {
-      if (iframeRef.value && !aborted) {
-        iframeRef.value.src = props.src
-      }
-    })
-  }
+    if (aborted) return;
+    cancelRetry();
+    state.value = "loading";
+    errorMessage.value = "";
+    if (iframeRef.value) {
+        iframeRef.value.src = "about:blank";
+        requestAnimationFrame(() => {
+            if (iframeRef.value && !aborted) {
+                iframeRef.value.src = props.src;
+            }
+        });
+    }
 }
 
 /** Halt all retry/health-check activity and blank the iframe. Does NOT set aborted. */
 function haltReconnects() {
-  stopHealthCheck()
-  clearLoadTimeout()
-  cancelRetry()
-  if (iframeRef.value) iframeRef.value.src = 'about:blank'
+    stopHealthCheck();
+    clearLoadTimeout();
+    cancelRetry();
+    if (iframeRef.value) iframeRef.value.src = "about:blank";
 }
 
 /** Stop all activity: clear iframe, halt retries/health checks. Terminal. */
 function stop() {
-  aborted = true
-  haltReconnects()
-  state.value = 'error'
-  errorMessage.value = 'Disconnected'
+    aborted = true;
+    haltReconnects();
+    state.value = "error";
+    errorMessage.value = "Disconnected";
 }
 
 /** Enter retained phase: halt reconnects, show retained overlay. Non-terminal. */
 function enterRetained() {
-  haltReconnects()
-  state.value = 'error'
-  errorMessage.value = props.retainedMessage ?? ''
+    haltReconnects();
+    state.value = "error";
+    errorMessage.value = props.retainedMessage ?? "";
 }
 
 // React to the stopped prop. Shut everything down immediately.
-watch(() => props.stopped, (stopped) => {
-  if (stopped) stop()
-})
+watch(
+    () => props.stopped,
+    (stopped) => {
+        if (stopped) stop();
+    },
+);
 
 // React to the retained prop. Halt reconnects without aborting.
-watch(() => props.retained, (retained) => {
-  if (retained && !props.stopped) enterRetained()
-})
+watch(
+    () => props.retained,
+    (retained) => {
+        if (retained && !props.stopped) enterRetained();
+    },
+);
 
 // Keep overlay message in sync while retained (e.g. transitioning from "Finalizing..." to "Recording captured").
-watch(() => props.retainedMessage, (msg) => {
-  if (props.retained && !props.stopped && state.value === 'error') {
-    errorMessage.value = msg ?? ''
-  }
-})
+watch(
+    () => props.retainedMessage,
+    (msg) => {
+        if (props.retained && !props.stopped && state.value === "error") {
+            errorMessage.value = msg ?? "";
+        }
+    },
+);
 
 // Re-load when src changes (e.g. interactive toggle flips query params on a stable key)
-watch(() => props.src, (newSrc) => {
-  stopHealthCheck()
-  cancelRetry()
-  state.value = 'loading'
-  if (iframeRef.value) {
-    iframeRef.value.src = newSrc
-  }
-})
+watch(
+    () => props.src,
+    (newSrc) => {
+        stopHealthCheck();
+        cancelRetry();
+        state.value = "loading";
+        if (iframeRef.value) {
+            iframeRef.value.src = newSrc;
+        }
+    },
+);
 
 // If iframe hasn't fired onload within 10s, assume connection failure
-let loadTimeout: ReturnType<typeof setTimeout> | null = null
+let loadTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function startLoadTimeout() {
-  clearLoadTimeout()
-  loadTimeout = setTimeout(() => {
-    if (state.value === 'loading' && !aborted) {
-      state.value = 'error'
-      errorMessage.value = 'Connection timed out'
-      scheduleRetry()
-    }
-  }, 10000)
+    clearLoadTimeout();
+    loadTimeout = setTimeout(() => {
+        if (state.value === "loading" && !aborted) {
+            state.value = "error";
+            errorMessage.value = "Connection timed out";
+            scheduleRetry();
+        }
+    }, 10000);
 }
 
 function clearLoadTimeout() {
-  if (loadTimeout) {
-    clearTimeout(loadTimeout)
-    loadTimeout = null
-  }
+    if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+    }
 }
 
-watch(() => state.value, (newState) => {
-  if (newState === 'loading') {
-    startLoadTimeout()
-  } else {
-    clearLoadTimeout()
-  }
-})
+watch(
+    () => state.value,
+    (newState) => {
+        if (newState === "loading") {
+            startLoadTimeout();
+        } else {
+            clearLoadTimeout();
+        }
+    },
+);
 
 onMounted(() => {
-  if (props.stopped) {
-    stop()
-  } else if (props.retained) {
-    enterRetained()
-  } else {
-    startLoadTimeout()
-  }
-})
+    if (props.stopped) {
+        stop();
+    } else if (props.retained) {
+        enterRetained();
+    } else {
+        startLoadTimeout();
+    }
+});
 
 onUnmounted(() => {
-  aborted = true
-  stopHealthCheck()
-  clearLoadTimeout()
-  cancelRetry()
-})
+    aborted = true;
+    stopHealthCheck();
+    clearLoadTimeout();
+    cancelRetry();
+});
 </script>
 
 <template>
