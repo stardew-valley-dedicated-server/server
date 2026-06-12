@@ -13,7 +13,7 @@ namespace JunimoServer.Tests.Helpers;
 /// <para>
 /// Used by both <see cref="Containers.ServerContainer"/> and
 /// <see cref="Containers.GameClientContainer"/>; the mod's <c>/health</c>
-/// response shape (<see cref="JunimoServer.Services.Api.ApiService.HealthResponse"/>)
+/// response shape (the mod's <c>ApiService.HealthResponse</c>)
 /// is identical for server and client so the same wait strategy works for both.
 /// </para>
 ///

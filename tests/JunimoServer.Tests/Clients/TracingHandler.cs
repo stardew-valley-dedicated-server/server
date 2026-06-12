@@ -21,7 +21,7 @@ namespace JunimoServer.Tests.Clients;
 /// </list>
 ///
 /// <para>
-/// <paramref name="clientKind"/> distinguishes calls to the server mod ("server")
+/// <c>clientKind</c> distinguishes calls to the server mod ("server")
 /// from calls to the test-client mod ("test-client").
 /// </para>
 /// </summary>

@@ -95,7 +95,7 @@ internal sealed class ClientPool : IAsyncDisposable
 
     /// <summary>
     /// Leases a client from the pool. Reuses an available client or creates a new one.
-    /// Global concurrency is bounded by <see cref="ClientCapacity"/>.
+    /// Global concurrency is bounded by <see cref="DockerHost.ClientCapacity"/>.
     /// <para>
     /// Steam-account ownership is bound to the lease, not the container. The Steam
     /// account index stays pinned to its container for the container's lifetime

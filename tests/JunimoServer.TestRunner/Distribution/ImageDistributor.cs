@@ -602,7 +602,7 @@ public sealed class ImageDistributor : IDisposable
     /// <see cref="IProgress{JSONMessage}"/> that captures daemon errors,
     /// tracks the daemon's most recent status line, and emits throttled
     /// progress events to <see cref="InfrastructureEventLog"/>, stderr, and
-    /// (when non-null) the renderer. <see cref="StreamUtil.MonitorStreamForMessagesAsync"/>
+    /// (when non-null) the renderer. Docker.DotNet's <c>StreamUtil.MonitorStreamForMessagesAsync</c>
     /// does NOT throw on daemon errors — we stash the first error and
     /// re-raise via <see cref="ThrowIfFailed"/>.
     /// </summary>

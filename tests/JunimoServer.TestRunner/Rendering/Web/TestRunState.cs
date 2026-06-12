@@ -1057,7 +1057,7 @@ public sealed class TestRunState
 
     /// <summary>
     /// Applies a recording-skipped event. Updates the test's per-source
-    /// <see cref="Test.RecordingSkipReasons"/> map and broadcasts to clients.
+    /// <see cref="TestState.RecordingSkipReasons"/> map and broadcasts to clients.
     /// Mirrors <see cref="ApplyRecordingCaptured"/> for skip events.
     /// </summary>
     public string ApplyRecordingSkipped(RecordingSkippedEvent e)

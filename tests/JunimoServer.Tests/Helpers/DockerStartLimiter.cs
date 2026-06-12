@@ -29,7 +29,7 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// <para>
 /// <b>Poison semantics</b>: a host-scoped <see cref="CancellationTokenSource"/>
-/// is linked into every <see cref="WaitAsync"/>. When <see cref="DockerHost.Poison"/>
+/// is linked into every <see cref="WaitAsync"/>. When <see cref="Infrastructure.DockerHost.Poison"/>
 /// fires, all queued waiters return promptly with <see cref="OperationCanceledException"/>
 /// instead of hanging until outer cancellation. This preserves the
 /// <c>host_disconnected</c> cascade documented in
@@ -155,7 +155,7 @@ internal sealed class DockerStartLimiter : IDisposable
     /// <summary>
     /// Cancels every queued waiter, unblocking them with
     /// <see cref="OperationCanceledException"/>. Idempotent. Called from
-    /// <see cref="DockerHost.Poison"/>.
+    /// <see cref="Infrastructure.DockerHost.Poison"/>.
     /// </summary>
     public void CancelPending()
     {

@@ -11,7 +11,7 @@ namespace JunimoServer.Tests.Helpers;
 /// Static event bus for fixture setup progress.
 ///
 /// Producers call <c>EmitX</c>; this builds a typed <see cref="IRendererEvent"/>
-/// record and hands it to the parent <see cref="JunimoServer.TestRunner"/>'s
+/// record and hands it to the parent <c>JunimoServer.TestRunner</c>'s
 /// renderer over a named pipe. The pipe is the only sink — the test assembly
 /// must be invoked through the runner.
 ///

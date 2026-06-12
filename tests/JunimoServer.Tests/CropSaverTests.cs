@@ -21,7 +21,7 @@ namespace JunimoServer.Tests;
 /// <c>KillCrop_Prefix</c>'s switch from a hardcoded <c>"Farm"</c> lookup to
 /// <c>dirt.Location.Name</c> suppresses vanilla <c>Crop.Kill()</c>'s
 /// out-of-season kill. Also exercises <c>SaverCrop.TryGetCoorespondingDirt</c>'s
-/// <see cref="StardewValley.Objects.IndoorPot"/> branch.
+/// <c>StardewValley.Objects.IndoorPot</c> branch.
 /// </description></item>
 /// </list>
 /// </summary>

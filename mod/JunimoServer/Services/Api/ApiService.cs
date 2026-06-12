@@ -255,7 +255,7 @@ public class HealthResponse
 
     /// <summary>
     /// True when the game thread hasn't ticked recently (lastTickMs above
-    /// <see cref="HealthFrozenThresholdMs"/>). Mirrors the existing
+    /// <c>HealthFrozenThresholdMs</c>). Mirrors the existing
     /// <see cref="Status"/> "degraded" semantic in a boolean form so tests
     /// don't have to string-compare. Used by WaitUntilGameReady to reject
     /// a server whose HTTP listener is up but whose game loop has stalled.
@@ -3613,22 +3613,6 @@ public partial class ApiService : ModService
         }
     }
 
-    /// <summary>
-    /// Awaits a snapshot satisfying <paramref name="predicate"/>, bounded
-    /// by <paramref name="timeout"/>. Returns the matching snapshot or
-    /// null on timeout.
-    ///
-    /// <para>
-    /// AsyncLocal correctness: <see cref="ModRequestContext"/> is bound by
-    /// the outer <see cref="HandleRequestAsync"/> via <c>using</c>; that
-    /// scope flows through the await, so any post-resume
-    /// <c>ModEventLog.Emit</c> here would still see the requestId. We
-    /// re-bind explicitly anyway because some HttpListener
-    /// implementations resume continuations on a new thread-pool worker
-    /// without flowing the AsyncLocal cleanly. See
-    /// <c>.claude/rules/asynclocal-pitfalls.md</c>.
-    /// </para>
-    /// </summary>
     /// <summary>
     /// Emits the <c>X-Predicate-Changed-At-Ms-Ago</c> response header so the
     /// test harness can stamp <c>wait_matched</c>'s producer-time with the

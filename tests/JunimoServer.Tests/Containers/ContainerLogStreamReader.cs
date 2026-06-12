@@ -9,7 +9,7 @@ namespace JunimoServer.Tests.Containers;
 
 /// <summary>
 /// Streams a container's stdout+stderr via the daemon's <c>follow=true</c> log
-/// endpoint and forwards each fully-formed line to <paramref name="onLine"/>.
+/// endpoint and forwards each fully-formed line to <c>onLine</c>.
 /// One persistent <see cref="MultiplexedStream"/> per container replaces the
 /// 500 ms <c>GetLogsAsync</c> poll loops the per-container types used to run.
 ///
@@ -21,7 +21,7 @@ namespace JunimoServer.Tests.Containers;
 /// <para>Reconnect cursor: when <c>Timestamps=true</c> the daemon prefixes
 /// each line with an RFC3339Nano timestamp. The reader parses the prefix to
 /// advance <see cref="_sinceCursor"/>, then strips it before invoking
-/// <paramref name="onLine"/>. On reconnect the cursor is passed back via
+/// <c>onLine</c>. On reconnect the cursor is passed back via
 /// <see cref="ContainerLogsParameters.Since"/> so the daemon resumes
 /// immediately after the last emitted line — no double-emit, no replay
 /// window.</para>
@@ -93,7 +93,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// </param>
     /// <param name="diagnosticCallback">
     /// Optional sink for human-readable status messages
-    /// (e.g. consecutive-error counts). Off-band from <paramref name="onLine"/>.
+    /// (e.g. consecutive-error counts). Off-band from <c>onLine</c>.
     /// </param>
     public ContainerLogStreamReader(
         DockerClient client,
@@ -136,7 +136,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// <summary>
     /// Cancels the read loop and awaits its completion up to
     /// <paramref name="timeout"/>, so any fully-formed lines already split out
-    /// of the in-flight chunk are flushed through <paramref name="onLine"/>
+    /// of the in-flight chunk are flushed through <c>onLine</c>
     /// (and into the per-site sink) before the consumer's
     /// <see cref="IAsyncDisposable.DisposeAsync"/> closes that sink.
     /// Per <c>drain-before-consume-disposal.md</c> — call this before

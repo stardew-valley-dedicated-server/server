@@ -54,7 +54,7 @@ public sealed record RunFinishedEvent(
 
 /// <summary>
 /// Run identity announcement: runId, runDir, git, env, runtime, server-config plan.
-/// Emitted once per run via <see cref="SetupEventBus"/> immediately after
+/// Emitted once per run via <see cref="Helpers.SetupEventBus"/> immediately after
 /// run-metadata.json is written. The runner stores it on TestRunState and
 /// surfaces it to the UI; the runner-side artifact writer uses RunDir to know
 /// where to write summary.json. The payload is carried as a verbatim

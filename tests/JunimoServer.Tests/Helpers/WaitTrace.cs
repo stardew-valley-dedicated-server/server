@@ -11,7 +11,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Snapshot delegate rules</b>: the optional <paramref name="snapshot"/>
+/// <b>Snapshot delegate rules</b>: the optional <c>snapshot</c> delegate
 /// runs at start AND completion. It MUST follow these rules:
 /// <list type="bullet">
 ///   <item>No locks — never acquire a lock the wait path itself holds.</item>
@@ -29,7 +29,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Pre-init waits</b>: events emitted before <see cref="InfrastructureEventLog.Initialize"/>
+/// <b>Pre-init waits</b>: events emitted before <see cref="InfrastructureEventLog.Initialize()"/>
 /// land in <c>infrastructure.jsonl</c> via the pre-init buffer.
 /// </para>
 /// </summary>

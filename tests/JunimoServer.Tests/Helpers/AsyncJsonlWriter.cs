@@ -27,7 +27,7 @@ namespace JunimoServer.Tests.Helpers;
 /// </para>
 ///
 /// <para>
-/// <b>Pre-flight disk check:</b> <see cref="Initialize"/> writes a 64-byte
+/// <b>Pre-flight disk check:</b> <see cref="Open"/> writes a 64-byte
 /// canary and flushes it to surface disk-full / permission-denied errors at
 /// startup, where the failure mode is loud (the run does not start) rather
 /// than mid-run silent recording corruption.

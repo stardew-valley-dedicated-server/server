@@ -192,7 +192,7 @@ public static class EmergencyCleanup
     ///
     /// Per-call timeout is 3s for remote (ssh://) hosts -- a hung SSH master
     /// must not block process exit. Local hosts run unbounded, matching the
-    /// pre-refactor `docker rm -f` behavior. <see cref="HostPoolAccessor.Hosts"/>
+    /// pre-refactor `docker rm -f` behavior. <see cref="Infrastructure.HostPoolAccessor.GetHostsForCleanup"/>
     /// returns the configured hosts; if HostPool is not yet initialized
     /// (early process exit), we fall back to the local default daemon.
     /// </summary>

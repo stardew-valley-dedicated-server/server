@@ -10,7 +10,7 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// Envelope schema: see docs/developers/events-schema.md
 ///
-/// Always on once <see cref="Initialize"/> is called. Overhead is negligible
+/// Always on once <see cref="Initialize()"/> is called. Overhead is negligible
 /// (~1600-2000 events over a 6.5-minute run, microsecond writes per emit).
 /// I/O errors propagate rather than being swallowed so a broken log surfaces
 /// as an infra failure instead of silently losing diagnostics.
@@ -335,10 +335,10 @@ public static class InfrastructureEventLog
     private static readonly object _lock = new();
 
     /// <summary>
-    /// Buffer for events emitted before <see cref="Initialize"/> has opened the
+    /// Buffer for events emitted before <see cref="Initialize()"/> has opened the
     /// log file. Pre-init events are stashed as their already-serialized JSON
     /// lines (so ts / requestId capture the true emit-time values),
-    /// then flushed in order when <see cref="Initialize"/> runs. Prevents
+    /// then flushed in order when <see cref="Initialize()"/> runs. Prevents
     /// observability gaps caused by static-field initializer ordering races
     /// or by callers that legitimately need to emit during construction (e.g.
     /// <c>DockerImageBuilder</c> called via a <c>Lazy&lt;Task&gt;</c> factory
@@ -349,7 +349,7 @@ public static class InfrastructureEventLog
 
     /// <summary>
     /// Hard cap on pre-Initialize events. A stuck test that never calls
-    /// <see cref="Initialize"/> must not grow memory unboundedly; at the cap
+    /// <see cref="Initialize()"/> must not grow memory unboundedly; at the cap
     /// we drop additional events (with one stderr warning) rather than leak.
     /// </summary>
     private const int PreInitBufferCap = 1000;
@@ -372,7 +372,7 @@ public static class InfrastructureEventLog
     /// are flushed to the log, in order, before this method returns. Callers
     /// therefore never need to worry about emit-vs-initialize ordering — an
     /// <see cref="Emit"/> call anywhere in the process graph reaches the log
-    /// as long as <see cref="Initialize"/> runs before <see cref="Shutdown"/>.
+    /// as long as <see cref="Initialize()"/> runs before <see cref="Shutdown"/>.
     /// </para>
     /// </summary>
     public static void Initialize() => Initialize(RunArtifactNames.InfrastructureJsonl);
@@ -495,8 +495,8 @@ public static class InfrastructureEventLog
     /// </para>
     ///
     /// <para>
-    /// If <see cref="Initialize"/> has not yet opened the log file, the event
-    /// is buffered in-memory and flushed when <see cref="Initialize"/> runs.
+    /// If <see cref="Initialize()"/> has not yet opened the log file, the event
+    /// is buffered in-memory and flushed when <see cref="Initialize()"/> runs.
     /// The buffer is capped at <see cref="PreInitBufferCap"/>; overflow drops
     /// events with a single stderr warning.
     /// </para>
@@ -680,7 +680,7 @@ public static class InfrastructureEventLog
     /// </para>
     ///
     /// <para>
-    /// If <see cref="Initialize"/> was never called (crash before pre-start),
+    /// If <see cref="Initialize()"/> was never called (crash before pre-start),
     /// any events that were buffered in memory are dumped to stderr so they
     /// aren't silently lost.
     /// </para>

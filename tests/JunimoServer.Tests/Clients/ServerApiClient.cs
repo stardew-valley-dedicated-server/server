@@ -958,7 +958,7 @@ public class ServerApiClient : IDisposable
     /// Stateless predicate (no <c>since</c> cursor): re-issue on null until
     /// the caller's outer deadline expires. Cold-start case: before the first
     /// tick fires the per-tick TCS has nothing to rotate, so the call returns
-    /// null after <see cref="WaitMaxTimeout"/> on the server. Callers MUST
+    /// null after <c>WaitMaxTimeout</c> on the server. Callers MUST
     /// wrap this in an outer re-issue loop, not a single await.
     /// </para>
     /// </summary>
@@ -1148,7 +1148,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Deletes a farmhand by UniqueMultiplayerID. Preferred for fresh joiners and
-    /// cleanup paths that already hold a <see cref="Farmer"/> reference.
+    /// cleanup paths that already hold a <c>Farmer</c> reference.
     /// DELETE /farmhands?playerId=X
     /// </summary>
     public async Task<FarmhandOperationResponse?> DeleteFarmhandById(
@@ -1308,7 +1308,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Test-only: mutate an existing CropSaver tracking entry. Used by E2E
-    /// tests to pre-arm <c>extraDays</c> past <see cref="OnDayEnd"/>'s
+    /// tests to pre-arm <c>extraDays</c> past <c>OnDayEnd</c>'s
     /// branch-1 floor without simulating many real day-transitions. All
     /// optional parameters are skipped (left at their existing values) when
     /// null. Returns <c>Found=false</c> if no SaverCrop exists at the tile.
