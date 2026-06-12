@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "npx @biomejs/biome check .",
+    "lint:fix": "npx @biomejs/biome check --write ."
   },
   "dependencies": {
     "@iconify/vue": "^5.0.0",
