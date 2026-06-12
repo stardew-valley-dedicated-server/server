@@ -7,7 +7,7 @@ namespace JunimoServer.Services.Commands;
 
 /// <summary>
 /// Chat command for player authentication.
-/// Usage: !login <password>
+/// Usage: !login &lt;password&gt;
 /// </summary>
 public class LoginCommand
 {

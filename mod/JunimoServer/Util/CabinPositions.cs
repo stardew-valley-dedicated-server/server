@@ -17,7 +17,7 @@ public enum CabinRole
 ///   Player stack:       (-20, -20)
 ///   Shared lobby:       (-21, -21)
 ///   Individual lobbies: (-22..-120, -21)
-///   Editing cabin:      (<= -121, -21)
+///   Editing cabin:      (&lt;= -121, -21)
 ///   Visible cabins:     real farm coordinates (>= 0)
 /// </summary>
 public static class CabinPositions

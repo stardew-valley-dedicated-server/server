@@ -29,7 +29,7 @@ namespace JunimoServer.Tests.Infrastructure;
 /// </list>
 ///
 /// Construction is two-phase:
-///   1. <see cref="DockerHost(...)"/> takes the user-facing <c>ssh://</c> URI
+///   1. The constructor takes the user-facing <c>ssh://</c> URI
 ///      (or null for local) and stores it for diagnostics. The api client
 ///      and endpoint config are unset.
 ///   2. <see cref="InitializeAsync"/> — for remote hosts, opens the daemon

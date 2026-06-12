@@ -71,7 +71,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
     /// stitching. Over a 75s per-test clip spanning many segments this drift reached
     /// ~500ms, visibly misaligning cross-clip burn-in timestamps. Verified end-to-end
     /// via <c>tools/.playground/recording-validator/vfr-absolute-pts-results/parallel/</c>:
-    /// two parallel TS recorders showed <100µs cross-clip differential over 20-second
+    /// two parallel TS recorders showed &lt;100µs cross-clip differential over 20-second
     /// extracted clips (vs 60-500ms differential with MKV sources).
     /// </summary>
     private const string SegmentFormat = "mpegts";

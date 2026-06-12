@@ -316,7 +316,7 @@ public static class TestTimings
 
     /// <summary>
     /// Time to wait for chat message to be delivered via WebSocket API.
-    /// WebSocket delivery is async but typically completes in <1s.
+    /// WebSocket delivery is async but typically completes in &lt;1s.
     /// </summary>
     public static readonly TimeSpan ChatDeliveryDelay = TimeSpan.FromSeconds(1);
 

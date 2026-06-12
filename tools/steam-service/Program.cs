@@ -1,4 +1,4 @@
-/**
+/*
  * Steam Service - Authentication & Game Download
  *
  * A unified tool for Steam authentication and game management.
