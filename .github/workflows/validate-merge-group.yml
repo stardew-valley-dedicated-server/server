@@ -52,6 +52,7 @@ jobs:
               - 'tools/netdebug/**'
               - 'tools/openapi-generator/**'
               - 'Directory.Build.props'
+              - 'CodeStyle.props'
               - '.editorconfig'
 
   validate-pr-title:

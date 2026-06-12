@@ -1,4 +1,4 @@
-# Global build arguments
+﻿# Global build arguments
 ARG SMAPI_VERSION=4.5.2
 
 # ============================================================================
@@ -8,7 +8,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS steam-service-builder
 WORKDIR /src
 
 # Repo-level build props + code-style rules apply inside the image build too
-COPY ./Directory.Build.props ./.editorconfig ./
+COPY ./Directory.Build.props ./CodeStyle.props ./.editorconfig ./
 COPY ./tools/steam-service/*.csproj ./
 RUN dotnet restore
 
@@ -61,7 +61,7 @@ COPY --from=game-downloader /game /game
 
 # Copy project files first for better layer caching
 # (.editorconfig: code-style rules enforced at build via EnforceCodeStyleInBuild)
-COPY ./Directory.Build.props ./.editorconfig /src/
+COPY ./Directory.Build.props ./CodeStyle.props ./.editorconfig /src/
 COPY ./mod/JunimoServer/JunimoServer.csproj /src/mod/JunimoServer/
 COPY ./mod/JunimoServer.Shared/JunimoServer.Shared.csproj /src/mod/JunimoServer.Shared/
 
