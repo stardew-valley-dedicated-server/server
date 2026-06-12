@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
@@ -105,6 +106,40 @@ public sealed class WebRenderer : RendererBase
             _app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
         }
 
+        // Serve test artifacts (screenshots, recordings, logs). PhysicalFileProvider owns
+        // path containment; its root must exist before Kestrel starts. MapWhen isolates
+        // /artifacts from the rest of the pipeline so a miss can't reach the SPA
+        // MapFallback below ([".mkv"]/[".log"] are absent from the provider defaults).
+        var testResultsDir = Path.GetFullPath("TestResults");
+        Directory.CreateDirectory(testResultsDir);
+        var artifactContentTypes = new FileExtensionContentTypeProvider();
+        artifactContentTypes.Mappings[".mkv"] = "video/x-matroska";
+        artifactContentTypes.Mappings[".log"] = "text/plain";
+        _app.MapWhen(
+            ctx => ctx.Request.Path.StartsWithSegments("/artifacts"),
+            branch =>
+            {
+                branch.UseStaticFiles(
+                    new StaticFileOptions
+                    {
+                        RequestPath = "/artifacts",
+                        FileProvider = new PhysicalFileProvider(testResultsDir),
+                        ContentTypeProvider = artifactContentTypes,
+                        ServeUnknownFileTypes = true,
+                        DefaultContentType = "application/octet-stream",
+                    }
+                );
+                // Explicit terminal 404: the branch's default terminal throws on requests
+                // the routing middleware already matched to an endpoint (extensionless
+                // paths match the fallback route's :nonfile pattern).
+                branch.Run(ctx =>
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return Task.CompletedTask;
+                });
+            }
+        );
+
         // API endpoints
         _app.MapGet(
             "/api/state",
@@ -121,44 +156,6 @@ public sealed class WebRenderer : RendererBase
                 var body = await reader.ReadToEndAsync();
                 TryHandleCommand(body);
                 return Results.Ok();
-            }
-        );
-
-        // Artifact serving with directory traversal protection
-        _app.MapGet(
-            "/artifacts/{**path}",
-            (string path) =>
-            {
-                var testResultsDir = Path.GetFullPath("TestResults");
-                var resolvedPath = Path.GetFullPath(Path.Combine(testResultsDir, path));
-
-                if (
-                    !resolvedPath.StartsWith(testResultsDir + Path.DirectorySeparatorChar)
-                    && resolvedPath != testResultsDir
-                )
-                {
-                    return Results.NotFound();
-                }
-
-                if (!File.Exists(resolvedPath))
-                {
-                    return Results.NotFound();
-                }
-
-                var contentType = Path.GetExtension(resolvedPath).ToLowerInvariant() switch
-                {
-                    ".png" => "image/png",
-                    ".jpg" or ".jpeg" => "image/jpeg",
-                    ".gif" => "image/gif",
-                    ".mp4" => "video/mp4",
-                    ".mkv" => "video/x-matroska",
-                    ".webm" => "video/webm",
-                    ".json" => "application/json",
-                    ".txt" or ".log" => "text/plain",
-                    _ => "application/octet-stream",
-                };
-
-                return Results.File(resolvedPath, contentType);
             }
         );
 
