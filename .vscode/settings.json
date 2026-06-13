@@ -3,5 +3,21 @@
         "editor.defaultFormatter": "csharpier.csharpier-vscode",
         "editor.formatOnSave": true,
         "editor.formatOnSaveMode": "file"
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.formatOnSave": true
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.formatOnSave": true
+    },
+    "[vue]": {
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.formatOnSave": true
+    },
+    "editor.codeActionsOnSave": {
+        "source.fixAll.biome": "explicit",
+        "source.organizeImports.biome": "explicit"
     }
 }
