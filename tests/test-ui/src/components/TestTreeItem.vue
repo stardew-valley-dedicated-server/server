@@ -1,31 +1,31 @@
 <script setup lang="ts">
-import { formatDuration } from '../utils/format'
-import StatusIcon from './StatusIcon.vue'
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
+import { formatDuration } from "../utils/format";
+import StatusIcon from "./StatusIcon.vue";
 
 defineProps<{
-  label: string
-  status: string
-  durationMs?: number | null
-  queueDurationMs?: number | null
-  indent?: number
-  isSelected?: boolean
-  isFocused?: boolean
-  clickable?: boolean
-  isGroup?: boolean
-  isExpanded?: boolean
-  count?: number
-  countTitle?: string
-  subtitle?: string
-  showProgress?: boolean
-  progressComplete?: boolean
-  icon?: 'docker' | 'none'
-  flakyInfo?: { failRate: number; recentRuns: number } | null
-}>()
+    label: string;
+    status: string;
+    durationMs?: number | null;
+    queueDurationMs?: number | null;
+    indent?: number;
+    isSelected?: boolean;
+    isFocused?: boolean;
+    clickable?: boolean;
+    isGroup?: boolean;
+    isExpanded?: boolean;
+    count?: number;
+    countTitle?: string;
+    subtitle?: string;
+    showProgress?: boolean;
+    progressComplete?: boolean;
+    icon?: "docker" | "none";
+    flakyInfo?: { failRate: number; recentRuns: number } | null;
+}>();
 
 defineEmits<{
-  click: []
-}>()
+    click: [];
+}>();
 </script>
 
 <template>

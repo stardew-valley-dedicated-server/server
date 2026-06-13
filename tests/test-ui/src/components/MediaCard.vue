@@ -1,34 +1,37 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
 
-withDefaults(defineProps<{
-  /** Bottom bar label text, e.g. "Screenshot · server" */
-  label?: string
-  /** Bottom bar icon (Iconify name) */
-  icon?: string
-  /** Show loading spinner overlay */
-  loading?: boolean
-  /** Force unavailable fallback state */
-  unavailable?: boolean
-  /** Primary fallback line when media is unavailable */
-  unavailableText?: string
-  /** Optional inline code token rendered as a chip below the primary line */
-  unavailableCode?: string
-  /** Optional secondary detail line rendered below the code chip */
-  unavailableDetail?: string
-  /** Fallback icon when media is unavailable */
-  unavailableIcon?: string
-  /** Background class override (default: bg-base-300) */
-  bgClass?: string
-  /** Whether to show the bottom label bar */
-  showLabel?: boolean
-}>(), {
-  icon: 'lucide:image',
-  unavailableText: 'Media unavailable',
-  unavailableIcon: 'lucide:image-off',
-  bgClass: 'bg-base-300',
-  showLabel: true
-})
+withDefaults(
+    defineProps<{
+        /** Bottom bar label text, e.g. "Screenshot · server" */
+        label?: string;
+        /** Bottom bar icon (Iconify name) */
+        icon?: string;
+        /** Show loading spinner overlay */
+        loading?: boolean;
+        /** Force unavailable fallback state */
+        unavailable?: boolean;
+        /** Primary fallback line when media is unavailable */
+        unavailableText?: string;
+        /** Optional inline code token rendered as a chip below the primary line */
+        unavailableCode?: string;
+        /** Optional secondary detail line rendered below the code chip */
+        unavailableDetail?: string;
+        /** Fallback icon when media is unavailable */
+        unavailableIcon?: string;
+        /** Background class override (default: bg-base-300) */
+        bgClass?: string;
+        /** Whether to show the bottom label bar */
+        showLabel?: boolean;
+    }>(),
+    {
+        icon: "lucide:image",
+        unavailableText: "Media unavailable",
+        unavailableIcon: "lucide:image-off",
+        bgClass: "bg-base-300",
+        showLabel: true,
+    },
+);
 </script>
 
 <template>

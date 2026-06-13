@@ -1,0 +1,101 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "includes": [".github/scripts/**", "docs/.vitepress/**", "tests/test-ui/**", "tools/discord-bot/**"]
+    },
+    "formatter": {
+        "enabled": true,
+        "formatWithErrors": false,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineEnding": "lf",
+        "lineWidth": 120,
+        "useEditorconfig": true
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "complexity": {
+                "noForEach": "off",
+                // fix:none — the unsafe fix deletes `!important`, which would break
+                // legitimate overrides like the reduced-motion block in style.css.
+                "noImportantStyles": {
+                    "level": "warn",
+                    "fix": "none"
+                },
+                "noStaticOnlyClass": "off",
+                "noUselessSwitchCase": "error",
+                "useFlatMap": "error"
+            },
+            "style": {
+                "noNegationElse": "off",
+                "useBlockStatements": "error",
+                "useForOf": "error",
+                "useNodejsImportProtocol": "error",
+                "useNumberNamespace": "error"
+            },
+            "suspicious": {
+                "noDoubleEquals": "error",
+                "noThenProperty": "error",
+                "useIsArray": "error",
+                "noExplicitAny": "off",
+                "noConsole": "off"
+            },
+            "correctness": {
+                "noUnusedPrivateClassMembers": {
+                    "level": "warn",
+                    "fix": "none"
+                }
+            },
+            "nursery": {
+                "noShadow": "error"
+            }
+        }
+    },
+    "assist": {
+        "enabled": true
+    },
+    "css": {
+        "parser": {
+            // test-ui uses Tailwind 4 at-rules (@plugin, @custom-variant) in style.css.
+            "tailwindDirectives": true
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "arrowParentheses": "always",
+            "bracketSameLine": false,
+            "bracketSpacing": true,
+            "jsxQuoteStyle": "double",
+            "quoteProperties": "asNeeded",
+            "semicolons": "always",
+            "trailingCommas": "all"
+        }
+    },
+    "overrides": [
+        {
+            // Biome can't see template usage of script declarations yet
+            // (https://biomejs.dev/internals/language-support/) — these four
+            // rules false-positive in SFCs per Biome's own Vue guidance.
+            "includes": ["**/*.vue"],
+            "linter": {
+                "rules": {
+                    "correctness": {
+                        "noUnusedVariables": "off",
+                        "noUnusedImports": "off"
+                    },
+                    "style": {
+                        "useConst": "off",
+                        "useImportType": "off"
+                    }
+                }
+            }
+        }
+    ]
+}

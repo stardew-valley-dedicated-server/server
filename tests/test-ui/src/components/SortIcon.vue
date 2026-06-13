@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
 
 defineProps<{
-  icon: string
-  direction: 'asc' | 'desc' | null
-}>()
+    icon: string;
+    direction: "asc" | "desc" | null;
+}>();
 </script>
 
 <template>

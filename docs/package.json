@@ -8,8 +8,8 @@
 		"build": "vitepress build",
 		"preview": "vitepress preview",
 		"typecheck": "tsc --noEmit",
-		"lint": "npx @biomejs/biome check --max-diagnostics 20",
-		"lint:fix": "npm run lint -- --write --unsafe",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write --unsafe .",
 		"check": "npm run lint && npm run typecheck"
 	},
 	"keywords": [
@@ -27,7 +27,6 @@
 		"vue": "^3.5.27"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.4.16",
 		"@types/node": "^25.2.2",
 		"typescript": "^6.0.0"
 	},

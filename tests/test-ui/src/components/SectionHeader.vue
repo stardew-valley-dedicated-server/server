@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import { Icon } from "@iconify/vue";
 
 defineProps<{
-  label: string
-  count?: number
-  icon?: string
-}>()
+    label: string;
+    count?: number;
+    icon?: string;
+}>();
 </script>
 
 <template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed, ref } from "vue";
 import { useNavBarExtra } from "./useNavBarExtra";
 
 interface Version {
@@ -20,11 +20,13 @@ const versions: Version[] = [
     { id: "preview", name: "Preview", path: "/server/preview/", badge: "unstable", badgeType: "warning" },
 ];
 
-const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra('__versionSwitcherObserver');
+const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra("__versionSwitcherObserver");
 const isOpen = ref(false);
 
 const currentVersion = computed(() => {
-    if (typeof window === "undefined") return versions[0];
+    if (typeof window === "undefined") {
+        return versions[0];
+    }
     const path = window.location.pathname;
     if (path.startsWith("/server/preview")) {
         return versions.find((v) => v.id === "preview") || versions[0];
@@ -33,7 +35,9 @@ const currentVersion = computed(() => {
 });
 
 function switchToVersion(version: Version) {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+        return;
+    }
 
     const currentPath = window.location.pathname;
     let relativePath = currentPath;
@@ -46,7 +50,7 @@ function switchToVersion(version: Version) {
     }
 
     if (!relativePath.startsWith("/")) {
-        relativePath = "/" + relativePath;
+        relativePath = `/${relativePath}`;
     }
 
     const newPath = version.path.replace(/\/$/, "") + relativePath;

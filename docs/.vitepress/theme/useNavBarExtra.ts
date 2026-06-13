@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 
 /**
  * Composable for components that need to:
@@ -12,15 +12,19 @@ export function useNavBarExtra(observerKey: string) {
     const isInlineOpen = ref(false);
 
     function checkScreenSize() {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined") {
+            return;
+        }
         // Medium screen: 768px - 1280px (where VPNavBarExtra triple-dot menu is visible)
         isMediumScreen.value = window.innerWidth >= 768 && window.innerWidth < 1280;
     }
 
     function findExtraMenuTarget() {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined") {
+            return;
+        }
         if (isMediumScreen.value) {
-            extraMenuTarget.value = document.querySelector('.VPNavBarExtra .VPMenu');
+            extraMenuTarget.value = document.querySelector(".VPNavBarExtra .VPMenu");
         } else {
             extraMenuTarget.value = null;
         }
@@ -43,7 +47,7 @@ export function useNavBarExtra(observerKey: string) {
     onMounted(() => {
         checkScreenSize();
         findExtraMenuTarget();
-        window.addEventListener('resize', checkScreenSize);
+        window.addEventListener("resize", checkScreenSize);
 
         // Watch for the menu to appear (it's lazy rendered)
         const observer = new MutationObserver(() => {
@@ -59,7 +63,7 @@ export function useNavBarExtra(observerKey: string) {
 
     onUnmounted(() => {
         if (typeof window !== "undefined") {
-            window.removeEventListener('resize', checkScreenSize);
+            window.removeEventListener("resize", checkScreenSize);
             const observer = (window as any)[observerKey];
             if (observer) {
                 observer.disconnect();

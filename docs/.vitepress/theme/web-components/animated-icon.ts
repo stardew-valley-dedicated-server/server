@@ -145,7 +145,9 @@ class AnimatedIcons extends HTMLElement {
 
     applyGroupColors(defaultColours, numberOfGroups, variationNumber, layers) {
         // Ensure that defaultColors, numberOfGroups, and variationNumber are provided
-        if (!defaultColours || !numberOfGroups || !variationNumber) return;
+        if (!defaultColours || !numberOfGroups || !variationNumber) {
+            return;
+        }
 
         // Loop through each group and apply the corresponding color
         for (let groupIndex = 1; groupIndex <= numberOfGroups; groupIndex++) {
@@ -209,7 +211,9 @@ class AnimatedIcons extends HTMLElement {
     }
 
     updateColorsRecursively(items, rgb, updateType) {
-        if (rgb.a === undefined) rgb.a = 1;
+        if (rgb.a === undefined) {
+            rgb.a = 1;
+        }
         items.forEach((item) => {
             if (updateType === "fill" && item.ty === "fl") {
                 item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255]; // Set RGB
@@ -261,7 +265,7 @@ export default class AnimatedIcon extends AnimatedIcons {
         // Small trick to have dynamic colors without recreating each AnimatedIcon.
         // Targets the SVG path with known stroke color, and just overrides it.
         const sheet = new CSSStyleSheet();
-            sheet.replaceSync(`
+        sheet.replaceSync(`
             g path[stroke="rgb(255,0,0)"] {
                 stroke: var(--vp-c-brand-1) !important;
                 transition: stroke 0.3s ease !important;
@@ -291,11 +295,11 @@ export default class AnimatedIcon extends AnimatedIcons {
         const rootStyles = getComputedStyle(root);
 
         // Get the value of the CSS variable
-        const c1 = rootStyles.getPropertyValue('--vp-c-brand-2').trim();
-        const c2 = rootStyles.getPropertyValue('--vp-c-brand-3').trim();
+        const _c1 = rootStyles.getPropertyValue("--vp-c-brand-2").trim();
+        const _c2 = rootStyles.getPropertyValue("--vp-c-brand-3").trim();
 
         // Randomly pick a color and remember which one
-        this.colorGroup = Math.random() >= 0.5 ? 'c1' : 'c2';
+        this.colorGroup = Math.random() >= 0.5 ? "c1" : "c2";
 
         // Default attributes
         const defaultAttributes = {
@@ -315,15 +319,24 @@ export default class AnimatedIcon extends AnimatedIcons {
         };
 
         // Set attributes if not already provided
-        if (!this.hasAttribute("src")) this.setAttribute("src", src);
-        if (!this.hasAttribute("width")) this.setAttribute("width", width);
-        if (!this.hasAttribute("height")) this.setAttribute("height", height);
-        if (!this.hasAttribute("trigger")) this.setAttribute("trigger", trigger);
-        if (!this.hasAttribute("attributes")) this.setAttribute("attributes", JSON.stringify(defaultAttributes));
+        if (!this.hasAttribute("src")) {
+            this.setAttribute("src", src);
+        }
+        if (!this.hasAttribute("width")) {
+            this.setAttribute("width", width);
+        }
+        if (!this.hasAttribute("height")) {
+            this.setAttribute("height", height);
+        }
+        if (!this.hasAttribute("trigger")) {
+            this.setAttribute("trigger", trigger);
+        }
+        if (!this.hasAttribute("attributes")) {
+            this.setAttribute("attributes", JSON.stringify(defaultAttributes));
+        }
 
         // Call the parent connectedCallback to handle Lottie initialization
         super.connectedCallback();
-
 
         // Uncomment in case we remove all the customization for external play,
         // and load "https://animatedicons.co/scripts/embed-animated-icons.js"

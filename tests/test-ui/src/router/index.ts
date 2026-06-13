@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from "vue-router";
 
 // Hash history so routing works identically in all three hosting modes: live
 // (Kestrel at /), offline report (file://), and the deep R2 object key. The
@@ -12,16 +12,16 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 // views in the UI). A nested /vnc/:id path would wrongly bind the modal to VNC
 // and strand report-mode deep-links, where the modal is opened from the tests
 // view.
-const noRender = { render: () => null }
+const noRender = { render: () => null };
 
 const router = createRouter({
-  history: createWebHashHistory(),
-  routes: [
-    { path: '/', name: 'tests', component: noRender },
-    { path: '/tests/:displayName', name: 'test', component: noRender },
-    { path: '/vnc', name: 'vnc', component: noRender },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
-  ],
-})
+    history: createWebHashHistory(),
+    routes: [
+        { path: "/", name: "tests", component: noRender },
+        { path: "/tests/:displayName", name: "test", component: noRender },
+        { path: "/vnc", name: "vnc", component: noRender },
+        { path: "/:pathMatch(.*)*", redirect: "/" },
+    ],
+});
 
-export default router
+export default router;

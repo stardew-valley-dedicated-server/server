@@ -27,7 +27,8 @@ make install
 This installs:
 - **commitlint** - Validates commit message format
 - **CSharpier** - C# formatter, restored as a local dotnet tool
-- **git hooks** - Auto-format staged C# files on commit, validate commit messages, block direct pushes to `master`
+- **Biome** - JS/TS formatter and linter, installed via the root `npm ci`
+- **git hooks** - Auto-format staged C# and JS/TS files on commit, validate commit messages, block direct pushes to `master`
 
 #### Line Endings
 
@@ -51,14 +52,20 @@ C# code is formatted by [CSharpier](https://csharpier.com/), and style rules (br
 - **The pre-commit hook** auto-formats staged C# files and re-stages them. Partial staging (`git add -p`) is safe: lefthook hides unstaged changes while the hook runs and restores them afterwards.
 - **CI** (`Validate Formatting`) fails any PR with formatting drift.
 
+JS/TS code (and Vue/JSON/CSS) is formatted and linted by [Biome](https://biomejs.dev/); the covered projects are scoped in the root `biome.jsonc`. The same conveniences apply:
+
+- **VSCode** formats on save via the `biomejs.biome` extension (workspace recommendation).
+- **The pre-commit hook** auto-fixes staged JS/TS files and re-stages them.
+- **CI** (`Validate JS/TS`) runs `biome ci` and fails on formatting drift or lint errors.
+
 Manual targets:
 
 ```bash
-make lint-check # verify analyzer style rules + formatting without writing (builds the solution)
-make lint-fix   # auto-fix analyzer style violations, then re-format (builds the solution)
+make lint-check # verify C# + JS/TS style rules + formatting without writing (builds the solution)
+make lint-fix   # auto-fix C# + JS/TS style violations, then re-format (builds the solution)
 ```
 
-CI's `Validate Formatting` runs the CSharpier half of `lint-check`; the analyzer rules are enforced as build errors wherever the code compiles.
+CI's `Validate Formatting` runs the CSharpier half of `lint-check` plus the analyzer style rules for the test projects, and `Validate JS/TS` runs the Biome half; the mod's analyzer rules are enforced as build errors when CI builds the Docker image.
 
 #### Development Workflow
 
@@ -161,7 +168,7 @@ Go to **Settings → Secrets → Actions** and add:
 - Pattern: `master`
 - Enable:
   - ✅ Require pull request before merging
-  - ✅ Require status checks: `Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate Line Endings`, `Validate PR Title`
+  - ✅ Require status checks: `Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate JS/TS`, `Validate Line Endings`, `Validate PR Title`
   - ✅ Require approvals: 1
 
 #### 3. Configure Fork PR Protection

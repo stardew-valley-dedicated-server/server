@@ -1,5 +1,5 @@
-import { ref, watch } from "vue";
-import { themes, DEFAULT_THEME_ID, type Theme } from "./themes";
+import { ref } from "vue";
+import { DEFAULT_THEME_ID, type Theme, themes } from "./themes";
 
 const STORAGE_KEY = "vitepress-theme-preference";
 
@@ -12,9 +12,11 @@ function applyTheme(theme: Theme) {
     root.style.setProperty("--vp-c-brand-3", theme.colors.brand3);
 
     // Dispatch a custom event to notify components of theme change
-    window.dispatchEvent(new CustomEvent("theme-changed", {
-        detail: { theme }
-    }));
+    window.dispatchEvent(
+        new CustomEvent("theme-changed", {
+            detail: { theme },
+        }),
+    );
 }
 
 function loadTheme(): string {
@@ -68,9 +70,11 @@ export function useTheme() {
         const theme = themes.find((t) => t.id === themeId);
         if (theme) {
             // Dispatch event for any listeners, but CSS vars are already set
-            window.dispatchEvent(new CustomEvent("theme-changed", {
-                detail: { theme }
-            }));
+            window.dispatchEvent(
+                new CustomEvent("theme-changed", {
+                    detail: { theme },
+                }),
+            );
         }
     }
 

@@ -1,69 +1,123 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { Icon } from '@iconify/vue'
-import type { InstanceSnapshot, SetupStepSnapshot } from '../types/state'
-import { tpsTextClass as _tpsText, fpsTextClass as _fpsText, cpuTextClass as _cpuText, memTextClass as _memText, displayMem as _displayMem, formatMem, queueTextClass as _queueText } from '../utils/metrics'
-import { instanceStatusDotClass, instanceStatusLabel, instanceStatusBadgeClass } from '../utils/instance-status'
-import { acquireInstanceSlot, releaseInstanceSlot } from '../composables/useIframeLayer'
+import { Icon } from "@iconify/vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { acquireInstanceSlot, releaseInstanceSlot } from "../composables/useIframeLayer";
+import type { InstanceSnapshot, SetupStepSnapshot } from "../types/state";
+import { instanceStatusBadgeClass, instanceStatusDotClass, instanceStatusLabel } from "../utils/instance-status";
+import {
+    cpuTextClass as _cpuText,
+    displayMem as _displayMem,
+    fpsTextClass as _fpsText,
+    memTextClass as _memText,
+    queueTextClass as _queueText,
+    tpsTextClass as _tpsText,
+    formatMem,
+} from "../utils/metrics";
 
-const props = withDefaults(defineProps<{
-  instance: InstanceSnapshot
-  spinnerColor: string
-  expanded?: boolean
-  connectionCount?: number
-  connectedServerLabel?: string | null
-  stats?: { cpuPercent: number; memoryMb: number; cpuCount: number; totalMemoryMb: number; fps: number | null; tps: number | null; avgTickMs: number | null; gameMemoryMb: number | null; targetTps: number | null; targetFps: number | null; gcRate: number | null; pendingActions: number | null; gameThreadWaitMs: number | null; netRxBytesPerSec: number | null; netTxBytesPerSec: number | null; blkReadBytesPerSec: number | null; blkWriteBytesPerSec: number | null; memoryLimitMb: number }
-  setupSteps?: SetupStepSnapshot[]
-  setupStatus?: 'pending' | 'running' | 'completed' | 'failed' | null
-  instanceCount?: number
-  /** Run ended; status is shown as stopped, external-link hidden. */
-  stopped?: boolean
-  /** Container disposed mid-run; treated as stopped for status display. */
-  retained?: boolean
-  /** Show the enlarge button. The enlarged layout is owned by the parent. */
-  showExpand?: boolean
-}>(), {
-  expanded: false,
-  connectionCount: undefined,
-  connectedServerLabel: undefined,
-  stats: undefined,
-  setupSteps: undefined,
-  setupStatus: undefined,
-  instanceCount: 1,
-  stopped: false,
-  retained: false,
-  showExpand: true
-})
+const props = withDefaults(
+    defineProps<{
+        instance: InstanceSnapshot;
+        spinnerColor: string;
+        expanded?: boolean;
+        connectionCount?: number;
+        connectedServerLabel?: string | null;
+        stats?: {
+            cpuPercent: number;
+            memoryMb: number;
+            cpuCount: number;
+            totalMemoryMb: number;
+            fps: number | null;
+            tps: number | null;
+            avgTickMs: number | null;
+            gameMemoryMb: number | null;
+            targetTps: number | null;
+            targetFps: number | null;
+            gcRate: number | null;
+            pendingActions: number | null;
+            gameThreadWaitMs: number | null;
+            netRxBytesPerSec: number | null;
+            netTxBytesPerSec: number | null;
+            blkReadBytesPerSec: number | null;
+            blkWriteBytesPerSec: number | null;
+            memoryLimitMb: number;
+        };
+        setupSteps?: SetupStepSnapshot[];
+        setupStatus?: "pending" | "running" | "completed" | "failed" | null;
+        instanceCount?: number;
+        /** Run ended; status is shown as stopped, external-link hidden. */
+        stopped?: boolean;
+        /** Container disposed mid-run; treated as stopped for status display. */
+        retained?: boolean;
+        /** Show the enlarge button. The enlarged layout is owned by the parent. */
+        showExpand?: boolean;
+    }>(),
+    {
+        expanded: false,
+        connectionCount: undefined,
+        connectedServerLabel: undefined,
+        stats: undefined,
+        setupSteps: undefined,
+        setupStatus: undefined,
+        instanceCount: 1,
+        stopped: false,
+        retained: false,
+        showExpand: true,
+    },
+);
 
 const emit = defineEmits<{
-  toggleExpand: []
-  inspect: []
-}>()
+    toggleExpand: [];
+    inspect: [];
+}>();
 
-function tpsTextClass(): string { return _tpsText(props.stats) }
-function fpsTextClass(): string { return _fpsText(props.stats) }
-function cpuTextClass(): string { return _cpuText(props.stats, props.instanceCount!) }
-function memTextClass(): string { return _memText(props.stats, props.instanceCount!) }
-function queueTextClass(): string { return _queueText(props.stats) }
-function displayMem(): number | null { return _displayMem(props.stats) }
+function tpsTextClass(): string {
+    return _tpsText(props.stats);
+}
+function fpsTextClass(): string {
+    return _fpsText(props.stats);
+}
+function cpuTextClass(): string {
+    return _cpuText(props.stats, props.instanceCount!);
+}
+function memTextClass(): string {
+    return _memText(props.stats, props.instanceCount!);
+}
+function queueTextClass(): string {
+    return _queueText(props.stats);
+}
+function displayMem(): number | null {
+    return _displayMem(props.stats);
+}
 
 function statusDotClass(): string {
-  return instanceStatusDotClass(props.instance.status, props.instance.connected, props.stopped || props.retained, 'sm')
+    return instanceStatusDotClass(
+        props.instance.status,
+        props.instance.connected,
+        props.stopped || props.retained,
+        "sm",
+    );
 }
 
 function statusLabel(): string {
-  return instanceStatusLabel(props.instance.status, props.instance.connected, props.stopped || props.retained, props.retained)
+    return instanceStatusLabel(
+        props.instance.status,
+        props.instance.connected,
+        props.stopped || props.retained,
+        props.retained,
+    );
 }
 
 function statusBadgeClass(): string {
-  return instanceStatusBadgeClass(props.instance.status)
+    return instanceStatusBadgeClass(props.instance.status);
 }
 
 function latestSetupStep(): string | null {
-  const steps = props.setupSteps
-  if (!steps || steps.length === 0) return null
-  const latest = steps[steps.length - 1]
-  return latest.details || latest.step
+    const steps = props.setupSteps;
+    if (!steps || steps.length === 0) {
+        return null;
+    }
+    const latest = steps[steps.length - 1];
+    return latest.details || latest.step;
 }
 
 // ── Iframe pool wiring ──
@@ -72,34 +126,47 @@ function latestSetupStep(): string | null {
 // Untrack on unmount clears the stale placeholder so the iframe hides
 // until another tile takes over (the wrapper itself stays alive — the
 // pool keeps it pinned for the session).
-const placeholderRef = ref<HTMLDivElement | null>(null)
-let activeSlot: ReturnType<typeof acquireInstanceSlot> | null = null
+const placeholderRef = ref<HTMLDivElement | null>(null);
+let activeSlot: ReturnType<typeof acquireInstanceSlot> | null = null;
 
 function publishPlaceholder() {
-  if (!placeholderRef.value) return
-  if (!activeSlot) activeSlot = acquireInstanceSlot(props.instance.instanceId)
-  activeSlot.track(placeholderRef.value)
+    if (!placeholderRef.value) {
+        return;
+    }
+    if (!activeSlot) {
+        activeSlot = acquireInstanceSlot(props.instance.instanceId);
+    }
+    activeSlot.track(placeholderRef.value);
 }
 
 onMounted(() => {
-  if (props.instance.vncUrl) publishPlaceholder()
-})
+    if (props.instance.vncUrl) {
+        publishPlaceholder();
+    }
+});
 
-watch(() => props.instance.vncUrl, (url) => {
-  if (url && !activeSlot) publishPlaceholder()
-})
+watch(
+    () => props.instance.vncUrl,
+    (url) => {
+        if (url && !activeSlot) {
+            publishPlaceholder();
+        }
+    },
+);
 
 watch(placeholderRef, (el) => {
-  if (el && props.instance.vncUrl && !activeSlot) publishPlaceholder()
-})
+    if (el && props.instance.vncUrl && !activeSlot) {
+        publishPlaceholder();
+    }
+});
 
 onBeforeUnmount(() => {
-  if (activeSlot) {
-    activeSlot.untrack()
-    releaseInstanceSlot(props.instance.instanceId)
-    activeSlot = null
-  }
-})
+    if (activeSlot) {
+        activeSlot.untrack();
+        releaseInstanceSlot(props.instance.instanceId);
+        activeSlot = null;
+    }
+});
 </script>
 
 <template>

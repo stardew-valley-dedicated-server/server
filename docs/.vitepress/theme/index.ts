@@ -1,13 +1,13 @@
 import type { Theme } from "vitepress";
 import DefaultTheme from "vitepress/theme";
+import { theme as openapiTheme, useOpenapi, useTheme as useOpenapiTheme } from "vitepress-openapi/client";
 import AnnouncementBar from "./AnnouncementBar.vue";
-import ServerStatusWidget from "./ServerStatusWidget.vue";
 import { initRandomIconAnimation } from "./randomIconAnimation";
-import { theme as openapiTheme, useTheme as useOpenapiTheme, useOpenapi } from "vitepress-openapi/client";
+import ServerStatusWidget from "./ServerStatusWidget.vue";
 import "vitepress-openapi/dist/style.css";
 import "virtual:group-icons.css";
 import "./custom.css";
-import spec from '../../assets/openapi.json';
+import spec from "../../assets/openapi.json";
 
 export default {
     extends: DefaultTheme,
@@ -30,21 +30,42 @@ export default {
                     deep: 2,
                 },
                 jsonViewer: {
-                    renderer: 'shiki',
+                    renderer: "shiki",
                 },
                 codeSamples: {
                     availableLanguages: [
                         ...useOpenapiTheme().getCodeSamplesAvailableLanguages(["curl", "python"]),
-                        { lang: "csharp", label: "C#", highlighter: "csharp", icon: ".cs", target: "csharp", client: "httpclient"},
-                        { lang: "ts1", label: "TS Fetch", highlighter: "typescript", icon: ".ts", target: "js", client: "fetch"},
-                        { lang: "ts2", label: "TS Axios", highlighter: "typescript", icon: ".ts", target: "js", client: "axios"},
+                        {
+                            lang: "csharp",
+                            label: "C#",
+                            highlighter: "csharp",
+                            icon: ".cs",
+                            target: "csharp",
+                            client: "httpclient",
+                        },
+                        {
+                            lang: "ts1",
+                            label: "TS Fetch",
+                            highlighter: "typescript",
+                            icon: ".ts",
+                            target: "js",
+                            client: "fetch",
+                        },
+                        {
+                            lang: "ts2",
+                            label: "TS Axios",
+                            highlighter: "typescript",
+                            icon: ".ts",
+                            target: "js",
+                            client: "axios",
+                        },
                     ],
                 },
                 operation: {
-                    hiddenSlots: hideTryItOutButton ? ['playground'] : [],
+                    hiddenSlots: hideTryItOutButton ? ["playground"] : [],
                     cols: 1,
-                }
-            }
+                },
+            },
         });
         openapiTheme.enhanceApp({ app });
 

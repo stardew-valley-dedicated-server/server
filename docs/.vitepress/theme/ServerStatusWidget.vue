@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
 interface ServerStatus {
     serverName: string;
@@ -21,22 +21,31 @@ const copied = ref(false);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const playerPercentage = computed(() => {
-    if (!status.value) return 0;
+    if (!status.value) {
+        return 0;
+    }
     return (status.value.currentPlayers / status.value.maxPlayers) * 100;
 });
 
 const statusColor = computed(() => {
-    if (!status.value?.isOnline) return "var(--vp-c-danger-1)";
-    if (status.value.currentPlayers >= status.value.maxPlayers) return "var(--vp-c-warning-1)";
+    if (!status.value?.isOnline) {
+        return "var(--vp-c-danger-1)";
+    }
+    if (status.value.currentPlayers >= status.value.maxPlayers) {
+        return "var(--vp-c-warning-1)";
+    }
     return "var(--vp-c-success-1)";
 });
 
 const statusText = computed(() => {
-    if (!status.value?.isOnline) return "Offline";
-    if (status.value.currentPlayers >= status.value.maxPlayers) return "Full";
+    if (!status.value?.isOnline) {
+        return "Offline";
+    }
+    if (status.value.currentPlayers >= status.value.maxPlayers) {
+        return "Full";
+    }
     return "Online";
 });
-
 
 async function fetchStatus() {
     // TODO: Replace mock with real API call
@@ -58,7 +67,9 @@ async function fetchStatus() {
 }
 
 async function copyInviteCode() {
-    if (!status.value?.inviteCode) return;
+    if (!status.value?.inviteCode) {
+        return;
+    }
     try {
         await navigator.clipboard.writeText(status.value.inviteCode);
         copied.value = true;

@@ -1,92 +1,118 @@
-/* Inter font, bundled locally for offline/air-gapped environments */
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/inter-latin-400.woff2') format('woff2'); }
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/inter-latin-500.woff2') format('woff2'); }
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/inter-latin-600.woff2') format('woff2'); }
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/inter-latin-700.woff2') format('woff2'); }
-
 @import "tailwindcss";
 
+/* Inter font, bundled locally for offline/air-gapped environments */
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/fonts/inter-latin-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("/fonts/inter-latin-500.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/fonts/inter-latin-600.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/fonts/inter-latin-700.woff2") format("woff2");
+}
+
 @plugin "daisyui" {
-  themes: sdvd-aqua --default --prefersdark, sdvd-light;
+    themes:
+        sdvd-aqua --default --prefersdark,
+        sdvd-light;
 }
 
 /* Dark theme – Aqua Gold. Brand: #63dbe4 / #25ac8a / #dda122 */
 @plugin "daisyui/theme" {
-  name: "sdvd-aqua";
-  default: true;
-  prefersdark: true;
-  color-scheme: dark;
-  --color-primary: #63dbe4;
-  --color-primary-content: #0a1a1c;
-  --color-secondary: #25ac8a;
-  --color-secondary-content: #ffffff;
-  --color-accent: #dda122;
-  --color-accent-content: #1a1400;
-  --color-neutral: #1c2627;
-  --color-neutral-content: #c6e8e5;
-  --color-base-100: #222b30;
-  --color-base-200: #182024;
-  --color-base-300: #0d1315;
-  --color-base-content: #c6e0de;
-  --color-info: #63dbe4;
-  --color-info-content: #0a1a1c;
-  --color-success: #a6e3a1;
-  --color-success-content: #0a180a;
-  --color-warning: #dda122;
-  --color-warning-content: #1a1400;
-  --color-error: #f38ba8;
-  --color-error-content: #1a0a10;
-  --radius-box: 0.75rem;
-  --radius-field: 0.5rem;
-  --radius-selector: 0.5rem;
+    name: "sdvd-aqua";
+    default: true;
+    prefersdark: true;
+    color-scheme: dark;
+    --color-primary: #63dbe4;
+    --color-primary-content: #0a1a1c;
+    --color-secondary: #25ac8a;
+    --color-secondary-content: #ffffff;
+    --color-accent: #dda122;
+    --color-accent-content: #1a1400;
+    --color-neutral: #1c2627;
+    --color-neutral-content: #c6e8e5;
+    --color-base-100: #222b30;
+    --color-base-200: #182024;
+    --color-base-300: #0d1315;
+    --color-base-content: #c6e0de;
+    --color-info: #63dbe4;
+    --color-info-content: #0a1a1c;
+    --color-success: #a6e3a1;
+    --color-success-content: #0a180a;
+    --color-warning: #dda122;
+    --color-warning-content: #1a1400;
+    --color-error: #f38ba8;
+    --color-error-content: #1a0a10;
+    --radius-box: 0.75rem;
+    --radius-field: 0.5rem;
+    --radius-selector: 0.5rem;
 }
 
 @plugin "daisyui/theme" {
-  name: "sdvd-light";
-  color-scheme: light;
-  --color-primary: #7c5cbf;
-  --color-primary-content: #ffffff;
-  --color-secondary: #5b21b6;
-  --color-secondary-content: #ffffff;
-  --color-accent: #34327a;
-  --color-accent-content: #ffffff;
-  --color-neutral: #f0eef6;
-  --color-neutral-content: #2d2b42;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f7fc;
-  --color-base-300: #f0eef6;
-  --color-base-content: #2d2b42;
-  --color-info: #3b82f6;
-  --color-info-content: #ffffff;
-  --color-success: #22c55e;
-  --color-success-content: #ffffff;
-  --color-warning: #eab308;
-  --color-warning-content: #1a1a2e;
-  --color-error: #ef4444;
-  --color-error-content: #ffffff;
-  --radius-box: 0.75rem;
-  --radius-field: 0.5rem;
-  --radius-selector: 0.5rem;
+    name: "sdvd-light";
+    color-scheme: light;
+    --color-primary: #7c5cbf;
+    --color-primary-content: #ffffff;
+    --color-secondary: #5b21b6;
+    --color-secondary-content: #ffffff;
+    --color-accent: #34327a;
+    --color-accent-content: #ffffff;
+    --color-neutral: #f0eef6;
+    --color-neutral-content: #2d2b42;
+    --color-base-100: #ffffff;
+    --color-base-200: #f8f7fc;
+    --color-base-300: #f0eef6;
+    --color-base-content: #2d2b42;
+    --color-info: #3b82f6;
+    --color-info-content: #ffffff;
+    --color-success: #22c55e;
+    --color-success-content: #ffffff;
+    --color-warning: #eab308;
+    --color-warning-content: #1a1a2e;
+    --color-error: #ef4444;
+    --color-error-content: #ffffff;
+    --radius-box: 0.75rem;
+    --radius-field: 0.5rem;
+    --radius-selector: 0.5rem;
 }
 
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Consolas', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "Consolas", "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
 }
 
 /* Scrollable panels with thin styled scrollbars */
 .panel-scroll {
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-primary) 20%, transparent) transparent;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--color-primary) 20%, transparent) transparent;
 }
 
 /* Code blocks */
 .code-block {
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  tab-size: 4;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    tab-size: 4;
 }
 
 /* Progress bar glow on the filled portion when running.
@@ -94,36 +120,40 @@
  * The pseudo is wider than the parent and translates back by one tile, so the
  * stripe pattern appears to flow without ever exposing an empty edge. */
 .progress-glow {
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 0 8px color-mix(in oklch, currentColor 40%, transparent);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 8px color-mix(in oklch, currentColor 40%, transparent);
 }
 
 .progress-glow::after {
-  content: '';
-  position: absolute;
-  /* Inset is slightly negative horizontally so the stripe pattern bleeds past
+    content: "";
+    position: absolute;
+    /* Inset is slightly negative horizontally so the stripe pattern bleeds past
    * both edges. That way the translateX animation never exposes a blank gap. */
-  inset: 0 -12px 0 -12px;
-  background-image: linear-gradient(
-    -45deg,
-    rgba(255, 255, 255, 0.15) 25%,
-    transparent 25%,
-    transparent 50%,
-    rgba(255, 255, 255, 0.15) 50%,
-    rgba(255, 255, 255, 0.15) 75%,
-    transparent 75%,
-    transparent
-  );
-  background-size: 12px 12px;
-  animation: progress-stripe 600ms linear infinite;
-  will-change: transform;
-  pointer-events: none;
+    inset: 0 -12px 0 -12px;
+    background-image: linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.15) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.15) 75%,
+        transparent 75%,
+        transparent
+    );
+    background-size: 12px 12px;
+    animation: progress-stripe 600ms linear infinite;
+    will-change: transform;
+    pointer-events: none;
 }
 
 @keyframes progress-stripe {
-  from { transform: translateX(0); }
-  to { transform: translateX(-12px); }
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-12px);
+    }
 }
 
 /* Promote an element to its own compositor layer so transform/opacity
@@ -131,88 +161,87 @@
  * Apply only to elements that actually animate — each promoted layer costs
  * a bit of GPU memory. */
 .gpu-accel {
-  will-change: transform;
+    will-change: transform;
 }
 
 /* Respect reduced-motion preference globally */
 @media screen and (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
+    * {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
 }
 
 /* Kill browser default image borders */
 img {
-  border: none;
-  outline: none;
+    border: none;
+    outline: none;
 }
 
 /* Selection highlight matching the brand accent */
 ::selection {
-  background: color-mix(in oklch, var(--color-primary) 30%, transparent);
+    background: color-mix(in oklch, var(--color-primary) 30%, transparent);
 }
 
 /* Sidebar collapse/expand animation (only when toggling, not while dragging) */
 .sidebar-animate {
-  transition: width 200ms ease-out;
+    transition: width 200ms ease-out;
 }
 
 /* Icon sidebar */
 .icon-sidebar {
-  width: 48px;
-  background-color: var(--color-base-200);
-  border-right: 1px solid color-mix(in oklch, var(--color-base-content) 6%, transparent);
+    width: 48px;
+    background-color: var(--color-base-200);
+    border-right: 1px solid color-mix(in oklch, var(--color-base-content) 6%, transparent);
 }
 
 .icon-sidebar-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  color: color-mix(in oklch, var(--color-base-content) 30%, transparent);
-  transition: all 150ms ease;
-  position: relative;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    color: color-mix(in oklch, var(--color-base-content) 30%, transparent);
+    transition: all 150ms ease;
+    position: relative;
 }
 
 .icon-sidebar-btn:hover {
-  color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
-  background-color: color-mix(in oklch, var(--color-base-content) 5%, transparent);
+    color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+    background-color: color-mix(in oklch, var(--color-base-content) 5%, transparent);
 }
 
 .icon-sidebar-btn.active {
-  color: var(--color-primary);
-  background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+    background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
 }
 
 .icon-sidebar-btn.active::before {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 25%;
-  bottom: 25%;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background-color: var(--color-primary);
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 25%;
+    bottom: 25%;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background-color: var(--color-primary);
 }
 
 /* Status stripe below output panel header */
 .status-stripe {
-  height: 3px;
-  width: 100%;
-  flex: none;
-  transition: background-color 300ms ease;
+    height: 3px;
+    width: 100%;
+    flex: none;
+    transition: background-color 300ms ease;
 }
-
 
 /* Setup step progress bar */
 .step-progress {
-  height: 3px;
-  border-radius: 1.5px;
-  transition: width 300ms ease;
+    height: 3px;
+    border-radius: 1.5px;
+    transition: width 300ms ease;
 }
 
 /* Smooth theme toggle transitions */
@@ -223,33 +252,38 @@ header,
 .panel-scroll,
 .icon-sidebar,
 .icon-sidebar-btn {
-  transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease,
+        border-color 150ms ease;
 }
 
 /* Timeline dot hover: subtle brightness boost to signal clickability */
 .dot-hover:hover {
-  filter: brightness(1.6);
+    filter: brightness(1.6);
 }
 
 /* Timeline breakpoint indicators */
 .ring-breakpoint,
 .ring-breakpoint-hit {
-  outline: 1.5px solid var(--color-primary);
-  outline-offset: 1px;
+    outline: 1.5px solid var(--color-primary);
+    outline-offset: 1px;
 }
 .ring-breakpoint-hit {
-  animation: breakpoint-pulse 1.5s ease-in-out infinite;
+    animation: breakpoint-pulse 1.5s ease-in-out infinite;
 }
 @keyframes breakpoint-pulse {
-  0%, 100% { outline-color: var(--color-primary); }
-  50% { outline-color: color-mix(in oklch, var(--color-primary) 40%, transparent); }
+    0%,
+    100% {
+        outline-color: var(--color-primary);
+    }
+    50% {
+        outline-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+    }
 }
 
 /* Breakpoint marker dashed line in timeline */
 .bp-marker-line {
-  width: 0;
-  border-left: 1px dashed color-mix(in oklch, var(--color-primary) 40%, transparent);
+    width: 0;
+    border-left: 1px dashed color-mix(in oklch, var(--color-primary) 40%, transparent);
 }

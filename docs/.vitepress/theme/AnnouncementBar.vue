@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { withBase, useData } from "vitepress";
+import { useData, withBase } from "vitepress";
 import DefaultTheme from "vitepress/theme";
+import { computed, onMounted, ref } from "vue";
+import BuildStamp from "./BuildStamp.vue";
 import ThemeSelector from "./ThemeSelector.vue";
 import VersionSwitcher from "./VersionSwitcher.vue";
-import BuildStamp from "./BuildStamp.vue";
 
 const { Layout } = DefaultTheme;
 
@@ -16,7 +16,9 @@ const announcementLink = withBase("/admins/operations/upgrading#preview-builds")
 
 // Check localStorage immediately if available (for SSR, default to true so CSS offset is applied)
 function getInitialState(): boolean {
-    if (typeof localStorage === "undefined") return true;
+    if (typeof localStorage === "undefined") {
+        return true;
+    }
     try {
         return localStorage.getItem("announcement-closed") !== "true";
     } catch {

@@ -44,6 +44,5 @@ website/
 │   ├── index.md            # Homepage
 │   └── guide.md            # Getting started guide
 ├── package.json
-├── tsconfig.json
-└── biome.json
+└── tsconfig.json
 ```

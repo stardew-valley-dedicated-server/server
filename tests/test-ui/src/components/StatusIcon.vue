@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import { statusIcon, statusTextClass, statusIconSpin, statusIconPulse } from '../utils/status'
+import { Icon } from "@iconify/vue";
+import { statusIcon, statusIconPulse, statusIconSpin, statusTextClass } from "../utils/status";
 
 defineProps<{
-  status: string
-  size?: number
-}>()
+    status: string;
+    size?: number;
+}>();
 </script>
 
 <template>

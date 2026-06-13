@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
 import { useData } from "vitepress";
+import { onMounted, ref } from "vue";
 import { formatDateTime } from "./formatDate";
 
 const { theme, page } = useData();

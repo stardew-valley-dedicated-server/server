@@ -1,120 +1,151 @@
 <script setup lang="ts">
-import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick } from 'vue'
-import type { Ref } from 'vue'
-import type { InstanceSnapshot, OutputEntry, AnnotationSource } from '../types/state'
-import type { VideoItem, VideoStatsPoint } from '../types/video'
-import { formatDuration, shortTestName } from '../utils/format'
-import { formatEntryTimestamp, anchorTimestampMs, nextTimestampMode, isSuccessLine, groupOutputEntries, segmentLineOffset, annotationSourceIcon, annotationLevelClass, annotationSourceClass, type OutputSegment, type TimestampMode } from '../utils/output'
-import { statusBgClass } from '../utils/status'
-import { instanceStatusDotClass, instanceStatusLabel } from '../utils/instance-status'
-import { Icon } from '@iconify/vue'
-import MediaCard from './MediaCard.vue'
-import StatusIcon from './StatusIcon.vue'
-import ImageLightbox from './ImageLightbox.vue'
-import SyncedVideos from './SyncedVideos.vue'
-import VncTile from './VncTile.vue'
-import { useTestUI } from '../composables/useTestUI'
-import { useVideoTimeline, snapBreakpointSec } from '../composables/useVideoTimeline'
-import { useVncInteractive } from '../composables/useVncInteractive'
-import { useAnnotationFilter } from '../composables/useAnnotationFilter'
+import { Icon } from "@iconify/vue";
+import type { Ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, watchEffect } from "vue";
+import { useAnnotationFilter } from "../composables/useAnnotationFilter";
+import { useTestUI } from "../composables/useTestUI";
+import { snapBreakpointSec, useVideoTimeline } from "../composables/useVideoTimeline";
+import { useVncInteractive } from "../composables/useVncInteractive";
+import type { AnnotationSource, InstanceSnapshot, OutputEntry } from "../types/state";
+import type { VideoItem, VideoStatsPoint } from "../types/video";
+import { formatDuration, shortTestName } from "../utils/format";
+import { instanceStatusDotClass, instanceStatusLabel } from "../utils/instance-status";
+import {
+    anchorTimestampMs,
+    annotationLevelClass,
+    annotationSourceClass,
+    annotationSourceIcon,
+    formatEntryTimestamp,
+    groupOutputEntries,
+    isSuccessLine,
+    nextTimestampMode,
+    type OutputSegment,
+    segmentLineOffset,
+    type TimestampMode,
+} from "../utils/output";
+import { statusBgClass } from "../utils/status";
+import ImageLightbox from "./ImageLightbox.vue";
+import MediaCard from "./MediaCard.vue";
+import StatusIcon from "./StatusIcon.vue";
+import SyncedVideos from "./SyncedVideos.vue";
+import VncTile from "./VncTile.vue";
 
-const { store, inspect } = useTestUI()
-const { interactive: vncInteractive } = useVncInteractive()
-const { timelinePos, breakpoints, hitBreakpointLine, hoveredBreakpointSec } = useVideoTimeline()
+const { store, inspect } = useTestUI();
+const { interactive: vncInteractive } = useVncInteractive();
+const { timelinePos, breakpoints, hitBreakpointLine, hoveredBreakpointSec } = useVideoTimeline();
 const {
-  filter: sourceFilter,
-  sources: filterSources,
-  toggle: toggleSourceFilter,
-  reset: resetSourceFilter,
-  isFiltered: isSourceFiltered,
-} = useAnnotationFilter()
+    filter: sourceFilter,
+    sources: filterSources,
+    toggle: toggleSourceFilter,
+    reset: resetSourceFilter,
+    isFiltered: isSourceFiltered,
+} = useAnnotationFilter();
 
 const sourceLabels: Record<AnnotationSource, string> = {
-  body: 'Body',
-  broker: 'Broker',
-  recording: 'Recording',
-  mod: 'Mod',
-  setup: 'Setup',
-}
+    body: "Body",
+    broker: "Broker",
+    recording: "Recording",
+    mod: "Mod",
+    setup: "Setup",
+};
 
 /** Drop entries whose source isn't currently enabled in the filter chip bar. */
 function applySourceFilter(entries: OutputEntry[] | null | undefined): OutputEntry[] {
-  if (!entries?.length) return []
-  return entries.filter(e => e.type !== 'annotation' || sourceFilter[e.source])
+    if (!entries?.length) {
+        return [];
+    }
+    return entries.filter((e) => e.type !== "annotation" || sourceFilter[e.source]);
 }
-const copiedOutput = ref(false)
-const copiedError = ref(false)
-const copiedRepro = ref(false)
-const copiedStep = ref(false)
-const failedImages = ref<Set<string>>(new Set())
-const loadedImages = ref<Set<string>>(new Set())
-const timestampMode = ref<TimestampMode>('off')
-const showInlineScreenshots = ref(true)
-const copyTimers: ReturnType<typeof setTimeout>[] = []
-const outputSearch = ref('')
-const outputSearchRef = ref<HTMLInputElement | null>(null)
-const hoveredSource = ref<AnnotationSource | null>(null)
+const copiedOutput = ref(false);
+const copiedError = ref(false);
+const copiedRepro = ref(false);
+const copiedStep = ref(false);
+const failedImages = ref<Set<string>>(new Set());
+const loadedImages = ref<Set<string>>(new Set());
+const timestampMode = ref<TimestampMode>("off");
+const showInlineScreenshots = ref(true);
+const copyTimers: ReturnType<typeof setTimeout>[] = [];
+const outputSearch = ref("");
+const outputSearchRef = ref<HTMLInputElement | null>(null);
+const hoveredSource = ref<AnnotationSource | null>(null);
 
 /** Check if a message matches the search query (case-insensitive). */
 function lineMatchesSearch(message: string): boolean {
-  if (!outputSearch.value) return true
-  return message.toLowerCase().includes(outputSearch.value.toLowerCase())
+    if (!outputSearch.value) {
+        return true;
+    }
+    return message.toLowerCase().includes(outputSearch.value.toLowerCase());
 }
 
 /** Whether to dim a line (doesn't match search). */
 function searchDimClass(message: string): string {
-  if (!outputSearch.value) return ''
-  return lineMatchesSearch(message) ? 'bg-primary/5' : 'opacity-30'
+    if (!outputSearch.value) {
+        return "";
+    }
+    return lineMatchesSearch(message) ? "bg-primary/5" : "opacity-30";
 }
 
-
 function resolveInstance(id: string): InstanceSnapshot | undefined {
-  return (store.state.instances ?? []).find(i => i.instanceId === id)
-    ?? store.stoppedInstances.find(i => i.instanceId === id)
+    return (
+        (store.state.instances ?? []).find((i) => i.instanceId === id) ??
+        store.stoppedInstances.find((i) => i.instanceId === id)
+    );
 }
 
 function resolveInstanceLabel(id: string): string {
-  return resolveInstance(id)?.label ?? id
+    return resolveInstance(id)?.label ?? id;
 }
 
-function resolveInstanceType(id: string): 'server' | 'client' {
-  return resolveInstance(id)?.instanceType ?? (id.startsWith('server') ? 'server' : 'client')
+function resolveInstanceType(id: string): "server" | "client" {
+    return resolveInstance(id)?.instanceType ?? (id.startsWith("server") ? "server" : "client");
 }
 
 function navigateToInstance(id: string) {
-  inspect.openInspect(id)
+    inspect.openInspect(id);
 }
 
 function inlineConnectionCount(inst: InstanceSnapshot): number | undefined {
-  if (inst.instanceType !== 'server') return undefined
-  const all = store.state.instances ?? []
-  let n = 0
-  for (const c of all) {
-    if (c.instanceType === 'client' && c.connectedServerId === inst.instanceId) n++
-  }
-  return n
+    if (inst.instanceType !== "server") {
+        return undefined;
+    }
+    const all = store.state.instances ?? [];
+    let n = 0;
+    for (const c of all) {
+        if (c.instanceType === "client" && c.connectedServerId === inst.instanceId) {
+            n++;
+        }
+    }
+    return n;
 }
 
 function containerBadgeDotClass(id: string): string {
-  const inst = resolveInstance(id)
-  if (!inst) return instanceStatusDotClass('idle', false, true, 'sm')
-  const stopped = store.runDone || inst.disposed
-  return instanceStatusDotClass(inst.status, inst.connected, stopped, 'sm')
+    const inst = resolveInstance(id);
+    if (!inst) {
+        return instanceStatusDotClass("idle", false, true, "sm");
+    }
+    const stopped = store.runDone || inst.disposed;
+    return instanceStatusDotClass(inst.status, inst.connected, stopped, "sm");
 }
 
 function containerBadgeStatusLabel(id: string): string {
-  const inst = resolveInstance(id)
-  if (!inst) return 'unknown'
-  const stopped = store.runDone || inst.disposed
-  return instanceStatusLabel(inst.status, inst.connected, stopped, true)
+    const inst = resolveInstance(id);
+    if (!inst) {
+        return "unknown";
+    }
+    const stopped = store.runDone || inst.disposed;
+    return instanceStatusLabel(inst.status, inst.connected, stopped, true);
 }
 
 function inlineConnectedServerLabel(inst: InstanceSnapshot): string | null | undefined {
-  if (inst.instanceType === 'server') return undefined
-  const id = inst.connectedServerId
-  if (!id) return null
-  const all = [...(store.state.instances ?? []), ...store.stoppedInstances]
-  return all.find(i => i.instanceId === id && i.instanceType === 'server')?.label ?? id
+    if (inst.instanceType === "server") {
+        return undefined;
+    }
+    const id = inst.connectedServerId;
+    if (!id) {
+        return null;
+    }
+    const all = [...(store.state.instances ?? []), ...store.stoppedInstances];
+    return all.find((i) => i.instanceId === id && i.instanceType === "server")?.label ?? id;
 }
 
 // The test objects inside collections are NOT deeply reactive (shallowRef).
@@ -122,83 +153,93 @@ function inlineConnectedServerLabel(inst: InstanceSnapshot): string | null | und
 // Reading it here makes `test` re-evaluate on every content change, so all
 // downstream computeds (output, videos, errors, etc.) react automatically.
 const test = computed(() => {
-  void store.selectedTestVersion.value
-  return store.selectedTest
-})
-const contentVersion = computed(() =>
-  `${test.value?.displayName ?? ''}:${store.selectedTestVersion.value}`
-)
-const step = computed(() => store.selectedStep)
-const error = computed(() => store.selectedError)
+    void store.selectedTestVersion.value;
+    return store.selectedTest;
+});
+const contentVersion = computed(() => `${test.value?.displayName ?? ""}:${store.selectedTestVersion.value}`);
+const step = computed(() => store.selectedStep);
+const error = computed(() => store.selectedError);
 
-const filteredTestOutput = computed(() => applySourceFilter(test.value?.output))
-const filteredStepOutput = computed(() => applySourceFilter(step.value?.output))
+const filteredTestOutput = computed(() => applySourceFilter(test.value?.output));
+const filteredStepOutput = computed(() => applySourceFilter(step.value?.output));
 
-const outputAnchorMs = computed(() => anchorTimestampMs(test.value?.output))
-const stepAnchorMs = computed(() => anchorTimestampMs(step.value?.output))
+const outputAnchorMs = computed(() => anchorTimestampMs(test.value?.output));
+const stepAnchorMs = computed(() => anchorTimestampMs(step.value?.output));
 const timestampTooltip = computed(() =>
-  timestampMode.value === 'off' ? 'Show absolute timestamps'
-  : timestampMode.value === 'absolute' ? 'Show relative timestamps'
-  : 'Hide timestamps')
+    timestampMode.value === "off"
+        ? "Show absolute timestamps"
+        : timestampMode.value === "absolute"
+          ? "Show relative timestamps"
+          : "Hide timestamps",
+);
 
 const testVncInstances = computed((): InstanceSnapshot[] => {
-  const ids = test.value?.usedInstances ?? []
-  return ids
-    .map(id => resolveInstance(id))
-    .filter((i): i is InstanceSnapshot => !!i && !!i.vncUrl)
-})
+    const ids = test.value?.usedInstances ?? [];
+    return ids.map((id) => resolveInstance(id)).filter((i): i is InstanceSnapshot => !!i && !!i.vncUrl);
+});
 
-const vncButtonEnabled = computed(() => testVncInstances.value.length > 0)
+const vncButtonEnabled = computed(() => testVncInstances.value.length > 0);
 const vncButtonTooltip = computed(() =>
-  vncButtonEnabled.value ? 'Toggle live VNC viewers' : 'No VNC available for this test'
-)
+    vncButtonEnabled.value ? "Toggle live VNC viewers" : "No VNC available for this test",
+);
 
 // VNC viewer state
-const vncExpanded = ref(false)
+const vncExpanded = ref(false);
 
 // Collapse inline VNC when run ends
 watchEffect(() => {
-  if (store.runDone) vncExpanded.value = false
-})
+    if (store.runDone) {
+        vncExpanded.value = false;
+    }
+});
 
 const hasError = computed(() => {
-  void contentVersion.value
-  return test.value?.errorMessage || test.value?.stackTrace
-})
+    void contentVersion.value;
+    return test.value?.errorMessage || test.value?.stackTrace;
+});
 
 /** True when recording is enabled in the run (any instance has a completed recording setup step). */
 const recordingEnabled = computed(() => {
-  const allInstances = [...(store.state.instances ?? []), ...store.stoppedInstances]
-  return allInstances.some(i =>
-    i.setupSteps?.some(s => s.step === 'Starting video recording' && s.status === 'completed')
-  )
-})
+    const allInstances = [...(store.state.instances ?? []), ...store.stoppedInstances];
+    return allInstances.some((i) =>
+        i.setupSteps?.some((s) => s.step === "Starting video recording" && s.status === "completed"),
+    );
+});
 
 // Default inline screenshots off when video recording is enabled (screenshots are redundant).
 // Keep watching until recordingEnabled becomes true (instances may not exist at mount time).
-let stopScreenshotWatch: ReturnType<typeof watch> | undefined
-stopScreenshotWatch = watch(recordingEnabled, (enabled) => {
-  if (enabled) {
-    showInlineScreenshots.value = false
-    stopScreenshotWatch?.()
-  }
-}, { immediate: true })
+let stopScreenshotWatch: ReturnType<typeof watch> | undefined;
+stopScreenshotWatch = watch(
+    recordingEnabled,
+    (enabled) => {
+        if (enabled) {
+            showInlineScreenshots.value = false;
+            stopScreenshotWatch?.();
+        }
+    },
+    { immediate: true },
+);
 
 /** True when the test should show a recording placeholder (test done, no recordings yet, recording enabled). */
 const showRecordingPlaceholder = computed(() => {
-
-  // Read directly from store to bypass stale shallow-ref issues
-  const t = store.selectedTest
-  if (!t) return false
-  const isDone = t.status === 'passed' || t.status === 'failed' || t.status === 'canceled'
-  const hasRecordings = t.recordings && t.recordings.length > 0
-  if (hasRecordings) return false
-  // If we have skip reasons, we *want* to show the placeholder (so the user
-  // sees the explanation) even if recording is globally disabled — the skip
-  // event itself is the contract that something happened.
-  if (t.recordingSkipReasons && Object.keys(t.recordingSkipReasons).length > 0) return isDone
-  return isDone && recordingEnabled.value
-})
+    // Read directly from store to bypass stale shallow-ref issues
+    const t = store.selectedTest;
+    if (!t) {
+        return false;
+    }
+    const isDone = t.status === "passed" || t.status === "failed" || t.status === "canceled";
+    const hasRecordings = t.recordings && t.recordings.length > 0;
+    if (hasRecordings) {
+        return false;
+    }
+    // If we have skip reasons, we *want* to show the placeholder (so the user
+    // sees the explanation) even if recording is globally disabled — the skip
+    // event itself is the contract that something happened.
+    if (t.recordingSkipReasons && Object.keys(t.recordingSkipReasons).length > 0) {
+        return isDone;
+    }
+    return isDone && recordingEnabled.value;
+});
 
 /**
  * Per-source placeholder cards. Reads `recordingSkipReasons` and produces one
@@ -207,35 +248,45 @@ const showRecordingPlaceholder = computed(() => {
  * skips (artifacts_opted_out, retention_passed) only emit the un-indexed key
  * but apply to every client card.
  */
-type PlaceholderCard = { source: string; label: string; reason: string | null }
+type PlaceholderCard = { source: string; label: string; reason: string | null };
 const placeholderCards = computed((): PlaceholderCard[] => {
-  const t = store.selectedTest
-  if (!t) return []
-  const reasons = t.recordingSkipReasons ?? {}
-  const sources = Object.keys(reasons)
-  // No skip events — fall back to a single generic card. The placeholder
-  // template's text picks the wording (eternal-pending / lost / etc.).
-  if (sources.length === 0) {
-    return [{ source: 'server', label: 'server · client', reason: null }]
-  }
-  // Stable order: server first, then clients in numeric order.
-  const sorted = [...sources].sort((a, b) => {
-    if (a === 'server') return -1
-    if (b === 'server') return 1
-    return a.localeCompare(b, undefined, { numeric: true })
-  })
-  return sorted.map(source => ({
-    source,
-    label: source.replace('_', ' '),
-    reason: lookupSkipReason(reasons, source),
-  }))
-})
+    const t = store.selectedTest;
+    if (!t) {
+        return [];
+    }
+    const reasons = t.recordingSkipReasons ?? {};
+    const sources = Object.keys(reasons);
+    // No skip events — fall back to a single generic card. The placeholder
+    // template's text picks the wording (eternal-pending / lost / etc.).
+    if (sources.length === 0) {
+        return [{ source: "server", label: "server · client", reason: null }];
+    }
+    // Stable order: server first, then clients in numeric order.
+    const sorted = [...sources].sort((a, b) => {
+        if (a === "server") {
+            return -1;
+        }
+        if (b === "server") {
+            return 1;
+        }
+        return a.localeCompare(b, undefined, { numeric: true });
+    });
+    return sorted.map((source) => ({
+        source,
+        label: source.replace("_", " "),
+        reason: lookupSkipReason(reasons, source),
+    }));
+});
 
 /** Per-source lookup: indexed first, then un-indexed `'client'` fallback. */
 function lookupSkipReason(reasons: Record<string, string>, source: string): string | null {
-  if (reasons[source]) return reasons[source]
-  if (source.startsWith('client') && reasons['client']) return reasons['client']
-  return null
+    if (reasons[source]) {
+        return reasons[source];
+    }
+    if (source.startsWith("client") && reasons.client) {
+        return reasons.client;
+    }
+    return null;
 }
 
 /**
@@ -245,199 +296,230 @@ function lookupSkipReason(reasons: Record<string, string>, source: string): stri
  * opted-out via Artifacts=false but client was leased and recorded).
  */
 const missingSourcePlaceholders = computed((): PlaceholderCard[] => {
-  const t = store.selectedTest
-  if (!t || !t.recordingSkipReasons) return []
-  const captured = new Set((t.recordings ?? []).map(r => r.source))
-  return placeholderCards.value.filter(card => !captured.has(card.source) && card.reason !== null)
-})
+    const t = store.selectedTest;
+    if (!t?.recordingSkipReasons) {
+        return [];
+    }
+    const captured = new Set((t.recordings ?? []).map((r) => r.source));
+    return placeholderCards.value.filter((card) => !captured.has(card.source) && card.reason !== null);
+});
 
-type PlaceholderCopy = { text: string; code?: string; detail?: string }
+type PlaceholderCopy = { text: string; code?: string; detail?: string };
 
 /** Map a snake_case skip reason to UI-facing copy. */
 function placeholderCopy(reason: string | null, source: string): PlaceholderCopy {
-  switch (reason) {
-    case 'artifacts_opted_out':
-      return {
-        text: 'No recording',
-        code: '[TestServer(Artifacts = false)]',
-        detail: 'Screenshots and video skipped on pass; available on failure.',
-      }
-    case 'retention_passed':
-      return { text: 'Recording skipped', detail: 'Only saved on failure.' }
-    case 'end_time_missing':
-    case 'recorder_never_started':
-    case 'recorder_missing':
-    case 'zero_duration':
-      return { text: 'Recording lost', detail: 'See infrastructure log.' }
-    case 'extraction_failed':
-    case 'finalize_deferred_failed':
-      return { text: 'Recording extraction failed', detail: 'See infrastructure log.' }
-    case null:
-      return placeholderFallbackCopy(source)
-    default:
-      return { text: 'Recording missing', detail: 'See infrastructure log.' }
-  }
+    switch (reason) {
+        case "artifacts_opted_out":
+            return {
+                text: "No recording",
+                code: "[TestServer(Artifacts = false)]",
+                detail: "Screenshots and video skipped on pass; available on failure.",
+            };
+        case "retention_passed":
+            return { text: "Recording skipped", detail: "Only saved on failure." };
+        case "end_time_missing":
+        case "recorder_never_started":
+        case "recorder_missing":
+        case "zero_duration":
+            return { text: "Recording lost", detail: "See infrastructure log." };
+        case "extraction_failed":
+        case "finalize_deferred_failed":
+            return { text: "Recording extraction failed", detail: "See infrastructure log." };
+        case null:
+            return placeholderFallbackCopy(source);
+        default:
+            return { text: "Recording missing", detail: "See infrastructure log." };
+    }
 }
 
 /** When there's no skip event at all, decide between pending and lost based on time. */
 function placeholderFallbackCopy(_source: string): PlaceholderCopy {
-  const t = store.selectedTest
-  if (!t) return { text: 'Recording pending…' }
-  // If the test finished < 30s ago, treat as still-pending; otherwise as lost.
-  const finishedRaw = t.runningStartTime
-    ? new Date(t.runningStartTime).getTime() + (t.durationMs ?? 0)
-    : null
-  if (finishedRaw == null) return { text: 'Recording pending…' }
-  const ageMs = Date.now() - finishedRaw
-  return ageMs < 30_000
-    ? { text: 'Recording pending…' }
-    : { text: 'Recording missing', detail: 'See infrastructure log.' }
+    const t = store.selectedTest;
+    if (!t) {
+        return { text: "Recording pending…" };
+    }
+    // If the test finished < 30s ago, treat as still-pending; otherwise as lost.
+    const finishedRaw = t.runningStartTime ? new Date(t.runningStartTime).getTime() + (t.durationMs ?? 0) : null;
+    if (finishedRaw == null) {
+        return { text: "Recording pending…" };
+    }
+    const ageMs = Date.now() - finishedRaw;
+    return ageMs < 30_000
+        ? { text: "Recording pending…" }
+        : { text: "Recording missing", detail: "See infrastructure log." };
 }
 
 // Reset copy state when test selection changes (VNC state is kept global)
 watch(test, () => {
-  copiedOutput.value = false
-  copiedError.value = false
-  copiedRepro.value = false
-  lightboxOpen.value = false
-})
+    copiedOutput.value = false;
+    copiedError.value = false;
+    copiedRepro.value = false;
+    lightboxOpen.value = false;
+});
 
 // Reset copy state when step selection changes
 watch(step, () => {
-  copiedStep.value = false
-})
+    copiedStep.value = false;
+});
 
 function screenshotSrc(path: string): string {
-  return store.screenshotSrc(path)
+    return store.screenshotSrc(path);
 }
 
 // Plain text output for copy-to-clipboard. Includes timestamps when the toggle is on.
 // Honors the active source-filter chips so the copy matches what's on screen.
 const plainOutput = computed(() => {
-  const entries = filteredTestOutput.value
-  if (!entries.length) return ''
-  return entries
-    .filter((e): e is Extract<OutputEntry, { type: 'annotation' }> => e.type === 'annotation')
-    .map(e => {
-      const tag = formatEntryTimestamp(e.ts, timestampMode.value, outputAnchorMs.value)
-      return tag ? `${tag} ${e.message}` : e.message
-    })
-    .join('\n')
-})
+    const entries = filteredTestOutput.value;
+    if (!entries.length) {
+        return "";
+    }
+    return entries
+        .filter((e): e is Extract<OutputEntry, { type: "annotation" }> => e.type === "annotation")
+        .map((e) => {
+            const tag = formatEntryTimestamp(e.ts, timestampMode.value, outputAnchorMs.value);
+            return tag ? `${tag} ${e.message}` : e.message;
+        })
+        .join("\n");
+});
 
 const errorText = computed(() => {
-
-  const parts: string[] = []
-  if (test.value?.errorType) parts.push(test.value.errorType)
-  if (test.value?.errorMessage) parts.push(test.value.errorMessage)
-  if (test.value?.stackTrace) {
-    parts.push('')
-    parts.push(test.value.stackTrace)
-  }
-  return parts.join('\n')
-})
+    const parts: string[] = [];
+    if (test.value?.errorType) {
+        parts.push(test.value.errorType);
+    }
+    if (test.value?.errorMessage) {
+        parts.push(test.value.errorMessage);
+    }
+    if (test.value?.stackTrace) {
+        parts.push("");
+        parts.push(test.value.stackTrace);
+    }
+    return parts.join("\n");
+});
 
 function scheduleCopyReset(flag: Ref<boolean>) {
-  flag.value = true
-  const id = setTimeout(() => flag.value = false, 2000)
-  copyTimers.push(id)
+    flag.value = true;
+    const id = setTimeout(() => (flag.value = false), 2000);
+    copyTimers.push(id);
 }
 
 async function copyOutput() {
-  await navigator.clipboard.writeText(plainOutput.value)
-  scheduleCopyReset(copiedOutput)
+    await navigator.clipboard.writeText(plainOutput.value);
+    scheduleCopyReset(copiedOutput);
 }
 
 async function copyError() {
-  await navigator.clipboard.writeText(errorText.value)
-  scheduleCopyReset(copiedError)
+    await navigator.clipboard.writeText(errorText.value);
+    scheduleCopyReset(copiedError);
 }
 
 async function copyRepro() {
-  if (!test.value?.reproCommand) return
-  await navigator.clipboard.writeText(test.value.reproCommand)
-  scheduleCopyReset(copiedRepro)
+    if (!test.value?.reproCommand) {
+        return;
+    }
+    await navigator.clipboard.writeText(test.value.reproCommand);
+    scheduleCopyReset(copiedRepro);
 }
 
 async function copyStepOutput() {
-  await navigator.clipboard.writeText(stepPlainOutput.value)
-  scheduleCopyReset(copiedStep)
+    await navigator.clipboard.writeText(stepPlainOutput.value);
+    scheduleCopyReset(copiedStep);
 }
 
 onUnmounted(() => {
-  for (const id of copyTimers) clearTimeout(id)
-})
-
+    for (const id of copyTimers) {
+        clearTimeout(id);
+    }
+});
 
 const outputSegments = computed((): OutputSegment[] => {
-  // Read contentVersion to re-evaluate when output is appended.
-  // test.value is a shallowRef object -- same reference even after mutation --
-  // so Vue's computed cache won't invalidate without this explicit dependency.
-  void contentVersion.value
-  return groupOutputEntries(filteredTestOutput.value)
-})
+    // Read contentVersion to re-evaluate when output is appended.
+    // test.value is a shallowRef object -- same reference even after mutation --
+    // so Vue's computed cache won't invalidate without this explicit dependency.
+    void contentVersion.value;
+    return groupOutputEntries(filteredTestOutput.value);
+});
 
 /** Seconds elapsed from test body start (runningStartTime) to the given ISO timestamp.
  *  Returns null if either timestamp is unavailable. */
 function secSinceTestStart(isoTimestamp: string | undefined | null): number | null {
-  const start = test.value?.runningStartTime
-  if (!isoTimestamp || !start) return null
-  return (new Date(isoTimestamp).getTime() - new Date(start).getTime()) / 1000
+    const start = test.value?.runningStartTime;
+    if (!isoTimestamp || !start) {
+        return null;
+    }
+    return (new Date(isoTimestamp).getTime() - new Date(start).getTime()) / 1000;
 }
 
 /** Find the instance that produced a video recording, matching by source name to instanceType. */
 function findInstanceForVideo(video: VideoItem): string | null {
-  const ids = test.value?.usedInstances ?? []
-  for (const id of ids) {
-    const inst = resolveInstance(id)
-    if (inst && inst.instanceType === video.source) return id
-    if (id.startsWith(video.source)) return id
-  }
-  return null
+    const ids = test.value?.usedInstances ?? [];
+    for (const id of ids) {
+        const inst = resolveInstance(id);
+        if (inst && inst.instanceType === video.source) {
+            return id;
+        }
+        if (id.startsWith(video.source)) {
+            return id;
+        }
+    }
+    return null;
 }
 
 /** Extract TPS stats points for a video's time window from instance stats history.
  *  Extends to clip edges via sample-and-hold so the graph spans the full width. */
-function extractVideoStats(video: VideoItem, instanceId: string): { points: VideoStatsPoint[]; targetTps: number | null } {
-  const history = store.instanceStatsHistory.get(instanceId) ?? []
-  if (history.length === 0) return { points: [], targetTps: null }
-
-  const videoStartSec = video.timelineOffset
-  const videoEndSec = videoStartSec + video.wallClockDuration
-
-  let targetTps: number | null = null
-  let lastBefore: { tps: number | null } | null = null
-  const points: VideoStatsPoint[] = []
-
-  for (const entry of history) {
-    const entrySec = secSinceTestStart(entry.timestamp)
-    if (entrySec === null) continue
-    if (entry.targetTps != null) targetTps = entry.targetTps
-
-    if (entrySec <= videoStartSec) {
-      lastBefore = entry
-      continue
+function extractVideoStats(
+    video: VideoItem,
+    instanceId: string,
+): { points: VideoStatsPoint[]; targetTps: number | null } {
+    const history = store.instanceStatsHistory.get(instanceId) ?? [];
+    if (history.length === 0) {
+        return { points: [], targetTps: null };
     }
-    if (entrySec > videoEndSec) break  // history is chronological
 
-    points.push({ offsetSec: entrySec - videoStartSec, tps: entry.tps })
-  }
+    const videoStartSec = video.timelineOffset;
+    const videoEndSec = videoStartSec + video.wallClockDuration;
 
-  if (points.length === 0 && lastBefore === null) return { points: [], targetTps: null }
+    let targetTps: number | null = null;
+    let lastBefore: { tps: number | null } | null = null;
+    const points: VideoStatsPoint[] = [];
 
-  // Extend to left edge (0s) using last value before window or first in-range value
-  const leftTps = lastBefore?.tps ?? points[0]?.tps ?? null
-  if (points.length === 0 || points[0].offsetSec > 0) {
-    points.unshift({ offsetSec: 0, tps: leftTps })
-  }
+    for (const entry of history) {
+        const entrySec = secSinceTestStart(entry.timestamp);
+        if (entrySec === null) {
+            continue;
+        }
+        if (entry.targetTps != null) {
+            targetTps = entry.targetTps;
+        }
 
-  // Extend to right edge (full duration) using last in-range value
-  const lastPoint = points[points.length - 1]
-  if (lastPoint.offsetSec < video.wallClockDuration) {
-    points.push({ offsetSec: video.wallClockDuration, tps: lastPoint.tps })
-  }
+        if (entrySec <= videoStartSec) {
+            lastBefore = entry;
+            continue;
+        }
+        if (entrySec > videoEndSec) {
+            break; // history is chronological
+        }
 
-  return { points, targetTps }
+        points.push({ offsetSec: entrySec - videoStartSec, tps: entry.tps });
+    }
+
+    if (points.length === 0 && lastBefore === null) {
+        return { points: [], targetTps: null };
+    }
+
+    // Extend to left edge (0s) using last value before window or first in-range value
+    const leftTps = lastBefore?.tps ?? points[0]?.tps ?? null;
+    if (points.length === 0 || points[0].offsetSec > 0) {
+        points.unshift({ offsetSec: 0, tps: leftTps });
+    }
+
+    // Extend to right edge (full duration) using last in-range value
+    const lastPoint = points[points.length - 1];
+    if (lastPoint.offsetSec < video.wallClockDuration) {
+        points.push({ offsetSec: video.wallClockDuration, tps: lastPoint.tps });
+    }
+
+    return { points, targetTps };
 }
 
 /** Video recordings from test metadata. Sorted by timeline offset (server first).
@@ -446,194 +528,227 @@ function extractVideoStats(video: VideoItem, instanceId: string): { points: Vide
  *  and can crossfade instead of unmount→remount. Clears only when switching to a
  *  test that will never have recordings (no recording enabled). */
 const videoItems = computed((): VideoItem[] => {
-  const t = test.value
-  // Only react to stats updates while the test is still active.
-  // For finished tests, stats are frozen. Avoid recomputation from other instances' stats.
-  const status = t?.status
-  if (status === 'running' || status === 'queued') {
-    void store.statsVersion.value
-  }
+    const t = test.value;
+    // Only react to stats updates while the test is still active.
+    // For finished tests, stats are frozen. Avoid recomputation from other instances' stats.
+    const status = t?.status;
+    if (status === "running" || status === "queued") {
+        void store.statsVersion.value;
+    }
 
-  const recs = t?.recordings
-  if (!recs?.length) return []
-  return [...recs].sort((a, b) => a.timelineOffset - b.timelineOffset).map(rec => {
-    const instanceId = findInstanceForVideo(rec)
-    if (!instanceId) return rec
-    const enriched = { ...rec, instanceId, label: resolveInstanceLabel(instanceId) }
-    const { points, targetTps } = extractVideoStats(rec, instanceId)
-    if (points.length === 0) return enriched
-    return { ...enriched, statsPoints: points, targetTps }
-  })
-})
-const stableVideoItems = ref<VideoItem[]>([])
-const stableTestDurationMs = ref<number | null>(null)
-const stableLifecycle = ref<{ testMs: number; cleanupMs: number; artifactsMs: number } | null>(null)
-watch(videoItems, (items) => {
-  const prev = stableVideoItems.value
-  if (
-    prev.length === items.length &&
-    prev.every((p, i) =>
-      p.path === items[i].path &&
-      p.statsPoints?.length === items[i].statsPoints?.length
-    )
-  ) {
-    return // No structural change, skip update
-  }
-  stableVideoItems.value = items
-  stableTestDurationMs.value = test.value?.durationMs ?? null
-}, { immediate: true })
+    const recs = t?.recordings;
+    if (!recs?.length) {
+        return [];
+    }
+    return [...recs]
+        .sort((a, b) => a.timelineOffset - b.timelineOffset)
+        .map((rec) => {
+            const instanceId = findInstanceForVideo(rec);
+            if (!instanceId) {
+                return rec;
+            }
+            const enriched = { ...rec, instanceId, label: resolveInstanceLabel(instanceId) };
+            const { points, targetTps } = extractVideoStats(rec, instanceId);
+            if (points.length === 0) {
+                return enriched;
+            }
+            return { ...enriched, statsPoints: points, targetTps };
+        });
+});
+const stableVideoItems = ref<VideoItem[]>([]);
+const stableTestDurationMs = ref<number | null>(null);
+const stableLifecycle = ref<{ testMs: number; cleanupMs: number; artifactsMs: number } | null>(null);
+watch(
+    videoItems,
+    (items) => {
+        const prev = stableVideoItems.value;
+        if (
+            prev.length === items.length &&
+            prev.every((p, i) => p.path === items[i].path && p.statsPoints?.length === items[i].statsPoints?.length)
+        ) {
+            return; // No structural change, skip update
+        }
+        stableVideoItems.value = items;
+        stableTestDurationMs.value = test.value?.durationMs ?? null;
+    },
+    { immediate: true },
+);
 // Lifecycle arrives after recordings; watch separately
-watch(() => test.value?.lifecycle, (lc) => {
-  stableLifecycle.value = lc ?? null
-}, { immediate: true })
+watch(
+    () => test.value?.lifecycle,
+    (lc) => {
+        stableLifecycle.value = lc ?? null;
+    },
+    { immediate: true },
+);
 
 // ── Timeline-linked output dots ──
-const hasVideos = computed(() => stableVideoItems.value.length > 0)
+const hasVideos = computed(() => stableVideoItems.value.length > 0);
 
 /** Convert an output entry's ISO timestamp to seconds since test body start (runningStartTime). */
 function lineTimelineSec(entry: { ts?: string }): number | null {
-  const sec = secSinceTestStart(entry.ts)
-  return sec !== null ? Math.max(0, sec) : null
+    const sec = secSinceTestStart(entry.ts);
+    return sec !== null ? Math.max(0, sec) : null;
 }
 
 /** Whether the timeline playhead has reached this output line's timestamp. */
 function lineReached(entry: { ts?: string }): boolean {
-  const sec = lineTimelineSec(entry)
-  if (sec === null) return false
-  // Strict > for lines at position 0: lines emitted before or at runningStartTime
-  // get clamped to sec=0 by lineTimelineSec, so >= would mark them as reached
-  // even when the playhead hasn't moved from its initial 0 position.
-  return sec === 0 ? timelinePos.value > 0 : timelinePos.value >= sec
+    const sec = lineTimelineSec(entry);
+    if (sec === null) {
+        return false;
+    }
+    // Strict > for lines at position 0: lines emitted before or at runningStartTime
+    // get clamped to sec=0 by lineTimelineSec, so >= would mark them as reached
+    // even when the playhead hasn't moved from its initial 0 position.
+    return sec === 0 ? timelinePos.value > 0 : timelinePos.value >= sec;
 }
 
 // ── Breakpoints ──
 
 function toggleBreakpoint(lineNum: number, entry: { ts?: string }) {
-  const sec = lineTimelineSec(entry)
-  if (sec === null) return
-  const next = new Map(breakpoints.value)
-  if (next.has(lineNum)) {
-    next.delete(lineNum)
-    if (hitBreakpointLine.value === lineNum) hitBreakpointLine.value = null
-  } else {
-    next.set(lineNum, sec)
-  }
-  breakpoints.value = next
+    const sec = lineTimelineSec(entry);
+    if (sec === null) {
+        return;
+    }
+    const next = new Map(breakpoints.value);
+    if (next.has(lineNum)) {
+        next.delete(lineNum);
+        if (hitBreakpointLine.value === lineNum) {
+            hitBreakpointLine.value = null;
+        }
+    } else {
+        next.set(lineNum, sec);
+    }
+    breakpoints.value = next;
 }
 
 function toggleAllBreakpoints() {
-  if (breakpoints.value.size > 0) {
-    breakpoints.value = new Map()
-    hitBreakpointLine.value = null
-    return
-  }
-  const next = new Map<number, number>()
-  let lineNum = 0
-  for (const seg of outputSegments.value) {
-    if (seg.type === 'lines') {
-      for (const entry of seg.items) {
-        lineNum++
-        const sec = lineTimelineSec(entry)
-        if (sec !== null) next.set(lineNum, sec)
-      }
+    if (breakpoints.value.size > 0) {
+        breakpoints.value = new Map();
+        hitBreakpointLine.value = null;
+        return;
     }
-  }
-  breakpoints.value = next
+    const next = new Map<number, number>();
+    let lineNum = 0;
+    for (const seg of outputSegments.value) {
+        if (seg.type === "lines") {
+            for (const entry of seg.items) {
+                lineNum++;
+                const sec = lineTimelineSec(entry);
+                if (sec !== null) {
+                    next.set(lineNum, sec);
+                }
+            }
+        }
+    }
+    breakpoints.value = next;
 }
 
-const hasAnyBreakpoints = computed(() => breakpoints.value.size > 0)
+const hasAnyBreakpoints = computed(() => breakpoints.value.size > 0);
 
 const outputSegmentOffsets = computed(() => {
-  const offsets: number[] = []
-  let offset = 0
-  for (const seg of outputSegments.value) {
-    offsets.push(offset)
-    if (seg.type === 'lines') offset += seg.items.length
-  }
-  return offsets
-})
+    const offsets: number[] = [];
+    let offset = 0;
+    for (const seg of outputSegments.value) {
+        offsets.push(offset);
+        if (seg.type === "lines") {
+            offset += seg.items.length;
+        }
+    }
+    return offsets;
+});
 
 const lineBreakpointState = computed(() => {
-  const map = new Map<number, 'hit' | 'hovered' | 'set'>()
-  const hoverSnap = hoveredBreakpointSec.value !== null ? snapBreakpointSec(hoveredBreakpointSec.value) : null
-  for (const [lineNum, sec] of breakpoints.value) {
-    if (hitBreakpointLine.value === lineNum) map.set(lineNum, 'hit')
-    else if (hoverSnap !== null && snapBreakpointSec(sec) === hoverSnap) map.set(lineNum, 'hovered')
-    else map.set(lineNum, 'set')
-  }
-  return map
-})
+    const map = new Map<number, "hit" | "hovered" | "set">();
+    const hoverSnap = hoveredBreakpointSec.value !== null ? snapBreakpointSec(hoveredBreakpointSec.value) : null;
+    for (const [lineNum, sec] of breakpoints.value) {
+        if (hitBreakpointLine.value === lineNum) {
+            map.set(lineNum, "hit");
+        } else if (hoverSnap !== null && snapBreakpointSec(sec) === hoverSnap) {
+            map.set(lineNum, "hovered");
+        } else {
+            map.set(lineNum, "set");
+        }
+    }
+    return map;
+});
 
 function resetBreakpoints() {
-  breakpoints.value = new Map()
-  hitBreakpointLine.value = null
+    breakpoints.value = new Map();
+    hitBreakpointLine.value = null;
 }
-watch(test, resetBreakpoints)
+watch(test, resetBreakpoints);
 // Toggling a source chip changes the line numbering; reset breakpoints so they
 // don't end up pointing at the wrong rows.
-watch(sourceFilter, resetBreakpoints, { deep: true })
+watch(sourceFilter, resetBreakpoints, { deep: true });
 
 watch(hitBreakpointLine, (ln) => {
-  if (ln === null) return
-  nextTick(() => {
-    document.querySelector('[data-breakpoint-hit]')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
-})
-
+    if (ln === null) {
+        return;
+    }
+    nextTick(() => {
+        document.querySelector("[data-breakpoint-hit]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+});
 
 /** Step output grouped into segments. Setup-step "details" are stored as
  *  annotations with source='setup', so the same grouping/rendering path applies. */
 const stepSegments = computed((): OutputSegment[] => {
-  return groupOutputEntries(filteredStepOutput.value)
-})
+    return groupOutputEntries(filteredStepOutput.value);
+});
 
 const stepPlainOutput = computed(() => {
-  const entries = filteredStepOutput.value
-  if (!entries.length) return ''
-  return entries
-    .filter((e): e is Extract<OutputEntry, { type: 'annotation' }> => e.type === 'annotation')
-    .map(e => {
-      const tag = formatEntryTimestamp(e.ts, timestampMode.value, stepAnchorMs.value)
-      return tag ? `${tag} ${e.message}` : e.message
-    })
-    .join('\n')
-})
+    const entries = filteredStepOutput.value;
+    if (!entries.length) {
+        return "";
+    }
+    return entries
+        .filter((e): e is Extract<OutputEntry, { type: "annotation" }> => e.type === "annotation")
+        .map((e) => {
+            const tag = formatEntryTimestamp(e.ts, timestampMode.value, stepAnchorMs.value);
+            return tag ? `${tag} ${e.message}` : e.message;
+        })
+        .join("\n");
+});
 
 // Lightbox state
-const lightboxOpen = ref(false)
-const lightboxInitialIndex = ref(0)
+const lightboxOpen = ref(false);
+const lightboxInitialIndex = ref(0);
 
 // Flat list of all screenshots for arrow navigation
 const allScreenshots = computed(() => {
-  const list: { src: string; alt: string; source: string }[] = []
-  for (const seg of outputSegments.value) {
-    if (seg.type === 'images') {
-      for (const img of seg.items) {
-        list.push({ src: screenshotSrc(img.path), alt: `${img.source} screenshot`, source: img.source })
-      }
+    const list: { src: string; alt: string; source: string }[] = [];
+    for (const seg of outputSegments.value) {
+        if (seg.type === "images") {
+            for (const img of seg.items) {
+                list.push({ src: screenshotSrc(img.path), alt: `${img.source} screenshot`, source: img.source });
+            }
+        }
     }
-  }
-  return list
-})
+    return list;
+});
 
 function openLightbox(src: string) {
-  lightboxInitialIndex.value = allScreenshots.value.findIndex(s => s.src === src)
-  if (lightboxInitialIndex.value < 0) lightboxInitialIndex.value = 0
-  lightboxOpen.value = true
+    lightboxInitialIndex.value = allScreenshots.value.findIndex((s) => s.src === src);
+    if (lightboxInitialIndex.value < 0) {
+        lightboxInitialIndex.value = 0;
+    }
+    lightboxOpen.value = true;
 }
 
 function onSearchShortcut(e: KeyboardEvent) {
-  if (lightboxOpen.value) return
-  const tag = (e.target as HTMLElement)?.tagName
-  if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
-    e.preventDefault()
-    outputSearchRef.value?.focus()
-  }
+    if (lightboxOpen.value) {
+        return;
+    }
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        outputSearchRef.value?.focus();
+    }
 }
 
-onMounted(() => window.addEventListener('keydown', onSearchShortcut))
-onUnmounted(() => window.removeEventListener('keydown', onSearchShortcut))
+onMounted(() => window.addEventListener("keydown", onSearchShortcut));
+onUnmounted(() => window.removeEventListener("keydown", onSearchShortcut));
 </script>
 
 <template>

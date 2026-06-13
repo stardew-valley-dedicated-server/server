@@ -1,10 +1,10 @@
-import { watch, type Ref } from 'vue'
-import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
-import type { TestStore } from './useTestStore'
-import type { useInspectNavigation } from './useInspectNavigation'
+import { type Ref, watch } from "vue";
+import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
+import type { useInspectNavigation } from "./useInspectNavigation";
+import type { TestStore } from "./useTestStore";
 
-type Inspect = ReturnType<typeof useInspectNavigation>
-type ActiveView = Ref<'tests' | 'vnc'>
+type Inspect = ReturnType<typeof useInspectNavigation>;
+type ActiveView = Ref<"tests" | "vnc">;
 
 /**
  * Two-way sync between the URL and the app's in-memory state, with App.vue kept
@@ -20,146 +20,161 @@ type ActiveView = Ref<'tests' | 'vnc'>
  * watchers from ping-ponging.
  */
 export function useRouteSync(store: TestStore, inspect: Inspect, activeView: ActiveView): void {
-  const route = useRoute()
-  const router = useRouter()
+    const route = useRoute();
+    const router = useRouter();
 
-  // True while we're applying one direction, so the opposite watcher no-ops.
-  let syncing = false
+    // True while we're applying one direction, so the opposite watcher no-ops.
+    let syncing = false;
 
-  // Set when a deep-linked test/instance hasn't streamed in yet (live mode); the
-  // source-data watcher re-applies the route once the tree/instances populate.
-  let pending = false
+    // Set when a deep-linked test/instance hasn't streamed in yet (live mode); the
+    // source-data watcher re-applies the route once the tree/instances populate.
+    let pending = false;
 
-  function withSync(fn: () => void) {
-    syncing = true
-    try {
-      fn()
-    } finally {
-      syncing = false
+    function withSync(fn: () => void) {
+        syncing = true;
+        try {
+            fn();
+        } finally {
+            syncing = false;
+        }
     }
-  }
 
-  // ── Route → state ────────────────────────────────────────────────────────
+    // ── Route → state ────────────────────────────────────────────────────────
 
-  function resolveTestFromName(name: string): boolean {
-    // Vue Router decodes path params, but bracketed names have been encoded
-    // inconsistently across versions — try raw, then one explicit decode.
-    let t = store.findTest(name)
-    if (!t) {
-      try {
-        t = store.findTest(decodeURIComponent(name))
-      } catch {
-        /* malformed escape — fall through to not-found */
-      }
+    function resolveTestFromName(name: string): boolean {
+        // Vue Router decodes path params, but bracketed names have been encoded
+        // inconsistently across versions — try raw, then one explicit decode.
+        let t = store.findTest(name);
+        if (!t) {
+            try {
+                t = store.findTest(decodeURIComponent(name));
+            } catch {
+                /* malformed escape — fall through to not-found */
+            }
+        }
+        if (t) {
+            store.selectTest(t);
+            return true;
+        }
+        return false;
     }
-    if (t) {
-      store.selectTest(t)
-      return true
+
+    function applyBaseFromRoute() {
+        const name = route.name;
+        if (name === "test") {
+            activeView.value = "tests";
+            const displayName = String(route.params.displayName ?? "");
+            if (resolveTestFromName(displayName)) {
+                return;
+            }
+            store.selectTest(null);
+            if (store.runDone) {
+                // Tree is fully hydrated and the test isn't here — drop the stale path
+                // (keep any ?inspect query) instead of stranding the URL.
+                router.replace({ name: "tests", query: route.query });
+            } else {
+                pending = true;
+            }
+        } else {
+            store.selectTest(null);
+            activeView.value = name === "vnc" ? "vnc" : "tests";
+        }
     }
-    return false
-  }
 
-  function applyBaseFromRoute() {
-    const name = route.name
-    if (name === 'test') {
-      activeView.value = 'tests'
-      const displayName = String(route.params.displayName ?? '')
-      if (resolveTestFromName(displayName)) return
-      store.selectTest(null)
-      if (store.runDone) {
-        // Tree is fully hydrated and the test isn't here — drop the stale path
-        // (keep any ?inspect query) instead of stranding the URL.
-        router.replace({ name: 'tests', query: route.query })
-      } else {
-        pending = true
-      }
-    } else {
-      store.selectTest(null)
-      activeView.value = name === 'vnc' ? 'vnc' : 'tests'
+    function applyInspectFromRoute() {
+        const id = route.query.inspect;
+        const inspectId = typeof id === "string" && id.length > 0 ? id : null;
+        if (!inspectId) {
+            inspect.closeInspect();
+            return;
+        }
+        inspect.openInspect(inspectId);
+        if (inspect.inspectInstance.value) {
+            return;
+        }
+        // openInspect set the stack, but the instance isn't loaded.
+        if (store.runDone) {
+            inspect.closeInspect();
+            const query = { ...route.query };
+            delete query.inspect;
+            router.replace({ name: route.name ?? "tests", params: route.params, query });
+        } else {
+            pending = true;
+        }
     }
-  }
 
-  function applyInspectFromRoute() {
-    const id = route.query.inspect
-    const inspectId = typeof id === 'string' && id.length > 0 ? id : null
-    if (!inspectId) {
-      inspect.closeInspect()
-      return
+    function applyFromRoute() {
+        withSync(() => {
+            pending = false;
+            applyBaseFromRoute();
+            applyInspectFromRoute();
+        });
     }
-    inspect.openInspect(inspectId)
-    if (inspect.inspectInstance.value) return
-    // openInspect set the stack, but the instance isn't loaded.
-    if (store.runDone) {
-      inspect.closeInspect()
-      const query = { ...route.query }
-      delete query.inspect
-      router.replace({ name: route.name ?? 'tests', params: route.params, query })
-    } else {
-      pending = true
-    }
-  }
 
-  function applyFromRoute() {
-    withSync(() => {
-      pending = false
-      applyBaseFromRoute()
-      applyInspectFromRoute()
-    })
-  }
+    watch(
+        () => route.fullPath,
+        () => {
+            if (!syncing) {
+                applyFromRoute();
+            }
+        },
+    );
 
-  watch(() => route.fullPath, () => {
-    if (!syncing) applyFromRoute()
-  })
+    // One re-resolve path for both dimensions: when the tree or instance list
+    // populates and a deep-link is still unresolved, re-apply the whole route.
+    // The instance arrays are mutated in place (splice/push), so watch .length —
+    // watching the array ref wouldn't fire on an in-place mutation.
+    watch([store.collections, () => store.state.instances?.length, () => store.stoppedInstances.length], () => {
+        if (pending) {
+            applyFromRoute();
+        }
+    });
 
-  // One re-resolve path for both dimensions: when the tree or instance list
-  // populates and a deep-link is still unresolved, re-apply the whole route.
-  // The instance arrays are mutated in place (splice/push), so watch .length —
-  // watching the array ref wouldn't fire on an in-place mutation.
-  watch(
-    [store.collections, () => store.state.instances?.length, () => store.stoppedInstances.length],
-    () => {
-      if (pending) applyFromRoute()
-    },
-  )
+    // ── State → route ─────────────────────────────────────────────────────────
 
-  // ── State → route ─────────────────────────────────────────────────────────
+    // Base: view + selected test. A WS auto-select uses replace (no history spam);
+    // user clicks push. Preserve the current ?inspect query so a view switch
+    // doesn't clobber an open modal.
+    watch([activeView, () => store.selectedTest], () => {
+        if (syncing) {
+            return;
+        }
+        const query = route.query;
+        let target: RouteLocationRaw;
+        if (activeView.value === "vnc") {
+            target = { name: "vnc", query };
+        } else if (store.selectedTest) {
+            target = { name: "test", params: { displayName: store.selectedTest.displayName }, query };
+        } else {
+            target = { name: "tests", query };
+        }
+        const auto = store.lastSelectionWasAuto.value;
+        store.lastSelectionWasAuto.value = false;
+        if (auto) {
+            router.replace(target);
+        } else {
+            router.push(target);
+        }
+    });
 
-  // Base: view + selected test. A WS auto-select uses replace (no history spam);
-  // user clicks push. Preserve the current ?inspect query so a view switch
-  // doesn't clobber an open modal.
-  watch(
-    [activeView, () => store.selectedTest],
-    () => {
-      if (syncing) return
-      const query = route.query
-      let target: RouteLocationRaw
-      if (activeView.value === 'vnc') {
-        target = { name: 'vnc', query }
-      } else if (store.selectedTest) {
-        target = { name: 'test', params: { displayName: store.selectedTest.displayName }, query }
-      } else {
-        target = { name: 'tests', query }
-      }
-      const auto = store.lastSelectionWasAuto.value
-      store.lastSelectionWasAuto.value = false
-      if (auto) router.replace(target)
-      else router.push(target)
-    },
-  )
+    // Modal: reflect inspectId into ?inspect, preserving the base path. Always a
+    // user action (no auto-inspect), so always push.
+    watch(
+        () => inspect.inspectId.value,
+        (id) => {
+            if (syncing) {
+                return;
+            }
+            const query = { ...route.query };
+            if (id) {
+                query.inspect = id;
+            } else {
+                delete query.inspect;
+            }
+            router.push({ name: route.name ?? "tests", params: route.params, query });
+        },
+    );
 
-  // Modal: reflect inspectId into ?inspect, preserving the base path. Always a
-  // user action (no auto-inspect), so always push.
-  watch(
-    () => inspect.inspectId.value,
-    (id) => {
-      if (syncing) return
-      const query = { ...route.query }
-      if (id) query.inspect = id
-      else delete query.inspect
-      router.push({ name: route.name ?? 'tests', params: route.params, query })
-    },
-  )
-
-  // ── Initial resolve ───────────────────────────────────────────────────────
-  applyFromRoute()
+    // ── Initial resolve ───────────────────────────────────────────────────────
+    applyFromRoute();
 }

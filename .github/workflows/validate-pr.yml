@@ -258,7 +258,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json') }}
+          key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-tools-
 
       - name: Restore .NET tools
@@ -266,3 +266,41 @@ jobs:
 
       - name: Check C# formatting
         run: dotnet csharpier check .
+
+      # Analyzer style rules ride compilation, so they only gate where CI compiles
+      # C#. The mod projects gate via the Docker image build (Validate Build); the
+      # test projects compile game-free, so verify them here on every PR.
+      # (tests/test-client needs the game DLLs and only compiles inside its image.)
+      - name: Check C# analyzer style rules (test projects)
+        run: |
+          dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes
+          dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes
+
+  validate-js:
+    name: Validate JS/TS
+    # Checks out fork head — `needs: authorize` keeps it behind the fork-pr approval gate.
+    needs: authorize
+    runs-on: ubuntu-latest
+
+    steps:
+      # persist-credentials off: the job only reads the checkout, and fork code
+      # should not share a workspace with a usable token.
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      # --ignore-scripts: lefthook's postinstall is useless in CI, and lifecycle
+      # scripts from the fork's lockfile should not execute here.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check JS/TS formatting and lints
+        run: npx biome ci --max-diagnostics=50 .

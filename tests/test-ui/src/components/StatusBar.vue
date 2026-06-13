@@ -1,51 +1,71 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Icon } from '@iconify/vue'
-import { formatDuration } from '../utils/format'
-import { useTestUI, useShowFailed } from '../composables/useTestUI'
+import { Icon } from "@iconify/vue";
+import { computed, ref, watch } from "vue";
+import { useShowFailed, useTestUI } from "../composables/useTestUI";
+import { formatDuration } from "../utils/format";
 
-const { store } = useTestUI()
-const { showFailedTests } = useShowFailed()
+const { store } = useTestUI();
+const { showFailedTests } = useShowFailed();
 
 // Read counts directly from the store's incrementally-maintained map
-const sc = store.statusCounts
+const sc = store.statusCounts;
 
-const completedCount = computed(() =>
-  sc.passed + sc.failed + sc.skipped + sc.canceled + sc.notDispatched + sc.aborted
-)
+const completedCount = computed(() => sc.passed + sc.failed + sc.skipped + sc.canceled + sc.notDispatched + sc.aborted);
 
 const progress = computed(() => {
-  const total = store.state.totalTests
-  if (total === 0) return 0
-  return Math.round((completedCount.value / total) * 100)
-})
+    const total = store.state.totalTests;
+    if (total === 0) {
+        return 0;
+    }
+    return Math.round((completedCount.value / total) * 100);
+});
 
 // Final elapsed (only set when run finishes; during the run, rAF updates the DOM directly)
-const elapsed = computed(() => formatDuration(store.elapsedMs))
+const elapsed = computed(() => formatDuration(store.elapsedMs));
 
 const statusLabel = computed(() => {
-  if (store.state.status === 'aborted') return 'aborted'
-  if (store.state.status === 'running') return 'running'
-  if (store.state.status === 'finished') {
-    if (sc.failed > 0) return 'failed'
-    if (sc.canceled > 0) return 'canceled'
-    if (sc.passed > 0) return 'passed'
-    return 'no tests ran'
-  }
-  return 'pending'
-})
+    if (store.state.status === "aborted") {
+        return "aborted";
+    }
+    if (store.state.status === "running") {
+        return "running";
+    }
+    if (store.state.status === "finished") {
+        if (sc.failed > 0) {
+            return "failed";
+        }
+        if (sc.canceled > 0) {
+            return "canceled";
+        }
+        if (sc.passed > 0) {
+            return "passed";
+        }
+        return "no tests ran";
+    }
+    return "pending";
+});
 
 const statusTextClass = computed(() => {
-  if (store.state.status === 'running') return 'text-success'
-  if (store.state.status === 'finished') {
-    if (sc.failed > 0) return 'text-error'
-    if (sc.canceled > 0) return 'text-warning'
-    if (sc.passed > 0) return 'text-success'
-    return 'text-warning'
-  }
-  if (store.state.status === 'aborted') return 'text-warning'
-  return 'text-base-content/50'
-})
+    if (store.state.status === "running") {
+        return "text-success";
+    }
+    if (store.state.status === "finished") {
+        if (sc.failed > 0) {
+            return "text-error";
+        }
+        if (sc.canceled > 0) {
+            return "text-warning";
+        }
+        if (sc.passed > 0) {
+            return "text-success";
+        }
+        return "text-warning";
+    }
+    if (store.state.status === "aborted") {
+        return "text-warning";
+    }
+    return "text-base-content/50";
+});
 
 // Stop = nuke. Single click force-exits the runner via Program.cs's
 // ForceExitNow path (bulk Docker cleanup by run-id label + Environment.Exit).
@@ -53,23 +73,35 @@ const statusTextClass = computed(() => {
 // frontend's onReconnectFailed flips state.status to 'aborted'.
 // Disable the button after the click so it doesn't look unresponsive while
 // the runner shuts down.
-const stopClicked = ref(false)
+const stopClicked = ref(false);
 
 function onStopClicked() {
-  stopClicked.value = true
-  void store.sendCommand('stop')
+    stopClicked.value = true;
+    void store.sendCommand("stop");
 }
 
-const shortcutsOpen = ref(false)
-const detailsOpen = ref(false)
+// Re-arm the button when a new run starts in the same session.
+watch(
+    () => store.state.status,
+    (status) => {
+        if (status === "running") {
+            stopClicked.value = false;
+        }
+    },
+);
 
-const runMeta = computed(() => store.state.runMetadata?.data ?? null)
+const shortcutsOpen = ref(false);
+const detailsOpen = ref(false);
+
+const runMeta = computed(() => store.state.runMetadata?.data ?? null);
 const gitLabel = computed(() => {
-  const g = runMeta.value?.git
-  if (!g) return null
-  const sha = g.sha ? g.sha.slice(0, 7) : '?'
-  return `${g.branch ?? '?'} @ ${sha}${g.dirty ? ' ●' : ''}`
-})
+    const g = runMeta.value?.git;
+    if (!g) {
+        return null;
+    }
+    const sha = g.sha ? g.sha.slice(0, 7) : "?";
+    return `${g.branch ?? "?"} @ ${sha}${g.dirty ? " ●" : ""}`;
+});
 </script>
 
 <template>
