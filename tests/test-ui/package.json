@@ -8,7 +8,7 @@
         "build": "vue-tsc --noEmit && vite build",
         "preview": "vite preview",
         "lint": "biome check .",
-        "lint:fix": "biome check --write ."
+        "lint:fix": "biome check --write --unsafe ."
     },
     "dependencies": {
         "@iconify/vue": "^5.0.0",

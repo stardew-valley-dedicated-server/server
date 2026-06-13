@@ -7,7 +7,7 @@
         "start": "bun run src/index.ts",
         "dev": "bun run --watch src/index.ts",
         "lint": "biome check .",
-        "lint:fix": "biome check --write ."
+        "lint:fix": "biome check --write --unsafe ."
     },
     "dependencies": {
         "discord.js": "^14.25.1"

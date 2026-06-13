@@ -265,7 +265,7 @@ lint-check:
 lint-fix:
 	@dotnet format style JunimoServer.slnx --severity error
 	@dotnet csharpier format .
-	@npx @biomejs/biome check --write .
+	@npx @biomejs/biome check --write --unsafe .
 
 # Show help
 help:

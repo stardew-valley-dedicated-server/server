@@ -21,11 +21,13 @@ pre-commit:
       run: dotnet csharpier format --no-cache {staged_files}
       stage_fixed: true
     # Fix + format staged JS/TS files and re-stage (Biome's documented lefthook
-    # pattern). --no-errors-on-unmatched: staged files outside biome's scope must
-    # not fail the hook; CI's `biome ci` is the safety net.
+    # pattern). --unsafe: apply every autofix so fixable rules never block a commit;
+    # rules whose unsafe fix is genuinely hazardous are set to fix:none in biome.jsonc.
+    # --no-errors-on-unmatched: staged files outside biome's scope must not fail the
+    # hook; CI's `biome ci` is the safety net.
     biome:
       glob: "*.{js,ts,cjs,mjs,cts,mts,jsx,tsx,vue,json,jsonc,css}"
-      run: npx @biomejs/biome check --write --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
+      run: npx @biomejs/biome check --write --unsafe --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
       stage_fixed: true
 
 # Local guard against accidental direct pushes to master.

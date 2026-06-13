@@ -23,6 +23,12 @@
             "recommended": true,
             "complexity": {
                 "noForEach": "off",
+                // fix:none — the unsafe fix deletes `!important`, which would break
+                // legitimate overrides like the reduced-motion block in style.css.
+                "noImportantStyles": {
+                    "level": "warn",
+                    "fix": "none"
+                },
                 "noStaticOnlyClass": "off",
                 "noUselessSwitchCase": "error",
                 "useFlatMap": "error"
