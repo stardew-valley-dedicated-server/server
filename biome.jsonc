@@ -29,6 +29,7 @@
             },
             "style": {
                 "noNegationElse": "off",
+                "useBlockStatements": "error",
                 "useForOf": "error",
                 "useNodejsImportProtocol": "error",
                 "useNumberNamespace": "error"
