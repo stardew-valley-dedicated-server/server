@@ -137,7 +137,7 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 - **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject the merge queue lints — checking it here fails a bad title on the PR rather than cryptically in the queue.
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
-- **Formatting** - Runs `dotnet csharpier check .` over the whole tree; fails on any C# formatting drift (fix locally with `make lint-fix`)
+- **Formatting** - Runs `dotnet csharpier check .` over the whole tree, plus the analyzer style rules for the test projects (the only C# that compiles game-free on the runner — the mod's analyzers gate via the Docker build); fails on formatting drift or style violations (fix locally with `make lint-fix`)
 - **JS/TS** - Runs `biome ci` over the projects scoped in the root `biome.jsonc`; fails on formatting drift or lint errors (fix locally with `make lint-fix`)
 - **Line endings** - Fails if a file with CRLF line endings reached the index, bypassing the LF normalization `.gitattributes` enforces
 

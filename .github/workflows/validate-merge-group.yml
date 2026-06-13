@@ -219,7 +219,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json') }}
+          key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-tools-
 
       - name: Restore .NET tools
@@ -227,6 +227,14 @@ jobs:
 
       - name: Check C# formatting
         run: dotnet csharpier check .
+
+      # Analyzer style rules ride compilation, so they only gate where CI compiles
+      # C#. The mod projects gate via the Docker image build (Validate Build); the
+      # test projects compile game-free, so verify them here. Mirrors validate-pr.yml.
+      - name: Check C# analyzer style rules (test projects)
+        run: |
+          dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes
+          dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes
 
   validate-js:
     name: Validate JS/TS

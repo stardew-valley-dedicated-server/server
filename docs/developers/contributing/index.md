@@ -65,7 +65,7 @@ make lint-check # verify C# + JS/TS style rules + formatting without writing (bu
 make lint-fix   # auto-fix C# + JS/TS style violations, then re-format (builds the solution)
 ```
 
-CI's `Validate Formatting` runs the CSharpier half of `lint-check` and `Validate JS/TS` the Biome half; the analyzer rules are enforced as build errors wherever the code compiles.
+CI's `Validate Formatting` runs the CSharpier half of `lint-check` plus the analyzer style rules for the test projects, and `Validate JS/TS` runs the Biome half; the mod's analyzer rules are enforced as build errors when CI builds the Docker image.
 
 #### Development Workflow
 
