@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useShowFailed, useTestUI } from "../composables/useTestUI";
 import { formatDuration } from "../utils/format";
 
@@ -79,6 +79,16 @@ function onStopClicked() {
     stopClicked.value = true;
     void store.sendCommand("stop");
 }
+
+// Re-arm the button when a new run starts in the same session.
+watch(
+    () => store.state.status,
+    (status) => {
+        if (status === "running") {
+            stopClicked.value = false;
+        }
+    },
+);
 
 const shortcutsOpen = ref(false);
 const detailsOpen = ref(false);

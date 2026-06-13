@@ -1225,6 +1225,11 @@ onUnmounted(() => {
         clearInterval(_stuckCheckTimer);
         _stuckCheckTimer = null;
     }
+    if (crossfadeTimer) {
+        clearTimeout(crossfadeTimer);
+        crossfadeTimer = null;
+    }
+    clearTimeout(resizeTimer);
     cleanupDrag?.();
     if (timelineInnerRef.value) {
         timelineInnerRef.value.removeEventListener("mousedown", onTimelineMouseDown);
