@@ -68,7 +68,9 @@ let continuationUntilMs = 0;
 let sharedRafId = 0;
 
 function scheduleDrainAll() {
-    if (sharedRafId) return;
+    if (sharedRafId) {
+        return;
+    }
     sharedRafId = requestAnimationFrame(drainAll);
 }
 
@@ -92,14 +94,18 @@ function scheduleSync(h: InternalHandle) {
 }
 
 function scheduleSyncAll() {
-    for (const h of handles) h.pending = true;
+    for (const h of handles) {
+        h.pending = true;
+    }
     scheduleDrainAll();
 }
 
 /** Extend the continuation window so we keep syncing for `ms` more. */
 function bumpContinuation(ms: number) {
     const until = performance.now() + ms;
-    if (until > continuationUntilMs) continuationUntilMs = until;
+    if (until > continuationUntilMs) {
+        continuationUntilMs = until;
+    }
     scheduleDrainAll();
 }
 
@@ -111,7 +117,9 @@ function writeStyle<K extends keyof CSSStyleDeclaration>(
     key: K & keyof InternalHandle["last"],
     value: string,
 ) {
-    if (last[key] === value) return;
+    if (last[key] === value) {
+        return;
+    }
     last[key] = value;
     (style as any)[key] = value;
 }
@@ -144,10 +152,14 @@ function syncHandle(h: InternalHandle) {
             measure.style.width = rect.width + "px";
             measure.style.height = "";
             measure.style.transition = "none";
-            while (wrapper.firstChild) measure.appendChild(wrapper.firstChild);
+            while (wrapper.firstChild) {
+                measure.appendChild(wrapper.firstChild);
+            }
             wrapper.parentNode!.appendChild(measure);
             h.targetHeight = measure.scrollHeight;
-            while (measure.firstChild) wrapper.appendChild(measure.firstChild);
+            while (measure.firstChild) {
+                wrapper.appendChild(measure.firstChild);
+            }
             measure.remove();
         }
         wrapperHeight = h.targetHeight;
@@ -155,7 +167,9 @@ function syncHandle(h: InternalHandle) {
         writeStyle(wrapper.style, last, "left", rect.left + "px");
         writeStyle(wrapper.style, last, "width", rect.width + "px");
         writeStyle(wrapper.style, last, "height", wrapperHeight + "px");
-        if (wrapperHeight > 0) placeholder.style.height = wrapperHeight + "px";
+        if (wrapperHeight > 0) {
+            placeholder.style.height = wrapperHeight + "px";
+        }
     } else {
         // Normal mode: width from placeholder; height driven by natural card content.
         writeStyle(wrapper.style, last, "width", rect.width + "px");
@@ -209,7 +223,9 @@ function onTransitionRun() {
 }
 
 function installListeners() {
-    if (listenersInstalled) return;
+    if (listenersInstalled) {
+        return;
+    }
     listenersInstalled = true;
     window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.addEventListener("resize", onResize, { passive: true });
@@ -217,8 +233,12 @@ function installListeners() {
 }
 
 function uninstallListenersIfIdle() {
-    if (!listenersInstalled) return;
-    if (handles.size > 0) return;
+    if (!listenersInstalled) {
+        return;
+    }
+    if (handles.size > 0) {
+        return;
+    }
     listenersInstalled = false;
     window.removeEventListener("scroll", onScroll, { capture: true });
     window.removeEventListener("resize", onResize);
@@ -275,7 +295,9 @@ export function animateTransition(durationMs: number = TRANSITION_DURATION_MS) {
     // Enable transitions on the next frame so the browser registers the snapshot.
     requestAnimationFrame(() => {
         const transition = `top ${durationMs}ms ease, left ${durationMs}ms ease, width ${durationMs}ms ease, height ${durationMs}ms ease`;
-        for (const h of handles) h.wrapper.style.transition = transition;
+        for (const h of handles) {
+            h.wrapper.style.transition = transition;
+        }
         scheduleDrainAll();
     });
 
@@ -409,14 +431,18 @@ export function acquireInstanceSlot(instanceId: string): PooledSlot {
  */
 export function releaseInstanceSlot(instanceId: string) {
     const entry = pool.get(instanceId);
-    if (!entry) return;
+    if (!entry) {
+        return;
+    }
     entry.refCount = Math.max(0, entry.refCount - 1);
 }
 
 /** Permanently destroy a pooled slot. Call when an instance is removed. */
 export function destroyInstanceSlot(instanceId: string) {
     const entry = pool.get(instanceId);
-    if (!entry) return;
+    if (!entry) {
+        return;
+    }
     entry.handle.destroy();
     pool.delete(instanceId);
 }

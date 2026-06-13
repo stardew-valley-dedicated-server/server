@@ -32,7 +32,7 @@
       // Restore saved theme before first paint to prevent flash
       try {
         const t = localStorage.getItem('ui-theme');
-        if (t) document.documentElement.setAttribute('data-theme', t);
+        if (t) { document.documentElement.setAttribute('data-theme', t); }
       } catch {}
     </script>
   </head>

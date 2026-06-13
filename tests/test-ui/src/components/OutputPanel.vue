@@ -51,7 +51,9 @@ const sourceLabels: Record<AnnotationSource, string> = {
 
 /** Drop entries whose source isn't currently enabled in the filter chip bar. */
 function applySourceFilter(entries: OutputEntry[] | null | undefined): OutputEntry[] {
-    if (!entries?.length) return [];
+    if (!entries?.length) {
+        return [];
+    }
     return entries.filter((e) => e.type !== "annotation" || sourceFilter[e.source]);
 }
 const copiedOutput = ref(false);
@@ -69,13 +71,17 @@ const hoveredSource = ref<AnnotationSource | null>(null);
 
 /** Check if a message matches the search query (case-insensitive). */
 function lineMatchesSearch(message: string): boolean {
-    if (!outputSearch.value) return true;
+    if (!outputSearch.value) {
+        return true;
+    }
     return message.toLowerCase().includes(outputSearch.value.toLowerCase());
 }
 
 /** Whether to dim a line (doesn't match search). */
 function searchDimClass(message: string): string {
-    if (!outputSearch.value) return "";
+    if (!outputSearch.value) {
+        return "";
+    }
     return lineMatchesSearch(message) ? "bg-primary/5" : "opacity-30";
 }
 
@@ -99,33 +105,45 @@ function navigateToInstance(id: string) {
 }
 
 function inlineConnectionCount(inst: InstanceSnapshot): number | undefined {
-    if (inst.instanceType !== "server") return undefined;
+    if (inst.instanceType !== "server") {
+        return undefined;
+    }
     const all = store.state.instances ?? [];
     let n = 0;
     for (const c of all) {
-        if (c.instanceType === "client" && c.connectedServerId === inst.instanceId) n++;
+        if (c.instanceType === "client" && c.connectedServerId === inst.instanceId) {
+            n++;
+        }
     }
     return n;
 }
 
 function containerBadgeDotClass(id: string): string {
     const inst = resolveInstance(id);
-    if (!inst) return instanceStatusDotClass("idle", false, true, "sm");
+    if (!inst) {
+        return instanceStatusDotClass("idle", false, true, "sm");
+    }
     const stopped = store.runDone || inst.disposed;
     return instanceStatusDotClass(inst.status, inst.connected, stopped, "sm");
 }
 
 function containerBadgeStatusLabel(id: string): string {
     const inst = resolveInstance(id);
-    if (!inst) return "unknown";
+    if (!inst) {
+        return "unknown";
+    }
     const stopped = store.runDone || inst.disposed;
     return instanceStatusLabel(inst.status, inst.connected, stopped, true);
 }
 
 function inlineConnectedServerLabel(inst: InstanceSnapshot): string | null | undefined {
-    if (inst.instanceType === "server") return undefined;
+    if (inst.instanceType === "server") {
+        return undefined;
+    }
     const id = inst.connectedServerId;
-    if (!id) return null;
+    if (!id) {
+        return null;
+    }
     const all = [...(store.state.instances ?? []), ...store.stoppedInstances];
     return all.find((i) => i.instanceId === id && i.instanceType === "server")?.label ?? id;
 }
@@ -170,7 +188,9 @@ const vncExpanded = ref(false);
 
 // Collapse inline VNC when run ends
 watchEffect(() => {
-    if (store.runDone) vncExpanded.value = false;
+    if (store.runDone) {
+        vncExpanded.value = false;
+    }
 });
 
 const hasError = computed(() => {
@@ -204,14 +224,20 @@ stopScreenshotWatch = watch(
 const showRecordingPlaceholder = computed(() => {
     // Read directly from store to bypass stale shallow-ref issues
     const t = store.selectedTest;
-    if (!t) return false;
+    if (!t) {
+        return false;
+    }
     const isDone = t.status === "passed" || t.status === "failed" || t.status === "canceled";
     const hasRecordings = t.recordings && t.recordings.length > 0;
-    if (hasRecordings) return false;
+    if (hasRecordings) {
+        return false;
+    }
     // If we have skip reasons, we *want* to show the placeholder (so the user
     // sees the explanation) even if recording is globally disabled — the skip
     // event itself is the contract that something happened.
-    if (t.recordingSkipReasons && Object.keys(t.recordingSkipReasons).length > 0) return isDone;
+    if (t.recordingSkipReasons && Object.keys(t.recordingSkipReasons).length > 0) {
+        return isDone;
+    }
     return isDone && recordingEnabled.value;
 });
 
@@ -225,7 +251,9 @@ const showRecordingPlaceholder = computed(() => {
 type PlaceholderCard = { source: string; label: string; reason: string | null };
 const placeholderCards = computed((): PlaceholderCard[] => {
     const t = store.selectedTest;
-    if (!t) return [];
+    if (!t) {
+        return [];
+    }
     const reasons = t.recordingSkipReasons ?? {};
     const sources = Object.keys(reasons);
     // No skip events — fall back to a single generic card. The placeholder
@@ -235,8 +263,12 @@ const placeholderCards = computed((): PlaceholderCard[] => {
     }
     // Stable order: server first, then clients in numeric order.
     const sorted = [...sources].sort((a, b) => {
-        if (a === "server") return -1;
-        if (b === "server") return 1;
+        if (a === "server") {
+            return -1;
+        }
+        if (b === "server") {
+            return 1;
+        }
         return a.localeCompare(b, undefined, { numeric: true });
     });
     return sorted.map((source) => ({
@@ -248,8 +280,12 @@ const placeholderCards = computed((): PlaceholderCard[] => {
 
 /** Per-source lookup: indexed first, then un-indexed `'client'` fallback. */
 function lookupSkipReason(reasons: Record<string, string>, source: string): string | null {
-    if (reasons[source]) return reasons[source];
-    if (source.startsWith("client") && reasons["client"]) return reasons["client"];
+    if (reasons[source]) {
+        return reasons[source];
+    }
+    if (source.startsWith("client") && reasons["client"]) {
+        return reasons["client"];
+    }
     return null;
 }
 
@@ -261,7 +297,9 @@ function lookupSkipReason(reasons: Record<string, string>, source: string): stri
  */
 const missingSourcePlaceholders = computed((): PlaceholderCard[] => {
     const t = store.selectedTest;
-    if (!t || !t.recordingSkipReasons) return [];
+    if (!t || !t.recordingSkipReasons) {
+        return [];
+    }
     const captured = new Set((t.recordings ?? []).map((r) => r.source));
     return placeholderCards.value.filter((card) => !captured.has(card.source) && card.reason !== null);
 });
@@ -297,10 +335,14 @@ function placeholderCopy(reason: string | null, source: string): PlaceholderCopy
 /** When there's no skip event at all, decide between pending and lost based on time. */
 function placeholderFallbackCopy(_source: string): PlaceholderCopy {
     const t = store.selectedTest;
-    if (!t) return { text: "Recording pending…" };
+    if (!t) {
+        return { text: "Recording pending…" };
+    }
     // If the test finished < 30s ago, treat as still-pending; otherwise as lost.
     const finishedRaw = t.runningStartTime ? new Date(t.runningStartTime).getTime() + (t.durationMs ?? 0) : null;
-    if (finishedRaw == null) return { text: "Recording pending…" };
+    if (finishedRaw == null) {
+        return { text: "Recording pending…" };
+    }
     const ageMs = Date.now() - finishedRaw;
     return ageMs < 30_000
         ? { text: "Recording pending…" }
@@ -328,7 +370,9 @@ function screenshotSrc(path: string): string {
 // Honors the active source-filter chips so the copy matches what's on screen.
 const plainOutput = computed(() => {
     const entries = filteredTestOutput.value;
-    if (!entries.length) return "";
+    if (!entries.length) {
+        return "";
+    }
     return entries
         .filter((e): e is Extract<OutputEntry, { type: "annotation" }> => e.type === "annotation")
         .map((e) => {
@@ -340,8 +384,12 @@ const plainOutput = computed(() => {
 
 const errorText = computed(() => {
     const parts: string[] = [];
-    if (test.value?.errorType) parts.push(test.value.errorType);
-    if (test.value?.errorMessage) parts.push(test.value.errorMessage);
+    if (test.value?.errorType) {
+        parts.push(test.value.errorType);
+    }
+    if (test.value?.errorMessage) {
+        parts.push(test.value.errorMessage);
+    }
     if (test.value?.stackTrace) {
         parts.push("");
         parts.push(test.value.stackTrace);
@@ -366,7 +414,9 @@ async function copyError() {
 }
 
 async function copyRepro() {
-    if (!test.value?.reproCommand) return;
+    if (!test.value?.reproCommand) {
+        return;
+    }
     await navigator.clipboard.writeText(test.value.reproCommand);
     scheduleCopyReset(copiedRepro);
 }
@@ -377,7 +427,9 @@ async function copyStepOutput() {
 }
 
 onUnmounted(() => {
-    for (const id of copyTimers) clearTimeout(id);
+    for (const id of copyTimers) {
+        clearTimeout(id);
+    }
 });
 
 const outputSegments = computed((): OutputSegment[] => {
@@ -392,7 +444,9 @@ const outputSegments = computed((): OutputSegment[] => {
  *  Returns null if either timestamp is unavailable. */
 function secSinceTestStart(isoTimestamp: string | undefined | null): number | null {
     const start = test.value?.runningStartTime;
-    if (!isoTimestamp || !start) return null;
+    if (!isoTimestamp || !start) {
+        return null;
+    }
     return (new Date(isoTimestamp).getTime() - new Date(start).getTime()) / 1000;
 }
 
@@ -401,8 +455,12 @@ function findInstanceForVideo(video: VideoItem): string | null {
     const ids = test.value?.usedInstances ?? [];
     for (const id of ids) {
         const inst = resolveInstance(id);
-        if (inst && inst.instanceType === video.source) return id;
-        if (id.startsWith(video.source)) return id;
+        if (inst && inst.instanceType === video.source) {
+            return id;
+        }
+        if (id.startsWith(video.source)) {
+            return id;
+        }
     }
     return null;
 }
@@ -414,7 +472,9 @@ function extractVideoStats(
     instanceId: string,
 ): { points: VideoStatsPoint[]; targetTps: number | null } {
     const history = store.instanceStatsHistory.get(instanceId) ?? [];
-    if (history.length === 0) return { points: [], targetTps: null };
+    if (history.length === 0) {
+        return { points: [], targetTps: null };
+    }
 
     const videoStartSec = video.timelineOffset;
     const videoEndSec = videoStartSec + video.wallClockDuration;
@@ -425,19 +485,27 @@ function extractVideoStats(
 
     for (const entry of history) {
         const entrySec = secSinceTestStart(entry.timestamp);
-        if (entrySec === null) continue;
-        if (entry.targetTps != null) targetTps = entry.targetTps;
+        if (entrySec === null) {
+            continue;
+        }
+        if (entry.targetTps != null) {
+            targetTps = entry.targetTps;
+        }
 
         if (entrySec <= videoStartSec) {
             lastBefore = entry;
             continue;
         }
-        if (entrySec > videoEndSec) break; // history is chronological
+        if (entrySec > videoEndSec) {
+            break; // history is chronological
+        }
 
         points.push({ offsetSec: entrySec - videoStartSec, tps: entry.tps });
     }
 
-    if (points.length === 0 && lastBefore === null) return { points: [], targetTps: null };
+    if (points.length === 0 && lastBefore === null) {
+        return { points: [], targetTps: null };
+    }
 
     // Extend to left edge (0s) using last value before window or first in-range value
     const leftTps = lastBefore?.tps ?? points[0]?.tps ?? null;
@@ -469,15 +537,21 @@ const videoItems = computed((): VideoItem[] => {
     }
 
     const recs = t?.recordings;
-    if (!recs?.length) return [];
+    if (!recs?.length) {
+        return [];
+    }
     return [...recs]
         .sort((a, b) => a.timelineOffset - b.timelineOffset)
         .map((rec) => {
             const instanceId = findInstanceForVideo(rec);
-            if (!instanceId) return rec;
+            if (!instanceId) {
+                return rec;
+            }
             const enriched = { ...rec, instanceId, label: resolveInstanceLabel(instanceId) };
             const { points, targetTps } = extractVideoStats(rec, instanceId);
-            if (points.length === 0) return enriched;
+            if (points.length === 0) {
+                return enriched;
+            }
             return { ...enriched, statsPoints: points, targetTps };
         });
 });
@@ -520,7 +594,9 @@ function lineTimelineSec(entry: { ts?: string }): number | null {
 /** Whether the timeline playhead has reached this output line's timestamp. */
 function lineReached(entry: { ts?: string }): boolean {
     const sec = lineTimelineSec(entry);
-    if (sec === null) return false;
+    if (sec === null) {
+        return false;
+    }
     // Strict > for lines at position 0: lines emitted before or at runningStartTime
     // get clamped to sec=0 by lineTimelineSec, so >= would mark them as reached
     // even when the playhead hasn't moved from its initial 0 position.
@@ -531,11 +607,15 @@ function lineReached(entry: { ts?: string }): boolean {
 
 function toggleBreakpoint(lineNum: number, entry: { ts?: string }) {
     const sec = lineTimelineSec(entry);
-    if (sec === null) return;
+    if (sec === null) {
+        return;
+    }
     const next = new Map(breakpoints.value);
     if (next.has(lineNum)) {
         next.delete(lineNum);
-        if (hitBreakpointLine.value === lineNum) hitBreakpointLine.value = null;
+        if (hitBreakpointLine.value === lineNum) {
+            hitBreakpointLine.value = null;
+        }
     } else {
         next.set(lineNum, sec);
     }
@@ -555,7 +635,9 @@ function toggleAllBreakpoints() {
             for (const entry of seg.items) {
                 lineNum++;
                 const sec = lineTimelineSec(entry);
-                if (sec !== null) next.set(lineNum, sec);
+                if (sec !== null) {
+                    next.set(lineNum, sec);
+                }
             }
         }
     }
@@ -569,7 +651,9 @@ const outputSegmentOffsets = computed(() => {
     let offset = 0;
     for (const seg of outputSegments.value) {
         offsets.push(offset);
-        if (seg.type === "lines") offset += seg.items.length;
+        if (seg.type === "lines") {
+            offset += seg.items.length;
+        }
     }
     return offsets;
 });
@@ -578,9 +662,13 @@ const lineBreakpointState = computed(() => {
     const map = new Map<number, "hit" | "hovered" | "set">();
     const hoverSnap = hoveredBreakpointSec.value !== null ? snapBreakpointSec(hoveredBreakpointSec.value) : null;
     for (const [lineNum, sec] of breakpoints.value) {
-        if (hitBreakpointLine.value === lineNum) map.set(lineNum, "hit");
-        else if (hoverSnap !== null && snapBreakpointSec(sec) === hoverSnap) map.set(lineNum, "hovered");
-        else map.set(lineNum, "set");
+        if (hitBreakpointLine.value === lineNum) {
+            map.set(lineNum, "hit");
+        } else if (hoverSnap !== null && snapBreakpointSec(sec) === hoverSnap) {
+            map.set(lineNum, "hovered");
+        } else {
+            map.set(lineNum, "set");
+        }
     }
     return map;
 });
@@ -595,7 +683,9 @@ watch(test, resetBreakpoints);
 watch(sourceFilter, resetBreakpoints, { deep: true });
 
 watch(hitBreakpointLine, (ln) => {
-    if (ln === null) return;
+    if (ln === null) {
+        return;
+    }
     nextTick(() => {
         document.querySelector("[data-breakpoint-hit]")?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
@@ -609,7 +699,9 @@ const stepSegments = computed((): OutputSegment[] => {
 
 const stepPlainOutput = computed(() => {
     const entries = filteredStepOutput.value;
-    if (!entries.length) return "";
+    if (!entries.length) {
+        return "";
+    }
     return entries
         .filter((e): e is Extract<OutputEntry, { type: "annotation" }> => e.type === "annotation")
         .map((e) => {
@@ -638,12 +730,16 @@ const allScreenshots = computed(() => {
 
 function openLightbox(src: string) {
     lightboxInitialIndex.value = allScreenshots.value.findIndex((s) => s.src === src);
-    if (lightboxInitialIndex.value < 0) lightboxInitialIndex.value = 0;
+    if (lightboxInitialIndex.value < 0) {
+        lightboxInitialIndex.value = 0;
+    }
     lightboxOpen.value = true;
 }
 
 function onSearchShortcut(e: KeyboardEvent) {
-    if (lightboxOpen.value) return;
+    if (lightboxOpen.value) {
+        return;
+    }
     const tag = (e.target as HTMLElement)?.tagName;
     if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA") {
         e.preventDefault();

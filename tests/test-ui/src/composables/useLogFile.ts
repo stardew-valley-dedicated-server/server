@@ -41,13 +41,19 @@ export function useLogFile(
 
     async function fetchOnce(force: boolean): Promise<void> {
         const url = path.value;
-        if (!url) return;
+        if (!url) {
+            return;
+        }
         loading.value = true;
         try {
             const headers: Record<string, string> = {};
-            if (!force && lastModified) headers["If-Modified-Since"] = lastModified;
+            if (!force && lastModified) {
+                headers["If-Modified-Since"] = lastModified;
+            }
             const res = await fetch(url, { headers });
-            if (res.status === 304) return;
+            if (res.status === 304) {
+                return;
+            }
             if (!res.ok) {
                 if (res.status === 404) {
                     // Artifact not yet created (early in run, or empty container) — keep prior state.
@@ -58,7 +64,9 @@ export function useLogFile(
             }
             error.value = null;
             const lm = res.headers.get("Last-Modified");
-            if (lm) lastModified = lm;
+            if (lm) {
+                lastModified = lm;
+            }
             const text = await res.text();
             // Strip a single trailing newline so the row count matches visual lines.
             const trimmed = text.endsWith("\n") ? text.slice(0, -1) : text;
@@ -71,8 +79,12 @@ export function useLogFile(
     }
 
     function scheduleNext() {
-        if (cancelled) return;
-        if (live && !live.value) return;
+        if (cancelled) {
+            return;
+        }
+        if (live && !live.value) {
+            return;
+        }
         timer = setTimeout(async () => {
             await fetchOnce(false);
             scheduleNext();
@@ -89,7 +101,9 @@ export function useLogFile(
     watch(
         path,
         async (next, prev) => {
-            if (next === prev) return;
+            if (next === prev) {
+                return;
+            }
             clearTimer();
             lastModified = null;
             lines.value = [];

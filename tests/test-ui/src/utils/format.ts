@@ -1,8 +1,14 @@
 /** Format duration in milliseconds to human-readable string. */
 export function formatDuration(ms: number | null | undefined): string {
-    if (ms == null) return "";
-    if (ms >= 60000) return `${(ms / 60000).toFixed(1)}m`;
-    if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
+    if (ms == null) {
+        return "";
+    }
+    if (ms >= 60000) {
+        return `${(ms / 60000).toFixed(1)}m`;
+    }
+    if (ms >= 1000) {
+        return `${(ms / 1000).toFixed(2)}s`;
+    }
     return `${Math.round(ms)}ms`;
 }
 

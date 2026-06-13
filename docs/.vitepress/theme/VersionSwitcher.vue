@@ -24,7 +24,9 @@ const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBa
 const isOpen = ref(false);
 
 const currentVersion = computed(() => {
-    if (typeof window === "undefined") return versions[0];
+    if (typeof window === "undefined") {
+        return versions[0];
+    }
     const path = window.location.pathname;
     if (path.startsWith("/server/preview")) {
         return versions.find((v) => v.id === "preview") || versions[0];
@@ -33,7 +35,9 @@ const currentVersion = computed(() => {
 });
 
 function switchToVersion(version: Version) {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+        return;
+    }
 
     const currentPath = window.location.pathname;
     let relativePath = currentPath;

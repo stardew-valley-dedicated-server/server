@@ -103,7 +103,9 @@ export function useChartPipeline(params: {
         const newSet = new Set<string>();
         for (const inst of params.filteredInstances.value) {
             const h = params.instanceStatsHistory.get(inst.instanceId);
-            if (h && h.length > 0) newSet.add(inst.instanceId);
+            if (h && h.length > 0) {
+                newSet.add(inst.instanceId);
+            }
         }
         if (
             newSet.size !== instancesWithStats.value.size ||
@@ -120,19 +122,34 @@ export function useChartPipeline(params: {
             const scanned = peakScanned.get(inst.instanceId) ?? 0;
             for (let i = scanned; i < h.length; i++) {
                 const s = h[i];
-                if (s.cpuPercent > peakCpu.value) peakCpu.value = s.cpuPercent;
+                if (s.cpuPercent > peakCpu.value) {
+                    peakCpu.value = s.cpuPercent;
+                }
                 const mem = s.gameMemoryMb ?? s.memoryMb;
-                if (mem > peakMem.value) peakMem.value = mem;
-                if (s.tps != null && s.tps > peakTps.value) peakTps.value = s.tps;
-                if (s.fps != null && s.fps > peakFps.value) peakFps.value = s.fps;
-                if (s.pendingActions != null && s.pendingActions > peakQueue.value) peakQueue.value = s.pendingActions;
-                if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value)
+                if (mem > peakMem.value) {
+                    peakMem.value = mem;
+                }
+                if (s.tps != null && s.tps > peakTps.value) {
+                    peakTps.value = s.tps;
+                }
+                if (s.fps != null && s.fps > peakFps.value) {
+                    peakFps.value = s.fps;
+                }
+                if (s.pendingActions != null && s.pendingActions > peakQueue.value) {
+                    peakQueue.value = s.pendingActions;
+                }
+                if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value) {
                     peakWait.value = s.gameThreadWaitMs;
-                if (s.gcRate != null && s.gcRate > peakGcRate.value) peakGcRate.value = s.gcRate;
-                if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value)
+                }
+                if (s.gcRate != null && s.gcRate > peakGcRate.value) {
+                    peakGcRate.value = s.gcRate;
+                }
+                if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value) {
                     peakNetRx.value = s.netRxBytesPerSec;
-                if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value)
+                }
+                if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value) {
                     peakNetTx.value = s.netTxBytesPerSec;
+                }
             }
             peakScanned.set(inst.instanceId, h.length);
         }
@@ -142,10 +159,16 @@ export function useChartPipeline(params: {
             globalMax = Number.NEGATIVE_INFINITY;
         for (const inst of instances) {
             const h = params.instanceStatsHistory.get(inst.instanceId) ?? [];
-            if (h.length === 0) continue;
+            if (h.length === 0) {
+                continue;
+            }
             const epochs = getEpochs(inst.instanceId, h);
-            if (epochs[0] < globalMin) globalMin = epochs[0];
-            if (epochs[epochs.length - 1] > globalMax) globalMax = epochs[epochs.length - 1];
+            if (epochs[0] < globalMin) {
+                globalMin = epochs[0];
+            }
+            if (epochs[epochs.length - 1] > globalMax) {
+                globalMax = epochs[epochs.length - 1];
+            }
         }
 
         if (globalMin > globalMax) {
@@ -166,7 +189,9 @@ export function useChartPipeline(params: {
             cachedGridMax = globalMax;
             const gridLen = Math.floor((globalMax - globalMin) / GRID_STEP) + 1;
             cachedGridEpochs = [];
-            for (let i = 0; i < gridLen; i++) cachedGridEpochs.push(globalMin + i * GRID_STEP);
+            for (let i = 0; i < gridLen; i++) {
+                cachedGridEpochs.push(globalMin + i * GRID_STEP);
+            }
             cachedGridLabels = cachedGridEpochs.map((t) => formatTimeLabel(new Date(t).toISOString()));
         }
         const gridEpochs = cachedGridEpochs;
@@ -218,7 +243,9 @@ export function useChartPipeline(params: {
                     sampled.push(null);
                     continue;
                 }
-                while (hi < histEpochs.length - 1 && histEpochs[hi + 1] <= t) hi++;
+                while (hi < histEpochs.length - 1 && histEpochs[hi + 1] <= t) {
+                    hi++;
+                }
                 sampled.push(hi < histEpochs.length && histEpochs[hi] <= t ? history[hi] : null);
             }
 
@@ -269,7 +296,9 @@ export function useChartPipeline(params: {
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
     function scheduleFlush() {
-        if (flushTimer != null) return;
+        if (flushTimer != null) {
+            return;
+        }
         flushTimer = setTimeout(() => {
             flushTimer = null;
             flushChartData();

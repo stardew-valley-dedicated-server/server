@@ -159,7 +159,9 @@ export function colorFor(
 export function applyDatasetHighlight(chart: any, hoveredIndex: number | null): void {
     for (let i = 0; i < chart.data.datasets.length; i++) {
         const meta = chart.getDatasetMeta(i);
-        if (!meta.dataset) continue;
+        if (!meta.dataset) {
+            continue;
+        }
         const ds = chart.data.datasets[i];
         if (hoveredIndex == null || i === hoveredIndex) {
             meta.dataset.options.borderColor = ds.borderColor;

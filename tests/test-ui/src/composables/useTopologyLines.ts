@@ -34,7 +34,9 @@ export function useTopologyLines(params: {
         groups.forEach((groupEl, groupIdx) => {
             const serverCard = groupEl.querySelector("[data-topology-server]") as HTMLElement | null;
             const clientCards = groupEl.querySelectorAll("[data-topology-client]");
-            if (!serverCard || clientCards.length === 0) return;
+            if (!serverCard || clientCards.length === 0) {
+                return;
+            }
 
             const groupRect = groupEl.getBoundingClientRect();
             const serverRect = serverCard.getBoundingClientRect();

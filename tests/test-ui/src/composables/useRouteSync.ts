@@ -64,7 +64,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
         if (name === "test") {
             activeView.value = "tests";
             const displayName = String(route.params.displayName ?? "");
-            if (resolveTestFromName(displayName)) return;
+            if (resolveTestFromName(displayName)) {
+                return;
+            }
             store.selectTest(null);
             if (store.runDone) {
                 // Tree is fully hydrated and the test isn't here — drop the stale path
@@ -87,7 +89,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
             return;
         }
         inspect.openInspect(inspectId);
-        if (inspect.inspectInstance.value) return;
+        if (inspect.inspectInstance.value) {
+            return;
+        }
         // openInspect set the stack, but the instance isn't loaded.
         if (store.runDone) {
             inspect.closeInspect();
@@ -110,7 +114,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     watch(
         () => route.fullPath,
         () => {
-            if (!syncing) applyFromRoute();
+            if (!syncing) {
+                applyFromRoute();
+            }
         },
     );
 
@@ -119,7 +125,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     // The instance arrays are mutated in place (splice/push), so watch .length —
     // watching the array ref wouldn't fire on an in-place mutation.
     watch([store.collections, () => store.state.instances?.length, () => store.stoppedInstances.length], () => {
-        if (pending) applyFromRoute();
+        if (pending) {
+            applyFromRoute();
+        }
     });
 
     // ── State → route ─────────────────────────────────────────────────────────
@@ -128,7 +136,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     // user clicks push. Preserve the current ?inspect query so a view switch
     // doesn't clobber an open modal.
     watch([activeView, () => store.selectedTest], () => {
-        if (syncing) return;
+        if (syncing) {
+            return;
+        }
         const query = route.query;
         let target: RouteLocationRaw;
         if (activeView.value === "vnc") {
@@ -140,8 +150,11 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
         }
         const auto = store.lastSelectionWasAuto.value;
         store.lastSelectionWasAuto.value = false;
-        if (auto) router.replace(target);
-        else router.push(target);
+        if (auto) {
+            router.replace(target);
+        } else {
+            router.push(target);
+        }
     });
 
     // Modal: reflect inspectId into ?inspect, preserving the base path. Always a
@@ -149,10 +162,15 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     watch(
         () => inspect.inspectId.value,
         (id) => {
-            if (syncing) return;
+            if (syncing) {
+                return;
+            }
             const query = { ...route.query };
-            if (id) query.inspect = id;
-            else delete query.inspect;
+            if (id) {
+                query.inspect = id;
+            } else {
+                delete query.inspect;
+            }
             router.push({ name: route.name ?? "tests", params: route.params, query });
         },
     );

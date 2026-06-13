@@ -133,7 +133,9 @@ function createEmptyState(): StateSnapshot {
 export function relativeRunPath(runDir: string): string | null {
     const norm = runDir.replace(/\\/g, "/");
     const idx = norm.lastIndexOf("/runs/");
-    if (idx < 0) return null;
+    if (idx < 0) {
+        return null;
+    }
     return norm.slice(idx + 1); // drop leading '/'
 }
 
@@ -237,19 +239,29 @@ export function useTestStore(): TestStore {
     // race where the runner crashes between OnRunFinished and WriteRunArtifacts.
     let _summaryFetched = false;
     async function fetchSummaryAndApplyAbort(): Promise<void> {
-        if (_summaryFetched) return;
+        if (_summaryFetched) {
+            return;
+        }
         _summaryFetched = true;
         const runDir = state.runMetadata?.runDir;
-        if (!runDir) return;
+        if (!runDir) {
+            return;
+        }
         const relative = relativeRunPath(runDir);
-        if (!relative) return;
+        if (!relative) {
+            return;
+        }
         try {
             const res = await fetch(`/artifacts/${relative}/summary.json`);
-            if (!res.ok) return;
+            if (!res.ok) {
+                return;
+            }
             const summary = (await res.json()) as { aborted?: boolean; abortReason?: string | null };
             if (summary.aborted === true) {
                 state.abortReason = summary.abortReason ?? null;
-                if (state.status !== "aborted") state.status = "aborted";
+                if (state.status !== "aborted") {
+                    state.status = "aborted";
+                }
             }
         } catch {
             // Artifact may not yet exist (timing) or runner is fully gone; harmless.
@@ -278,17 +290,25 @@ export function useTestStore(): TestStore {
         // Build className -> collection name mapping for collection name resolution
         for (const col of collections.value) {
             for (const cls of col.classes) {
-                if (!(cls.name in classToCollection)) classToCollection[cls.name] = col.name;
+                if (!(cls.name in classToCollection)) {
+                    classToCollection[cls.name] = col.name;
+                }
             }
         }
         state.errors.splice(0, state.errors.length, ...snapshot.errors);
 
         if (snapshot.instances) {
-            if (!state.instances) state.instances = [];
+            if (!state.instances) {
+                state.instances = [];
+            }
             // Ensure history and used_instances fields exist (missing in older snapshots/mock data)
             for (const inst of snapshot.instances) {
-                if (!inst.history) inst.history = [];
-                if (inst.disposed === undefined) inst.disposed = false;
+                if (!inst.history) {
+                    inst.history = [];
+                }
+                if (inst.disposed === undefined) {
+                    inst.disposed = false;
+                }
             }
 
             // When hydrating a finished/aborted run, all instances are past containers.
@@ -304,8 +324,11 @@ export function useTestStore(): TestStore {
                 const live: typeof snapshot.instances = [];
                 const past: typeof snapshot.instances = [];
                 for (const inst of snapshot.instances) {
-                    if (inst.disposed && inst.recordingPath) past.push(inst);
-                    else live.push(inst);
+                    if (inst.disposed && inst.recordingPath) {
+                        past.push(inst);
+                    } else {
+                        live.push(inst);
+                    }
                 }
                 state.instances.splice(0, state.instances.length, ...live);
                 stoppedInstances.splice(0, stoppedInstances.length, ...past);
@@ -322,13 +345,16 @@ export function useTestStore(): TestStore {
 
         // Sync nextExecutionOrder from snapshot so new events get correct ordering
         let maxExecOrder = -1;
-        for (const col of collections.value)
-            for (const cls of col.classes)
+        for (const col of collections.value) {
+            for (const cls of col.classes) {
                 for (const test of cls.tests) {
-                    if (test.executionOrder != null && test.executionOrder > maxExecOrder)
+                    if (test.executionOrder != null && test.executionOrder > maxExecOrder) {
                         maxExecOrder = test.executionOrder;
+                    }
                     cacheScreenshotsFromOutput(test.output);
                 }
+            }
+        }
         nextExecutionOrder = maxExecOrder + 1;
 
         // Rebuild status counts from the full tree
@@ -353,7 +379,9 @@ export function useTestStore(): TestStore {
         // Priority: failed > running > most-recently-finished.
         if (!selectedTest.value) {
             const candidate = findInitialSelection();
-            if (candidate) autoSelect(candidate);
+            if (candidate) {
+                autoSelect(candidate);
+            }
         }
 
         // Sync browser tab title with current state
@@ -368,8 +396,12 @@ export function useTestStore(): TestStore {
         for (const col of collections.value) {
             for (const cls of col.classes) {
                 for (const test of cls.tests) {
-                    if (!firstFailed && test.status === "failed") firstFailed = test;
-                    if (!firstRunning && test.status === "running") firstRunning = test;
+                    if (!firstFailed && test.status === "failed") {
+                        firstFailed = test;
+                    }
+                    if (!firstRunning && test.status === "running") {
+                        firstRunning = test;
+                    }
                     if (test.executionOrder != null && test.executionOrder > mostRecentOrder) {
                         mostRecentOrder = test.executionOrder;
                         mostRecent = test;
@@ -417,7 +449,9 @@ export function useTestStore(): TestStore {
     }
 
     function startElapsedTimer() {
-        if (state.runStartTime) _startTimer(state.runStartTime);
+        if (state.runStartTime) {
+            _startTimer(state.runStartTime);
+        }
     }
 
     function stopElapsedTimer(finalMs?: number) {
@@ -439,7 +473,9 @@ export function useTestStore(): TestStore {
                     for (const col of event.collections) {
                         const colSnapshot = { name: col.name, classes: [] as (typeof collections.value)[0]["classes"] };
                         for (const cls of col.classes) {
-                            if (!(cls.name in classToCollection)) classToCollection[cls.name] = col.name;
+                            if (!(cls.name in classToCollection)) {
+                                classToCollection[cls.name] = col.name;
+                            }
                             colSnapshot.classes.push({
                                 name: cls.name,
                                 tests: cls.tests.map((t) => ({
@@ -547,7 +583,9 @@ export function useTestStore(): TestStore {
                 }
 
                 // Keep the larger of execution total and discovered total
-                if (event.totalTests > state.totalTests) state.totalTests = event.totalTests;
+                if (event.totalTests > state.totalTests) {
+                    state.totalTests = event.totalTests;
+                }
 
                 // Archive remaining live instances for post-run inspection (without VNC iframes)
                 // Append to stoppedInstances (some may already be there from mid-run disposals)
@@ -645,7 +683,9 @@ export function useTestStore(): TestStore {
                     test.queueDurationMs = event.queueDurationMs ?? null;
                     // Pipe-accumulated output has timestamps; prefer it over event.output.
                     // Fall back to event.output for reconnecting clients that missed pipe events.
-                    if (event.output && !test.output) test.output = event.output;
+                    if (event.output && !test.output) {
+                        test.output = event.output;
+                    }
                     cacheScreenshotsFromOutput(test.output);
                     transitionStatus(oldStatus, "passed");
                     markTreeDirty();
@@ -667,7 +707,9 @@ export function useTestStore(): TestStore {
                     test.queueDurationMs = event.queueDurationMs ?? null;
                     // Pipe-accumulated output has timestamps; prefer it over event.output.
                     // Fall back to event.output for reconnecting clients that missed pipe events.
-                    if (event.output && !test.output) test.output = event.output;
+                    if (event.output && !test.output) {
+                        test.output = event.output;
+                    }
                     cacheScreenshotsFromOutput(test.output);
                     test.errorMessage = event.error;
                     test.errorType = event.exceptionType;
@@ -676,12 +718,16 @@ export function useTestStore(): TestStore {
                     // appended to test.output. The xUnit-native test_failed.screenshotPath
                     // is cached here so the eager screenshot-cache populates before the
                     // separate event arrives, but the snapshot itself only stores it in output.
-                    if (event.screenshotPath) cacheScreenshot(event.screenshotPath);
+                    if (event.screenshotPath) {
+                        cacheScreenshot(event.screenshotPath);
+                    }
                     transitionStatus(oldStatus, newStatus);
                     markTreeDirty();
                     markSelectedContentDirty(test);
                     // Auto-select failed test (but not canceled ones)
-                    if (!isCanceled) autoSelect(test);
+                    if (!isCanceled) {
+                        autoSelect(test);
+                    }
                 }
                 break;
             }
@@ -800,8 +846,12 @@ export function useTestStore(): TestStore {
                 // Also route to matching instances by server_key or instance_id === event.collection
                 if (event.collection && state.instances) {
                     for (const inst of state.instances) {
-                        if (inst.serverKey !== event.collection && inst.instanceId !== event.collection) continue;
-                        if (inst.setupStatus === null) inst.setupStatus = "running";
+                        if (inst.serverKey !== event.collection && inst.instanceId !== event.collection) {
+                            continue;
+                        }
+                        if (inst.setupStatus === null) {
+                            inst.setupStatus = "running";
+                        }
                         const existingStep = inst.setupSteps.find((s) => s.step === event.step);
                         if (existingStep) {
                             existingStep.status = event.status;
@@ -895,7 +945,9 @@ export function useTestStore(): TestStore {
                     test.failureContext = event.failureContext;
                     // Eagerly cache an enrichment-side screenshot path; the snapshot only
                     // stores screenshots in test.output via the dedicated screenshot event.
-                    if (event.screenshotPath) cacheScreenshot(event.screenshotPath);
+                    if (event.screenshotPath) {
+                        cacheScreenshot(event.screenshotPath);
+                    }
                     test.lifecycle = {
                         testMs: event.testBodyMs,
                         cleanupMs: event.cleanupMs,
@@ -909,7 +961,9 @@ export function useTestStore(): TestStore {
             }
 
             case "instance_created": {
-                if (!state.instances) state.instances = [];
+                if (!state.instances) {
+                    state.instances = [];
+                }
                 // Deduplicate: if an instance with the same ID already exists, preserve history/setup
                 const existingIdx = state.instances.findIndex((i) => i.instanceId === event.instanceId);
                 const existing = existingIdx >= 0 ? state.instances[existingIdx] : null;
@@ -967,8 +1021,12 @@ export function useTestStore(): TestStore {
                 if (event.testName) {
                     const test = findTestByDisplayName(event.testName);
                     if (test) {
-                        if (!test.usedInstances) test.usedInstances = [];
-                        if (!test.usedInstances.includes(event.instanceId)) test.usedInstances.push(event.instanceId);
+                        if (!test.usedInstances) {
+                            test.usedInstances = [];
+                        }
+                        if (!test.usedInstances.includes(event.instanceId)) {
+                            test.usedInstances.push(event.instanceId);
+                        }
                         markSelectedContentDirty(test);
                     }
                 }
@@ -1162,8 +1220,12 @@ export function useTestStore(): TestStore {
         // Flush any queued messages. A run_finished event may be in the buffer
         flushPendingMessages();
 
-        if (state.status === "finished" || state.status === "aborted") return;
-        if (state.status !== "running" && state.status !== "pending") return;
+        if (state.status === "finished" || state.status === "aborted") {
+            return;
+        }
+        if (state.status !== "running" && state.status !== "pending") {
+            return;
+        }
 
         state.status = "aborted";
         stopElapsedTimer();
@@ -1214,11 +1276,17 @@ export function useTestStore(): TestStore {
         collection = resolveCollectionName(collection, className);
 
         for (const col of collections.value) {
-            if (col.name !== collection) continue;
+            if (col.name !== collection) {
+                continue;
+            }
             for (const cls of col.classes) {
-                if (cls.name !== className) continue;
+                if (cls.name !== className) {
+                    continue;
+                }
                 const test = cls.tests.find((t) => t.displayName === displayName);
-                if (test) return test;
+                if (test) {
+                    return test;
+                }
             }
         }
 
@@ -1269,11 +1337,14 @@ export function useTestStore(): TestStore {
 
     /** Find a test by its display_name across all collections. */
     function findTestByDisplayName(displayName: string): TestSnapshot | null {
-        for (const col of collections.value)
+        for (const col of collections.value) {
             for (const cls of col.classes) {
                 const test = cls.tests.find((t) => t.displayName === displayName);
-                if (test) return test;
+                if (test) {
+                    return test;
+                }
             }
+        }
         return null;
     }
 
@@ -1281,7 +1352,9 @@ export function useTestStore(): TestStore {
     const classToCollection: Record<string, string> = {};
 
     function resolveCollectionName(runtimeName: string, className: string): string {
-        if (collections.value.some((c) => c.name === runtimeName)) return runtimeName;
+        if (collections.value.some((c) => c.name === runtimeName)) {
+            return runtimeName;
+        }
         return classToCollection[className] ?? runtimeName;
     }
 
@@ -1291,7 +1364,9 @@ export function useTestStore(): TestStore {
             const match = state.setupPhases.find(
                 (p) => p.category === category && p.status === "running" && p.collectionName === collection,
             );
-            if (match) return match;
+            if (match) {
+                return match;
+            }
         }
         // Fallback: any running phase in this category
         return state.setupPhases.find((p) => p.category === category && p.status === "running");
@@ -1320,7 +1395,9 @@ export function useTestStore(): TestStore {
     let selectedContentDirty = false;
 
     function scheduleFlush() {
-        if (flushScheduled) return;
+        if (flushScheduled) {
+            return;
+        }
         flushScheduled = true;
         requestAnimationFrame(flushPendingMessages);
     }
@@ -1347,8 +1424,12 @@ export function useTestStore(): TestStore {
         }
 
         // Trigger exactly one shallow-ref notification per frame (if needed)
-        if (treeDirty) notifyTreeChanged();
-        if (selectedContentDirty) selectedTestVersion.value++;
+        if (treeDirty) {
+            notifyTreeChanged();
+        }
+        if (selectedContentDirty) {
+            selectedTestVersion.value++;
+        }
     }
 
     /** Queue incoming message for batch processing on next animation frame. */
@@ -1451,7 +1532,9 @@ export function useTestStore(): TestStore {
      */
     async function sendCommand(cmd: "stop"): Promise<void> {
         const payload = JSON.stringify({ cmd });
-        if (ws?.send(payload)) return;
+        if (ws?.send(payload)) {
+            return;
+        }
         try {
             await fetch("/api/command", {
                 method: "POST",
@@ -1514,7 +1597,9 @@ export function useTestStore(): TestStore {
         findGlobalStep(stepName: string): SetupStepSnapshot | null {
             for (const phase of state.setupPhases) {
                 const match = phase.steps.find((s) => s.step === stepName);
-                if (match) return match;
+                if (match) {
+                    return match;
+                }
             }
             return null;
         },

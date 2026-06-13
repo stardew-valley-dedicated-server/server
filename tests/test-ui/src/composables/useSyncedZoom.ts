@@ -20,7 +20,9 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
 
     function pruneDead() {
         for (let i = chartEls.length - 1; i >= 0; i--) {
-            if (!chartEls[i]?.chart) chartEls.splice(i, 1);
+            if (!chartEls[i]?.chart) {
+                chartEls.splice(i, 1);
+            }
         }
     }
 
@@ -29,15 +31,21 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
             pruneDead();
             return;
         }
-        if (!chartEls.includes(el)) chartEls.push(el);
+        if (!chartEls.includes(el)) {
+            chartEls.push(el);
+        }
     }
 
     const ctrlHeld = ref(false);
     function onKeyDown(e: KeyboardEvent) {
-        if (e.key === "Control") ctrlHeld.value = true;
+        if (e.key === "Control") {
+            ctrlHeld.value = true;
+        }
     }
     function onKeyUp(e: KeyboardEvent) {
-        if (e.key === "Control") ctrlHeld.value = false;
+        if (e.key === "Control") {
+            ctrlHeld.value = false;
+        }
     }
 
     onMounted(() => {
@@ -55,7 +63,9 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
     function checkZoomed() {
         for (const c of chartEls) {
             const chart = c?.chart;
-            if (!chart) continue;
+            if (!chart) {
+                continue;
+            }
             if (chart.isZoomedOrPanned?.()) {
                 isZoomed.value = true;
                 return;
@@ -70,9 +80,13 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
     const baseYMax = new WeakMap<any, number>();
 
     function updateBaseYMax(chart: any) {
-        if (chart.isZoomedOrPanned?.()) return;
+        if (chart.isZoomedOrPanned?.()) {
+            return;
+        }
         const yMax = chart.scales?.y?.max;
-        if (yMax != null && yMax > 0) baseYMax.set(chart, yMax);
+        if (yMax != null && yMax > 0) {
+            baseYMax.set(chart, yMax);
+        }
     }
 
     function syncAllAxes(sourceChart: any) {
@@ -83,7 +97,9 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
         pruneDead();
         const srcX = sourceChart.scales?.x;
         const srcY = sourceChart.scales?.y;
-        if (!srcX || !srcY) return;
+        if (!srcX || !srcY) {
+            return;
+        }
 
         updateBaseYMax(sourceChart);
         const srcBase = baseYMax.get(sourceChart) ?? srcY.max;
@@ -92,7 +108,9 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
         syncing = true;
         for (const c of chartEls) {
             const target = c?.chart;
-            if (!target || target === sourceChart) continue;
+            if (!target || target === sourceChart) {
+                continue;
+            }
 
             target.scales.x.options.min = srcX.min;
             target.scales.x.options.max = srcX.max;
@@ -116,7 +134,9 @@ export function useSyncedZoom(opts?: { enabled?: Ref<boolean> }) {
         pruneDead();
         for (const c of chartEls) {
             const chart = c?.chart;
-            if (!chart) continue;
+            if (!chart) {
+                continue;
+            }
             baseYMax.delete(chart);
             chart.resetZoom();
         }

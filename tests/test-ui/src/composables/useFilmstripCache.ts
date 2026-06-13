@@ -186,23 +186,33 @@ export function useFilmstripCache() {
 
         /** Whether this path has all expected thumbnails and no active job. */
         isFullyComplete(path: string): boolean {
-            if (activeJobs.has(path)) return false;
+            if (activeJobs.has(path)) {
+                return false;
+            }
             const expected = expectedCounts.get(path);
-            if (!expected) return false;
+            if (!expected) {
+                return false;
+            }
             const entry = cache.get(path);
             return !!entry && entry.length >= expected;
         },
 
         /** Enqueue a thumbnail generation job. No-op if already queued or cached with enough frames. */
         enqueue(job: ThumbJob) {
-            if (activeJobs.has(job.path)) return;
+            if (activeJobs.has(job.path)) {
+                return;
+            }
             const existing = cache.get(job.path);
-            if (existing && existing.length >= job.count) return;
+            if (existing && existing.length >= job.count) {
+                return;
+            }
             expectedCounts.set(job.path, job.count);
             log.log(`enqueue ${job.path.slice(-40)} (count=${job.count}, queue=${queue.length})`);
             activeJobs.add(job.path);
             queue.push(job);
-            if (!processing) processQueue();
+            if (!processing) {
+                processQueue();
+            }
         },
 
         /** Move jobs for these paths to the front of the queue so they generate next. */
@@ -211,8 +221,11 @@ export function useFilmstripCache() {
             const rest: ThumbJob[] = [];
             const pathSet = new Set(paths);
             for (const job of queue) {
-                if (pathSet.has(job.path)) urgent.push(job);
-                else rest.push(job);
+                if (pathSet.has(job.path)) {
+                    urgent.push(job);
+                } else {
+                    rest.push(job);
+                }
             }
             if (urgent.length > 0) {
                 log.log(`prioritize ${urgent.length} jobs to front (${rest.length} deferred)`);

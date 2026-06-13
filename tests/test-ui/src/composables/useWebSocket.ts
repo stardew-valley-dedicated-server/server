@@ -26,7 +26,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
     const maxAttempts = options.maxReconnectAttempts ?? 3;
 
     function connect() {
-        if (disposed) return;
+        if (disposed) {
+            return;
+        }
 
         // Close previous socket
         if (ws) {
@@ -89,7 +91,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
     }
 
     function scheduleReconnect() {
-        if (disposed || reconnectTimer) return;
+        if (disposed || reconnectTimer) {
+            return;
+        }
         reconnectAttempts++;
         if (reconnectAttempts > maxAttempts) {
             options.onReconnectFailed?.();
@@ -125,7 +129,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
      * whether to fall back to the REST endpoint.
      */
     function send(data: string): boolean {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return false;
+        }
         try {
             ws.send(data);
             return true;

@@ -113,7 +113,9 @@ function statusBadgeClass(): string {
 
 function latestSetupStep(): string | null {
     const steps = props.setupSteps;
-    if (!steps || steps.length === 0) return null;
+    if (!steps || steps.length === 0) {
+        return null;
+    }
     const latest = steps[steps.length - 1];
     return latest.details || latest.step;
 }
@@ -128,24 +130,34 @@ const placeholderRef = ref<HTMLDivElement | null>(null);
 let activeSlot: ReturnType<typeof acquireInstanceSlot> | null = null;
 
 function publishPlaceholder() {
-    if (!placeholderRef.value) return;
-    if (!activeSlot) activeSlot = acquireInstanceSlot(props.instance.instanceId);
+    if (!placeholderRef.value) {
+        return;
+    }
+    if (!activeSlot) {
+        activeSlot = acquireInstanceSlot(props.instance.instanceId);
+    }
     activeSlot.track(placeholderRef.value);
 }
 
 onMounted(() => {
-    if (props.instance.vncUrl) publishPlaceholder();
+    if (props.instance.vncUrl) {
+        publishPlaceholder();
+    }
 });
 
 watch(
     () => props.instance.vncUrl,
     (url) => {
-        if (url && !activeSlot) publishPlaceholder();
+        if (url && !activeSlot) {
+            publishPlaceholder();
+        }
     },
 );
 
 watch(placeholderRef, (el) => {
-    if (el && props.instance.vncUrl && !activeSlot) publishPlaceholder();
+    if (el && props.instance.vncUrl && !activeSlot) {
+        publishPlaceholder();
+    }
 });
 
 onBeforeUnmount(() => {

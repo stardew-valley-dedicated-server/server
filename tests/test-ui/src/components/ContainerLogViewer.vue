@@ -22,9 +22,13 @@ const live = computed(() => store.state.status === "running");
 // container.log path is null when no runMetadata yet; useLogFile gates on that.
 const logPath = computed<string | null>(() => {
     const runDir = store.state.runMetadata?.runDir;
-    if (!runDir) return null;
+    if (!runDir) {
+        return null;
+    }
     const rel = relativeRunPath(runDir);
-    if (!rel) return null;
+    if (!rel) {
+        return null;
+    }
     return `/artifacts/${rel}/containers/${props.instanceId}/container.log`;
 });
 
@@ -36,7 +40,9 @@ const { lines, loading, error, refresh } = useLogFile(activePath, { live });
 // Filtered view (case-insensitive substring match).
 const filteredLines = computed(() => {
     const q = search.value.trim().toLowerCase();
-    if (!q) return lines.value;
+    if (!q) {
+        return lines.value;
+    }
     return lines.value.filter((l) => l.toLowerCase().includes(q));
 });
 

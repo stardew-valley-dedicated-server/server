@@ -145,7 +145,9 @@ class AnimatedIcons extends HTMLElement {
 
     applyGroupColors(defaultColours, numberOfGroups, variationNumber, layers) {
         // Ensure that defaultColors, numberOfGroups, and variationNumber are provided
-        if (!defaultColours || !numberOfGroups || !variationNumber) return;
+        if (!defaultColours || !numberOfGroups || !variationNumber) {
+            return;
+        }
 
         // Loop through each group and apply the corresponding color
         for (let groupIndex = 1; groupIndex <= numberOfGroups; groupIndex++) {
@@ -209,7 +211,9 @@ class AnimatedIcons extends HTMLElement {
     }
 
     updateColorsRecursively(items, rgb, updateType) {
-        if (rgb.a === undefined) rgb.a = 1;
+        if (rgb.a === undefined) {
+            rgb.a = 1;
+        }
         items.forEach((item) => {
             if (updateType === "fill" && item.ty === "fl") {
                 item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255]; // Set RGB
@@ -315,11 +319,21 @@ export default class AnimatedIcon extends AnimatedIcons {
         };
 
         // Set attributes if not already provided
-        if (!this.hasAttribute("src")) this.setAttribute("src", src);
-        if (!this.hasAttribute("width")) this.setAttribute("width", width);
-        if (!this.hasAttribute("height")) this.setAttribute("height", height);
-        if (!this.hasAttribute("trigger")) this.setAttribute("trigger", trigger);
-        if (!this.hasAttribute("attributes")) this.setAttribute("attributes", JSON.stringify(defaultAttributes));
+        if (!this.hasAttribute("src")) {
+            this.setAttribute("src", src);
+        }
+        if (!this.hasAttribute("width")) {
+            this.setAttribute("width", width);
+        }
+        if (!this.hasAttribute("height")) {
+            this.setAttribute("height", height);
+        }
+        if (!this.hasAttribute("trigger")) {
+            this.setAttribute("trigger", trigger);
+        }
+        if (!this.hasAttribute("attributes")) {
+            this.setAttribute("attributes", JSON.stringify(defaultAttributes));
+        }
 
         // Call the parent connectedCallback to handle Lottie initialization
         super.connectedCallback();

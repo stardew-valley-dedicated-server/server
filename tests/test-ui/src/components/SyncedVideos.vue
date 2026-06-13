@@ -55,7 +55,9 @@ function queueThumbnails(index: number) {
     const v = props.videos[index];
     const displayEl = videoRefs.value[index];
     const src = displayEl?.src || (v ? props.screenshotSrc(v.path) : "");
-    if (!src) return;
+    if (!src) {
+        return;
+    }
     filmstrip.enqueue({
         path: v.path,
         src,
@@ -75,13 +77,17 @@ function filmstripThumbs(index: number): Thumbnail[] {
     // Touch version to establish reactive dependency
     void filmstrip.version.value;
     const v = props.videos[index];
-    if (!v) return [];
+    if (!v) {
+        return [];
+    }
     return filmstrip.get(v.path) ?? [];
 }
 
 function prevFilmstrip(index: number): Thumbnail[] {
     const cached = prevThumbnails.value.get(index);
-    if (!cached || cached.length === 0) return [];
+    if (!cached || cached.length === 0) {
+        return [];
+    }
     return cached;
 }
 
@@ -166,7 +172,9 @@ function snapSlotPx(slot: number, slotWidth: number): { left: number; width: num
  */
 function visibleThumbs(clipIndex: number): VisibleThumb[] {
     const ts = thumbState.value[clipIndex];
-    if (!ts || ts.thumbs.length === 0) return [];
+    if (!ts || ts.thumbs.length === 0) {
+        return [];
+    }
 
     const clipPx = clipWidthPx(clipIndex);
     const displayCount = Math.max(1, Math.ceil(clipPx / THUMB_DISPLAY_W));
@@ -184,7 +192,9 @@ function visibleThumbs(clipIndex: number): VisibleThumb[] {
     const result: VisibleThumb[] = [];
     for (let slot = start; slot < end; slot++) {
         const poolIdx = Math.min(Math.round(slot * stride), finalPool - 1);
-        if (poolIdx >= ts.thumbs.length) continue;
+        if (poolIdx >= ts.thumbs.length) {
+            continue;
+        }
         const px = snapSlotPx(slot, THUMB_DISPLAY_W);
         result.push({ url: ts.thumbs[poolIdx].url, leftPx: px.left, widthPx: px.width, key: slot });
     }
@@ -193,7 +203,9 @@ function visibleThumbs(clipIndex: number): VisibleThumb[] {
 
 function visiblePrevThumbs(clipIndex: number): VisibleThumb[] {
     const thumbs = prevFilmstrip(clipIndex);
-    if (thumbs.length === 0) return [];
+    if (thumbs.length === 0) {
+        return [];
+    }
 
     const clipPx = clipWidthPx(clipIndex);
     const clipLeftPx = timeToPx(props.videos[clipIndex].timelineOffset);
@@ -267,7 +279,9 @@ function effectiveDuration(index: number): number {
     const v = props.videos[index];
     // Prefer wallClockDuration from props (stable, available immediately).
     // Only use el.duration as fallback when wallClockDuration is unavailable.
-    if (v.wallClockDuration > 0) return v.wallClockDuration;
+    if (v.wallClockDuration > 0) {
+        return v.wallClockDuration;
+    }
     const el = videoRefs.value[index];
     return el?.duration && isFinite(el.duration) ? el.duration : 0;
 }
@@ -284,7 +298,9 @@ const totalDuration = computed(() => {
               : 0.1;
     for (let i = 0; i < props.videos.length; i++) {
         const end = props.videos[i].timelineOffset + effectiveDuration(i);
-        if (end > max) max = end;
+        if (end > max) {
+            max = end;
+        }
     }
     return max;
 });
@@ -319,7 +335,9 @@ const visibleEnd = computed(() => pxToTime(scrollLeft.value + containerWidth.val
 const LABEL_MIN_SPACING_PX = 100; // minimum px between label centers
 const rulerTicks = computed(() => {
     const dur = totalDuration.value;
-    if (dur <= 0) return [];
+    if (dur <= 0) {
+        return [];
+    }
     const tw = timelineWidth.value;
     const pxPerSec = tw / dur;
 
@@ -339,7 +357,9 @@ const rulerTicks = computed(() => {
     for (let step = startStep; step <= endStep; step++) {
         const t = +(step * tickInterval).toFixed(10);
         const px = timeToPx(t);
-        if (px >= tw) continue;
+        if (px >= tw) {
+            continue;
+        }
         const isLabel = step % ticksPerLabel === 0;
         ticks.push({ time: t, label: isLabel ? formatTimeRuler(t) : null, px, key: `${tickInterval}:${step}` });
     }
@@ -349,11 +369,17 @@ const rulerTicks = computed(() => {
 
 // ── Video state ──
 function videoState(index: number): "not_started" | "active" | "finished" | "error" {
-    if (errorPaths.value.has(props.videos[index].path)) return "error";
+    if (errorPaths.value.has(props.videos[index].path)) {
+        return "error";
+    }
     const v = props.videos[index];
     const dur = effectiveDuration(index);
-    if (timelinePos.value < v.timelineOffset - 0.1) return "not_started";
-    if (dur > 0 && timelinePos.value >= v.timelineOffset + dur) return "finished";
+    if (timelinePos.value < v.timelineOffset - 0.1) {
+        return "not_started";
+    }
+    if (dur > 0 && timelinePos.value >= v.timelineOffset + dur) {
+        return "finished";
+    }
     return "active";
 }
 
@@ -361,7 +387,9 @@ function videoState(index: number): "not_started" | "active" | "finished" | "err
 function isPlayheadOverClip(index: number): boolean {
     const v = props.videos[index];
     const dur = effectiveDuration(index);
-    if (dur <= 0) return true; // Unknown duration, treat as always active
+    if (dur <= 0) {
+        return true; // Unknown duration, treat as always active
+    }
     return timelinePos.value >= v.timelineOffset && timelinePos.value <= v.timelineOffset + dur;
 }
 
@@ -390,7 +418,9 @@ const LIFECYCLE_PHASES: { key: keyof NonNullable<typeof props.lifecycle>; label:
 
 const lifecycleSegments = computed(() => {
     const lc = props.lifecycle;
-    if (!lc) return [];
+    if (!lc) {
+        return [];
+    }
     const segments: { offset: number; duration: number; label: string; color: string }[] = [];
     let offset = 0;
     for (const phase of LIFECYCLE_PHASES) {
@@ -418,17 +448,23 @@ interface TpsGraphData {
 function tpsGraph(index: number): TpsGraphData | null {
     const vid = props.videos[index];
     const pts = vid?.statsPoints;
-    if (!pts || pts.length === 0) return null;
+    if (!pts || pts.length === 0) {
+        return null;
+    }
 
     const values = pts.filter((p) => p.tps != null).map((p) => p.tps!);
-    if (values.length === 0) return null;
+    if (values.length === 0) {
+        return null;
+    }
 
     const target = vid.targetTps ?? DEFAULT_TARGET_TPS;
     const peak = Math.max(...values);
     const maxTps = Math.max(peak * TPS_PEAK_HEADROOM, target * TPS_TARGET_HEADROOM);
     const clipPx = clipWidthPx(index);
     const duration = effectiveDuration(index);
-    if (clipPx <= 0 || duration <= 0) return null;
+    if (clipPx <= 0 || duration <= 0) {
+        return null;
+    }
 
     const toX = (sec: number) => (sec / duration) * clipPx;
     const toY = (tps: number) => GRAPH_H - (tps / maxTps) * GRAPH_H;
@@ -439,7 +475,9 @@ function tpsGraph(index: number): TpsGraphData | null {
         lastX = 0,
         started = false;
     for (const p of pts) {
-        if (p.tps == null) continue;
+        if (p.tps == null) {
+            continue;
+        }
         const x = toX(p.offsetSec),
             y = toY(p.tps);
         if (!started) {
@@ -449,7 +487,9 @@ function tpsGraph(index: number): TpsGraphData | null {
         lastX = x;
         segs.push(`${segs.length > 0 ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`);
     }
-    if (!started) return null;
+    if (!started) {
+        return null;
+    }
     segs.push(`L ${lastX.toFixed(1)} ${GRAPH_H} L ${firstX.toFixed(1)} ${GRAPH_H} Z`);
 
     // Target reference line Y. Uses same maxTps, guaranteed aligned.
@@ -470,38 +510,56 @@ const tpsGraphData = computed(() => props.videos.map((_, i) => tpsGraph(i)));
 function snappedTpsAt(index: number, timelineSec: number): { tps: number; target: number; offsetSec: number } | null {
     const vid = props.videos[index];
     const pts = vid?.statsPoints;
-    if (!pts || pts.length === 0) return null;
+    if (!pts || pts.length === 0) {
+        return null;
+    }
     const offsetSec = timelineSec - vid.timelineOffset;
-    if (offsetSec < 0 || offsetSec > vid.wallClockDuration) return null;
+    if (offsetSec < 0 || offsetSec > vid.wallClockDuration) {
+        return null;
+    }
     let nearest: { offsetSec: number; tps: number } | null = null;
     let nearestDist = Number.POSITIVE_INFINITY;
     for (const p of pts) {
-        if (p.tps == null) continue;
+        if (p.tps == null) {
+            continue;
+        }
         const dist = Math.abs(p.offsetSec - offsetSec);
         if (dist < nearestDist) {
             nearestDist = dist;
             nearest = { offsetSec: p.offsetSec, tps: p.tps };
         }
     }
-    if (!nearest) return null;
+    if (!nearest) {
+        return null;
+    }
     return { tps: nearest.tps, target: vid.targetTps ?? DEFAULT_TARGET_TPS, offsetSec: nearest.offsetSec };
 }
 
 /** TPS at the currently hovered timeline position (snapped to nearest data point). */
 const hoverTps = computed(() => {
-    if (hoverTrack.value == null) return null;
+    if (hoverTrack.value == null) {
+        return null;
+    }
     return snappedTpsAt(hoverTrack.value, hoverTime.value);
 });
 
 /** CSS percentage coordinates for the hover dot on a track's TPS graph. */
 function tpsHoverPoint(index: number): { leftPct: number; topPct: number } | null {
-    if (hoverTrack.value !== index) return null;
+    if (hoverTrack.value !== index) {
+        return null;
+    }
     const gd = tpsGraphData.value[index];
-    if (!gd) return null;
+    if (!gd) {
+        return null;
+    }
     const dur = effectiveDuration(index);
-    if (dur <= 0) return null;
+    if (dur <= 0) {
+        return null;
+    }
     const snap = snappedTpsAt(index, hoverTime.value);
-    if (!snap) return null;
+    if (!snap) {
+        return null;
+    }
     const maxTps = Math.max(gd.peak * TPS_PEAK_HEADROOM, gd.target * TPS_TARGET_HEADROOM);
     return {
         leftPct: (snap.offsetSec / dur) * 100,
@@ -512,14 +570,20 @@ function tpsHoverPoint(index: number): { leftPct: number; topPct: number } | nul
 /** Color class for a TPS value relative to its target. */
 function tpsColorClass(value: number, target: number): string {
     const level = tpsLevel(value, target);
-    if (level === "error") return "text-error";
-    if (level === "warn") return "text-warning";
+    if (level === "error") {
+        return "text-error";
+    }
+    if (level === "warn") {
+        return "text-warning";
+    }
     return "text-success";
 }
 
 function onLoadedMetadata(path: string) {
     const index = props.videos.findIndex((v) => v.path === path);
-    if (index === -1) return;
+    if (index === -1) {
+        return;
+    }
     const el = videoRefs.value[index];
     log.log(`onLoadedMetadata[${index}]`, {
         alreadyReady: videoLoadState.value.get(path) === "ready",
@@ -530,7 +594,9 @@ function onLoadedMetadata(path: string) {
         loadedCount: loadedCount.value,
         totalVideos: props.videos.length,
     });
-    if (videoLoadState.value.get(path) === "ready") return;
+    if (videoLoadState.value.get(path) === "ready") {
+        return;
+    }
     loadedCount.value++;
     videoLoadState.value.set(path, "ready");
 
@@ -540,7 +606,9 @@ function onLoadedMetadata(path: string) {
 }
 function onError(path: string) {
     const index = props.videos.findIndex((v) => v.path === path);
-    if (index === -1) return;
+    if (index === -1) {
+        return;
+    }
     const el = videoRefs.value[index];
     log.log(`onError[${index}]`, {
         alreadyError: videoLoadState.value.get(path) === "error",
@@ -548,7 +616,9 @@ function onError(path: string) {
         error: el?.error,
         networkState: el?.networkState,
     });
-    if (videoLoadState.value.get(path) === "error") return;
+    if (videoLoadState.value.get(path) === "error") {
+        return;
+    }
     errorPaths.value.add(path);
     videoLoadState.value.set(path, "error");
 }
@@ -563,7 +633,9 @@ const breakpointMarkers = computed(() => {
     const markers: { sec: number; pos: string }[] = [];
     for (const sec of breakpoints.value.values()) {
         const snapped = snapBreakpointSec(sec);
-        if (seen.has(snapped)) continue;
+        if (seen.has(snapped)) {
+            continue;
+        }
         seen.add(snapped);
         markers.push({ sec, pos: timeToPos(sec) });
     }
@@ -578,10 +650,13 @@ let _lastHitLine: number | null = null;
 function findNextBreakpoint(prevPos: number, nextPos: number): { lineNum: number; sec: number } | null {
     let best: { lineNum: number; sec: number } | null = null;
     for (const [lineNum, sec] of breakpoints.value) {
-        if (lineNum === _lastHitLine) continue;
+        if (lineNum === _lastHitLine) {
+            continue;
+        }
         if (sec >= prevPos && sec <= nextPos) {
-            if (best === null || sec < best.sec || (sec === best.sec && lineNum < best.lineNum))
+            if (best === null || sec < best.sec || (sec === best.sec && lineNum < best.lineNum)) {
                 best = { lineNum, sec };
+            }
         }
     }
     return best;
@@ -591,7 +666,9 @@ function findNextBreakpoint(prevPos: number, nextPos: number): { lineNum: number
 function startPlaybackLoop() {
     let lastTime = performance.now();
     function tick(now: number) {
-        if (!playing.value) return;
+        if (!playing.value) {
+            return;
+        }
         const dt = (now - lastTime) / 1000;
         lastTime = now;
         if (!dragging.value) {
@@ -636,18 +713,31 @@ function syncVideos() {
     for (let i = 0; i < props.videos.length; i++) {
         const v = props.videos[i];
         const el = videoRefs.value[i];
-        if (!el || errorPaths.value.has(v.path)) continue;
+        if (!el || errorPaths.value.has(v.path)) {
+            continue;
+        }
         const state = videoState(i);
         const targetTime = Math.max(0, pos - v.timelineOffset);
         if (state === "active") {
             const threshold = dragging.value ? 0 : 0.1;
-            if (Math.abs(el.currentTime - targetTime) > threshold) el.currentTime = targetTime;
-            if (el.playbackRate !== playbackSpeed.value) el.playbackRate = playbackSpeed.value;
-            if (el.paused && playing.value && !dragging.value) el.play().catch(() => {});
+            if (Math.abs(el.currentTime - targetTime) > threshold) {
+                el.currentTime = targetTime;
+            }
+            if (el.playbackRate !== playbackSpeed.value) {
+                el.playbackRate = playbackSpeed.value;
+            }
+            if (el.paused && playing.value && !dragging.value) {
+                el.play().catch(() => {});
+            }
         } else {
-            if (!el.paused) el.pause();
-            if (state === "not_started") el.currentTime = 0;
-            else if (state === "finished") el.currentTime = el.duration || 0;
+            if (!el.paused) {
+                el.pause();
+            }
+            if (state === "not_started") {
+                el.currentTime = 0;
+            } else if (state === "finished") {
+                el.currentTime = el.duration || 0;
+            }
         }
     }
     syncVersion.value++;
@@ -656,7 +746,9 @@ function syncVideos() {
 // ── Auto-scroll to keep playhead visible during playback ──
 function autoScrollToPlayhead() {
     const container = scrollContainerRef.value;
-    if (!container) return;
+    if (!container) {
+        return;
+    }
     const px = playheadPx.value;
     const left = container.scrollLeft;
     const width = container.clientWidth;
@@ -675,7 +767,9 @@ function togglePlay() {
         stopped.value = false;
         cancelAnimationFrame(rafId);
         for (const el of videoRefs.value) {
-            if (el && !el.paused) el.pause();
+            if (el && !el.paused) {
+                el.pause();
+            }
         }
     } else {
         stopped.value = false;
@@ -691,7 +785,9 @@ function pauseAll() {
     playing.value = false;
     cancelAnimationFrame(rafId);
     for (const el of videoRefs.value) {
-        if (el && !el.paused) el.pause();
+        if (el && !el.paused) {
+            el.pause();
+        }
     }
 }
 
@@ -707,14 +803,18 @@ function stopPlayback() {
 function setSpeed(speed: number) {
     playbackSpeed.value = speed;
     for (const el of videoRefs.value) {
-        if (el) el.playbackRate = speed;
+        if (el) {
+            el.playbackRate = speed;
+        }
     }
 }
 
 // ── Timeline seek (accounts for scroll) ──
 function getTimeFromMouse(e: MouseEvent): number {
     const container = scrollContainerRef.value;
-    if (!container) return 0;
+    if (!container) {
+        return 0;
+    }
     const rect = container.getBoundingClientRect();
     const x = e.clientX - rect.left + container.scrollLeft;
     return Math.max(0, Math.min(pxToTime(x), totalDuration.value));
@@ -730,13 +830,21 @@ const previewReady = ref<Set<string>>(new Set());
 
 /** Hover position, follows cursor time for seamless scrubbing. */
 const hoverInfo = computed<{ trackIndex: number; positionPx: number } | null>(() => {
-    if (dragging.value || panning.value) return null;
+    if (dragging.value || panning.value) {
+        return null;
+    }
     const idx = hoverTrack.value;
-    if (idx == null) return null;
+    if (idx == null) {
+        return null;
+    }
     const vid = props.videos[idx];
     const dur = effectiveDuration(idx);
-    if (dur <= 0) return null;
-    if (hoverTime.value < vid.timelineOffset || hoverTime.value > vid.timelineOffset + dur) return null;
+    if (dur <= 0) {
+        return null;
+    }
+    if (hoverTime.value < vid.timelineOffset || hoverTime.value > vid.timelineOffset + dur) {
+        return null;
+    }
     return { trackIndex: idx, positionPx: Math.round(timeToPx(hoverTime.value)) };
 });
 
@@ -774,14 +882,18 @@ function onTrackMouseLeave() {
 }
 
 function onPreviewLoaded(path: string) {
-    if (props.videos.findIndex((v) => v.path === path) === -1) return;
+    if (props.videos.findIndex((v) => v.path === path) === -1) {
+        return;
+    }
     previewReady.value.add(path);
     previewReady.value = new Set(previewReady.value);
 }
 
 function onPreviewSeeked(path: string) {
     const index = props.videos.findIndex((v) => v.path === path);
-    if (index !== -1 && previewCanvasTrack === index) drawPreviewFrame();
+    if (index !== -1 && previewCanvasTrack === index) {
+        drawPreviewFrame();
+    }
 }
 
 /** Draw the preview video's current frame onto the hover canvas (called via ref callback) */
@@ -800,7 +912,9 @@ function mountPreviewCanvas(canvas: HTMLCanvasElement | null, trackIndex: number
 }
 
 function drawPreviewFrame() {
-    if (!previewCanvasCtx || previewCanvasTrack < 0) return;
+    if (!previewCanvasCtx || previewCanvasTrack < 0) {
+        return;
+    }
     const el = previewVideoRefs.value[previewCanvasTrack];
     if (el && el.readyState >= 2) {
         previewCanvasCtx.drawImage(el, 0, 0, PREVIEW_W, PREVIEW_H);
@@ -810,12 +924,16 @@ function drawPreviewFrame() {
 // ── Sidebar video controls ──
 function requestFullscreen(index: number) {
     const el = videoRefs.value[index];
-    if (!el) return;
+    if (!el) {
+        return;
+    }
     el.requestFullscreen?.().catch(() => {});
 }
 
 function navigateToInstance(vid: VideoItem) {
-    if (vid.instanceId) emit("navigate-instance", vid.instanceId);
+    if (vid.instanceId) {
+        emit("navigate-instance", vid.instanceId);
+    }
 }
 
 // ── Auto-scroll during drag ──
@@ -826,7 +944,9 @@ let cleanupDrag: (() => void) | null = null;
 
 function dragAutoScroll() {
     const container = scrollContainerRef.value;
-    if (!container || !lastDragEvent || !dragging.value) return;
+    if (!container || !lastDragEvent || !dragging.value) {
+        return;
+    }
     const rect = container.getBoundingClientRect();
     const cursorX = lastDragEvent.clientX;
     const scrollSpeed = 0.05;
@@ -852,7 +972,9 @@ function onTimelineMouseDown(e: MouseEvent) {
         e.preventDefault();
         panning.value = true;
         const container = scrollContainerRef.value;
-        if (!container) return;
+        if (!container) {
+            return;
+        }
         const initialScrollLeft = container.scrollLeft;
         const initialX = e.clientX;
         document.body.style.cursor = "grabbing";
@@ -873,7 +995,9 @@ function onTimelineMouseDown(e: MouseEvent) {
     }
 
     // Left mouse: seek + drag with auto-scroll
-    if (e.button !== 0) return;
+    if (e.button !== 0) {
+        return;
+    }
     dragging.value = true;
     _lastHitLine = null;
     hitBreakpointLine.value = null;
@@ -909,7 +1033,9 @@ function seekTo(pos: number) {
 function onWheel(e: WheelEvent) {
     e.preventDefault();
     const container = scrollContainerRef.value;
-    if (!container) return;
+    if (!container) {
+        return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
         // Zoom centered on cursor
@@ -932,7 +1058,9 @@ function onWheel(e: WheelEvent) {
 
 function onScroll() {
     const container = scrollContainerRef.value;
-    if (container) scrollLeft.value = container.scrollLeft;
+    if (container) {
+        scrollLeft.value = container.scrollLeft;
+    }
 }
 
 // ── Download ──
@@ -960,11 +1088,15 @@ function downloadAll() {
 // ── Debug: detect stuck videos ──
 let _stuckCheckTimer: ReturnType<typeof setInterval> | null = null;
 function startStuckCheck() {
-    if (_stuckCheckTimer) clearInterval(_stuckCheckTimer);
+    if (_stuckCheckTimer) {
+        clearInterval(_stuckCheckTimer);
+    }
     _stuckCheckTimer = setInterval(() => {
         for (let i = 0; i < props.videos.length; i++) {
             const state = videoLoadState.value.get(props.videos[i].path);
-            if (state === "ready" || state === "error") continue;
+            if (state === "ready" || state === "error") {
+                continue;
+            }
             const el = videoRefs.value[i];
             log.log(`STUCK CHECK[${i}]`, {
                 state,
@@ -982,10 +1114,14 @@ function startStuckCheck() {
 
 // ── Keyboard: Space toggles play/pause ──
 function onSpaceKey(e: KeyboardEvent) {
-    if (e.key !== " " && e.code !== "Space") return;
+    if (e.key !== " " && e.code !== "Space") {
+        return;
+    }
     const target = e.target as HTMLElement | null;
     const tag = target?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+    if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) {
+        return;
+    }
     e.preventDefault();
     togglePlay();
 }
@@ -1003,7 +1139,9 @@ onMounted(() => {
     if (scrollContainerRef.value) {
         containerWidth.value = scrollContainerRef.value.clientWidth;
         resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) containerWidth.value = entry.contentRect.width;
+            for (const entry of entries) {
+                containerWidth.value = entry.contentRect.width;
+            }
             resizing.value = true;
             clearTimeout(resizeTimer);
             resizeTimer = window.setTimeout(() => {
@@ -1038,13 +1176,17 @@ watch(
         previewCanvasTrack = -1;
 
         // Snapshot current filmstrip state for crossfade animation
-        if (crossfadeTimer) clearTimeout(crossfadeTimer);
+        if (crossfadeTimer) {
+            clearTimeout(crossfadeTimer);
+        }
         const oldPrevVideos = _prevVideos;
         if (oldPrevVideos.length > 0) {
             const snapshot = new Map<number, Thumbnail[]>();
             for (let i = 0; i < oldPrevVideos.length; i++) {
                 const cached = filmstrip.get(oldPrevVideos[i].path);
-                if (cached?.length) snapshot.set(i, cached);
+                if (cached?.length) {
+                    snapshot.set(i, cached);
+                }
             }
             prevThumbnails.value = snapshot;
         }

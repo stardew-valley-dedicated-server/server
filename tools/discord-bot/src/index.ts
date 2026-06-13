@@ -77,7 +77,9 @@ let wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
  * Starts the WebSocket heartbeat timer.
  */
 function startHeartbeat(): void {
-    if (wsHeartbeatTimer) clearInterval(wsHeartbeatTimer);
+    if (wsHeartbeatTimer) {
+        clearInterval(wsHeartbeatTimer);
+    }
     wsHeartbeatTimer = setInterval(() => {
         if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "ping" }));
@@ -155,7 +157,9 @@ async function updateBotNickname(): Promise<void> {
         }
     }
 
-    if (!nickname) return;
+    if (!nickname) {
+        return;
+    }
 
     for (const guild of client.guilds.cache.values()) {
         try {
@@ -233,7 +237,9 @@ function connectWebSocket(): void {
                 }
 
                 // Ignore messages if not authenticated
-                if (!wsAuthenticated) return;
+                if (!wsAuthenticated) {
+                    return;
+                }
 
                 if (msg.type === "chat" && msg.payload) {
                     // Game -> Discord
@@ -304,10 +310,14 @@ function sendChatToGame(author: string, message: string): boolean {
 // Handle Discord messages for chat relay
 client.on(Events.MessageCreate, async (message: Message) => {
     // Ignore bot messages
-    if (message.author.bot) return;
+    if (message.author.bot) {
+        return;
+    }
 
     // Only process messages from the configured chat channel
-    if (message.channel.id !== DISCORD_CHAT_CHANNEL_ID) return;
+    if (message.channel.id !== DISCORD_CHAT_CHANNEL_ID) {
+        return;
+    }
 
     // Get display name (server nickname if set, otherwise global display name)
     const displayName = message.member?.displayName || message.author.displayName;
@@ -386,7 +396,9 @@ async function performStartupChecks(): Promise<void> {
     // Check permissions in each guild
     for (const guild of client.guilds.cache.values()) {
         const botMember = guild.members.me;
-        if (!botMember) continue;
+        if (!botMember) {
+            continue;
+        }
 
         // Check nickname permission
         if (!botMember.permissions.has(PermissionFlagsBits.ChangeNickname)) {

@@ -20,7 +20,9 @@ export function useLinkedCharts() {
     let lastDataset = -1;
 
     function setChartRef(el: any) {
-        if (!el) return;
+        if (!el) {
+            return;
+        }
         if (!charts.value.includes(el)) {
             charts.value.push(el);
         }
@@ -29,18 +31,24 @@ export function useLinkedCharts() {
     const plugin = {
         id: "linkedCharts",
         afterEvent(chart: any, args: any) {
-            if (syncing) return;
+            if (syncing) {
+                return;
+            }
             const evt = args.event;
 
             if (evt.type === "mouseout") {
-                if (lastIndex === -1) return; // Already cleared
+                if (lastIndex === -1) {
+                    return; // Already cleared
+                }
                 lastIndex = -1;
                 lastDataset = -1;
 
                 syncing = true;
                 for (const c of charts.value) {
                     const target = c?.chart as ChartJS | undefined;
-                    if (!target || target === chart) continue;
+                    if (!target || target === chart) {
+                        continue;
+                    }
                     target.setActiveElements([]);
                     target.tooltip?.setActiveElements([], { x: 0, y: 0 });
                     target.update("none");
@@ -50,23 +58,31 @@ export function useLinkedCharts() {
                 return;
             }
 
-            if (evt.type !== "mousemove") return;
+            if (evt.type !== "mousemove") {
+                return;
+            }
 
             const active = chart.getActiveElements();
-            if (active.length === 0) return;
+            if (active.length === 0) {
+                return;
+            }
 
             const dataIndex = active[0].index;
             const datasetIndex = active[0].datasetIndex;
 
             // Skip if still hovering the same data point
-            if (dataIndex === lastIndex && datasetIndex === lastDataset) return;
+            if (dataIndex === lastIndex && datasetIndex === lastDataset) {
+                return;
+            }
             lastIndex = dataIndex;
             lastDataset = datasetIndex;
 
             syncing = true;
             for (const c of charts.value) {
                 const target = c?.chart as ChartJS | undefined;
-                if (!target || target === chart) continue;
+                if (!target || target === chart) {
+                    continue;
+                }
 
                 const elements: any[] = [];
                 for (let di = 0; di < target.data.datasets.length; di++) {

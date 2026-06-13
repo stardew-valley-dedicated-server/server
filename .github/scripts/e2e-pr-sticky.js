@@ -43,7 +43,9 @@ function readFilter(body) {
  */
 function readHistory(body) {
     const m = body && body.match(/<!-- run-history:([\s\S]*?)-->/);
-    if (!m) return [];
+    if (!m) {
+        return [];
+    }
     try {
         const parsed = JSON.parse(m[1].trim());
         return Array.isArray(parsed) ? parsed : [];
@@ -58,7 +60,9 @@ function readHistory(body) {
  * @returns {boolean}
  */
 function isReRunChecked(body) {
-    if (!body) return false;
+    if (!body) {
+        return false;
+    }
     return new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s*${escapeRe(RERUN_LABEL)}`, "m").test(body);
 }
 
@@ -70,7 +74,9 @@ function isReRunChecked(body) {
  * @returns {string} The body with the re-run box set to `- [ ]`.
  */
 function resetReRunCheckbox(body) {
-    if (!body) return body;
+    if (!body) {
+        return body;
+    }
     return body.replace(new RegExp(`^(\\s*-\\s*\\[)[xX](\\]\\s*${escapeRe(RERUN_LABEL)})`, "m"), "$1 $2");
 }
 
@@ -288,7 +294,9 @@ function parseCommand(body) {
     // unable to match `/run-tests-e2e Foo\r` (silently ignoring the command).
     const firstLine = (body || "").split(/\r?\n/, 1)[0].replace(/\r$/, "");
     const m = firstLine.match(/^\/run-tests-e2e(?:\s+(.*))?$/);
-    if (!m) return { isCommand: false, filter: "", valid: false };
+    if (!m) {
+        return { isCommand: false, filter: "", valid: false };
+    }
     const filter = (m[1] || "").trim().split(/\s+/).filter(Boolean).join(" ");
     return { isCommand: true, filter, valid: isValidFilter(filter) };
 }
@@ -310,7 +318,9 @@ function isValidFilter(filter) {
  * @returns {boolean} True only on a confirmed unchecked->checked transition.
  */
 function shouldFireRerun({ priorBody, body }) {
-    if (priorBody == null) return false;
+    if (priorBody == null) {
+        return false;
+    }
     return isReRunChecked(body) && !isReRunChecked(priorBody);
 }
 
@@ -332,7 +342,9 @@ async function isMaintainer({ github, owner, repo, username }) {
         const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
         return data.permission === "admin" || data.permission === "write";
     } catch (err) {
-        if (err.status === 404) return false;
+        if (err.status === 404) {
+            return false;
+        }
         throw err; // 403/5xx/rate-limit: fail loudly (closed), never silently allow
     }
 }

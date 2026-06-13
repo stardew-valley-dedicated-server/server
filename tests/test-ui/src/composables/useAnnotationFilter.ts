@@ -18,7 +18,9 @@ function loadInitial(): FilterState {
         if (raw) {
             const parsed = JSON.parse(raw) as Partial<FilterState>;
             for (const source of ALL_SOURCES) {
-                if (typeof parsed[source] === "boolean") state[source] = parsed[source]!;
+                if (typeof parsed[source] === "boolean") {
+                    state[source] = parsed[source]!;
+                }
             }
         }
     } catch {
@@ -58,7 +60,9 @@ export function useAnnotationFilter() {
         },
         reset() {
             const defaults = defaultFilter();
-            for (const source of ALL_SOURCES) filter[source] = defaults[source];
+            for (const source of ALL_SOURCES) {
+                filter[source] = defaults[source];
+            }
         },
         /** True when at least one source is currently disabled. Used to gate the
          *  reset button's visibility. */

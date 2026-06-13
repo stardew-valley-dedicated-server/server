@@ -31,12 +31,18 @@ let healthTimer: ReturnType<typeof setInterval> | null = null;
 let aborted = false;
 
 function onIframeLoad() {
-    if (aborted) return;
+    if (aborted) {
+        return;
+    }
     // While retained, ignore any in-flight load events from the previous src.
-    if (props.retained) return;
+    if (props.retained) {
+        return;
+    }
     // Ignore load events from about:blank
     const currentSrc = iframeRef.value?.src ?? "";
-    if (!currentSrc || currentSrc === "about:blank") return;
+    if (!currentSrc || currentSrc === "about:blank") {
+        return;
+    }
     state.value = "connected";
     errorMessage.value = "";
     cancelRetry();
@@ -54,7 +60,9 @@ function startHealthCheck() {
         try {
             await fetch(props.src, { mode: "no-cors", signal: AbortSignal.timeout(5000) });
         } catch {
-            if (aborted) return;
+            if (aborted) {
+                return;
+            }
             state.value = "error";
             errorMessage.value = "Connection lost";
             stopHealthCheck();
@@ -72,7 +80,9 @@ function stopHealthCheck() {
 
 function scheduleRetry() {
     cancelRetry();
-    if (aborted) return;
+    if (aborted) {
+        return;
+    }
     retryCountdown.value = RETRY_DELAY_S;
     retryTimer = setInterval(() => {
         retryCountdown.value--;
@@ -92,7 +102,9 @@ function cancelRetry() {
 }
 
 function reload() {
-    if (aborted) return;
+    if (aborted) {
+        return;
+    }
     cancelRetry();
     state.value = "loading";
     errorMessage.value = "";
@@ -111,7 +123,9 @@ function haltReconnects() {
     stopHealthCheck();
     clearLoadTimeout();
     cancelRetry();
-    if (iframeRef.value) iframeRef.value.src = "about:blank";
+    if (iframeRef.value) {
+        iframeRef.value.src = "about:blank";
+    }
 }
 
 /** Stop all activity: clear iframe, halt retries/health checks. Terminal. */
@@ -133,7 +147,9 @@ function enterRetained() {
 watch(
     () => props.stopped,
     (stopped) => {
-        if (stopped) stop();
+        if (stopped) {
+            stop();
+        }
     },
 );
 
@@ -141,7 +157,9 @@ watch(
 watch(
     () => props.retained,
     (retained) => {
-        if (retained && !props.stopped) enterRetained();
+        if (retained && !props.stopped) {
+            enterRetained();
+        }
     },
 );
 

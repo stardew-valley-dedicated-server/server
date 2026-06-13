@@ -11,17 +11,25 @@ export type OutputSegment = { type: "lines"; items: AnnotationEntry[] } | { type
 
 /** Groups consecutive output entries of the same type for rendering. */
 export function groupOutputEntries(entries: OutputEntry[] | null | undefined): OutputSegment[] {
-    if (!entries?.length) return [];
+    if (!entries?.length) {
+        return [];
+    }
     const segments: OutputSegment[] = [];
     for (const entry of entries) {
         if (entry.type === "annotation") {
             const last = segments[segments.length - 1];
-            if (last?.type === "lines") last.items.push(entry);
-            else segments.push({ type: "lines", items: [entry] });
+            if (last?.type === "lines") {
+                last.items.push(entry);
+            } else {
+                segments.push({ type: "lines", items: [entry] });
+            }
         } else if (entry.type === "screenshot") {
             const last = segments[segments.length - 1];
-            if (last?.type === "images") last.items.push(entry);
-            else segments.push({ type: "images", items: [entry] });
+            if (last?.type === "images") {
+                last.items.push(entry);
+            } else {
+                segments.push({ type: "images", items: [entry] });
+            }
         }
     }
     return segments;
@@ -32,7 +40,9 @@ export function segmentLineOffset(segments: OutputSegment[], segIndex: number): 
     let offset = 0;
     for (let i = 0; i < segIndex; i++) {
         const seg = segments[i];
-        if (seg.type === "lines") offset += seg.items.length;
+        if (seg.type === "lines") {
+            offset += seg.items.length;
+        }
     }
     return offset;
 }
@@ -69,8 +79,12 @@ export function formatRelativeTimestamp(elapsedMs: number): string {
 
 /** Format an output entry's timestamp according to the active mode. Returns '' when off or missing. */
 export function formatEntryTimestamp(ts: string | undefined, mode: TimestampMode, anchorMs: number): string {
-    if (!ts || mode === "off") return "";
-    if (mode === "absolute") return `[${formatLineTimestamp(ts)}]`;
+    if (!ts || mode === "off") {
+        return "";
+    }
+    if (mode === "absolute") {
+        return `[${formatLineTimestamp(ts)}]`;
+    }
     return `[${formatRelativeTimestamp(new Date(ts).getTime() - anchorMs)}]`;
 }
 

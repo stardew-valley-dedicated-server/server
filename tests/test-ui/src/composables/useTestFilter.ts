@@ -19,7 +19,9 @@ export function useTestFilter(statusCounts: Record<string, number>, searchQuery:
 
     function toggleFilter(status: TestStatus) {
         if (activeFilters.value.has(status)) {
-            if (activeFilters.value.size <= 1) return;
+            if (activeFilters.value.size <= 1) {
+                return;
+            }
             activeFilters.value.delete(status);
         } else {
             activeFilters.value.add(status);
@@ -31,7 +33,9 @@ export function useTestFilter(statusCounts: Record<string, number>, searchQuery:
     const isFiltering = computed(() => activeFilters.value.size < allStatuses.length);
 
     function testPassesFilter(test: TestSnapshot): boolean {
-        if (!activeFilters.value.has(test.status as TestStatus)) return false;
+        if (!activeFilters.value.has(test.status as TestStatus)) {
+            return false;
+        }
         if (searchQuery.value) {
             return test.displayName.toLowerCase().includes(searchQuery.value.toLowerCase());
         }

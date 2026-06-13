@@ -31,14 +31,18 @@ watch(
 
 function prev() {
     const len = props.images.length;
-    if (len === 0) return;
+    if (len === 0) {
+        return;
+    }
     currentIndex.value = currentIndex.value > 0 ? currentIndex.value - 1 : len - 1;
     loaded.value = false;
 }
 
 function next() {
     const len = props.images.length;
-    if (len === 0) return;
+    if (len === 0) {
+        return;
+    }
     currentIndex.value = currentIndex.value < len - 1 ? currentIndex.value + 1 : 0;
     loaded.value = false;
 }

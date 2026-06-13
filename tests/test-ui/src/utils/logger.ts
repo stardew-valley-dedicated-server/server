@@ -9,8 +9,12 @@
 function isEnabled(scope: string): boolean {
     try {
         const flag = localStorage.getItem("debug");
-        if (!flag) return false;
-        if (flag === "*") return true;
+        if (!flag) {
+            return false;
+        }
+        if (flag === "*") {
+            return true;
+        }
         return flag.split(",").some((s) => s.trim() === scope);
     } catch {
         return false;
@@ -27,13 +31,19 @@ export function createLogger(scope: string): Logger {
     const prefix = `[${scope}]`;
     return {
         log: (...args) => {
-            if (isEnabled(scope)) console.log(prefix, ...args);
+            if (isEnabled(scope)) {
+                console.log(prefix, ...args);
+            }
         },
         warn: (...args) => {
-            if (isEnabled(scope)) console.warn(prefix, ...args);
+            if (isEnabled(scope)) {
+                console.warn(prefix, ...args);
+            }
         },
         error: (...args) => {
-            if (isEnabled(scope)) console.error(prefix, ...args);
+            if (isEnabled(scope)) {
+                console.error(prefix, ...args);
+            }
         },
     };
 }

@@ -22,8 +22,12 @@ const instancesWithVnc = computed<InstanceSnapshot[]>(() => {
     const seen = new Set<string>();
     const out: InstanceSnapshot[] = [];
     for (const inst of all) {
-        if (!inst.vncUrl) continue;
-        if (seen.has(inst.instanceId)) continue;
+        if (!inst.vncUrl) {
+            continue;
+        }
+        if (seen.has(inst.instanceId)) {
+            continue;
+        }
         seen.add(inst.instanceId);
         out.push(inst);
     }

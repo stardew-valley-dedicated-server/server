@@ -73,7 +73,9 @@ let savedZoom: ZoomState[] = [];
 watch(filter, () => {
     savedZoom = chartEls.map((c) => {
         const chart = c?.chart;
-        if (!chart) return {};
+        if (!chart) {
+            return {};
+        }
         return {
             xMin: chart.scales?.x?.min,
             xMax: chart.scales?.x?.max,
@@ -86,7 +88,9 @@ watch(filter, () => {
         for (let i = 0; i < chartEls.length; i++) {
             const chart = chartEls[i]?.chart;
             const z = savedZoom[i];
-            if (!chart || !z || z.xMin == null) continue;
+            if (!chart || !z || z.xMin == null) {
+                continue;
+            }
             if (z.xMin != null && z.xMax != null) {
                 chart.scales.x.options.min = z.xMin;
                 chart.scales.x.options.max = z.xMax;
@@ -108,7 +112,9 @@ const allInstances = computed(() => {
 });
 
 const filteredInstances = computed(() => {
-    if (filter.value === "all") return allInstances.value;
+    if (filter.value === "all") {
+        return allInstances.value;
+    }
     return allInstances.value.filter((i) => i.instanceType === filter.value);
 });
 
@@ -145,7 +151,9 @@ const pinYZeroPlugin = {
     id: "pinYZero",
     beforeLayout(chart: any) {
         const yOpts = chart.options?.scales?.y;
-        if (yOpts?.stacked) yOpts.min = 0;
+        if (yOpts?.stacked) {
+            yOpts.min = 0;
+        }
     },
     afterDataLimits(_chart: any, args: any) {
         if (args.scale?.id === "y" && args.scale.options?.stacked && args.scale.min < 0) {
@@ -182,7 +190,11 @@ const baseOptions = {
                 usePointStyle: false,
                 generateLabels(chart: any) {
                     const items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                    for (const it of items) if (it.hidden) it.fontColor = "rgba(255,255,255,0.9)";
+                    for (const it of items) {
+                        if (it.hidden) {
+                            it.fontColor = "rgba(255,255,255,0.9)";
+                        }
+                    }
                     return items;
                 },
             },
@@ -207,7 +219,9 @@ const baseOptions = {
             callbacks: {
                 label: (ctx: any) => {
                     const v = ctx.raw as number | null;
-                    if (v == null) return "";
+                    if (v == null) {
+                        return "";
+                    }
                     return `${ctx.dataset.label}: ${Math.round(v * 10) / 10}`;
                 },
             },
@@ -342,7 +356,9 @@ const netOptions = computed(() => {
                 callbacks: {
                     label: (ctx: any) => {
                         const v = ctx.raw as number | null;
-                        if (v == null) return "";
+                        if (v == null) {
+                            return "";
+                        }
                         return `${ctx.dataset.label}: ${formatBytesPerSec(v)}`;
                     },
                 },
@@ -364,7 +380,9 @@ const showLegend = computed(() => chartInstances.value.length > 1);
 
 const chartPlugins = computed(() => {
     const plugins: any[] = [pinYZeroPlugin, highlightPlugin];
-    if (chartsLinked.value) plugins.push(linkedPlugin);
+    if (chartsLinked.value) {
+        plugins.push(linkedPlugin);
+    }
     return plugins;
 });
 </script>

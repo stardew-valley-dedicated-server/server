@@ -41,21 +41,31 @@ export function useElapsedTimer(): ElapsedTimer {
     let visibilityHandler: (() => void) | null = null;
 
     function writeText(text: string) {
-        if (text === lastText) return;
+        if (text === lastText) {
+            return;
+        }
         lastText = text;
         const el = elapsedTimerRef.value;
-        if (el) el.textContent = text;
+        if (el) {
+            el.textContent = text;
+        }
     }
 
     function writeTitle(title: string) {
-        if (title === lastTitle) return;
+        if (title === lastTitle) {
+            return;
+        }
         lastTitle = title;
         document.title = title;
     }
 
     function tick() {
-        if (runStartMs == null) return;
-        if (document.hidden) return;
+        if (runStartMs == null) {
+            return;
+        }
+        if (document.hidden) {
+            return;
+        }
 
         const now = performance.now();
         const elapsed = Date.now() - runStartMs;
@@ -69,7 +79,9 @@ export function useElapsedTimer(): ElapsedTimer {
     }
 
     function startElapsedTimer(runStartTime: string) {
-        if (intervalId != null) return;
+        if (intervalId != null) {
+            return;
+        }
         runStartMs = new Date(runStartTime).getTime();
         lastSpinnerMs = 0;
         // Immediate first tick so the UI updates without a 100ms delay.
@@ -79,7 +91,9 @@ export function useElapsedTimer(): ElapsedTimer {
         // Flush text the moment the tab becomes visible again, so the user never
         // sees a stale value after returning from another tab.
         visibilityHandler = () => {
-            if (!document.hidden) tick();
+            if (!document.hidden) {
+                tick();
+            }
         };
         document.addEventListener("visibilitychange", visibilityHandler);
     }
@@ -94,7 +108,9 @@ export function useElapsedTimer(): ElapsedTimer {
             visibilityHandler = null;
         }
         runStartMs = null;
-        if (finalMs != null) elapsedMs.value = finalMs;
+        if (finalMs != null) {
+            elapsedMs.value = finalMs;
+        }
     }
 
     return {

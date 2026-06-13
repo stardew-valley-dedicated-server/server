@@ -12,13 +12,17 @@ export function useNavBarExtra(observerKey: string) {
     const isInlineOpen = ref(false);
 
     function checkScreenSize() {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined") {
+            return;
+        }
         // Medium screen: 768px - 1280px (where VPNavBarExtra triple-dot menu is visible)
         isMediumScreen.value = window.innerWidth >= 768 && window.innerWidth < 1280;
     }
 
     function findExtraMenuTarget() {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined") {
+            return;
+        }
         if (isMediumScreen.value) {
             extraMenuTarget.value = document.querySelector(".VPNavBarExtra .VPMenu");
         } else {

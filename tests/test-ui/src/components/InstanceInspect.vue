@@ -122,14 +122,19 @@ const {
 } = useSyncedZoom();
 
 function setChartRef(el: any) {
-    if (!el) return;
+    if (!el) {
+        return;
+    }
     setLinkedChartRef(el);
     trackZoomRef(el);
 }
 
 function toggleStep(step: string) {
-    if (expandedSteps.value.has(step)) expandedSteps.value.delete(step);
-    else expandedSteps.value.add(step);
+    if (expandedSteps.value.has(step)) {
+        expandedSteps.value.delete(step);
+    } else {
+        expandedSteps.value.add(step);
+    }
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -159,34 +164,48 @@ onUnmounted(() => {
 const { store } = useTestUI();
 const historyRows = ref<HTMLElement[]>([]);
 function setHistoryRow(el: Element | null, idx: number) {
-    if (el instanceof HTMLElement) historyRows.value[idx] = el;
+    if (el instanceof HTMLElement) {
+        historyRows.value[idx] = el;
+    }
 }
 
 watch(
     () => store.state.currentRunMs,
     async (ms) => {
-        if (ms == null) return;
+        if (ms == null) {
+            return;
+        }
         const startIso = store.state.runStartTime;
         const history = props.instance.history;
-        if (!startIso || !history || history.length === 0) return;
+        if (!startIso || !history || history.length === 0) {
+            return;
+        }
         const runStart = new Date(startIso).getTime();
-        if (Number.isNaN(runStart)) return;
+        if (Number.isNaN(runStart)) {
+            return;
+        }
         let bestIdx = -1;
         let bestDelta = Number.POSITIVE_INFINITY;
         for (let i = 0; i < history.length; i++) {
             const t = new Date(history[i].timestamp).getTime();
-            if (Number.isNaN(t)) continue;
+            if (Number.isNaN(t)) {
+                continue;
+            }
             const delta = Math.abs(t - runStart - ms);
             if (delta < bestDelta) {
                 bestDelta = delta;
                 bestIdx = i;
             }
         }
-        if (bestIdx < 0) return;
+        if (bestIdx < 0) {
+            return;
+        }
         // Wait one tick so freshly-mounted history rows are populated before scroll.
         await nextTick();
         const el = historyRows.value[bestIdx];
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
     },
     { immediate: true },
 );
@@ -224,7 +243,9 @@ const chartOptions = {
             callbacks: {
                 label: (ctx: any) => {
                     const v = ctx.raw as number | null;
-                    if (v == null) return "";
+                    if (v == null) {
+                        return "";
+                    }
                     return `${Math.round(v * 10) / 10}`;
                 },
             },
@@ -264,16 +285,34 @@ const peakNetTx = ref(0);
 // Reset and recompute when length shrinks (instance switched).
 let lastPeakLength = 0;
 function updatePeaksFromEntry(s: StatsSnapshotEntry) {
-    if (s.cpuPercent > peakCpu.value) peakCpu.value = s.cpuPercent;
+    if (s.cpuPercent > peakCpu.value) {
+        peakCpu.value = s.cpuPercent;
+    }
     const mem = s.gameMemoryMb ?? s.memoryMb;
-    if (mem > peakMem.value) peakMem.value = mem;
-    if (s.tps != null && s.tps > peakTps.value) peakTps.value = s.tps;
-    if (s.fps != null && s.fps > peakFps.value) peakFps.value = s.fps;
-    if (s.pendingActions != null && s.pendingActions > peakQueue.value) peakQueue.value = s.pendingActions;
-    if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value) peakWait.value = s.gameThreadWaitMs;
-    if (s.gcRate != null && s.gcRate > peakGcRate.value) peakGcRate.value = s.gcRate;
-    if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value) peakNetRx.value = s.netRxBytesPerSec;
-    if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value) peakNetTx.value = s.netTxBytesPerSec;
+    if (mem > peakMem.value) {
+        peakMem.value = mem;
+    }
+    if (s.tps != null && s.tps > peakTps.value) {
+        peakTps.value = s.tps;
+    }
+    if (s.fps != null && s.fps > peakFps.value) {
+        peakFps.value = s.fps;
+    }
+    if (s.pendingActions != null && s.pendingActions > peakQueue.value) {
+        peakQueue.value = s.pendingActions;
+    }
+    if (s.gameThreadWaitMs != null && s.gameThreadWaitMs > peakWait.value) {
+        peakWait.value = s.gameThreadWaitMs;
+    }
+    if (s.gcRate != null && s.gcRate > peakGcRate.value) {
+        peakGcRate.value = s.gcRate;
+    }
+    if (s.netRxBytesPerSec != null && s.netRxBytesPerSec > peakNetRx.value) {
+        peakNetRx.value = s.netRxBytesPerSec;
+    }
+    if (s.netTxBytesPerSec != null && s.netTxBytesPerSec > peakNetTx.value) {
+        peakNetTx.value = s.netTxBytesPerSec;
+    }
 }
 
 watch(
@@ -290,7 +329,9 @@ watch(
             peakGcRate.value = 0;
             peakNetRx.value = 0;
             peakNetTx.value = 0;
-            for (const s of props.statsHistory) updatePeaksFromEntry(s);
+            for (const s of props.statsHistory) {
+                updatePeaksFromEntry(s);
+            }
         } else if (len > lastPeakLength) {
             updatePeaksFromEntry(props.statsHistory[len - 1]);
         }
@@ -477,7 +518,9 @@ const netOptions = computed(() => {
                 callbacks: {
                     label: (ctx: any) => {
                         const v = ctx.raw as number | null;
-                        if (v == null) return "";
+                        if (v == null) {
+                            return "";
+                        }
                         return `${ctx.dataset.label}: ${formatBytesPerSec(v)}`;
                     },
                 },
@@ -505,10 +548,14 @@ watch(showLeaseMarkers, () => {
 });
 
 const leaseMarkers = computed(() => {
-    if (props.statsHistory.length === 0) return [];
+    if (props.statsHistory.length === 0) {
+        return [];
+    }
     const markers: { index: number; label: string }[] = [];
     for (const entry of props.instance.history) {
-        if (entry.event !== "leased") continue;
+        if (entry.event !== "leased") {
+            continue;
+        }
         const entryTime = new Date(entry.timestamp).getTime();
         let closest = -1,
             minDiff = Number.POSITIVE_INFINITY;
@@ -529,9 +576,13 @@ const leaseMarkers = computed(() => {
 const leaseLinePlugin = {
     id: "leaseLines",
     afterDraw(chart: any) {
-        if (!showLeaseMarkers.value) return;
+        if (!showLeaseMarkers.value) {
+            return;
+        }
         const meta = chart.getDatasetMeta(0);
-        if (!meta?.data?.length) return;
+        if (!meta?.data?.length) {
+            return;
+        }
         const ctx = chart.ctx;
         const yScale = chart.scales.y;
         const mouseX = (chart as any)._leaseMouseX as number | undefined;
@@ -542,7 +593,9 @@ const leaseLinePlugin = {
         if (mouseX != null) {
             for (let i = 0; i < leaseMarkers.value.length; i++) {
                 const m = leaseMarkers.value[i];
-                if (m.index >= meta.data.length) continue;
+                if (m.index >= meta.data.length) {
+                    continue;
+                }
                 const dist = Math.abs(mouseX - meta.data[m.index].x);
                 if (dist < 6 && dist < nearestDist) {
                     nearestDist = dist;
@@ -554,10 +607,14 @@ const leaseLinePlugin = {
         let hoveredMarker: { label: string; x: number } | null = null;
         for (let i = 0; i < leaseMarkers.value.length; i++) {
             const m = leaseMarkers.value[i];
-            if (m.index >= meta.data.length) continue;
+            if (m.index >= meta.data.length) {
+                continue;
+            }
             const x = meta.data[m.index].x;
             const isHovered = i === nearestIndex;
-            if (isHovered) hoveredMarker = { label: m.label, x };
+            if (isHovered) {
+                hoveredMarker = { label: m.label, x };
+            }
             ctx.save();
             ctx.strokeStyle = isHovered ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.28)";
             ctx.lineWidth = isHovered ? 2.5 : 1.5;
@@ -570,7 +627,9 @@ const leaseLinePlugin = {
         }
         // Position HTML tooltip (managed as a child of the canvas wrapper)
         const wrapper = chart.canvas?.parentElement;
-        if (!wrapper) return;
+        if (!wrapper) {
+            return;
+        }
         let tip = wrapper.querySelector(".lease-marker-tip") as HTMLElement | null;
         if (hoveredMarker) {
             if (!tip) {
@@ -606,7 +665,9 @@ const leaseLinePlugin = {
         } else if (args.event.type === "mouseout") {
             (chart as any)._leaseMouseX = undefined;
             const tip = chart.canvas?.parentElement?.querySelector(".lease-marker-tip") as HTMLElement | null;
-            if (tip) tip.style.display = "none";
+            if (tip) {
+                tip.style.display = "none";
+            }
             chart.draw();
         }
     },

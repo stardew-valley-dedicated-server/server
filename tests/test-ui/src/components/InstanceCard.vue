@@ -64,7 +64,9 @@ const emit = defineEmits<{
 const slot = createIframeSlot();
 
 onMounted(() => {
-    if (props.placeholderEl) slot.track(props.placeholderEl);
+    if (props.placeholderEl) {
+        slot.track(props.placeholderEl);
+    }
 });
 
 onUnmounted(() => {
@@ -74,8 +76,11 @@ onUnmounted(() => {
 watch(
     () => props.placeholderEl,
     (el) => {
-        if (el) slot.track(el);
-        else slot.untrack();
+        if (el) {
+            slot.track(el);
+        } else {
+            slot.untrack();
+        }
     },
 );
 </script>

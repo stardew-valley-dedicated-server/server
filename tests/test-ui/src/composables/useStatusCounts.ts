@@ -41,19 +41,31 @@ export function useStatusCounts(): StatusCounts {
     });
 
     function resetStatusCounts() {
-        for (const key in statusCounts) statusCounts[key] = 0;
+        for (const key in statusCounts) {
+            statusCounts[key] = 0;
+        }
     }
 
     function transitionStatus(oldStatus: string | null, newStatus: string) {
-        if (oldStatus && oldStatus in statusCounts) statusCounts[oldStatus]--;
-        if (newStatus in statusCounts) statusCounts[newStatus]++;
+        if (oldStatus && oldStatus in statusCounts) {
+            statusCounts[oldStatus]--;
+        }
+        if (newStatus in statusCounts) {
+            statusCounts[newStatus]++;
+        }
     }
 
     function rebuildStatusCounts(collections: CollectionSnapshot[]) {
         resetStatusCounts();
-        for (const col of collections)
-            for (const cls of col.classes)
-                for (const test of cls.tests) if (test.status in statusCounts) statusCounts[test.status]++;
+        for (const col of collections) {
+            for (const cls of col.classes) {
+                for (const test of cls.tests) {
+                    if (test.status in statusCounts) {
+                        statusCounts[test.status]++;
+                    }
+                }
+            }
+        }
     }
 
     return {

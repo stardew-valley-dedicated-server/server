@@ -30,7 +30,9 @@ const { activeFilters, toggleFilter, visibleStatuses, isFiltering, testPassesFil
 const flakyByName = computed(() => {
     const map = new Map<string, { failRate: number; recentRuns: number }>();
     const entries = store.state.flakyTests;
-    if (!entries) return map;
+    if (!entries) {
+        return map;
+    }
     for (const e of entries) {
         map.set(e.test, { failRate: e.failRate, recentRuns: e.recentRuns });
     }
@@ -44,12 +46,16 @@ function flakyFor(test: TestSnapshot): { failRate: number; recentRuns: number } 
 
 // Auto-expand all nodes when search is active
 watch(searchQuery, (q) => {
-    if (q) collapsed.value.clear();
+    if (q) {
+        collapsed.value.clear();
+    }
 });
 
 // React to external filter trigger (e.g., clicking "failed" in status bar)
 watch(filterToStatus, (status) => {
-    if (!status) return;
+    if (!status) {
+        return;
+    }
     const s = status as TestStatus;
     if (allStatuses.includes(s)) {
         setExclusiveFilter(s);
@@ -89,12 +95,14 @@ const filteredCollections = computed(() => {
         } else if (mode === "duration-asc" || mode === "duration-desc") {
             const aggColDuration = (col: { classes: { tests: { durationMs?: number | null }[] }[] }) => {
                 let total = 0;
-                for (const cls of col.classes)
+                for (const cls of col.classes) {
                     for (const t of cls.tests) {
-                        if (t.durationMs == null)
+                        if (t.durationMs == null) {
                             return mode === "duration-asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+                        }
                         total += t.durationMs;
                     }
+                }
                 return total;
             };
             const dir = mode === "duration-asc" ? 1 : -1;
@@ -102,9 +110,13 @@ const filteredCollections = computed(() => {
         } else if (mode === "started-asc" || mode === "started-desc") {
             const earliestStart = (col: { classes: { tests: TestSnapshot[] }[] }) => {
                 let min = "\uffff";
-                for (const cls of col.classes)
-                    for (const t of cls.tests)
-                        if (t.runningStartTime != null && t.runningStartTime < min) min = t.runningStartTime;
+                for (const cls of col.classes) {
+                    for (const t of cls.tests) {
+                        if (t.runningStartTime != null && t.runningStartTime < min) {
+                            min = t.runningStartTime;
+                        }
+                    }
+                }
                 return min;
             };
             const dir = mode === "started-asc" ? 1 : -1;
@@ -112,12 +124,17 @@ const filteredCollections = computed(() => {
         } else if (mode === "finished-asc" || mode === "finished-desc") {
             const latestFinish = (col: { classes: { tests: TestSnapshot[] }[] }) => {
                 let max = mode === "finished-asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-                for (const cls of col.classes)
+                for (const cls of col.classes) {
                     for (const t of cls.tests) {
                         const ft = testFinishTime(t);
-                        if (ft == null) return max;
-                        if (mode === "finished-asc" ? ft < max : ft > max) max = ft;
+                        if (ft == null) {
+                            return max;
+                        }
+                        if (mode === "finished-asc" ? ft < max : ft > max) {
+                            max = ft;
+                        }
                     }
+                }
                 return max;
             };
             const dir = mode === "finished-asc" ? 1 : -1;
@@ -141,10 +158,17 @@ const flatClasses = computed(() => {
 // Timeline view: flat list of all tests sorted by execution order
 const timelineTests = computed(() => {
     const all: TestSnapshot[] = [];
-    for (const col of filteredCollections.value)
-        for (const cls of col.classes) for (const test of cls.tests) all.push(test);
+    for (const col of filteredCollections.value) {
+        for (const cls of col.classes) {
+            for (const test of cls.tests) {
+                all.push(test);
+            }
+        }
+    }
 
-    if (sortMode.value !== "none") return sortTests(all);
+    if (sortMode.value !== "none") {
+        return sortTests(all);
+    }
 
     const executed = all.filter((t) => t.executionOrder != null).sort((a, b) => a.executionOrder! - b.executionOrder!);
     const notExecuted = all
@@ -152,7 +176,9 @@ const timelineTests = computed(() => {
         .sort((a, b) => {
             const da = a.discoveryOrder ?? Number.POSITIVE_INFINITY;
             const db = b.discoveryOrder ?? Number.POSITIVE_INFINITY;
-            if (da !== db) return da - db;
+            if (da !== db) {
+                return da - db;
+            }
             return a.displayName.localeCompare(b.displayName);
         });
     return [...executed, ...notExecuted];
@@ -188,12 +214,16 @@ function scrollFocusedAfterLoad() {
 watch(
     () => store.selectedTest,
     (test) => {
-        if (!test) return;
+        if (!test) {
+            return;
+        }
         for (const col of store.collections.value) {
             for (const cls of col.classes) {
                 if (cls.tests.some((t) => t.displayName === test.displayName)) {
                     const clsKey = `cls:${cls.name}`;
-                    if (!userCollapsed.value.has(clsKey)) collapsed.value.delete(clsKey);
+                    if (!userCollapsed.value.has(clsKey)) {
+                        collapsed.value.delete(clsKey);
+                    }
                 }
             }
         }
@@ -207,17 +237,37 @@ watch(
 );
 
 function aggregateStatus(tests: TestSnapshot[]): string {
-    if (tests.some((t) => t.status === "failed")) return "failed";
-    if (tests.some((t) => t.status === "canceled")) return "canceled";
-    if (tests.some((t) => t.status === "aborted")) return "aborted";
-    if (tests.some((t) => t.status === "running")) return "running";
-    if (tests.some((t) => t.status === "queued")) return "queued";
-    if (tests.every((t) => t.status === "passed") && tests.length > 0) return "passed";
-    if (tests.every((t) => t.status === "skipped") && tests.length > 0) return "skipped";
-    if (tests.every((t) => t.status === "notDispatched") && tests.length > 0) return "notDispatched";
+    if (tests.some((t) => t.status === "failed")) {
+        return "failed";
+    }
+    if (tests.some((t) => t.status === "canceled")) {
+        return "canceled";
+    }
+    if (tests.some((t) => t.status === "aborted")) {
+        return "aborted";
+    }
+    if (tests.some((t) => t.status === "running")) {
+        return "running";
+    }
+    if (tests.some((t) => t.status === "queued")) {
+        return "queued";
+    }
+    if (tests.every((t) => t.status === "passed") && tests.length > 0) {
+        return "passed";
+    }
+    if (tests.every((t) => t.status === "skipped") && tests.length > 0) {
+        return "skipped";
+    }
+    if (tests.every((t) => t.status === "notDispatched") && tests.length > 0) {
+        return "notDispatched";
+    }
     // Some passed but not all. Only show as running if the run is actually in progress.
-    if (tests.some((t) => t.status === "passed") && store.state.status === "running") return "running";
-    if (tests.some((t) => t.status === "passed")) return "passed";
+    if (tests.some((t) => t.status === "passed") && store.state.status === "running") {
+        return "running";
+    }
+    if (tests.some((t) => t.status === "passed")) {
+        return "passed";
+    }
     return "pending";
 }
 
@@ -231,7 +281,9 @@ function classStatus(cls: { tests: TestSnapshot[] }): string {
 function classDuration(cls: { tests: TestSnapshot[] }): number | null {
     let total = 0;
     for (const test of cls.tests) {
-        if (test.durationMs == null) return null;
+        if (test.durationMs == null) {
+            return null;
+        }
         total += test.durationMs;
     }
     return cls.tests.length > 0 ? total : null;
@@ -240,9 +292,13 @@ function classDuration(cls: { tests: TestSnapshot[] }): number | null {
 // ── Expand/Collapse all ──
 const allCollapsed = computed(() => {
     const classes = flatClasses.value;
-    if (classes.length === 0) return true;
+    if (classes.length === 0) {
+        return true;
+    }
     for (const cls of classes) {
-        if (!collapsed.value.has(`cls:${cls.name}`)) return false;
+        if (!collapsed.value.has(`cls:${cls.name}`)) {
+            return false;
+        }
     }
     return true;
 });
@@ -289,7 +345,9 @@ const visibleNodes = computed((): TreeNode[] => {
     for (const cls of flatClasses.value) {
         const clsKey = `cls:${cls.name}`;
         nodes.push({ key: clsKey, type: "class", isGroup: true });
-        if (!isExpanded(clsKey)) continue;
+        if (!isExpanded(clsKey)) {
+            continue;
+        }
         for (const test of cls.tests) {
             nodes.push({ key: `test:${test.displayName}`, type: "test", parentKey: clsKey, test, isGroup: false });
         }
@@ -298,7 +356,9 @@ const visibleNodes = computed((): TreeNode[] => {
 });
 
 function focusedIndex(): number {
-    if (!focusedKey.value) return -1;
+    if (!focusedKey.value) {
+        return -1;
+    }
     return visibleNodes.value.findIndex((n) => n.key === focusedKey.value);
 }
 
@@ -319,12 +379,18 @@ function onKeyDown(e: KeyboardEvent) {
         e.preventDefault();
         return;
     }
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (tag === "INPUT" || tag === "TEXTAREA") {
+        return;
+    }
     // Don't handle keys when lightbox or modal is open (they take priority)
-    if (document.querySelector("[data-lightbox]") || document.querySelector("[data-modal]")) return;
+    if (document.querySelector("[data-lightbox]") || document.querySelector("[data-modal]")) {
+        return;
+    }
 
     const nodes = visibleNodes.value;
-    if (nodes.length === 0) return;
+    if (nodes.length === 0) {
+        return;
+    }
 
     switch (e.key) {
         case "ArrowDown":
@@ -334,7 +400,9 @@ function onKeyDown(e: KeyboardEvent) {
             const next = idx < nodes.length - 1 ? idx + 1 : 0;
             focusedKey.value = nodes[next].key;
             // Auto-select if it's a test
-            if (nodes[next].test) store.selectTest(nodes[next].test!);
+            if (nodes[next].test) {
+                store.selectTest(nodes[next].test!);
+            }
             scrollFocusedIntoView();
             break;
         }
@@ -344,14 +412,18 @@ function onKeyDown(e: KeyboardEvent) {
             const idx = focusedIndex();
             const prev = idx > 0 ? idx - 1 : nodes.length - 1;
             focusedKey.value = nodes[prev].key;
-            if (nodes[prev].test) store.selectTest(nodes[prev].test!);
+            if (nodes[prev].test) {
+                store.selectTest(nodes[prev].test!);
+            }
             scrollFocusedIntoView();
             break;
         }
         case "ArrowRight": {
             e.preventDefault();
             const idx = focusedIndex();
-            if (idx < 0) break;
+            if (idx < 0) {
+                break;
+            }
             const node = nodes[idx];
             if (node.isGroup && collapsed.value.has(node.key)) {
                 // Expand
@@ -360,7 +432,9 @@ function onKeyDown(e: KeyboardEvent) {
             } else if (node.isGroup && idx < nodes.length - 1) {
                 // Already expanded, move to first child
                 focusedKey.value = nodes[idx + 1].key;
-                if (nodes[idx + 1].test) store.selectTest(nodes[idx + 1].test!);
+                if (nodes[idx + 1].test) {
+                    store.selectTest(nodes[idx + 1].test!);
+                }
                 scrollFocusedIntoView();
             }
             break;
@@ -368,7 +442,9 @@ function onKeyDown(e: KeyboardEvent) {
         case "ArrowLeft": {
             e.preventDefault();
             const idx = focusedIndex();
-            if (idx < 0) break;
+            if (idx < 0) {
+                break;
+            }
             const node = nodes[idx];
             if (node.isGroup && !collapsed.value.has(node.key)) {
                 // Collapse
@@ -384,7 +460,9 @@ function onKeyDown(e: KeyboardEvent) {
         case "Escape": {
             e.preventDefault();
             const idx = focusedIndex();
-            if (idx < 0) break;
+            if (idx < 0) {
+                break;
+            }
             const node = nodes[idx];
             if (node.parentKey) {
                 focusedKey.value = node.parentKey;
@@ -396,7 +474,9 @@ function onKeyDown(e: KeyboardEvent) {
         case " ": {
             e.preventDefault();
             const idx = focusedIndex();
-            if (idx < 0) break;
+            if (idx < 0) {
+                break;
+            }
             const node = nodes[idx];
             if (node.isGroup) {
                 toggleCollapse(node.key);

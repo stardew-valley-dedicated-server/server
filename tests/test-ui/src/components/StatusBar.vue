@@ -14,7 +14,9 @@ const completedCount = computed(() => sc.passed + sc.failed + sc.skipped + sc.ca
 
 const progress = computed(() => {
     const total = store.state.totalTests;
-    if (total === 0) return 0;
+    if (total === 0) {
+        return 0;
+    }
     return Math.round((completedCount.value / total) * 100);
 });
 
@@ -22,26 +24,46 @@ const progress = computed(() => {
 const elapsed = computed(() => formatDuration(store.elapsedMs));
 
 const statusLabel = computed(() => {
-    if (store.state.status === "aborted") return "aborted";
-    if (store.state.status === "running") return "running";
+    if (store.state.status === "aborted") {
+        return "aborted";
+    }
+    if (store.state.status === "running") {
+        return "running";
+    }
     if (store.state.status === "finished") {
-        if (sc.failed > 0) return "failed";
-        if (sc.canceled > 0) return "canceled";
-        if (sc.passed > 0) return "passed";
+        if (sc.failed > 0) {
+            return "failed";
+        }
+        if (sc.canceled > 0) {
+            return "canceled";
+        }
+        if (sc.passed > 0) {
+            return "passed";
+        }
         return "no tests ran";
     }
     return "pending";
 });
 
 const statusTextClass = computed(() => {
-    if (store.state.status === "running") return "text-success";
+    if (store.state.status === "running") {
+        return "text-success";
+    }
     if (store.state.status === "finished") {
-        if (sc.failed > 0) return "text-error";
-        if (sc.canceled > 0) return "text-warning";
-        if (sc.passed > 0) return "text-success";
+        if (sc.failed > 0) {
+            return "text-error";
+        }
+        if (sc.canceled > 0) {
+            return "text-warning";
+        }
+        if (sc.passed > 0) {
+            return "text-success";
+        }
         return "text-warning";
     }
-    if (store.state.status === "aborted") return "text-warning";
+    if (store.state.status === "aborted") {
+        return "text-warning";
+    }
     return "text-base-content/50";
 });
 
@@ -64,7 +86,9 @@ const detailsOpen = ref(false);
 const runMeta = computed(() => store.state.runMetadata?.data ?? null);
 const gitLabel = computed(() => {
     const g = runMeta.value?.git;
-    if (!g) return null;
+    if (!g) {
+        return null;
+    }
     const sha = g.sha ? g.sha.slice(0, 7) : "?";
     return `${g.branch ?? "?"} @ ${sha}${g.dirty ? " ●" : ""}`;
 });

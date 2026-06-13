@@ -87,7 +87,9 @@ const expandedPanelRef = ref<HTMLElement | null>(null);
 const expandedContainerRef = ref<HTMLElement | null>(null);
 
 function activeContainerRef(): HTMLElement | null {
-    if (expandedId.value) return expandedContainerRef.value;
+    if (expandedId.value) {
+        return expandedContainerRef.value;
+    }
     switch (layout.value) {
         case "grid":
             return gridContainerRef.value;
@@ -104,7 +106,9 @@ function activeContainerRef(): HTMLElement | null {
 // tiles disappear at the panel's top edge instead of painting over the toolbar
 // and Infrastructure Timeline above it when the panel is scrolled.
 function activeScrollPanelRef(): HTMLElement | null {
-    if (expandedId.value) return expandedPanelRef.value;
+    if (expandedId.value) {
+        return expandedPanelRef.value;
+    }
     switch (layout.value) {
         case "grid":
             return gridContainerRef.value;
@@ -146,13 +150,17 @@ watch(
 const serverConnectionCounts = computed(() => {
     const counts: Record<string, number> = {};
     for (const c of clients.value) {
-        if (c.connectedServerId) counts[c.connectedServerId] = (counts[c.connectedServerId] || 0) + 1;
+        if (c.connectedServerId) {
+            counts[c.connectedServerId] = (counts[c.connectedServerId] || 0) + 1;
+        }
     }
     return counts;
 });
 
 function getServerLabel(serverInstanceId: string | null): string | null {
-    if (!serverInstanceId) return null;
+    if (!serverInstanceId) {
+        return null;
+    }
     const srv = servers.value.find((s) => s.instanceId === serverInstanceId);
     return srv?.label ?? serverInstanceId;
 }
@@ -263,7 +271,9 @@ watch(
 );
 
 function onSplitResizeStart(e: PointerEvent) {
-    if (!splitContainerRef.value) return;
+    if (!splitContainerRef.value) {
+        return;
+    }
     isResizing.value = true;
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);

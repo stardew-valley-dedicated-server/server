@@ -49,7 +49,9 @@ const allInstances = computed<InstanceSnapshot[]>(() => {
 
 const runStartMs = computed<number | null>(() => {
     const iso = store.state.runStartTime;
-    if (!iso) return null;
+    if (!iso) {
+        return null;
+    }
     const t = new Date(iso).getTime();
     return Number.isFinite(t) ? t : null;
 });
@@ -81,13 +83,21 @@ const chartData = computed<ChartData<"scatter", TimelinePoint[]>>(() => {
     };
 
     instances.forEach((inst, y) => {
-        if (!inst.history) return;
+        if (!inst.history) {
+            return;
+        }
         for (const entry of inst.history) {
             const cat = entry.event as CategoryKey;
-            if (!(cat in buckets)) continue;
-            if (!enabled[cat]) continue;
+            if (!(cat in buckets)) {
+                continue;
+            }
+            if (!enabled[cat]) {
+                continue;
+            }
             const t = new Date(entry.timestamp).getTime();
-            if (!Number.isFinite(t)) continue;
+            if (!Number.isFinite(t)) {
+                continue;
+            }
             const runMs = start != null ? t - start : 0;
             buckets[cat].push({
                 x: runMs / 1000,
@@ -148,7 +158,9 @@ const chartOptions = computed<ChartOptions<"scatter">>(() => ({
                 autoSkip: false,
                 callback: (v) => {
                     const i = Number(v);
-                    if (!Number.isInteger(i)) return "";
+                    if (!Number.isInteger(i)) {
+                        return "";
+                    }
                     const inst = allInstances.value[i];
                     return inst?.label || inst?.instanceId || "";
                 },
@@ -183,11 +195,15 @@ const chartOptions = computed<ChartOptions<"scatter">>(() => ({
         },
     },
     onClick: (_evt, elements) => {
-        if (elements.length === 0) return;
+        if (elements.length === 0) {
+            return;
+        }
         const first = elements[0];
         const ds = chartData.value.datasets[first.datasetIndex];
         const point = ds?.data[first.index] as TimelinePoint | undefined;
-        if (!point) return;
+        if (!point) {
+            return;
+        }
         store.state.currentRunMs = point.runMs;
         inspect.pushInspect(point.instanceId);
     },

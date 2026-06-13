@@ -21,7 +21,9 @@ const inspect = useInspectNavigation({ instances, stoppedInstances: store.stoppe
 provide("inspect", inspect);
 
 function getServerLabel(serverInstanceId: string | null): string | null {
-    if (!serverInstanceId) return null;
+    if (!serverInstanceId) {
+        return null;
+    }
     const srv = instances.value.find((i) => i.instanceId === serverInstanceId && i.instanceType === "server");
     return srv?.label ?? serverInstanceId;
 }
@@ -47,7 +49,9 @@ let themeObserver: MutationObserver | null = null;
 onMounted(() => {
     themeObserver = new MutationObserver(() => {
         const theme = document.documentElement.getAttribute("data-theme");
-        if (theme) localStorage.setItem("ui-theme", theme);
+        if (theme) {
+            localStorage.setItem("ui-theme", theme);
+        }
     });
     themeObserver.observe(document.documentElement, {
         attributes: true,
@@ -127,8 +131,12 @@ const vncCount = computed(() => store.state.instances?.length ?? 0);
 
 // When collapsed, width is 0 (fully hidden). Dragging uses live value.
 const effectiveWidth = computed(() => {
-    if (isResizing.value) return sidebarWidth.value;
-    if (sidebarCollapsed.value) return 0;
+    if (isResizing.value) {
+        return sidebarWidth.value;
+    }
+    if (sidebarCollapsed.value) {
+        return 0;
+    }
     return sidebarWidth.value;
 });
 

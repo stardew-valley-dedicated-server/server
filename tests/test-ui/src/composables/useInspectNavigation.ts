@@ -23,7 +23,9 @@ export function useInspectNavigation(params: {
     });
 
     const inspectIndex = computed(() => {
-        if (!inspectId.value) return -1;
+        if (!inspectId.value) {
+            return -1;
+        }
         return allOrderedInstances.value.findIndex((i) => i.instanceId === inspectId.value);
     });
 
@@ -61,7 +63,9 @@ export function useInspectNavigation(params: {
     }
 
     const inspectInstance = computed(() => {
-        if (!inspectId.value) return null;
+        if (!inspectId.value) {
+            return null;
+        }
         return (
             params.instances.value.find((i) => i.instanceId === inspectId.value) ??
             params.stoppedInstances.find((i) => i.instanceId === inspectId.value) ??
@@ -70,7 +74,9 @@ export function useInspectNavigation(params: {
     });
 
     const inspectPeers = computed(() => {
-        if (!inspectInstance.value) return [];
+        if (!inspectInstance.value) {
+            return [];
+        }
         const id = inspectId.value!;
         const all = [...params.instances.value, ...params.stoppedInstances];
         if (inspectInstance.value.instanceType === "server") {

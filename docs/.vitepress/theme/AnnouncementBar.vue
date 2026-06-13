@@ -16,7 +16,9 @@ const announcementLink = withBase("/admins/operations/upgrading#preview-builds")
 
 // Check localStorage immediately if available (for SSR, default to true so CSS offset is applied)
 function getInitialState(): boolean {
-    if (typeof localStorage === "undefined") return true;
+    if (typeof localStorage === "undefined") {
+        return true;
+    }
     try {
         return localStorage.getItem("announcement-closed") !== "true";
     } catch {
