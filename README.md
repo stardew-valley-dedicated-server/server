@@ -1,14 +1,8 @@
 # JunimoServer
 
 <!-- Project -->
-![GitHub Tag](https://img.shields.io/github/v/tag/stardew-valley-dedicated-server/server?label=Latest%20Release&style=flat&colorA=18181B)
-![Static Badge](https://img.shields.io/badge/Stardew%20Valley-v1.6.15-34D058?style=flat&colorA=18181B)
-<!-- CI status (master) -->
-[![CodeQL](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/codeql.yml?branch=master&label=CodeQL&style=flat&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/codeql.yml)
-[![E2E Tests](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/e2e-tests.yml?branch=master&label=E2E%20Tests&style=flat&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/e2e-tests.yml)
-<!-- Community -->
-[![Discord](https://img.shields.io/discord/947923329057185842?label=Discord&logo=discord&color=34D058&style=flat&colorA=18181B)](https://discord.gg/w23GVXdSF7)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-34D058?style=flat&colorA=18181B&logo=githubsponsors)](https://github.com/sponsors/JulianVallee)
+
+![GitHub Tag](https://img.shields.io/github/v/tag/stardew-valley-dedicated-server/server?label=Latest%20Release&style=flat-square&colorA=18181B) ![Static Badge](https://img.shields.io/badge/Stardew%20Valley-v1.6.15-34D058?style=flat-square&colorA=18181B) [![CodeQL](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/codeql.yml?branch=master&label=CodeQL&style=flat-square&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/codeql.yml) [![E2E Tests](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/e2e-tests.yml?branch=master&label=E2E%20Tests&style=flat-square&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/e2e-tests.yml) [![Discord](https://img.shields.io/discord/947923329057185842?label=Discord&logo=discord&color=34D058&style=flat-square&colorA=18181B)](https://discord.gg/w23GVXdSF7)
 
 **JunimoServer** makes [Stardew Valley](https://www.stardewvalley.net/) multiplayer hosting simple and flexible. Host your farm anytime, anywhere — on your local machine, a VPS, or a dedicated server.
 
@@ -20,14 +14,14 @@ This open-source project enables 24/7 multiplayer farms without needing to keep 
 
 <!-- toc -->
 
--   [Features](#features)
--   [Quick start](#quick-start)
-    -   [Prerequisites](#prerequisites)
-    -   [Getting started](#getting-started)
-    -   [Updating to a new version](#updating-to-a-new-version)
-    -   [Using preview releases](#using-preview-releases)
--   [Documentation](#documentation)
--   [Support](#support)
+- [Features](#features)
+- [Quick start](#quick-start)
+    - [Prerequisites](#prerequisites)
+    - [Getting started](#getting-started)
+    - [Updating to a new version](#updating-to-a-new-version)
+    - [Using preview releases](#using-preview-releases)
+- [Documentation](#documentation)
+- [Support](#support)
 
 <!-- tocstop -->
 
@@ -35,19 +29,19 @@ This open-source project enables 24/7 multiplayer farms without needing to keep 
 
 JunimoServer gives you everything you need to host Stardew Valley:
 
--   **Always-On Hosting**: Keep your farm running 24/7 without needing to leave the game open.
--   **Easy Management**: Control your server through a simple, web-based interface with admin capabilities.
--   **Persistent Progress**: Protect your crops and ensure your farm continues to thrive, even when no one’s online.
--   **Automatic Backups**: Regularly save your farm so you can easily restore it if something goes wrong.
--   **Fully Customizable**: Change game modes, tweak settings, and optimize performance to fit your needs.
--   **Mod-Friendly**: Supports SMAPI mods to enhance your Stardew Valley experience with customizations and extra content.
+- **Always-On Hosting**: Keep your farm running 24/7 without needing to leave the game open.
+- **Easy Management**: Control your server through a simple, web-based interface with admin capabilities.
+- **Persistent Progress**: Protect your crops and ensure your farm continues to thrive, even when no one’s online.
+- **Automatic Backups**: Regularly save your farm so you can easily restore it if something goes wrong.
+- **Fully Customizable**: Change game modes, tweak settings, and optimize performance to fit your needs.
+- **Mod-Friendly**: Supports SMAPI mods to enhance your Stardew Valley experience with customizations and extra content.
 
 ## Quick start
 
 ### Prerequisites
 
--   **Docker**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
--   **Steam account**: A Steam account that owns Stardew Valley (required to download game files)
+- **Docker**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux)
+- **Steam account**: A Steam account that owns Stardew Valley (required to download game files)
 
 ### Getting started
 
@@ -131,15 +125,15 @@ You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VE
 
 Explore the [full documentation](https://stardew-valley-dedicated-server.github.io/server/) to get started. Here's what you'll find:
 
--   **[Getting Started](https://stardew-valley-dedicated-server.github.io/server/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
--   **[Server Guide](https://stardew-valley-dedicated-server.github.io/server/guide/using-the-server):** Learn how to use and manage your server.
--   **[Community](https://stardew-valley-dedicated-server.github.io/server/community/getting-help):** Find out how to get involved and get help.
+- **[Getting Started](https://stardew-valley-dedicated-server.github.io/server/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
+- **[Server Guide](https://stardew-valley-dedicated-server.github.io/server/guide/using-the-server):** Learn how to use and manage your server.
+- **[Community](https://stardew-valley-dedicated-server.github.io/server/community/getting-help):** Find out how to get involved and get help.
 
 ## Support
 
 JunimoServer is free and open-source, maintained in spare time. If it keeps your farm running and you'd like to give something back, donations help cover **server/hosting costs** and **development time** — entirely optional, always appreciated. 🌱
 
--   **[GitHub Sponsors](https://github.com/sponsors/JulianVallee)** — monthly or one-time, 100% goes to development.
--   **[Ko-fi](https://ko-fi.com/junimoserver)** — buy the project a coffee (one-time, PayPal or card).
+- **[GitHub Sponsors](https://github.com/sponsors/JulianVallee)** — monthly or one-time, 100% goes to development.
+- **[Ko-fi](https://ko-fi.com/junimoserver)** — buy the project a coffee (one-time, PayPal or card).
 
 Not in a position to donate? Starring the repo, reporting bugs, improving the docs, or helping others on [Discord](https://discord.gg/w23GVXdSF7) helps just as much.
