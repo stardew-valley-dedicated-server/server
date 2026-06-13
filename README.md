@@ -8,6 +8,7 @@
 [![E2E Tests](https://img.shields.io/github/actions/workflow/status/stardew-valley-dedicated-server/server/e2e-tests.yml?branch=master&label=E2E%20Tests&style=flat&colorA=18181B)](https://github.com/stardew-valley-dedicated-server/server/actions/workflows/e2e-tests.yml)
 <!-- Community -->
 [![Discord](https://img.shields.io/discord/947923329057185842?label=Discord&logo=discord&color=34D058&style=flat&colorA=18181B)](https://discord.gg/w23GVXdSF7)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-34D058?style=flat&colorA=18181B&logo=githubsponsors)](https://github.com/sponsors/JulianVallee)
 
 **JunimoServer** makes [Stardew Valley](https://www.stardewvalley.net/) multiplayer hosting simple and flexible. Host your farm anytime, anywhere — on your local machine, a VPS, or a dedicated server.
 
@@ -26,6 +27,7 @@ This open-source project enables 24/7 multiplayer farms without needing to keep 
     -   [Updating to a new version](#updating-to-a-new-version)
     -   [Using preview releases](#using-preview-releases)
 -   [Documentation](#documentation)
+-   [Support](#support)
 
 <!-- tocstop -->
 
@@ -132,3 +134,12 @@ Explore the [full documentation](https://stardew-valley-dedicated-server.github.
 -   **[Getting Started](https://stardew-valley-dedicated-server.github.io/server/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
 -   **[Server Guide](https://stardew-valley-dedicated-server.github.io/server/guide/using-the-server):** Learn how to use and manage your server.
 -   **[Community](https://stardew-valley-dedicated-server.github.io/server/community/getting-help):** Find out how to get involved and get help.
+
+## Support
+
+JunimoServer is free and open-source, maintained in spare time. If it keeps your farm running and you'd like to give something back, donations help cover **server/hosting costs** and **development time** — entirely optional, always appreciated. 🌱
+
+-   **[GitHub Sponsors](https://github.com/sponsors/JulianVallee)** — monthly or one-time, 100% goes to development.
+-   **[Ko-fi](https://ko-fi.com/junimoserver)** — buy the project a coffee (one-time, PayPal or card).
+
+Not in a position to donate? Starring the repo, reporting bugs, improving the docs, or helping others on [Discord](https://discord.gg/w23GVXdSF7) helps just as much.
