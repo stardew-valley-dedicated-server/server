@@ -6,8 +6,8 @@
     "scripts": {
         "start": "bun run src/index.ts",
         "dev": "bun run --watch src/index.ts",
-        "lint": "npx @biomejs/biome check .",
-        "lint:fix": "npx @biomejs/biome check --write ."
+        "lint": "biome check .",
+        "lint:fix": "biome check --write ."
     },
     "dependencies": {
         "discord.js": "^14.25.1"
