@@ -255,14 +255,17 @@ test-diagnose:
 	@grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5 | python3 -m json.tool --no-ensure-ascii 2>/dev/null || grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5
 
 # Verify analyzer style rules and formatting without writing (builds the solution).
+# Biome covers the JS/TS projects scoped in biome.jsonc.
 lint-check:
 	@dotnet format style JunimoServer.slnx --severity error --verify-no-changes
 	@dotnet csharpier check .
+	@npx @biomejs/biome check .
 
 # Auto-fix analyzer style violations (braces, namespaces, usings), then re-format.
 lint-fix:
 	@dotnet format style JunimoServer.slnx --severity error
 	@dotnet csharpier format .
+	@npx @biomejs/biome check --write .
 
 # Show help
 help:
@@ -293,8 +296,8 @@ help:
 	@echo "  make build-test-client - Build test client container image (for E2E tests)"
 	@echo ""
 	@echo Formatting:
-	@echo "  make lint-check - Verify style rules + formatting (slow, builds)"
-	@echo "  make lint-fix   - Auto-fix style violations + re-format (slow, builds)"
+	@echo "  make lint-check - Verify C# + JS/TS style rules + formatting (slow, builds)"
+	@echo "  make lint-fix   - Auto-fix C# + JS/TS style violations + re-format (slow, builds)"
 	@echo ""
 	@echo Test Observability:
 	@echo "  make test-summary  - Show test run summary (failures, timing)"
