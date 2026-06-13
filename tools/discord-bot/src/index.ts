@@ -33,7 +33,7 @@ if (!DISCORD_BOT_TOKEN) {
  * Returns headers for API requests, including Authorization if API_KEY is set.
  */
 function getApiHeaders(): HeadersInit {
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (API_KEY) {
         headers.Authorization = `Bearer ${API_KEY}`;
     }
@@ -233,6 +233,9 @@ function connectWebSocket(): void {
                     console.error(
                         `[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`,
                     );
+                    // Close so onclose schedules a reconnect instead of leaving a
+                    // dead, unauthenticated socket open until the next restart.
+                    ws?.close();
                     return;
                 }
 
