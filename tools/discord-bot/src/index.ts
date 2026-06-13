@@ -53,6 +53,8 @@ interface ServerStatus {
 
 interface WebSocketMessage {
     type: string;
+    /** Failure reason, sent top-level (not in payload) by auth_failed. */
+    error?: string;
     payload?: {
         playerName?: string;
         message?: string;
@@ -230,9 +232,7 @@ function connectWebSocket(): void {
                 }
 
                 if (msg.type === "auth_failed") {
-                    console.error(
-                        `[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`,
-                    );
+                    console.error(`[Discord Bot] WebSocket authentication failed: ${msg.error || "unknown error"}`);
                     // Close so onclose schedules a reconnect instead of leaving a
                     // dead, unauthenticated socket open until the next restart.
                     ws?.close();
