@@ -233,8 +233,8 @@ function connectWebSocket(): void {
 
                 if (msg.type === "auth_failed") {
                     console.error(`[Discord Bot] WebSocket authentication failed: ${msg.error || "unknown error"}`);
-                    // Close so onclose schedules a reconnect instead of leaving a
-                    // dead, unauthenticated socket open until the next restart.
+                    // The server closes after sending auth_failed (ApiService.cs); closing
+                    // here too guarantees onclose's reconnect even if that close is lost.
                     ws?.close();
                     return;
                 }

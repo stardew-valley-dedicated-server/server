@@ -31,9 +31,8 @@ export function useLogFile(
     let lastModified: string | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
-    // A response only gets applied while its version is still current — a slow
-    // fetch for a previous path must not overwrite the newer path's state.
-    let requestVersion = 0;
+    // Aborted = superseded (newer fetch, path change, or unmount). The post-await
+    // abort checks keep a slow response from overwriting the newer path's state.
     let inFlight: AbortController | null = null;
 
     function clearTimer() {
@@ -43,8 +42,7 @@ export function useLogFile(
         }
     }
 
-    function invalidateInFlight() {
-        requestVersion++;
+    function abortInFlight() {
         inFlight?.abort();
         inFlight = null;
     }
@@ -55,20 +53,16 @@ export function useLogFile(
             return;
         }
         inFlight?.abort();
-        inFlight = new AbortController();
-        const signal = inFlight.signal;
-        const myVersion = ++requestVersion;
+        const ctl = new AbortController();
+        inFlight = ctl;
         loading.value = true;
         try {
             const headers: Record<string, string> = {};
             if (!force && lastModified) {
                 headers["If-Modified-Since"] = lastModified;
             }
-            const res = await fetch(url, { headers, signal });
-            if (myVersion !== requestVersion) {
-                return;
-            }
-            if (res.status === 304) {
+            const res = await fetch(url, { headers, signal: ctl.signal });
+            if (ctl.signal.aborted || res.status === 304) {
                 return;
             }
             if (!res.ok) {
@@ -85,19 +79,18 @@ export function useLogFile(
                 lastModified = lm;
             }
             const text = await res.text();
-            if (myVersion !== requestVersion) {
+            if (ctl.signal.aborted) {
                 return;
             }
             // Strip a single trailing newline so the row count matches visual lines.
             const trimmed = text.endsWith("\n") ? text.slice(0, -1) : text;
             lines.value = trimmed.length === 0 ? [] : trimmed.split("\n");
         } catch (e) {
-            if (myVersion !== requestVersion || signal.aborted) {
-                return;
+            if (!ctl.signal.aborted) {
+                error.value = e instanceof Error ? e.message : String(e);
             }
-            error.value = e instanceof Error ? e.message : String(e);
         } finally {
-            if (myVersion === requestVersion) {
+            if (!ctl.signal.aborted) {
                 loading.value = false;
             }
         }
@@ -130,7 +123,7 @@ export function useLogFile(
                 return;
             }
             clearTimer();
-            invalidateInFlight();
+            abortInFlight();
             lastModified = null;
             lines.value = [];
             error.value = null;
@@ -158,7 +151,7 @@ export function useLogFile(
     onUnmounted(() => {
         cancelled = true;
         clearTimer();
-        invalidateInFlight();
+        abortInFlight();
     });
 
     return { lines, loading, error, refresh };
