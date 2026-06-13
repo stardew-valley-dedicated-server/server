@@ -295,8 +295,8 @@ export default class AnimatedIcon extends AnimatedIcons {
         const rootStyles = getComputedStyle(root);
 
         // Get the value of the CSS variable
-        const c1 = rootStyles.getPropertyValue("--vp-c-brand-2").trim();
-        const c2 = rootStyles.getPropertyValue("--vp-c-brand-3").trim();
+        const _c1 = rootStyles.getPropertyValue("--vp-c-brand-2").trim();
+        const _c2 = rootStyles.getPropertyValue("--vp-c-brand-3").trim();
 
         // Randomly pick a color and remember which one
         this.colorGroup = Math.random() >= 0.5 ? "c1" : "c2";

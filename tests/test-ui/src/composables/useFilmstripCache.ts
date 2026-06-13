@@ -98,7 +98,7 @@ async function generate(job: ThumbJob) {
     }
 
     const duration = vid.duration;
-    if (!duration || !isFinite(duration) || duration <= 0) {
+    if (!duration || !Number.isFinite(duration) || duration <= 0) {
         cleanupVideo(vid);
         return;
     }

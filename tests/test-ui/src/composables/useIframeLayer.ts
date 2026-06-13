@@ -149,13 +149,13 @@ function syncHandle(h: InternalHandle) {
         if (h.targetHeight === 0) {
             const measure = wrapper.cloneNode(false) as HTMLDivElement;
             measure.style.cssText = "position:fixed;top:-9999px;left:-9999px;pointer-events:none;overflow:hidden;";
-            measure.style.width = rect.width + "px";
+            measure.style.width = `${rect.width}px`;
             measure.style.height = "";
             measure.style.transition = "none";
             while (wrapper.firstChild) {
                 measure.appendChild(wrapper.firstChild);
             }
-            wrapper.parentNode!.appendChild(measure);
+            wrapper.parentNode?.appendChild(measure);
             h.targetHeight = measure.scrollHeight;
             while (measure.firstChild) {
                 wrapper.appendChild(measure.firstChild);
@@ -163,29 +163,29 @@ function syncHandle(h: InternalHandle) {
             measure.remove();
         }
         wrapperHeight = h.targetHeight;
-        writeStyle(wrapper.style, last, "top", rect.top + "px");
-        writeStyle(wrapper.style, last, "left", rect.left + "px");
-        writeStyle(wrapper.style, last, "width", rect.width + "px");
-        writeStyle(wrapper.style, last, "height", wrapperHeight + "px");
+        writeStyle(wrapper.style, last, "top", `${rect.top}px`);
+        writeStyle(wrapper.style, last, "left", `${rect.left}px`);
+        writeStyle(wrapper.style, last, "width", `${rect.width}px`);
+        writeStyle(wrapper.style, last, "height", `${wrapperHeight}px`);
         if (wrapperHeight > 0) {
-            placeholder.style.height = wrapperHeight + "px";
+            placeholder.style.height = `${wrapperHeight}px`;
         }
     } else {
         // Normal mode: width from placeholder; height driven by natural card content.
-        writeStyle(wrapper.style, last, "width", rect.width + "px");
+        writeStyle(wrapper.style, last, "width", `${rect.width}px`);
         writeStyle(wrapper.style, last, "height", "");
 
         // Push the card's natural height back to the placeholder so layout reserves
         // space for the header + test bar + iframe.
         wrapperHeight = wrapper.scrollHeight;
-        if (wrapperHeight > 0 && placeholder.style.height !== wrapperHeight + "px") {
-            placeholder.style.height = wrapperHeight + "px";
+        if (wrapperHeight > 0 && placeholder.style.height !== `${wrapperHeight}px`) {
+            placeholder.style.height = `${wrapperHeight}px`;
         }
 
         // Re-read position once the placeholder height has settled.
         const updatedRect = placeholder.getBoundingClientRect();
-        writeStyle(wrapper.style, last, "top", updatedRect.top + "px");
-        writeStyle(wrapper.style, last, "left", updatedRect.left + "px");
+        writeStyle(wrapper.style, last, "top", `${updatedRect.top}px`);
+        writeStyle(wrapper.style, last, "left", `${updatedRect.left}px`);
     }
 
     // Clip to host bounds if registered.
@@ -279,15 +279,15 @@ export function animateTransition(durationMs: number = TRANSITION_DURATION_MS) {
     for (const h of handles) {
         const w = h.wrapper;
         const cur = w.getBoundingClientRect();
-        w.style.top = cur.top + "px";
-        w.style.left = cur.left + "px";
-        w.style.width = cur.width + "px";
-        w.style.height = cur.height + "px";
+        w.style.top = `${cur.top}px`;
+        w.style.left = `${cur.left}px`;
+        w.style.width = `${cur.width}px`;
+        w.style.height = `${cur.height}px`;
         // Clear diff cache so the next sync() writes will definitely take effect.
-        h.last.top = cur.top + "px";
-        h.last.left = cur.left + "px";
-        h.last.width = cur.width + "px";
-        h.last.height = cur.height + "px";
+        h.last.top = `${cur.top}px`;
+        h.last.left = `${cur.left}px`;
+        h.last.width = `${cur.width}px`;
+        h.last.height = `${cur.height}px`;
     }
 
     transitionCount++;

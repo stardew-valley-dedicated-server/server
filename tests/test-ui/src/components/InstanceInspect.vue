@@ -349,7 +349,8 @@ const cpuChartData = computed(() => ({
 const cpuOptions = computed(() => {
     // Match badge logic: fair share = (cpuCount * 100) / instanceCount
     // Badge fallback: cpuCount defaults to 4 when 0/unknown
-    const cpuCount = (props.stats?.cpuCount ?? 0) > 0 ? props.stats!.cpuCount! : 4;
+    const reportedCpuCount = props.stats?.cpuCount ?? 0;
+    const cpuCount = reportedCpuCount > 0 ? reportedCpuCount : 4;
     const fairShare = (cpuCount * 100) / Math.max(props.instanceCount, 1);
     // Badge turns red at 1.5x fair share, so show that range comfortably
     const max = niceCeil(Math.max(peakCpu.value * 1.15, fairShare * 1.5), 50);
@@ -378,7 +379,8 @@ const memChartData = computed(() => ({
 const memOptions = computed(() => {
     // Match badge logic: fair share = totalMem / instanceCount
     // Badge fallback: totalMem defaults to 16384 when 0/unknown
-    const totalMem = (props.stats?.totalMemoryMb ?? 0) > 0 ? props.stats!.totalMemoryMb! : 16384;
+    const reportedTotalMem = props.stats?.totalMemoryMb ?? 0;
+    const totalMem = reportedTotalMem > 0 ? reportedTotalMem : 16384;
     const fairShare = totalMem / Math.max(props.instanceCount, 1);
     // Badge turns red at 1.5x fair share, so show that range comfortably
     const ceiling = niceCeil(Math.max(peakMem.value * 1.15, fairShare * 1.5), 512);
@@ -651,8 +653,8 @@ const leaseLinePlugin = {
                 wrapper.appendChild(tip);
             }
             tip.textContent = hoveredMarker.label;
-            tip.style.left = hoveredMarker.x + "px";
-            tip.style.top = yScale.top - 4 + "px";
+            tip.style.left = `${hoveredMarker.x}px`;
+            tip.style.top = `${yScale.top - 4}px`;
             tip.style.display = "";
         } else if (tip) {
             tip.style.display = "none";

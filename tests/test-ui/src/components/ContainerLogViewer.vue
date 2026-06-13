@@ -58,7 +58,7 @@ const leaseEvents = computed(() => {
 function fmtTime(iso: string): string {
     try {
         const d = new Date(iso);
-        return d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+        return `${d.toLocaleTimeString([], { hour12: false })}.${String(d.getMilliseconds()).padStart(3, "0")}`;
     } catch {
         return iso;
     }

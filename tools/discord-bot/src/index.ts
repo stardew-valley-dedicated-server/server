@@ -12,7 +12,7 @@ import {
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const API_URL = process.env.API_URL || "http://server:8080";
 const API_KEY = process.env.API_KEY || "";
-const WS_URL = process.env.WS_URL || API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws";
+const WS_URL = process.env.WS_URL || `${API_URL.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
 const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
 
@@ -35,7 +35,7 @@ if (!DISCORD_BOT_TOKEN) {
 function getApiHeaders(): HeadersInit {
     const headers: HeadersInit = {};
     if (API_KEY) {
-        headers["Authorization"] = `Bearer ${API_KEY}`;
+        headers.Authorization = `Bearer ${API_KEY}`;
     }
     return headers;
 }
@@ -121,7 +121,7 @@ async function updatePresence(): Promise<void> {
 
     let activityName: string;
 
-    if (!status || !status.isOnline) {
+    if (!status?.isOnline) {
         activityName = "Server Offline";
     } else {
         const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
@@ -268,7 +268,7 @@ function connectWebSocket(): void {
             wsReconnectTimer = setTimeout(connectWebSocket, 5000);
         };
 
-        ws.onerror = (event) => {
+        ws.onerror = (_event) => {
             // WebSocket error events don't contain useful error details in the browser API
             // The actual error will trigger onclose, so we just log that an error occurred
             console.error(`[Discord Bot] WebSocket connection error - will attempt reconnection`);

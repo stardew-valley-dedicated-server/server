@@ -50,7 +50,7 @@ function switchToVersion(version: Version) {
     }
 
     if (!relativePath.startsWith("/")) {
-        relativePath = "/" + relativePath;
+        relativePath = `/${relativePath}`;
     }
 
     const newPath = version.path.replace(/\/$/, "") + relativePath;

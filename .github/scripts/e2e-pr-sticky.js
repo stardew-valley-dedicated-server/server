@@ -31,7 +31,7 @@ const MAX_HISTORY_ROWS = 40;
  * @returns {string} The filter (empty string = full suite, or no marker present).
  */
 function readFilter(body) {
-    const m = body && body.match(/<!-- filter:([\s\S]*?)-->/);
+    const m = body?.match(/<!-- filter:([\s\S]*?)-->/);
     return m ? m[1].trim() : "";
 }
 
@@ -42,7 +42,7 @@ function readFilter(body) {
  * @returns {Array<object>} The history rows (newest appended last).
  */
 function readHistory(body) {
-    const m = body && body.match(/<!-- run-history:([\s\S]*?)-->/);
+    const m = body?.match(/<!-- run-history:([\s\S]*?)-->/);
     if (!m) {
         return [];
     }
@@ -117,7 +117,7 @@ function skippedClause(summary) {
  */
 function deriveResult({ summary, jobStatus, sha, reportUrl }) {
     let outcome;
-    if (jobStatus === "cancelled" || (summary && summary.aborted)) {
+    if (jobStatus === "cancelled" || summary?.aborted) {
         outcome = {
             status: "aborted",
             emoji: "⚪",

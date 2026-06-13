@@ -1,4 +1,4 @@
-import { ref, watch } from "vue";
+import { ref } from "vue";
 import { DEFAULT_THEME_ID, type Theme, themes } from "./themes";
 
 const STORAGE_KEY = "vitepress-theme-preference";

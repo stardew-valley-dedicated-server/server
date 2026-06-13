@@ -283,8 +283,8 @@ function lookupSkipReason(reasons: Record<string, string>, source: string): stri
     if (reasons[source]) {
         return reasons[source];
     }
-    if (source.startsWith("client") && reasons["client"]) {
-        return reasons["client"];
+    if (source.startsWith("client") && reasons.client) {
+        return reasons.client;
     }
     return null;
 }
@@ -297,7 +297,7 @@ function lookupSkipReason(reasons: Record<string, string>, source: string): stri
  */
 const missingSourcePlaceholders = computed((): PlaceholderCard[] => {
     const t = store.selectedTest;
-    if (!t || !t.recordingSkipReasons) {
+    if (!t?.recordingSkipReasons) {
         return [];
     }
     const captured = new Set((t.recordings ?? []).map((r) => r.source));

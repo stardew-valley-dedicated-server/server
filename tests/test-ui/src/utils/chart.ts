@@ -114,13 +114,13 @@ export const chartLayoutDefaults = {
 
 /** Y-axis tick formatter for percentages. */
 export function pctTickCallback(v: number | string): string {
-    return Math.round(Number(v)) + "%";
+    return `${Math.round(Number(v))}%`;
 }
 
 /** Y-axis tick formatter for memory (MB/GB). */
 export function memTickCallback(v: number | string): string {
     const n = Number(v);
-    return n >= 1024 ? (n / 1024).toFixed(1) + "G" : Math.round(n) + "M";
+    return n >= 1024 ? `${(n / 1024).toFixed(1)}G` : `${Math.round(n)}M`;
 }
 
 // ── Instance color palettes ──

@@ -137,9 +137,9 @@ export function displayMem(stats: MetricStats | undefined): number | null {
 /** Format MB value as human-readable string. */
 export function formatMem(mb: number): string {
     if (mb >= 1024) {
-        return (mb / 1024).toFixed(1) + "gb";
+        return `${(mb / 1024).toFixed(1)}gb`;
     }
-    return Math.round(mb) + "mb";
+    return `${Math.round(mb)}mb`;
 }
 
 /** Game thread queue color: green = 0, yellow = 1-5, red > 5 */
@@ -173,10 +173,10 @@ export function waitTextClass(stats: MetricStats | undefined): string {
 /** Format bytes/sec as human-readable string. */
 export function formatBytesPerSec(bps: number): string {
     if (bps >= 1024 * 1024) {
-        return (bps / (1024 * 1024)).toFixed(1) + " MB/s";
+        return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
     }
     if (bps >= 1024) {
-        return (bps / 1024).toFixed(1) + " KB/s";
+        return `${(bps / 1024).toFixed(1)} KB/s`;
     }
-    return Math.round(bps) + " B/s";
+    return `${Math.round(bps)} B/s`;
 }

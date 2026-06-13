@@ -283,7 +283,7 @@ function effectiveDuration(index: number): number {
         return v.wallClockDuration;
     }
     const el = videoRefs.value[index];
-    return el?.duration && isFinite(el.duration) ? el.duration : 0;
+    return el?.duration && Number.isFinite(el.duration) ? el.duration : 0;
 }
 
 const totalDuration = computed(() => {
@@ -313,12 +313,12 @@ function timeToPx(time: number): number {
 }
 
 function timeToPos(time: number): string {
-    return timeToPx(time) + "px";
+    return `${timeToPx(time)}px`;
 }
 
 function timeToWidth(duration: number, offset: number): string {
     const width = Math.min(timeToPx(duration), timelineWidth.value - timeToPx(offset));
-    return Math.max(width, 4) + "px";
+    return `${Math.max(width, 4)}px`;
 }
 
 function pxToTime(px: number): number {
