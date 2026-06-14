@@ -13,7 +13,7 @@ public class AlwaysOnServerFestivals
 {
     private const string StartNowText = "Type !event to start now";
 
-    // When does the offline-timeout clock start
+    // When the offline-timeout clock starts ticking
     private enum TimeoutStart
     {
         OnEntry,
@@ -24,43 +24,43 @@ public class AlwaysOnServerFestivals
     {
         public Func<bool> IsToday;
 
+        // Clear active-festival state once in-game time reaches this (HHMM, e.g. 1410 = 14:10)
         public int ResetCutoff;
         public bool RestoreHudOnReset;
 
+        // Main-event festivals run a host-triggered countdown then start the event;
+        // leave-only festivals (HasMainEvent = false) just wait for players to leave.
         public bool HasMainEvent;
-
         public Func<int> CountdownSeconds;
         public string AnnounceText;
-        public Action OnAnnounce; // optional action (add iridium star in Luau)
-        public bool AutoEndAfterCountdown;
+        public Action OnAnnounce; // e.g. add the iridium starfruit to the Luau soup
+        public bool AutoEndAfterCountdown; // host ends the festival once the countdown elapses (Fair)
+        public string EndLogText; // logged when AutoEndAfterCountdown fires
 
+        // Wall-clock backstop: kick everyone once this elapses (from entry or after the main event)
         public Func<double> TimeoutSeconds;
         public TimeoutStart TimeoutStart;
-        public string EndLogText;
     }
 
     private readonly List<FestivalSpec> _festivals;
 
-    // Current festival & run state
+    // Active festival and main-event countdown state
     private FestivalSpec _activeFestival;
     private DateTime? _runStartTime;
     private bool _announced;
     private bool _started;
+    private bool _eventCommandUsed;
 
-    private bool eventCommandUsed;
-
-    // Variables for timeout reset
+    // Wall-clock timeout backstop state
     private DateTime? _timeoutStartTime;
     private bool _timeoutWarned;
 
-    // Track if we're currently warping to festival to avoid repeated warps
     private bool _warpingToFestival;
-
-    // Track if we've started the festival end process
     private bool _startedFestivalEnd;
 
-    // Log throttle
-    private DateTime _lastLogTime = DateTime.MinValue;
+    // Independent per-second throttles for the two diagnostic log lines
+    private DateTime _lastStartLogTime = DateTime.MinValue;
+    private DateTime _lastLeaveLogTime = DateTime.MinValue;
 
     protected readonly IModHelper _helper;
     protected readonly IMonitor _monitor;
@@ -152,7 +152,6 @@ public class AlwaysOnServerFestivals
                 HasMainEvent = false,
                 TimeoutStart = TimeoutStart.OnEntry,
                 TimeoutSeconds = () => TicksToSeconds(Config.SpiritsEveTimeOut),
-                EndLogText = "Spirit's Eve timeout, triggering festival end",
             },
             new FestivalSpec
             {
@@ -171,7 +170,6 @@ public class AlwaysOnServerFestivals
                 HasMainEvent = false,
                 TimeoutStart = TimeoutStart.OnEntry,
                 TimeoutSeconds = () => TicksToSeconds(Config.WinterStarTimeOut),
-                EndLogText = "Winter Feast timeout, triggering festival end",
             },
         };
     }
@@ -207,7 +205,11 @@ public class AlwaysOnServerFestivals
     /// </summary>
     public void UpdateFestivalStatus()
     {
-        if (Game1.otherFarmers.Count == 0)
+        // Reset once we hold festival state and time has passed the festival window.
+        // Not gated on connected players: a festival can end with nobody present
+        // (the no-players leave path), and that stale state must still clear so it
+        // doesn't poison the next festival. The _activeFestival guard keeps it one-shot.
+        if (_activeFestival == null)
         {
             return;
         }
@@ -244,24 +246,26 @@ public class AlwaysOnServerFestivals
         _runStartTime = null;
         _announced = false;
         _started = false;
-        eventCommandUsed = false;
+        _eventCommandUsed = false;
     }
 
     /// <summary>
-    /// Called every tick. Handles warping the host to the festival when other players are ready.
-    /// Uses the same approach as the game's DedicatedServer - monitor ready state and warp directly.
+    /// Called every tick. Warps the host to the festival when other players are ready,
+    /// mirroring the game's DedicatedServer (monitor ready state, then warp directly).
     /// </summary>
     public void HandleFestivalStart()
     {
-        // Debug: log once per second on festival days
-        if (Game1.whereIsTodaysFest != null && (DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
+        if (
+            Game1.whereIsTodaysFest != null
+            && (DateTime.UtcNow - _lastStartLogTime).TotalSeconds >= 1.0
+        )
         {
-            _lastLogTime = DateTime.UtcNow;
+            _lastStartLogTime = DateTime.UtcNow;
             var numberReady = Game1.netReady.GetNumberReady("festivalStart");
             var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
             _monitor.Log(
                 $"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
-                LogLevel.Info
+                LogLevel.Trace
             );
         }
 
@@ -270,13 +274,11 @@ public class AlwaysOnServerFestivals
             return;
         }
 
-        // Already at festival or already warping
         if (Game1.CurrentEvent?.isFestival == true || _warpingToFestival)
         {
             return;
         }
 
-        // Check if there's a festival today and others are ready
         if (Game1.whereIsTodaysFest != null && CheckOthersReady("festivalStart"))
         {
             _monitor.Log(
@@ -292,7 +294,7 @@ public class AlwaysOnServerFestivals
             locationRequest.OnWarp += delegate
             {
                 _warpingToFestival = false;
-                SetFestivalAvailableFlag();
+                BeginActiveFestival();
             };
 
             int x = -1;
@@ -303,9 +305,10 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Set the appropriate festival available flag based on today's festival.
+    /// Mark today's festival active and reset its main-event countdown state.
+    /// Called once the host finishes warping into the festival.
     /// </summary>
-    private void SetFestivalAvailableFlag()
+    private void BeginActiveFestival()
     {
         _activeFestival = _festivals.FirstOrDefault(spec => spec.IsToday());
         _runStartTime = null;
@@ -346,14 +349,13 @@ public class AlwaysOnServerFestivals
         return false;
     }
 
+    /// <summary>
+    /// Called once per second. Drives the active festival's main-event countdown
+    /// (or, for leave-only festivals, just the timeout backstop).
+    /// </summary>
     public void HandleFestivalEvents()
     {
-        if (Game1.CurrentEvent == null || !Game1.CurrentEvent.isFestival)
-        {
-            return;
-        }
-
-        if (_activeFestival == null)
+        if (Game1.CurrentEvent?.isFestival != true || _activeFestival == null)
         {
             return;
         }
@@ -369,11 +371,12 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Festivals with a host-triggered main event
+    /// Announce a countdown, start the host-triggered main event when it elapses,
+    /// then (for the Fair) auto-end. !event short-circuits the countdown.
     /// </summary>
     private void RunMainEventCountdown(FestivalSpec spec)
     {
-        if (eventCommandUsed)
+        if (_eventCommandUsed)
         {
             _runStartTime = DateTime.UtcNow.AddSeconds(-spec.CountdownSeconds());
             if (!_announced)
@@ -381,7 +384,7 @@ public class AlwaysOnServerFestivals
                 spec.OnAnnounce?.Invoke();
                 _announced = true;
             }
-            eventCommandUsed = false;
+            _eventCommandUsed = false;
         }
 
         if (!_runStartTime.HasValue)
@@ -416,6 +419,7 @@ public class AlwaysOnServerFestivals
             _started = true;
         }
 
+        // +5 ticks of slack so the main event has been kicked off before we start its timeout / auto-end
         if (elapsed >= countdownSeconds + 5.0 / 60.0)
         {
             if (spec.TimeoutStart == TimeoutStart.AfterMainEvent)
@@ -433,25 +437,20 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Festivals with no host-triggered main event
+    /// Festivals with no host-triggered main event. Like the game's DedicatedServer,
+    /// the host only leaves once other players are ready (handled in
+    /// <see cref="HandleFestivalLeave"/>); here we just run the wall-clock backstop
+    /// so an empty or AFK festival still ends.
     /// </summary>
     private void RunLeaveOnly(FestivalSpec spec)
     {
-        if (!_runStartTime.HasValue)
-        {
-            _runStartTime = DateTime.UtcNow;
-        }
-
         RunOfflineTimeout(spec);
-
-        if (ElapsedSeconds(_runStartTime) >= TicksToSeconds(10) && !_startedFestivalEnd)
-        {
-            _monitor.Log(spec.EndLogText);
-            Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
-            _startedFestivalEnd = true;
-        }
     }
 
+    /// <summary>
+    /// Wall-clock backstop: warn at <see cref="AlwaysOnConfig.FestivalExitWarningSeconds"/>
+    /// before the timeout, then kick everyone (offline mode) so a stalled festival can't hang.
+    /// </summary>
     private void RunOfflineTimeout(FestivalSpec spec)
     {
         if (!_timeoutStartTime.HasValue)
@@ -462,6 +461,7 @@ public class AlwaysOnServerFestivals
         double resetElapsed = ElapsedSeconds(_timeoutStartTime);
         double timeoutSeconds = spec.TimeoutSeconds();
 
+        // FestivalExitWarningSeconds is already seconds (unlike the *TimeOut configs, which are ticks)
         if (!_timeoutWarned && resetElapsed >= timeoutSeconds - Config.FestivalExitWarningSeconds)
         {
             _helper.SendPublicMessage(
@@ -478,50 +478,52 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Called every tick. Handles leaving the festival when other players are ready.
-    /// Uses TryStartEndFestivalDialogue like the game's DedicatedServer does.
+    /// Called every tick. Ends the festival via TryStartEndFestivalDialogue, like the
+    /// game's DedicatedServer: immediately once the last player leaves, otherwise once
+    /// the remaining players are ready to leave.
     /// </summary>
     public void HandleFestivalLeave()
     {
-        if (Game1.otherFarmers.Count == 0)
-        {
-            return;
-        }
-
-        // Only handle if we're at a festival and haven't started ending yet
         if (Game1.CurrentEvent?.isFestival != true || _startedFestivalEnd)
         {
             return;
         }
 
-        // Debug: log festivalEnd ready state once per second
-        var endReady = Game1.netReady.GetNumberReady("festivalEnd");
-        var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
-        if ((DateTime.UtcNow - _lastLogTime).TotalSeconds >= 1.0)
+        // No players left at the festival: end it now so the host isn't stranded
+        // (mirrors DedicatedServer.Tick's onlineIds.Count == 0 branch).
+        if (Game1.otherFarmers.Count == 0)
         {
-            _lastLogTime = DateTime.UtcNow;
+            EndFestival("No players remaining at festival, triggering end dialogue");
+            return;
+        }
+
+        if ((DateTime.UtcNow - _lastLeaveLogTime).TotalSeconds >= 1.0)
+        {
+            _lastLeaveLogTime = DateTime.UtcNow;
+            var endReady = Game1.netReady.GetNumberReady("festivalEnd");
+            var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
             _monitor.Log(
                 $"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
-                LogLevel.Info
+                LogLevel.Trace
             );
         }
 
         if (CheckOthersReady("festivalEnd"))
         {
-            _monitor.Log(
-                "Other players ready to leave festival, triggering end dialogue",
-                LogLevel.Info
-            );
-            Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
-            _startedFestivalEnd = true;
+            EndFestival("Other players ready to leave festival, triggering end dialogue");
         }
     }
 
+    private void EndFestival(string reason)
+    {
+        _monitor.Log(reason, LogLevel.Info);
+        Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+        _startedFestivalEnd = true;
+    }
+
     /// <summary>
-    /// Starts the current days event if there is any.
+    /// !event chat command: force-start today's main-event countdown.
     /// </summary>
-    /// <param name="args"></param>
-    /// <param name="msg"></param>
     private void StartEventCommand(string[] args, ReceivedMessage msg)
     {
         if (Game1.CurrentEvent is not { isFestival: true })
@@ -542,7 +544,7 @@ public class AlwaysOnServerFestivals
             return;
         }
 
-        eventCommandUsed = true;
+        _eventCommandUsed = true;
         _activeFestival = spec;
     }
 }

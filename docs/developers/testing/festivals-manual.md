@@ -1,6 +1,6 @@
 # Manual Testing: Festivals
 
-Runbook for manually reproducing festival behavior. The sleep-through requirement (do not use `/debug day` to skip to a festival day) is the rule at [.claude/rules/host-automation.md](https://github.com/stardew-valley-dedicated-server/server/blob/master/.claude/rules/host-automation.md), item 3.
+Runbook for manually reproducing festival behavior. For how the server handles festivals (warp-in, countdown, leave, timeout backstop) and a per-festival reference, see [Festival Handling](../architecture/festival-handling.md). The sleep-through requirement (do not use `/debug day` to skip to a festival day) is the rule at [.claude/rules/host-automation.md](https://github.com/stardew-valley-dedicated-server/server/blob/master/.claude/rules/host-automation.md), item 3.
 
 ## Quick Setup
 
