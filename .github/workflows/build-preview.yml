@@ -255,7 +255,9 @@ jobs:
     uses: ./.github/workflows/build-image.yml
     with:
       image_name: sdvd/steam-service
-      context: ./tools/steam-service
+      # Repo root, not ./tools/steam-service — the Dockerfile COPYs the repo-level
+      # Directory.Build.props and .editorconfig (code-style enforcement).
+      context: .
       dockerfile: ./tools/steam-service/Dockerfile
       version: ${{ needs.calculate-version.outputs.preview_version }}
       additional_tag: preview
