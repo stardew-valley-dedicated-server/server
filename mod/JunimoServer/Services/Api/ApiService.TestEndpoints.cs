@@ -297,7 +297,8 @@ public partial class ApiService
 
             // Push the reconciled date + time to NetWorldState so peers replicate them (both are
             // replicated NetFields; see decompiled Game1.cs:8264 for Stardew's own day-end usage).
-            Game1.netWorldState.Value.UpdateFromGame1();
+            // Null-safe: netWorldState.Value is null before a save loads.
+            Game1.netWorldState?.Value?.UpdateFromGame1();
         });
 
         Monitor.Log(

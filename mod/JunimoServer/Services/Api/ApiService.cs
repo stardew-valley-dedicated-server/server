@@ -3996,7 +3996,8 @@ public partial class ApiService : ModService
             // local write never reaches clients, which keep their stale time until the host's
             // next natural 10-minute tick broadcasts a delta. Push it so SetTime is observable
             // on peers immediately (mirrors /test/set_date's same UpdateFromGame1 call).
-            Game1.netWorldState.Value.UpdateFromGame1();
+            // Null-safe: netWorldState.Value is null before a save loads.
+            Game1.netWorldState?.Value?.UpdateFromGame1();
         });
         Monitor.Log($"Time set to {time} via API", LogLevel.Info);
 

@@ -314,10 +314,18 @@ public class AlwaysOnServerFestivals
     /// </summary>
     private void BeginActiveFestival()
     {
+        // Clear the end/timeout latches too, not just countdown state. Normally
+        // UpdateFestivalStatus's reset-cutoff path clears them when the prior festival's day
+        // ends, but a date jump (/test/set_date) lands at 06:00 — below any ResetCutoff — so a
+        // prior festival's _startedFestivalEnd can survive into the next one and make
+        // HandleFestivalLeave early-return, stranding it on the wall-clock timeout. Resetting
+        // here makes each festival start clean regardless of how the day changed.
+        ResetFestivalState();
         _activeFestival = _festivals.FirstOrDefault(spec => spec.IsToday());
         _runStartTime = null;
         _announced = false;
         _started = false;
+        _eventCommandUsed = false;
     }
 
     /// <summary>
