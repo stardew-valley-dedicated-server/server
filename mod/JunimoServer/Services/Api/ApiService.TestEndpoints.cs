@@ -276,6 +276,14 @@ public partial class ApiService
             };
         }
 
+        // Fail closed before mutating: with no world loaded netWorldState.Value is null, so the
+        // replication push below would silently no-op while we still reported Success — E2E setup
+        // would advance on a date jump that never reached peers. (gameMode == 3 is playingGameMode.)
+        if (Game1.gameMode != 3 || !Game1.IsServer)
+        {
+            return new TestSetDateResponse { Success = false, Error = "Server not ready" };
+        }
+
         await RunOnGameThreadAsync(() =>
         {
             Game1.season = season;
@@ -297,8 +305,7 @@ public partial class ApiService
 
             // Push the reconciled date + time to NetWorldState so peers replicate them (both are
             // replicated NetFields; see decompiled Game1.cs:8264 for Stardew's own day-end usage).
-            // Null-safe: netWorldState.Value is null before a save loads.
-            Game1.netWorldState?.Value?.UpdateFromGame1();
+            Game1.netWorldState.Value.UpdateFromGame1();
         });
 
         Monitor.Log(
