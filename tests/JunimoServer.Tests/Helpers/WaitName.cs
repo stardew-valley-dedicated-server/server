@@ -146,4 +146,14 @@ public enum WaitName
     // CabinPlacementValidationTests.cs (2)
     Polling_CabinPlacement_Moved,
     Polling_CabinPlacement_Rejected,
+
+    // FestivalTests.cs (8)
+    Polling_Festival_DayConfirmed,
+    Polling_Festival_ClientWindowSynced,
+    Polling_Festival_BecameActive,
+    Polling_Festival_StillActiveAfterSettle,
+    Polling_Festival_EndedAfterLeave,
+    Polling_Festival_EndedNoPlayers,
+    Polling_Festival_NextFestivalEndedOnLeave,
+    Polling_Festival_MainEventStillActive,
 }

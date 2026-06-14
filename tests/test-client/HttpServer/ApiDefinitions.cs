@@ -258,6 +258,16 @@ public class ApiDefinitions
 
     [ApiEndpoint(
         "POST",
+        "/actions/leave_festival",
+        Summary = "Leave the festival",
+        Description = "Vote to leave the current festival (TryStartEndFestivalDialogue). No-op if not at a festival.",
+        Tag = "Actions"
+    )]
+    [ApiResponse(typeof(LeaveFestivalResult), 200)]
+    private void LeaveFestival() { }
+
+    [ApiEndpoint(
+        "POST",
         "/actions/warp",
         Summary = "Warp the player",
         Description = "Queue an asynchronous warp to a location/tile. Caller must poll /status to confirm arrival.",

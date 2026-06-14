@@ -576,6 +576,12 @@ public class ModEntry : Mod
             _ => ExecuteOnGameThread(() => _actionsController!.GoToSleep())
         );
 
+        // POST /actions/leave_festival - Vote to leave the current festival
+        _server.Post(
+            "actions/leave_festival",
+            _ => ExecuteOnGameThread(() => _actionsController!.LeaveFestival())
+        );
+
         // POST /actions/warp - Queue a warp to the given location/tile (async; caller polls /status to confirm)
         _server.Post(
             "actions/warp",

@@ -264,12 +264,16 @@ public class AlwaysOnServerFestivals
             var numberReady = Game1.netReady.GetNumberReady("festivalStart");
             var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
             _monitor.Log(
-                $"[Festival] otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
+                $"[Festival] online={CountOnlineOtherPlayers()}, otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
                 LogLevel.Trace
             );
         }
 
-        if (Game1.otherFarmers.Count == 0)
+        // Don't warp the host in if nobody (online, non-disconnecting) is there to attend.
+        // Consistent with the no-players end check; CurrentEvent is null here so otherFarmers
+        // would be live, but use the same online count so a player disconnecting mid-warp-in is
+        // seen immediately rather than one removeDisconnectedFarmers pass later.
+        if (CountOnlineOtherPlayers() == 0)
         {
             return;
         }
@@ -347,6 +351,30 @@ public class AlwaysOnServerFestivals
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Count online non-host players, excluding any mid-disconnect, mirroring how the game's
+    /// <c>DedicatedServer</c> builds its <c>onlineIds</c> set (DedicatedServer.cs:286-293).
+    ///
+    /// <para>
+    /// Do NOT use <c>Game1.otherFarmers.Count</c> for "is the festival empty?". A player who
+    /// disconnects mid-festival is only <i>marked</i> in <c>disconnectingFarmers</c>; the actual
+    /// <c>Game1.otherFarmers.Remove</c> runs in <c>Multiplayer.removeDisconnectedFarmers</c>, which
+    /// is gated on <c>Game1.CurrentEvent == null</c> (Multiplayer.cs:1821). So during a festival
+    /// the count never drops — and gating the no-players force-end on it would hang the festival
+    /// forever (event up → not removed → count stays 1 → never ends → event stays up).
+    /// <c>isDisconnecting</c> is the signal the engine itself uses to see through that.
+    /// </para>
+    /// </summary>
+    private static int CountOnlineOtherPlayers()
+    {
+        return Game1
+            .getOnlineFarmers()
+            .Count(f =>
+                f.UniqueMultiplayerID != Game1.player.UniqueMultiplayerID
+                && !Game1.Multiplayer.isDisconnecting(f)
+            );
     }
 
     /// <summary>
@@ -481,9 +509,10 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Called every tick. Ends the festival like the game's DedicatedServer: immediately
-    /// once the last player leaves (forceEndFestival), otherwise once the remaining players
-    /// are ready to leave (TryStartEndFestivalDialogue).
+    /// Called every tick. Ends the festival like the game's DedicatedServer: once no online
+    /// players remain, or once the remaining players are ready to leave. Both paths go through
+    /// <c>TryStartEndFestivalDialogue</c> (the host's own festivalEnd ready then satisfies the
+    /// check, since NumberRequired excludes disconnecting players) — matching DedicatedServer.cs:306.
     /// </summary>
     public void HandleFestivalLeave()
     {
@@ -492,13 +521,16 @@ public class AlwaysOnServerFestivals
             return;
         }
 
-        // No players left at the festival: end it now so the host isn't stranded
-        // (mirrors DedicatedServer.Tick's onlineIds.Count == 0 branch).
-        if (Game1.otherFarmers.Count == 0)
+        // No online players left at the festival: end it so the host isn't stranded. Mirrors
+        // DedicatedServer.Tick's onlineIds.Count == 0 branch (DedicatedServer.cs:294-308), which
+        // ends via TryStartEndFestivalDialogue (force: false) — with no one else online the host's
+        // own festivalEnd ready satisfies the check and the festival ends gracefully. Counts
+        // online non-disconnecting players, NOT otherFarmers.Count (see CountOnlineOtherPlayers).
+        if (CountOnlineOtherPlayers() == 0)
         {
             EndFestival(
                 "No players remaining at festival, ending and sending host home",
-                force: true
+                force: false
             );
             return;
         }
@@ -509,7 +541,7 @@ public class AlwaysOnServerFestivals
             var endReady = Game1.netReady.GetNumberReady("festivalEnd");
             var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
             _monitor.Log(
-                $"[FestivalLeave] ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
+                $"[FestivalLeave] online={CountOnlineOtherPlayers()}, ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
                 LogLevel.Trace
             );
         }
@@ -524,11 +556,12 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// End the active festival. <paramref name="force"/> = true calls
-    /// <c>forceEndFestival</c> (ends immediately, warps everyone home, no dialog) for the
-    /// no-players and timeout paths; false uses <c>TryStartEndFestivalDialogue</c> (the
-    /// ReadyCheckDialog flow) for the ready-check-met path, matching the game's DedicatedServer.
-    /// The <c>?.</c> guards against <c>CurrentEvent</c> clearing before this runs.
+    /// End the active festival. <paramref name="force"/> = true calls <c>forceEndFestival</c>
+    /// (ends immediately, warps everyone home, no dialog) for the wall-clock timeout backstop,
+    /// where players may still be online but stalled. false uses <c>TryStartEndFestivalDialogue</c>
+    /// (the ReadyCheckDialog flow) for the graceful paths — players ready to leave, or no online
+    /// players remaining — matching the game's DedicatedServer. The <c>?.</c> guards against
+    /// <c>CurrentEvent</c> clearing before this runs.
     /// </summary>
     private void EndFestival(string reason, bool force)
     {

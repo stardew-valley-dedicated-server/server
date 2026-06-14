@@ -3992,6 +3992,11 @@ public partial class ApiService : ModService
         {
             Game1.timeOfDay = time;
             Game1.gameTimeInterval = 0;
+            // timeOfDay is a replicated NetWorldState field; without this push the host's
+            // local write never reaches clients, which keep their stale time until the host's
+            // next natural 10-minute tick broadcasts a delta. Push it so SetTime is observable
+            // on peers immediately (mirrors /test/set_date's same UpdateFromGame1 call).
+            Game1.netWorldState.Value.UpdateFromGame1();
         });
         Monitor.Log($"Time set to {time} via API", LogLevel.Info);
 

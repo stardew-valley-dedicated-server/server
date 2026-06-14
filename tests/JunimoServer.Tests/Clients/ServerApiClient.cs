@@ -445,6 +445,43 @@ public class TestCropsResponse
 }
 
 /// <summary>
+/// Response from /test/festival_state GET endpoint (test-only). Mirrors the server-side
+/// TestFestivalStateResponse DTO — a direct read of the host's festival state.
+/// </summary>
+public class TestFestivalStateResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("isFestivalDay")]
+    public bool IsFestivalDay { get; set; }
+
+    [JsonPropertyName("whereIsTodaysFest")]
+    public string? WhereIsTodaysFest { get; set; }
+
+    [JsonPropertyName("isFestivalActive")]
+    public bool IsFestivalActive { get; set; }
+
+    [JsonPropertyName("festivalStartReady")]
+    public int FestivalStartReady { get; set; }
+
+    [JsonPropertyName("festivalStartRequired")]
+    public int FestivalStartRequired { get; set; }
+
+    [JsonPropertyName("festivalEndReady")]
+    public int FestivalEndReady { get; set; }
+
+    [JsonPropertyName("festivalEndRequired")]
+    public int FestivalEndRequired { get; set; }
+
+    [JsonPropertyName("timeOfDay")]
+    public int TimeOfDay { get; set; }
+}
+
+/// <summary>
 /// Response from /test/set_date POST endpoint.
 /// </summary>
 public class TestSetDateResponse
@@ -1223,6 +1260,20 @@ public class ServerApiClient : IDisposable
         var response = await _httpClient.GetAsync("/test/crops", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestCropsResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: read the host's current festival state directly (whether a festival
+    /// is active, today's festival map, and the festivalStart/festivalEnd ready counts).
+    /// Used by FestivalTests to assert festival-active / festival-ended without proxying
+    /// through the client location (which reads "Temp" during a festival).
+    /// GET /test/festival_state
+    /// </summary>
+    public async Task<TestFestivalStateResponse?> GetFestivalState(CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync("/test/festival_state", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestFestivalStateResponse>(ct);
     }
 
     /// <summary>

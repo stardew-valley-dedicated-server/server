@@ -217,6 +217,15 @@ public class WarpResult
     public string? LocationName { get; set; }
 }
 
+public class LeaveFestivalResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 public class PlacePotResult
 {
     [JsonPropertyName("success")]
@@ -407,6 +416,24 @@ public class FarmerInfoResponse
 
     [JsonPropertyName("uniqueId")]
     public string UniqueId { get; set; } = string.Empty;
+
+    [JsonPropertyName("weatherIcon")]
+    public int WeatherIcon { get; set; }
+
+    [JsonPropertyName("whereIsTodaysFest")]
+    public string? WhereIsTodaysFest { get; set; }
+
+    [JsonPropertyName("isFestival")]
+    public bool IsFestival { get; set; }
+
+    [JsonPropertyName("festivalStartReady")]
+    public int FestivalStartReady { get; set; }
+
+    [JsonPropertyName("festivalStartRequired")]
+    public int FestivalStartRequired { get; set; }
+
+    [JsonPropertyName("timeOfDay")]
+    public int TimeOfDay { get; set; }
 }
 
 #endregion
@@ -560,6 +587,18 @@ public class ActionsClient
     public Task<SleepResult?> Sleep()
     {
         return _client.PostAsync<SleepResult>("/actions/sleep", new { });
+    }
+
+    /// <summary>
+    /// Vote to leave the current festival (the real-player exit path). Returns
+    /// Success=false if the client isn't at a festival. The festival only ends
+    /// once the host is also ready, so callers should then poll
+    /// <see cref="ServerApiClient.GetFestivalState"/> for IsFestivalActive=false.
+    /// POST /actions/leave_festival
+    /// </summary>
+    public Task<LeaveFestivalResult?> LeaveFestival()
+    {
+        return _client.PostAsync<LeaveFestivalResult>("/actions/leave_festival", new { });
     }
 
     /// <summary>
@@ -1004,6 +1043,19 @@ public class GameTestClient : IDisposable
             PlayerName = status.Farmer?.Name,
             UniqueId = status.Farmer?.UniqueId,
         };
+    }
+
+    /// <summary>
+    /// Raw client-side farmer info, including the festival diagnostic fields
+    /// (weatherIcon, whereIsTodaysFest, festivalStart ready). Used to debug
+    /// festival-entry failures — the host warps in only when this client has
+    /// whereIsTodaysFest set locally and festivalStart ready.
+    /// GET /status
+    /// </summary>
+    public async Task<FarmerInfoResponse?> GetFestivalDebug()
+    {
+        var status = await GetAsync<StatusResponse>("/status");
+        return status?.Farmer;
     }
 
     /// <summary>
