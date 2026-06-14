@@ -121,6 +121,40 @@ public class ActionsController
     }
 
     /// <summary>
+    /// Vote to leave the current festival, exactly as a real player walking out does.
+    /// <c>Event.TryStartEndFestivalDialogue</c> sets this client's <c>festivalEnd</c> ready
+    /// flag and opens an auto-confirming <c>ReadyCheckDialog</c>; once the host is also ready
+    /// (its <c>HandleFestivalLeave</c> sees <c>CheckOthersReady("festivalEnd")</c>), the
+    /// festival ends for everyone. No-op (returns Success=false) if not at a festival.
+    /// </summary>
+    public LeaveFestivalResult LeaveFestival()
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new LeaveFestivalResult { Success = false, Error = "Not in a game world" };
+        }
+
+        var currentEvent = Game1.CurrentEvent;
+        if (currentEvent is not { isFestival: true })
+        {
+            return new LeaveFestivalResult
+            {
+                Success = false,
+                Error = "Not currently at a festival",
+            };
+        }
+
+        var started = currentEvent.TryStartEndFestivalDialogue(Game1.player);
+        return new LeaveFestivalResult
+        {
+            Success = started,
+            Error = started
+                ? null
+                : "TryStartEndFestivalDialogue declined (not local player or no longer a festival)",
+        };
+    }
+
+    /// <summary>
     /// Place a Garden Pot at the given tile on the player's current location. The
     /// IndoorPot ctor reads <c>Game1.currentLocation</c> when initializing its inner
     /// HoeDirt, so the player must already be at <paramref name="locationName"/>.
@@ -297,6 +331,12 @@ public class WarpResult
     public string? Message { get; set; }
     public string? Error { get; set; }
     public string? LocationName { get; set; }
+}
+
+public class LeaveFestivalResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
 }
 
 public class WarpParams

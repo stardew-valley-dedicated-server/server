@@ -161,6 +161,12 @@ public static class MenuDetector
             IsMainPlayer = Game1.player.IsMainPlayer,
             UniqueId = Game1.player.UniqueMultiplayerID.ToString(),
             CurrentLocation = Game1.player.currentLocation?.NameOrUniqueName,
+            WeatherIcon = Game1.weatherIcon,
+            WhereIsTodaysFest = Game1.whereIsTodaysFest,
+            IsFestival = Game1.CurrentEvent?.isFestival == true,
+            FestivalStartReady = Game1.netReady.GetNumberReady("festivalStart"),
+            FestivalStartRequired = Game1.netReady.GetNumberRequired("festivalStart"),
+            TimeOfDay = Game1.timeOfDay,
         };
     }
 
@@ -371,6 +377,18 @@ public class FarmerInfo
     public bool IsMainPlayer { get; set; }
     public string UniqueId { get; set; } = "";
     public string? CurrentLocation { get; set; }
+
+    // Client-side festival state. Festival entry keys on the client's LOCAL festival state
+    // (warpFarmer's guard reads weatherIcon/whereIsTodaysFest/timeOfDay on this client), so
+    // tests gate the warp-in on these and dump them when an entry fails to debug which guard
+    // is unmet. WhereIsTodaysFest/WeatherIcon/TimeOfDay are load-bearing for that gate; the
+    // ready counts and IsFestival are diagnostic-only.
+    public int WeatherIcon { get; set; }
+    public string? WhereIsTodaysFest { get; set; }
+    public bool IsFestival { get; set; }
+    public int FestivalStartReady { get; set; }
+    public int FestivalStartRequired { get; set; }
+    public int TimeOfDay { get; set; }
 }
 
 public class MenuButtonsInfo

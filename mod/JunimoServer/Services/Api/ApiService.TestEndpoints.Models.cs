@@ -122,6 +122,45 @@ public class TestHouseUpgradeResponse
 }
 
 /// <summary>
+/// Response from GET /test/festival_state (test-only). A direct read of the host's
+/// festival state, so E2E tests can assert "festival still active" / "festival ended"
+/// without proxying through the client's location (which reads "Temp" during a festival)
+/// or the timeOfDay jump. Mirrors the signals the AlwaysOnServerFestivals service acts on.
+/// </summary>
+public class TestFestivalStateResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>True if today is a festival day (SDateHelper.IsFestivalToday).</summary>
+    public bool IsFestivalDay { get; set; }
+
+    /// <summary>
+    /// The festival map name today, or null. Populated only by a real day-transition
+    /// (sleep-through) — empty after /test/set_date alone (see host-automation.md item 3).
+    /// </summary>
+    public string? WhereIsTodaysFest { get; set; }
+
+    /// <summary>
+    /// True once the festival event is loaded and running (Game1.CurrentEvent.isFestival).
+    /// This is the headline signal: it stays true while players are at the festival and
+    /// flips to false when the festival ends.
+    /// </summary>
+    public bool IsFestivalActive { get; set; }
+
+    /// <summary>Game1.netReady ready/required counts for the festivalStart check.</summary>
+    public int FestivalStartReady { get; set; }
+    public int FestivalStartRequired { get; set; }
+
+    /// <summary>Game1.netReady ready/required counts for the festivalEnd check.</summary>
+    public int FestivalEndReady { get; set; }
+    public int FestivalEndRequired { get; set; }
+
+    /// <summary>Current in-game time (HHMM). Jumps to the festival's reset cutoff once it ends.</summary>
+    public int TimeOfDay { get; set; }
+}
+
+/// <summary>
 /// Response from POST /test/stamp_claim (test-only). Constructs an abandoned-claim slot
 /// deterministically: stamps a synthetic userID onto an uncustomized, homed farmhandData entry,
 /// reproducing the on-disk shape (<c>userID != "" &amp;&amp; isCustomized == false</c>, homeLocation

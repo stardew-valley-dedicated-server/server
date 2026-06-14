@@ -56,6 +56,9 @@ public partial class ApiService
                     case "/test/crops":
                         await WriteJsonAsync(response, await HandleGetTestCropsAsync());
                         return;
+                    case "/test/festival_state":
+                        await WriteJsonAsync(response, await HandleGetTestFestivalStateAsync());
+                        return;
                 }
                 break;
             case "POST":
@@ -172,6 +175,41 @@ public partial class ApiService
     }
 
     [ApiEndpoint(
+        "GET",
+        "/test/festival_state",
+        Summary = "Read the host's current festival state (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestFestivalStateResponse), 200)]
+    private async Task<TestFestivalStateResponse> HandleGetTestFestivalStateAsync()
+    {
+        var result = new TestFestivalStateResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                result.IsFestivalDay = SDateHelper.IsFestivalToday();
+                result.WhereIsTodaysFest = Game1.whereIsTodaysFest;
+                result.IsFestivalActive = Game1.CurrentEvent?.isFestival == true;
+                result.FestivalStartReady = Game1.netReady.GetNumberReady("festivalStart");
+                result.FestivalStartRequired = Game1.netReady.GetNumberRequired("festivalStart");
+                result.FestivalEndReady = Game1.netReady.GetNumberReady("festivalEnd");
+                result.FestivalEndRequired = Game1.netReady.GetNumberRequired("festivalEnd");
+                result.TimeOfDay = Game1.timeOfDay;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
         "POST",
         "/test/set_date",
         Summary = "Set season/day/year directly (test-only)",
@@ -238,16 +276,35 @@ public partial class ApiService
             };
         }
 
+        // Fail closed before mutating: with no world loaded netWorldState.Value is null, so the
+        // replication push below would silently no-op while we still reported Success — E2E setup
+        // would advance on a date jump that never reached peers. (gameMode == 3 is playingGameMode.)
+        if (Game1.gameMode != 3 || !Game1.IsServer)
+        {
+            return new TestSetDateResponse { Success = false, Error = "Server not ready" };
+        }
+
         await RunOnGameThreadAsync(() =>
         {
             Game1.season = season;
             Game1.dayOfMonth = body.Day;
             Game1.year = body.Year;
-            // Writes to Game1.season/dayOfMonth/year mirror NetWorldState
-            // fields that replicate to peers. Without this push, the next
-            // peer's sendServerIntroduction snapshot carries the previous
-            // day's stale NetField — see decompiled Game1.cs:8264 for
-            // Stardew's own day-end usage of the same primitive.
+
+            // Reconcile the date-dependent host state, mirroring the engine's own new-day reset
+            // block (newDayAfterFade, Game1.cs:7818/7842/updateWeatherIcon): a date jump is "start
+            // of this day", so reset to morning, clear any prior festival target, and recompute the
+            // host's weather icon from the new date. weatherIcon is local (not replicated) — each
+            // instance derives it from isFestivalDay — so this only fixes the host; clients recompute
+            // theirs once the date replicates. Without it, a stale weatherIcon == 1 (festival) bleeds
+            // onto a non-festival day, making performTenMinuteClockUpdate load a non-existent
+            // Data/Festivals/<season><day> file and crash the update loop.
+            Game1.timeOfDay = 600;
+            Game1.gameTimeInterval = 0;
+            Game1.whereIsTodaysFest = null;
+            Game1.updateWeatherIcon();
+
+            // Push the reconciled date + time to NetWorldState so peers replicate them (both are
+            // replicated NetFields; see decompiled Game1.cs:8264 for Stardew's own day-end usage).
             Game1.netWorldState.Value.UpdateFromGame1();
         });
 

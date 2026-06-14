@@ -230,6 +230,7 @@ export default withMermaid(
                             { text: "Networking Internals", link: "/developers/architecture/networking" },
                             { text: "Game Engine Reference", link: "/developers/architecture/game-engine-notes" },
                             { text: "Mod Architecture", link: "/developers/architecture/mod-architecture" },
+                            { text: "Festival Handling", link: "/developers/architecture/festival-handling" },
                             { text: "Events Schema", link: "/developers/events-schema" },
                         ],
                     },
