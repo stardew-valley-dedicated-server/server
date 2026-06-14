@@ -60,7 +60,9 @@ RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERS
 # ============================================================================
 # Stage 3: Build test-client mod using game DLLs
 # ============================================================================
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS mod-builder
+# SDK 10.0 (not 6.0): ModBuildConfig 4.4.0's analyzer targets Roslyn 4.9, which
+# the 6.0 SDK's 4.3 compiler rejects (CS9057). The net6.0 TFM still builds fine.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS mod-builder
 
 ARG BUILD_CONFIGURATION=Release
 
