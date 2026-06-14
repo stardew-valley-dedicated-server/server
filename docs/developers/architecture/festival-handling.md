@@ -10,9 +10,9 @@ A festival day runs through four phases, each driven from a per-tick or per-seco
 
 2. **Main event** — `HandleFestivalEvents` (per second), for festivals that have one. It announces a countdown in chat, and when the countdown elapses the host answers the festival host's "start the event?" dialogue. The `!event` chat command short-circuits the countdown and starts immediately.
 
-3. **Leave** — `HandleFestivalLeave` (per tick). The host triggers `TryStartEndFestivalDialogue` (ending the festival for everyone) in two cases, both matching the game's dedicated host: when the `festivalEnd` ready-check shows every remaining player is ready to leave, or immediately once the last player has left so the host isn't stranded.
+3. **Leave** — `HandleFestivalLeave` (per tick). The host ends the festival for everyone in two cases, both matching the game's dedicated host: when the `festivalEnd` ready-check shows every remaining player is ready to leave (via `TryStartEndFestivalDialogue`, the ReadyCheckDialog flow players expect when they vote to leave), or immediately once the last player has left so the host isn't stranded (via `forceEndFestival`, which ends without a dialog). Either way the game's own exit path warps every player home.
 
-4. **Reset** — `UpdateFestivalStatus` (on time change). In-game time is frozen while a festival event is active, so this runs only after the festival has ended and time resumes: once it passes the festival's window, active-festival state is cleared and the server returns to `online` mode. It is deliberately not gated on connected players, so a festival that ended with nobody present still clears its state instead of poisoning the next festival.
+4. **Reset** — `UpdateFestivalStatus` (on time change). In-game time is frozen while a festival event is active, so this runs only after the festival has ended and time resumes: once it passes the festival's window, active-festival state is cleared. It is deliberately not gated on connected players, so a festival that ended with nobody present still clears its state instead of poisoning the next festival.
 
 ### Ready-check formula
 
@@ -20,7 +20,7 @@ A festival day runs through four phases, each driven from a per-tick or per-seco
 
 ### Timeout backstop
 
-Players drive entry and exit, but an AFK festival where no one votes to leave would otherwise stay open until its time window closes. `RunOfflineTimeout` is the wall-clock backstop: after `*TimeOut` elapses it warns players (`FestivalExitWarningSeconds` before the deadline) and then switches the server to `offline` mode, which disconnects everyone. It does not end the festival directly — but with the last player gone, the Leave phase's no-players path ends it on the next tick. There is no fixed "dwell then auto-leave" timer for leave-only festivals; they end on the `festivalEnd` ready-check, the no-players path, or (via this backstop's disconnect) the time window — nothing in between.
+Players drive entry and exit, but an AFK festival where no one votes to leave would otherwise stay open until its time window closes. `RunFestivalTimeout` is the wall-clock backstop: after `*TimeOut` elapses it warns players (`FestivalExitWarningSeconds` before the deadline) and then ends the festival directly via `forceEndFestival`, which warps every player home (and the host) with their connections intact — the same exit the game uses for a player-voted end. It does **not** disconnect anyone or take the server offline; a new client can still join afterward. There is no fixed "dwell then auto-leave" timer for leave-only festivals; they end on the `festivalEnd` ready-check, the no-players path, or this backstop — nothing in between.
 
 ## Per-festival reference
 

@@ -13,7 +13,7 @@ public class AlwaysOnServerFestivals
 {
     private const string StartNowText = "Type !event to start now";
 
-    // When the offline-timeout clock starts ticking
+    // When the timeout backstop clock starts ticking
     private enum TimeoutStart
     {
         OnEntry,
@@ -37,8 +37,11 @@ public class AlwaysOnServerFestivals
         public bool AutoEndAfterCountdown; // host ends the festival once the countdown elapses (Fair)
         public string EndLogText; // logged when AutoEndAfterCountdown fires
 
-        // Wall-clock backstop: kick everyone once this elapses (from entry or after the main event)
+        // Wall-clock backstop: end the festival and warp everyone home once this elapses
+        // (from entry or after the main event)
         public Func<double> TimeoutSeconds;
+
+        // Only read on the main-event path; leave-only festivals leave it defaulted (OnEntry).
         public TimeoutStart TimeoutStart;
     }
 
@@ -150,7 +153,6 @@ public class AlwaysOnServerFestivals
                 ResetCutoff = 2400,
                 RestoreHudOnReset = true,
                 HasMainEvent = false,
-                TimeoutStart = TimeoutStart.OnEntry,
                 TimeoutSeconds = () => TicksToSeconds(Config.SpiritsEveTimeOut),
             },
             new FestivalSpec
@@ -168,7 +170,6 @@ public class AlwaysOnServerFestivals
                 IsToday = SDateHelper.IsFeastOfWinterStarToday,
                 ResetCutoff = 1410,
                 HasMainEvent = false,
-                TimeoutStart = TimeoutStart.OnEntry,
                 TimeoutSeconds = () => TicksToSeconds(Config.WinterStarTimeOut),
             },
         };
@@ -233,7 +234,6 @@ public class AlwaysOnServerFestivals
 
     private void ResetFestivalState()
     {
-        Game1.options.setServerMode("online");
         _timeoutStartTime = null;
         _timeoutWarned = false;
         _warpingToFestival = false;
@@ -397,7 +397,7 @@ public class AlwaysOnServerFestivals
 
         if (spec.TimeoutStart == TimeoutStart.OnEntry)
         {
-            RunOfflineTimeout(spec);
+            RunFestivalTimeout(spec);
         }
 
         if (!_announced)
@@ -424,14 +424,12 @@ public class AlwaysOnServerFestivals
         {
             if (spec.TimeoutStart == TimeoutStart.AfterMainEvent)
             {
-                RunOfflineTimeout(spec);
+                RunFestivalTimeout(spec);
             }
 
             if (spec.AutoEndAfterCountdown && !_startedFestivalEnd)
             {
-                _monitor.Log(spec.EndLogText);
-                Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
-                _startedFestivalEnd = true;
+                EndFestival(spec.EndLogText, force: false);
             }
         }
     }
@@ -444,14 +442,15 @@ public class AlwaysOnServerFestivals
     /// </summary>
     private void RunLeaveOnly(FestivalSpec spec)
     {
-        RunOfflineTimeout(spec);
+        RunFestivalTimeout(spec);
     }
 
     /// <summary>
     /// Wall-clock backstop: warn at <see cref="AlwaysOnConfig.FestivalExitWarningSeconds"/>
-    /// before the timeout, then kick everyone (offline mode) so a stalled festival can't hang.
+    /// before the timeout, then end the festival and warp everyone home so a stalled
+    /// festival can't hang.
     /// </summary>
-    private void RunOfflineTimeout(FestivalSpec spec)
+    private void RunFestivalTimeout(FestivalSpec spec)
     {
         if (!_timeoutStartTime.HasValue)
         {
@@ -465,22 +464,26 @@ public class AlwaysOnServerFestivals
         if (!_timeoutWarned && resetElapsed >= timeoutSeconds - Config.FestivalExitWarningSeconds)
         {
             _helper.SendPublicMessage(
-                $"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or"
+                $"{Config.FestivalExitWarningSeconds / 60f:0.#} minutes to the exit or everyone will be sent home."
             );
-            _helper.SendPublicMessage("everyone will be kicked.");
             _timeoutWarned = true;
         }
 
-        if (resetElapsed >= timeoutSeconds)
+        // !_startedFestivalEnd so this and HandleFestivalLeave's no-players path don't
+        // both fire on the same tick.
+        if (resetElapsed >= timeoutSeconds && !_startedFestivalEnd)
         {
-            Game1.options.setServerMode("offline");
+            EndFestival(
+                "Festival timeout reached, ending festival and sending players home",
+                force: true
+            );
         }
     }
 
     /// <summary>
-    /// Called every tick. Ends the festival via TryStartEndFestivalDialogue, like the
-    /// game's DedicatedServer: immediately once the last player leaves, otherwise once
-    /// the remaining players are ready to leave.
+    /// Called every tick. Ends the festival like the game's DedicatedServer: immediately
+    /// once the last player leaves (forceEndFestival), otherwise once the remaining players
+    /// are ready to leave (TryStartEndFestivalDialogue).
     /// </summary>
     public void HandleFestivalLeave()
     {
@@ -493,7 +496,10 @@ public class AlwaysOnServerFestivals
         // (mirrors DedicatedServer.Tick's onlineIds.Count == 0 branch).
         if (Game1.otherFarmers.Count == 0)
         {
-            EndFestival("No players remaining at festival, triggering end dialogue");
+            EndFestival(
+                "No players remaining at festival, ending and sending host home",
+                force: true
+            );
             return;
         }
 
@@ -510,14 +516,31 @@ public class AlwaysOnServerFestivals
 
         if (CheckOthersReady("festivalEnd"))
         {
-            EndFestival("Other players ready to leave festival, triggering end dialogue");
+            EndFestival(
+                "Other players ready to leave festival, triggering end dialogue",
+                force: false
+            );
         }
     }
 
-    private void EndFestival(string reason)
+    /// <summary>
+    /// End the active festival. <paramref name="force"/> = true calls
+    /// <c>forceEndFestival</c> (ends immediately, warps everyone home, no dialog) for the
+    /// no-players and timeout paths; false uses <c>TryStartEndFestivalDialogue</c> (the
+    /// ReadyCheckDialog flow) for the ready-check-met path, matching the game's DedicatedServer.
+    /// The <c>?.</c> guards against <c>CurrentEvent</c> clearing before this runs.
+    /// </summary>
+    private void EndFestival(string reason, bool force)
     {
         _monitor.Log(reason, LogLevel.Info);
-        Game1.CurrentEvent.TryStartEndFestivalDialogue(Game1.player);
+        if (force)
+        {
+            Game1.CurrentEvent?.forceEndFestival(Game1.player);
+        }
+        else
+        {
+            Game1.CurrentEvent?.TryStartEndFestivalDialogue(Game1.player);
+        }
         _startedFestivalEnd = true;
     }
 
