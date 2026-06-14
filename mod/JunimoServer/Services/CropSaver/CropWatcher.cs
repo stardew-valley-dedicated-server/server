@@ -12,7 +12,14 @@ namespace JunimoServer.Services.CropSaver;
 
 public class CropWatcher
 {
-    private readonly Dictionary<(string, Vector2), bool> _previousHasCrop = new();
+    // Whether each tile had a crop. Double-buffered: CheckTile reads the last
+    // scan's state from _previousHasCrop and writes this scan's state to
+    // _currentHasCrop, then the two are swapped at scan end. Tiles whose
+    // soil/pot is gone simply aren't written this scan, so they drop out
+    // automatically — keeping the maps sized to live tiles, not every tile ever
+    // seen, with no per-scan allocation.
+    private Dictionary<(string, Vector2), bool> _previousHasCrop = new();
+    private Dictionary<(string, Vector2), bool> _currentHasCrop = new();
 
     private readonly Action<CropLocation> _onCropAdded;
     private readonly Action<CropLocation> _onCropRemoved;
@@ -40,6 +47,8 @@ public class CropWatcher
             return;
         }
         _timer = UpdateEveryTicks;
+
+        _currentHasCrop.Clear();
 
         Utility.ForEachLocation(location =>
         {
@@ -74,6 +83,12 @@ public class CropWatcher
 
             return true;
         });
+
+        // This scan's state becomes the next scan's baseline; the old map is
+        // cleared and reused. A harvested tile keeps its soil, so it's still
+        // scanned and rewritten — only tiles whose soil is actually gone fall
+        // out, leaving a replant to read as a fresh crop, not a stale one.
+        (_previousHasCrop, _currentHasCrop) = (_currentHasCrop, _previousHasCrop);
     }
 
     private void CheckTile(CropLocation cropLoc)
@@ -93,7 +108,7 @@ public class CropWatcher
                 _onCropAdded(cropLoc);
             }
 
-            _previousHasCrop[key] = hasCrop;
+            _currentHasCrop[key] = hasCrop;
             return;
         }
 
@@ -106,7 +121,7 @@ public class CropWatcher
             _onCropRemoved(cropLoc);
         }
 
-        _previousHasCrop[key] = hasCrop;
+        _currentHasCrop[key] = hasCrop;
     }
 }
 
