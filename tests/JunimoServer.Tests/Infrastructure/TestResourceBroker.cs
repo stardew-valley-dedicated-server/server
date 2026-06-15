@@ -41,6 +41,41 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// </summary>
     private static string BrokerKeyFor(string key, DockerHost host) => $"{key}@{host.Id}";
 
+    /// <summary>
+    /// Picks the exception a faulted server-acquisition hands to its waiters,
+    /// so the runner's exception-type classifier
+    /// (<c>TestRunState.ApplyTestFailed</c>) buckets stopOnFail cascade victims
+    /// as "canceled" while genuine outages stay "failed"/infrastructure.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="_stopOnFailNotified"/> is the precise signal (set only by
+    /// <see cref="NotifyStopOnFail"/>); gating on a bare <c>_runCts</c> would
+    /// also catch <c>DisposeAsync</c> and the pre-start abort fan-out, which
+    /// must remain real failures.
+    /// </para>
+    /// <para>
+    /// The OCE must be returned BARE (no inner exception, no wrapping):
+    /// <c>RunnerCallbacks.UnwrapException</c> walks to the deepest inner, so a
+    /// nested OCE whose deepest inner is something else silently reverts to
+    /// "failed".
+    /// </para>
+    /// </remarks>
+    private Exception BuildAcquisitionFault(string displayLabel, DockerHost host, Exception? cause)
+    {
+        if (_stopOnFailNotified && !host.IsPoisoned)
+        {
+            return new OperationCanceledException(
+                $"Server acquisition for {displayLabel} aborted by stopOnFail"
+            );
+        }
+
+        return cause
+            ?? new ServerUnavailableException(
+                $"All server creation attempts failed for {displayLabel} on {host.Id}"
+            );
+    }
+
     // Server.DisposeAsync tasks kicked off in the background by
     // TryEvictIdleServerForAsync so the waiting test can proceed without
     // blocking on Docker stop-grace + recording extraction. Also receives
@@ -1173,6 +1208,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var displayLabel = requirements.GetDisplayLabel();
         var brokerKey = BrokerKeyFor(key, host);
         var succeeded = false;
+        Exception? capturedCreateException = null;
         try
         {
             var managed = await CreateServerAsync(key, requirements, host, ct);
@@ -1227,6 +1263,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            // Stash the real cause so the finally's BuildAcquisitionFault can
+            // propagate it when this isn't a stopOnFail abort.
+            capturedCreateException = ex;
             TestLog.Server(
                 $"{displayLabel} creation FAILED on {host.Id}: {ex.GetType().Name}: {ex.Message}"
             );
@@ -1269,9 +1308,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 if (!succeeded && inFlightRemaining == 0 && !queue.IsReady)
                 {
                     queue.ServerFailed(
-                        new ServerUnavailableException(
-                            $"All server creation attempts failed for {displayLabel} on {host.Id}"
-                        )
+                        BuildAcquisitionFault(displayLabel, host, capturedCreateException)
                     );
                 }
             }
@@ -1681,12 +1718,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 );
                 if (!replacementSucceeded && inFlightRemaining == 0 && !queue.IsReady)
                 {
-                    queue.ServerFailed(
-                        replacementError
-                            ?? new ServerUnavailableException(
-                                $"Server replacement failed for {displayLabel} on {host.Id}"
-                            )
-                    );
+                    queue.ServerFailed(BuildAcquisitionFault(displayLabel, host, replacementError));
                 }
             }
         }

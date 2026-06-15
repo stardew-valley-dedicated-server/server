@@ -715,6 +715,22 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             throw new ExceptionMonitorException(message, Array.Empty<CapturedException>());
         }
         EmitCancellationDiagnostic(context ?? "server-error-check");
+
+        // Distinguish a run-level abort (stopOnFail / Ctrl-C cancelled the shared
+        // run token) from a genuine per-test failure. A stopOnFail cascade cancels
+        // the in-flight HTTP call (e.g. join world) of every sibling still running;
+        // those are victims, not failures, and must record as canceled so the run
+        // ends with 1 failed + N canceled. The signal: the run/xUnit token is
+        // cancelled but the per-test budget did NOT expire (a real wall-clock
+        // timeout stays a failure) and there was no server error (handled above).
+        var budgetExpired = _budgetCts?.IsCancellationRequested == true;
+        var runAborted = TestContext.Current?.CancellationToken.IsCancellationRequested == true;
+        if (runAborted && !budgetExpired)
+        {
+            RecordTestCancellation();
+            throw ex;
+        }
+
         RecordTestFailure(ex.Message, context, exceptionType: ex.GetType().FullName);
         throw ex;
     }
