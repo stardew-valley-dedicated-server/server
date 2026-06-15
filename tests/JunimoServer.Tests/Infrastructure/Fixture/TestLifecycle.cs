@@ -381,6 +381,15 @@ internal sealed class TestLifecycle
                         }
                         else
                         {
+                            // A non-OCE body exception (e.g. DockerContainerNotFound
+                            // when abort cleanup removed this test's container, or a
+                            // Socket/Http fault) stays a failure by design. We do NOT
+                            // convert it to canceled on run-abort: a genuine crash that
+                            // coincides with an abort must remain visible, and a real
+                            // host outage already carries the infrastructure stamp
+                            // (TestBase.RecordTestFailure host-poison branch). Only OCE
+                            // cancellations — unambiguous run-abort/timeout signals —
+                            // route to canceled (here and in ThrowIfServerError).
                             var errorMessage =
                                 testState.ExceptionMessages?.FirstOrDefault()
                                 ?? "Test failed (no message)";
