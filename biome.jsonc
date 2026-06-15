@@ -1,12 +1,20 @@
 {
-    "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+    "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
     "vcs": {
         "enabled": true,
         "clientKind": "git",
         "useIgnoreFile": true
     },
     "files": {
-        "includes": [".github/scripts/**", "docs/.vitepress/**", "tests/test-ui/**", "tools/discord-bot/**"]
+        "includes": [
+            ".github/scripts/**",
+            "docs/.vitepress/**",
+            "tests/test-ui/**",
+            // public/ holds Vite static assets (copied verbatim into the build) — vendor-exported
+            // artwork, not source. Linting them is a category error (e.g. noSvgWithoutTitle on the logo).
+            "!tests/test-ui/public",
+            "tools/discord-bot/**"
+        ]
     },
     "formatter": {
         "enabled": true,
@@ -45,16 +53,14 @@
                 "noThenProperty": "error",
                 "useIsArray": "error",
                 "noExplicitAny": "off",
-                "noConsole": "off"
+                "noConsole": "off",
+                "noShadow": "error"
             },
             "correctness": {
                 "noUnusedPrivateClassMembers": {
                     "level": "warn",
                     "fix": "none"
                 }
-            },
-            "nursery": {
-                "noShadow": "error"
             }
         }
     },
