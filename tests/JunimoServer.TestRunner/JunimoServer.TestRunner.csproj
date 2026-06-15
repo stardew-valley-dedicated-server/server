@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Spectre.Console" Version="0.55.2" />
+    <PackageReference Include="Spectre.Console" Version="0.57.0" />
     <PackageReference Include="xunit.v3.runner.utility" Version="3.2.2" />
   </ItemGroup>
 
