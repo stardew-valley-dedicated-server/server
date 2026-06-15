@@ -38,8 +38,10 @@
         (the bundled 6.0.0.0 copy is shadowed by the game's already-loaded 5.0.0.0). DI is
         therefore pinned to 5.0.2 (Abstractions 5.0.0 transitively), matching the game. NSwag.Core
         is held at 14.2.0 — 14.3.0+ pulls a transitive System.Text.Json above the net6 6.0.0 line,
-        dragging in System.IO.Pipelines. Renovate enforces these boundaries (see renovate.json
-        PIN/CAP rules).
+        dragging in System.IO.Pipelines. Websocket.Client is capped below 5.0 — 5.x pulls
+        Microsoft.Extensions.Logging.Abstractions 8.x → DependencyInjection.Abstractions 8.0.0.0,
+        which collides with the pinned DI 5.0.2 (CS0433 on ServiceCollection). Renovate enforces
+        these boundaries (see renovate.json PIN/CAP rules).
     -->
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.2"/>
