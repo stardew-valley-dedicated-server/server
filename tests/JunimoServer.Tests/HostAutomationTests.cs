@@ -394,15 +394,16 @@ public class HostAutomationTests : TestBase
     /// Regression for issue #242: the Mr. Qi mystery-box overnight cutscene (QiPlaneEvent) hangs the
     /// host, so the new day never starts. QiPlaneEvent's completion gate is advanced in its draw(),
     /// not its tickUpdate(), so on a headless host (draws gated/desynced) it never converges.
-    /// QiPlaneEventOverrides force-completes it via a framerate-independent game-time fallback.
+    /// QiPlaneEventOverrides drives the gate forward from tickUpdate the way an Escape-holding player
+    /// would, draw-independent (the test client does the same via QiPlaneSkip).
     ///
-    /// Runs across an FPS matrix because the fix must NOT assume a particular SERVER_FPS — the bug
-    /// reporter was on unbounded FPS. The day must advance whether rendering is disabled (0) or capped.
+    /// Brackets draws-disabled (0) and draws-capped (5): 0 is the original #242 condition (the only
+    /// row that catches a reintroduced draw dependency), 5 is the CI-proven server FPS. Completion is
+    /// draw-independent, so intermediate caps add no distinct coverage.
     /// </summary>
     [Theory]
     [InlineData(0)]
     [InlineData(5)]
-    [InlineData(1)]
     [TestServer(Exclusive = true)]
     public async Task HostCompletesQiPlaneEvent_AcrossFpsMatrix(int fps)
     {
@@ -435,7 +436,8 @@ public class HostAutomationTests : TestBase
             Assert.True(sleepResult?.Success, $"Sleep action failed: {sleepResult?.Error}");
 
             // Without the fix the overnight transition hangs here (QiPlaneEvent never completes) and
-            // this times out. With the fix the game-time fallback completes the event and the day starts.
+            // this times out. With the fix the host drives the event's gate forward from tickUpdate,
+            // completing it so the day starts.
             var (dayChanged, disconnected) = await DayChange.WaitAsync(
                 dayBefore,
                 seasonBefore,

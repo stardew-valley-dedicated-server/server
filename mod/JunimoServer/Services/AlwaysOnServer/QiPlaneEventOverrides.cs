@@ -1,86 +1,49 @@
-using Microsoft.Xna.Framework;
-using StardewModdingAPI;
+using HarmonyLib;
 using StardewValley;
 using StardewValley.Events;
 
 namespace JunimoServer.Services.AlwaysOn;
 
 /// <summary>
-/// Force-completes the Mr. Qi mystery-box overnight cutscene (<see cref="QiPlaneEvent"/>) on the
-/// host. Unlike every other overnight <c>FarmEvent</c>, QiPlaneEvent's completion gate
-/// (<c>finalFadeTimer &gt; 4000</c>) is advanced inside its <c>draw()</c>, not its
-/// <c>tickUpdate()</c> — so when the headless host's draw cadence is gated/throttled/desynced from
-/// the per-tick update pump, the gate never converges and <c>tickUpdate</c> returns false forever.
-/// The new day never starts and clients hang on "Waiting for the host's event to finish."
-///
-/// The postfix accumulates <see cref="GameTime.ElapsedGameTime"/> (game-time, not wall-clock and not
-/// draw-coupled) per event instance and forces <c>tickUpdate</c> to return true once the event has
-/// run longer than it ever would with healthy draws. This is framerate-independent: with draws
-/// running normally the event self-completes first and the postfix is a no-op; otherwise the
-/// fallback fires and the vanilla completion block (warp-to-bed + save) runs unchanged.
+/// Completes the Mr. Qi mystery-box overnight cutscene (<see cref="QiPlaneEvent"/>) on the host the
+/// way a player holding Escape would. QiPlaneEvent's completion gate advances only in <c>draw()</c>,
+/// so on a headless host (draws gated) it never converges and the new day never starts (issue #242;
+/// see <c>host-automation.md</c> #4). Vanilla's Escape branch advances the same gate from
+/// <c>tickUpdate</c> instead (QiPlaneEvent.cs:80-88); the host has no keyboard, so this postfix
+/// drives those private fields past their gates. The cutscene is never drawn here, so rather than
+/// ramp the timers tick-by-tick we jump straight past both thresholds in one tick — the event then
+/// completes through its own gate and runs the vanilla completion block (warp-to-bed + save)
+/// unchanged, starting the new day a few seconds sooner. With healthy draws the event self-completes
+/// first and the postfix is a no-op.
 /// </summary>
 public static class QiPlaneEventOverrides
 {
-    private static IMonitor _monitor;
+    private static AccessTools.FieldRef<QiPlaneEvent, float> _finalFadeTimerRef;
+    private static AccessTools.FieldRef<QiPlaneEvent, float> _textTimerRef;
+    private static AccessTools.FieldRef<QiPlaneEvent, string> _strRef;
 
-    private static QiPlaneEvent _trackedInstance;
-    private static double _accumulatedMs;
-    private static bool _forcedThisInstance;
-
-    /// <summary>
-    /// Game-time the event may run before we force completion. Natural draw-driven completion is
-    /// ~15-25s of game-time; 30s sits above that so a host with a healthy draw cadence always
-    /// self-completes first (postfix no-op), while a host where draws never advance the gate still
-    /// escapes after 30s of accumulated game-time. tickUpdate runs every update tick regardless of
-    /// draws, so this elapses quickly in wall-clock on a stuck host. The stuck-farm-event watchdog
-    /// (<c>AlwaysOnServer.HandleStuckFarmEvent</c>) keys its own threshold off this so the two stay
-    /// ordered (watchdog fires only well after this).
-    /// </summary>
-    public const double FallbackThresholdMs = 30000.0;
-
-    public static void Initialize(IMonitor monitor) => _monitor = monitor;
-
-    /// <summary>
-    /// Harmony postfix for <see cref="QiPlaneEvent.tickUpdate"/>. Forces the event to complete on
-    /// the host after the game-time fallback threshold if its draw-driven gate never converged.
-    /// </summary>
-    // ReSharper disable once InconsistentNaming
-    public static void TickUpdate_Postfix(QiPlaneEvent __instance, GameTime time, ref bool __result)
+    /// <summary>Resolves the private fields up front; throws loudly if a future SDV renames them.</summary>
+    public static void Initialize()
     {
-        if (!Game1.IsMasterGame)
+        _finalFadeTimerRef = AccessTools.FieldRefAccess<QiPlaneEvent, float>("finalFadeTimer");
+        _textTimerRef = AccessTools.FieldRefAccess<QiPlaneEvent, float>("textTimer");
+        _strRef = AccessTools.FieldRefAccess<QiPlaneEvent, string>("str");
+    }
+
+    // ReSharper disable once InconsistentNaming
+    public static void TickUpdate_Postfix(QiPlaneEvent __instance, ref bool __result)
+    {
+        if (!Game1.IsMasterGame || __result)
         {
-            return; // only the host runs the completion block + newDaySync
+            return; // only the host completes the event; __result already true means draws handled it
         }
 
-        if (__result)
-        {
-            return; // event self-completed (draws were healthy) — nothing to do
-        }
-
-        // Reset the accumulator when a new event instance starts ticking.
-        if (!ReferenceEquals(__instance, _trackedInstance))
-        {
-            _trackedInstance = __instance;
-            _accumulatedMs = 0.0;
-            _forcedThisInstance = false;
-        }
-        if (_forcedThisInstance)
-        {
-            return;
-        }
-
-        _accumulatedMs += time.ElapsedGameTime.TotalMilliseconds;
-        if (_accumulatedMs < FallbackThresholdMs)
-        {
-            return;
-        }
-
-        _forcedThisInstance = true;
+        // The host doesn't draw the cutscene, so jump both private fields past the gates vanilla
+        // checks (text-scrolled: textTimer/100 > str.Length + 27, then finalFadeTimer > 4000;
+        // QiPlaneEvent.cs:57,120) in one tick. tickUpdate then returns true through the event's own
+        // gate, running the vanilla completion block unchanged.
+        _textTimerRef(__instance) = ((_strRef(__instance)?.Length ?? 0) + 28) * 100f;
+        _finalFadeTimerRef(__instance) = 4001f;
         __result = true;
-        _monitor?.Log(
-            "QiPlaneEvent (Mr. Qi mystery box) did not self-complete — forcing overnight completion "
-                + "so the new day can start.",
-            LogLevel.Info
-        );
     }
 }
