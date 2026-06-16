@@ -198,61 +198,53 @@ test-web-report: build-test-ui
 	@dotnet run --project $(RUNNER_PROJECT) -- --web --report $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
 
 # --- Test Observability Targets ---
-# Resolve latest run: prefer latest.txt, fall back to most recent run dir with summary.json
-LATEST_RUN = $(shell cat TestResults/latest.txt 2>/dev/null)
-ifeq ($(LATEST_RUN),)
-  LATEST_RUN = $(shell ls -1d TestResults/runs/*/ 2>/dev/null | sort -r | while read d; do test -f "$$d/summary.json" && echo "$$d" && break; done)
-endif
+# All run via tools/test-observability.ts so they work from any shell (PowerShell,
+# cmd, bash) with no jq/python/awk/column dependency. Latest-run resolution and
+# all queries live in the script; these targets just pass args through.
 
 # Show test run summary (failures, timing, classification)
 test-summary:
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found. Run tests first."; exit 1; fi
-	@if [ ! -f "$(LATEST_RUN)/summary.json" ]; then echo "No summary.json in $(LATEST_RUN) (run may have been aborted)."; exit 1; fi
-	@cat "$(LATEST_RUN)/summary.json" | python3 -m json.tool 2>/dev/null || cat "$(LATEST_RUN)/summary.json"
+	@bun tools/test-observability.ts summary
 
 # Show per-test event log (Usage: make test-events TEST=ClassName.MethodName[(arg=...)])
 # Filters infrastructure.jsonl by test displayName; matches both fact and theory tests.
 test-events:
-	@test -n "$(TEST)" || { echo "Usage: make test-events TEST=ClassName.MethodName[(arg=value)]"; exit 1; }
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
-	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure.jsonl in $(LATEST_RUN)."; exit 1; fi
-	@jq -c 'select(.test.displayName // "" | contains("$(TEST)"))' \
-	    "$(LATEST_RUN)/diagnostics/infrastructure.jsonl"
+	@bun tools/test-observability.ts events TEST="$(TEST)"
 
 # Show infrastructure lifecycle log (server/client creation, capacity, sessions)
 test-infra-log:
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
-	@cat "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" 2>/dev/null || echo "No infrastructure log in $(LATEST_RUN)."
+	@bun tools/test-observability.ts infra-log
 
 # Show full lifecycle log for a container (Usage: make test-container-log CONTAINER=server-0)
 test-container-log:
-	@test -n "$(CONTAINER)" || { echo "Usage: make test-container-log CONTAINER=server-0|client-0|steam-auth-shared|steam-auth-per-N"; exit 1; }
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
-	@if [ -f "$(LATEST_RUN)/containers/$(CONTAINER)/container.log" ]; then \
-	  cat "$(LATEST_RUN)/containers/$(CONTAINER)/container.log"; \
-	elif [ -f "$(LATEST_RUN)/containers/$(CONTAINER)/container.log.gz" ]; then \
-	  gunzip -c "$(LATEST_RUN)/containers/$(CONTAINER)/container.log.gz"; \
-	else \
-	  echo "No container.log for $(CONTAINER) in $(LATEST_RUN)."; \
-	  ls "$(LATEST_RUN)/containers/" 2>/dev/null | head -20; \
-	  exit 1; \
-	fi
+	@bun tools/test-observability.ts container-log CONTAINER="$(CONTAINER)"
 
 # Show run metadata (git, env, runtime info)
 test-metadata:
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
-	@cat "$(LATEST_RUN)/run-metadata.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || cat "$(LATEST_RUN)/run-metadata.json" 2>/dev/null || echo "No metadata in $(LATEST_RUN)."
+	@bun tools/test-observability.ts metadata
 
 # Show flakiness data across recent runs
 test-flaky:
-	@test -f TestResults/flakiness.jsonl && tail -2000 TestResults/flakiness.jsonl || echo "No flakiness data. Run tests multiple times first."
+	@bun tools/test-observability.ts flaky
+
+# Rank tests by runtime across recent runs to find suite-shortening targets.
+# Reads the per-test timing already in flakiness.jsonl (same file as test-flaky).
+# Default sort is total slot-time (count x p50) — the best proxy for "improving
+# this shortens the whole suite", since tests run in parallel and a frequently-run
+# or theory-multiplied test consumes more wall-clock than a slow-but-rare singleton.
+# Usage: make test-slowest [N=15] [SORT=total|p50|p90|max] [FIELD=durationMs|testBodyMs] [LASTRUNS=20] [MINRUNS=3]
+N ?= 15
+SORT ?= total
+FIELD ?= durationMs
+LASTRUNS ?= 20
+MINRUNS ?= 3
+test-slowest:
+	@bun tools/test-observability.ts slowest N=$(N) SORT=$(SORT) FIELD=$(FIELD) LASTRUNS=$(LASTRUNS) MINRUNS=$(MINRUNS)
 
 # Dump the last failure_context event from the latest run for quick triage.
 # Usage: make test-diagnose [TEST=ClassName.MethodName]
 test-diagnose:
-	@if [ -z "$(LATEST_RUN)" ]; then echo "No test runs found."; exit 1; fi
-	@if [ ! -f "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" ]; then echo "No infrastructure log in $(LATEST_RUN)."; exit 1; fi
-	@grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5 | python3 -m json.tool --no-ensure-ascii 2>/dev/null || grep -F '"event":"failure_context"' "$(LATEST_RUN)/diagnostics/infrastructure.jsonl" | tail -5
+	@bun tools/test-observability.ts diagnose
 
 # Verify analyzer style rules and formatting without writing (builds the solution).
 # Biome covers the JS/TS projects scoped in biome.jsonc.
@@ -305,6 +297,7 @@ help:
 	@echo "  make test-infra-log - Show infrastructure lifecycle log"
 	@echo "  make test-metadata - Show run metadata (git, env, runtime)"
 	@echo "  make test-flaky    - Show flakiness data across recent runs"
+	@echo "  make test-slowest  - Rank tests by runtime (SORT=total|p50|p90) to find suite-shortening targets"
 	@echo "  make test-diagnose - Show last failure_context events for triage"
 	@echo "  make test-container-log - Show full container log (Usage: CONTAINER=server-0)"
 	@echo ""
