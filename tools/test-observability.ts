@@ -19,12 +19,13 @@ const RECENT_FAILURES = 5; // failure_context events to show for triage
 const CONTAINER_LIST_LIMIT = 20; // container names to suggest when one isn't found
 
 // One per-test timing record in flakiness.jsonl (one line, one test, one run).
+// testBodyMs is absent on non-passed records (e.g. canceled), so it's optional.
 interface FlakinessRecord {
     runId: string;
     test: string;
     result: string;
     durationMs: number;
-    testBodyMs: number;
+    testBodyMs?: number;
 }
 
 const SORT_KEYS = ["n", "p50", "p90", "max", "total"] as const;
@@ -112,6 +113,15 @@ function requireOneOf<T extends string>(name: string, value: string, allowed: re
         return value as T;
     }
     return die(`Invalid ${name}=${value}. Allowed: ${allowed.join(", ")}`);
+}
+
+// Parse a CLI argument as a positive integer, or exit with a clear message.
+function requirePositiveInt(name: string, value: string): number {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        return die(`Invalid ${name}=${value}. Expected a positive integer.`);
+    }
+    return parsed;
 }
 
 // Nearest-rank percentile over an already-ascending array. `quantile` is 0.5, 0.9, etc.
@@ -222,9 +232,9 @@ const commands: Record<string, () => void> = {
 
     slowest() {
         const args = parseArgs({ N: "15", SORT: "total", FIELD: "durationMs", LASTRUNS: "20", MINRUNS: "3" });
-        const limit = Number(args.N);
-        const lastRuns = Number(args.LASTRUNS);
-        const minRuns = Number(args.MINRUNS);
+        const limit = requirePositiveInt("N", args.N);
+        const lastRuns = requirePositiveInt("LASTRUNS", args.LASTRUNS);
+        const minRuns = requirePositiveInt("MINRUNS", args.MINRUNS);
         const field: TimingField = requireOneOf("FIELD", args.FIELD, TIMING_FIELDS);
         const sort: SortKey = requireOneOf("SORT", args.SORT, SORT_KEYS);
 
@@ -251,8 +261,12 @@ const commands: Record<string, () => void> = {
             if (record.result !== "passed" || !recentRuns.has(record.runId)) {
                 continue;
             }
+            const value = record[field];
+            if (typeof value !== "number") {
+                continue;
+            }
             const durations = durationsByTest.get(record.test) ?? [];
-            durations.push(record[field]);
+            durations.push(value);
             durationsByTest.set(record.test, durations);
         }
 

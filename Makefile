@@ -229,9 +229,10 @@ test-flaky:
 
 # Rank tests by runtime across recent runs to find suite-shortening targets.
 # Reads the per-test timing already in flakiness.jsonl (same file as test-flaky).
-# Default sort is total slot-time (count x p50) — the best proxy for "improving
-# this shortens the whole suite", since tests run in parallel and a frequently-run
-# or theory-multiplied test consumes more wall-clock than a slow-but-rare singleton.
+# Default sort is total observed slot-time (sum of sampled durations) — the best
+# proxy for "improving this shortens the whole suite", since tests run in parallel
+# and a frequently-run or theory-multiplied test consumes more wall-clock than a
+# slow-but-rare singleton.
 # Usage: make test-slowest [N=15] [SORT=total|p50|p90|max] [FIELD=durationMs|testBodyMs] [LASTRUNS=20] [MINRUNS=3]
 N ?= 15
 SORT ?= total
@@ -241,8 +242,7 @@ MINRUNS ?= 3
 test-slowest:
 	@bun tools/test-observability.ts slowest N=$(N) SORT=$(SORT) FIELD=$(FIELD) LASTRUNS=$(LASTRUNS) MINRUNS=$(MINRUNS)
 
-# Dump the last failure_context event from the latest run for quick triage.
-# Usage: make test-diagnose [TEST=ClassName.MethodName]
+# Dump the last few failure_context events from the latest run for quick triage.
 test-diagnose:
 	@bun tools/test-observability.ts diagnose
 
@@ -297,7 +297,7 @@ help:
 	@echo "  make test-infra-log - Show infrastructure lifecycle log"
 	@echo "  make test-metadata - Show run metadata (git, env, runtime)"
 	@echo "  make test-flaky    - Show flakiness data across recent runs"
-	@echo "  make test-slowest  - Rank tests by runtime (SORT=total|p50|p90) to find suite-shortening targets"
+	@echo "  make test-slowest  - Rank tests by runtime (SORT=total|p50|p90|max) to find suite-shortening targets"
 	@echo "  make test-diagnose - Show last failure_context events for triage"
 	@echo "  make test-container-log - Show full container log (Usage: CONTAINER=server-0)"
 	@echo ""
