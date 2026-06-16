@@ -41,7 +41,7 @@ public class QiPlaneSkip
         }
         catch (System.Exception ex)
         {
-            _monitor.Log($"Failed to apply QiPlaneSkip patch: {ex.Message}", LogLevel.Warn);
+            _monitor.Log($"Failed to apply QiPlaneSkip patch: {ex.Message}", LogLevel.Error);
         }
     }
 
