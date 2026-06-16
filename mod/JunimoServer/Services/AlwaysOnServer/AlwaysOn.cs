@@ -594,6 +594,10 @@ public class AlwaysOnServer : ModService
         if (!Game1.player.eventsSeen.Contains("611439"))
         {
             Game1.player.eventsSeen.Add("611439");
+        }
+
+        if (!Game1.MasterPlayer.mailReceived.Contains("ccDoorUnlock"))
+        {
             Game1.MasterPlayer.mailReceived.Add("ccDoorUnlock");
         }
     }
