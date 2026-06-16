@@ -814,11 +814,12 @@ try
         OnTestFinished = callbacks.OnTestFinished,
     };
 
-    // Apply filter if specified
-    if (!string.IsNullOrEmpty(filter))
+    // Apply filter if specified. A '|' splits into independent patterns; xUnit's
+    // included-method filters are OR'd, so one AddIncludedMethodFilter per pattern
+    // matches any of them — mirroring TestFilter's substring-OR semantics.
+    foreach (var pattern in TestFilter.ParsePatterns(filter))
     {
-        // Use method filter which matches against the fully-qualified test name
-        options.Filters.AddIncludedMethodFilter($"*{filter}*");
+        options.Filters.AddIncludedMethodFilter($"*{pattern}*");
     }
 
     // Notify run started
@@ -1100,10 +1101,6 @@ static List<(
         var className = type.Name;
         var classFullName = type.FullName ?? type.Name;
 
-        var classMatchesFilter =
-            string.IsNullOrEmpty(filter)
-            || classFullName.Contains(filter, StringComparison.OrdinalIgnoreCase);
-
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
         {
             var hasFact = factType != null && method.GetCustomAttribute(factType) != null;
@@ -1120,13 +1117,7 @@ static List<(
                     {
                         foreach (var theoryDisplayName in expanded)
                         {
-                            if (
-                                !classMatchesFilter
-                                && !theoryDisplayName.Contains(
-                                    filter!,
-                                    StringComparison.OrdinalIgnoreCase
-                                )
-                            )
+                            if (!TestFilter.Matches(filter, classFullName, theoryDisplayName))
                             {
                                 continue;
                             }
@@ -1138,10 +1129,7 @@ static List<(
                 }
 
                 var displayName = $"{classFullName}.{methodName}";
-                if (
-                    !classMatchesFilter
-                    && !displayName.Contains(filter!, StringComparison.OrdinalIgnoreCase)
-                )
+                if (!TestFilter.Matches(filter, classFullName, displayName))
                 {
                     continue;
                 }

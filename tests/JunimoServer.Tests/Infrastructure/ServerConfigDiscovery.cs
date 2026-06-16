@@ -38,11 +38,11 @@ public static class ServerConfigDiscovery
     /// </para>
     /// <para>
     /// <paramref name="methodFilter"/>: when non-null and non-empty, mirrors the
-    /// runner's `--filter` substring predicate applied per-method (class FullName
-    /// contains the substring OR `{ClassFullName}.{MethodName}` contains it,
-    /// case-insensitive). Non-matching methods don't contribute to any demand's
-    /// counts, so multiple classes sharing a config key don't inflate
-    /// <c>TestCount</c>/<c>NonExclusiveTestCount</c> beyond what xUnit will
+    /// runner's `--filter` predicate via <see cref="TestFilter.Matches"/> (one or more
+    /// '|'-separated substring patterns, matched per-method against class FullName or
+    /// `{ClassFullName}.{MethodName}`, case-insensitive). Non-matching methods don't
+    /// contribute to any demand's counts, so multiple classes sharing a config key don't
+    /// inflate <c>TestCount</c>/<c>NonExclusiveTestCount</c> beyond what xUnit will
     /// actually dispatch. Used by the local-runner prestart path; distributed
     /// workers leave it null and rely on <paramref name="keyFilter"/> for
     /// scoping.
@@ -257,10 +257,10 @@ public static class ServerConfigDiscovery
     /// groups test case counts by the resulting server key. This mirrors the merge
     /// that <see cref="TestBase.InitializeAsync"/> performs at runtime.
     ///
-    /// <paramref name="methodFilter"/> mirrors the runner's `--filter` substring
-    /// predicate: methods are kept only when the class FullName contains the
-    /// substring OR the `{ClassFullName}.{MethodName}` display name does
-    /// (case-insensitive). Null/empty means "no filter".
+    /// <paramref name="methodFilter"/> mirrors the runner's `--filter` predicate via
+    /// <see cref="TestFilter.Matches"/>: '|'-separated patterns, kept when any is a
+    /// case-insensitive substring of the class FullName or `{ClassFullName}.{MethodName}`
+    /// display name. Null/empty means "no filter".
     /// </summary>
     private static List<MethodDemand> DiscoverMethodDemands(
         Type type,
@@ -273,9 +273,6 @@ public static class ServerConfigDiscovery
             new Dictionary<string, (ResourceRequirements reqs, int total, int exclusive)>();
 
         var classFull = type.FullName ?? type.Name;
-        var classMatches =
-            string.IsNullOrEmpty(methodFilter)
-            || classFull.Contains(methodFilter, StringComparison.OrdinalIgnoreCase);
 
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
         {
@@ -301,13 +298,9 @@ public static class ServerConfigDiscovery
                 continue;
             }
 
-            if (!classMatches)
+            if (!TestFilter.Matches(methodFilter, classFull, $"{classFull}.{method.Name}"))
             {
-                var displayName = $"{classFull}.{method.Name}";
-                if (!displayName.Contains(methodFilter!, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
+                continue;
             }
 
             var cases = (isFact && !isTheory) ? 1 : CountTheoryDataRows(type, method, attrs);

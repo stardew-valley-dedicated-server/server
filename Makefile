@@ -152,9 +152,11 @@ clean:
 TEST_PROJECT := ./tests/JunimoServer.Tests
 RUNNER_PROJECT := ./tests/JunimoServer.TestRunner
 
-# Test filtering. Use FILTER to run specific tests:
+# Test filtering. Use FILTER to run specific tests (case-insensitive substring of the
+# class FullName or {Class}.{Method} display name). Separate alternatives with '|':
 #   make test FILTER=PasswordProtection
 #   make test FILTER="Login_WithCorrectPassword"
+#   make test FILTER="CabinStrategyNoneTests|CabinPositionPersistenceTests"
 #   make test (runs all tests)
 FILTER ?=
 
