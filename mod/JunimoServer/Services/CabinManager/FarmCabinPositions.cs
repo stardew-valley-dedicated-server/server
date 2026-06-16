@@ -22,7 +22,11 @@ public static class FarmCabinPositions
     /// Returns all map-designated cabin positions for the given farm, sorted by Order.
     /// Reads both tile index 29 (grouped) and 30 (separate) since we just need valid locations.
     /// </summary>
-    public static List<Vector2> GetDesignatedPositions(Farm farm)
+    /// <remarks>
+    /// Returns the cached list directly (no defensive copy) on a hit, so the type is
+    /// <see cref="IReadOnlyList{T}"/> to keep callers from mutating the cache.
+    /// </remarks>
+    public static IReadOnlyList<Vector2> GetDesignatedPositions(Farm farm)
     {
         if (ReferenceEquals(farm, _cachedFarm))
         {
