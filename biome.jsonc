@@ -13,7 +13,9 @@
             // public/ holds Vite static assets (copied verbatim into the build) — vendor-exported
             // artwork, not source. Linting them is a category error (e.g. noSvgWithoutTitle on the logo).
             "!tests/test-ui/public",
-            "tools/discord-bot/**"
+            "tools/discord-bot/**",
+            "tools/test-observability.ts",
+            "tools/tsconfig.json"
         ]
     },
     "formatter": {
