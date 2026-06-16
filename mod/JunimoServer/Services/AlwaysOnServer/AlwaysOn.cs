@@ -92,7 +92,7 @@ public class AlwaysOnServer : ModService
         // Force-complete the Mr. Qi mystery-box overnight cutscene on the host. Its completion gate
         // lives in draw() rather than tickUpdate(), so on a headless host (draws gated/desynced) it
         // never converges and the new day never starts. See QiPlaneEventOverrides.
-        QiPlaneEventOverrides.Initialize(monitor);
+        QiPlaneEventOverrides.Initialize();
         harmony.Patch(
             original: AccessTools.Method(
                 typeof(StardewValley.Events.QiPlaneEvent),
@@ -688,12 +688,12 @@ public class AlwaysOnServer : ModService
 
     /// <summary>
     /// Watchdog for overnight farm events that never complete on a headless host. The known
-    /// headless-hangers are handled directly — <see cref="QiPlaneEventOverrides"/> force-completes
-    /// the Mr. Qi mystery box, and <see cref="HandleOvernightNamingMenu"/> auto-names births — so
-    /// those resolve before this fires. For an unknown/modded <c>FarmEvent</c> still stuck well past
-    /// any vanilla event's natural duration, log once at Warn with its type so we can see what's
-    /// hanging. We deliberately do NOT force-complete unknown types: skipping their tickUpdate would
-    /// bypass their makeChangesToLocation side effects and could corrupt the save.
+    /// headless-hangers are handled directly — <see cref="QiPlaneEventOverrides"/> completes the Mr.
+    /// Qi mystery box, and <see cref="HandleOvernightNamingMenu"/> auto-names births — so those
+    /// resolve before this fires. For an unknown/modded <c>FarmEvent</c> still stuck well past any
+    /// vanilla event's natural duration, log once at Warn with its type so we can see what's hanging.
+    /// We deliberately do NOT force-complete unknown types: skipping their tickUpdate would bypass
+    /// their makeChangesToLocation side effects and could corrupt the save.
     /// </summary>
     private void HandleStuckFarmEvent()
     {
@@ -711,9 +711,9 @@ public class AlwaysOnServer : ModService
 
         _farmEventActiveMs += Game1.currentGameTime?.ElapsedGameTime.TotalMilliseconds ?? 0.0;
 
-        // Fire only well after the QiPlane fallback so a healthy or already-handled event never
-        // trips this — anything still stuck past here is an event we don't auto-complete.
-        const double StuckThresholdMs = QiPlaneEventOverrides.FallbackThresholdMs + 15000.0;
+        // Well past any vanilla overnight event's natural duration — anything still stuck here is an
+        // event we don't auto-complete.
+        const double StuckThresholdMs = 25000.0;
         if (_stuckFarmEventLogged || _farmEventActiveMs < StuckThresholdMs)
         {
             return;

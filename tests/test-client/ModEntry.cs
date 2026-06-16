@@ -31,6 +31,7 @@ public class ModEntry : Mod
     private ConvenienceTweaks? _tweaks;
     private SkipIntro? _skipIntro;
     private GodTool? _godTool;
+    private QiPlaneSkip? _qiPlaneSkip;
 
     // Diagnostics
     private HealthWatchdog? _healthWatchdog;
@@ -78,6 +79,9 @@ public class ModEntry : Mod
 
         _godTool = new GodTool(helper, Monitor, _harmony);
         _godTool.Apply();
+
+        _qiPlaneSkip = new QiPlaneSkip(Monitor, _harmony);
+        _qiPlaneSkip.Apply();
 
         // Apply Steam/Galaxy auth patches (must be before Steam diagnostics)
         var authService = new ClientAuthService(helper, Monitor, _harmony);
