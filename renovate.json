@@ -156,6 +156,14 @@
             "allowedVersions": "=5.0.2"
         },
         {
+            "description": "CAP — Websocket.Client below 5.0 in the SMAPI mod (net6.0). 4.x depends only on System.Reactive + System.Threading.Channels; 5.x adds Microsoft.Extensions.Logging.Abstractions 8.x, which transitively pulls DependencyInjection.Abstractions 8.0.0.0. That collides with the pinned DI 5.0.2 (CS0433 on ServiceCollection) and sits above the game's loaded 5.0.0.0 Abstractions line — same boundary as the DI/Grpc pins. The cap still allows safe 4.x patch bumps (4.x stays on the no-Microsoft.Extensions graph). Lift only as part of moving the whole mod off the Abstractions-5.0.0.0 floor. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": ["mod/JunimoServer/JunimoServer.csproj"],
+            "matchPackageNames": ["Websocket.Client"],
+            "versioning": "semver",
+            "allowedVersions": "<5.0.0"
+        },
+        {
             "description": "CAP — Microsoft.OpenApi below 2.0 in the test-client. The 2.0/3.x rewrite changes Type (string→JsonSchemaType enum), makes SerializeAsJson/Yaml async, and redesigns OpenApiReference/OperationType, so OpenApiGenerator.cs would not compile. Lift once OpenApiGenerator.cs is ported to the 2.x model. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": ["tests/test-client/JunimoTestClient.csproj"],
