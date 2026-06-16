@@ -13,17 +13,28 @@ namespace JunimoServer.Services.CabinManager;
 /// </summary>
 public static class FarmCabinPositions
 {
+    // Cache the static Paths-layer scan, keyed on Farm identity. A reload/newgame realizes a
+    // fresh Farm, so reference inequality rescans and prior-session positions can't leak.
+    private static Farm _cachedFarm;
+    private static List<Vector2> _cachedPositions;
+
     /// <summary>
     /// Returns all map-designated cabin positions for the given farm, sorted by Order.
     /// Reads both tile index 29 (grouped) and 30 (separate) since we just need valid locations.
     /// </summary>
     public static List<Vector2> GetDesignatedPositions(Farm farm)
     {
+        if (ReferenceEquals(farm, _cachedFarm))
+        {
+            return _cachedPositions;
+        }
+
         var positions = new List<(int order, Vector2 position)>();
         var layer = farm.map?.GetLayer("Paths");
 
         if (layer == null)
         {
+            // Not realized yet; don't cache, so a later call on this Farm rescans.
             return new List<Vector2>();
         }
 
@@ -52,7 +63,10 @@ public static class FarmCabinPositions
             }
         }
 
-        return positions.OrderBy(p => p.order).Select(p => p.position).ToList();
+        var result = positions.OrderBy(p => p.order).Select(p => p.position).ToList();
+        _cachedFarm = farm;
+        _cachedPositions = result;
+        return result;
     }
 
     /// <summary>
