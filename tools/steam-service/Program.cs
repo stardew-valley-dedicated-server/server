@@ -394,13 +394,23 @@ return;
 
 async Task DownloadAllAsync(SteamAuthService svc)
 {
-    await svc.DownloadGameAsync(StardewValleyAppId);
-
-    // Also download Steamworks SDK for GameServer mode (unless --skip-sdk)
-    if (!args.Contains("--skip-sdk"))
+    try
     {
-        var steamSdkDir = Path.Combine(gameDir, ".steam-sdk");
-        await svc.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
+        await svc.DownloadGameAsync(StardewValleyAppId);
+
+        // Also download Steamworks SDK for GameServer mode (unless --skip-sdk)
+        if (!args.Contains("--skip-sdk"))
+        {
+            var steamSdkDir = Path.Combine(gameDir, ".steam-sdk");
+            await svc.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
+        }
+    }
+    catch (Exception ex)
+    {
+        // Convert an exhausted-retry crash (e.g. all CDN servers unreachable) into a clean
+        // single-line failure + non-zero exit the build/CI sees, instead of a raw stack dump.
+        Logger.Log($"[SteamService] Game download failed: {ex.Message}");
+        Environment.Exit(1);
     }
 }
 
