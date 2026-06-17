@@ -1230,8 +1230,9 @@ public class SteamAuthService
             );
         }
 
-        // Cap so a huge list can't spin forever; floor at 1 so the loop always runs.
-        int maxAttempts = Math.Clamp(live.Count, 1, 8);
+        // Attempt every live server once. `live` is a fixed snapshot (dead hosts can only be
+        // added on later calls, never mid-loop), so this is already bounded — no extra cap needed.
+        int maxAttempts = live.Count;
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             var server = live[attempt % live.Count];
@@ -1259,7 +1260,7 @@ public class SteamAuthService
                     if (session.DeadHosts.Add(host))
                     {
                         Logger.Log(
-                            $"{_logPrefix} {label}: {host} unreachable (DNS), skipping for rest of download"
+                            $"{_logPrefix} {label}: {host} unreachable, skipping for rest of download"
                         );
                     }
                     continue; // host-fatal: next live server immediately, no backoff
@@ -1277,13 +1278,27 @@ public class SteamAuthService
         );
     }
 
+    // Socket errors that mean *this host* (or the route to it) is unusable for the rest of the
+    // download: DNS can't resolve it, or the connection can't be established. Deliberately excludes
+    // mid-transfer transients like ConnectionReset/TimedOut — a healthy host can throw those under
+    // momentary load, and marking it dead session-wide would needlessly burn a working server.
+    private static readonly HashSet<SocketError> HostFatalSocketErrors =
+    [
+        SocketError.HostNotFound, // DNS: no such host ("Name or service not known")
+        SocketError.TryAgain, // DNS: temporary resolution failure
+        SocketError.NoData, // DNS: host exists but no address record
+        SocketError.HostUnreachable, // connect: no route to host
+        SocketError.NetworkUnreachable, // connect: no route to network
+        SocketError.ConnectionRefused, // connect: host actively refused
+    ];
+
     // A DNS-resolution or TCP-connect failure means *this host* is unusable; SteamKit surfaces it
     // as HttpRequestException wrapping a SocketException. Walk the inner chain to detect it.
     private static bool IsHostFatal(Exception ex)
     {
         for (var e = ex; e != null; e = e.InnerException)
         {
-            if (e is SocketException)
+            if (e is SocketException se && HostFatalSocketErrors.Contains(se.SocketErrorCode))
             {
                 return true;
             }
