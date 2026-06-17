@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -1183,6 +1184,69 @@ public class SteamAuthService
         }
     }
 
+    // Runs a CDN-host request across the available servers, failing over on error. A DNS/connect
+    // failure (SocketException) is host-fatal: skip to the next server immediately with no delay.
+    // A transient HTTP failure (e.g. 503 during a depot rollout) backs off, then retries the next
+    // server. Throws an aggregated exception only when every server has been exhausted.
+    private async Task<T> RetryAcrossServersAsync<T>(
+        string label,
+        IReadOnlyList<Server> servers,
+        Func<Server, Task<T>> operation
+    )
+    {
+        // Cap so a huge list can't spin forever; floor at 1 so the loop always runs.
+        int maxAttempts = Math.Clamp(servers.Count, 1, 8);
+        var failures = new List<Exception>();
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var server = servers[attempt % servers.Count];
+            // Log only retries (attempt 2+); logging every first attempt would flood the chunk loop.
+            if (attempt > 0)
+            {
+                Logger.Log(
+                    $"{_logPrefix} {label}: retrying on {server.Host} (attempt {attempt + 1}/{maxAttempts})"
+                );
+            }
+            try
+            {
+                return await operation(server);
+            }
+            // No `when` guard: the last attempt's exception is collected too, so the post-loop
+            // throw carries the real reason instead of propagating it raw.
+            catch (Exception ex)
+            {
+                failures.Add(ex);
+                bool hostDead = IsHostFatal(ex);
+                Logger.Log(
+                    $"{_logPrefix} {label} failed on {server.Host} "
+                        + $"(attempt {attempt + 1}/{maxAttempts}{(hostDead ? ", host unreachable, skipping" : "")}): {ex.Message}"
+                );
+                if (!hostDead && attempt < maxAttempts - 1)
+                {
+                    await Task.Delay(1000 * (attempt + 1));
+                }
+            }
+        }
+        throw new AggregateException(
+            $"{label} failed across all {servers.Count} CDN servers",
+            failures
+        );
+    }
+
+    // A DNS-resolution or TCP-connect failure means *this host* is unusable; SteamKit surfaces it
+    // as HttpRequestException wrapping a SocketException. Walk the inner chain to detect it.
+    private static bool IsHostFatal(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is SocketException)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Audio is always stripped — the dedicated server runs silent (no Wave Bank).
     private static readonly Regex[] WaveBankPatterns =
     [
@@ -1458,10 +1522,9 @@ public class SteamAuthService
                 throw new Exception("No CDN servers available");
             }
 
-            Logger.Log($"{_logPrefix} Found {cdnServers.Count} CDN servers");
-
-            // Use first available CDN server (no auth token needed for Stardew Valley)
-            var server = cdnServers.First();
+            // DistinctBy(Host) drops duplicate hosts so rotation can't re-hit one dead server.
+            var cdnServerList = cdnServers.DistinctBy(s => s.Host).ToList();
+            Logger.Log($"{_logPrefix} Found {cdnServerList.Count} CDN servers");
 
             // Get manifest request code
             Logger.Log($"{_logPrefix} Getting manifest request code...");
@@ -1474,14 +1537,14 @@ public class SteamAuthService
             // Download using CDN client
             var cdnClient = new Client(_steamClient);
 
-            Logger.Log($"{_logPrefix} Downloading manifest...");
+            Logger.Log($"{_logPrefix} Downloading manifest from {cdnServerList[0].Host}...");
 
-            // The manifest fetch is a single CDN request that previously crashed the
-            // whole download on a transient 503 (no retry, unlike the chunk loop). Wrap
-            // it so a flaky CDN response backs off and retries instead of aborting.
-            var manifest = await RetryTransientAsync(
+            // The manifest request code is not server-bound, so the download can fail over to
+            // any server in the list.
+            var manifest = await RetryAcrossServersAsync(
                 "Download manifest",
-                () =>
+                cdnServerList,
+                server =>
                     cdnClient.DownloadManifestAsync(
                         depotId,
                         manifestId,
@@ -1589,34 +1652,24 @@ public class SteamAuthService
 
                     foreach (var chunk in chunksToDownload)
                     {
-                        // Rent buffer for chunk data
                         var buffer = ArrayPool<byte>.Shared.Rent((int)chunk.UncompressedLength);
                         try
                         {
-                            // Retry logic for transient network failures
-                            int written = 0;
-                            const int maxRetries = 3;
-                            for (int retry = 0; retry < maxRetries; retry++)
-                            {
-                                try
-                                {
-                                    written = await cdnClient.DownloadDepotChunkAsync(
+                            // Reusing the rented buffer across servers is safe: a failed attempt
+                            // throws before DownloadDepotChunkAsync writes it, so a retry on
+                            // another server starts clean.
+                            int written = await RetryAcrossServersAsync(
+                                $"Chunk {file.FileName}",
+                                cdnServerList,
+                                server =>
+                                    cdnClient.DownloadDepotChunkAsync(
                                         depotId,
                                         chunk,
                                         server,
                                         buffer,
                                         depotKeyResult.DepotKey
-                                    );
-                                    break; // Success
-                                }
-                                catch (Exception ex) when (retry < maxRetries - 1)
-                                {
-                                    Logger.Log(
-                                        $"{_logPrefix} Chunk download failed (attempt {retry + 1}/{maxRetries}): {ex.Message}"
-                                    );
-                                    await Task.Delay(1000 * (retry + 1)); // Exponential backoff
-                                }
-                            }
+                                    )
+                            );
 
                             // Validate chunk was fully downloaded
                             if (written != (int)chunk.UncompressedLength)
