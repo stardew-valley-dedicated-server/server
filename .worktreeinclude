@@ -1,0 +1,5 @@
+# Gitignored files copied into each new `claude --worktree`. .gitignore syntax.
+# .env: build reads GAME_PATH via Directory.Build.props. .env.test: E2E tests.
+# node_modules is NOT copied — run `npm ci` per worktree (see git-workflow.md).
+.env
+.env.test

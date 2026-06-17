@@ -23,3 +23,14 @@ The `sleep 2` before `gh pr merge` avoids GitHub returning "not mergeable" right
 ## PR Descriptions
 
 Bullet points of changes. No co-author attributions.
+
+## Worktrees
+
+A fresh worktree is a clean checkout, so two gitignored things from the main checkout need setting up:
+
+```bash
+git worktree add -b <branch> "../server-worktrees/<name>" master
+cp .env .env.test "../server-worktrees/<name>/"   # build + tests; skip if created via `claude --worktree` (.worktreeinclude handles it)
+cd "../server-worktrees/<name>" && npm ci          # commitlint hook needs node_modules; per-worktree, never symlink the main repo's
+git worktree remove --force "../server-worktrees/<name>"   # cleanup; keep the branch if a PR depends on it
+```

@@ -30,8 +30,7 @@ _pendingActions.Enqueue(() =>
 
 **How to apply:**
 - For new ambient-context types, default to `AsyncLocal<T>`. Use `ThreadLocal<T>` only if the consumer is strictly synchronous end-to-end with no awaits.
-- Before emitting a structured event that reads `SomeContext.Current` from a non-trivial call path, trace the path. If it crosses `Queue<Action>.Enqueue` / `ConcurrentQueue<T>.Enqueue` / `CallbackManager.Subscribe` / a `Task.Run` that's pumped externally, the current value will NOT flow. Capture at the caller, re-bind in the callee.
-- For test-time identity, prefer `Xunit.TestContext.Current` over a custom AsyncLocal.
+- Before emitting a structured event that reads `SomeContext.Current` from a non-trivial call path, trace the path. If it crosses `Queue<Action>.Enqueue` / `ConcurrentQueue<T>.Enqueue` / `CallbackManager.Subscribe` / a `Task.Run` that's pumped externally, the current value will NOT flow — capture at the caller, re-bind in the callee. For test-time identity, prefer `Xunit.TestContext.Current` over a custom AsyncLocal.
 - `Task.Run` without an external pump *does* flow ExecutionContext — don't add capture+rebind to every task.
 - When diagnosing "field X is null on event Y", check the execution-context boundary first, not the emit code. To quantify a coverage gap: `grep -c '"event":"<name>"' infra.jsonl` vs `grep '"event":"<name>"' infra.jsonl | grep -cE '"<field>":[ ]*\{'`.
 
