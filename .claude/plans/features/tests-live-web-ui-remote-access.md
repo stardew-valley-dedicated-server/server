@@ -4,7 +4,7 @@
 
 There is no way to watch the test-UI of a running E2E CI job from outside. The
 coordinator (`JunimoServer.TestRunner`) runs on an **ephemeral GitHub `ubuntu-latest`
-runner** (`.github/workflows/e2e-tests.yml:253`) and in CI it uses `CIRenderer`
+runner** (`.github/workflows/e2e-tests.yml:313`) and in CI it uses `CIRenderer`
 (streaming logs only). The Vue SPA + WebSocket server (`WebRenderer`) exists but is
 never started in CI, and even locally it binds to `127.0.0.1:0` — loopback only. The
 only post-run view is the offline R2-hosted report (`e2e-tests.yml:590-659`).
@@ -82,8 +82,8 @@ runs stay byte-for-byte unchanged.
   running `WebRenderer` in CI serves correct state, and the existing abort-path already
   pushes `run_aborted` over the WS via `UnwrapRenderer(renderer) is WebRenderer`
   (`Program.cs:144-159`).
-- **WebRenderer bind** is hardcoded `http://127.0.0.1:0` at one site (`WebRenderer.cs:85`);
-  port is printed to stderr after `StartAsync` (`WebRenderer.cs:233`).
+- **WebRenderer bind** is hardcoded `http://127.0.0.1:0` at one site (`WebRenderer.cs:86`);
+  port is printed to stderr after `StartAsync` (`WebRenderer.cs:234`).
 - **No CORS / no HostFiltering / no Origin check** in the WebRenderer pipeline
   (`WebRenderer.cs:87-224`); `/ws` checks only `IsWebSocketRequest` (`:147`). A request
   arriving via a forwarded port under any Host header is served — and equally, **there is
@@ -127,7 +127,7 @@ run, acceptable for an opt-in/rare session where the watcher is on the web UI.
 
 ### 2. Runner: honor a fixed port via `SDVD_WEB_PORT`
 
-**`tests/JunimoServer.TestRunner/Rendering/WebRenderer.cs:85`** — replace the hardcoded
+**`tests/JunimoServer.TestRunner/Rendering/WebRenderer.cs:86`** — replace the hardcoded
 `:0` so the reverse forward targets a known port:
 
 ```csharp
@@ -267,7 +267,7 @@ fixed port is only the live-view bind.
 | File | Change |
 |---|---|
 | `tests/JunimoServer.TestRunner/OutputMode.cs` | `--live` → `Web` (one line, `Detect`) |
-| `tests/JunimoServer.TestRunner/Rendering/WebRenderer.cs` | `SDVD_WEB_PORT` bind (`:85`); cookie-exchange token middleware before `UseWebSockets` (`:~87-89`); `WaitForShutdownOrTimeoutAsync` for the linger |
+| `tests/JunimoServer.TestRunner/Rendering/WebRenderer.cs` | `SDVD_WEB_PORT` bind (`:86`); cookie-exchange token middleware before `UseWebSockets` (`:~87-89`); `WaitForShutdownOrTimeoutAsync` for the linger |
 | `tests/JunimoServer.Tests/Infrastructure/TunnelManager.cs` | `OpenReverseAsync` (+ `-O cancel -R` teardown / `ssh -N -R` fallback), mirroring `OpenForwardOnMasterAsync:429-454` + `CancelForwardAsync:549-583`; reverse `ForwardLease` |
 | `tests/JunimoServer.TestRunner/Program.cs` | when `--live`: open reverse forward **after `PreflightAsync` (`:402`)**, write `[WebUI] LIVE: …` to `$GITHUB_STEP_SUMMARY`, bounded post-run hold before disposal (`:708`), dispose lease in finally |
 | `.github/workflows/e2e-tests.yml` | `live` input (`:42-48`); `SDVD_WEB_PORT`/`SDVD_WEB_TOKEN`/`SDVD_LIVE_VPS_HOST`/`SDVD_LIVE_VPS_PORT`/`SDVD_LIVE_HOLD_SECONDS` + `--live` on the run step |

@@ -1,10 +1,20 @@
-# Verify: Steam-behind-a-proxy on the default bridge network (issue #157)
+# Issue #157 — verify Steam-behind-a-proxy on the default bridge network
+
+**Verdict:** ✅ hypothesis to confirm — Steam auth honors a proxy env var on the
+default bridge network, so host networking is unnecessary.
+**Action:** run the verification harness below, then post the evidence-backed
+#157 comment (Step 6).
+
+Companion plan `issue-157-xvnc-host-networking.md` triages the xvnc timeout this
+host-networking change caused. This plan proves the reporter never needed host
+networking in the first place; coordinate the #157 comment with that plan so the
+issue gets one reply, not two.
 
 ## Context
 
-Issue #157: a reporter in China switched `network_mode: host` to make their outbound
-Steam proxy work, which broke xvnc ("not ready after 10000 msec") and would also break
-this stack's service-name DNS (`http://steam-auth:3001`, `http://server:8080`).
+Issue #157: a reporter in China switched `network_mode: host` to make their
+outbound Steam proxy work, which broke xvnc ("not ready after 10000 msec") and would also
+break this stack's service-name DNS (`http://steam-auth:3001`, `http://server:8080`).
 
 Static code analysis (already done) established a strong hypothesis: **the reporter does
 not need host networking at all.** Only the `steam-auth` sidecar talks to Steam, it uses
