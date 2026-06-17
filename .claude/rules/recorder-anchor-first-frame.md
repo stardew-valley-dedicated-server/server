@@ -6,11 +6,9 @@ paths:
 
 # ContainerRecorder load-bearing invariants
 
-The recorder's design exists because each load-bearing choice — wall-clock-honest PTS, MPEG-TS segments, segments.csv as anchor source, phase-locked launches, two-pass extraction, `-tune zerolatency` — was reached after observing the failure mode of its alternative. Reverting any one re-introduces the bug it fixed. This rule lists each invariant with the failure mode that motivates it, so future changes can be evaluated against the right risk.
+Each invariant below pairs a load-bearing choice with the failure mode of its alternative — reverting any one re-introduces the bug it fixed. Cross-clip alignment between two recorders on the same host runs ~1-5ms in production (irreducible x11grab sample-phase + sleep precision); regressions show up as hundreds-of-ms cross-clip burn-in differences or per-test clips landing before/after the test body.
 
-Cross-clip alignment between two recorders on the same host is currently within ~2-5ms at fps=15 and ~1-4ms at fps=1 in production. Most of the residual is irreducible (x11grab sample-phase, sleep precision). Regressions tend to show up as cross-clip burn-in differences in the hundreds-of-ms range or per-test clips landing before/after the test body.
-
-**Burn-in geometry is coupled to the in-game overlay — but its content/timing is not.** `BurnInFilter` renders `TIME %{pts}` as black text, `box=0`, `fontsize=24`, at `x=8/y=5` so it lands inside the white top row `TestOverlay` reserves (one coherent panel instead of two overlapping overlays); `y=5` puts DejaVu's glyphs in the same vertical band `Game1.smallFont` occupies in a `TestOverlay.RowHeight` (28px) row, so all three rows share a baseline. Changing the `x`/`y`/`fontsize`/`box` is governed by `test-overlay-pixel-contract.md` (must stay consistent with `TestOverlay.TextInsetX`/`RowHeight`/`ReservedPtsWidth` and keep pixel `(0,0)` white). The `TIME ` label is space-separated because a colon in drawtext `text=` breaks the avfilter parser (verified against this image's ffmpeg 8.1.1). The invariants below — `%{pts}` content, the timing flags, segment format, anchor source — are orthogonal to this styling and unaffected by it.
+**Burn-in geometry** (where `BurnInFilter` draws `TIME %{pts}`) is a pixel contract with the in-game overlay — its `x`/`y`/`fontsize`/`box` values live in `BurnInFilter`'s doc-comment (`ContainerRecorder.cs`) and the contract is governed by [`test-overlay-pixel-contract.md`](test-overlay-pixel-contract.md); read both before changing them. The one caveat that lives *here*: the `TIME ` label is space-separated because a colon in drawtext `text=` breaks the avfilter parser (ffmpeg 8.1.1). The `%{pts}` content and the timing/format/anchor invariants below are orthogonal to that styling.
 
 ## Invariant 1 — `-tune zerolatency` on libx264
 
@@ -99,6 +97,12 @@ Sequence-number filenames are always unique and the anchor doesn't need filename
 ## Slack in `SelectCoveringSegments`
 
 `5 * _segmentTime` slack on each side of the cover window. Phase-lock + segments.csv anchor + `-tune zerolatency` keep anchor accuracy within one frame. The remaining slack absorbs x11grab pacing jitter and the row-0 `cover0Epoch` warmup-overshoot fallback. Don't widen to mask future regressions — drift is an upstream symptom, fix the cause. Shrinking to `2 * _segmentTime` is plausible but unverified.
+
+## Verify any recorder claim against BOTH the libx264 and NVENC paths
+
+`ContainerRecorder` branches on `_useGpu` in two places — `BuildEncoderArgs` (source-segment encoding) and `BuildExtractCommand`'s `codec` selection (pass-2 re-encode) — with substantially different keyframe behavior. Before writing a property claim about recorder behavior in a doc-comment, invariant, or commit message, confirm it holds for BOTH branches.
+
+The trap: "irreducible single keyframe snap" (Invariant 6) is true for the libx264 source path (`-g 1` makes every frame a keyframe) but **false for NVENC** (`-g {fps*segmentTime}` puts keyframes only at segment boundaries, so pass-2's `-ss` can snap back up to `segmentTime` seconds). No GPU host runs in production today, so the latent inaccuracy doesn't bite — but a future GPU host would silently regress alignment. When a property doesn't hold for both, state which path it applies to ("libx264 source: …; NVENC source: …") rather than asserting it universally — Invariant 1's "NVENC caveat" is the pattern; the later invariants should match it.
 
 ## Where to start debugging when cross-clip alignment regresses
 
