@@ -1184,51 +1184,95 @@ public class SteamAuthService
         }
     }
 
-    // Runs a CDN-host request across the available servers, failing over on error. A DNS/connect
-    // failure (SocketException) is host-fatal: skip to the next server immediately with no delay.
-    // A transient HTTP failure (e.g. 503 during a depot rollout) backs off, then retries the next
-    // server. Throws an aggregated exception only when every server has been exhausted.
+    /// <summary>
+    /// Mutable CDN failover state shared across every <see cref="RetryAcrossServersAsync{T}"/>
+    /// call of a single download. Created once in <see cref="DownloadGameAsync"/> and threaded
+    /// into the per-chunk calls so a host that goes dead (or a failover that's already been
+    /// logged) is remembered across the thousands of chunks — without it, a DNS-dead host is
+    /// re-attempted and re-logged once per chunk and floods the console.
+    /// <para>
+    /// The download loop is strictly sequential (one <c>foreach</c> over files, then chunks),
+    /// so these sets need no synchronization. If chunk downloads are ever parallelized, switch
+    /// to concurrent sets.
+    /// </para>
+    /// </summary>
+    private sealed class CdnDownloadSession(IReadOnlyList<Server> servers)
+    {
+        public IReadOnlyList<Server> Servers { get; } = servers;
+
+        // Hosts that hit a host-fatal (DNS/connect) error; skipped for the rest of the download.
+        public HashSet<string> DeadHosts { get; } = [];
+
+        // Hosts whose status has already been logged once this download (dedup guard so the
+        // "unreachable" / "now using" lines fire once per host, not once per chunk).
+        public HashSet<string> LoggedHosts { get; } = [];
+    }
+
+    // Runs a CDN-host request across the session's servers, failing over on error. A DNS/connect
+    // failure (SocketException) is host-fatal: the host is marked dead for the rest of the
+    // download (skipped by every later call) and logged once. A transient HTTP failure (e.g. 503
+    // during a depot rollout) backs off, then retries the next live server. Throws an aggregated
+    // exception only when every still-live server has been exhausted.
     private async Task<T> RetryAcrossServersAsync<T>(
         string label,
-        IReadOnlyList<Server> servers,
+        CdnDownloadSession session,
         Func<Server, Task<T>> operation
     )
     {
-        // Cap so a huge list can't spin forever; floor at 1 so the loop always runs.
-        int maxAttempts = Math.Clamp(servers.Count, 1, 8);
+        // Only hosts not already known-dead from an earlier call are worth attempting.
+        var live = session.Servers.Where(s => !session.DeadHosts.Contains(s.Host ?? "")).ToList();
         var failures = new List<Exception>();
+        if (live.Count == 0)
+        {
+            throw new AggregateException(
+                $"{label}: all {session.Servers.Count} CDN servers are marked unreachable",
+                failures
+            );
+        }
+
+        // Cap so a huge list can't spin forever; floor at 1 so the loop always runs.
+        int maxAttempts = Math.Clamp(live.Count, 1, 8);
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var server = servers[attempt % servers.Count];
-            // Log only retries (attempt 2+); logging every first attempt would flood the chunk loop.
-            if (attempt > 0)
-            {
-                Logger.Log(
-                    $"{_logPrefix} {label}: retrying on {server.Host} (attempt {attempt + 1}/{maxAttempts})"
-                );
-            }
+            var server = live[attempt % live.Count];
+            var host = server.Host ?? "";
             try
             {
-                return await operation(server);
+                var result = await operation(server);
+                // Announce the replacement host only when we actually failed over to it
+                // (attempt > 0), and only once. The happy-path first attempt is silent — its
+                // host is already named by the caller's "Downloading ..." line.
+                if (attempt > 0 && session.LoggedHosts.Add(host))
+                {
+                    Logger.Log($"{_logPrefix} {label}: now using {host}");
+                }
+                return result;
             }
             // No `when` guard: the last attempt's exception is collected too, so the post-loop
             // throw carries the real reason instead of propagating it raw.
             catch (Exception ex)
             {
                 failures.Add(ex);
-                bool hostDead = IsHostFatal(ex);
-                Logger.Log(
-                    $"{_logPrefix} {label} failed on {server.Host} "
-                        + $"(attempt {attempt + 1}/{maxAttempts}{(hostDead ? ", host unreachable, skipping" : "")}): {ex.Message}"
-                );
-                if (!hostDead && attempt < maxAttempts - 1)
+                if (IsHostFatal(ex))
+                {
+                    // Mark dead so no later chunk attempts this host again; log once.
+                    if (session.DeadHosts.Add(host))
+                    {
+                        Logger.Log(
+                            $"{_logPrefix} {label}: {host} unreachable (DNS), skipping for rest of download"
+                        );
+                    }
+                    continue; // host-fatal: next live server immediately, no backoff
+                }
+
+                if (attempt < maxAttempts - 1)
                 {
                     await Task.Delay(1000 * (attempt + 1));
                 }
             }
         }
         throw new AggregateException(
-            $"{label} failed across all {servers.Count} CDN servers",
+            $"{label} failed across all {live.Count} CDN servers",
             failures
         );
     }
@@ -1526,6 +1570,10 @@ public class SteamAuthService
             var cdnServerList = cdnServers.DistinctBy(s => s.Host).ToList();
             Logger.Log($"{_logPrefix} Found {cdnServerList.Count} CDN servers");
 
+            // One session shared by the manifest download and every per-chunk call below, so a
+            // host found dead once is skipped (and logged) once for the whole download.
+            var cdnSession = new CdnDownloadSession(cdnServerList);
+
             // Get manifest request code
             Logger.Log($"{_logPrefix} Getting manifest request code...");
             var manifestCode = await RetryTransientAsync(
@@ -1543,7 +1591,7 @@ public class SteamAuthService
             // any server in the list.
             var manifest = await RetryAcrossServersAsync(
                 "Download manifest",
-                cdnServerList,
+                cdnSession,
                 server =>
                     cdnClient.DownloadManifestAsync(
                         depotId,
@@ -1660,7 +1708,7 @@ public class SteamAuthService
                             // another server starts clean.
                             int written = await RetryAcrossServersAsync(
                                 $"Chunk {file.FileName}",
-                                cdnServerList,
+                                cdnSession,
                                 server =>
                                     cdnClient.DownloadDepotChunkAsync(
                                         depotId,
