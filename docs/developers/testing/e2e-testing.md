@@ -217,6 +217,19 @@ Results surface in several places, all produced from artifacts the runner emits:
   Job Summary and the PR sticky, so the interactive report (with playing videos) can
   be opened directly and shared. Per-branch history is kept; an R2 lifecycle rule
   expires reports after 30 days.
+- **README E2E badge (R2-backed)** — a full-suite run against master's committed HEAD
+  (the nightly schedule, or a plain full-suite dispatch — not a PR or filtered run) also
+  publishes two fixed-key objects the README badge consumes: `…/e2e/master/badge.json`
+  (a shields.io [endpoint](https://shields.io/badges/endpoint-badge) payload with the
+  pass/fail count, derived from `summary.json`) and `…/e2e/master/latest/index.html` (a
+  mirror of that run's report, which the badge links to). Both have fixed keys, so the
+  README needs no per-run rewrites. The badge requests the shortest cache shields.io
+  allows (its 300s endpoint-badge floor), so the rendered count refreshes within ~5 min
+  of a run — though the R2 object itself updates immediately (curl it to confirm a manual
+  run before the image catches up). Caveat: both ride the same `e2e/` 30-day
+  lifecycle rule, so a >30-day gap with no master full-suite run would prune them (the
+  badge then shows shields.io's "inaccessible" / 404s the link) — accepted because master
+  runs nightly.
 
 Under `CI` (or with the `--report` flag locally), the runner assembles that
 bundle into `TestResults/runs/{id}/report/` after the run — it requires the
