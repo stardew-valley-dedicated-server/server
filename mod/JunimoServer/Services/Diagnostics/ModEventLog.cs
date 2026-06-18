@@ -10,6 +10,11 @@ namespace JunimoServer.Services.Diagnostics;
 /// Envelope schema: see docs/developers/events-schema.md
 ///
 /// <para>
+/// Only emits when <see cref="Env.IsTest"/> (<c>SDVD_ENV=test</c>): the lines
+/// are consumed solely by the E2E harness, so prod builds skip them.
+/// </para>
+///
+/// <para>
 /// Transport: each event is one <c>Console.Out.WriteLine</c> prefixed
 /// with <c>SDVD_EVENT </c>. The host-side <c>SimpleContainerLogStreamer</c>
 /// parses the prefix and forwards the payload to <c>infrastructure.jsonl</c>,
@@ -44,6 +49,14 @@ public static class ModEventLog
     /// because reading <c>Game1.ticks</c> off the game thread is unsafe.</param>
     public static void Emit(string eventType, object? data = null, int? tickMs = null)
     {
+        // SDVD_EVENT lines are consumed only by the E2E harness's
+        // SimpleContainerLogStreamer; in prod nothing reads them, so skip the
+        // serialize + stdout write entirely.
+        if (!Env.IsTest)
+        {
+            return;
+        }
+
         try
         {
             var entry = new

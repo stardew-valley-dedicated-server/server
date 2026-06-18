@@ -50,12 +50,26 @@ public static class Logger
     /// the first failure of each type and suppress the rest.</summary>
     private static readonly ConcurrentDictionary<Type, byte> _reportedEventFailures = new();
 
+    /// <summary>Mirrors the mod's <c>Env.IsTest</c>: <c>SDVD_ENV=test</c>
+    /// (case-insensitive, matching <c>Env.SdvdEnv</c>'s <c>ToLowerInvariant</c>).
+    /// Only the E2E harness consumes <c>SDVD_EVENT </c> lines, so prod skips them.</summary>
+    private static readonly bool _isTest = string.Equals(
+        Environment.GetEnvironmentVariable("SDVD_ENV"),
+        "test",
+        StringComparison.OrdinalIgnoreCase
+    );
+
     /// <summary>
     /// Emits a structured event line. Interleaves with the free-text log
     /// stream on stdout; the host-side streamer filters by the
     /// <c>SDVD_EVENT </c> prefix and forwards to <c>infrastructure.jsonl</c>.
     ///
     /// Envelope schema: see docs/developers/events-schema.md
+    ///
+    /// <para>
+    /// Only emits when <c>SDVD_ENV=test</c>: the lines are consumed solely by
+    /// the E2E harness, so prod builds skip the serialize + stdout write.
+    /// </para>
     ///
     /// <para>
     /// Never throws: a dropped event is preferable to a crashed sidecar.
@@ -66,6 +80,11 @@ public static class Logger
     /// </summary>
     public static void LogEvent(string name, object? data = null)
     {
+        if (!_isTest)
+        {
+            return;
+        }
+
         try
         {
             var entry = new
