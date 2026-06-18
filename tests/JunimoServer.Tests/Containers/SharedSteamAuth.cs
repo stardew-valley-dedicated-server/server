@@ -131,6 +131,10 @@ public class SharedSteamAuth : IAsyncDisposable
             .WithEnvironment("PORT", ContainerPort.ToString())
             .WithEnvironment("GAME_DIR", "/data/game")
             .WithEnvironment("SESSION_DIR", "/data/steam-session")
+            // Gate for the sidecar's SDVD_EVENT emit (Logger.LogEvent). Without
+            // this its structured events stay silent even here, where the harness
+            // consumes them via SimpleContainerLogStreamer.
+            .WithEnvironment("SDVD_ENV", "test")
             .WithCreateParameterModifier(p =>
             {
                 p.HostConfig ??= new HostConfig();
