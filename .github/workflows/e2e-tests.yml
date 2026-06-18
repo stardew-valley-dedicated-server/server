@@ -651,6 +651,11 @@ jobs:
           # Prefer the gate-resolved PR head ref so the object key is keyed on the PR's
           # branch — on issue_comment, github.ref_name is the default branch (master).
           BRANCH_REF: ${{ needs.gate.outputs.head_ref || github.ref_name }}
+          # "" + "" means a full-suite run against master's committed HEAD (gate no-PR
+          # branch leaves head_sha unset; empty filter = no subset). Gates the two README-
+          # badge publishes below (badge.json count + the latest/ report mirror) — a
+          # PR/filtered run's result isn't representative of master, so it must not move them.
+          MASTER_FULL_SUITE: ${{ needs.gate.outputs.head_sha == '' && needs.gate.outputs.filter == '' }}
         run: |
           # GitHub runs steps with `bash -eo pipefail` (errexit ON). Relax it so a
           # partial failure can't truncate the script before the summary write.
@@ -673,6 +678,41 @@ jobs:
           fi
 
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          # README E2E badge: a shields.io `endpoint` badge reads this JSON from a stable
+          # R2 key. Only a master full-suite run publishes it (head_sha=='' && filter=='';
+          # a PR/filtered count isn't representative — see the MASTER_FULL_SUITE comment).
+          # Done here (before the report-dir check) so an aborted run with no report bundle
+          # still updates the badge. Classification mirrors deriveResult in e2e-pr-sticky.js
+          # (aborted > failed > passed). Rides the same e2e/ 30-day lifecycle as latest/.
+          if [ "$MASTER_FULL_SUITE" = "true" ]; then
+            summary=$(find TestResults/runs/*/summary.json -maxdepth 0 2>/dev/null | head -n1 || true)
+            if [ -z "$summary" ] || [ "$(jq -r '.aborted // false' "$summary")" = "true" ]; then
+              msg="run aborted"; col="lightgrey"
+            else
+              passed=$(jq -r '.passed // 0' "$summary")
+              failed=$(jq -r '.failed // 0' "$summary")
+              if [ "$failed" -gt 0 ]; then
+                msg="${failed} failed, ${passed} passed"; col="red"
+              else
+                msg="${passed} passed"; col="brightgreen"
+              fi
+            fi
+            # badge.json is overwritten in place each run, so bound BOTH caches in series
+            # to the shortest shields.io allows: cacheSeconds=300 is its endpoint-badge
+            # floor (services/endpoint clamps via Math.max(300, cacheSeconds)), and a
+            # matching Cache-Control keeps R2's r2.dev edge from adding latency on top.
+            # The R2 object itself updates immediately; only the rendered badge holds ≤5min.
+            jq -nc --arg m "$msg" --arg c "$col" \
+              '{schemaVersion:1, label:"E2E Tests", message:$m, color:$c, cacheSeconds:300}' > badge.json
+            if aws s3 cp badge.json "s3://${R2_BUCKET}/e2e/master/badge.json" \
+                 --endpoint-url "$endpoint" --content-type application/json \
+                 --cache-control "max-age=300" --no-progress; then
+              echo "Updated badge: $msg"
+            else
+              echo "::warning::badge.json upload failed — README badge may be stale."
+            fi
+          fi
 
           # Exactly one run per CI invocation, so the glob resolves a single report dir.
           report_dir=$(find TestResults/runs/*/report -maxdepth 0 -type d 2>/dev/null | head -n1 || true)
@@ -714,6 +754,25 @@ jobs:
             # Hand the URL to the PR-sticky step (no-op on dispatch / when unconfigured).
             echo "report_url=$url" >> "$GITHUB_OUTPUT"
             echo "Published report: $url ($size)"
+
+            # Stable latest/ mirror that the README badge links to — only a master
+            # full-suite run moves it (retention caveat: docs e2e-testing.md "Hosted report").
+            if [ "$MASTER_FULL_SUITE" = "true" ]; then
+              latest_key="e2e/master/latest"
+              latest_dir="${report_dir}.latest"
+              cp -r "$report_dir" "$latest_dir"
+              # The run-id sed above already consumed the sentinels, so re-point the copy's
+              # now-absolute OG urls (run-id → latest) so previews of the stable URL self-reference.
+              sed -i \
+                -e "s#${R2_PUBLIC_BASE_URL%/}/${key}/#${R2_PUBLIC_BASE_URL%/}/${latest_key}/#g" \
+                "$latest_dir/index.html"
+              if aws s3 sync "$latest_dir" "s3://${R2_BUCKET}/${latest_key}" \
+                   --endpoint-url "$endpoint" --no-progress --delete; then
+                echo "Updated stable badge report: ${R2_PUBLIC_BASE_URL%/}/${latest_key}/index.html"
+              else
+                echo "::warning::latest/ mirror sync failed — badge link may be stale (per-run report still published)."
+              fi
+            fi
           else
             echo "::warning::R2 publish failed (network/credentials/quota). Report remains in the 'e2e-web-report' artifact."
           fi
