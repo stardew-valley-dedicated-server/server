@@ -50,9 +50,14 @@ public static class Logger
     /// the first failure of each type and suppress the rest.</summary>
     private static readonly ConcurrentDictionary<Type, byte> _reportedEventFailures = new();
 
-    /// <summary>Mirrors the mod's <c>Env.IsTest</c>: <c>SDVD_ENV=test</c>.
+    /// <summary>Mirrors the mod's <c>Env.IsTest</c>: <c>SDVD_ENV=test</c>
+    /// (case-insensitive, matching <c>Env.SdvdEnv</c>'s <c>ToLowerInvariant</c>).
     /// Only the E2E harness consumes <c>SDVD_EVENT </c> lines, so prod skips them.</summary>
-    private static readonly bool _isTest = Environment.GetEnvironmentVariable("SDVD_ENV") == "test";
+    private static readonly bool _isTest = string.Equals(
+        Environment.GetEnvironmentVariable("SDVD_ENV"),
+        "test",
+        StringComparison.OrdinalIgnoreCase
+    );
 
     /// <summary>
     /// Emits a structured event line. Interleaves with the free-text log
