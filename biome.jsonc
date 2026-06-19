@@ -10,9 +10,11 @@
             ".github/scripts/**",
             "docs/.vitepress/**",
             "tests/test-ui/**",
-            // public/ holds Vite static assets (copied verbatim into the build) — vendor-exported
-            // artwork, not source. Linting them is a category error (e.g. noSvgWithoutTitle on the logo).
+            // Vendor-exported artwork/fonts, not authored source: public/ (copied verbatim
+            // into the build) and src/assets/ (imported so Vite hashes them). Linting these is
+            // a category error (e.g. noSvgWithoutTitle on the logo svg).
             "!tests/test-ui/public",
+            "!tests/test-ui/src/assets",
             "tools/discord-bot/**",
             "tools/test-observability.ts",
             "tools/tsconfig.json"

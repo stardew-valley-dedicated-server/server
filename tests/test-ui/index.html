@@ -2,8 +2,15 @@
 <html lang="en" data-theme="sdvd-aqua">
   <head>
     <meta charset="UTF-8" />
+    <!-- Must precede every URL-bearing tag below — <base> only affects elements
+         after it. Relative "./" resolves assets against the served dir: correct
+         for dev, the live runner (root), the offline file:// bundle, and the R2
+         per-run subpath. (Holds under hash routing, where the document path is
+         stable; switching to history routing would need an absolute <base href>
+         injected at publish, since deep routes change the path.) -->
+    <base href="./" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/img/logo.svg" />
     <!-- META:BEGIN -->
     <!-- ReportGenerator replaces this block per-run; the workflow fills the
          absolute __OG_URL__/__OG_IMAGE__ sentinels in the published report. -->

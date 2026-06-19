@@ -7,6 +7,7 @@ import { useFilterTrigger, useTestUI } from "../composables/useTestUI";
 import type { ClassSnapshot, TestSnapshot } from "../types/state";
 import { shortTestName } from "../utils/format";
 import { statusFilterClass } from "../utils/status";
+import EmptyState from "./EmptyState.vue";
 import SortIcon from "./SortIcon.vue";
 import StatusIcon from "./StatusIcon.vue";
 import TestTreeItem from "./TestTreeItem.vue";
@@ -742,11 +743,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
       </div>
 
       <!-- Empty state -->
-      <div v-if="store.collections.value.length === 0 && store.state.setupPhases.length === 0"
-           class="flex flex-col items-center justify-center py-16 px-4 text-base-content/40">
-        <img src="/logo.svg" alt="" class="w-10 h-10 mb-3 opacity-20" />
-        <span class="text-sm">Waiting for tests...</span>
-      </div>
+      <EmptyState v-if="store.collections.value.length === 0 && store.state.setupPhases.length === 0"
+                  label="Waiting for tests..." class="py-16 px-4" />
     </div>
 
   </div>
