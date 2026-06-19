@@ -105,12 +105,8 @@ public sealed class ReportGenerator
         var reportDir = Path.Combine(_testResultsPath, "report");
         Directory.CreateDirectory(reportDir);
 
-        // Copy the SPA (JS, CSS) next to the bundle.
+        // Copy the SPA (JS, CSS, hashed images/fonts) next to the bundle.
         CopyAssets(reportDir);
-
-        // Root-level dist statics (favicon) aren't under dist/assets/, so CopyAssets
-        // misses them — copy the ones the report references explicitly.
-        CopyRootStatic(reportDir, "logo.svg");
 
         // Generate the link-preview og:image alongside index.html. Best-effort: a
         // failure leaves the og:image sentinel pointing at a missing file, which
@@ -174,11 +170,6 @@ public sealed class ReportGenerator
             html = dataTag + "\n" + html;
         }
 
-        // Fix asset paths to be relative (the bundle is opened over file://).
-        // Vite outputs paths like /assets/xxx.js; make them ./assets/xxx.js
-        html = html.Replace("src=\"/assets/", "src=\"./assets/");
-        html = html.Replace("href=\"/assets/", "href=\"./assets/");
-
         html = ReplaceMetaBlock(html, summary);
 
         var reportPath = Path.Combine(reportDir, "index.html");
@@ -187,15 +178,6 @@ public sealed class ReportGenerator
         Console.Error.WriteLine(
             $"[WebUI] Static report generated: {PathDisplay.ScrubMessage(reportPath)}"
         );
-    }
-
-    private void CopyRootStatic(string reportDir, string fileName)
-    {
-        var src = Path.Combine(_spaDistPath, fileName);
-        if (File.Exists(src))
-        {
-            File.Copy(src, Path.Combine(reportDir, fileName), overwrite: true);
-        }
     }
 
     // Replaces the source index.html's <!-- META:BEGIN/END --> block with per-run

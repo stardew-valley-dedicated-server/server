@@ -24,6 +24,7 @@ import {
     type TimestampMode,
 } from "../utils/output";
 import { statusBgClass } from "../utils/status";
+import EmptyState from "./EmptyState.vue";
 import ImageLightbox from "./ImageLightbox.vue";
 import MediaCard from "./MediaCard.vue";
 import StatusIcon from "./StatusIcon.vue";
@@ -754,10 +755,7 @@ onUnmounted(() => window.removeEventListener("keydown", onSearchShortcut));
 <template>
   <div class="flex flex-col h-full">
     <!-- Empty state -->
-    <div v-if="!test && !step && !error" class="flex-1 flex flex-col items-center justify-center text-base-content/30 gap-2">
-      <img src="/logo.svg" alt="" class="w-10 h-10 opacity-15" />
-      <span class="text-sm">Select a test to view details</span>
-    </div>
+    <EmptyState v-if="!test && !step && !error" label="Select a test to view details" class="flex-1" />
 
     <!-- Run error details -->
     <template v-else-if="error">
