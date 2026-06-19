@@ -1,3 +1,7 @@
+---
+description: The JunimoServer community — FAQ, where to get help, how to report bugs, contributing, the project roadmap, and changelog.
+---
+
 # Community
 
 JunimoServer is a community project. Glad to have you here!

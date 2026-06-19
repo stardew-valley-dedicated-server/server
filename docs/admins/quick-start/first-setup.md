@@ -1,3 +1,7 @@
+---
+description: First-time JunimoServer setup — handling Steam Guard, creating or importing a farm, and getting players connected for the first time.
+---
+
 # First Server Setup
 
 ## Steam Guard Methods

@@ -1,5 +1,6 @@
 ---
 layout: home
+description: Host a Stardew Valley farm online 24/7 with JunimoServer — a self-hosted, Docker-based dedicated server with cabin management, password protection, and mod support.
 
 hero:
     name: JunimoServer

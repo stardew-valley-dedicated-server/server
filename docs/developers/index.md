@@ -1,3 +1,7 @@
+---
+description: Developer documentation for JunimoServer — REST API reference, mod and networking architecture, the E2E test harness, and contributing guides.
+---
+
 # Developers
 
 Technical documentation for integrating with, extending, or contributing to JunimoServer.

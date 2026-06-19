@@ -1,3 +1,7 @@
+---
+description: JunimoServer features — password-protected lobbies, cabin and chest protection, cross-platform multiplayer, SMAPI mod support, a Discord bot, and a REST API.
+---
+
 # Features
 
 ## Security

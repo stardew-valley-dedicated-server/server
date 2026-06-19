@@ -1,3 +1,7 @@
+---
+description: Install JunimoServer with Docker Compose — download the configuration, set your Steam credentials, and start your Stardew Valley dedicated server.
+---
+
 # Installation
 
 For development, see [Building from Source](/developers/advanced/building-from-source).
