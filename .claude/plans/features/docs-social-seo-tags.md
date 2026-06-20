@@ -96,7 +96,7 @@ De-dup mechanism — **verified against `vitepress/dist/node/chunk-D3CUZ4fa.js`*
 - VitePress auto-emits `<title>` and `<meta name="description">` itself (chunk:49468–69); we are *adding* OG/Twitter/canonical, not replacing those. No conflict.
 
 Other verified facts:
-- **URL suffix:** no `cleanUrls`/`rewrites` in config (confirmed). SSG writes `page.replace(/\.md$/,".html")` (chunk:49483) → canonical uses `.html`. Home (`index.md`) → `${base}` (root). Still inspect one built file as the final gate.
+- **URL suffix:** no `cleanUrls`/`rewrites` in config (confirmed), so SSG writes `*.html` (chunk:49483). The canonical/og:url suffix is derived from `siteConfig.cleanUrls` (`.html` when false/unset, extension-less when true) so it stays correct if `cleanUrls` is ever enabled. Home (`index.md`) → `${base}` (root). Still inspect one built file as the final gate.
 - **404 page:** guarded by `pageData.isNotFound` early-return above.
 
 ### 4. Per-page description hygiene (content pass)

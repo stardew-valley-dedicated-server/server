@@ -101,11 +101,14 @@ export default withMermaid(
         // and description-less pages get sensible values. These tags replace the
         // page-invariant placeholders in `head` via mergeHead (property/name must be
         // the first attr key for the dedup to match).
-        transformHead({ pageData, title, description }) {
+        transformHead({ pageData, siteConfig, title, description }) {
             if (pageData.isNotFound) {
                 return [];
             }
-            const path = pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, ".html");
+            // Match the canonical/og:url suffix to how the page is actually served:
+            // cleanUrls strips the .html extension, otherwise it's kept (VitePress default).
+            const suffix = siteConfig.cleanUrls ? "" : ".html";
+            const path = pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, suffix);
             const url = `${origin}${base}${path}`;
             return [
                 ["meta", { property: "og:title", content: title }],
