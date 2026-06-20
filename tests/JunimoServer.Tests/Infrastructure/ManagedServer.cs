@@ -1173,6 +1173,11 @@ internal sealed class ManagedServer : IAsyncDisposable
         public const string ServerLogError = "server_log_error";
         public const string FarmerRemovalTimeout = "farmer_removal_timeout";
         public const string CleanupFarmerDeleteFailed = "cleanup_farmer_delete_failed";
+
+        /// <summary>A test intentionally retired a server it left unusable (e.g. a deliberate
+        /// network-outage test whose server's API reachability can't be restored), so it must not be
+        /// reused. Not a defect — distinguishes intentional retirement from real poison in reports.</summary>
+        public const string TestRetiredServer = "test_retired_server";
         public const string Other = "other";
     }
 

@@ -220,7 +220,11 @@ public class SteamGameServerService : ModService
 
     private static void OnSteamServersConnectFailure(SteamServerConnectFailure_t callback)
     {
-        _monitor.Log($"Failed to connect to Steam servers: {callback.m_eResult}", LogLevel.Error);
+        // Warn, not Error: a CM connect failure is recoverable (SteamKit keeps retrying and
+        // the SDR relay reconnects), so it is not a fatal condition. Error here also poisons
+        // E2E tests — the server-side log scan cancels on ERROR/FATAL (see debugging.md) — which
+        // is wrong for a transient flap and breaks the deliberate-outage repro.
+        _monitor.Log($"Failed to connect to Steam servers: {callback.m_eResult}", LogLevel.Warn);
         if (callback.m_bStillRetrying)
         {
             _monitor.Log("Still retrying connection...", LogLevel.Info);

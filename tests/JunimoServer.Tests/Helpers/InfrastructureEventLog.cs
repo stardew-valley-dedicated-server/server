@@ -123,7 +123,13 @@ namespace JunimoServer.Tests.Helpers;
 /// (<c>invocation, networkingSet</c>) · <c>auth_galaxy_state_change</c>
 /// (<c>invocation, operationalState, signedIn, loggedOn, networkingSet</c>;
 /// diagnostic — observes whether the Galaxy SDK re-fires after reconnect)
-/// (each optionally carries <c>mode:"gameServer"</c>).</item>
+/// (these four — success/failed/lost/state_change — carry <c>mode:"gameServer"</c> on the
+/// GameServer-mode path, omitted on the client-mode path) · the
+/// Steam-reconnect-triggered Galaxy-reauth recovery (<c>trigger:"reconnect"|"test"</c>):
+/// <c>auth_galaxy_relogin_skipped</c> (<c>trigger, reason:"galaxy_lobby_connected"</c>; gate
+/// declined re-login because the Galaxy lobby was still live) / <c>auth_galaxy_relogin_attempt</c>
+/// (<c>trigger, galaxyConnected</c>; gate began re-login on a dead lobby) /
+/// <c>auth_galaxy_recovered</c> (no payload; lobby re-stamped after the re-login settled).</item>
 ///
 /// <item><b>Mod role changes (RoleService)</b>:
 /// <c>role_assigned</c> / <c>role_unassigned</c> (<c>playerId, role</c>).</item>

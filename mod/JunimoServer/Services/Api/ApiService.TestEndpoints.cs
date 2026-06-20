@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using JunimoServer.Services.Auth;
 using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Util;
@@ -81,6 +82,9 @@ public partial class ApiService
                         return;
                     case "/test/stamp_claim":
                         await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
+                        return;
+                    case "/test/galaxy_relogin":
+                        await WriteJsonAsync(response, await HandlePostTestGalaxyReloginAsync());
                         return;
                 }
                 break;
@@ -621,6 +625,40 @@ public partial class ApiService
         {
             // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
             result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/galaxy_relogin",
+        Summary = "Trigger a Galaxy re-sign-in on demand, no outage (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestGalaxyReloginResponse), 200)]
+    private async Task<TestGalaxyReloginResponse> HandlePostTestGalaxyReloginAsync()
+    {
+        // No-op safety probe for the Steam-reconnect-triggered Galaxy-reauth fix: re-login while
+        // Galaxy is HEALTHY and a client is connected, so the test can verify the live lobby and
+        // invite code survive. Runs the same BeginGalaxyReSignIn the real fix uses.
+        var result = new TestGalaxyReloginResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                result.Triggered = GalaxyAuthService.TriggerGalaxyReSignInForTest();
+                if (!result.Triggered)
+                {
+                    result.Error =
+                        "Galaxy not initialized (no STEAM_AUTH_URL, or not yet signed in)";
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            result.Triggered = false;
             result.Error = ex.Message;
         }
 

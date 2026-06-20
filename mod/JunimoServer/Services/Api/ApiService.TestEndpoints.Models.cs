@@ -182,3 +182,16 @@ public class TestStampClaimResponse
     /// <summary>The slot's homeLocation after stamping (must resolve to a Cabin for the homed-path test).</summary>
     public string HomeLocation { get; set; } = "";
 }
+
+/// <summary>
+/// Response from POST /test/galaxy_relogin (test-only). Triggers a Galaxy re-sign-in with no outage,
+/// so a test can verify that re-login while Galaxy is healthy and a client is connected does not
+/// disrupt the live lobby or change the invite code (the no-op safety question for the
+/// Steam-reconnect-triggered Galaxy-reauth fix).
+/// </summary>
+public class TestGalaxyReloginResponse
+{
+    /// <summary>True if the re-sign-in was triggered (Galaxy was initialized); false otherwise.</summary>
+    public bool Triggered { get; set; }
+    public string? Error { get; set; }
+}
