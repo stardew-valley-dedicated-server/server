@@ -115,12 +115,21 @@ internal static class InfraEventReader
     /// null on timeout. Use a SHORT timeout (a flush-settle window, a few seconds)
     /// when confirming absence; a LONGER one when waiting for an expected event to
     /// land (e.g. the post-restore Steam reconnect).
+    ///
+    /// <paramref name="since"/> anchors the wait to an action: only events with
+    /// <c>Ts >= since</c> match, so the same server's own earlier-in-the-run emissions
+    /// (an initial-boot <c>steam_session_connected</c>, a pre-outage lobby) can't satisfy
+    /// a wait — or, for absence checks, can't produce a false positive. Capture
+    /// <c>DateTime.UtcNow</c> (or a prior anchoring event's <c>Ts</c>) immediately before
+    /// the action that should cause the event, and pass it here. (<paramref name="forwardedVia"/>
+    /// already isolates by origin container; <paramref name="since"/> adds the temporal axis.)
     /// </summary>
     public static async Task<Event?> WaitForEventAsync(
         IReadOnlySet<string> eventNames,
         Func<Event, bool> predicate,
         TimeSpan timeout,
         string? forwardedVia = null,
+        DateTime? since = null,
         TimeSpan? pollInterval = null,
         CancellationToken ct = default
     )
@@ -129,7 +138,9 @@ internal static class InfraEventReader
         var deadline = DateTime.UtcNow + timeout;
         while (true)
         {
-            var match = Read(eventNames, forwardedVia).FirstOrDefault(predicate);
+            var match = Read(eventNames, forwardedVia)
+                .Where(e => since is not { } s || (e.Ts is { } ts && ts >= s))
+                .FirstOrDefault(predicate);
             if (match != null)
             {
                 return match;

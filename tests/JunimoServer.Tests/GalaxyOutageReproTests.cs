@@ -99,6 +99,10 @@ public class GalaxyOutageReproTests : TestBase
         var networkId = await NetworkOutageHelper.GetAttachedNetworkIdAsync(Lease, ct);
         managed.SuspendHealthChecks();
         Log($"Health checks suspended; cutting network {networkId[..12]}…");
+        // Anchor every post-cut event wait to this instant so the server's own initial-boot
+        // emissions (a first steam_session_connected, the pre-outage auth_steam_lobby_created)
+        // can never satisfy an outage-recovery wait.
+        var outageStart = DateTime.UtcNow;
         await NetworkOutageHelper.DisconnectAsync(Lease, ct);
 
         try
@@ -111,6 +115,7 @@ public class GalaxyOutageReproTests : TestBase
                 e => e.Name == "steam_session_lost",
                 TimeSpan.FromMinutes(2),
                 forwardedVia: serverSlug,
+                since: outageStart,
                 ct: ct
             );
             Assert.True(
@@ -159,6 +164,7 @@ public class GalaxyOutageReproTests : TestBase
                 && r.GetBoolean(),
             reconnectBudget,
             forwardedVia: serverSlug,
+            since: outageStart,
             ct: ct
         );
         Assert.True(
@@ -183,6 +189,7 @@ public class GalaxyOutageReproTests : TestBase
             e => e.Name == "auth_galaxy_recovered" || e.Name == "auth_galaxy_relogin_skipped",
             TimeSpan.FromMinutes(3),
             forwardedVia: serverSlug,
+            since: steamReconnect!.Ts,
             ct: ct
         );
         Assert.True(
@@ -198,13 +205,10 @@ public class GalaxyOutageReproTests : TestBase
         // points the (live) Galaxy lobby at a current Steam lobby rather than the dead pre-outage one.
         var freshSteamLobby = await InfraEventReader.WaitForEventAsync(
             SteamLobbyEvents,
-            e =>
-                e.Name == "auth_steam_lobby_created"
-                && steamReconnect!.Ts is { } rt
-                && e.Ts is { } et
-                && et >= rt,
+            e => e.Name == "auth_steam_lobby_created",
             TimeSpan.FromMinutes(2),
             forwardedVia: serverSlug,
+            since: steamReconnect!.Ts,
             ct: ct
         );
         Assert.True(
@@ -272,6 +276,9 @@ public class GalaxyOutageReproTests : TestBase
 
         // Drive the gated re-login path with NO outage. The gate sees the lobby is still connected and
         // declines — Triggered just means the endpoint reached the gate, not that a re-login ran.
+        // Anchor the verdict waits to just before the trigger so the absent-recovered check can't be
+        // fooled by any earlier-in-this-server's-life recovery, and the skipped match is this trigger's.
+        var gateProbeStart = DateTime.UtcNow;
         var relogin = await ServerApi.TriggerGalaxyRelogin(ct);
         Assert.True(relogin?.Triggered == true, $"Gate path was not reached: {relogin?.Error}");
         Log(
@@ -289,6 +296,7 @@ public class GalaxyOutageReproTests : TestBase
                 && t.GetString() == "test",
             TimeSpan.FromSeconds(20),
             forwardedVia: serverSlug,
+            since: gateProbeStart,
             ct: ct
         );
         Assert.True(
@@ -302,6 +310,7 @@ public class GalaxyOutageReproTests : TestBase
             e => e.Name == "auth_galaxy_recovered",
             TimeSpan.FromSeconds(5),
             forwardedVia: serverSlug,
+            since: gateProbeStart,
             ct: ct
         );
         Assert.True(
