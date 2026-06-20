@@ -168,16 +168,23 @@ public sealed class CIRenderer : RendererBase
             _out.WriteLine();
         }
 
-        // Summary footer: include implicit skips (tests that never executed)
+        // Summary footer: include implicit skips (tests that never executed). e.Failed is xUnit's
+        // raw count (it lumps canceled in), so use it for the implicit-skip math but report the
+        // reclassified FailedCount/CanceledCount (matching summary.json) below.
         var executedTotal = e.Passed + e.Failed + e.Skipped;
         var implicitSkipped = Math.Max(0, TotalDiscovered - executedTotal);
         var totalSkipped = e.Skipped + implicitSkipped;
-        var totalTests = e.Passed + e.Failed + totalSkipped;
+        var totalTests = e.Passed + FailedCount + CanceledCount + totalSkipped;
         var parts = new List<string>();
 
-        if (e.Failed > 0)
+        if (FailedCount > 0)
         {
-            parts.Add(RedBold($"{e.Failed} failed"));
+            parts.Add(RedBold($"{FailedCount} failed"));
+        }
+
+        if (CanceledCount > 0)
+        {
+            parts.Add(Yellow($"{CanceledCount} canceled"));
         }
 
         if (totalSkipped > 0)
