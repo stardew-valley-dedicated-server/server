@@ -7,7 +7,7 @@ namespace JunimoServer.Tests;
 /// <summary>
 /// E2E coverage for CropSaver across Garden Pots.
 ///
-/// Two complementary tests, both load-bearing:
+/// Three complementary tests, all load-bearing:
 /// <list type="bullet">
 /// <item><description>
 /// <see cref="GardenPotCrop_IsRegisteredWithCropSaverWatcher"/> exercises the
@@ -23,9 +23,17 @@ namespace JunimoServer.Tests;
 /// out-of-season kill. Also exercises <c>SaverCrop.TryGetCoorespondingDirt</c>'s
 /// <c>StardewValley.Objects.IndoorPot</c> branch.
 /// </description></item>
+/// <item><description>
+/// <see cref="PotCropInImmuneLocation_SurvivesPastDateOfDeath_WhileOwnerOffline"/>
+/// drives a pot crop in a season-immune location (the farmhand's cabin interior)
+/// past its computed date of death through a real <c>OnDayEnd</c>, asserting the
+/// <c>IsCropSeasonImmune()</c> guard spares it — the greenhouse bug class.
+/// </description></item>
 /// </list>
 /// </summary>
-[TestServer(Isolation = IsolationMode.SharedClass)]
+// Exclusive serializes the methods (SharedClass alone runs them concurrently): all
+// three mutate the global calendar and would clobber each other mid-transition.
+[TestServer(Isolation = IsolationMode.SharedClass, Exclusive = true)]
 public class CropSaverTests : TestBase
 {
     /// <summary>
@@ -34,6 +42,13 @@ public class CropSaverTests : TestBase
     /// DaysInPhase=[1,2,4,4,1] = 12 days total to maturity.
     /// </summary>
     private const string CauliflowerSeedId = "474";
+
+    /// <summary>
+    /// Pumpkin seed id (unqualified). Fall-only, so planted Fall 1 its CropSaver date
+    /// of death is Fall 28 — the immune-location test drives one SetDate to that
+    /// season-end rollover, where a seasonal crop would be killed.
+    /// </summary>
+    private const string PumpkinSeedId = "490";
 
     /// <summary>
     /// Tile coordinates on open Farm soil south of the FarmHouse front door
@@ -54,12 +69,21 @@ public class CropSaverTests : TestBase
     private const int TileB_X = 64;
     private const int TileB_Y = 22;
 
+    /// <summary>
+    /// Tile inside the farmhand's cabin interior for the immune-location test.
+    /// The cabin interior is a separate location from the Farm, so this needs no
+    /// coordination with the Farm tiles above. (3, 5) is open floor in the
+    /// starter cabin map, clear of the bed/chest/TV furniture near the walls.
+    /// </summary>
+    private const int CabinTileX = 3;
+    private const int CabinTileY = 5;
+
     [Fact]
     public async Task GardenPotCrop_IsRegisteredWithCropSaverWatcher()
     {
         var ct = TestContext.Current.CancellationToken;
         await PlacePotAndPlantCauliflowerAsync(TileA_X, TileA_Y, ct);
-        await AssertWatcherRegistersPotAsync(TileA_X, TileA_Y, ct);
+        await AssertWatcherRegistersPotAsync("Farm", TileA_X, TileA_Y, ct);
     }
 
     [Fact]
@@ -68,7 +92,7 @@ public class CropSaverTests : TestBase
         var ct = TestContext.Current.CancellationToken;
 
         var farmhand = await PlacePotAndPlantCauliflowerAsync(TileB_X, TileB_Y, ct);
-        await AssertWatcherRegistersPotAsync(TileB_X, TileB_Y, ct);
+        await AssertWatcherRegistersPotAsync("Farm", TileB_X, TileB_Y, ct);
 
         // Pre-arm extraDays past CropSaver.OnDayEnd's branch-1 / branch-2
         // floors so the prolong logic doesn't kill the crop *inside* OnDayEnd
@@ -154,6 +178,119 @@ public class CropSaverTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task PotCropInImmuneLocation_SurvivesPastDateOfDeath_WhileOwnerOffline()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Plant a Pumpkin in a Garden Pot inside the farmhand's own cabin
+        // interior — an indoor (season-immune) location, exercising the same fix
+        // branch as the greenhouse (the Greenhouse itself is CC-pantry-gated
+        // rubble on a fresh test save and isn't warpable/plantable).
+        var farmhand = await Farmers.ConnectNewAsync(namePrefix: "CropImmune", ct: ct);
+
+        // The farmhand auto-warps into its cabin on join; the client reports the
+        // interior as "FarmHouse" + GUID (NameOrUniqueName), so confirm arrival on that.
+        // Placement and the crop snapshot below key on GameLocation.Name, which is
+        // "Cabin" — not the unique name above.
+        var arrived = await GameClient.WaitForLocationAsync(
+            "^FarmHouse",
+            TimeSpan.FromSeconds(15),
+            ct
+        );
+        Assert.NotNull(arrived);
+
+        var place = await GameClient.Actions.PlacePot(
+            "Cabin",
+            CabinTileX,
+            CabinTileY,
+            clearObstacles: true
+        );
+        Assert.True(place?.Success, $"PlacePot failed: {place?.Error}");
+
+        var plant = await GameClient.Actions.PlantCrop(
+            PumpkinSeedId,
+            "Cabin",
+            CabinTileX,
+            CabinTileY
+        );
+        Assert.True(plant?.Success, $"PlantCrop failed: {plant?.Error}");
+
+        await AssertWatcherRegistersPotAsync("Cabin", CabinTileX, CabinTileY, ct);
+
+        // The fix must classify the cabin as season-immune. Assert it on the
+        // snapshot row so a regression in IsCropSeasonImmune() fails here loudly
+        // rather than only via the survival check below.
+        var snapshot = await ServerApi.GetAllCrops(ct);
+        Assert.NotNull(snapshot);
+        var potRow = snapshot.Crops.SingleOrDefault(c =>
+            c.IsInPot && c.LocationName == "Cabin" && c.TileX == CabinTileX && c.TileY == CabinTileY
+        );
+        Assert.NotNull(potRow);
+        Assert.True(
+            potRow.IsSeasonImmune,
+            "Cabin interior must be season-immune (indoor → !IsOutdoors)"
+        );
+
+        // Stamp datePlanted = Fall 1 (death Fall 28) with extraDays left at 0, so the
+        // upcoming Fall 28 → Winter 1 rollover would kill a seasonal crop. Only the
+        // immunity guard spares this one.
+        var planted = await ServerApi.SetSaverCrop(
+            "Cabin",
+            CabinTileX,
+            CabinTileY,
+            datePlanted: ("fall", 1, 1),
+            ct: ct
+        );
+        Assert.NotNull(planted);
+        Assert.True(planted.Success, $"SetSaverCrop failed: {planted.Error}");
+        Assert.True(planted.Found, "SaverCrop entry must exist before setting datePlanted");
+
+        await ServerApi.SetDate("fall", 28, year: 1, ct);
+
+        // Disconnect the owner so branch-2's kill exception (online owner) does
+        // not apply — the kill would definitely fire here without the fix.
+        await Farmers.DisconnectAndWaitForSlotAsync(
+            farmhand.JoinResult.UniqueMultiplayerId,
+            farmhand.FarmerName,
+            ct
+        );
+
+        var statusBefore = await ServerApi.GetStatus(ct);
+        Assert.NotNull(statusBefore);
+        await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
+        await ServerApi.SetClockSpeed(20, ct);
+        try
+        {
+            var dayChanged = await DayChange.WaitAsync(
+                statusBefore.Day,
+                statusBefore.Season,
+                statusBefore.Year,
+                ct
+            );
+            Assert.True(dayChanged, "Day did not advance from Fall 28 → Winter 1");
+        }
+        finally
+        {
+            await ServerApi.SetClockSpeed(1, ct);
+        }
+
+        // OnDayEnd ran during the transition. The immunity guard's `continue`
+        // must have skipped the date-of-death kill for this indoor pot.
+        var cropsAfter = await ServerApi.GetAllCrops(ct);
+        Assert.NotNull(cropsAfter);
+        var stillThere = cropsAfter.Crops.SingleOrDefault(c =>
+            c.IsInPot && c.LocationName == "Cabin" && c.TileX == CabinTileX && c.TileY == CabinTileY
+        );
+        Assert.NotNull(stillThere);
+        Assert.True(
+            stillThere.IsAlive,
+            "Pumpkin in a Garden Pot inside a season-immune cabin interior must survive "
+                + "Fall 28 → Winter 1 past its computed date of death. Pre-fix: CropSaver.OnDayEnd "
+                + "had no immunity awareness and date-of-death-killed it — the greenhouse bug class."
+        );
+    }
+
     /// <summary>
     /// Connects a farmhand, warps to the Farm pot tile, places an IndoorPot,
     /// and plants Cauliflower. Returns the connected farmhand. Note: the
@@ -206,7 +343,12 @@ public class CropSaverTests : TestBase
     /// the host-side /test/crops endpoint, which sets <c>IsManaged=true</c>
     /// when <c>CropSaverData</c> has a matching entry.
     /// </summary>
-    private async Task AssertWatcherRegistersPotAsync(int tileX, int tileY, CancellationToken ct)
+    private async Task AssertWatcherRegistersPotAsync(
+        string locationName,
+        int tileX,
+        int tileY,
+        CancellationToken ct
+    )
     {
         var watcherRegisteredPot = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CropSaver_AwaitWatcher,
@@ -216,7 +358,7 @@ public class CropSaverTests : TestBase
                 return snapshot?.Crops.Any(c =>
                         c.IsInPot
                         && c.IsManaged
-                        && c.LocationName == "Farm"
+                        && c.LocationName == locationName
                         && c.TileX == tileX
                         && c.TileY == tileY
                     ) == true;

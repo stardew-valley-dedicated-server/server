@@ -48,4 +48,14 @@ public static class GameLocationExtensions
         building = location.GetCabinHidden(peerId);
         return building != null;
     }
+
+    /// <summary>
+    /// True if crops here are season-immune — vanilla never withers them.
+    /// Mirrors the Crop.newDay kill gate, which only withers when the location
+    /// is outdoors and the crop is out of season (decompiled Crop.cs:837,
+    /// IsInSeason Crop.cs:357). Greenhouse + Ginger Island return
+    /// SeedsIgnoreSeasonsHere()==true; every indoor location is !IsOutdoors.
+    /// </summary>
+    public static bool IsCropSeasonImmune(this GameLocation location) =>
+        !location.IsOutdoors || location.SeedsIgnoreSeasonsHere();
 }
