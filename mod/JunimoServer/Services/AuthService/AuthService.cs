@@ -201,7 +201,7 @@ public class GalaxyAuthService : ModService
             // RECONNECT (Steam dropped and came back): the Steam reconnect is the recovery trigger
             // because the Galaxy SDK fires no auth callback on an outage. Always recreate the Steam
             // lobby; gate the Galaxy re-login on whether its lobby actually died (see
-            // TryBeginGalaxyReSignInGated). .claude/plans/bugs/galaxy-reinit-after-outage.md.
+            // TryBeginGalaxyReSignInGated).
             CreateSteamLobbyViaHttpAsync();
             if (_galaxyInitComplete)
             {

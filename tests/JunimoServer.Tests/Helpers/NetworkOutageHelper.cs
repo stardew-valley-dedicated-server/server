@@ -19,7 +19,7 @@ namespace JunimoServer.Tests.Helpers;
 /// outbound internet is dead — then both return on reconnect. So the test cannot
 /// poll the HTTP API during the cut; it reads recovery from infrastructure.jsonl
 /// (mod events stream over stdout, not the network) and re-checks the API after
-/// reconnect. See .claude/plans/bugs/galaxy-reinit-repro-automation.md.
+/// reconnect.
 ///
 /// This helper does NOT touch the health watchdog. The caller must bracket the
 /// outage with <see cref="ManagedServer.SuspendHealthChecks"/> /

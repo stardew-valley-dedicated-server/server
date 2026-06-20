@@ -5,8 +5,7 @@ using Xunit;
 namespace JunimoServer.Tests;
 
 /// <summary>
-/// Regression tests for the Galaxy-reinit-after-outage fix
-/// (.claude/plans/bugs/galaxy-reinit-after-outage.md). A total connectivity loss on a
+/// Regression tests for the Galaxy-reinit-after-outage fix. A total connectivity loss on a
 /// Steam-authenticated headless server drops Galaxy auth. The Galaxy SDK fires no AUTH callback
 /// and its IUser liveness members (SignedIn/IsLoggedOn/GetGalaxyID) stay stale, so the lobby's
 /// Galaxy session is left dead and vanilla clients can't rejoin even after Steam auto-reconnects.
