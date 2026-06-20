@@ -169,9 +169,14 @@ public class SteamAppTicketFetcherHttp
         }
         catch (Exception ex)
         {
+            // Warn, not Error: a ticket fetch failure is a recoverable HTTP condition. At startup
+            // the sidecar's readiness is already gated by VerifyServiceReady; during a network
+            // outage the Galaxy-reauth liveness poll calls this on a retry loop and EXPECTS it to
+            // fail until connectivity returns. Error would also poison E2E tests (server-side
+            // ERROR/FATAL log scan) on every retry. The caller still gets the throw to react to.
             _monitor.Log(
                 $"Failed to get app ticket from steam-auth service: {ex.Message}",
-                LogLevel.Error
+                LogLevel.Warn
             );
             throw;
         }

@@ -33,7 +33,7 @@ public class GalaxyAuthService : ModService
     private static bool _galaxyInitComplete;
 
     // Diagnostic-only: count GameServer-mode Galaxy auth-lost / state-change callbacks so a
-    // full-NIC-outage repro can tell whether the closed-source Galaxy SDK re-fires them after
+    // total-connectivity-loss repro can tell whether the closed-source Galaxy SDK re-fires them after
     // reconnect. That single observation decides the Galaxy-reinit fix (callback-driven if it
     // re-fires, poll-based if it doesn't). Game thread only; remove once the design is chosen.
     private static int _galaxyAuthLostCount;
@@ -84,6 +84,24 @@ public class GalaxyAuthService : ModService
     /// Galaxy API directly.
     /// </summary>
     private static volatile bool _pendingGalaxyLobbyUpdate;
+
+    /// <summary>True while a background re-sign-in ticket fetch is in flight; see
+    /// <see cref="BeginGalaxyReSignIn"/>. Task-written, game-thread read, so volatile.</summary>
+    private static volatile bool _galaxyReSignInInFlight;
+
+    /// <summary>Set by the fetch task with a fresh ticket; consumed next game tick to run the
+    /// non-thread-safe <c>SignInSteam</c>.</summary>
+    private static volatile bool _pendingGalaxyReSignIn;
+    private static byte[] _pendingReSignInTicket;
+    private static uint _pendingReSignInTicketLength;
+
+    /// <summary>True while waiting for the async re-login to log on before re-creating the server;
+    /// the consume site polls <c>IsLoggedOn()</c> each tick.</summary>
+    private static bool _galaxyAwaitingReLogon;
+
+    /// <summary>Safety ceiling: give up waiting for the re-login to log on after this many ticks.</summary>
+    private const int GalaxyReLogonTimeoutTicks = 600;
+    private static int _galaxyReLogonWaitedTicks;
 
     /// <summary>
     /// Cached Steam Auth API client (singleton pattern to avoid socket exhaustion)
@@ -180,8 +198,15 @@ public class GalaxyAuthService : ModService
         }
         else
         {
-            // Galaxy init already done, just create the lobby
+            // RECONNECT (Steam dropped and came back): the Steam reconnect is the recovery trigger
+            // because the Galaxy SDK fires no auth callback on an outage. Always recreate the Steam
+            // lobby; gate the Galaxy re-login on whether its lobby actually died (see
+            // TryBeginGalaxyReSignInGated). .claude/plans/bugs/galaxy-reinit-after-outage.md.
             CreateSteamLobbyViaHttpAsync();
+            if (_galaxyInitComplete)
+            {
+                TryBeginGalaxyReSignInGated("reconnect");
+            }
         }
     }
 
@@ -199,6 +224,13 @@ public class GalaxyAuthService : ModService
         _lobbyCreationAttempted = false;
         _lastSteamLobbyPrivacy = null;
         _pendingGalaxyLobbyUpdate = false;
+
+        // Abandon a prior session's in-flight re-login — else it consumes a stale (gen-bumped) ticket
+        // or re-stamps against the just-cleared lobby. The next reconnect re-arms it.
+        // (_galaxyReSignInInFlight needs no reset — its Task.Run already drops on the generation bump.)
+        _pendingGalaxyReSignIn = false;
+        _pendingReSignInTicket = null;
+        _galaxyAwaitingReLogon = false;
     }
 
     public GalaxyAuthService(
@@ -352,6 +384,22 @@ public class GalaxyAuthService : ModService
     }
 
     /// <summary>
+    /// The single resolution into the GameServer's internal <c>servers</c> list — returns the list and
+    /// the <see cref="GalaxyNetServer"/> in it (either may be <c>null</c>). Centralizes the
+    /// <c>"servers"</c> reflection string and type match so the four call sites can't drift.
+    /// <c>servers</c> is null when no GameServer is active. Game-thread only.
+    /// </summary>
+    private static (List<Server> servers, GalaxyNetServer galaxyServer) GetGalaxyServer()
+    {
+        if (Game1.server is not StardewValley.Network.GameServer gameServer)
+        {
+            return (null, null);
+        }
+        var servers = _helper.Reflection.GetField<List<Server>>(gameServer, "servers").GetValue();
+        return (servers, servers.OfType<GalaxyNetServer>().FirstOrDefault());
+    }
+
+    /// <summary>
     /// Fix for race condition: If the GameServer was created before Galaxy auth completed,
     /// it won't have a GalaxyNetServer. This method late-adds one if needed.
     /// </summary>
@@ -371,12 +419,8 @@ public class GalaxyAuthService : ModService
                 return;
             }
 
-            // Access the internal 'servers' list via reflection
-            var serversField = _helper.Reflection.GetField<List<Server>>(Game1.server, "servers");
-            var servers = serversField.GetValue();
-
-            // Check if a GalaxyNetServer already exists
-            if (servers.Any(s => s.GetType().Name == "GalaxyNetServer"))
+            var (servers, existing) = GetGalaxyServer();
+            if (existing != null)
             {
                 _monitor.Log("GalaxyNetServer already exists, skipping late-add", LogLevel.Debug);
                 return;
@@ -417,6 +461,116 @@ public class GalaxyAuthService : ModService
             _monitor.Log($"Failed to late-add Galaxy server: {ex.Message}", LogLevel.Error);
             _monitor.Log(ex.ToString(), LogLevel.Debug);
         }
+    }
+
+    /// <summary>
+    /// Stops and removes the <c>GalaxyNetServer</c> before a recovery <c>SignOut()</c>, so its
+    /// per-tick <c>receiveMessages()</c> stops hitting the SDK while signed out (those vanilla calls
+    /// throw at ERROR, which poisons tests). <see cref="TryLateAddGalaxyServer"/> re-adds a fresh one
+    /// after re-login. Game-thread only.
+    /// </summary>
+    private static void TryRemoveGalaxyServer()
+    {
+        try
+        {
+            var (servers, galaxyServer) = GetGalaxyServer();
+            if (galaxyServer == null)
+            {
+                return;
+            }
+            try
+            {
+                galaxyServer.stopServer();
+            }
+            catch (Exception ex)
+            {
+                _monitor.Log($"GalaxyNetServer.stopServer() threw: {ex.Message}", LogLevel.Trace);
+            }
+            servers.Remove(galaxyServer);
+            _monitor.Log("Removed dead GalaxyNetServer for re-auth", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            // Warn (not Error) — recoverable; the re-login still proceeds.
+            _monitor.Log($"Failed to remove GalaxyNetServer: {ex.Message}", LogLevel.Warn);
+        }
+    }
+
+    /// <summary>
+    /// The re-login gate's discriminator: <c>GalaxySocket.Connected</c> (<c>lobby != null</c>). On a
+    /// total connectivity loss the Galaxy lobby-left callback nulls <c>lobby</c> → <c>false</c>; on a healthy
+    /// server (idle, with peers, or mid-re-login) → <c>true</c>. The only Galaxy-side signal that
+    /// tracks the outage — the <c>IUser</c> liveness members stay stale-<c>true</c>. Reads a plain
+    /// managed field (no SDK call). <c>null</c> (no server/socket, or reflection failure) is treated
+    /// as dead by the gate. Game-thread only.
+    /// </summary>
+    private static bool? IsGalaxyLobbyConnected()
+    {
+        try
+        {
+            var (_, galaxyServer) = GetGalaxyServer();
+            if (galaxyServer == null)
+            {
+                return null;
+            }
+            // GalaxySocket is a protected field on GalaxyNetServer; read it reflectively.
+            var socket = _helper
+                .Reflection.GetField<GalaxySocket>(galaxyServer, "server")
+                .GetValue();
+            if (socket == null)
+            {
+                return null;
+            }
+            return socket.Connected;
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"IsGalaxyLobbyConnected probe threw: {ex.Message}", LogLevel.Trace);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gates the DISRUPTIVE re-login (<see cref="BeginGalaxyReSignIn"/> — SignOut + rebuild the lobby)
+    /// on <see cref="IsGalaxyLobbyConnected"/>. This is only the rebuild half; the Steam-lobby re-stamp
+    /// runs unconditionally on every reconnect (<see cref="CreateSteamLobbyViaHttpAsync"/> →
+    /// <c>_pendingGalaxyLobbyUpdate</c> → <see cref="UpdateGalaxyLobbyWithSteamLobbyId"/>), so the
+    /// pointer is always fixed regardless of this gate.
+    /// <list type="bullet">
+    /// <item><c>false</c> → lobby dead (Galaxy's own auto-recreate hasn't restored it): re-login.</item>
+    /// <item><c>true</c> → SKIP: a Steam-CM flap or auto-recreate already rebuilt the lobby; a rebuild
+    ///   would only sever connected clients (re-login drops live peers).</item>
+    /// <item><c>null</c> → treated as dead; can't occur on a healthy flap (reads <c>true</c>).</item>
+    /// </list>
+    /// Shared by the reconnect path and the test endpoint so they can't diverge. Game thread only.
+    /// </summary>
+    private static void TryBeginGalaxyReSignInGated(string trigger)
+    {
+        var connected = IsGalaxyLobbyConnected();
+        if (connected == true)
+        {
+            // Galaxy lobby is alive — almost certainly a Steam-CM-only flap. Re-login here would kick
+            // connected players for no benefit, so skip it.
+            _monitor.Log(
+                $"Galaxy lobby still connected on {trigger}; skipping re-login (would sever connected clients)",
+                LogLevel.Info
+            );
+            Diagnostics.ModEventLog.Emit(
+                "auth_galaxy_relogin_skipped",
+                new { trigger, reason = "galaxy_lobby_connected" }
+            );
+            return;
+        }
+
+        _monitor.Log(
+            $"Galaxy lobby not connected on {trigger} (connected={connected?.ToString() ?? "unknown"}); re-establishing Galaxy auth",
+            LogLevel.Info
+        );
+        Diagnostics.ModEventLog.Emit(
+            "auth_galaxy_relogin_attempt",
+            new { trigger, galaxyConnected = connected }
+        );
+        BeginGalaxyReSignIn();
     }
 
     #region SteamHelper patches (GameServer mode)
@@ -599,33 +753,16 @@ public class GalaxyAuthService : ModService
 
         try
         {
-            // Find the GalaxyNetServer and set lobby data
-            if (Game1.server is StardewValley.Network.GameServer gameServer)
+            var (_, galaxyServer) = GetGalaxyServer();
+            if (galaxyServer == null)
             {
-                var servers = _helper
-                    .Reflection.GetField<List<Server>>(gameServer, "servers")
-                    .GetValue();
-                foreach (var server in servers)
-                {
-                    if (server is GalaxyNetServer galaxyServer)
-                    {
-                        // Set the SteamLobbyId in Galaxy lobby metadata
-                        // This is what vanilla SteamNetClient reads to join the Steam lobby
-                        galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
-                        _monitor.Log(
-                            $"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}",
-                            LogLevel.Info
-                        );
-                        return;
-                    }
-                }
-
                 _monitor.Log("Could not find GalaxyNetServer to update lobby data", LogLevel.Warn);
+                return;
             }
-            else
-            {
-                _monitor.Log("Game1.server is not a GameServer instance", LogLevel.Warn);
-            }
+            // Set the SteamLobbyId in Galaxy lobby metadata — this is what vanilla SteamNetClient
+            // reads to join the Steam lobby.
+            galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
+            _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);
         }
         catch (Exception ex)
         {
@@ -926,11 +1063,189 @@ public class GalaxyAuthService : ModService
                     _pendingGalaxyLobbyUpdate = false;
                     UpdateGalaxyLobbyWithSteamLobbyId();
                 }
+
+                ConsumePendingGalaxyReSignIn();
+                PumpGalaxyReLogonWait(__instance);
             }
         }
 
         Game1.game1.IsMouseVisible = Game1.paused || Game1.options.hardwareCursor;
         return false; // Skip original
+    }
+
+    /// <summary>
+    /// Game-thread half of the reconnect recovery: runs a deferred Galaxy re-sign-in once the
+    /// off-thread ticket fetch (<see cref="BeginGalaxyReSignIn"/>) has armed
+    /// <see cref="_pendingGalaxyReSignIn"/>. <c>SignInSteam</c> is not thread-safe, so it must run
+    /// here. Arms <see cref="_galaxyAwaitingReLogon"/> for <see cref="PumpGalaxyReLogonWait"/> to
+    /// finish once the login logs on. Called per tick from <see cref="SteamHelperUpdate_Prefix"/>.
+    /// </summary>
+    private static void ConsumePendingGalaxyReSignIn()
+    {
+        if (!_pendingGalaxyReSignIn)
+        {
+            return;
+        }
+        _pendingGalaxyReSignIn = false;
+        try
+        {
+            // Remove the dead server first: its per-tick receiveMessages() would keep
+            // hitting the SDK while signed out and throw at ERROR (poisons tests).
+            TryRemoveGalaxyServer();
+
+            // SignOut before SignInSteam: the SDK still reports SignedIn()==true after the
+            // outage (never saw connectivity drop), so a bare SignInSteam throws "already signed
+            // in". Own try so a SignOut throw doesn't skip the sign-in.
+            try
+            {
+                GalaxyInstance.User().SignOut();
+            }
+            catch (Exception ex)
+            {
+                _monitor.Log($"Galaxy SignOut (recovery) failed: {ex.Message}", LogLevel.Trace);
+            }
+
+            GalaxyInstance
+                .User()
+                .SignInSteam(_pendingReSignInTicket, _pendingReSignInTicketLength, ServerName);
+            _monitor.Log("Galaxy re-sign-in submitted (reconnect recovery)", LogLevel.Info);
+            // SignInSteam is async — wait for logon (PumpGalaxyReLogonWait) before re-creating the
+            // server (too early throws "not logged on").
+            _galaxyAwaitingReLogon = true;
+            _galaxyReLogonWaitedTicks = 0;
+        }
+        catch (Exception ex)
+        {
+            // The next Steam reconnect (or a manual trigger) re-attempts. Trace, not Error
+            // (test poison / recoverable).
+            _monitor.Log($"Galaxy SignInSteam (recovery) failed: {ex.Message}", LogLevel.Trace);
+        }
+        finally
+        {
+            _pendingReSignInTicket = null;
+        }
+    }
+
+    /// <summary>
+    /// Game-thread half of the reconnect recovery: once the re-sign-in started by
+    /// <see cref="ConsumePendingGalaxyReSignIn"/> logs on, re-creates the GalaxyNetServer and
+    /// re-stamps the Steam lobby id. Polling <c>IsLoggedOn()</c> works because a FRESH login flips it
+    /// true (it was only stale during the outage, with no fresh login) — the SDK gives no callback for
+    /// this. Gives up after <see cref="GalaxyReLogonTimeoutTicks"/>. Called per tick from
+    /// <see cref="SteamHelperUpdate_Prefix"/>.
+    /// </summary>
+    private static void PumpGalaxyReLogonWait(SteamHelper __instance)
+    {
+        if (!_galaxyAwaitingReLogon)
+        {
+            return;
+        }
+
+        bool loggedOn = false;
+        try
+        {
+            loggedOn = GalaxyInstance.User().IsLoggedOn();
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log(
+                $"IsLoggedOn() probe threw during re-login wait: {ex.Message}",
+                LogLevel.Trace
+            );
+        }
+
+        if (loggedOn)
+        {
+            _galaxyAwaitingReLogon = false;
+            _monitor.Log("Galaxy re-login logged on; re-stamping lobby", LogLevel.Info);
+            // Must re-set GalaxyConnected before re-creating: vanilla CreateServer returns
+            // null when it's false (onLost cleared it; the re-login's onStateChange that
+            // would set it is blocked by its Networking!=null early-return).
+            SetSteamGalaxyConnected(__instance, true);
+            TryLateAddGalaxyServer();
+            if (_steamLobbyId != 0)
+            {
+                UpdateGalaxyLobbyWithSteamLobbyId();
+            }
+            Diagnostics.ModEventLog.Emit("auth_galaxy_recovered");
+        }
+        else if (++_galaxyReLogonWaitedTicks >= GalaxyReLogonTimeoutTicks)
+        {
+            // Gave up — re-login never logged on. Stop waiting; the next Steam reconnect
+            // re-attempts. Warn (not Error) to avoid test poison.
+            _galaxyAwaitingReLogon = false;
+            _monitor.Log(
+                "Galaxy re-login did not log on within timeout; will retry on next reconnect",
+                LogLevel.Warn
+            );
+        }
+    }
+
+    /// <summary>
+    /// Fetches the app ticket off-thread (blocking sidecar HTTP, up to 30s), then sets
+    /// <see cref="_pendingGalaxyReSignIn"/> so the game thread runs the non-thread-safe
+    /// <c>SignInSteam</c>. Mirrors <see cref="CreateSteamLobbyViaHttpAsync"/>. No-op if a fetch is
+    /// already in flight; a fetch failure (sidecar still down) is Trace — the next reconnect retries.
+    /// </summary>
+    private static void BeginGalaxyReSignIn()
+    {
+        // _galaxyAwaitingReLogon is in the guard too: a second Steam reconnect that lands while a
+        // prior re-login is still waiting for IsLoggedOn() must not re-run SignOut+SignInSteam (a
+        // real second outage routes through OnSteamServersLost first, which clears all three flags).
+        if (_galaxyReSignInInFlight || _pendingGalaxyReSignIn || _galaxyAwaitingReLogon)
+        {
+            return;
+        }
+        var fetcher = _steamAppTicketFetcher;
+        if (fetcher == null)
+        {
+            return;
+        }
+
+        _galaxyReSignInInFlight = true;
+        var generation = _steamSessionGeneration;
+        Task.Run(() =>
+        {
+            try
+            {
+                var ticket = Convert.FromBase64String(fetcher.GetTicket().Ticket);
+                if (generation != _steamSessionGeneration)
+                {
+                    // Session was torn down while we fetched — drop this ticket.
+                    return;
+                }
+                _pendingReSignInTicket = ticket;
+                _pendingReSignInTicketLength = Convert.ToUInt32(ticket.Length);
+                _pendingGalaxyReSignIn = true;
+            }
+            catch (Exception ex)
+            {
+                // Expected while the sidecar is unreachable (the outage). Next poll retries.
+                _monitor.Log(
+                    $"Galaxy re-sign-in ticket fetch failed: {ex.Message}",
+                    LogLevel.Trace
+                );
+            }
+            finally
+            {
+                _galaxyReSignInInFlight = false;
+            }
+        });
+    }
+
+    /// <summary>
+    /// TEST-ONLY (/test/galaxy_relogin): runs the real gate <see cref="TryBeginGalaxyReSignInGated"/>
+    /// on demand with no outage, so the E2E flap test sees the gate SKIP on a healthy lobby (and the
+    /// connected client survive). Returns false if Galaxy isn't initialized.
+    /// </summary>
+    public static bool TriggerGalaxyReSignInForTest()
+    {
+        if (!_galaxyInitComplete)
+        {
+            return false;
+        }
+        TryBeginGalaxyReSignInGated("test");
+        return true;
     }
 
     /// <summary>

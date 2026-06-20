@@ -557,6 +557,20 @@ public class TestStampClaimResponse
 }
 
 /// <summary>
+/// Response from /test/galaxy_relogin POST endpoint (test-only). Mirrors the server-side
+/// TestGalaxyReloginResponse DTO. Triggers a Galaxy re-sign-in with no outage so a test can
+/// verify re-login while healthy doesn't disrupt the live lobby / invite code.
+/// </summary>
+public class TestGalaxyReloginResponse
+{
+    [JsonPropertyName("triggered")]
+    public bool Triggered { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+/// <summary>
 /// Response from /test/saver_crop POST endpoint (test-only).
 /// </summary>
 public class TestSaverCropResponse
@@ -1355,6 +1369,20 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(HttpMethod.Post, "/test/stamp_claim", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestStampClaimResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: trigger a Galaxy re-sign-in with no outage, to verify re-login while healthy
+    /// doesn't disrupt the live lobby / invite code.
+    /// POST /test/galaxy_relogin
+    /// </summary>
+    public async Task<TestGalaxyReloginResponse?> TriggerGalaxyRelogin(
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/galaxy_relogin", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestGalaxyReloginResponse>(ct);
     }
 
     /// <summary>
