@@ -134,6 +134,7 @@ public partial class ApiService
                                 IsInPot = false,
                                 SeedItemId = crop.netSeedIndex.Value,
                                 IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile),
+                                IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
                     }
@@ -162,6 +163,7 @@ public partial class ApiService
                                 IsInPot = true,
                                 SeedItemId = crop.netSeedIndex.Value,
                                 IsManaged = CropSaverOverrides.IsManaged(locName, pot.TileLocation),
+                                IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
                     }

@@ -57,16 +57,24 @@ public class CropSaver : ModService
             .ForEach(saverCrop =>
             {
                 var dirt = saverCrop.TryGetCoorespondingDirt();
-                if (dirt != null)
+                if (dirt == null)
                 {
-                    if (
-                        saverCrop.ownerId != 0
-                        && !onlineIds.Contains(saverCrop.ownerId)
-                        && dirt.state.Value != HoeDirt.watered
-                    )
-                    {
-                        saverCrop.IncrementExtraDays();
-                    }
+                    return;
+                }
+
+                // Immune crops are never killed below, so there is nothing to prolong.
+                if (dirt.Location?.IsCropSeasonImmune() == true)
+                {
+                    return;
+                }
+
+                if (
+                    saverCrop.ownerId != 0
+                    && !onlineIds.Contains(saverCrop.ownerId)
+                    && dirt.state.Value != HoeDirt.watered
+                )
+                {
+                    saverCrop.IncrementExtraDays();
                 }
             });
 
@@ -74,7 +82,8 @@ public class CropSaver : ModService
         for (var i = _cropSaverDataLoader.GetSaverCrops().Count - 1; i >= 0; i--)
         {
             var saverCrop = _cropSaverDataLoader.GetSaverCrops()[i];
-            var crop = saverCrop.TryGetCoorespondingCrop();
+            var dirt = saverCrop.TryGetCoorespondingDirt();
+            var crop = dirt?.crop;
             if (crop == null)
             {
                 _monitor.Log(
@@ -105,6 +114,16 @@ public class CropSaver : ModService
                     saverCrop.cropLocationName,
                     saverCrop.cropLocationTile
                 );
+                continue;
+            }
+
+            // CropSaver is the sole death authority for tracked crops, so it must skip
+            // season-immune locations or it withers crops vanilla never would — the
+            // greenhouse bug. A null location (resolved crop, no location) is anomalous,
+            // not immune, so fall through to the normal kill logic.
+            var location = dirt.Location;
+            if (location != null && location.IsCropSeasonImmune())
+            {
                 continue;
             }
 
@@ -194,9 +213,13 @@ public class CropSaver : ModService
 
     private static SDate CalculateDateOfDeath(Crop crop, SaverCrop saverCrop)
     {
-        var numSeasons =
-            crop.GetData().Seasons.Count
-            - (crop.GetData().Seasons.IndexOf(saverCrop.datePlanted.Season));
+        var seasons = crop.GetData().Seasons;
+        var seasonIndex = seasons.IndexOf(saverCrop.datePlanted.Season);
+        if (seasonIndex < 0)
+        {
+            seasonIndex = 0; // planted-season not in list: treat as first season
+        }
+        var numSeasons = seasons.Count - seasonIndex;
         var numDaysToLive = saverCrop.extraDays + (28 * numSeasons) - saverCrop.datePlanted.Day;
         var dateOfDeath = saverCrop.datePlanted.AddDays(numDaysToLive);
 

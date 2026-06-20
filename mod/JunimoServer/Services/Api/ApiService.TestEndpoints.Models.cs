@@ -32,6 +32,10 @@ public class TestCrop
 
     /// <summary>True if CropSaver has a tracking entry for this (locationName, tile).</summary>
     public bool IsManaged { get; set; }
+
+    /// <summary>True if this location is season-immune (greenhouse, Ginger Island, indoors)
+    /// — vanilla never withers crops here, so CropSaver must not either.</summary>
+    public bool IsSeasonImmune { get; set; }
 }
 
 /// <summary>

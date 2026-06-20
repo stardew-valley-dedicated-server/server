@@ -427,6 +427,11 @@ public class TestCrop
     /// <summary>True if CropSaver has a tracking entry for this (locationName, tile).</summary>
     [JsonPropertyName("isManaged")]
     public bool IsManaged { get; set; }
+
+    /// <summary>True if this location is season-immune (greenhouse, Ginger Island, indoors)
+    /// — vanilla never withers crops here, so CropSaver must not either.</summary>
+    [JsonPropertyName("isSeasonImmune")]
+    public bool IsSeasonImmune { get; set; }
 }
 
 /// <summary>
@@ -1399,9 +1404,22 @@ public class ServerApiClient : IDisposable
         int tileY,
         int? extraDays = null,
         long? ownerId = null,
+        (string Season, int Day, int Year)? datePlanted = null,
         CancellationToken ct = default
     )
     {
+        // Cast to object? so the null and the populated-object branches share a
+        // compile-time type; System.Text.Json serializes a null property fine,
+        // and the endpoint skips DatePlanted when it's null.
+        object? datePlantedBody = datePlanted is { } dp
+            ? new
+            {
+                season = dp.Season,
+                day = dp.Day,
+                year = dp.Year,
+            }
+            : null;
+
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             "/test/saver_crop",
@@ -1415,6 +1433,7 @@ public class ServerApiClient : IDisposable
                         tileY,
                         extraDays,
                         ownerId,
+                        datePlanted = datePlantedBody,
                     }
                 )
         );
