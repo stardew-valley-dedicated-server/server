@@ -1,3 +1,7 @@
+---
+description: Joining a JunimoServer Stardew Valley server — connect with an invite code, learn the gameplay differences, in-game chat commands, and troubleshooting.
+---
+
 # Players
 
 This section is for players joining someone else's server. If you're setting up your own, head over to [Admins](/admins/).

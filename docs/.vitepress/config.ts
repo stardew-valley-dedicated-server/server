@@ -4,13 +4,21 @@ import { useSidebar } from "vitepress-openapi";
 import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import spec from "../assets/openapi.json" with { type: "json" };
+import { DEFAULT_THEME_ID, themes } from "./theme/themes";
 
 // Docs version: "latest" or "preview" (set via DOCS_VERSION env var during build)
 const docsVersion = process.env.DOCS_VERSION || "latest";
 const isPreview = docsVersion === "preview";
 const base = isPreview ? "/server/preview/" : "/server/";
 
+const origin = "https://stardew-valley-dedicated-server.github.io";
+const ogImage = `${origin}${base}og-image.png`;
+
 const openApiSidebar = useSidebar({ spec, linkPrefix: "/developers/api/" });
+
+// Single source of truth for the FOUC pre-paint script: derive the {id: colors}
+// map from themes.ts so it can't drift from the runtime ThemeSelector.
+const foucThemeMap = JSON.stringify(Object.fromEntries(themes.map((t) => [t.id, t.colors])));
 
 export default withMermaid(
     defineConfig({
@@ -45,33 +53,30 @@ export default withMermaid(
         description: "Stardew Valley dedicated server documentation",
         head: [
             ["link", { rel: "icon", href: `${base}logo.svg` }],
+            // Page-invariant social tags. Per-page og/twitter title+description+url and
+            // canonical are emitted by transformHead (below), which replaces any matching
+            // tag here via VitePress's mergeHead.
             ["meta", { property: "og:type", content: "website" }],
-            ["meta", { property: "og:title", content: "JunimoServer" }],
-            ["meta", { property: "og:description", content: "Stardew Valley dedicated server documentation" }],
+            ["meta", { property: "og:site_name", content: "JunimoServer" }],
+            ["meta", { property: "og:image", content: ogImage }],
+            ["meta", { property: "og:image:width", content: "1200" }],
+            ["meta", { property: "og:image:height", content: "630" }],
             [
                 "meta",
-                { property: "og:image", content: "https://stardew-valley-dedicated-server.github.io/server/logo.svg" },
+                { property: "og:image:alt", content: "JunimoServer Documentation — Stardew Valley Dedicated Server" },
             ],
-            ["meta", { name: "twitter:card", content: "summary" }],
-            ["meta", { name: "twitter:title", content: "JunimoServer" }],
-            ["meta", { name: "twitter:description", content: "Stardew Valley dedicated server documentation" }],
+            ["meta", { name: "twitter:card", content: "summary_large_image" }],
+            ["meta", { name: "twitter:image", content: ogImage }],
+            ["meta", { name: "theme-color", content: "#63dbe4" }],
             // Inline script to prevent FOUC for theme and announcement bar
             [
                 "script",
                 {},
                 `
 (function() {
-    // Theme colors map (must match themes.ts)
-    var themes = {
-        "aqua-gold": { brand1: "#63dbe4ff", brand2: "#25ac8aff", brand3: "#dda122ff" },
-        "blue-green": { brand1: "#0571d7ff", brand2: "#2b7eb8ff", brand3: "#25ac8aff" },
-        "blue-deep": { brand1: "#0571d7ff", brand2: "#0b4373ff", brand3: "#0a2969ff" },
-        "green": { brand1: "#066636ff", brand2: "#25ac8aff", brand3: "#39c63cff" },
-        "night-market": { brand1: "#281075ff", brand2: "#41b824ff", brand3: "#420375ff" },
-        "purple-1": { brand1: "#9370db", brand2: "#6e2bff", brand3: "#34327a" },
-        "purple-2": { brand1: "#9370db", brand2: "#A014DC", brand3: "#34327a" }
-    };
-    var defaultTheme = "purple-1";
+    // Theme colors map — generated from themes.ts at build time (see foucThemeMap).
+    var themes = ${foucThemeMap};
+    var defaultTheme = ${JSON.stringify(DEFAULT_THEME_ID)};
 
     try {
         // Apply saved theme immediately
@@ -91,6 +96,29 @@ export default withMermaid(
         `,
             ],
         ],
+        // Per-page social/SEO tags. `title`/`description` here are already resolved
+        // (page value, falling back to the site title/description), so the home page
+        // and description-less pages get sensible values. These tags replace the
+        // page-invariant placeholders in `head` via mergeHead (property/name must be
+        // the first attr key for the dedup to match).
+        transformHead({ pageData, siteConfig, title, description }) {
+            if (pageData.isNotFound) {
+                return [];
+            }
+            // Match the canonical/og:url suffix to how the page is actually served:
+            // cleanUrls strips the .html extension, otherwise it's kept (VitePress default).
+            const suffix = siteConfig.cleanUrls ? "" : ".html";
+            const path = pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, suffix);
+            const url = `${origin}${base}${path}`;
+            return [
+                ["meta", { property: "og:title", content: title }],
+                ["meta", { property: "og:description", content: description }],
+                ["meta", { property: "og:url", content: url }],
+                ["link", { rel: "canonical", href: url }],
+                ["meta", { name: "twitter:title", content: title }],
+                ["meta", { name: "twitter:description", content: description }],
+            ];
+        },
         lastUpdated: true,
         sitemap: {
             hostname: "https://stardew-valley-dedicated-server.github.io",
