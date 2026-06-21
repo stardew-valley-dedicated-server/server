@@ -193,6 +193,10 @@ public class DiagnosticsStateResponse
     /// <c>?masterFlag=</c> query (null if no flag was queried). Boolean, not the flag list.</summary>
     public bool? MasterHasFlag { get; set; }
 
+    /// <summary>Whether <c>MasterPlayer.eventsSeen</c> contains the id named in the <c>?masterEvent=</c>
+    /// query (null if none queried). eventsSeen is a distinct collection from mailReceived.</summary>
+    public bool? MasterHasEvent { get; set; }
+
     /// <summary><c>MasterPlayer.caveChoice</c> (Test 7b — non-mail master-gated field carry).</summary>
     public int MasterCaveChoice { get; set; }
 
@@ -2725,6 +2729,9 @@ public partial class ApiService : ModService
         // Optional ?masterFlag=<id> — when present, MasterHasFlag reports whether the master's
         // mailReceived contains it (boolean, never the flag list). Used by save-import Test 7.
         var masterFlag = request?.QueryString["masterFlag"];
+        // Optional ?masterEvent=<id> — MasterHasEvent reports whether the master's eventsSeen contains
+        // it (a distinct collection from mailReceived). Used by save-import Test 7.
+        var masterEvent = request?.QueryString["masterEvent"];
         // Optional ?masterFriendKey=<npc> — MasterShadowFriendshipPoints reports that NPC's specific
         // friendship points (not a max-over-all). Used by save-import Test 7c.
         var masterFriendKey = request?.QueryString["masterFriendKey"];
@@ -2931,6 +2938,11 @@ public partial class ApiService : ModService
                             {
                                 resp.MasterHasFlag =
                                     master.mailReceived?.Contains(masterFlag) ?? false;
+                            }
+                            if (!string.IsNullOrEmpty(masterEvent))
+                            {
+                                resp.MasterHasEvent =
+                                    master.eventsSeen?.Contains(masterEvent) ?? false;
                             }
                             resp.MasterCaveChoice = master.caveChoice?.Value ?? 0;
                             resp.MasterDaysPlayed = (int)(master.stats?.DaysPlayed ?? 0);

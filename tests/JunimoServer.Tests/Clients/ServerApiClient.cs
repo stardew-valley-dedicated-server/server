@@ -190,6 +190,9 @@ public class DiagnosticsStateResponse
     [JsonPropertyName("masterHasFlag")]
     public bool? MasterHasFlag { get; set; }
 
+    [JsonPropertyName("masterHasEvent")]
+    public bool? MasterHasEvent { get; set; }
+
     [JsonPropertyName("masterCaveChoice")]
     public int MasterCaveChoice { get; set; }
 
@@ -1203,20 +1206,26 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// As <see cref="GetDiagnosticsState(CancellationToken)"/>, but with optional <c>?masterFlag=</c>
-    /// (so <c>MasterHasFlag</c> reports whether the master's mailReceived contains that flag) and
+    /// (so <c>MasterHasFlag</c> reports whether the master's mailReceived contains that flag),
+    /// <c>?masterEvent=</c> (so <c>MasterHasEvent</c> reports the same for eventsSeen), and
     /// <c>?masterFriendKey=</c> (so <c>MasterShadowFriendshipPoints</c> reports that NPC's specific
     /// friendship points). Used by the save-import master-carry tests.
     /// </summary>
     public async Task<DiagnosticsStateResponse?> GetDiagnosticsState(
         string? masterFlag,
         CancellationToken ct = default,
-        string? masterFriendKey = null
+        string? masterFriendKey = null,
+        string? masterEvent = null
     )
     {
         var query = new List<string>();
         if (!string.IsNullOrEmpty(masterFlag))
         {
             query.Add($"masterFlag={Uri.EscapeDataString(masterFlag)}");
+        }
+        if (!string.IsNullOrEmpty(masterEvent))
+        {
+            query.Add($"masterEvent={Uri.EscapeDataString(masterEvent)}");
         }
         if (!string.IsNullOrEmpty(masterFriendKey))
         {

@@ -514,7 +514,7 @@ public class SaveImportTests : TestBase
 
     /// <summary>Tests 7/7b/7c/8 (merged) — the blank Server master's Layer-A field handling, all of
     /// which are independent of the finalizer and observable after one swap+reload, so one game-create
-    /// covers them. Asserts the three master-gated bucket-B fields are KEPT (mail/event flag,
+    /// covers them. Asserts the master-gated bucket-B fields are KEPT (mailReceived, eventsSeen,
     /// caveChoice, the keyed Krobus friendship + stats.DaysPlayed — risk #9), AND the relationship
     /// bucket-A field is CLEARED (spouse — risk #1; the demoted owner keeps theirs). Each property is
     /// a distinct <c>Assert</c> so a regression names exactly which bucket decision broke.</summary>
@@ -523,12 +523,13 @@ public class SaveImportTests : TestBase
     {
         var ct = TestContext.Current.CancellationToken;
         const string mailFlag = "ccDoorUnlock";
+        const string eventSeen = "191393";
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest
             {
                 OwnerName = "Grace",
                 MailFlag = mailFlag,
-                EventSeen = "191393",
+                EventSeen = eventSeen,
                 CaveChoice = 1, // bat/fruit cave
                 ShadowFriendshipPoints = 1300, // > 1250 (Dark Shrine pacifism gate)
                 DaysPlayed = 42,
@@ -557,7 +558,8 @@ public class SaveImportTests : TestBase
                 state = await ServerApi.GetDiagnosticsState(
                     mailFlag,
                     ct,
-                    masterFriendKey: "Krobus"
+                    masterFriendKey: "Krobus",
+                    masterEvent: eventSeen
                 );
                 // Gate on the load completing: the master must be the fresh "Server" host.
                 return state is { MasterName: "Server" };
@@ -570,7 +572,11 @@ public class SaveImportTests : TestBase
         // Bucket B — KEEP (master-gated world-state; zeroing any reverts the imported world):
         Assert.True(
             state!.MasterHasFlag == true,
-            $"Master must carry the seeded mail flag '{mailFlag}' (mail/event store — CC/Joja/island geometry)"
+            $"Master must carry the seeded mailReceived flag '{mailFlag}' (CC/Joja/island geometry)"
+        );
+        Assert.True(
+            state.MasterHasEvent == true,
+            $"Master must carry the seeded eventsSeen id '{eventSeen}' (distinct collection from mailReceived)"
         );
         Assert.Equal(1, state.MasterCaveChoice); // bat/fruit-cave daily regen
         Assert.True(
