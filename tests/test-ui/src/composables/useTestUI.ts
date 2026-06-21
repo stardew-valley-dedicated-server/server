@@ -10,6 +10,11 @@ import type { TestStore } from "./useTestStore";
 
 export type InspectNavigation = ReturnType<typeof useInspectNavigation>;
 
+/** The app's three top-level views. Single source of truth — widening this here
+ *  flows to App.vue, useRouteSync, and the inject below (a missed site is a
+ *  vue-tsc failure). "overview" is the landing page; not persisted (see App.vue). */
+export type ActiveView = "tests" | "vnc" | "overview";
+
 /**
  * Access the test store and shared UI state.
  * Must be called inside a component that is a descendant of App.vue.
@@ -20,7 +25,7 @@ export function useTestUI() {
         throw new Error("useTestUI: store not provided. Component must be inside App.vue");
     }
 
-    const activeView = inject<Ref<"tests" | "vnc">>("activeView");
+    const activeView = inject<Ref<ActiveView>>("activeView");
     if (!activeView) {
         throw new Error("useTestUI: activeView not provided");
     }
@@ -53,4 +58,15 @@ export function useShowFailed() {
         throw new Error("useShowFailed: showFailedTests not provided");
     }
     return { showFailedTests };
+}
+
+/**
+ * Access the goToExplorer callback (switches to Explorer + reopens the sidebar).
+ */
+export function useGoToExplorer() {
+    const goToExplorer = inject<() => void>("goToExplorer");
+    if (!goToExplorer) {
+        throw new Error("useGoToExplorer: goToExplorer not provided");
+    }
+    return { goToExplorer };
 }

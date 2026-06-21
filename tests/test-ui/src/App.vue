@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import AbortBanner from "./components/AbortBanner.vue";
 import InstanceInspect from "./components/InstanceInspect.vue";
 import OutputPanel from "./components/OutputPanel.vue";
+import OverviewPanel from "./components/OverviewPanel.vue";
 import StatusBar from "./components/StatusBar.vue";
 import TestTree from "./components/TestTree.vue";
 import VncGrid from "./components/VncGrid.vue";
@@ -11,6 +12,7 @@ import VncIframePool from "./components/VncIframePool.vue";
 import { useInspectNavigation } from "./composables/useInspectNavigation";
 import { useRouteSync } from "./composables/useRouteSync";
 import { useTestStore } from "./composables/useTestStore";
+import type { ActiveView } from "./composables/useTestUI";
 
 const store = useTestStore();
 provide("store", store);
@@ -66,6 +68,7 @@ const LS_KEY = "app-layout-prefs";
 interface LayoutPrefs {
     sidebarWidth: number;
     sidebarCollapsed: boolean;
+    // No "overview": it's a cold-visit default, not a persisted preference.
     activeView: "tests" | "vnc";
 }
 
@@ -93,7 +96,8 @@ function saveLayoutPrefs() {
             JSON.stringify({
                 sidebarWidth: sidebarWidth.value,
                 sidebarCollapsed: sidebarCollapsed.value,
-                activeView: activeView.value,
+                // Coerce "overview" away so a reload lands on the URL/selection, not the landing page.
+                activeView: activeView.value === "vnc" ? "vnc" : "tests",
             }),
         );
     } catch {
@@ -107,8 +111,9 @@ const sidebarCollapsed = ref(prefs.sidebarCollapsed);
 const isResizing = ref(false);
 const widthBeforeCollapse = ref(prefs.sidebarCollapsed ? 260 : prefs.sidebarWidth);
 
-// View mode: 'tests' (default) or 'vnc'
-const activeView = ref<"tests" | "vnc">(prefs.activeView);
+// View mode: 'tests' (default), 'vnc', or 'overview' (landing page). The cold-visit
+// default to 'overview' is applied by useRouteSync from the initial URL.
+const activeView = ref<ActiveView>(prefs.activeView);
 provide("activeView", activeView);
 
 watch(activeView, saveLayoutPrefs);
@@ -121,11 +126,27 @@ useRouteSync(store, inspect, activeView);
 const filterToStatus = ref<string | null>(null);
 provide("filterToStatus", filterToStatus);
 
+// Cross-component hover link: the Overview's nav cards set this to their target
+// view, and the icon-sidebar buttons light up the matching icon — so hovering a
+// card previews where it leads. Null when nothing is hovered.
+const hoveredNav = ref<ActiveView | null>(null);
+provide("hoveredNav", hoveredNav);
+
 function showFailedTests() {
     activeView.value = "tests";
     filterToStatus.value = "failed";
 }
 provide("showFailedTests", showFailedTests);
+
+// Switch to Explorer, reopening the sidebar if collapsed (mirrors the icon-sidebar
+// Explorer button) so callers like the Overview don't land on a hidden tree.
+function goToExplorer() {
+    activeView.value = "tests";
+    if (sidebarCollapsed.value) {
+        toggleSidebar();
+    }
+}
+provide("goToExplorer", goToExplorer);
 
 const vncCount = computed(() => store.state.instances?.length ?? 0);
 
@@ -202,13 +223,17 @@ function onResizeStart(e: PointerEvent) {
                     @click="toggleSidebar">
                 <Icon icon="lucide:panel-left" class="w-5 h-5" />
             </button>
-            <button class="icon-sidebar-btn" :class="{ active: activeView === 'tests' }"
-                    title="Explorer" @click="activeView = 'tests'; if (sidebarCollapsed) toggleSidebar()">
+            <button class="icon-sidebar-btn" :class="{ active: activeView === 'overview' }"
+                    title="Overview" @click="activeView = 'overview'">
+                <Icon icon="lucide:layout-dashboard" class="w-5 h-5" />
+            </button>
+            <button class="icon-sidebar-btn" :class="{ active: activeView === 'tests', hovered: hoveredNav === 'tests' }"
+                    title="Explorer" @click="goToExplorer">
                 <Icon icon="lucide:file-text" class="w-5 h-5" />
             </button>
-            <button class="icon-sidebar-btn" :class="{ active: activeView === 'vnc' }"
-                    title="VNC" @click="activeView = 'vnc'">
-                <Icon icon="lucide:monitor" class="w-5 h-5" />
+            <button class="icon-sidebar-btn" :class="{ active: activeView === 'vnc', hovered: hoveredNav === 'vnc' }"
+                    title="Containers" @click="activeView = 'vnc'">
+                <Icon icon="lucide:container" class="w-5 h-5" />
                 <span v-if="vncCount > 0"
                       class="absolute -top-1 -right-1 text-[9px] min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-primary text-primary-content font-bold">
                     {{ vncCount }}
@@ -259,7 +284,8 @@ function onResizeStart(e: PointerEvent) {
             <AbortBanner />
             <StatusBar />
             <div class="flex-1 min-h-0 panel-scroll bg-base-100">
-                <OutputPanel v-if="activeView === 'tests'" />
+                <OverviewPanel v-if="activeView === 'overview'" />
+                <OutputPanel v-else-if="activeView === 'tests'" />
                 <VncGrid v-else />
             </div>
         </div>

@@ -2,9 +2,10 @@ import { type Ref, watch } from "vue";
 import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import type { useInspectNavigation } from "./useInspectNavigation";
 import type { TestStore } from "./useTestStore";
+import type { ActiveView } from "./useTestUI";
 
 type Inspect = ReturnType<typeof useInspectNavigation>;
-type ActiveView = Ref<"tests" | "vnc">;
+type ActiveViewRef = Ref<ActiveView>;
 
 /**
  * Two-way sync between the URL and the app's in-memory state, with App.vue kept
@@ -19,7 +20,7 @@ type ActiveView = Ref<"tests" | "vnc">;
  * into the URL. A `syncing` guard stops the route→state and state→route
  * watchers from ping-ponging.
  */
-export function useRouteSync(store: TestStore, inspect: Inspect, activeView: ActiveView): void {
+export function useRouteSync(store: TestStore, inspect: Inspect, activeView: ActiveViewRef): void {
     const route = useRoute();
     const router = useRouter();
 
@@ -29,6 +30,16 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     // Set when a deep-linked test/instance hasn't streamed in yet (live mode); the
     // source-data watcher re-applies the route once the tree/instances populate.
     let pending = false;
+
+    // Cold-visit latch: was the page loaded at the bare root (no test path, no
+    // ?inspect)? Read from the loaded URL, NOT selectedTest — the store's
+    // hydrate-time autoSelect has already mutated selectedTest by now (synchronously
+    // in report mode), so keying off the URL dodges that race: deep-links leave this
+    // false (untouched), a bare root defaults to the Overview.
+    const initialHash = window.location.hash; // "", "#", "#/", or "#/<route>[?query]"
+    const initialPath = initialHash.replace(/^#/, "").split("?")[0] ?? "";
+    const initialQuery = initialHash.includes("?") ? initialHash.slice(initialHash.indexOf("?")) : "";
+    const coldRootVisit = (initialPath === "" || initialPath === "/") && !initialQuery.includes("inspect=");
 
     function withSync(fn: () => void) {
         syncing = true;
@@ -77,7 +88,7 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
             }
         } else {
             store.selectTest(null);
-            activeView.value = name === "vnc" ? "vnc" : "tests";
+            activeView.value = name === "vnc" ? "vnc" : name === "overview" ? "overview" : "tests";
         }
     }
 
@@ -141,7 +152,9 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
         }
         const query = route.query;
         let target: RouteLocationRaw;
-        if (activeView.value === "vnc") {
+        if (activeView.value === "overview") {
+            target = { name: "overview", query };
+        } else if (activeView.value === "vnc") {
             target = { name: "vnc", query };
         } else if (store.selectedTest) {
             target = { name: "test", params: { displayName: store.selectedTest.displayName }, query };
@@ -176,5 +189,18 @@ export function useRouteSync(store: TestStore, inspect: Inspect, activeView: Act
     );
 
     // ── Initial resolve ───────────────────────────────────────────────────────
-    applyFromRoute();
+    if (coldRootVisit) {
+        // Show the Overview and clear the hydrate-time autoSelect (else it strands
+        // the URL at /tests/<name> or pre-empts the view). Inside withSync so the
+        // state→route watcher stays quiet; replace (not push) parks the URL at
+        // /overview without a back-button trap to /.
+        withSync(() => {
+            activeView.value = "overview";
+            store.selectTest(null);
+            applyInspectFromRoute();
+        });
+        router.replace({ name: "overview", query: route.query });
+    } else {
+        applyFromRoute();
+    }
 }
