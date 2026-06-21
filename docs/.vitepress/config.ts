@@ -49,6 +49,9 @@ export default withMermaid(
             ],
         },
         base,
+        // _partials/ holds reusable markdown fragments pulled in via <!--@include-->. They are not
+        // standalone pages, so keep them out of routing, search, and the sitemap.
+        srcExclude: ["**/_partials/**"],
         title: isPreview ? "JunimoServer (Preview)" : "JunimoServer",
         description: "Stardew Valley dedicated server documentation",
         head: [
