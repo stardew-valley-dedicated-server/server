@@ -171,6 +171,53 @@ public class DiagnosticsStateResponse
     /// <summary>UMIs in <c>Multiplayer.disconnectingFarmers</c> (mid-disconnect).</summary>
     public long[] DisconnectingFarmers { get; set; } = System.Array.Empty<long>();
 
+    // ── Save-import assertion probes (counts/booleans/small ints only; unauthenticated-safe). ──
+    // The post-swap Server-host FarmHouse must be empty after the contents/NPC move.
+    /// <summary>Placed-object count in the host FarmHouse (must be 0 after a swap import).</summary>
+    public int FarmHouseObjectCount { get; set; }
+
+    /// <summary>Furniture count in the host FarmHouse (must be 0 after a swap import).</summary>
+    public int FarmHouseFurnitureCount { get; set; }
+
+    /// <summary>Fridge-item count in the host FarmHouse (must be 0 after a swap import).</summary>
+    public int FarmHouseFridgeItemCount { get; set; }
+
+    /// <summary>Object count in the master's "Cellar"-1 (must be 0 after a swap import moved the
+    /// former owner's casks into their reassigned cellar).</summary>
+    public int MasterCellarObjectCount { get; set; }
+
+    // Master-gated world-state probes: prove the blank Server master carries the copied
+    // master-gated fields (caveChoice/friendshipData/stats/mail) yet NOT the cleared relationship
+    // field (spouse). MasterPlayer IS Game1.player on this server (multiplayerMode=2).
+    /// <summary>Whether <c>MasterPlayer.mailReceived</c> contains the flag named in the
+    /// <c>?masterFlag=</c> query (null if no flag was queried). Boolean, not the flag list.</summary>
+    public bool? MasterHasFlag { get; set; }
+
+    /// <summary><c>MasterPlayer.caveChoice</c> (Test 7b — non-mail master-gated field carry).</summary>
+    public int MasterCaveChoice { get; set; }
+
+    /// <summary><c>MasterPlayer.friendshipData[?masterFriendKey].Points</c> — the SPECIFIC keyed NPC's
+    /// points (Test 7c — shadow-pacifism gate carry), or null when no <c>?masterFriendKey=</c> was
+    /// queried (nullable for parity with <see cref="MasterHasFlag"/>: "not queried" ≠ "genuinely 0").</summary>
+    public int? MasterShadowFriendshipPoints { get; set; }
+
+    /// <summary><c>MasterPlayer.stats.DaysPlayed</c> (Test 7c — same-day-reconnect gate carry).</summary>
+    public int MasterDaysPlayed { get; set; }
+
+    /// <summary>Whether the blank Server master has an NPC spouse (Test 8 — must be FALSE after a
+    /// swap; the clone-blank clears <c>&lt;spouse&gt;</c> on the master only).</summary>
+    public bool MasterHasSpouse { get; set; }
+
+    /// <summary>The master farmer's name. After a swap it is "Server" (the fresh blank host); after an
+    /// as-is import it is the save's original owner name — the as-is test asserts the latter, so it can
+    /// distinguish "owner preserved as host" from "a blank Server was wrongly installed."</summary>
+    public string MasterName { get; set; } = "";
+
+    /// <summary>Count of save-import finalize success-path runs since process start. The single-shot
+    /// test asserts this stays 1 across two reloads (a re-fire would bump it), proving the finalizer
+    /// cleared its intent and did NOT re-run.</summary>
+    public int SaveImportFinalizeCount { get; set; }
+
     /// <summary>Fields that failed to be read. Empty on fully-successful dumps.</summary>
     public List<string> FailedFields { get; set; } = new();
 }
@@ -194,6 +241,23 @@ public class DiagnosticsCabinState
     public string HomeLocationOfOwner { get; set; } = "";
     public bool FarmhandReferenceDefined { get; set; }
     public long FarmhandReferenceUid { get; set; }
+
+    /// <summary>Count of placed objects (chests/machines) in the cabin interior. Used by the
+    /// save-import contents-move test to assert the owner's chests moved into the cabin. Count
+    /// only (not contents) — /diagnostics/state is unauthenticated.</summary>
+    public int ObjectCount { get; set; }
+
+    /// <summary>Count of items in the cabin fridge (save-import contents move).</summary>
+    public int FridgeItemCount { get; set; }
+
+    /// <summary>Count of <c>Pet</c> NPCs in the cabin interior, so the save-import pet-relocation test
+    /// can assert the PET reached the cabin, not merely "some NPC."</summary>
+    public int PetCount { get; set; }
+
+    /// <summary>Object count in the cellar the engine assigned to this cabin's owner (resolved via
+    /// <c>Cabin.GetCellarName()</c>), so the save-import cellar-move test can assert the former owner's
+    /// casks reached their cellar. 0 when the owner has no assigned cellar.</summary>
+    public int CellarObjectCount { get; set; }
 }
 
 public class DiagnosticsFarmhandState
@@ -678,6 +742,7 @@ public partial class ApiService : ModService
     private readonly CabinManagerService _cabinManager;
     private readonly RoleService _roleService;
     private readonly PasswordProtectionService? _passwordProtectionService;
+    private readonly SaveImport.SaveImportService _saveImportService;
 
     // WebSocket client management
     private readonly List<WebSocket> _wsClients = new();
@@ -925,6 +990,7 @@ public partial class ApiService : ModService
         PersistentOptions persistentOptions,
         CabinManagerService cabinManager,
         RoleService roleService,
+        SaveImport.SaveImportService saveImportService,
         PasswordProtectionService? passwordProtectionService = null
     )
         : base(helper, monitor)
@@ -933,6 +999,7 @@ public partial class ApiService : ModService
         _persistentOptions = persistentOptions;
         _cabinManager = cabinManager;
         _roleService = roleService;
+        _saveImportService = saveImportService;
         _passwordProtectionService = passwordProtectionService;
     }
 
@@ -1981,7 +2048,10 @@ public partial class ApiService : ModService
                         await HandleWaitFarmhandsAsync(request, response, requestId);
                         break;
                     case "/diagnostics/state":
-                        await WriteJsonAsync(response, await HandleGetDiagnosticsStateAsync());
+                        await WriteJsonAsync(
+                            response,
+                            await HandleGetDiagnosticsStateAsync(request)
+                        );
                         break;
                     case "/diagnostics/handler-timing":
                         await WriteJsonAsync(response, BuildHandlerTimingReport());
@@ -2647,9 +2717,17 @@ public partial class ApiService : ModService
         Tag = "Diagnostics"
     )]
     [ApiResponse(typeof(DiagnosticsStateResponse), 200)]
-    private async Task<DiagnosticsStateResponse> HandleGetDiagnosticsStateAsync()
+    private async Task<DiagnosticsStateResponse> HandleGetDiagnosticsStateAsync(
+        HttpListenerRequest? request = null
+    )
     {
         var resp = new DiagnosticsStateResponse { CapturedAt = DateTime.UtcNow.ToString("o") };
+        // Optional ?masterFlag=<id> — when present, MasterHasFlag reports whether the master's
+        // mailReceived contains it (boolean, never the flag list). Used by save-import Test 7.
+        var masterFlag = request?.QueryString["masterFlag"];
+        // Optional ?masterFriendKey=<npc> — MasterShadowFriendshipPoints reports that NPC's specific
+        // friendship points (not a max-over-all). Used by save-import Test 7c.
+        var masterFriendKey = request?.QueryString["masterFriendKey"];
 
         // Phase 1 — primitive / thread-safe reads. These are value-type
         // snapshots or use cached Interlocked counters; safe from the HTTP
@@ -2716,6 +2794,14 @@ public partial class ApiService : ModService
             () =>
             {
                 resp.AvgGameThreadWaitMs = Volatile.Read(ref _avgGameThreadWaitMs);
+            }
+        );
+        TryRead(
+            "saveImportFinalizeCount",
+            resp.FailedFields,
+            () =>
+            {
+                resp.SaveImportFinalizeCount = CabinManagerService.SaveImportFinalizeCount;
             }
         );
 
@@ -2812,6 +2898,57 @@ public partial class ApiService : ModService
                             resp.DisconnectingFarmers = ReadDisconnectingFarmers();
                         }
                     );
+
+                    // Save-import probes: host FarmHouse content/NPC counts (must be 0 after a swap
+                    // move) and master-gated world-state on the blank Server master.
+                    TryRead(
+                        "farmHouseContents",
+                        resp.FailedFields,
+                        () =>
+                        {
+                            var fh = Game1.getLocationFromName("FarmHouse") as FarmHouse;
+                            resp.FarmHouseObjectCount = fh?.objects?.Count() ?? 0;
+                            resp.FarmHouseFurnitureCount = fh?.furniture?.Count ?? 0;
+                            resp.FarmHouseFridgeItemCount =
+                                fh?.fridge?.Value?.Items?.Count(i => i != null) ?? 0;
+                            var masterCellar = Game1.getLocationFromName("Cellar");
+                            resp.MasterCellarObjectCount = masterCellar?.objects?.Count() ?? 0;
+                        }
+                    );
+
+                    TryRead(
+                        "masterState",
+                        resp.FailedFields,
+                        () =>
+                        {
+                            var master = Game1.MasterPlayer;
+                            if (master == null)
+                            {
+                                return;
+                            }
+                            resp.MasterName = master.Name ?? "";
+                            if (!string.IsNullOrEmpty(masterFlag))
+                            {
+                                resp.MasterHasFlag =
+                                    master.mailReceived?.Contains(masterFlag) ?? false;
+                            }
+                            resp.MasterCaveChoice = master.caveChoice?.Value ?? 0;
+                            resp.MasterDaysPlayed = (int)(master.stats?.DaysPlayed ?? 0);
+                            resp.MasterHasSpouse = !string.IsNullOrEmpty(master.spouse);
+                            // Read the SPECIFIC keyed friendship the test seeded (the Dark-Shrine gate
+                            // keys on a particular NPC), not a max-over-all — a max could false-pass if
+                            // any other NPC happened to be high while the seeded carry was lost.
+                            if (
+                                !string.IsNullOrEmpty(masterFriendKey)
+                                && master.friendshipData != null
+                                && master.friendshipData.TryGetValue(masterFriendKey, out var keyed)
+                                && keyed != null
+                            )
+                            {
+                                resp.MasterShadowFriendshipPoints = keyed.Points;
+                            }
+                        }
+                    );
                 },
                 timeoutMs: 3000
             );
@@ -2864,6 +3001,11 @@ public partial class ApiService : ModService
                         FarmhandReferenceDefined =
                             cabin?.farmhandReference?.defined?.Value ?? false,
                         FarmhandReferenceUid = cabin?.farmhandReference?.uid?.Value ?? 0,
+                        ObjectCount = cabin?.objects?.Count() ?? 0,
+                        FridgeItemCount = cabin?.fridge?.Value?.Items?.Count(i => i != null) ?? 0,
+                        PetCount =
+                            cabin?.characters?.Count(c => c is StardewValley.Characters.Pet) ?? 0,
+                        CellarObjectCount = ReadCabinCellarObjectCount(cabin),
                     }
                 );
             }
@@ -2872,6 +3014,22 @@ public partial class ApiService : ModService
             }
         }
         return list;
+    }
+
+    /// <summary>
+    /// Object count in the cellar the engine assigned to <paramref name="cabin"/>'s owner, resolved
+    /// the engine's own way (<c>Cabin.GetCellarName()</c> → <c>cellarAssignments</c> keyed on the
+    /// owner UID). 0 when there's no owner or no assigned cellar.
+    /// </summary>
+    private static int ReadCabinCellarObjectCount(StardewValley.Locations.Cabin? cabin)
+    {
+        var cellarName = cabin?.GetCellarName();
+        if (string.IsNullOrEmpty(cellarName))
+        {
+            return 0;
+        }
+        var cellar = Game1.getLocationFromName(cellarName);
+        return cellar?.objects?.Count() ?? 0;
     }
 
     private static List<DiagnosticsFarmhandState> ReadFarmhandDiagnostics()

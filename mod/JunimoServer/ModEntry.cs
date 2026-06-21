@@ -11,6 +11,7 @@ using JunimoServer.Services.Lobby;
 using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
+using JunimoServer.Services.SaveImport;
 using JunimoServer.Services.Settings;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -293,11 +294,12 @@ internal class ModEntry : Mod
         var cabinManager = _services.GetRequiredService<CabinManagerService>();
         var persistentOptions = _services.GetRequiredService<PersistentOptions>();
         var settings = _services.GetRequiredService<ServerSettingsLoader>();
+        var saveImport = _services.GetRequiredService<SaveImportService>();
 
         RenderingCommand.Register(Helper, Monitor);
         SettingsCommand.Register(Helper, Monitor, gameLoader, persistentOptions, settings);
         CabinsConsoleCommand.Register(Helper, Monitor, cabinManager, persistentOptions);
-        SavesCommand.Register(Helper, Monitor, gameLoader, settings);
+        SavesCommand.Register(Helper, Monitor, saveImport);
     }
 
     private void RegisterChatCommands()

@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Xml;
 using JunimoServer.Services.GameCreator;
-using JunimoServer.Services.GameLoader;
-using JunimoServer.Services.Settings;
+using JunimoServer.Services.SaveImport;
 using StardewModdingAPI;
 
 namespace JunimoServer.Services.Commands;
@@ -13,23 +11,17 @@ namespace JunimoServer.Services.Commands;
 internal static class SavesCommand
 {
     private static IMonitor _monitor;
-    private static GameLoaderService _gameLoader;
-    private static ServerSettingsLoader _settings;
+    private static SaveImportService _saveImport;
 
-    public static void Register(
-        IModHelper helper,
-        IMonitor monitor,
-        GameLoaderService gameLoader,
-        ServerSettingsLoader settings
-    )
+    public static void Register(IModHelper helper, IMonitor monitor, SaveImportService saveImport)
     {
         _monitor = monitor;
-        _gameLoader = gameLoader;
-        _settings = settings;
+        _saveImport = saveImport;
 
         helper.ConsoleCommands.Add(
             "saves",
-            "Save management. Run 'saves' for list, 'saves info <name>', 'saves select <name> [--confirm]'.",
+            "Save management. Run 'saves' for list, 'saves info <name>', "
+                + "'saves import <name> [--swap-host-to <id>]'.",
             (cmd, args) => HandleCommand(args)
         );
     }
@@ -52,21 +44,88 @@ internal static class SavesCommand
                 }
                 ShowSaveInfo(args[1]);
                 break;
-            case "select":
-                if (args.Length < 2)
-                {
-                    _monitor.Log("Usage: saves select <saveName> [--confirm]", LogLevel.Warn);
-                    return;
-                }
-                var confirm = args.Any(a => a == "--confirm");
-                SelectSave(args[1], confirm);
+            case "import":
+                ImportSave(args);
                 break;
             default:
                 _monitor.Log(
-                    $"Unknown saves subcommand: {args[0]}. Use: saves [info|select]",
+                    $"Unknown saves subcommand: {args[0]}. Use: saves [info|import]",
                     LogLevel.Warn
                 );
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Imports a save in one shot. <c>saves import &lt;name&gt;</c> imports as-is (the save's owner
+    /// becomes the headless host); <c>saves import &lt;name&gt; --swap-host-to &lt;id&gt;</c> demotes
+    /// the owner into a cabin farmhand bound to the platform id and installs a fresh blank "Server"
+    /// host. Presence of <c>--swap-host-to</c> selects swap+bind; absence selects as-is. Executes
+    /// directly (no preview/confirm gate) — the safety net is the fault-tolerant in-place transform.
+    /// </summary>
+    private static void ImportSave(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            _monitor.Log("Usage: saves import <saveName> [--swap-host-to <id>]", LogLevel.Warn);
+            return;
+        }
+
+        var saveName = args[1];
+
+        // Parse the optional --swap-host-to <id>. Platform-neutral on purpose (Steam64 OR
+        // GOG Galaxy-uint64). Absence = as-is import.
+        string userId = null;
+        var flagIndex = Array.FindIndex(
+            args,
+            a => string.Equals(a, "--swap-host-to", StringComparison.OrdinalIgnoreCase)
+        );
+        if (flagIndex >= 0)
+        {
+            if (flagIndex + 1 >= args.Length)
+            {
+                _monitor.Log(
+                    "--swap-host-to requires a platform id (e.g. a Steam64 or GOG Galaxy id).",
+                    LogLevel.Warn
+                );
+                return;
+            }
+            userId = args[flagIndex + 1];
+        }
+
+        var result = _saveImport.ExecuteImport(saveName, userId);
+        if (!result.Success)
+        {
+            // ExecuteImport already logged the specific Warn; add the headline.
+            _monitor.Log(
+                $"Import of '{saveName}' did not complete (see warning above).",
+                LogLevel.Warn
+            );
+            return;
+        }
+
+        if (result.RepointedBind)
+        {
+            _monitor.Log(
+                $"Re-pointed the pending host-swap bind for '{saveName}'. Restart to finalize.",
+                LogLevel.Info
+            );
+        }
+        else if (result.Swapped)
+        {
+            _monitor.Log(
+                $"Imported '{saveName}' with host swap (former owner "
+                    + $"'{result.FormerOwnerName ?? result.FormerOwnerUid.ToString()}' → cabin farmhand "
+                    + "bound to the provided id). Restart the server to finalize.",
+                LogLevel.Info
+            );
+        }
+        else
+        {
+            _monitor.Log(
+                $"Imported '{saveName}' as-is. Restart the server to load it.",
+                LogLevel.Info
+            );
         }
     }
 
@@ -103,14 +162,17 @@ internal static class SavesCommand
         var savePath = Path.Combine(Constants.SavesPath, saveName);
         if (!Directory.Exists(savePath))
         {
-            _monitor.Log($"Save '{saveName}' not found.", LogLevel.Error);
+            // Warn, not Error: console commands run in the server process, where LogLevel.Error trips
+            // ServerContainer's ERROR/FATAL test-poison scan. A bad save name is operator error, not
+            // a server fault.
+            _monitor.Log($"Save '{saveName}' not found.", LogLevel.Warn);
             return;
         }
 
         var info = ReadSaveGameInfo(savePath);
         if (info == null)
         {
-            _monitor.Log($"Could not read save info for '{saveName}'.", LogLevel.Error);
+            _monitor.Log($"Could not read save info for '{saveName}'.", LogLevel.Warn);
             return;
         }
 
@@ -123,46 +185,6 @@ internal static class SavesCommand
         {
             _monitor.Log($"  Players:    {string.Join(", ", info.PlayerNames)}", LogLevel.Info);
         }
-    }
-
-    private static void SelectSave(string saveName, bool confirm)
-    {
-        var savePath = Path.Combine(Constants.SavesPath, saveName);
-        if (!Directory.Exists(savePath))
-        {
-            _monitor.Log($"Save '{saveName}' not found.", LogLevel.Error);
-            return;
-        }
-
-        if (!confirm)
-        {
-            var info = ReadSaveGameInfo(savePath);
-            _monitor.Log("Import Preview:", LogLevel.Info);
-            _monitor.Log($"  Save:                    {saveName}", LogLevel.Info);
-
-            if (info != null)
-            {
-                _monitor.Log($"  Farm Type:               {info.FarmTypeDisplay}", LogLevel.Info);
-                _monitor.Log($"  Existing Cabins:         {info.CabinCount}", LogLevel.Info);
-            }
-
-            _monitor.Log($"  -- Settings to apply --", LogLevel.Info);
-            _monitor.Log($"  Cabin Strategy:          {_settings.CabinStrategy}", LogLevel.Info);
-            _monitor.Log(
-                $"  Existing Cabin Behavior: {_settings.ExistingCabinBehavior}",
-                LogLevel.Info
-            );
-            _monitor.Log($"", LogLevel.Info);
-            _monitor.Log($"Run 'saves select {saveName} --confirm' to activate.", LogLevel.Info);
-            _monitor.Log($"The server will load this save on next restart.", LogLevel.Info);
-            return;
-        }
-
-        _gameLoader.SetSaveNameToLoad(saveName);
-        _monitor.Log(
-            $"Save '{saveName}' set as active. Restart the server to load it.",
-            LogLevel.Info
-        );
     }
 
     #region Save Info Parsing

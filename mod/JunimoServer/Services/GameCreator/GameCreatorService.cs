@@ -138,12 +138,16 @@ class GameCreatorService : ModService
         Game1.whichFarm = whichFarm;
         Game1.whichModFarm = modFarm;
 
-        Game1.player.Name = "Server";
+        // Name/favoriteThing/isCustomized are the shared host identity, sourced from
+        // ServerFarmerIdentity so the new-game host and the save-import clone-blank host
+        // (SaveImportXmlTransform) cannot drift. displayName is a runtime field derived
+        // from Name (no serialized display-name field), so it is assigned here, not shared.
+        Game1.player.Name = ServerFarmerIdentity.Name;
         Game1.player.displayName = Game1.player.Name;
-        Game1.player.favoriteThing.Value = "Junimos";
+        Game1.player.favoriteThing.Value = ServerFarmerIdentity.FavoriteThing;
         Game1.player.farmName.Value = config.FarmName;
 
-        Game1.player.isCustomized.Value = true;
+        Game1.player.isCustomized.Value = ServerFarmerIdentity.IsCustomized;
         Game1.player.ConvertClothingOverrideToClothesItems();
 
         Game1.multiplayerMode = 2; // Server mode (Game1.IsServer)

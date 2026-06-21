@@ -81,8 +81,20 @@ Manage save files:
 |---------|-------------|
 | `saves` | List available saves (marks currently active) |
 | `saves info <name>` | Show save details (farm type, cabins, players) |
-| `saves select <name>` | Preview importing a save |
-| `saves select <name> --confirm` | Set save as active (loaded on restart) |
+| `saves import <name>` | Import a save as-is (its owner becomes the headless host); loaded on restart |
+| `saves import <name> --swap-host-to <id>` | Import + demote the save's owner into a cabin farmhand bound to the given platform id (Steam64 or GOG Galaxy id), installing a fresh "Server" host |
+
+> **`--swap-host-to` rewrites the target save in place — back up first.** The swap transform mutates
+> the save folder (fault-tolerantly: a failed transform leaves the loadable save byte-intact). Plain
+> as-is import makes **no** file changes — it only points the next boot at the save.
+>
+> Importing **as-is** makes the save's original player the automated headless host (correct for a
+> single-player save; for a co-op save whose owner is a real player, use `--swap-host-to <id>` so they
+> stay a player). The bind stamps the demoted owner's farmhand with that platform id so it is **scoped
+> to — and selectable by — that account**; the player still picks it from the farmhand menu (vanilla
+> allows multiple farmhands per account, so it is not auto-selected). The `--swap-host-to` bind is only
+> enforced on Steam/GOG (LAN clients have no platform id), and the import is one-shot: run it, restart
+> once, done.
 
 ### rendering
 
