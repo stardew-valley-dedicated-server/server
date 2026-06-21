@@ -138,6 +138,16 @@ function showFailedTests() {
 }
 provide("showFailedTests", showFailedTests);
 
+// Switch to Explorer, reopening the sidebar if collapsed (mirrors the icon-sidebar
+// Explorer button) so callers like the Overview don't land on a hidden tree.
+function goToExplorer() {
+    activeView.value = "tests";
+    if (sidebarCollapsed.value) {
+        toggleSidebar();
+    }
+}
+provide("goToExplorer", goToExplorer);
+
 const vncCount = computed(() => store.state.instances?.length ?? 0);
 
 // When collapsed, width is 0 (fully hidden). Dragging uses live value.
@@ -218,7 +228,7 @@ function onResizeStart(e: PointerEvent) {
                 <Icon icon="lucide:layout-dashboard" class="w-5 h-5" />
             </button>
             <button class="icon-sidebar-btn" :class="{ active: activeView === 'tests', hovered: hoveredNav === 'tests' }"
-                    title="Explorer" @click="activeView = 'tests'; if (sidebarCollapsed) toggleSidebar()">
+                    title="Explorer" @click="goToExplorer">
                 <Icon icon="lucide:file-text" class="w-5 h-5" />
             </button>
             <button class="icon-sidebar-btn" :class="{ active: activeView === 'vnc', hovered: hoveredNav === 'vnc' }"

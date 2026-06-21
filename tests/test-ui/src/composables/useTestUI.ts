@@ -59,3 +59,14 @@ export function useShowFailed() {
     }
     return { showFailedTests };
 }
+
+/**
+ * Access the goToExplorer callback (switches to Explorer + reopens the sidebar).
+ */
+export function useGoToExplorer() {
+    const goToExplorer = inject<() => void>("goToExplorer");
+    if (!goToExplorer) {
+        throw new Error("useGoToExplorer: goToExplorer not provided");
+    }
+    return { goToExplorer };
+}

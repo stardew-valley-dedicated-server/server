@@ -6,7 +6,7 @@ import { computed, inject, onBeforeUnmount, type Ref } from "vue";
 // as EmptyState.vue.
 import logoUrl from "../assets/img/logo.svg";
 import { useRunStatus } from "../composables/useRunStatus";
-import { type ActiveView, useShowFailed, useTestUI } from "../composables/useTestUI";
+import { type ActiveView, useGoToExplorer, useShowFailed, useTestUI } from "../composables/useTestUI";
 import type { TestSnapshot } from "../types/state";
 import { formatDateTime, formatDuration, shortTestName } from "../utils/format";
 import { TERM_HELP } from "../utils/glossary";
@@ -15,6 +15,7 @@ import StatusIcon from "./StatusIcon.vue";
 
 const { store, activeView } = useTestUI();
 const { showFailedTests } = useShowFailed();
+const { goToExplorer } = useGoToExplorer();
 const { statusLabel, statusTextClass } = useRunStatus(store);
 
 const sc = store.statusCounts;
@@ -273,7 +274,7 @@ function selectFlaky(displayName: string) {
         <!-- Navigation cards: bordered + chevron so they read as clickable, not prose. -->
         <div class="grid sm:grid-cols-2 gap-3 text-sm">
           <button class="group cursor-pointer flex items-start gap-2.5 text-left rounded-lg border border-base-content/10 bg-base-200/30 p-3 hover:bg-base-200/70 hover:border-base-content/20 transition-colors"
-                  @click="activeView = 'tests'"
+                  @click="goToExplorer()"
                   @mouseenter="setHover('tests')" @mouseleave="setHover(null)">
             <Icon icon="lucide:file-text" class="w-4 h-4 mt-0.5 flex-none text-base-content/40 group-hover:text-base-content/80 transition-colors" />
             <p class="text-base-content/60 flex-1">
