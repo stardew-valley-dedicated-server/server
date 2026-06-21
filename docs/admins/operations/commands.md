@@ -84,17 +84,15 @@ Manage save files:
 | `saves import <name>` | Import a save as-is (its owner becomes the headless host); loaded on restart |
 | `saves import <name> --swap-host-to <id>` | Import + demote the save's owner into a cabin farmhand bound to the given platform id (Steam64 or GOG Galaxy id), installing a fresh "Server" host |
 
-> **`--swap-host-to` rewrites the target save in place — back up first.** The swap transform mutates
-> the save folder (fault-tolerantly: a failed transform leaves the loadable save byte-intact). Plain
-> as-is import makes **no** file changes — it only points the next boot at the save.
+> **As-is vs swap.** Importing **as-is** makes the save's original player the automated headless host —
+> correct for a single-player save, wrong for a co-op save whose owner is a real player. For a co-op
+> save, use `--swap-host-to <id>` so the owner stays a player: it demotes them to a cabin farmhand
+> scoped to that platform account (the player selects it from the farmhand menu on connect). The bind
+> is enforced only on Steam/GOG, not LAN.
 >
-> Importing **as-is** makes the save's original player the automated headless host (correct for a
-> single-player save; for a co-op save whose owner is a real player, use `--swap-host-to <id>` so they
-> stay a player). The bind stamps the demoted owner's farmhand with that platform id so it is **scoped
-> to — and selectable by — that account**; the player still picks it from the farmhand menu (vanilla
-> allows multiple farmhands per account, so it is not auto-selected). The `--swap-host-to` bind is only
-> enforced on Steam/GOG (LAN clients have no platform id), and the import is one-shot: run it, restart
-> once, done.
+> **Back up before `--swap-host-to`.** The swap rewrites the save folder in place (fault-tolerantly — a
+> failed transform leaves the save loadable). As-is import changes no files; it only sets the next-boot
+> target. Either way the import is one-shot: run it, restart once.
 
 ### rendering
 
