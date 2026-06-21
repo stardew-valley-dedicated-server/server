@@ -266,10 +266,10 @@ function selectFlaky(displayName: string) {
       </section>
 
       <!-- ── Help / orientation block (always visible) ── -->
-      <!-- !mt-6 overrides the wrapper's space-y-8 so the divider has balanced
+      <!-- mt-6! overrides the wrapper's space-y-8 so the divider has balanced
            breathing room (24px above via margin, 24px below via padding) instead
            of the 32px+24px the global gap would stack on top of the border. -->
-      <section class="space-y-4 border-t border-base-content/5 !mt-6 pt-6">
+      <section class="space-y-4 border-t border-base-content/5 mt-6! pt-6">
         <h2 class="text-xs uppercase tracking-widest text-base-content/40 font-semibold">Getting around</h2>
         <!-- Navigation cards: bordered + chevron so they read as clickable, not prose. -->
         <div class="grid sm:grid-cols-2 gap-3 text-sm">
