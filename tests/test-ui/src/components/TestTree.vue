@@ -6,6 +6,7 @@ import { useTestSort } from "../composables/useTestSort";
 import { useFilterTrigger, useTestUI } from "../composables/useTestUI";
 import type { ClassSnapshot, TestSnapshot } from "../types/state";
 import { shortTestName } from "../utils/format";
+import { TERM_HELP } from "../utils/glossary";
 import { statusFilterClass } from "../utils/status";
 import EmptyState from "./EmptyState.vue";
 import SortIcon from "./SortIcon.vue";
@@ -24,6 +25,12 @@ const viewMode = ref<"grouped" | "timeline">("grouped");
 const statusCounts = store.statusCounts;
 const { activeFilters, toggleFilter, visibleStatuses, isFiltering, testPassesFilter, setExclusiveFilter } =
     useTestFilter(statusCounts, searchQuery);
+
+// Status-pill tooltip: the term definition plus the toggle action it performs.
+function statusTitle(status: TestStatus): string {
+    const action = activeFilters.value.has(status) ? "Hide" : "Show";
+    return `${TERM_HELP[status] ?? ""}\n\n${action} ${status} tests.`.trim();
+}
 
 // Flaky lookup. Each entry's `test` matches the test name (className.method form),
 // so we match against the test's displayName (xUnit's full display name) endsWith
@@ -672,7 +679,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
               activeFilters.has(status) ? 'opacity-100' : 'opacity-30',
               statusFilterClass(status)
             ]"
-            :title="`${activeFilters.has(status) ? 'Hide' : 'Show'} ${status} tests`"
+            :title="statusTitle(status)"
             @click="toggleFilter(status)"
           >
             <StatusIcon :status="status" :size="10" />

@@ -310,9 +310,9 @@ function onSplitDoubleClick() {
     <!-- Empty state (no live and no stopped instances) -->
     <div v-if="!hasAnyEndpoints && !hasStoppedInstances"
          class="flex-1 flex flex-col items-center justify-center text-base-content/30 gap-3">
-      <Icon icon="lucide:monitor" class="w-12 h-12 opacity-20" />
-      <span class="text-sm">No VNC endpoints available yet</span>
-      <span class="text-xs text-base-content/20">VNC viewers appear as server and client containers start</span>
+      <Icon icon="lucide:container" class="w-12 h-12 opacity-20" />
+      <span class="text-sm">No containers yet</span>
+      <span class="text-xs text-base-content/20">Server and client containers appear here as the run starts them</span>
     </div>
 
     <!-- Has instances (live or stopped) -->

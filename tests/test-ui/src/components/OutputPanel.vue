@@ -9,6 +9,7 @@ import { useVncInteractive } from "../composables/useVncInteractive";
 import type { AnnotationSource, InstanceSnapshot, OutputEntry } from "../types/state";
 import type { VideoItem, VideoStatsPoint } from "../types/video";
 import { formatDuration, shortTestName } from "../utils/format";
+import { TERM_HELP } from "../utils/glossary";
 import { instanceStatusDotClass, instanceStatusLabel } from "../utils/instance-status";
 import {
     anchorTimestampMs,
@@ -49,6 +50,12 @@ const sourceLabels: Record<AnnotationSource, string> = {
     mod: "Mod",
     setup: "Setup",
 };
+
+// Chip tooltip: the term definition plus the toggle action it performs.
+function sourceTitle(source: AnnotationSource): string {
+    const action = sourceFilter[source] ? "Hide" : "Show";
+    return `${TERM_HELP[source] ?? ""}\n\n${action} ${sourceLabels[source]} entries.`.trim();
+}
 
 /** Drop entries whose source isn't currently enabled in the filter chip bar. */
 function applySourceFilter(entries: OutputEntry[] | null | undefined): OutputEntry[] {
@@ -1014,7 +1021,7 @@ onUnmounted(() => window.removeEventListener("keydown", onSearchShortcut));
                       :class="sourceFilter[source]
                         ? 'bg-base-content/10 text-base-content/80'
                         : 'bg-base-300/40 text-base-content/30 line-through'"
-                      :title="sourceFilter[source] ? `Hide ${sourceLabels[source]} entries` : `Show ${sourceLabels[source]} entries`"
+                      :title="sourceTitle(source)"
                       @mouseenter="hoveredSource = source"
                       @mouseleave="hoveredSource = null"
                       @click="toggleSourceFilter(source)">

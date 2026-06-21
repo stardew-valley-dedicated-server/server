@@ -280,6 +280,18 @@ export function useTestStore(): TestStore {
         state.skipped = snapshot.skipped;
         state.notDispatched = snapshot.notDispatched ?? 0;
         state.durationMs = snapshot.durationMs;
+        // Carry run metadata + flaky list from the snapshot. Live mode also gets
+        // these via WS events (run_metadata / flaky_tests), but snapshot-only modes
+        // (dev mock, static report) never fire those — so hydrate is the sole source
+        // there, and the Overview would otherwise have no metadata to show.
+        // Guard on !== undefined so a reconnect snapshot omitting them can't wipe
+        // values an earlier event set.
+        if (snapshot.runMetadata !== undefined) {
+            state.runMetadata = snapshot.runMetadata;
+        }
+        if (snapshot.flakyTests !== undefined) {
+            state.flakyTests = snapshot.flakyTests;
+        }
 
         // For arrays, mutate in-place (splice+push) rather than replacing the reference.
         // This ensures Vue's reactivity system properly tracks the deep changes.

@@ -18,6 +18,7 @@ const router = createRouter({
     history: createWebHashHistory(),
     routes: [
         { path: "/", name: "tests", component: noRender },
+        { path: "/overview", name: "overview", component: noRender },
         { path: "/tests/:displayName", name: "test", component: noRender },
         { path: "/vnc", name: "vnc", component: noRender },
         { path: "/:pathMatch(.*)*", redirect: "/" },

@@ -206,11 +206,15 @@ img {
     color: color-mix(in oklch, var(--color-base-content) 30%, transparent);
     transition: all 150ms ease;
     position: relative;
+    cursor: pointer;
 }
 
-.icon-sidebar-btn:hover {
+/* Icon color only on hover (and when an Overview nav card previews this target via
+   .hovered) — no background fill; the filled bg is reserved for the .active
+   selected state below. */
+.icon-sidebar-btn:hover,
+.icon-sidebar-btn.hovered {
     color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
-    background-color: color-mix(in oklch, var(--color-base-content) 5%, transparent);
 }
 
 .icon-sidebar-btn.active {

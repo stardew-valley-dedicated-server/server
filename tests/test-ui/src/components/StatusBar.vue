@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
 import { computed, ref, watch } from "vue";
+import { useRunStatus } from "../composables/useRunStatus";
 import { useShowFailed, useTestUI } from "../composables/useTestUI";
 import { formatDuration } from "../utils/format";
+import { TERM_HELP } from "../utils/glossary";
 
 const { store } = useTestUI();
 const { showFailedTests } = useShowFailed();
 
 // Read counts directly from the store's incrementally-maintained map
 const sc = store.statusCounts;
+
+// Overall run status label + color, shared with OverviewPanel via useRunStatus.
+const { statusLabel, statusTextClass } = useRunStatus(store);
 
 const completedCount = computed(() => sc.passed + sc.failed + sc.skipped + sc.canceled + sc.notDispatched + sc.aborted);
 
@@ -22,50 +27,6 @@ const progress = computed(() => {
 
 // Final elapsed (only set when run finishes; during the run, rAF updates the DOM directly)
 const elapsed = computed(() => formatDuration(store.elapsedMs));
-
-const statusLabel = computed(() => {
-    if (store.state.status === "aborted") {
-        return "aborted";
-    }
-    if (store.state.status === "running") {
-        return "running";
-    }
-    if (store.state.status === "finished") {
-        if (sc.failed > 0) {
-            return "failed";
-        }
-        if (sc.canceled > 0) {
-            return "canceled";
-        }
-        if (sc.passed > 0) {
-            return "passed";
-        }
-        return "no tests ran";
-    }
-    return "pending";
-});
-
-const statusTextClass = computed(() => {
-    if (store.state.status === "running") {
-        return "text-success";
-    }
-    if (store.state.status === "finished") {
-        if (sc.failed > 0) {
-            return "text-error";
-        }
-        if (sc.canceled > 0) {
-            return "text-warning";
-        }
-        if (sc.passed > 0) {
-            return "text-success";
-        }
-        return "text-warning";
-    }
-    if (store.state.status === "aborted") {
-        return "text-warning";
-    }
-    return "text-base-content/50";
-});
 
 // Stop = nuke. Single click force-exits the runner via Program.cs's
 // ForceExitNow path (bulk Docker cleanup by run-id label + Environment.Exit).
@@ -91,17 +52,6 @@ watch(
 );
 
 const shortcutsOpen = ref(false);
-const detailsOpen = ref(false);
-
-const runMeta = computed(() => store.state.runMetadata?.data ?? null);
-const gitLabel = computed(() => {
-    const g = runMeta.value?.git;
-    if (!g) {
-        return null;
-    }
-    const sha = g.sha ? g.sha.slice(0, 7) : "?";
-    return `${g.branch ?? "?"} @ ${sha}${g.dirty ? " ●" : ""}`;
-});
 </script>
 
 <template>
@@ -124,15 +74,15 @@ const gitLabel = computed(() => {
 
     <!-- Counters -->
     <div class="flex items-center gap-2.5 text-xs tabular-nums flex-none">
-      <span class="text-success font-medium">{{ sc.passed }} passed</span>
+      <span class="text-success font-medium" :title="TERM_HELP.passed">{{ sc.passed }} passed</span>
       <span v-if="sc.failed > 0"
             class="text-error font-medium cursor-pointer hover:underline"
-            title="Show failed tests only"
+            :title="`${TERM_HELP.failed}\n\nClick to show failed tests only.`"
             @click="showFailedTests()">{{ sc.failed }} failed</span>
-      <span v-if="sc.canceled > 0" class="text-warning font-medium">{{ sc.canceled }} canceled</span>
-      <span v-if="sc.notDispatched > 0" class="text-base-content/50 font-medium">{{ sc.notDispatched }} not dispatched</span>
-      <span v-if="sc.queued > 0" class="text-primary font-medium">{{ sc.queued }} queued</span>
-      <span v-if="sc.skipped > 0" class="text-base-content/50 font-medium">{{ sc.skipped }} skipped</span>
+      <span v-if="sc.canceled > 0" class="text-warning font-medium" :title="TERM_HELP.canceled">{{ sc.canceled }} canceled</span>
+      <span v-if="sc.notDispatched > 0" class="text-base-content/50 font-medium" :title="TERM_HELP.notDispatched">{{ sc.notDispatched }} not dispatched</span>
+      <span v-if="sc.queued > 0" class="text-primary font-medium" :title="TERM_HELP.queued">{{ sc.queued }} queued</span>
+      <span v-if="sc.skipped > 0" class="text-base-content/50 font-medium" :title="TERM_HELP.skipped">{{ sc.skipped }} skipped</span>
     </div>
 
     <!-- Progress bar (inline) -->
@@ -178,49 +128,6 @@ const gitLabel = computed(() => {
             class="text-xs text-base-content/50 tabular-nums"
             title="Elapsed time">{{ elapsed || '--' }}</span>
     </span>
-
-    <!-- Run details drawer (git, env, runtime, server-config plan) -->
-    <div v-if="runMeta" class="relative flex-none">
-      <button class="flex items-center gap-1.5 px-2 h-6 rounded-md text-xs text-base-content/70 hover:text-base-content hover:bg-base-content/5 transition-colors tabular-nums"
-              title="Run details"
-              @click.stop="detailsOpen = !detailsOpen"
-              @blur="detailsOpen = false">
-        <Icon icon="lucide:git-branch" class="w-3 h-3" />
-        <span v-if="gitLabel">{{ gitLabel }}</span>
-        <Icon icon="lucide:chevron-down" class="w-3 h-3" />
-      </button>
-      <div v-if="detailsOpen"
-           class="absolute right-0 top-full mt-1.5 z-40 bg-base-300 border border-base-content/10 rounded-lg shadow-lg p-3 text-xs space-y-2 w-80 max-h-96 overflow-auto"
-           @mousedown.stop>
-        <div>
-          <div class="text-base-content/50 uppercase text-[10px] tracking-wider mb-1">Run</div>
-          <div class="font-mono break-all">{{ runMeta.runId }}</div>
-        </div>
-        <div v-if="runMeta.git">
-          <div class="text-base-content/50 uppercase text-[10px] tracking-wider mb-1">Git</div>
-          <div>branch: <span class="font-mono">{{ runMeta.git.branch ?? '?' }}</span></div>
-          <div>sha: <span class="font-mono">{{ runMeta.git.sha ?? '?' }}</span></div>
-          <div v-if="runMeta.git.dirty" class="text-warning">dirty working tree</div>
-        </div>
-        <div v-if="runMeta.runtime">
-          <div class="text-base-content/50 uppercase text-[10px] tracking-wider mb-1">Runtime</div>
-          <div v-if="runMeta.runtime.os">{{ runMeta.runtime.os }}</div>
-          <div v-if="runMeta.runtime.dotnet">{{ runMeta.runtime.dotnet }}</div>
-          <div v-if="runMeta.runtime.docker">docker {{ runMeta.runtime.docker }}</div>
-        </div>
-        <div v-if="runMeta.env && Object.keys(runMeta.env).length > 0">
-          <div class="text-base-content/50 uppercase text-[10px] tracking-wider mb-1">Env</div>
-          <div v-for="(v, k) in runMeta.env" :key="k" class="font-mono">{{ k }}={{ v }}</div>
-        </div>
-        <div v-if="runMeta.serverConfigs && runMeta.serverConfigs.length > 0">
-          <div class="text-base-content/50 uppercase text-[10px] tracking-wider mb-1">Server config plan</div>
-          <div v-for="cfg in runMeta.serverConfigs" :key="cfg.key" class="flex justify-between gap-2">
-            <span class="truncate">{{ cfg.label }}</span>
-            <span class="tabular-nums text-base-content/60 flex-none">{{ cfg.testCount }} tests · {{ cfg.prestartedInstanceCount }} prestarted</span>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Keyboard shortcuts hint (hover + click toggle) -->
     <div class="relative group flex-none">
