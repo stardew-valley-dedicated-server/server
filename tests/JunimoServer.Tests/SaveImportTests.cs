@@ -55,22 +55,31 @@ public class SaveImportTests : TestBase
 
         // A connected, customized, in-world client is required for the day-transition save.
         var client = await Farmers.ConnectNewAsync(ct: ct);
-        var customized = await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName,
-            requireCustomized: true,
-            ct: ct
-        );
-        Assert.True(customized, $"Source client '{client.FarmerName}' should be customized");
+        try
+        {
+            var customized = await ServerApi.WaitForFarmhandByNameAsync(
+                client.FarmerName,
+                requireCustomized: true,
+                ct: ct
+            );
+            Assert.True(customized, $"Source client '{client.FarmerName}' should be customized");
 
-        var seedResult = await ServerApi.SeedImportSource(seed, ct);
-        Assert.True(seedResult?.Success == true, $"SeedImportSource failed: {seedResult?.Error}");
-        Assert.NotEqual(0, seedResult!.OwnerUid);
+            var seedResult = await ServerApi.SeedImportSource(seed, ct);
+            Assert.True(
+                seedResult?.Success == true,
+                $"SeedImportSource failed: {seedResult?.Error}"
+            );
+            Assert.NotEqual(0, seedResult!.OwnerUid);
 
-        // Flush to disk, then disconnect so /reload (which needs 0 clients) can run later.
-        await SleepToSaveAsync(ct);
-        await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, ct);
-
-        return seedResult;
+            await SleepToSaveAsync(ct);
+            return seedResult;
+        }
+        finally
+        {
+            // Always disconnect so /reload (which needs 0 clients) can run later — even if an
+            // assertion above fails, a lingering client would cascade into later reload paths.
+            await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, ct);
+        }
     }
 
     /// <summary>Test 1 — swap+bind: the demoted owner becomes a bound customized cabin farmhand and a
@@ -121,8 +130,10 @@ public class SaveImportTests : TestBase
                     return false;
                 }
 
-                // The new master is "Server" and is NOT the former owner.
-                var serverMasterIsFresh = ownerEntry.Name != "Server";
+                // Assert the master identity directly — checking only that the owner isn't named
+                // "Server" would still pass if the master regressed to the old human host.
+                var serverMasterIsFresh =
+                    state.MasterName == "Server" && ownerEntry.Name != "Server";
                 return serverMasterIsFresh;
             },
             TestTimings.CabinAssignmentTimeout,
@@ -493,10 +504,8 @@ public class SaveImportTests : TestBase
             $"Re-run on a valid save should succeed: {importGood?.ImportError ?? importGood?.Error}"
         );
         var leftover = await ServerApi.SaveTmpExists(importGood!.TargetSaveName, ct);
-        Assert.False(
-            leftover?.Exists == true,
-            "A successful import must leave no .tmp on the volume"
-        );
+        Assert.True(leftover?.Success == true, $"SaveTmpExists failed: {leftover?.Error}");
+        Assert.False(leftover!.Exists, "A successful import must leave no .tmp on the volume");
         Log("Re-run on a fixed input succeeded (repeatable, no junk)");
     }
 

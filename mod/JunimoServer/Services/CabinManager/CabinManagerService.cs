@@ -1323,7 +1323,7 @@ public class CabinManagerService : ModService
 
             // Step 5 — move the owner's farmhouse contents into the cabin.
             failedStep = "move_contents";
-            contentsMoved = TransferFarmhouseContentsToCabin(farmHouse, cabin);
+            contentsMoved = TransferFarmhouseContentsToCabin(farmHouse, cabin, builtFresh);
 
             // Step 6 — relocate the owner's household NPCs (pet, spouse, children) into the cabin.
             failedStep = "relocate_household";
@@ -1445,18 +1445,23 @@ public class CabinManagerService : ModService
     /// built-in farmhouse→cabin transfer, so this is hand-written from the source-derived content
     /// list. Returns the count of moved objects + furniture (for the finalize event).
     /// </summary>
-    private int TransferFarmhouseContentsToCabin(FarmHouse farmHouse, Cabin cabin)
+    private int TransferFarmhouseContentsToCabin(FarmHouse farmHouse, Cabin cabin, bool builtFresh)
     {
         if (farmHouse == null || cabin == null)
         {
             return 0;
         }
 
-        // First, clear the destination cabin's own default starter contents (build OR reuse path):
-        // a freshly-built Cabin runs AddStarterGiftBox + AddStarterFurniture in its ctor, and a
-        // reused spare cabin that was never lived in still has its starter giftbox. Remove them
-        // before merging so the owner's cabin doesn't end up with a phantom giftbox / tile overlap.
-        ClearStarterContents(cabin);
+        // Clear the destination's default starter contents ONLY when we built the cabin fresh: a new
+        // Cabin runs AddStarterGiftBox + AddStarterFurniture in its ctor, which must go before the
+        // merge or the owner's cabin ends up with a phantom giftbox / tile overlap. A REUSED cabin is
+        // the engine's auto-assigned spare, which can be an uncustomized-but-furnished slot (Cabin.
+        // DeleteFarmhand never clears the interior) — clearing it would delete that real player data,
+        // so skip the clear and merge the master's farmhouse contents on top of what's there.
+        if (builtFresh)
+        {
+            ClearStarterContents(cabin);
+        }
 
         int moved = 0;
 
@@ -1689,6 +1694,7 @@ public class CabinManagerService : ModService
         var destCellarName = cabin.GetCellarName();
         var destCellar =
             destCellarName == null ? null : Game1.getLocationFromName(destCellarName) as Cellar;
+        var maskedOwnerName = ChatRedaction.MaskValue(owner.Name);
 
         if (destCellar == null || ReferenceEquals(destCellar, sourceCellar))
         {
@@ -1696,7 +1702,7 @@ public class CabinManagerService : ModService
             // still resolves to "Cellar"-1. Leave the contents where they are and warn — recoverable,
             // not a finalize failure.
             Monitor.Log(
-                $"Save-import: former owner '{owner.Name}' has {sourceObjectCount} cellar item(s) but "
+                $"Save-import: former owner '{maskedOwnerName}' has {sourceObjectCount} cellar item(s) but "
                     + "no separate cellar could be assigned (player limit reached); they remain in the "
                     + "main farm cellar (now the Server host's).",
                 LogLevel.Warn
@@ -1704,9 +1710,11 @@ public class CabinManagerService : ModService
             return 0;
         }
 
-        // Clear any pre-existing objects in the destination (a freshly-assigned slot is empty, but be
-        // safe — same discipline as the cabin starter-content clear), then move the casks over by tile.
-        // Cellar interiors share the same map, so source tiles are valid in the destination.
+        // Clearing the destination can't destroy another farmer's data: updateCellarAssignments only
+        // ever hands the owner a slot whose prior holder no longer resolves (a per-slot cellar,
+        // pre-created empty — cellars have no starter contents) or the owner's own already-held slot;
+        // it never reassigns a still-held slot, and the ReferenceEquals guard above rules out the
+        // master's "Cellar"-1. Cellar interiors share the same map, so source tiles are valid here.
         foreach (var pos in destCellar.objects.Keys.ToList())
         {
             destCellar.objects.Remove(pos);
@@ -1722,7 +1730,7 @@ public class CabinManagerService : ModService
 
         Monitor.Log(
             $"Save-import: moved {moved} cellar item(s) from the main farm cellar into former owner "
-                + $"'{owner.Name}'s cellar ('{destCellarName}').",
+                + $"'{maskedOwnerName}'s cellar ('{destCellarName}').",
             LogLevel.Info
         );
         return moved;

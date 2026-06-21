@@ -141,6 +141,20 @@ public class SaveImportService : ModService
             );
         }
 
+        // Parse before retargeting boot — otherwise a malformed save selects cleanly here and only
+        // fails on the next restart (the swap path gets this for free from its own doc.Load).
+        try
+        {
+            new XmlDocument().Load(mainFile);
+        }
+        catch (Exception ex)
+        {
+            return Fail(
+                result,
+                $"Save '{saveName}' could not be parsed: {ex.Message}. Restore a backup, then import."
+            );
+        }
+
         // As-is makes the save's <player> the automated headless host. Correct for a single-player
         // import; for a co-op save whose owner is a real player it is the inversion the feature
         // exists to prevent. The XML can't reliably distinguish the two, so always warn loudly,
@@ -294,19 +308,51 @@ public class SaveImportService : ModService
             );
         }
 
-        // Persist the finalize intent BEFORE retargeting boot.
-        WriteIntent(
-            new PendingFinalize
-            {
-                SaveName = saveName,
-                OwnerUid = ownerUid,
-                UserId = userId,
-            }
-        );
+        // Past the on-disk commit, a failure must not return overall failure: the intent governs
+        // recovery. If the intent can't be persisted, leave the boot target alone — a swapped save
+        // with no intent boots into the stranded half-apply (cabin-less owner's userID cleared
+        // mid-load), whereas an un-booted swapped save is still recoverable (restore a backup, or
+        // re-run for the already-swapped re-point path).
+        try
+        {
+            WriteIntent(
+                new PendingFinalize
+                {
+                    SaveName = saveName,
+                    OwnerUid = ownerUid,
+                    UserId = userId,
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log(
+                $"'{saveName}' was transformed but the finalize intent could not be persisted "
+                    + $"({ex.Message}); boot target left unchanged to avoid a stranded swap. Re-run "
+                    + "`saves import` to retry the bind, or restore a backup to revert.",
+                LogLevel.Warn
+            );
+            return Fail(
+                result,
+                $"Save transformed but finalize intent could not be persisted: {ex.Message}. "
+                    + "Boot target unchanged; re-run to retry."
+            );
+        }
 
-        // LAST: point the next boot at the in-place-transformed save. Any failure before this leaves
-        // the boot target untouched, so it never points at a half-written save.
-        _gameLoader.SetSaveNameToLoad(saveName);
+        // Intent is durable past this point, so a boot-retarget failure is recoverable — Warn, don't fail.
+        try
+        {
+            _gameLoader.SetSaveNameToLoad(saveName);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log(
+                $"'{saveName}' transformed and finalize intent persisted, but the boot target could "
+                    + $"not be set ({ex.Message}). Set it manually or re-run `saves import` before "
+                    + "restarting to finalize.",
+                LogLevel.Warn
+            );
+        }
 
         Diagnostics.ModEventLog.Emit(
             "save_import_executed",

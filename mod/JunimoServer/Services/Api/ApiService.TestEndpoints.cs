@@ -956,6 +956,15 @@ public partial class ApiService
             targetName = string.IsNullOrEmpty(body.TargetSaveName)
                 ? sourceName
                 : body.TargetSaveName;
+            // SkipClone imports the name verbatim (no CloneSaveFolder guard runs); validate it here so
+            // a request-supplied name can't escape SavesPath via the hash/import path below.
+            if (!IsSafeSaveName(targetName))
+            {
+                result.Success = false;
+                result.Error =
+                    "TargetSaveName must be a bare folder name (no path separators) when SkipClone is set";
+                return result;
+            }
             result.TargetSaveName = targetName;
         }
 
@@ -1003,6 +1012,16 @@ public partial class ApiService
     /// </summary>
     private static string CloneSaveFolder(string sourceName, string seed)
     {
+        // sourceName is request-supplied; keep it from escaping SavesPath (the derived targetName is
+        // built from FilterFileName + a numeric id, so it's safe by construction).
+        if (!IsSafeSaveName(sourceName))
+        {
+            throw new ArgumentException(
+                $"Invalid source save name '{sourceName}'",
+                nameof(sourceName)
+            );
+        }
+
         var savesPath = Constants.SavesPath;
         var sourceDir = System.IO.Path.Combine(savesPath, sourceName);
         if (!System.IO.Directory.Exists(sourceDir))
@@ -1091,6 +1110,18 @@ public partial class ApiService
 
         return targetName;
     }
+
+    /// <summary>
+    /// True when <paramref name="saveName"/> is a bare save-folder name safe to combine under
+    /// <c>Constants.SavesPath</c> — a single path segment with no directory separators and no
+    /// <c>..</c> traversal. These test endpoints take the name from request input, so guard it before
+    /// any <c>Path.Combine</c> to keep an untrusted value from escaping the saves directory.
+    /// </summary>
+    private static bool IsSafeSaveName(string? saveName) =>
+        !string.IsNullOrEmpty(saveName)
+        && System.IO.Path.GetFileName(saveName) == saveName
+        && saveName != "."
+        && saveName != "..";
 
     private static string TryHashSaveMainFile(string saveName)
     {
@@ -1192,6 +1223,14 @@ public partial class ApiService
             {
                 Success = false,
                 Error = "saveName query required",
+            };
+        }
+        if (!IsSafeSaveName(saveName))
+        {
+            return new TestSaveFileOpResponse
+            {
+                Success = false,
+                Error = "saveName must be a bare folder name (no path separators)",
             };
         }
         try
