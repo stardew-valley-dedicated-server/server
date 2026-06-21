@@ -169,7 +169,7 @@ Consider automating backups with cron (Linux) or Task Scheduler (Windows):
 ## Importing Existing Saves
 
 Bring an existing single-player or co-op save to your server. This has two parts: copy the save folder
-onto the server, then run `saves import` to load it.
+onto the server, then run `saves import` to queue it for the next restart.
 
 **1. Copy the save folder into the saves volume** (replace `junimoserver` with your directory name):
 

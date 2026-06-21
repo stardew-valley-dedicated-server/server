@@ -181,7 +181,7 @@ docker compose logs server | grep -i error
 ### Importing a save doesn't work
 
 1. Confirm the save folder is copied in correctly (the whole `{FarmName}_{number}` folder) and `saves` lists it
-2. Run `saves import <name>` to load it, then restart — copying the folder alone doesn't activate it (see [Importing Existing Saves](/features/backup#importing-existing-saves))
+2. Run `saves import <name>`, then restart to load it — copying the folder alone doesn't activate it (see [Importing Existing Saves](/features/backup#importing-existing-saves))
 3. Co-op save where the wrong player became the host? Re-import with `saves import <name> --swap-host-to <id>`
 4. Check folder structure and file permissions
 
