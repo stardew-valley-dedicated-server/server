@@ -314,19 +314,12 @@ public class TestImportSaveRequest
     public bool SkipClone { get; set; }
 }
 
-/// <summary>
-/// Body for POST /test/console (test-only). Invokes a registered SMAPI console command by name with
-/// the given args, exactly as a server operator typing it would — used to drive the <c>saves reload</c>
-/// guard/kick path, which has no HTTP endpoint of its own (the guard + kick live in the console
-/// command). Reflects into SMAPI's internal command registry; test-only, so it cannot affect production.
-/// </summary>
+/// <summary>Body for POST /test/console (test-only): a console command name + args to invoke.</summary>
 public class TestConsoleCommandRequest
 {
-    /// <summary>The registered console command name (e.g. "saves").</summary>
-    public string Name { get; set; } = "";
+    public string Name { get; set; } = ""; // e.g. "saves"
 
-    /// <summary>The command args (e.g. ["reload", "--force"]).</summary>
-    public string[] Args { get; set; } = Array.Empty<string>();
+    public string[] Args { get; set; } = Array.Empty<string>(); // e.g. ["reload", "--force"]
 }
 
 /// <summary>Response from POST /test/console.</summary>

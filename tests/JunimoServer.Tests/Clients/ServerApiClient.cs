@@ -1682,10 +1682,8 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Test-only: invoke a registered SMAPI console command by name/args exactly as a server operator
-    /// typing it would (the server reflects into SMAPI's internal command registry). Used to drive the
-    /// <c>saves reload</c> guard/kick path, which has no HTTP endpoint of its own. The command runs
-    /// fire-and-forget; assert its effect via the diagnostics snapshot.
+    /// Test-only: invoke a registered console command by name/args (drives <c>saves reload</c>, which
+    /// has no HTTP endpoint). Runs fire-and-forget — assert its effect via the diagnostics snapshot.
     /// POST /test/console
     /// </summary>
     public async Task<TestConsoleCommandResponse?> RunConsoleCommand(

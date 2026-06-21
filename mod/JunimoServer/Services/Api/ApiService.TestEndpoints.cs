@@ -1018,12 +1018,8 @@ public partial class ApiService
         HttpListenerRequest request
     )
     {
-        // The `saves reload` guard + force-kick path lives entirely in the console command
-        // (SavesCommand), which SMAPI 4.4 exposes no public API to invoke programmatically
-        // (ICommandHelper has only Add — verified). To drive the REAL command path in E2E — same
-        // dispatch, same flag parsing, same guard — reflect into SMAPI's internal command registry
-        // and invoke the command's callback exactly as an operator typing it would. Test-only
-        // (/test/* is gated to Env.IsTest), so this reflection can never affect production.
+        // Drives the saves-reload guard/kick path, which lives only in the console command — no HTTP
+        // endpoint reaches it, and SMAPI 4.4 has no public command-invoke API. See InvokeConsoleCommand.
         TestConsoleCommandRequest body;
         try
         {
@@ -1062,12 +1058,10 @@ public partial class ApiService
     }
 
     /// <summary>
-    /// Invokes a registered console command's callback by name, via SMAPI internals (no public API
-    /// exists). Chain (verified against SMAPI 4.4): <c>SCore.Instance</c> (static internal prop) →
-    /// <c>CommandManager</c> (internal field) → <c>Get(name)</c> (public) → the <c>Command.Callback</c>
-    /// (public <c>Action&lt;string,string[]&gt;</c>). Runs on the calling (HTTP handler) thread, which
-    /// matches how SMAPI runs console commands — on a background thread, not the game thread; the
-    /// command itself marshals to the game thread where it needs to. Test-only.
+    /// Invokes a console command's callback by name via SMAPI internals (no public API exists).
+    /// Chain (SMAPI 4.4): <c>SCore.Instance</c> → <c>CommandManager</c> field → <c>Get(name)</c> →
+    /// <c>Command.Callback</c> (<c>Action&lt;string,string[]&gt;</c>); a future SMAPI may rename these.
+    /// Runs off the game thread, as a real console command does. Test-only.
     /// </summary>
     private static void InvokeConsoleCommand(string name, string[] args)
     {
