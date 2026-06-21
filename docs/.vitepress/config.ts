@@ -129,11 +129,11 @@ export default withMermaid(
 
             nav: [
                 { text: "Home", link: "/" },
-                { text: "Players", link: "/players/" },
-                { text: "Admins", link: "/admins/" },
-                { text: "Features", link: "/features/" },
-                { text: "Developers", link: "/developers/" },
-                { text: "Community", link: "/community/" },
+                { text: "Players", link: "/players/", activeMatch: "^/players/" },
+                { text: "Admins", link: "/admins/", activeMatch: "^/admins/" },
+                { text: "Features", link: "/features/", activeMatch: "^/features/" },
+                { text: "Developers", link: "/developers/", activeMatch: "^/developers/" },
+                { text: "Community", link: "/community/", activeMatch: "^/community/" },
             ],
 
             notFound: {
@@ -178,6 +178,7 @@ export default withMermaid(
                         items: [
                             { text: "Overview", link: "/admins/operations/" },
                             { text: "Commands", link: "/admins/operations/commands" },
+                            { text: "Importing Saves", link: "/admins/operations/importing-saves" },
                             { text: "Networking", link: "/admins/operations/networking" },
                             { text: "Upgrading", link: "/admins/operations/upgrading" },
                             { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
