@@ -22,6 +22,12 @@ namespace JunimoServer.Tests;
 /// is customized but has <c>userID==""</c> (LAN never stamps — <c>abandoned-claim-is-steam-only.md</c>),
 /// so <c>HasUserId==true</c> after reload proves Layer B re-stamped the bind, not a carried value.
 ///
+/// The two <c>saves reload</c> guard tests instead drive the real console command via
+/// <c>POST /test/console</c> (SMAPI 4.4 exposes no public API to invoke a console command, so the
+/// endpoint reflects into SMAPI's command registry) — exercising the actual <c>SavesCommand</c> guard
+/// + force-kick path, not the separate <c>/reload</c> endpoint guard. They still assert via the
+/// snapshot.
+///
 /// Class-level <c>Exclusive</c> serializes the methods (each begins with its own
 /// <c>CreateNewGameOnServerAsync</c>, so a prior test's imported active save never leaks in) — see
 /// <c>test-broker-invariants.md</c>.
@@ -737,6 +743,130 @@ public class SaveImportTests : TestBase
         Log("Non-colliding id accepted");
     }
 
+    /// <summary>Test 12 — the <c>saves reload</c> client guard: with a player connected, a plain
+    /// <c>--reload</c> (no force) must REFUSE — the world does not reload, so the queued swap import is
+    /// NOT finalized (master stays the seeded owner, not "Server") and the connected player stays.
+    /// Drives the real console command via /test/console (SMAPI exposes no Trigger API), so this
+    /// exercises the actual guard in SavesCommand, not the /reload endpoint's separate guard.</summary>
+    [Fact]
+    public async Task Import_Reload_RefusesWhenClientConnected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // Seed the master as a real owner "Nina" so the ACTIVE world's MasterName is "Nina" — a
+        // finalized swap would flip it to "Server", so MasterName staying "Nina" proves no reload.
+        await GenerateSourceSaveAsync(new TestSeedImportSourceRequest { OwnerName = "Nina" }, ct);
+
+        // Queue a swap import of a clone (sets SaveNameToLoad to the imported clone). The active world
+        // is untouched — the import runs against the clone folder, not Game1.
+        var import = await ServerApi.ImportSave(
+            new TestImportSaveRequest { SwapHostTo = SyntheticBindId },
+            ct
+        );
+        Assert.True(import?.Success == true && import.Swapped, $"Import failed: {import?.Error}");
+
+        // Connect a player to the ACTIVE world so the guard sees a connected client.
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        try
+        {
+            var clientUid = client.JoinResult.UniqueMultiplayerId;
+            Assert.True(
+                await ServerApi.WaitForPlayerByIdAsync(clientUid, ct: ct),
+                "Guard test requires the client to be connected before the reload"
+            );
+
+            // Plain reload — must refuse (a player is connected and we did not force).
+            var cmd = await ServerApi.RunConsoleCommand("saves", new[] { "reload" }, ct);
+            Assert.True(cmd?.Success == true, $"Console command dispatch failed: {cmd?.Error}");
+
+            // Negative assertion (refusal): a reload would ExitToTitle — dropping the client and
+            // flipping the master to "Server" within a tick or two. Wait a settle window long enough
+            // for a wrongful reload to manifest (mirrors TimePausedVerification's "state must NOT
+            // change" idiom), then assert the steady state held: client still on, master still "Nina".
+            await Task.Delay(TestTimings.TimePausedVerification, ct);
+
+            var players = await ServerApi.GetPlayers(ct);
+            Assert.True(
+                players?.Players.Any(p => p.Id == clientUid) == true,
+                "A plain --reload with a client connected must refuse — the client must stay connected "
+                    + "(a reload would have ExitToTitle'd it)"
+            );
+            var state = await ServerApi.GetDiagnosticsState(ct);
+            Assert.Equal("Nina", state?.MasterName); // "Server" would mean the swap wrongly finalized
+            Log("Plain reload refused while a client was connected (import stays queued)");
+        }
+        finally
+        {
+            // The refused client is still connected — disconnect so it can't cascade into another
+            // Exclusive method on this shared server.
+            await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, ct);
+        }
+    }
+
+    /// <summary>Test 13 — <c>saves reload --force</c> with a player connected: kicks the player, then
+    /// reloads, finalizing the queued swap WITHOUT a separate restart. Proves the force-kick path and
+    /// that the reload runs the Layer B finalizer (kicked player gone from /players, swap finalized to
+    /// a "Server" master with the owner a bound cabin farmhand).</summary>
+    [Fact]
+    public async Task Import_ForceReload_KicksThenFinalizes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var seed = await GenerateSourceSaveAsync(
+            new TestSeedImportSourceRequest { OwnerName = "Omar" },
+            ct
+        );
+        var ownerUid = seed.OwnerUid;
+
+        var import = await ServerApi.ImportSave(
+            new TestImportSaveRequest { SwapHostTo = SyntheticBindId },
+            ct
+        );
+        Assert.True(import?.Success == true && import.Swapped, $"Import failed: {import?.Error}");
+
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var clientUid = client.JoinResult.UniqueMultiplayerId;
+        Assert.True(
+            await ServerApi.WaitForPlayerByIdAsync(clientUid, ct: ct),
+            "Force test requires the client to be connected before the reload"
+        );
+
+        // Force reload — broadcasts, kicks the connected player, then reloads the queued import.
+        var cmd = await ServerApi.RunConsoleCommand("saves", new[] { "reload", "--force" }, ct);
+        Assert.True(cmd?.Success == true, $"Console command dispatch failed: {cmd?.Error}");
+
+        // The kicked player is gone (ExitToTitle disconnects everyone regardless, but the explicit
+        // kick precedes it) and the swap finalized into a fresh "Server" master with the demoted owner
+        // a bound cabin farmhand — the same end state as a restart, with no restart.
+        var ok = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_SaveImport_ForceReloadKicksAndFinalizes,
+            async () =>
+            {
+                var state = await ServerApi.GetDiagnosticsState(ct);
+                if (state == null || state.MasterName != "Server")
+                {
+                    return false;
+                }
+                var ownerEntry = state.FarmhandData.FirstOrDefault(f =>
+                    f.UniqueMultiplayerId == ownerUid
+                );
+                if (ownerEntry is not { IsCustomized: true, HasUserId: true })
+                {
+                    return false;
+                }
+                // The kicked client is no longer present.
+                var players = await ServerApi.GetPlayers(ct);
+                return players?.Players.All(p => p.Id != clientUid) == true;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            ok,
+            "Force reload must kick the connected player and finalize the swap in-process: fresh "
+                + "'Server' master, owner a bound cabin farmhand, kicked client gone from /players"
+        );
+        Log("Force reload kicked the connected player and finalized the swap without a restart");
+    }
+
     // ── CI coverage gaps (documented, not faked) ──────────────────────────────────────
     //
     // TODO: Test 6 (1.5-origin fold) — needs a real pre-1.6 co-op save fixture at
@@ -760,4 +890,12 @@ public class SaveImportTests : TestBase
     //
     // TODO: full player-to-player marriage survival across the swap needs two customized farmhands;
     //   Test 8 covers only the master-clear half. p2p-marriage survival is a manual-verification gap.
+    //
+    // NOTE: Test 13 (force reload) can't ISOLATE the courtesy kick from the reload's own ExitToTitle —
+    //   both disconnect the client, so via the HTTP snapshot (tests-assert-via-http-api.md) "client
+    //   gone" is satisfied either way. What it DOES prove is that --force gets past the guard that
+    //   Test 12 shows blocks a plain reload, then finalizes. The explicit kick firing first is visible
+    //   only in the client log ("Disconnected: Kicked" before "ExitedToMainMenu") — diagnostics, not
+    //   an assertion surface. Isolating the kick would need a snapshot signal the kick produces that
+    //   ExitToTitle doesn't; none exists, so it's a documented gap, not faked coverage.
 }

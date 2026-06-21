@@ -109,7 +109,7 @@ public enum WaitName
     Polling_AbandonedClaim_DisconnectHealConfirmed,
     Polling_AbandonedClaim_SweptOnReload,
 
-    // SaveImportTests.cs (9)
+    // SaveImportTests.cs (10)
     Polling_SaveImport_SwapFinalized,
     Polling_SaveImport_ContentsMoved,
     Polling_SaveImport_ContentsMovedUpgraded,
@@ -119,6 +119,7 @@ public enum WaitName
     Polling_SaveImport_PartialThenStable,
     Polling_SaveImport_SecondReloadNoop,
     Polling_SaveImport_MasterGatedState,
+    Polling_SaveImport_ForceReloadKicksAndFinalizes,
 
     // FarmhandManagementTests.cs (1)
     Polling_FarmhandManagement_FarmhandGone,

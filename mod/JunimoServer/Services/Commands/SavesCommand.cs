@@ -1,27 +1,35 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml;
 using JunimoServer.Services.GameCreator;
+using JunimoServer.Services.GameManager;
 using JunimoServer.Services.SaveImport;
+using JunimoServer.Util;
 using StardewModdingAPI;
+using StardewModdingAPI.Events;
+using StardewValley;
 
 namespace JunimoServer.Services.Commands;
 
 internal static class SavesCommand
 {
+    private static IModHelper _helper;
     private static IMonitor _monitor;
     private static SaveImportService _saveImport;
 
     public static void Register(IModHelper helper, IMonitor monitor, SaveImportService saveImport)
     {
+        _helper = helper;
         _monitor = monitor;
         _saveImport = saveImport;
 
         helper.ConsoleCommands.Add(
             "saves",
             "Save management. Run 'saves' for list, 'saves info <name>', "
-                + "'saves import <name> [--swap-host-to <id>]'.",
+                + "'saves import <name> [--swap-host-to <id>] [--reload | --force-reload]', "
+                + "'saves reload [--force]'.",
             (cmd, args) => HandleCommand(args)
         );
     }
@@ -47,9 +55,12 @@ internal static class SavesCommand
             case "import":
                 ImportSave(args);
                 break;
+            case "reload":
+                ReloadCommand(args);
+                break;
             default:
                 _monitor.Log(
-                    $"Unknown saves subcommand: {args[0]}. Use: saves [info|import]",
+                    $"Unknown saves subcommand: {args[0]}. Use: saves [info|import|reload]",
                     LogLevel.Warn
                 );
                 break;
@@ -67,7 +78,10 @@ internal static class SavesCommand
     {
         if (args.Length < 2)
         {
-            _monitor.Log("Usage: saves import <saveName> [--swap-host-to <id>]", LogLevel.Warn);
+            _monitor.Log(
+                "Usage: saves import <saveName> [--swap-host-to <id>] [--reload | --force-reload]",
+                LogLevel.Warn
+            );
             return;
         }
 
@@ -93,6 +107,11 @@ internal static class SavesCommand
             userId = args[flagIndex + 1];
         }
 
+        // --force-reload implies --reload. Both are matched case-insensitively, same idiom as
+        // --swap-host-to above.
+        var forceReload = HasFlag(args, "--force-reload");
+        var reload = forceReload || HasFlag(args, "--reload");
+
         var result = _saveImport.ExecuteImport(saveName, userId);
         if (!result.Success)
         {
@@ -104,10 +123,14 @@ internal static class SavesCommand
             return;
         }
 
+        // "apply" verb: a reload finalizes/loads in-process; otherwise it's a restart away.
+        var applyHint = reload ? "Reloading to apply…" : "Restart the server to load it.";
+        var finalizeHint = reload ? "Reloading to finalize…" : "Restart the server to finalize.";
+
         if (result.RepointedBind)
         {
             _monitor.Log(
-                $"Re-pointed the pending host-swap bind for '{saveName}'. Restart to finalize.",
+                $"Re-pointed the pending host-swap bind for '{saveName}'. {finalizeHint}",
                 LogLevel.Info
             );
         }
@@ -116,17 +139,155 @@ internal static class SavesCommand
             _monitor.Log(
                 $"Imported '{saveName}' with host swap (former owner "
                     + $"'{result.FormerOwnerName ?? result.FormerOwnerUid.ToString()}' → cabin farmhand "
-                    + "bound to the provided id). Restart the server to finalize.",
+                    + $"bound to the provided id). {finalizeHint}",
                 LogLevel.Info
             );
         }
         else
         {
-            _monitor.Log(
-                $"Imported '{saveName}' as-is. Restart the server to load it.",
-                LogLevel.Info
+            _monitor.Log($"Imported '{saveName}' as-is. {applyHint}", LogLevel.Info);
+        }
+
+        if (reload)
+        {
+            // The import already succeeded and is queued for next restart regardless; the reload
+            // is a layered, opt-in step on top. A refusal (clients connected, no --force) leaves
+            // the queued import intact — it is NOT an import failure.
+            TryReloadActiveWorld(
+                force: forceReload,
+                contextLine: $"applying imported save '{saveName}'"
             );
         }
+    }
+
+    /// <summary>
+    /// Reloads the active world in-process (no container restart) — for applying a manual save
+    /// change without a bounce. <c>--force</c> broadcasts a warning and kicks non-host players first.
+    /// </summary>
+    private static void ReloadCommand(string[] args)
+    {
+        var force = HasFlag(args, "--force");
+        TryReloadActiveWorld(force, contextLine: "reloading the active world");
+    }
+
+    private static bool HasFlag(string[] args, string flag) =>
+        Array.Exists(args, a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The single home for the guard + kick + in-process reload orchestration shared by the import
+    /// <c>--reload</c>/<c>--force-reload</c> flags and the standalone <c>saves reload</c> subcommand.
+    /// Console commands run on a background thread, so the count/kick/reload are marshalled onto the
+    /// game thread via a one-shot <see cref="UpdateTickedEventArgs"/> handler (the RenderingCommand
+    /// pattern). With clients connected and <paramref name="force"/> false, it refuses and returns —
+    /// any queued import stays queued for the next restart.
+    /// </summary>
+    private static void TryReloadActiveWorld(bool force, string contextLine)
+    {
+        void Apply(object sender, UpdateTickedEventArgs e)
+        {
+            _helper.Events.GameLoop.UpdateTicked -= Apply;
+
+            // Wrap the whole body: this runs inside SMAPI's UpdateTicked dispatch on the game thread,
+            // and an unhandled throw here would be logged by SMAPI at Error — which trips
+            // ServerContainer's ERROR/FATAL test-poison scan (debugging.md). kick / SendPublicMessage /
+            // RequestReloadSave's synchronous ExitToTitle could all throw on an edge case. Catch and
+            // log at Warn, mirroring GameManagerService.ConditionallyStartGame's reload guard.
+            try
+            {
+                // No world loaded → nothing to reload (e.g. server still at title). Reuse-on-restart
+                // path handles a queued import; a standalone reload here would have nothing to act on.
+                if (!Game1.hasLoadedGame || Game1.player == null)
+                {
+                    _monitor.Log(
+                        $"No active world loaded — skipping reload ({contextLine}). "
+                            + "It will load on the next restart.",
+                        LogLevel.Warn
+                    );
+                    return;
+                }
+
+                // Host-excluded, event-safe count (mirrors AlwaysOnFestivals.CountOnlineOtherPlayers):
+                // the bare otherFarmers.Count is unreliable during an active event (host-automation.md
+                // invariant 7), so count online non-disconnecting non-host farmers.
+                var others = Game1
+                    .getOnlineFarmers()
+                    .Where(f =>
+                        f.UniqueMultiplayerID != Game1.player.UniqueMultiplayerID
+                        && !Game1.Multiplayer.isDisconnecting(f)
+                    )
+                    .ToList();
+
+                if (others.Count > 0 && !force)
+                {
+                    var names = string.Join(", ", others.Select(f => f.Name));
+                    _monitor.Log(
+                        $"Refusing to reload while {others.Count} player(s) are connected: {names}. "
+                            + "Re-run with --force-reload to kick them, or restart when they leave.",
+                        LogLevel.Warn
+                    );
+                    return;
+                }
+
+                if (others.Count > 0)
+                {
+                    _helper.SendPublicMessage(
+                        "Server is reloading to apply a save change — reconnect in a moment."
+                    );
+                    foreach (var f in others)
+                    {
+                        Game1.server.kick(f.UniqueMultiplayerID);
+                    }
+                    _monitor.Log(
+                        $"Kicked {others.Count} player(s) before reload: "
+                            + string.Join(", ", others.Select(f => f.Name)),
+                        LogLevel.Info
+                    );
+                }
+
+                var manager = GameManagerService.Instance;
+                if (manager == null)
+                {
+                    _monitor.Log(
+                        "Game manager not ready; cannot reload in-process. Restart to load.",
+                        LogLevel.Warn
+                    );
+                    return;
+                }
+
+                _monitor.Log($"Reloading the active world ({contextLine})…", LogLevel.Info);
+
+                // Console commands return void and can't await across the tick boundary, so
+                // fire-and-forget with a logged continuation. RequestReloadSave faults its own TCS on a
+                // failed LoadSave (GameManagerService.cs:261-264), so no extra timeout is needed. The
+                // continuation runs on a thread-pool thread and only touches _monitor.Log (thread-safe).
+                manager
+                    .RequestReloadSave()
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                        {
+                            _monitor.Log(
+                                $"World reload failed: {t.Exception?.GetBaseException().Message}",
+                                LogLevel.Warn
+                            );
+                        }
+                        else
+                        {
+                            _monitor.Log($"World reloaded ({contextLine}).", LogLevel.Info);
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                // Warn, not Error (test-poison). The import (if any) stays queued for next restart.
+                _monitor.Log(
+                    $"In-process reload failed ({contextLine}): {ex.Message}",
+                    LogLevel.Warn
+                );
+            }
+        }
+
+        _helper.Events.GameLoop.UpdateTicked += Apply;
     }
 
     private static void ListSaves()

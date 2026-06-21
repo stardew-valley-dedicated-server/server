@@ -197,13 +197,24 @@ original human owner into that automated host — they can no longer play as tha
 `--swap-host-to <id>` (their Steam64 or GOG Galaxy id) to keep them a player.
 :::
 
-**3. Restart to load it:**
+**3. Load it.** A plain import loads on the next restart:
 
 ```sh
 docker compose restart server
 ```
 
-The save loads on restart; a swap import finalizes the farmhand on that first load. Connect via VNC or
+Or skip the restart — add `--reload` to load it in-process immediately (use `--force-reload` to kick
+connected players first):
+
+```text
+# Applies right away if nobody is connected; otherwise refuses and names them.
+saves import YourFarm_123456789 --reload
+
+# Kicks connected players, then reloads.
+saves import YourFarm_123456789 --force-reload
+```
+
+Either way the save loads and a swap import finalizes the farmhand on that load. Connect via VNC or
 join in-game to verify.
 
 ## Recovery Scenarios

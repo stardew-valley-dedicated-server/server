@@ -83,6 +83,10 @@ Manage save files:
 | `saves info <name>` | Show save details (farm type, cabins, players) |
 | `saves import <name>` | Import a save as-is (its owner becomes the headless host); loaded on restart |
 | `saves import <name> --swap-host-to <id>` | Import + demote the save's owner into a cabin farmhand bound to the given platform id (Steam64 or GOG Galaxy id), installing a fresh "Server" host |
+| `saves import <name> --reload` | Import, then load it in-process without a restart (refuses if players are connected) |
+| `saves import <name> --force-reload` | Same, but kick connected players first |
+| `saves reload` | Reload the active world in-process — apply a manual save edit without a restart (refuses if players are connected) |
+| `saves reload --force` | Same, but kick connected players first |
 
 > **As-is vs swap.** Importing **as-is** makes the save's original player the automated headless host —
 > correct for a single-player save, wrong for a co-op save whose owner is a real player. For a co-op
@@ -92,7 +96,13 @@ Manage save files:
 >
 > **Back up before `--swap-host-to`.** The swap rewrites the save folder in place (fault-tolerantly — a
 > failed transform leaves the save loadable). As-is import changes no files; it only sets the next-boot
-> target. Either way the import is one-shot: run it, restart once.
+> target.
+>
+> **Applying it.** A plain import loads on the next restart. The `--reload` variants skip the restart
+> and load it in-process; they refuse while players are connected (the log names them) unless you use
+> `--force-reload`, which kicks them first. A refused import is **not** lost — it still loads on the
+> next restart. `saves reload` does the same in-process reload for the active world, so a manual save
+> edit takes effect without a restart.
 
 ### rendering
 

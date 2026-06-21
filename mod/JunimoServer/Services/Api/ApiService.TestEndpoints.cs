@@ -102,6 +102,12 @@ public partial class ApiService
                             await HandlePostTestImportSaveAsync(request)
                         );
                         return;
+                    case "/test/console":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestConsoleCommandAsync(request)
+                        );
+                        return;
                     case "/test/corrupt_save":
                         await WriteJsonAsync(
                             response,
@@ -999,6 +1005,114 @@ public partial class ApiService
         result.FormerOwnerUid = import?.FormerOwnerUid ?? 0;
         result.ImportError = import?.Error;
         return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/console",
+        Summary = "Invoke a registered SMAPI console command by name (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestConsoleCommandResponse), 200)]
+    private async Task<TestConsoleCommandResponse> HandlePostTestConsoleCommandAsync(
+        HttpListenerRequest request
+    )
+    {
+        // The `saves reload` guard + force-kick path lives entirely in the console command
+        // (SavesCommand), which SMAPI 4.4 exposes no public API to invoke programmatically
+        // (ICommandHelper has only Add — verified). To drive the REAL command path in E2E — same
+        // dispatch, same flag parsing, same guard — reflect into SMAPI's internal command registry
+        // and invoke the command's callback exactly as an operator typing it would. Test-only
+        // (/test/* is gated to Env.IsTest), so this reflection can never affect production.
+        TestConsoleCommandRequest body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body =
+                JsonConvert.DeserializeObject<TestConsoleCommandRequest>(json)
+                ?? new TestConsoleCommandRequest();
+        }
+        catch (Exception ex)
+        {
+            return new TestConsoleCommandResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(body.Name))
+        {
+            return new TestConsoleCommandResponse { Success = false, Error = "Name is required" };
+        }
+
+        try
+        {
+            InvokeConsoleCommand(body.Name, body.Args ?? Array.Empty<string>());
+            return new TestConsoleCommandResponse { Success = true };
+        }
+        catch (Exception ex)
+        {
+            return new TestConsoleCommandResponse { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Invokes a registered console command's callback by name, via SMAPI internals (no public API
+    /// exists). Chain (verified against SMAPI 4.4): <c>SCore.Instance</c> (static internal prop) →
+    /// <c>CommandManager</c> (internal field) → <c>Get(name)</c> (public) → the <c>Command.Callback</c>
+    /// (public <c>Action&lt;string,string[]&gt;</c>). Runs on the calling (HTTP handler) thread, which
+    /// matches how SMAPI runs console commands — on a background thread, not the game thread; the
+    /// command itself marshals to the game thread where it needs to. Test-only.
+    /// </summary>
+    private static void InvokeConsoleCommand(string name, string[] args)
+    {
+        var smapiAsm = typeof(IModHelper).Assembly;
+        var scoreType =
+            smapiAsm.GetType("StardewModdingAPI.Framework.SCore")
+            ?? throw new InvalidOperationException("SCore type not found");
+        var instance =
+            scoreType
+                .GetProperty(
+                    "Instance",
+                    System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Public
+                )
+                ?.GetValue(null)
+            ?? throw new InvalidOperationException("SCore.Instance is null");
+
+        var commandManager =
+            scoreType
+                .GetField(
+                    "CommandManager",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Public
+                )
+                ?.GetValue(instance)
+            ?? throw new InvalidOperationException("SCore.CommandManager is null");
+
+        var command = commandManager
+            .GetType()
+            .GetMethod("Get", new[] { typeof(string) })
+            ?.Invoke(commandManager, new object[] { name });
+        if (command == null)
+        {
+            throw new InvalidOperationException($"Console command '{name}' is not registered");
+        }
+
+        var callback =
+            command.GetType().GetProperty("Callback")?.GetValue(command) as Action<string, string[]>
+            ?? throw new InvalidOperationException(
+                $"Console command '{name}' has no invocable callback"
+            );
+
+        callback(name, args);
     }
 
     /// <summary>

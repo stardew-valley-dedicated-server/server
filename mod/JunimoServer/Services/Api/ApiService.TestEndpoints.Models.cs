@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace JunimoServer.Services.Api;
@@ -311,6 +312,29 @@ public class TestImportSaveRequest
 
     /// <summary>Skip the clone step (import an existing/pre-corrupted target directly — resilience test).</summary>
     public bool SkipClone { get; set; }
+}
+
+/// <summary>
+/// Body for POST /test/console (test-only). Invokes a registered SMAPI console command by name with
+/// the given args, exactly as a server operator typing it would — used to drive the <c>saves reload</c>
+/// guard/kick path, which has no HTTP endpoint of its own (the guard + kick live in the console
+/// command). Reflects into SMAPI's internal command registry; test-only, so it cannot affect production.
+/// </summary>
+public class TestConsoleCommandRequest
+{
+    /// <summary>The registered console command name (e.g. "saves").</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The command args (e.g. ["reload", "--force"]).</summary>
+    public string[] Args { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>Response from POST /test/console.</summary>
+public class TestConsoleCommandResponse
+{
+    /// <summary>True if the named command was found and its callback invoked without throwing.</summary>
+    public bool Success { get; set; }
+    public string? Error { get; set; }
 }
 
 /// <summary>Response from POST /test/import_save.</summary>

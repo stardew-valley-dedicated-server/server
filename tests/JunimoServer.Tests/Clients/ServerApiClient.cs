@@ -763,6 +763,26 @@ public class TestImportSaveResponse
     public string PostImportMainFileHash { get; set; } = "";
 }
 
+/// <summary>Body for /test/console (test-only). Mirrors the server-side DTO.</summary>
+public class TestConsoleCommandRequest
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("args")]
+    public string[] Args { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>Response from /test/console (test-only).</summary>
+public class TestConsoleCommandResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 /// <summary>
 /// Response from /test/galaxy_relogin POST endpoint (test-only). Mirrors the server-side
 /// TestGalaxyReloginResponse DTO. Triggers a Galaxy re-sign-in with no outage so a test can
@@ -1659,6 +1679,29 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestImportSaveResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: invoke a registered SMAPI console command by name/args exactly as a server operator
+    /// typing it would (the server reflects into SMAPI's internal command registry). Used to drive the
+    /// <c>saves reload</c> guard/kick path, which has no HTTP endpoint of its own. The command runs
+    /// fire-and-forget; assert its effect via the diagnostics snapshot.
+    /// POST /test/console
+    /// </summary>
+    public async Task<TestConsoleCommandResponse?> RunConsoleCommand(
+        string name,
+        string[] args,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/console",
+            ct,
+            () => JsonContent.Create(new TestConsoleCommandRequest { Name = name, Args = args })
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestConsoleCommandResponse>(ct);
     }
 
     /// <summary>
