@@ -1,3 +1,5 @@
+using JunimoServer.Tests.Clients;
+using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
 
@@ -25,6 +27,22 @@ public class CabinStrategyNoneTests : TestBase
         {
             try
             {
+                // Disconnect the primary first: /newgame 409s while any client is connected.
+                // The NewGame_* tests connect no client, but NoneStrategy_CabinMovesToFarmerTilePlusOne
+                // leaves the primary connected — without this the reset would 409 and leak None
+                // state. Tolerant: a no-op throw when never connected / already at title must
+                // not block the reset.
+                try
+                {
+                    await DisconnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    LogWarning(
+                        $"Primary disconnect during cleanup failed (may not be connected): {ex.Message}"
+                    );
+                }
+
                 await CreateNewGameOnServerAsync(farmType: 0);
             }
             catch (Exception ex)
@@ -81,4 +99,65 @@ public class CabinStrategyNoneTests : TestBase
 
         Assert.Equal(cabinsResponse.TotalCount, cabinsResponse.AvailableCount);
     }
+
+    /// <summary>
+    /// !cabin under None moves a visible cabin to farmer.Tile + (1,0): None has no hidden
+    /// stack, so the move is between two real map positions. Proves the None happy path of
+    /// the command (otherwise only exercised incidentally by the strategy-switch test).
+    /// </summary>
+    [Fact]
+    public async Task NoneStrategy_CabinMovesToFarmerTilePlusOne()
+    {
+        LogSection("Testing !cabin under None (vanilla) strategy");
+
+        _needsServerReset = true;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 1);
+
+        var ct = TestContext.Current.CancellationToken;
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+
+        // Baseline is map-derived under None — never hard-coded.
+        var baseline = await GetOurCabinAsync(ownerId, ct);
+        Assert.False(baseline.IsHidden, "None-strategy cabin should start visible");
+
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
+
+        // Resend each poll: the !cabin handler reads the server's view of the farmer
+        // location, which can lag the client warp by a tick.
+        CabinInfoResponse? moved = null;
+        var ok = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinPlacement_Moved,
+            async () =>
+            {
+                await GameClient.SendChat("!cabin");
+                moved = await GetOurCabinAsync(ownerId, ct);
+                return (moved.TileX, moved.TileY) != (baseline.TileX, baseline.TileY);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+
+        Assert.True(ok, "Cabin did not move to the farmer tile after !cabin under None");
+        Assert.Equal(CabinPlacementHelper.ExpectedCabinTile, (moved!.TileX, moved.TileY));
+        Assert.Equal("Normal", moved.Type);
+        Assert.False(moved.IsHidden, "Moved None cabin must stay visible");
+
+        await Exceptions.AssertNoExceptionsAsync("after !cabin under None");
+
+        Log($"None-strategy cabin moved to ({moved.TileX},{moved.TileY})");
+    }
+
+    #region Helpers
+
+    private async Task<CabinInfoResponse> GetOurCabinAsync(long ownerId, CancellationToken ct)
+    {
+        var cabins = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabins);
+        var ours = cabins.Cabins.FirstOrDefault(c => c.OwnerId == ownerId);
+        Assert.NotNull(ours);
+        return ours;
+    }
+
+    #endregion
 }

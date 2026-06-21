@@ -648,6 +648,12 @@ public class ModEntry : Mod
             }
         );
 
+        // GET /actions/farm_buildings - List this client's view of the farm's cabins (name + tile)
+        _server.Get(
+            "actions/farm_buildings",
+            _ => ExecuteOnGameThread(() => _actionsController!.GetFarmBuildings())
+        );
+
         // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
         _server.Post(
             "actions/plant_crop",

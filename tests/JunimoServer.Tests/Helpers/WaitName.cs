@@ -95,6 +95,15 @@ public enum WaitName
     Polling_CabinStrategy_FarmerSyncedCabinAndFarmhand,
     Polling_CabinStrategy_FarmerDeletionReflected,
 
+    // CabinPositionPersistenceTests.cs — !cabin reset (1)
+    Polling_CabinReset_CabinHidden,
+
+    // CabinPositionPersistenceTests.cs — dummy cabin at shared stack (1)
+    Polling_DummyCabin_VisibleInClientFarm,
+
+    // CabinPositionPersistenceTests.cs — same-pass sweep reflected in snapshot (1)
+    Polling_CabinSweep_PostReloadSettled,
+
     // AbandonedClaimTests.cs (3)
     Polling_AbandonedClaim_StuckStateReproduced,
     Polling_AbandonedClaim_DisconnectHealConfirmed,

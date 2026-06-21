@@ -127,18 +127,49 @@ public class CabinPlacementValidationTests : TestBase
     }
 
     /// <summary>
+    /// !cabin off the Farm is rejected with "Must be on Farm" and records no intent. A
+    /// fresh farmhand spawns inside its cabin interior — already off-Farm — so no warp is
+    /// needed; this asserts the location gate fires before any placement.
+    /// </summary>
+    [Fact]
+    public async Task OffFarm_RejectsAndDoesNotMove()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+        var baseline = await GetOurCabinAsync(ownerId, ct);
+
+        var rejected = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinPlacement_Rejected,
+            () => Chat.AssertResponseAsync("!cabin", "Must be on Farm"),
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(rejected, "Expected a 'Must be on Farm' rejection reply");
+
+        var after = await GetOurCabinAsync(ownerId, ct);
+        Assert.True(after.IsHidden, "Cabin should still be hidden after an off-Farm reject");
+        Assert.Equal((baseline.TileX, baseline.TileY), (after.TileX, after.TileY));
+
+        var cabins = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabins);
+        Assert.DoesNotContain(ownerId, cabins.SavedPositionPlayerIds);
+
+        await Exceptions.AssertNoExceptionsAsync("after off-Farm !cabin");
+    }
+
+    /// <summary>
     /// Another connected, visible farmer standing in the footprint must reject with
     /// "another player is standing there" — and the host (skipped via IsMainPlayer)
     /// must NOT trigger that rejection on its own.
     ///
-    /// Skipped: needs a second concurrently-connected farmer, which the shared
-    /// connection helpers don't support (they bind to the single primary client). The
-    /// body documents the contained mechanism — a second ConnectionHelper over a
-    /// second lease — so enabling it later is mechanical.
+    /// First consumer of the second-farmer helper (plan 02): a second concurrently-
+    /// connected farmer over its own lease. <c>await using</c> disposes it before this
+    /// class's <c>DisposeAsync</c> runs <c>/newgame</c> (409s while any client is connected).
     /// </summary>
-    [Fact(
-        Skip = "Needs a 2nd concurrently-connected farmer (first in suite); deferred — see body for approach"
-    )]
+    [Fact]
     public async Task AnotherPlayerInFootprint_RejectsAndDoesNotMove()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -149,29 +180,16 @@ public class CabinPlacementValidationTests : TestBase
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
         var baseline = await GetOurCabinAsync(ownerIdA, ct);
 
-        // Second farmer over its own lease + ConnectionHelper (LAN; Steam not needed).
-        var nameB = Farmers.GenerateName("FarmerB");
-        // Scope leaseB so its client disconnects before this class's DisposeAsync runs
-        // /newgame — that reset returns 409 while any client is still connected, and
-        // ResourceLease.DisposeAsync would otherwise dispose leaseB too late.
-        await using var leaseB = await LeaseClientAsync(ct);
-        var connB = new ConnectionHelper(leaseB.Client, serverApi: ServerApi);
-        var joinB = await connB.JoinWorldViaLanAsync(
-            Lease!.ServerLanAddress,
-            Lease.ServerLanPort,
-            nameB,
-            cancellationToken: ct
-        );
-        Farmers.TrackFarmer(nameB, joinB.UniqueMultiplayerId);
+        await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
 
         // Stand B inside A's prospective footprint.
-        var warpB = await leaseB.Client.Actions.Warp(
+        var warpB = await farmerB.Client.Actions.Warp(
             "Farm",
             CabinPlacementHelper.ExpectedCabinTile.X + 1,
             CabinPlacementHelper.ExpectedCabinTile.Y
         );
         Assert.True(warpB?.Success == true, $"B warp failed: {warpB?.Error}");
-        await leaseB.Client.WaitForLocationAsync("^Farm$", ct: ct);
+        await farmerB.Client.WaitForLocationAsync("^Farm$", ct: ct);
 
         var rejected = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinPlacement_Rejected,

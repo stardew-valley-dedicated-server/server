@@ -492,6 +492,15 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     internal Task<GameTestClient> GetClientAsyncInternal(CancellationToken ct = default) =>
         GetClientAsync(ct);
 
+    /// <summary>
+    /// Leases an additional client container for a Fixture/ helper (e.g. a second concurrent
+    /// farmer). Delegates to the protected <see cref="LeaseClientAsync"/> so the
+    /// recording-mark side effect is preserved; the protected method isn't reachable from a
+    /// sibling-namespace helper.
+    /// </summary>
+    internal Task<ClientLease> LeaseClientForHelperAsync(CancellationToken ct = default) =>
+        LeaseClientAsync(ct);
+
     internal Task AcquireServerAsyncInternal(
         ResourceRequirements requirements,
         CancellationToken ct = default,
