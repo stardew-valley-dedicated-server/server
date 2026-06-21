@@ -40,11 +40,11 @@ public static class CabinPlacementValidator
                     continue;
                 }
 
-                if (!IsTileBuildable(farm, cabin, tile, buildableRect, out failureReason))
-                {
-                    return false;
-                }
-
+                // Farmer collision is checked BEFORE buildability: a standing farmer also
+                // trips IsTileBuildable's CanItemBePlacedHere (CollisionMask.All +
+                // useFarmerTile:true), so checking buildability first would always report the
+                // generic "blocked by terrain or object" and make this specific message
+                // unreachable.
                 foreach (var farmer in farm.farmers)
                 {
                     // Skip the AlwaysOn host: it stands parked on the Farm but is
@@ -65,6 +65,11 @@ public static class CabinPlacementValidator
                         failureReason = "another player is standing there";
                         return false;
                     }
+                }
+
+                if (!IsTileBuildable(farm, cabin, tile, buildableRect, out failureReason))
+                {
+                    return false;
                 }
             }
         }

@@ -315,6 +315,68 @@ public class ActionsController
             SeedItemId = itemId,
         };
     }
+
+    /// <summary>
+    /// Lists this client's view of the farm's cabin buildings (name + tile). The server
+    /// rewrites each peer's locationIntroduction copy (CabinManagerService), so the client's
+    /// farm can differ from master state — e.g. a dummy cabin relocated to the shared stack
+    /// for a player whose own cabin was moved. /cabins (master state) cannot observe that, so
+    /// this is the positive-observation gate for the per-peer cabin mutations.
+    /// </summary>
+    public FarmBuildingsResult GetFarmBuildings()
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new FarmBuildingsResult { Success = false, Error = "Not in a game world" };
+        }
+
+        var farm = Game1.getFarm();
+        if (farm == null)
+        {
+            return new FarmBuildingsResult { Success = false, Error = "Farm not loaded" };
+        }
+
+        var cabins = new List<FarmBuildingInfo>();
+        foreach (var building in farm.buildings)
+        {
+            if (!building.isCabin)
+            {
+                continue;
+            }
+
+            cabins.Add(
+                new FarmBuildingInfo
+                {
+                    Name = building.GetIndoors()?.NameOrUniqueName ?? "",
+                    TileX = building.tileX.Value,
+                    TileY = building.tileY.Value,
+                    // HasInterior == false means the door is dead: Building.doAction only warps
+                    // the player inside when GetIndoors() != null, so a null interior is an
+                    // unenterable (door-dead) cabin — what the dummy-cabin prop must be.
+                    HasInterior = building.GetIndoors() != null,
+                }
+            );
+        }
+
+        return new FarmBuildingsResult { Success = true, Cabins = cabins };
+    }
+}
+
+public class FarmBuildingInfo
+{
+    public string Name { get; set; } = "";
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+
+    /// <summary>True if this building has an interior the player can enter (door is live).</summary>
+    public bool HasInterior { get; set; }
+}
+
+public class FarmBuildingsResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public List<FarmBuildingInfo> Cabins { get; set; } = new();
 }
 
 public class SleepResult

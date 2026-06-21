@@ -85,7 +85,6 @@ COPY ./mod/JunimoServer.Shared /src/mod/JunimoServer.Shared
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet build /src/tests/test-client/JunimoTestClient.csproj \
     --configuration ${BUILD_CONFIGURATION} \
-    --no-restore \
     /p:GamePath=/game \
     /p:EnableModDeploy=false \
     -o /output/JunimoTestClient \

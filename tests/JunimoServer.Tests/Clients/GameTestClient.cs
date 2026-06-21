@@ -256,6 +256,34 @@ public class ClearAreaResult
     public string? Error { get; set; }
 }
 
+public class FarmBuildingInfo
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("tileX")]
+    public int TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int TileY { get; set; }
+
+    /// <summary>True if this building has an interior the player can enter (door is live).</summary>
+    [JsonPropertyName("hasInterior")]
+    public bool HasInterior { get; set; }
+}
+
+public class FarmBuildingsResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("cabins")]
+    public List<FarmBuildingInfo> Cabins { get; set; } = new();
+}
+
 public class PlantCropResult
 {
     [JsonPropertyName("success")]
@@ -683,6 +711,15 @@ public class ActionsClient
                 tileY,
             }
         );
+
+    /// <summary>
+    /// List this client's view of the farm's cabins (name + tile). The server rewrites each
+    /// peer's locationIntroduction, so the client's farm can differ from master state — this
+    /// is how a test observes per-peer cabin mutations that /cabins (master) can't see.
+    /// GET /actions/farm_buildings
+    /// </summary>
+    public Task<FarmBuildingsResult?> GetFarmBuildings(CancellationToken ct = default) =>
+        _client.GetAsync<FarmBuildingsResult>("/actions/farm_buildings", ct);
 }
 
 public class ChatClient

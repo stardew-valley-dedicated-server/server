@@ -95,6 +95,62 @@ internal sealed class FarmerTestHelper
     }
 
     /// <summary>
+    /// Connects a second concurrent farmer over its own client lease and joins it via LAN.
+    /// The primary farmer keeps using the shared connection helpers; this is the one missing
+    /// primitive for multi-player E2E tests. LAN-only is sufficient — none of the planned
+    /// consumers need a client-stamped userID (which requires Steam). The farmer is tracked
+    /// for cleanup via <see cref="TrackFarmer"/>.
+    ///
+    /// Scope the returned <see cref="SecondFarmer"/> with <c>await using</c> so it
+    /// disconnects before the test class's <c>/newgame</c> reset. No
+    /// <c>[TestServer(Clients = 2)]</c> is needed: the cabin pool replenishes on join
+    /// (EnsureAtLeastXCabins runs in the patched sendAvailableFarmhands path), so the second
+    /// farmer always finds a slot, and a runtime lease avoids splitting the server pool.
+    /// </summary>
+    public async Task<SecondFarmer> ConnectSecondFarmerAsync(
+        string namePrefix = "FarmerB",
+        CancellationToken ct = default
+    )
+    {
+        var lease = _testBase.LeaseInternal;
+        if (lease == null)
+        {
+            throw new InvalidOperationException(
+                "Server not acquired; cannot connect a second farmer."
+            );
+        }
+
+        var name = GenerateName(namePrefix);
+        var clientLease = await _testBase.LeaseClientForHelperAsync(ct);
+
+        // Dispose the lease if the join (or its assert) throws — otherwise it leaks client
+        // capacity and leaves a connected client around during cleanup. On success, the
+        // returned SecondFarmer owns disposal.
+        try
+        {
+            var conn = new ConnectionHelper(clientLease.Client, serverApi: _testBase.ServerApi);
+            var join = await conn.JoinWorldViaLanAsync(
+                lease.ServerLanAddress,
+                lease.ServerLanPort,
+                name,
+                cancellationToken: ct
+            );
+            Assert.True(
+                join.Success,
+                $"Second farmer '{name}' failed to join via LAN: {join.Error}"
+            );
+
+            TrackFarmer(name, join.UniqueMultiplayerId);
+            return new SecondFarmer(clientLease, join.UniqueMultiplayerId, name);
+        }
+        catch
+        {
+            await clientLease.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Reconnects an existing farmer (no name generation, no tracking).
     /// Use after a disconnect when testing reconnect behavior.
     /// </summary>

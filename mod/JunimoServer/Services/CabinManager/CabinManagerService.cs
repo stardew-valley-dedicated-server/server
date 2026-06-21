@@ -547,6 +547,34 @@ public class CabinManagerService : ModService
             {
                 cabin.Relocate(StackLocation.Create(_cabinManagerData).ToPoint());
             }
+            else if (cabin != null && !cabin.IsInHiddenStack())
+            {
+                // This peer's own cabin is NOT in the hidden stack (they moved it via
+                // /cabin, or it imported visible under KeepExisting), so they'd otherwise
+                // see an empty spot at the shared StackLocation where everyone else sees a
+                // cabin. Render one hidden-stack cabin there as a *door-dead* dummy so the
+                // empty spot is filled without exposing another player's home.
+                //
+                // Both routes (!cabin-moved and KeepExisting-imported-visible) reach this
+                // branch through the identical `!IsInHiddenStack()` precondition, which is all
+                // this branch reads — the saved-position intent map is not consulted here. So
+                // the !cabin-moved E2E test (DummyCabin_AfterMoveAndReconnect...) covers the
+                // KeepExisting route by equivalence; a separate KeepExisting test would
+                // exercise the same dummy code with heavier strategy-setup, not new coverage.
+                //
+                // FirstOrDefault + null-guard are load-bearing defense: a First/. would turn
+                // the (effectively unreachable on a real join — EnsureAtLeastXCabins replenishes
+                // the hidden pool before locationIntroduction) zero-candidate case into a broken
+                // join handshake. IsInHiddenStack() checks (-20,-20) only, so lobby cabins at
+                // (-21,-21) are excluded automatically.
+                var dummy = farm.buildings.FirstOrDefault(b =>
+                    b.isCabin && b != cabin && b.IsInHiddenStack()
+                );
+                if (dummy != null)
+                {
+                    PlaceDoorDeadDummyCabin(dummy);
+                }
+            }
         }
 
         // Update the outgoing message
@@ -555,6 +583,31 @@ public class CabinManagerService : ModService
             farm.Root,
             forceCurrentLocation
         );
+    }
+
+    /// <summary>
+    /// Renders a hidden-stack cabin at the shared StackLocation as a door-dead dummy, mutating
+    /// only the per-peer message copy passed in. The cabin fills the empty spot the peer would
+    /// otherwise see, but its door is a no-op — stepping on it does nothing, so it never exposes
+    /// the real owner's home.
+    ///
+    /// How the door is killed sure-fire: Building.doAction only warps the player inside when
+    /// GetIndoors() != null (decompiled Building.cs:950). GetIndoors() reads indoors.Value then
+    /// nonInstancedIndoorsName; null both → no interior → no entry. The client never re-creates
+    /// the interior: LoadFromBuildingData's createIndoors is gated on `hasLoaded || forConstruction`
+    /// (Building.cs:523), and hasLoaded is only ever set on the master (Building.load() early-returns
+    /// `if (!Game1.IsMasterGame)`), so on a farmhand client hasLoaded stays false and the nulled
+    /// interior survives deserialization. humanDoor IS reset from data on the client, but that's
+    /// irrelevant once GetIndoors() is null. This mutates the deserialized copy only (NetRoot.Connect
+    /// builds a fresh graph), so master state and other peers are untouched.
+    /// </summary>
+    private void PlaceDoorDeadDummyCabin(Building dummy)
+    {
+        dummy.SetPosition(StackLocation.Create(_cabinManagerData).ToPoint());
+        // Kill the door: null both interior references so GetIndoors() returns null on the client.
+        // No need to set interior warps — there is no interior to warp into anymore.
+        dummy.indoors.Value = null;
+        dummy.nonInstancedIndoorsName.Value = null;
     }
 
     private void OnLocationDeltaMessage(MessageContext context)

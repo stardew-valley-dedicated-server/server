@@ -97,7 +97,6 @@ COPY ./mod /src/mod
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet build /src/mod/JunimoServer/JunimoServer.csproj \
     --configuration ${BUILD_CONFIGURATION} \
-    --no-restore \
     /p:GamePath=/game \
     -o /output/JunimoServer
 
