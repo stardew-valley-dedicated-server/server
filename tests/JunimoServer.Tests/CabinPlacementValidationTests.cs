@@ -189,7 +189,14 @@ public class CabinPlacementValidationTests : TestBase
             CabinPlacementHelper.ExpectedCabinTile.Y
         );
         Assert.True(warpB?.Success == true, $"B warp failed: {warpB?.Error}");
-        await farmerB.Client.WaitForLocationAsync("^Farm$", ct: ct);
+        // WaitForLocationAsync returns non-null only when the location matched ^Farm$ within
+        // the timeout; assert it so a B-not-settled failure surfaces here, not as an opaque
+        // "no rejection" timeout below.
+        var bArrived = await farmerB.Client.WaitForLocationAsync("^Farm$", ct: ct);
+        Assert.True(
+            bArrived is not null,
+            "Farmer B did not reach the Farm before the rejection check"
+        );
 
         var rejected = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinPlacement_Rejected,

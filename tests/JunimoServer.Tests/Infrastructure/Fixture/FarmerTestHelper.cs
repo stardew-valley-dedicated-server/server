@@ -123,17 +123,31 @@ internal sealed class FarmerTestHelper
         var name = GenerateName(namePrefix);
         var clientLease = await _testBase.LeaseClientForHelperAsync(ct);
 
-        var conn = new ConnectionHelper(clientLease.Client, serverApi: _testBase.ServerApi);
-        var join = await conn.JoinWorldViaLanAsync(
-            lease.ServerLanAddress,
-            lease.ServerLanPort,
-            name,
-            cancellationToken: ct
-        );
-        Assert.True(join.Success, $"Second farmer '{name}' failed to join via LAN: {join.Error}");
+        // Dispose the lease if the join (or its assert) throws — otherwise it leaks client
+        // capacity and leaves a connected client around during cleanup. On success, the
+        // returned SecondFarmer owns disposal.
+        try
+        {
+            var conn = new ConnectionHelper(clientLease.Client, serverApi: _testBase.ServerApi);
+            var join = await conn.JoinWorldViaLanAsync(
+                lease.ServerLanAddress,
+                lease.ServerLanPort,
+                name,
+                cancellationToken: ct
+            );
+            Assert.True(
+                join.Success,
+                $"Second farmer '{name}' failed to join via LAN: {join.Error}"
+            );
 
-        TrackFarmer(name, join.UniqueMultiplayerId);
-        return new SecondFarmer(clientLease, join.UniqueMultiplayerId, name);
+            TrackFarmer(name, join.UniqueMultiplayerId);
+            return new SecondFarmer(clientLease, join.UniqueMultiplayerId, name);
+        }
+        catch
+        {
+            await clientLease.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>
