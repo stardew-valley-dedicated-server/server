@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace JunimoServer.Services.Api;
@@ -198,4 +199,162 @@ public class TestGalaxyReloginResponse
     /// <summary>True if the re-sign-in was triggered (Galaxy was initialized); false otherwise.</summary>
     public bool Triggered { get; set; }
     public string? Error { get; set; }
+}
+
+/// <summary>
+/// Body for POST /test/seed_import_source (test-only). All fields optional. Seeds the active game's
+/// master (Game1.player — what the swap import demotes) and FarmHouse to look like a real importable
+/// owner before SleepToSaveAsync, so the save's &lt;player&gt; reads as a played human and carries the
+/// world/relationship/house state and contents the save-import tests assert.
+/// </summary>
+public class TestSeedImportSourceRequest
+{
+    /// <summary>Override the master's name (default "ImportedOwner"). Must NOT be "Server".</summary>
+    public string? OwnerName { get; set; }
+
+    /// <summary>Set the master's house upgrade level (drives the cabin level + cellar warn).</summary>
+    public int? HouseUpgradeLevel { get; set; }
+
+    /// <summary>Set the master's caveChoice (1 = bat/fruit cave) — bucket-B carry test (7b).</summary>
+    public int? CaveChoice { get; set; }
+
+    /// <summary>Set the master's NPC spouse name — spouse-clear-on-master test (8).</summary>
+    public string? Spouse { get; set; }
+
+    /// <summary>Add a mailReceived flag (e.g. "ccDoorUnlock") — mail/event carry test (7).</summary>
+    public string? MailFlag { get; set; }
+
+    /// <summary>Add an eventsSeen id — mail/event carry test (7).</summary>
+    public string? EventSeen { get; set; }
+
+    /// <summary>Set a friendshipData[key].Points entry — shadow-pacifism gate carry test (7c).</summary>
+    public int? ShadowFriendshipPoints { get; set; }
+
+    /// <summary>The friendshipData key for ShadowFriendshipPoints (default "Krobus").</summary>
+    public string? ShadowFriendshipKey { get; set; }
+
+    /// <summary>Set stats.DaysPlayed — same-day-reconnect gate carry test (7c).</summary>
+    public int? DaysPlayed { get; set; }
+
+    /// <summary>Place a chest (with a known item) in the FarmHouse — contents-move test (2).</summary>
+    public bool PlaceChest { get; set; }
+    public int ChestTileX { get; set; } = 3;
+    public int ChestTileY { get; set; } = 3;
+
+    /// <summary>Add an item to the FarmHouse fridge — contents-move test (2).</summary>
+    public bool PlaceFridgeItem { get; set; }
+
+    /// <summary>Spawn a pet into the FarmHouse — household-relocation test (3).</summary>
+    public bool SpawnPet { get; set; }
+
+    /// <summary>Place an item in the master's "Cellar"-1 — cellar-contents-move test (11).</summary>
+    public bool PlaceCellarItem { get; set; }
+
+    /// <summary>Stamp this userID onto a spare uncustomized farmhand slot — userID-collision test (10).</summary>
+    public string? InjectFarmhandUserId { get; set; }
+}
+
+/// <summary>Response from POST /test/seed_import_source.</summary>
+public class TestSeedImportSourceResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The seeded master's UniqueMultiplayerID (becomes the demoted owner's uid after swap).</summary>
+    public long OwnerUid { get; set; }
+    public string OwnerName { get; set; } = "";
+    public bool ChestPlaced { get; set; }
+    public bool FridgeItemPlaced { get; set; }
+    public bool PetSpawned { get; set; }
+    public bool CellarItemPlaced { get; set; }
+    public bool FarmhandUserIdInjected { get; set; }
+}
+
+/// <summary>Body for POST /test/corrupt_save (test-only).</summary>
+public class TestCorruptSaveRequest
+{
+    /// <summary>Folder to clone from (default: the active save).</summary>
+    public string? SourceSaveName { get; set; }
+
+    /// <summary>Folder to clone to + corrupt (required).</summary>
+    public string? TargetSaveName { get; set; }
+}
+
+/// <summary>Response from POST /test/corrupt_save / GET /test/save_tmp_exists.</summary>
+public class TestSaveFileOpResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>For save_tmp_exists: whether a leftover .tmp exists next to the main file.</summary>
+    public bool Exists { get; set; }
+
+    /// <summary>For corrupt_save: the actual clone folder name created (derived from a re-stamped
+    /// uniqueID); the caller imports this with SkipClone.</summary>
+    public string TargetSaveName { get; set; } = "";
+}
+
+/// <summary>
+/// Body for POST /test/import_save (test-only). Clones a source save folder under a new name, then
+/// runs saves-import on the clone (ExecuteImport rejects importing the active save, so the clone is
+/// required). Defaults: source = the active save, target = source + "-import".
+/// </summary>
+public class TestImportSaveRequest
+{
+    /// <summary>Folder to clone from (default: the currently-active save).</summary>
+    public string? SourceSaveName { get; set; }
+
+    /// <summary>Folder to clone to + import (default: SourceSaveName + "-import").</summary>
+    public string? TargetSaveName { get; set; }
+
+    /// <summary>The platform id to bind on swap (all-digit Steam64/Galaxy id). Absent = as-is import.</summary>
+    public string? SwapHostTo { get; set; }
+
+    /// <summary>Skip the clone step (import an existing/pre-corrupted target directly — resilience test).</summary>
+    public bool SkipClone { get; set; }
+}
+
+/// <summary>Body for POST /test/console (test-only): a console command name + args to invoke.</summary>
+public class TestConsoleCommandRequest
+{
+    public string Name { get; set; } = ""; // e.g. "saves"
+
+    public string[] Args { get; set; } = Array.Empty<string>(); // e.g. ["reload", "--force"]
+}
+
+/// <summary>Response from POST /test/console.</summary>
+public class TestConsoleCommandResponse
+{
+    /// <summary>True if the named command was found and its callback invoked without throwing.</summary>
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+}
+
+/// <summary>Response from POST /test/import_save.</summary>
+public class TestImportSaveResponse
+{
+    /// <summary>True if the endpoint's own steps (clone + dispatch) succeeded.</summary>
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The target save folder the import ran against.</summary>
+    public string TargetSaveName { get; set; } = "";
+
+    /// <summary>Whether the import was a host swap (vs as-is).</summary>
+    public bool Swapped { get; set; }
+
+    /// <summary>Whether the import only re-pointed an existing pending bind.</summary>
+    public bool RepointedBind { get; set; }
+
+    /// <summary>The demoted owner's UniqueMultiplayerID (swap only).</summary>
+    public long FormerOwnerUid { get; set; }
+
+    /// <summary>The import's own error/warn message (when ImportError is set, the import did not succeed).</summary>
+    public string? ImportError { get; set; }
+
+    /// <summary>SHA-256 (base64) of the target main file before import — for the byte-unchanged assertion.</summary>
+    public string PreImportMainFileHash { get; set; } = "";
+
+    /// <summary>SHA-256 (base64) of the target main file after import.</summary>
+    public string PostImportMainFileHash { get; set; } = "";
 }

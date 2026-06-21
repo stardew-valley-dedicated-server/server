@@ -6,9 +6,9 @@
 
 Yes. JunimoServer is open-source and free to use. You need to own a copy of Stardew Valley on Steam (the server downloads game files using your Steam account).
 
-### Can I use my existing single-player save?
+### Can I use my existing single-player or co-op save?
 
-Yes. See [Backup & Recovery](/features/backup#importing-existing-saves) for import instructions.
+Yes. Copy it onto the server and run `saves import` — see [Importing Existing Saves](/features/backup#importing-existing-saves). For a co-op save, use `--swap-host-to` so the original owner stays a player instead of becoming the automated host.
 
 ### How many players can join?
 

@@ -174,6 +174,43 @@ public class DiagnosticsStateResponse
     [JsonPropertyName("disconnectingFarmers")]
     public long[] DisconnectingFarmers { get; set; } = Array.Empty<long>();
 
+    // ── Save-import assertion probes (mirror the mod-side DiagnosticsStateResponse). ──
+    [JsonPropertyName("farmHouseObjectCount")]
+    public int FarmHouseObjectCount { get; set; }
+
+    [JsonPropertyName("farmHouseFurnitureCount")]
+    public int FarmHouseFurnitureCount { get; set; }
+
+    [JsonPropertyName("farmHouseFridgeItemCount")]
+    public int FarmHouseFridgeItemCount { get; set; }
+
+    [JsonPropertyName("masterCellarObjectCount")]
+    public int MasterCellarObjectCount { get; set; }
+
+    [JsonPropertyName("masterHasFlag")]
+    public bool? MasterHasFlag { get; set; }
+
+    [JsonPropertyName("masterHasEvent")]
+    public bool? MasterHasEvent { get; set; }
+
+    [JsonPropertyName("masterCaveChoice")]
+    public int MasterCaveChoice { get; set; }
+
+    [JsonPropertyName("masterShadowFriendshipPoints")]
+    public int? MasterShadowFriendshipPoints { get; set; }
+
+    [JsonPropertyName("masterDaysPlayed")]
+    public int MasterDaysPlayed { get; set; }
+
+    [JsonPropertyName("masterHasSpouse")]
+    public bool MasterHasSpouse { get; set; }
+
+    [JsonPropertyName("masterName")]
+    public string MasterName { get; set; } = "";
+
+    [JsonPropertyName("saveImportFinalizeCount")]
+    public int SaveImportFinalizeCount { get; set; }
+
     [JsonPropertyName("failedFields")]
     public List<string> FailedFields { get; set; } = new();
 }
@@ -213,6 +250,18 @@ public class DiagnosticsCabinState
 
     [JsonPropertyName("farmhandReferenceUid")]
     public long FarmhandReferenceUid { get; set; }
+
+    [JsonPropertyName("objectCount")]
+    public int ObjectCount { get; set; }
+
+    [JsonPropertyName("fridgeItemCount")]
+    public int FridgeItemCount { get; set; }
+
+    [JsonPropertyName("petCount")]
+    public int PetCount { get; set; }
+
+    [JsonPropertyName("cellarObjectCount")]
+    public int CellarObjectCount { get; set; }
 }
 
 public class DiagnosticsFarmhandState
@@ -559,6 +608,182 @@ public class TestStampClaimResponse
 
     [JsonPropertyName("homeLocation")]
     public string HomeLocation { get; set; } = "";
+}
+
+/// <summary>Body for /test/seed_import_source (test-only). Mirrors the server-side DTO.</summary>
+public class TestSeedImportSourceRequest
+{
+    [JsonPropertyName("ownerName")]
+    public string? OwnerName { get; set; }
+
+    [JsonPropertyName("houseUpgradeLevel")]
+    public int? HouseUpgradeLevel { get; set; }
+
+    [JsonPropertyName("caveChoice")]
+    public int? CaveChoice { get; set; }
+
+    [JsonPropertyName("spouse")]
+    public string? Spouse { get; set; }
+
+    [JsonPropertyName("mailFlag")]
+    public string? MailFlag { get; set; }
+
+    [JsonPropertyName("eventSeen")]
+    public string? EventSeen { get; set; }
+
+    [JsonPropertyName("shadowFriendshipPoints")]
+    public int? ShadowFriendshipPoints { get; set; }
+
+    [JsonPropertyName("shadowFriendshipKey")]
+    public string? ShadowFriendshipKey { get; set; }
+
+    [JsonPropertyName("daysPlayed")]
+    public int? DaysPlayed { get; set; }
+
+    [JsonPropertyName("placeChest")]
+    public bool PlaceChest { get; set; }
+
+    [JsonPropertyName("chestTileX")]
+    public int ChestTileX { get; set; } = 3;
+
+    [JsonPropertyName("chestTileY")]
+    public int ChestTileY { get; set; } = 3;
+
+    [JsonPropertyName("placeFridgeItem")]
+    public bool PlaceFridgeItem { get; set; }
+
+    [JsonPropertyName("spawnPet")]
+    public bool SpawnPet { get; set; }
+
+    [JsonPropertyName("placeCellarItem")]
+    public bool PlaceCellarItem { get; set; }
+
+    [JsonPropertyName("injectFarmhandUserId")]
+    public string? InjectFarmhandUserId { get; set; }
+}
+
+/// <summary>Response from /test/seed_import_source (test-only).</summary>
+public class TestSeedImportSourceResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("ownerUid")]
+    public long OwnerUid { get; set; }
+
+    [JsonPropertyName("ownerName")]
+    public string OwnerName { get; set; } = "";
+
+    [JsonPropertyName("chestPlaced")]
+    public bool ChestPlaced { get; set; }
+
+    [JsonPropertyName("fridgeItemPlaced")]
+    public bool FridgeItemPlaced { get; set; }
+
+    [JsonPropertyName("petSpawned")]
+    public bool PetSpawned { get; set; }
+
+    [JsonPropertyName("cellarItemPlaced")]
+    public bool CellarItemPlaced { get; set; }
+
+    [JsonPropertyName("farmhandUserIdInjected")]
+    public bool FarmhandUserIdInjected { get; set; }
+}
+
+/// <summary>Body for /test/corrupt_save (test-only).</summary>
+public class TestCorruptSaveRequest
+{
+    [JsonPropertyName("sourceSaveName")]
+    public string? SourceSaveName { get; set; }
+
+    [JsonPropertyName("targetSaveName")]
+    public string? TargetSaveName { get; set; }
+}
+
+/// <summary>Response from /test/corrupt_save and /test/save_tmp_exists (test-only).</summary>
+public class TestSaveFileOpResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("exists")]
+    public bool Exists { get; set; }
+
+    [JsonPropertyName("targetSaveName")]
+    public string TargetSaveName { get; set; } = "";
+}
+
+/// <summary>Body for /test/import_save (test-only). Mirrors the server-side DTO.</summary>
+public class TestImportSaveRequest
+{
+    [JsonPropertyName("sourceSaveName")]
+    public string? SourceSaveName { get; set; }
+
+    [JsonPropertyName("targetSaveName")]
+    public string? TargetSaveName { get; set; }
+
+    [JsonPropertyName("swapHostTo")]
+    public string? SwapHostTo { get; set; }
+
+    [JsonPropertyName("skipClone")]
+    public bool SkipClone { get; set; }
+}
+
+/// <summary>Response from /test/import_save (test-only).</summary>
+public class TestImportSaveResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("targetSaveName")]
+    public string TargetSaveName { get; set; } = "";
+
+    [JsonPropertyName("swapped")]
+    public bool Swapped { get; set; }
+
+    [JsonPropertyName("repointedBind")]
+    public bool RepointedBind { get; set; }
+
+    [JsonPropertyName("formerOwnerUid")]
+    public long FormerOwnerUid { get; set; }
+
+    [JsonPropertyName("importError")]
+    public string? ImportError { get; set; }
+
+    [JsonPropertyName("preImportMainFileHash")]
+    public string PreImportMainFileHash { get; set; } = "";
+
+    [JsonPropertyName("postImportMainFileHash")]
+    public string PostImportMainFileHash { get; set; } = "";
+}
+
+/// <summary>Body for /test/console (test-only). Mirrors the server-side DTO.</summary>
+public class TestConsoleCommandRequest
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("args")]
+    public string[] Args { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>Response from /test/console (test-only).</summary>
+public class TestConsoleCommandResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
 }
 
 /// <summary>
@@ -975,9 +1200,42 @@ public class ServerApiClient : IDisposable
     /// server); safe to call from every failure path.
     /// GET /diagnostics/state
     /// </summary>
-    public async Task<DiagnosticsStateResponse?> GetDiagnosticsState(CancellationToken ct = default)
+    public async Task<DiagnosticsStateResponse?> GetDiagnosticsState(
+        CancellationToken ct = default
+    ) => await GetDiagnosticsState(null, ct);
+
+    /// <summary>
+    /// As <see cref="GetDiagnosticsState(CancellationToken)"/>, but with optional <c>?masterFlag=</c>
+    /// (so <c>MasterHasFlag</c> reports whether the master's mailReceived contains that flag),
+    /// <c>?masterEvent=</c> (so <c>MasterHasEvent</c> reports the same for eventsSeen), and
+    /// <c>?masterFriendKey=</c> (so <c>MasterShadowFriendshipPoints</c> reports that NPC's specific
+    /// friendship points). Used by the save-import master-carry tests.
+    /// </summary>
+    public async Task<DiagnosticsStateResponse?> GetDiagnosticsState(
+        string? masterFlag,
+        CancellationToken ct = default,
+        string? masterFriendKey = null,
+        string? masterEvent = null
+    )
     {
-        var response = await _httpClient.GetAsync("/diagnostics/state", ct);
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(masterFlag))
+        {
+            query.Add($"masterFlag={Uri.EscapeDataString(masterFlag)}");
+        }
+        if (!string.IsNullOrEmpty(masterEvent))
+        {
+            query.Add($"masterEvent={Uri.EscapeDataString(masterEvent)}");
+        }
+        if (!string.IsNullOrEmpty(masterFriendKey))
+        {
+            query.Add($"masterFriendKey={Uri.EscapeDataString(masterFriendKey)}");
+        }
+        var path =
+            query.Count == 0
+                ? "/diagnostics/state"
+                : "/diagnostics/state?" + string.Join("&", query);
+        var response = await _httpClient.GetAsync(path, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<DiagnosticsStateResponse>(ct);
     }
@@ -1388,6 +1646,108 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(HttpMethod.Post, "/test/galaxy_relogin", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestGalaxyReloginResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: seed the active game's master + FarmHouse to look like a real importable owner
+    /// (non-Server name + inventory, plus optional house/world/relationship state and FarmHouse
+    /// contents) before saving, so the save's &lt;player&gt; reads as a played human for a swap import.
+    /// POST /test/seed_import_source
+    /// </summary>
+    public async Task<TestSeedImportSourceResponse?> SeedImportSource(
+        TestSeedImportSourceRequest body,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/seed_import_source",
+            ct,
+            () => JsonContent.Create(body)
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestSeedImportSourceResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: clone a source save folder under a new name and run saves-import on the clone
+    /// (ExecuteImport rejects importing the active save). Defaults: source = active save, target =
+    /// source + "-import". Pass <c>SwapHostTo</c> for a swap+bind import.
+    /// POST /test/import_save
+    /// </summary>
+    public async Task<TestImportSaveResponse?> ImportSave(
+        TestImportSaveRequest body,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/import_save",
+            ct,
+            () => JsonContent.Create(body)
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestImportSaveResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: invoke a registered console command by name/args (drives <c>saves reload</c>, which
+    /// has no HTTP endpoint). Runs fire-and-forget — assert its effect via the diagnostics snapshot.
+    /// POST /test/console
+    /// </summary>
+    public async Task<TestConsoleCommandResponse?> RunConsoleCommand(
+        string name,
+        string[] args,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/console",
+            ct,
+            () => JsonContent.Create(new TestConsoleCommandRequest { Name = name, Args = args })
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestConsoleCommandResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: clone the active (valid) save to <paramref name="targetSaveName"/>, then corrupt
+    /// the clone's main file into non-well-formed XML (resilience test). The active save is untouched.
+    /// POST /test/corrupt_save
+    /// </summary>
+    public async Task<TestSaveFileOpResponse?> CorruptSave(
+        string targetSaveName,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/corrupt_save",
+            ct,
+            () => JsonContent.Create(new TestCorruptSaveRequest { TargetSaveName = targetSaveName })
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestSaveFileOpResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: whether a leftover <c>.tmp</c> remains next to the save's main file (no-junk
+    /// assertion after a successful import).
+    /// GET /test/save_tmp_exists?saveName=...
+    /// </summary>
+    public async Task<TestSaveFileOpResponse?> SaveTmpExists(
+        string saveName,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Get,
+            $"/test/save_tmp_exists?saveName={Uri.EscapeDataString(saveName)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestSaveFileOpResponse>(ct);
     }
 
     /// <summary>

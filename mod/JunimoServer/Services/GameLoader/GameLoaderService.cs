@@ -6,7 +6,7 @@ using StardewValley.Menus;
 
 namespace JunimoServer.Services.GameLoader;
 
-class GameLoaderService : ModService
+public class GameLoaderService : ModService
 {
     private const string SaveKey = "JunimoHost.GameLoader";
 

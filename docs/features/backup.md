@@ -168,29 +168,54 @@ Consider automating backups with cron (Linux) or Task Scheduler (Windows):
 
 ## Importing Existing Saves
 
-To bring an existing save to your server:
+Bring an existing single-player or co-op save to your server. This has two parts: copy the save folder
+onto the server, then run `saves import` to queue it for the next restart.
 
-**1. Stop the server:**
-
-```sh
-docker compose down
-```
-
-**2. Copy save folder into volume** (replace `junimoserver` with your directory name)**:**
+**1. Copy the save folder into the saves volume** (replace `junimoserver` with your directory name):
 
 ```sh
 docker run --rm -v junimoserver_saves:/saves -v $(pwd):/backup ubuntu cp -r /backup/YourFarm_123456789 /saves/
 ```
 
-**3. Start server:**
+The folder name is `{FarmName}_{number}` — copy the whole folder, not its contents.
 
-```sh
-docker compose up -d
+**2. Import it.** Run `saves` to confirm it's listed, then import it from the server console (see the
+[`saves` command](/admins/operations/commands#saves)):
+
+```text
+# Single-player save — the save's owner becomes the headless host:
+saves import YourFarm_123456789
+
+# Co-op save — keep the original owner as a player, demote them to a cabin
+# farmhand bound to their Steam/GOG id (back up first; this rewrites the save):
+saves import YourFarm_123456789 --swap-host-to 76561198XXXXXXXXX
 ```
 
-**4. Verify in game:**
+::: warning Co-op saves need `--swap-host-to`
+On this server the main farmer is the automated host. Importing a co-op save **as-is** turns the
+original human owner into that automated host — they can no longer play as that farmer. Use
+`--swap-host-to <id>` (their Steam64 or GOG Galaxy id) to keep them a player.
+:::
 
-Connect via VNC and check that your save appears.
+**3. Load it.** A plain import loads on the next restart:
+
+```sh
+docker compose restart server
+```
+
+Or skip the restart — add `--reload` to load it in-process immediately (use `--force-reload` to kick
+connected players first):
+
+```text
+# Applies right away if nobody is connected; otherwise refuses and names them.
+saves import YourFarm_123456789 --reload
+
+# Kicks connected players, then reloads.
+saves import YourFarm_123456789 --force-reload
+```
+
+Either way the save loads and a swap import finalizes the farmhand on that load. Connect via VNC or
+join in-game to verify.
 
 ## Recovery Scenarios
 

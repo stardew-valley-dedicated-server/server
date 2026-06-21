@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using StardewModdingAPI;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using StardewValley.Characters;
 using StardewValley.Locations;
 using StardewValley.Objects;
 using StardewValley.TerrainFeatures;
@@ -60,6 +61,9 @@ public partial class ApiService
                     case "/test/festival_state":
                         await WriteJsonAsync(response, await HandleGetTestFestivalStateAsync());
                         return;
+                    case "/test/save_tmp_exists":
+                        await WriteJsonAsync(response, HandleGetTestSaveTmpExists(request));
+                        return;
                 }
                 break;
             case "POST":
@@ -85,6 +89,30 @@ public partial class ApiService
                         return;
                     case "/test/galaxy_relogin":
                         await WriteJsonAsync(response, await HandlePostTestGalaxyReloginAsync());
+                        return;
+                    case "/test/seed_import_source":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestSeedImportSourceAsync(request)
+                        );
+                        return;
+                    case "/test/import_save":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestImportSaveAsync(request)
+                        );
+                        return;
+                    case "/test/console":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestConsoleCommandAsync(request)
+                        );
+                        return;
+                    case "/test/corrupt_save":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestCorruptSaveAsync(request)
+                        );
                         return;
                 }
                 break;
@@ -665,5 +693,666 @@ public partial class ApiService
         }
 
         return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/seed_import_source",
+        Summary = "Seed the active game's master + FarmHouse to look like a real importable owner (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestSeedImportSourceResponse), 200)]
+    private async Task<TestSeedImportSourceResponse> HandlePostTestSeedImportSourceAsync(
+        HttpListenerRequest request
+    )
+    {
+        // The in-process generator always creates a "Server" master, but a real imported co-op save's
+        // <player> is a human owner. So before saving, this makes the active master (Game1.player —
+        // which is what the swap import demotes) look like a real owner: a non-Server name + an
+        // inventory (so the re-import guard doesn't mistake it for a clone-blank Server master), plus
+        // optional world-gating/relationship/house state and FarmHouse contents the import tests
+        // assert move/carry. Mirrors /test/stamp_claim's "construct a precise pre-save state" role.
+        TestSeedImportSourceRequest body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body = string.IsNullOrWhiteSpace(json)
+                ? new TestSeedImportSourceRequest()
+                : JsonConvert.DeserializeObject<TestSeedImportSourceRequest>(json)
+                    ?? new TestSeedImportSourceRequest();
+        }
+        catch (Exception ex)
+        {
+            return new TestSeedImportSourceResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        var result = new TestSeedImportSourceResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var master = Game1.player;
+                var farmHouse = Game1.getLocationFromName("FarmHouse") as FarmHouse;
+                if (master == null || farmHouse == null)
+                {
+                    result.Error = "Master player or FarmHouse not available";
+                    return;
+                }
+
+                // Identity: a non-Server name + a guaranteed inventory item so the save's <player>
+                // reads as a real played owner (defeats the clone-blank re-import fingerprint).
+                master.Name = string.IsNullOrEmpty(body.OwnerName)
+                    ? "ImportedOwner"
+                    : body.OwnerName;
+                master.displayName = master.Name;
+                if (!master.Items.Any(i => i != null))
+                {
+                    master.Items.Add(ItemRegistry.Create("(O)388", 10)); // wood — marks a played owner
+                }
+
+                if (body.HouseUpgradeLevel.HasValue)
+                {
+                    master.HouseUpgradeLevel = body.HouseUpgradeLevel.Value;
+                }
+                if (body.CaveChoice.HasValue)
+                {
+                    master.caveChoice.Value = body.CaveChoice.Value;
+                }
+                if (!string.IsNullOrEmpty(body.Spouse))
+                {
+                    master.spouse = body.Spouse;
+                }
+                if (!string.IsNullOrEmpty(body.MailFlag))
+                {
+                    master.mailReceived.Add(body.MailFlag);
+                }
+                if (!string.IsNullOrEmpty(body.EventSeen))
+                {
+                    master.eventsSeen.Add(body.EventSeen);
+                }
+                if (body.ShadowFriendshipPoints.HasValue)
+                {
+                    // Mirror the Dark Shrine pacifism gate (MasterPlayer.friendshipData[key].Points).
+                    var key = string.IsNullOrEmpty(body.ShadowFriendshipKey)
+                        ? "Krobus"
+                        : body.ShadowFriendshipKey;
+                    if (!master.friendshipData.TryGetValue(key, out var fr) || fr == null)
+                    {
+                        fr = new Friendship();
+                        master.friendshipData[key] = fr;
+                    }
+                    fr.Points = body.ShadowFriendshipPoints.Value;
+                }
+                if (body.DaysPlayed.HasValue)
+                {
+                    master.stats.DaysPlayed = (uint)body.DaysPlayed.Value;
+                }
+
+                // FarmHouse contents the contents-move test asserts: a chest (with a known item) and
+                // a fridge item. Place the chest at a known open floor tile.
+                if (body.PlaceChest)
+                {
+                    var tile = new Vector2(body.ChestTileX, body.ChestTileY);
+                    var chest = new Chest(playerChest: true, tile, "232");
+                    chest.Items.Clear();
+                    chest.Items.Add(ItemRegistry.Create("(O)388", 5)); // wood — a known chest item
+                    farmHouse.objects[tile] = chest;
+                    result.ChestPlaced = true;
+                }
+                if (body.PlaceFridgeItem && farmHouse.fridge.Value != null)
+                {
+                    farmHouse.fridge.Value.Items.Add(ItemRegistry.Create("(O)24", 1)); // parsnip
+                    result.FridgeItemPlaced = true;
+                }
+
+                // Pet: spawn a Pet into the FarmHouse characters for the household-relocation test.
+                if (body.SpawnPet)
+                {
+                    var existing = master.getPet();
+                    if (existing == null)
+                    {
+                        var pet = new Pet(5, 5, "0", "Cat") { Name = "TestPet" };
+                        pet.homeLocationName.Value = "Farm";
+                        farmHouse.addCharacter(pet);
+                        pet.currentLocation = farmHouse;
+                        result.PetSpawned = true;
+                    }
+                    else
+                    {
+                        result.PetSpawned = true; // already present
+                    }
+                }
+
+                // Cellar item: place a known object in the master's "Cellar"-1 (the location the owner
+                // built their casks in while master). The "Cellar" location always exists in
+                // Game1.locations regardless of house level, so this faithfully reproduces cellar
+                // contents the swap must carry into the demoted owner's reassigned cellar.
+                if (body.PlaceCellarItem)
+                {
+                    var cellar = Game1.getLocationFromName("Cellar");
+                    if (cellar != null)
+                    {
+                        var tile = new Vector2(2, 2);
+                        var cask = new Cask(tile); // an aged-goods cask — the canonical cellar object
+                        cellar.objects[tile] = cask;
+                        result.CellarItemPlaced = true;
+                    }
+                }
+
+                // Inject a userID onto a spare uncustomized farmhand slot (for the collision test).
+                // LAN never stamps a userID, so the test needs a server-side inject to set up the
+                // cross-farmhand collision the import guard must catch.
+                if (!string.IsNullOrEmpty(body.InjectFarmhandUserId))
+                {
+                    var stamped = false;
+                    foreach (var building in Game1.getFarm().buildings)
+                    {
+                        if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+                        {
+                            continue;
+                        }
+                        var slot = building.GetIndoors<Cabin>()?.owner;
+                        if (
+                            slot == null
+                            || slot.isCustomized.Value
+                            || !string.IsNullOrEmpty(slot.userID.Value)
+                        )
+                        {
+                            continue;
+                        }
+                        slot.userID.Value = body.InjectFarmhandUserId;
+                        stamped = true;
+                        break;
+                    }
+                    result.FarmhandUserIdInjected = stamped;
+                }
+
+                result.OwnerUid = master.UniqueMultiplayerID;
+                result.OwnerName = master.Name;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/import_save",
+        Summary = "Clone an existing save under a new name and run saves-import on it (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestImportSaveResponse), 200)]
+    private async Task<TestImportSaveResponse> HandlePostTestImportSaveAsync(
+        HttpListenerRequest request
+    )
+    {
+        // Mirrors the operator console path (SaveImportService.ExecuteImport) but on the game thread
+        // (matching /test/stamp_claim). ExecuteImport's Layer A logic stays engine-free; the live
+        // engine here is incidental. Because ExecuteImport rejects importing the currently-active
+        // save, the test must import a DIFFERENT folder — so this endpoint first clones a source
+        // folder (default: the active save) to a fresh target folder, then imports the target.
+        TestImportSaveRequest body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body = string.IsNullOrWhiteSpace(json)
+                ? new TestImportSaveRequest()
+                : JsonConvert.DeserializeObject<TestImportSaveRequest>(json)
+                    ?? new TestImportSaveRequest();
+        }
+        catch (Exception ex)
+        {
+            return new TestImportSaveResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        var result = new TestImportSaveResponse();
+
+        // Resolve source. The target FOLDER name is computed by CloneSaveFolder from the clone's
+        // re-stamped uniqueIDForThisGame so that Constants.SaveFolderName after load EQUALS the
+        // folder name (a real operator import already satisfies this — folders are named
+        // {farmName}_{uniqueID}; a naive "{name}-import" clone would not, and the finalizer's
+        // wrong-save guard — SaveFolderName == intent.SaveName — would then skip the finalize).
+        var sourceName = string.IsNullOrEmpty(body.SourceSaveName)
+            ? Constants.SaveFolderName
+            : body.SourceSaveName;
+
+        // The caller's TargetSaveName is used only as a uniqueness SEED (so distinct tests don't
+        // collide); the actual folder name is derived. SkipClone imports an existing folder verbatim.
+        string targetName;
+        if (!body.SkipClone)
+        {
+            try
+            {
+                targetName = CloneSaveFolder(sourceName, body.TargetSaveName);
+                result.TargetSaveName = targetName;
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.Error =
+                    $"Failed to clone save '{sourceName}' → '{body.TargetSaveName}': {ex.Message}";
+                return result;
+            }
+        }
+        else
+        {
+            targetName = string.IsNullOrEmpty(body.TargetSaveName)
+                ? sourceName
+                : body.TargetSaveName;
+            // SkipClone imports the name verbatim (no CloneSaveFolder guard runs); validate it here so
+            // a request-supplied name can't escape SavesPath via the hash/import path below.
+            if (!IsSafeSaveName(targetName))
+            {
+                result.Success = false;
+                result.Error =
+                    "TargetSaveName must be a bare folder name (no path separators) when SkipClone is set";
+                return result;
+            }
+            result.TargetSaveName = targetName;
+        }
+
+        // Capture a pre-import hash of the target's main file so the resilience test can assert
+        // byte-unchanged on a failed import.
+        result.PreImportMainFileHash = TryHashSaveMainFile(targetName);
+
+        // Run the import on the game thread.
+        SaveImport.SaveImportService.ImportResult import = null;
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                import = _saveImportService.ExecuteImport(
+                    targetName,
+                    string.IsNullOrWhiteSpace(body.SwapHostTo) ? null : body.SwapHostTo
+                );
+            });
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+            return result;
+        }
+
+        result.PostImportMainFileHash = TryHashSaveMainFile(targetName);
+
+        result.Success = import?.Success ?? false;
+        result.Swapped = import?.Swapped ?? false;
+        result.RepointedBind = import?.RepointedBind ?? false;
+        result.FormerOwnerUid = import?.FormerOwnerUid ?? 0;
+        result.ImportError = import?.Error;
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/console",
+        Summary = "Invoke a registered SMAPI console command by name (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestConsoleCommandResponse), 200)]
+    private async Task<TestConsoleCommandResponse> HandlePostTestConsoleCommandAsync(
+        HttpListenerRequest request
+    )
+    {
+        // Drives the saves-reload guard/kick path, which lives only in the console command — no HTTP
+        // endpoint reaches it, and SMAPI 4.4 has no public command-invoke API. See InvokeConsoleCommand.
+        TestConsoleCommandRequest body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body =
+                JsonConvert.DeserializeObject<TestConsoleCommandRequest>(json)
+                ?? new TestConsoleCommandRequest();
+        }
+        catch (Exception ex)
+        {
+            return new TestConsoleCommandResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(body.Name))
+        {
+            return new TestConsoleCommandResponse { Success = false, Error = "Name is required" };
+        }
+
+        try
+        {
+            InvokeConsoleCommand(body.Name, body.Args ?? Array.Empty<string>());
+            return new TestConsoleCommandResponse { Success = true };
+        }
+        catch (Exception ex)
+        {
+            return new TestConsoleCommandResponse { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Invokes a console command's callback by name via SMAPI internals (no public API exists).
+    /// Chain (SMAPI 4.4): <c>SCore.Instance</c> → <c>CommandManager</c> field → <c>Get(name)</c> →
+    /// <c>Command.Callback</c> (<c>Action&lt;string,string[]&gt;</c>); a future SMAPI may rename these.
+    /// Runs off the game thread, as a real console command does. Test-only.
+    /// </summary>
+    private static void InvokeConsoleCommand(string name, string[] args)
+    {
+        var smapiAsm = typeof(IModHelper).Assembly;
+        var scoreType =
+            smapiAsm.GetType("StardewModdingAPI.Framework.SCore")
+            ?? throw new InvalidOperationException("SCore type not found");
+        var instance =
+            scoreType
+                .GetProperty(
+                    "Instance",
+                    System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Public
+                )
+                ?.GetValue(null)
+            ?? throw new InvalidOperationException("SCore.Instance is null");
+
+        var commandManager =
+            scoreType
+                .GetField(
+                    "CommandManager",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                        | System.Reflection.BindingFlags.Public
+                )
+                ?.GetValue(instance)
+            ?? throw new InvalidOperationException("SCore.CommandManager is null");
+
+        var command = commandManager
+            .GetType()
+            .GetMethod("Get", new[] { typeof(string) })
+            ?.Invoke(commandManager, new object[] { name });
+        if (command == null)
+        {
+            throw new InvalidOperationException($"Console command '{name}' is not registered");
+        }
+
+        var callback =
+            command.GetType().GetProperty("Callback")?.GetValue(command) as Action<string, string[]>
+            ?? throw new InvalidOperationException(
+                $"Console command '{name}' has no invocable callback"
+            );
+
+        callback(name, args);
+    }
+
+    /// <summary>
+    /// Clones <paramref name="sourceName"/> into a NEW independent save whose folder name matches its
+    /// internal identity, and returns the actual folder name. Re-stamps <c>uniqueIDForThisGame</c> to
+    /// a fresh value (derived deterministically from <paramref name="seed"/> — Date.Now is unavailable
+    /// and irrelevant here) and names the folder <c>{FilterFileName(farmName)}_{newId}</c>, so that
+    /// <c>Constants.SaveFolderName</c> after the engine loads it EQUALS the folder name. Without this,
+    /// the clone (same uniqueID as the source, different folder name) loads with a SaveFolderName that
+    /// differs from its folder, and the finalizer's wrong-save guard skips the finalize.
+    /// </summary>
+    private static string CloneSaveFolder(string sourceName, string seed)
+    {
+        // sourceName is request-supplied; keep it from escaping SavesPath (the derived targetName is
+        // built from FilterFileName + a numeric id, so it's safe by construction).
+        if (!IsSafeSaveName(sourceName))
+        {
+            throw new ArgumentException(
+                $"Invalid source save name '{sourceName}'",
+                nameof(sourceName)
+            );
+        }
+
+        var savesPath = Constants.SavesPath;
+        var sourceDir = System.IO.Path.Combine(savesPath, sourceName);
+        if (!System.IO.Directory.Exists(sourceDir))
+        {
+            throw new System.IO.DirectoryNotFoundException($"Source save '{sourceName}' not found");
+        }
+
+        var sourceMain = System.IO.Path.Combine(sourceDir, sourceName);
+        if (!System.IO.File.Exists(sourceMain))
+        {
+            throw new System.IO.FileNotFoundException($"Source main file '{sourceName}' not found");
+        }
+
+        // Read farmName + a fresh unique id from the source XML.
+        var doc = new System.Xml.XmlDocument();
+        doc.Load(sourceMain);
+        var farmName =
+            doc.SelectSingleNode("//SaveGame/player/farmName")?.InnerText
+            ?? doc.SelectSingleNode("//SaveGame/farmhands/Farmer/farmName")?.InnerText
+            ?? "Imported";
+
+        // Deterministic new id from the source id + seed (no Date.Now; just needs to be distinct from
+        // the source and stable for this call). Use an unsigned cast of the hash — Math.Abs would
+        // throw on int.MinValue. The +1 keeps it strictly above the source id.
+        var sourceId = doc.SelectSingleNode("//SaveGame/uniqueIDForThisGame")?.InnerText ?? "0";
+        ulong.TryParse(sourceId, out var srcIdVal);
+        var seedOffset = (ulong)((uint)(seed ?? "import").GetHashCode() % 1000000) + 1;
+        var newId = (srcIdVal == 0 ? 1000000000UL : srcIdVal) + seedOffset;
+
+        var targetName = $"{StardewValley.SaveGame.FilterFileName(farmName)}_{newId}";
+        var targetDir = System.IO.Path.Combine(savesPath, targetName);
+        if (System.IO.Directory.Exists(targetDir))
+        {
+            System.IO.Directory.Delete(targetDir, recursive: true);
+        }
+        System.IO.Directory.CreateDirectory(targetDir);
+
+        // Re-stamp uniqueIDForThisGame in the cloned main XML and write it as the target's main file.
+        var idNode = doc.SelectSingleNode("//SaveGame/uniqueIDForThisGame");
+        if (idNode != null)
+        {
+            idNode.InnerText = newId.ToString();
+        }
+        doc.Save(System.IO.Path.Combine(targetDir, targetName));
+
+        // Copy SaveGameInfo too (re-stamp its uniqueIDForThisGame if present), plus any other files.
+        foreach (var file in System.IO.Directory.GetFiles(sourceDir))
+        {
+            var fileName = System.IO.Path.GetFileName(file);
+            if (fileName == sourceName)
+            {
+                continue; // main file already written above
+            }
+            // Skip the engine's recovery backups (named after the SOURCE folder). Copying them into a
+            // differently-named target folder would leave untransformed pre-swap copies on the volume;
+            // and were they ever renamed to {target}_*, SaveGame.TryReadSaveFileWithFallback could
+            // silently auto-recover the un-swapped original. A fresh clone needs no backups.
+            if (
+                fileName.EndsWith("_old", StringComparison.Ordinal)
+                || fileName.Contains("_STARDEWVALLEYSAVETMP")
+            )
+            {
+                continue;
+            }
+            if (fileName == "SaveGameInfo")
+            {
+                try
+                {
+                    var sgi = new System.Xml.XmlDocument();
+                    sgi.Load(file);
+                    var sgiId = sgi.SelectSingleNode("//uniqueIDForThisGame");
+                    if (sgiId != null)
+                    {
+                        sgiId.InnerText = newId.ToString();
+                    }
+                    sgi.Save(System.IO.Path.Combine(targetDir, "SaveGameInfo"));
+                    continue;
+                }
+                catch
+                {
+                    // fall through to a raw copy if SaveGameInfo isn't parseable
+                }
+            }
+            System.IO.File.Copy(file, System.IO.Path.Combine(targetDir, fileName), overwrite: true);
+        }
+
+        return targetName;
+    }
+
+    /// <summary>
+    /// True when <paramref name="saveName"/> is a bare save-folder name safe to combine under
+    /// <c>Constants.SavesPath</c> — a single path segment with no directory separators and no
+    /// <c>..</c> traversal. These test endpoints take the name from request input, so guard it before
+    /// any <c>Path.Combine</c> to keep an untrusted value from escaping the saves directory.
+    /// </summary>
+    private static bool IsSafeSaveName(string? saveName) =>
+        !string.IsNullOrEmpty(saveName)
+        && System.IO.Path.GetFileName(saveName) == saveName
+        && saveName != "."
+        && saveName != "..";
+
+    private static string TryHashSaveMainFile(string saveName)
+    {
+        try
+        {
+            var mainFile = System.IO.Path.Combine(Constants.SavesPath, saveName, saveName);
+            if (!System.IO.File.Exists(mainFile))
+            {
+                return "";
+            }
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var stream = System.IO.File.OpenRead(mainFile);
+            return Convert.ToBase64String(sha.ComputeHash(stream));
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/corrupt_save",
+        Summary = "Clone a save under a new name and corrupt the clone's <player> (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestSaveFileOpResponse), 200)]
+    private async Task<TestSaveFileOpResponse> HandlePostTestCorruptSaveAsync(
+        HttpListenerRequest request
+    )
+    {
+        // Used by the resilience test: clone the active (valid) save to a target folder, then mangle
+        // the clone's main file so a swap import of it fails the XmlDocument.Load — proving the
+        // transform leaves the file byte-unchanged on a malformed input. Plain file IO (off-thread).
+        TestCorruptSaveRequest body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body = string.IsNullOrWhiteSpace(json)
+                ? new TestCorruptSaveRequest()
+                : JsonConvert.DeserializeObject<TestCorruptSaveRequest>(json)
+                    ?? new TestCorruptSaveRequest();
+        }
+        catch (Exception ex)
+        {
+            return new TestSaveFileOpResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        if (string.IsNullOrEmpty(body.TargetSaveName))
+        {
+            return new TestSaveFileOpResponse
+            {
+                Success = false,
+                Error = "TargetSaveName required",
+            };
+        }
+
+        try
+        {
+            var source = string.IsNullOrEmpty(body.SourceSaveName)
+                ? Constants.SaveFolderName
+                : body.SourceSaveName;
+            // CloneSaveFolder derives the real folder name (re-stamped uniqueID); return it so the
+            // caller imports the actual corrupted folder with SkipClone.
+            var actualTarget = CloneSaveFolder(source, body.TargetSaveName);
+
+            // Mangle the clone's main file into non-well-formed XML so XmlDocument.Load throws.
+            var mainFile = System.IO.Path.Combine(Constants.SavesPath, actualTarget, actualTarget);
+            System.IO.File.WriteAllText(mainFile, "<SaveGame><player>NOT WELL FORMED");
+            return new TestSaveFileOpResponse { Success = true, TargetSaveName = actualTarget };
+        }
+        catch (Exception ex)
+        {
+            return new TestSaveFileOpResponse { Success = false, Error = ex.Message };
+        }
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/save_tmp_exists",
+        Summary = "Whether a leftover .tmp exists next to a save's main file (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestSaveFileOpResponse), 200)]
+    private TestSaveFileOpResponse HandleGetTestSaveTmpExists(HttpListenerRequest request)
+    {
+        var saveName = request.QueryString["saveName"];
+        if (string.IsNullOrEmpty(saveName))
+        {
+            return new TestSaveFileOpResponse
+            {
+                Success = false,
+                Error = "saveName query required",
+            };
+        }
+        if (!IsSafeSaveName(saveName))
+        {
+            return new TestSaveFileOpResponse
+            {
+                Success = false,
+                Error = "saveName must be a bare folder name (no path separators)",
+            };
+        }
+        try
+        {
+            var tmp = System.IO.Path.Combine(Constants.SavesPath, saveName, saveName + ".tmp");
+            return new TestSaveFileOpResponse
+            {
+                Success = true,
+                Exists = System.IO.File.Exists(tmp),
+            };
+        }
+        catch (Exception ex)
+        {
+            return new TestSaveFileOpResponse { Success = false, Error = ex.Message };
+        }
     }
 }

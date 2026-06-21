@@ -109,6 +109,18 @@ public enum WaitName
     Polling_AbandonedClaim_DisconnectHealConfirmed,
     Polling_AbandonedClaim_SweptOnReload,
 
+    // SaveImportTests.cs (10)
+    Polling_SaveImport_SwapFinalized,
+    Polling_SaveImport_ContentsMoved,
+    Polling_SaveImport_ContentsMovedUpgraded,
+    Polling_SaveImport_PetRelocated,
+    Polling_SaveImport_CellarMoved,
+    Polling_SaveImport_AsIsPreserved,
+    Polling_SaveImport_PartialThenStable,
+    Polling_SaveImport_SecondReloadNoop,
+    Polling_SaveImport_MasterGatedState,
+    Polling_SaveImport_ForceReloadKicksAndFinalizes,
+
     // FarmhandManagementTests.cs (1)
     Polling_FarmhandManagement_FarmhandGone,
 

@@ -6,6 +6,7 @@ using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
+using JunimoServer.Services.SaveImport;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -15,6 +16,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Buildings;
+using StardewValley.Characters;
 using StardewValley.Locations;
 using StardewValley.Network;
 
@@ -48,12 +50,26 @@ public class CabinManagerService : ModService
 
     private readonly RoleService roleService;
 
+    // One-way dependency (CabinManagerService → SaveImportService). Injected solely to read+clear
+    // the pending save-import finalize intent; all engine-touching finalizer logic is this service's
+    // own private code (Layer B). A mutual injection would be a startup-fatal constructor cycle.
+    private readonly SaveImportService saveImportService;
+
     private static readonly int minEmptyCabins = 1;
 
     private readonly HashSet<long> farmersInFarmhouse = new HashSet<long>();
 
     // Static reference ONLY for Harmony patches (unavoidable)
     private static CabinManagerService _instance;
+
+    // Count of save-import finalizer SUCCESS-path runs this process. Exposed via /diagnostics/state
+    // so the single-shot E2E test can assert the finalizer runs exactly once across two reloads
+    // (i.e. the intent was cleared and did NOT re-fire) — a property the owner's customized+bound
+    // state alone can't distinguish from a harmless re-run.
+    private static int _saveImportFinalizeCount;
+
+    /// <summary>Count of save-import finalize success-path completions since process start (test probe).</summary>
+    public static int SaveImportFinalizeCount => _saveImportFinalizeCount;
 
     // Instance data - NOT static
     private CabinManagerData _cabinManagerData;
@@ -64,7 +80,8 @@ public class CabinManagerService : ModService
         Harmony harmony,
         RoleService roleService,
         MessageInterceptorsService messageInterceptorsService,
-        PersistentOptions options
+        PersistentOptions options,
+        SaveImportService saveImportService
     )
         : base(helper, monitor)
     {
@@ -79,6 +96,7 @@ public class CabinManagerService : ModService
 
         this.roleService = roleService;
         this.options = options;
+        this.saveImportService = saveImportService;
 
         Data = new CabinManagerData(helper, monitor);
 
@@ -146,6 +164,16 @@ public class CabinManagerService : ModService
 
     private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
     {
+        // Save-import Layer B finalizer — MUST be the first statement, before Data.Read() and the
+        // whole reconciliation chain. Ordering is load-bearing three ways: (1) the demoted owner is
+        // homed+bound before the reconciliation absorbs it; (2) running before
+        // ClearStaleFarmhandReferences means the owner's homeLocation is already the new cabin (not
+        // the stale FarmHouse), so that sweep leaves it alone; (3) running before
+        // ClearAbandonedCabinClaimsOnLoad (which only clears uncustomized farmhands) plus keeping
+        // the owner isCustomized=true both protect the fresh userID stamp. No-op (zero cost) on
+        // normal loads with no pending import.
+        TryFinalizeOnLoad();
+
         Data.Read();
 
         // Detect and handle strategy changes between runs
@@ -920,8 +948,25 @@ public class CabinManagerService : ModService
 
     /// <summary>
     /// Build a cabin at the hidden out-of-bounds location (for CabinStack/FarmhouseStack).
+    /// Thin <c>bool</c> wrapper over <see cref="BuildNewCabinReturning(GameLocation)"/> for callers
+    /// that don't need the handle (EnsureAtLeastXCabins, CabinsConsoleCommand).
     /// </summary>
-    public bool BuildNewCabin(GameLocation location)
+    public bool BuildNewCabin(GameLocation location) => BuildNewCabinReturning(location) != null;
+
+    /// <summary>
+    /// Build a cabin at a real, visible farm position (for None strategy). Thin <c>bool</c> wrapper
+    /// over <see cref="BuildNewCabinVisibleReturning(GameLocation)"/>.
+    /// </summary>
+    public bool BuildNewCabinVisible(GameLocation location) =>
+        BuildNewCabinVisibleReturning(location) != null;
+
+    /// <summary>
+    /// Build a hidden-stack cabin and return its <see cref="Cabin"/> interior handle (null on
+    /// failure). The save-import finalizer needs the handle — under CabinStack all hidden cabins
+    /// share tile (-20,-20), so position can't disambiguate; the returned handle is the only reliable
+    /// reference. Logs build failures at <c>Warn</c> (NOT Error — Error is server-side test poison).
+    /// </summary>
+    public Cabin BuildNewCabinReturning(GameLocation location)
     {
         var cabinTilePosition = HiddenCabinLocation.ToVector2();
         var cabin = CreateCabinBuilding(cabinTilePosition);
@@ -935,7 +980,7 @@ public class CabinManagerService : ModService
             {
                 Monitor.Log(
                     "Hidden cabin was built but has no interior; farmhand not created",
-                    LogLevel.Error
+                    LogLevel.Warn
                 );
                 Diagnostics.ModEventLog.Emit(
                     "cabin_build_failed",
@@ -947,10 +992,10 @@ public class CabinManagerService : ModService
                         reason = "no_interior_after_buildStructure",
                     }
                 );
-                return false;
+                return null;
             }
 
-            return true;
+            return indoors;
         }
 
         Diagnostics.ModEventLog.Emit(
@@ -963,14 +1008,15 @@ public class CabinManagerService : ModService
                 reason = "buildStructure_returned_false",
             }
         );
-        return false;
+        return null;
     }
 
     /// <summary>
-    /// Build a cabin at a real, visible farm position (for None strategy).
-    /// Uses map-designated positions from the Paths layer.
+    /// Build a visible-position cabin (None strategy) and return its <see cref="Cabin"/> interior
+    /// handle (null on failure). See <see cref="BuildNewCabinReturning"/> for why the handle matters.
+    /// Logs build failures at <c>Warn</c> (NOT Error — Error is server-side test poison).
     /// </summary>
-    public bool BuildNewCabinVisible(GameLocation location)
+    public Cabin BuildNewCabinVisibleReturning(GameLocation location)
     {
         var farm = location as Farm ?? Game1.getFarm();
         var position = FarmCabinPositions.GetNextAvailablePosition(farm);
@@ -982,7 +1028,7 @@ public class CabinManagerService : ModService
                 "cabin_build_failed",
                 new { hidden = false, reason = "no_available_map_position" }
             );
-            return false;
+            return null;
         }
 
         var cabin = CreateCabinBuilding(position.Value);
@@ -996,7 +1042,7 @@ public class CabinManagerService : ModService
             {
                 Monitor.Log(
                     $"Visible cabin at ({position.Value.X}, {position.Value.Y}) was built but has no interior; farmhand not created",
-                    LogLevel.Error
+                    LogLevel.Warn
                 );
                 Diagnostics.ModEventLog.Emit(
                     "cabin_build_failed",
@@ -1008,14 +1054,14 @@ public class CabinManagerService : ModService
                         reason = "no_interior_after_buildStructure",
                     }
                 );
-                return false;
+                return null;
             }
 
             Monitor.Log(
                 $"Built visible cabin at ({position.Value.X}, {position.Value.Y})",
                 LogLevel.Info
             );
-            return true;
+            return indoors;
         }
 
         Diagnostics.ModEventLog.Emit(
@@ -1028,7 +1074,7 @@ public class CabinManagerService : ModService
                 reason = "buildStructure_returned_false",
             }
         );
-        return false;
+        return null;
     }
 
     /// <summary>
@@ -1168,13 +1214,526 @@ public class CabinManagerService : ModService
 
         if (cabin.GetIndoors() == null)
         {
+            // Warn, not Error: this runs on the server game thread (incl. the save-import finalize
+            // build path), where LogLevel.Error trips ServerContainer's ERROR/FATAL test-poison scan.
+            // A null interior is surfaced as a failed build by the callers (cabin_build_failed event +
+            // their own Warn) — this is a recoverable condition, not a test-failure-worthy one.
             Monitor.Log(
                 "Cabin interior creation failed. Cabin will have no interior!",
-                LogLevel.Error
+                LogLevel.Warn
             );
         }
 
         return cabin;
+    }
+
+    #endregion
+
+    #region Save Import Finalizer (Layer B)
+
+    /// <summary>
+    /// One-shot save-import finalizer. Reads the pending finalize intent (written by
+    /// <see cref="SaveImportService.ExecuteImport"/> during a swap import); if present and for this
+    /// save, demotes the imported owner into a known cabin, moves their farmhouse contents and
+    /// household NPCs into it, and re-stamps their platform userID. Self-heals (Warn + clear +
+    /// return) on any pre-condition miss, and clears the intent on EVERY exit (including a throw
+    /// after a world mutation) so a failed finalize never retries against an already-changed world.
+    /// </summary>
+    private void TryFinalizeOnLoad()
+    {
+        var intent = saveImportService.TryReadIntent();
+        if (intent == null)
+        {
+            return; // zero cost on normal loads
+        }
+
+        // Wrong-save guard: a stale intent (or an unrelated loader write between import and reboot)
+        // must not mis-finalize a different save.
+        if (!string.Equals(Constants.SaveFolderName, intent.SaveName, StringComparison.Ordinal))
+        {
+            Monitor.Log(
+                $"Save-import intent targets '{intent.SaveName}' but loaded '{Constants.SaveFolderName}'; "
+                    + "clearing the orphan intent.",
+                LogLevel.Warn
+            );
+            saveImportService.ClearIntent();
+            return;
+        }
+
+        var farmhandData = Game1.netWorldState?.Value?.farmhandData;
+        if (farmhandData == null)
+        {
+            // Should be impossible at SaveLoaded (the world is fully loaded), but never NRE an
+            // unrelated load — clear the intent and bail.
+            Monitor.Log(
+                "Save-import: netWorldState/farmhandData unavailable at finalize; clearing intent.",
+                LogLevel.Warn
+            );
+            saveImportService.ClearIntent();
+            return;
+        }
+        if (!farmhandData.TryGetValue(intent.OwnerUid, out var owner) || owner == null)
+        {
+            Monitor.Log(
+                $"Save-import: demoted owner {intent.OwnerUid} not found in farmhandData; "
+                    + "clearing intent (nothing to finalize).",
+                LogLevel.Warn
+            );
+            saveImportService.ClearIntent();
+            return;
+        }
+
+        int contentsMoved = 0;
+        int npcsMoved = 0;
+        string failedStep = "";
+
+        try
+        {
+            // Step 4 — resolve the owner's cabin handle (reuse an auto-assigned cabin if the load
+            // coroutine already homed the owner into a spare one, else build a fresh cabin).
+            failedStep = "resolve_cabin";
+            var cabin = ResolveOrBuildOwnerCabin(owner, out var builtFresh);
+            if (cabin == null)
+            {
+                // Loud-fail at Warn (not Error). The owner stays a customized-but-cabin-less
+                // farmhand (progress intact, recoverable by a later reassignment); never proceed to
+                // the world-mutating steps.
+                Monitor.Log(
+                    $"Save-import: could not resolve or build a cabin for owner {intent.OwnerUid}; "
+                        + "finalize aborted (owner kept, progress intact).",
+                    LogLevel.Warn
+                );
+                Diagnostics.ModEventLog.Emit(
+                    "save_import_partial",
+                    new { ownerUid = intent.OwnerUid, failedStep }
+                );
+                return; // intent cleared in finally
+            }
+
+            // Realize a freshly-built cabin's interior map to the owner's upgrade level before the
+            // contents move, so the move targets the realized layout (belt-and-suspenders; the
+            // day-start updateFarmLayout would otherwise heal it). Furniture-preserving method, NOT
+            // the bare HouseUpgradeLevel setter (host-automation invariant 5 is a different path).
+            if (builtFresh && owner.HouseUpgradeLevel > 0)
+            {
+                cabin.setMapForUpgradeLevel(owner.HouseUpgradeLevel);
+            }
+
+            var farmHouse = Game1.getLocationFromName("FarmHouse") as FarmHouse;
+
+            // Step 5 — move the owner's farmhouse contents into the cabin.
+            failedStep = "move_contents";
+            contentsMoved = TransferFarmhouseContentsToCabin(farmHouse, cabin, builtFresh);
+
+            // Step 6 — relocate the owner's household NPCs (pet, spouse, children) into the cabin.
+            failedStep = "relocate_household";
+            npcsMoved = RelocateHouseholdToCabin(farmHouse, cabin, owner);
+
+            // Step 7 — move the owner's cellar contents (casks/wine, built in the master-keyed
+            // "Cellar"-1 while they were the master) into the cellar the engine reassigns to them as
+            // a farmhand. Counts toward contentsMoved.
+            failedStep = "move_cellar";
+            contentsMoved += TransferOwnerCellarContents(owner, cabin);
+
+            // Step 8 — re-stamp userID (idempotent whether vanilla cleared or preserved it). Owner
+            // is now homed + customized + bound; on any later reload it is homed → ResetFarmhandState
+            // early-returns → userID survives.
+            failedStep = "restamp_userid";
+            owner.userID.Value = intent.UserId;
+
+            // Success — count it so the single-shot test can prove the finalizer ran exactly once
+            // across reloads (a re-fire would bump this past 1).
+            System.Threading.Interlocked.Increment(ref _saveImportFinalizeCount);
+
+            Diagnostics.ModEventLog.Emit(
+                "save_import_finalized",
+                new
+                {
+                    ownerUid = intent.OwnerUid,
+                    hasUserId = !string.IsNullOrEmpty(intent.UserId),
+                    contentsMoved,
+                    npcsMoved,
+                }
+            );
+            Monitor.Log(
+                $"Save-import finalized: owner {intent.OwnerUid} homed + bound; "
+                    + $"moved {contentsMoved} item(s) and {npcsMoved} NPC(s) into the cabin.",
+                LogLevel.Info
+            );
+        }
+        catch (Exception ex)
+        {
+            // A throw after a world mutation leaves a partially-moved-but-stable world. The owner is
+            // already customized + cabin-homed (progress intact), so a missing content/NPC move is a
+            // recoverable cosmetic gap, not a boot-loop. Warn (never Error) + emit partial.
+            Monitor.Log(
+                $"Save-import finalize failed at step '{failedStep}': {ex.Message}. World is partially "
+                    + "moved but stable; owner kept. Intent cleared (no retry).",
+                LogLevel.Warn
+            );
+            Diagnostics.ModEventLog.Emit(
+                "save_import_partial",
+                new
+                {
+                    ownerUid = intent.OwnerUid,
+                    failedStep,
+                    contentsMoved,
+                    npcsMoved,
+                }
+            );
+        }
+        finally
+        {
+            // Single-shot: clear on EVERY exit path, including a post-mutation throw.
+            saveImportService.ClearIntent();
+        }
+    }
+
+    /// <summary>
+    /// Resolves the demoted owner's cabin. If the load coroutine already auto-homed the owner into a
+    /// spare cabin (the common co-op-with-spare-cabins case), reuses that cabin. Otherwise builds a
+    /// fresh one and assigns the owner. Returns null only on a build failure.
+    /// </summary>
+    private Cabin ResolveOrBuildOwnerCabin(Farmer owner, out bool builtFresh)
+    {
+        builtFresh = false;
+
+        // Reuse path: the owner was already auto-homed into a spare cabin by the load coroutine's
+        // ResetFarmhandState → TryAssignFarmhandHome. Reusing it avoids a double-assignment and a
+        // vacated spare cabin. getLocationFromName resolves a cabin interior (visible or hidden-stack)
+        // by its NameOrUniqueName — the same expression vanilla itself uses at NetWorldState.cs:783.
+        if (
+            Game1.getLocationFromName(owner.homeLocation.Value) is Cabin existing
+            && existing.OwnerId == owner.UniqueMultiplayerID
+        )
+        {
+            Monitor.Log(
+                $"Save-import: reusing auto-assigned cabin '{existing.NameOrUniqueName}' for owner "
+                    + $"{owner.UniqueMultiplayerID}.",
+                LogLevel.Info
+            );
+            return existing;
+        }
+
+        // Build path: no cabin was auto-assigned (single-player import, or all cabins customized).
+        var farm = Game1.getFarm();
+        var cabin = options.IsNone
+            ? BuildNewCabinVisibleReturning(farm)
+            : BuildNewCabinReturning(farm);
+        if (cabin == null)
+        {
+            return null;
+        }
+
+        builtFresh = true;
+        // AssignFarmhand auto-deletes the just-built cabin's unclaimed placeholder owner (created by
+        // buildStructure → Cabin.CreateFarmhand) then sets farmhandReference + the owner's
+        // homeLocation in one call (Cabin.cs:92-104). No throw — the placeholder is isUnclaimedFarmhand.
+        cabin.AssignFarmhand(owner);
+        Monitor.Log(
+            $"Save-import: built and assigned cabin '{cabin.NameOrUniqueName}' for owner "
+                + $"{owner.UniqueMultiplayerID}.",
+            LogLevel.Info
+        );
+        return cabin;
+    }
+
+    /// <summary>
+    /// Moves the former owner's placed farmhouse contents (chests + contents, machines + held items,
+    /// furniture, fridge, mini-jukebox, wallpaper/flooring) from the FarmHouse into their cabin, then
+    /// clears the FarmHouse copies so the Server host boots into an empty house. The engine has no
+    /// built-in farmhouse→cabin transfer, so this is hand-written from the source-derived content
+    /// list. Returns the count of moved objects + furniture (for the finalize event).
+    /// </summary>
+    private int TransferFarmhouseContentsToCabin(FarmHouse farmHouse, Cabin cabin, bool builtFresh)
+    {
+        if (farmHouse == null || cabin == null)
+        {
+            return 0;
+        }
+
+        // Clear the destination's default starter contents ONLY when we built the cabin fresh: a new
+        // Cabin runs AddStarterGiftBox + AddStarterFurniture in its ctor, which must go before the
+        // merge or the owner's cabin ends up with a phantom giftbox / tile overlap. A REUSED cabin is
+        // the engine's auto-assigned spare, which can be an uncustomized-but-furnished slot (Cabin.
+        // DeleteFarmhand never clears the interior) — clearing it would delete that real player data,
+        // so skip the clear and merge the master's farmhouse contents on top of what's there.
+        if (builtFresh)
+        {
+            ClearStarterContents(cabin);
+        }
+
+        int moved = 0;
+
+        // objects (placed chests + their contents, machines + held items, mini-fridges). Snapshot
+        // the source positions first; mutating netObjects while enumerating it would tear the
+        // enumeration.
+        var sourceObjects = farmHouse.objects.Pairs.ToList();
+        foreach (var kvp in sourceObjects)
+        {
+            var pos = kvp.Key;
+            var obj = kvp.Value;
+            farmHouse.objects.Remove(pos);
+            // Place at the same tile; the cabin interior is the same map (Cabin : FarmHouse), so
+            // the tile is valid (the destination's starter objects were just cleared above).
+            cabin.objects[pos] = obj;
+            moved++;
+        }
+
+        // mini-jukebox count/track (separate NetFields a raw objects move misses): a MiniJukebox
+        // object rides along in objects above, but its count/track don't, so the FarmHouse would
+        // strand a track (count>0, no object) and the cabin would show count=0 without this.
+        if (farmHouse.miniJukeboxCount.Value > 0)
+        {
+            cabin.miniJukeboxCount.Set(farmHouse.miniJukeboxCount.Value);
+            cabin.miniJukeboxTrack.Set(farmHouse.miniJukeboxTrack.Value);
+            farmHouse.miniJukeboxCount.Set(0);
+            farmHouse.miniJukeboxTrack.Set("");
+        }
+
+        // furniture (incl. beds and 2-tile furniture).
+        var sourceFurniture = farmHouse.furniture.ToList();
+        foreach (var f in sourceFurniture)
+        {
+            farmHouse.furniture.Remove(f);
+            cabin.furniture.Add(f);
+            moved++;
+        }
+
+        // fridge contents: a default cabin fridge is empty, so move the source fridge's items into
+        // the destination fridge (keeps the destination's NetRef<Chest> identity intact).
+        if (farmHouse.fridge.Value != null && cabin.fridge.Value != null)
+        {
+            var fridgeItems = farmHouse.fridge.Value.Items.ToList();
+            foreach (var item in fridgeItems)
+            {
+                if (item != null)
+                {
+                    cabin.fridge.Value.Items.Add(item);
+                }
+            }
+            farmHouse.fridge.Value.Items.Clear();
+        }
+
+        // Wallpaper / flooring (live decor stores). Copy both dictionaries then clear the FarmHouse
+        // ones. Also carry the obsolete pre-1.6 DecorationFacades if present (cheap; avoids dropping
+        // legacy decor).
+        CopyAndClearDecor(farmHouse, cabin);
+
+        // terrainFeatures / largeTerrainFeatures are normally empty for a farmhouse interior (interior
+        // floor/wall decor lives in appliedFloor/appliedWallpaper, not terrainFeatures). Move anything
+        // content-bearing if present (verified-once: do not assume empty).
+        var srcTerrain = farmHouse.terrainFeatures.Pairs.ToList();
+        foreach (var kvp in srcTerrain)
+        {
+            farmHouse.terrainFeatures.Remove(kvp.Key);
+            cabin.terrainFeatures[kvp.Key] = kvp.Value;
+            moved++;
+        }
+        var srcLargeTerrain = farmHouse.largeTerrainFeatures.ToList();
+        foreach (var ltf in srcLargeTerrain)
+        {
+            farmHouse.largeTerrainFeatures.Remove(ltf);
+            cabin.largeTerrainFeatures.Add(ltf);
+            moved++;
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Removes a destination cabin's default starter giftbox + starter furniture before the contents
+    /// merge (risk #11). A default cabin fridge is empty, so it needs no special handling here.
+    /// </summary>
+    private static void ClearStarterContents(Cabin cabin)
+    {
+        // Starter giftbox is a Chest with giftbox flag in objects; clear ALL starter objects (a fresh
+        // cabin's objects are only the starter giftbox).
+        foreach (var pos in cabin.objects.Keys.ToList())
+        {
+            cabin.objects.Remove(pos);
+        }
+        // Starter furniture.
+        cabin.furniture.Clear();
+    }
+
+    /// <summary>Copies wallpaper/floor decor dictionaries FarmHouse→cabin and clears the source.</summary>
+    private static void CopyAndClearDecor(FarmHouse farmHouse, Cabin cabin)
+    {
+        foreach (var key in farmHouse.appliedWallpaper.Keys.ToList())
+        {
+            cabin.appliedWallpaper[key] = farmHouse.appliedWallpaper[key];
+        }
+        foreach (var key in farmHouse.appliedFloor.Keys.ToList())
+        {
+            cabin.appliedFloor[key] = farmHouse.appliedFloor[key];
+        }
+        foreach (var key in farmHouse.appliedWallpaper.Keys.ToList())
+        {
+            farmHouse.appliedWallpaper.Remove(key);
+        }
+        foreach (var key in farmHouse.appliedFloor.Keys.ToList())
+        {
+            farmHouse.appliedFloor.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Relocates the owner's household NPCs (pet, spouse, children) from the FarmHouse into their
+    /// cabin. The owner's homeLocation is already the cabin (step 4), so each NPC's home resolves
+    /// off that field automatically — this physically moves the NPC object so the day-zero state is
+    /// correct. Returns the count of NPCs moved.
+    /// </summary>
+    private int RelocateHouseholdToCabin(FarmHouse farmHouse, Cabin cabin, Farmer owner)
+    {
+        if (farmHouse == null || cabin == null)
+        {
+            return 0;
+        }
+
+        int moved = 0;
+        var bedSpot = Utility.PointToVector2(cabin.GetPlayerBedSpot());
+
+        // Children: filter by the FarmHouse's characters list (Child resolution is by which house
+        // the owner's homeLocation points to, NOT idOfParent). Move every Child out of the old
+        // FarmHouse into the cabin. Move AFTER the owner is homed at the cabin (done in step 4) so
+        // the master doesn't re-stamp idOfParent to the wrong farmer.
+        foreach (var child in farmHouse.characters.OfType<Child>().ToList())
+        {
+            Game1.warpCharacter(child, cabin, bedSpot);
+            moved++;
+        }
+
+        // Pet: move the pet into the cabin for day-zero. Resolve it with a FULL-world scan
+        // (FindFarmPet), NOT Farmer.getPet(): getPet() scans only Game1.getFarm().characters then each
+        // farmer's resolved home (Farmer.cs:getPet), but the finalizer runs at SaveLoaded — BEFORE the
+        // reconciliation chain and before the day-start dayUpdate that warps the pet to its Farm bowl —
+        // so the pet may be deserialized in an interior (a FarmHouse/Cabin) that neither loop covers
+        // yet, and getPet() returns null intermittently (the npcsMoved:0 flake). A pet always exists
+        // somewhere in Game1.locations, so scanning all locations finds it deterministically. Do NOT
+        // repoint Pet.homeLocationName — the bowl is a Farm building resolved off it; warp-home follows
+        // the owner anyway, and the pet returns to its bowl on the next dayUpdate.
+        var pet = FindFarmPet();
+        if (pet != null)
+        {
+            Game1.warpCharacter(pet, cabin, bedSpot);
+            moved++;
+        }
+
+        // Spouse NPC: an NPC spouse relocates itself via marriageDuties on the first day, but move it
+        // physically as belt-and-suspenders for day zero. Resolve by the owner's <spouse> name.
+        if (!string.IsNullOrEmpty(owner.spouse))
+        {
+            var spouseNpc = farmHouse.characters.FirstOrDefault(c =>
+                string.Equals(c.Name, owner.spouse, StringComparison.Ordinal)
+            );
+            if (spouseNpc != null)
+            {
+                Game1.warpCharacter(spouseNpc, cabin, bedSpot);
+                moved++;
+            }
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Finds the farm's pet by scanning every location (interiors included), returning the first
+    /// <see cref="Pet"/> found, or null if the farm has none. Used instead of
+    /// <see cref="Farmer.getPet"/> in the save-import finalizer: getPet() scans only the Farm and each
+    /// farmer's resolved home, which misses a pet deserialized into an interior at SaveLoaded time
+    /// (before the day-start dayUpdate warps it to its bowl). The pet is farm-scoped (one per save —
+    /// Pet has no per-farmer owner field, only a bowl assignment), so the demoted owner's pet is the
+    /// farm's pet.
+    /// </summary>
+    private static Pet FindFarmPet()
+    {
+        Pet found = null;
+        Utility.ForEachLocation(location =>
+        {
+            foreach (var npc in location.characters)
+            {
+                if (npc is Pet pet)
+                {
+                    found = pet;
+                    return false; // stop the scan
+                }
+            }
+            return true; // keep scanning
+        });
+        return found;
+    }
+
+    /// <summary>
+    /// Moves the demoted owner's cellar contents into the cellar the engine reassigns to them. The
+    /// owner built their casks/wine inside "Cellar"-1 while they were the master, but
+    /// updateCellarAssignments (Game1.cs:4515) hardwires "Cellar"-1 to the master (now the Server
+    /// bot) and hands the owner one of the per-slot cellars ("Cellar2".."CellarN", pre-created up to
+    /// HighestPlayerLimit at Game1.cs:7417-7422). Cellar contents are location-bound, so they don't
+    /// follow the assignment — this transfers them, mirroring the farmhouse→cabin content move.
+    /// Returns the count of moved objects. Falls back to a Warn (and leaves the contents in "Cellar"-1)
+    /// only if no destination cellar can be resolved (no free slot under HighestPlayerLimit) — a
+    /// graceful degrade, never a throw.
+    /// </summary>
+    private int TransferOwnerCellarContents(Farmer owner, Cabin cabin)
+    {
+        // Source: the master's "Cellar"-1, where the owner's casks physically live.
+        var sourceCellar = Game1.getLocationFromName("Cellar");
+        var sourceObjectCount = sourceCellar?.objects?.Count() ?? 0;
+        if (sourceCellar == null || sourceObjectCount == 0)
+        {
+            return 0; // nothing built; no-op (don't cry wolf on a farm that never stocked a cellar)
+        }
+
+        // Ensure assignments are current, then resolve the owner's reassigned cellar by the engine's
+        // own path (Cabin inherits GetCellarName(), which maps cellarAssignments → "Cellar"+N off the
+        // owner's UID). updateCellarAssignments is idempotent (the engine calls it at load/day-start/
+        // join) and assigns "Cellar"-1 to the master + the next free slot to each other farmer; the
+        // owner is in farmhandData (getAllFarmers), so a free slot lands on them.
+        Game1.updateCellarAssignments();
+        var destCellarName = cabin.GetCellarName();
+        var destCellar =
+            destCellarName == null ? null : Game1.getLocationFromName(destCellarName) as Cellar;
+        var maskedOwnerName = ChatRedaction.MaskValue(owner.Name);
+
+        if (destCellar == null || ReferenceEquals(destCellar, sourceCellar))
+        {
+            // No free per-slot cellar (farmer count exceeds HighestPlayerLimit), or the owner somehow
+            // still resolves to "Cellar"-1. Leave the contents where they are and warn — recoverable,
+            // not a finalize failure.
+            Monitor.Log(
+                $"Save-import: former owner '{maskedOwnerName}' has {sourceObjectCount} cellar item(s) but "
+                    + "no separate cellar could be assigned (player limit reached); they remain in the "
+                    + "main farm cellar (now the Server host's).",
+                LogLevel.Warn
+            );
+            return 0;
+        }
+
+        // Clearing the destination can't destroy another farmer's data: updateCellarAssignments only
+        // ever hands the owner a slot whose prior holder no longer resolves (a per-slot cellar,
+        // pre-created empty — cellars have no starter contents) or the owner's own already-held slot;
+        // it never reassigns a still-held slot, and the ReferenceEquals guard above rules out the
+        // master's "Cellar"-1. Cellar interiors share the same map, so source tiles are valid here.
+        foreach (var pos in destCellar.objects.Keys.ToList())
+        {
+            destCellar.objects.Remove(pos);
+        }
+
+        int moved = 0;
+        foreach (var kvp in sourceCellar.objects.Pairs.ToList())
+        {
+            sourceCellar.objects.Remove(kvp.Key);
+            destCellar.objects[kvp.Key] = kvp.Value;
+            moved++;
+        }
+
+        Monitor.Log(
+            $"Save-import: moved {moved} cellar item(s) from the main farm cellar into former owner "
+                + $"'{maskedOwnerName}'s cellar ('{destCellarName}').",
+            LogLevel.Info
+        );
+        return moved;
     }
 
     #endregion
