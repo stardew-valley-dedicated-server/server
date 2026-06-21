@@ -45,11 +45,15 @@ docker compose exec server attach-cli
 
 ### Save Management
 
-Save files are stored in the `saves` Docker volume. See [Backup & Recovery](/features/backup) for backup and restore procedures.
+Save files are stored in the `saves` Docker volume.
+
+- [Importing Saves](/admins/operations/importing-saves): bring an existing save into the server
+- [Backup & Recovery](/features/backup): back up and restore saves you already host
 
 ## Guides
 
 - [Console & Chat Commands](/admins/operations/commands)
+- [Importing Saves](/admins/operations/importing-saves)
 - [Networking](/admins/operations/networking)
 - [Upgrading](/admins/operations/upgrading)
 - [Web Interface (VNC)](/admins/operations/vnc) (advanced debugging only)

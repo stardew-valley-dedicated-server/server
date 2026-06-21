@@ -67,37 +67,37 @@ Your data lives in Docker volumes and bind mounts that persist across container 
 | Settings | `.local-container/settings/` bind mount | Server configuration (`server-settings.json`) |
 
 ::: info Volume Names
-Docker Compose prefixes volume names with your project directory. If your directory is `junimoserver`, the saves volume is `junimoserver_saves`. Run `docker volume ls` to see actual names.
+Docker Compose prefixes each volume with your project directory name, so the `saves` volume is actually `<project>_saves` (e.g. `server_saves` if you cloned into a `server/` directory). Run `docker volume ls` to see the real names, and substitute your prefix wherever `<project>_saves` appears below.
 :::
 
 ### Inspecting Volumes
 
 ```sh
-# List volumes
+# List volumes (find your real prefix here)
 docker volume ls
 
-# Inspect a volume (replace prefix with your project directory name)
-docker volume inspect junimoserver_saves
+# Inspect the saves volume
+docker volume inspect <project>_saves
 ```
 
 ## Manual Backups
 
 For maximum safety, create periodic manual backups.
 
-### Backup Saves Volume
+All commands below use `<project>_saves` for the saves volume. Replace it with your real prefix (see the volume names note above).
 
-Replace `junimoserver` below with your project directory name (see volume names note above).
+### Backup Saves Volume
 
 **Linux/macOS:**
 
 ```sh
-docker run --rm -v junimoserver_saves:/saves -v $(pwd):/backup ubuntu tar czf /backup/saves-backup-$(date +%Y%m%d).tar.gz /saves
+docker run --rm -v <project>_saves:/saves -v $(pwd):/backup alpine tar czf /backup/saves-backup-$(date +%Y%m%d).tar.gz /saves
 ```
 
 **Windows PowerShell:**
 
 ```powershell
-docker run --rm -v junimoserver_saves:/saves -v ${PWD}:/backup ubuntu tar czf /backup/saves-backup-$(Get-Date -Format "yyyyMMdd").tar.gz /saves
+docker run --rm -v <project>_saves:/saves -v ${PWD}:/backup alpine tar czf /backup/saves-backup-$(Get-Date -Format "yyyyMMdd").tar.gz /saves
 ```
 
 ### Backup All Data
@@ -108,8 +108,8 @@ Create a comprehensive backup:
 # Stop server first
 docker compose down
 
-# Backup saves volume (replace junimoserver with your directory name)
-docker run --rm -v junimoserver_saves:/data -v $(pwd):/backup ubuntu tar czf /backup/saves-$(date +%Y%m%d).tar.gz /data
+# Backup saves volume
+docker run --rm -v <project>_saves:/data -v $(pwd):/backup alpine tar czf /backup/saves-$(date +%Y%m%d).tar.gz /data
 
 # Backup settings (bind mount, just copy the directory)
 cp -r .local-container/settings settings-backup-$(date +%Y%m%d)
@@ -120,20 +120,18 @@ docker compose up -d
 
 ### Restore from Manual Backup
 
-Replace `junimoserver` below with your project directory name.
-
 ```sh
 # Stop server
 docker compose down
 
 # Remove old volume
-docker volume rm junimoserver_saves
+docker volume rm <project>_saves
 
 # Recreate volume
-docker volume create junimoserver_saves
+docker volume create <project>_saves
 
 # Restore from backup
-docker run --rm -v junimoserver_saves:/data -v $(pwd):/backup ubuntu bash -c "cd /data && tar xzf /backup/saves-YYYYMMDD.tar.gz --strip-components=1"
+docker run --rm -v <project>_saves:/data -v $(pwd):/backup alpine sh -c "cd /data && tar xzf /backup/saves-YYYYMMDD.tar.gz --strip-components=1"
 
 # Restart
 docker compose up -d
@@ -166,56 +164,10 @@ Consider automating backups with cron (Linux) or Task Scheduler (Windows):
 0 3 * * * /path/to/backup-script.sh
 ```
 
-## Importing Existing Saves
-
-Bring an existing single-player or co-op save to your server. This has two parts: copy the save folder
-onto the server, then run `saves import` to queue it for the next restart.
-
-**1. Copy the save folder into the saves volume** (replace `junimoserver` with your directory name):
-
-```sh
-docker run --rm -v junimoserver_saves:/saves -v $(pwd):/backup ubuntu cp -r /backup/YourFarm_123456789 /saves/
-```
-
-The folder name is `{FarmName}_{number}` — copy the whole folder, not its contents.
-
-**2. Import it.** Run `saves` to confirm it's listed, then import it from the server console (see the
-[`saves` command](/admins/operations/commands#saves)):
-
-```text
-# Single-player save — the save's owner becomes the headless host:
-saves import YourFarm_123456789
-
-# Co-op save — keep the original owner as a player, demote them to a cabin
-# farmhand bound to their Steam/GOG id (back up first; this rewrites the save):
-saves import YourFarm_123456789 --swap-host-to 76561198XXXXXXXXX
-```
-
-::: warning Co-op saves need `--swap-host-to`
-On this server the main farmer is the automated host. Importing a co-op save **as-is** turns the
-original human owner into that automated host — they can no longer play as that farmer. Use
-`--swap-host-to <id>` (their Steam64 or GOG Galaxy id) to keep them a player.
+::: tip Bringing in a save from elsewhere?
+This page covers backing up and restoring saves you already host. To import an existing save into the
+server, see [Importing Saves](/admins/operations/importing-saves).
 :::
-
-**3. Load it.** A plain import loads on the next restart:
-
-```sh
-docker compose restart server
-```
-
-Or skip the restart — add `--reload` to load it in-process immediately (use `--force-reload` to kick
-connected players first):
-
-```text
-# Applies right away if nobody is connected; otherwise refuses and names them.
-saves import YourFarm_123456789 --reload
-
-# Kicks connected players, then reloads.
-saves import YourFarm_123456789 --force-reload
-```
-
-Either way the save loads and a swap import finalizes the farmhand on that load. Connect via VNC or
-join in-game to verify.
 
 ## Recovery Scenarios
 
