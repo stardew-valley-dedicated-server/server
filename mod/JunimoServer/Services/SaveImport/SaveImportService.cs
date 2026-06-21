@@ -382,7 +382,7 @@ public class SaveImportService : ModService
     /// Same id → true no-op. Different id while the intent is still pending (pre-reboot) → re-point
     /// <see cref="PendingFinalize.UserId"/> in place (the owner is already correctly reparented).
     /// Different id after the finalizer already consumed the intent → can't re-bind via intent;
-    /// direct the operator to /unlink or restore-and-reimport.
+    /// direct the operator to /unlinkPlayer or restore-and-reimport.
     /// </summary>
     private ImportResult HandleAlreadySwappedReRun(
         ImportResult result,
@@ -439,7 +439,7 @@ public class SaveImportService : ModService
         return Fail(
             result,
             $"'{saveName}' is already host-swapped and the bind is already applied. To change it, "
-                + "use /unlink + reconnect, or restore a backup and re-import."
+                + "use /unlinkPlayer + reconnect, or restore a backup and re-import."
         );
     }
 

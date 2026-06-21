@@ -144,8 +144,15 @@ These settings apply on every startup and can be changed between runs.
 | `AllowIpConnections` | Allow direct IP connections | `false` |
 | `LobbyMode` | Lobby mode for password protection | `"Shared"` |
 | `ActiveLobbyLayout` | Active lobby layout name | `"default"` |
-| `AdminSteamIds` | Steam IDs auto-granted admin on join | `[]` |
+| `AdminSteamIds` | Platform ids (Steam or GOG) auto-granted admin on join | `[]` |
 | `NetworkBroadcastPeriod` | Ticks between farmer/location/world-state delta broadcasts (1=every tick, 3=vanilla) | `1` |
+
+### AdminSteamIds
+
+Players whose platform id is listed here are granted admin automatically when they join. Despite the
+name, it accepts both Steam and GOG ids.
+
+<!--@include: ../../_partials/platform-id-lookup.md-->
 
 ### Cabin Strategies
 
