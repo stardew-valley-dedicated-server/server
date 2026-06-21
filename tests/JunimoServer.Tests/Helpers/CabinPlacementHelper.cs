@@ -49,8 +49,10 @@ public static class CabinPlacementHelper
     {
         var warp = await client.Actions.Warp("Farm", tileX, tileY);
         Assert.True(warp?.Success == true, $"Warp to Farm failed: {warp?.Error}");
+        // WaitForLocationAsync returns non-null only when the client's location matched ^Farm$
+        // within the timeout (null on timeout), so a non-null result confirms the sync.
         var arrived = await client.WaitForLocationAsync("^Farm$", ct: ct);
-        Assert.True(arrived is not null, "Warp to Farm did not complete before clearing footprint");
+        Assert.True(arrived is not null, "Client did not sync to Farm before clearing footprint");
 
         var cleared = await client.Actions.ClearArea("Farm", tileX + 1, tileY, width: 5, height: 4);
         Assert.True(cleared?.Success == true, $"ClearArea failed: {cleared?.Error}");
