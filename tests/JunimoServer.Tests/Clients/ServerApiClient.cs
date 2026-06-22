@@ -1601,11 +1601,31 @@ public class ServerApiClient : IDisposable
             Helpers.WaitName.Polling_ServerApi_WaitForFarmerServerTile,
             async () =>
             {
-                var response = await _httpClient.GetAsync("/test/farmers", ct);
-                response.EnsureSuccessStatusCode();
-                var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(ct);
-                var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
-                return f != null && f.TileX == tileX && f.TileY == tileY;
+                try
+                {
+                    // Bound each request well under the outer budget: _httpClient.Timeout is 5
+                    // min, so an unbounded request could outlive the poll and hang.
+                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
+                    var response = await _httpClient.GetAsync("/test/farmers", reqCts.Token);
+                    response.EnsureSuccessStatusCode();
+                    var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(
+                        reqCts.Token
+                    );
+                    var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
+                    return f != null && f.TileX == tileX && f.TileY == tileY;
+                }
+                catch (Exception ex)
+                    when (ex
+                            is HttpRequestException
+                                or TaskCanceledException
+                                or OperationCanceledException
+                        && !ct.IsCancellationRequested
+                    )
+                {
+                    // Per-request timeout or connection error, retry.
+                    return false;
+                }
             },
             timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
             cancellationToken: ct
