@@ -201,6 +201,10 @@ test-web: build-test-ui
 test-web-report: build-test-ui
 	@dotnet run --project $(RUNNER_PROJECT) -- --web --report $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
 
+# Render OG (social link-preview) card mockups to .output/og-preview/ for design review
+og-preview:
+	@dotnet run --project $(RUNNER_PROJECT) -- preview-og
+
 # --- Test Observability Targets ---
 # All run via tools/test-observability.ts so they work from any shell (PowerShell,
 # cmd, bash) with no jq/python/awk/column dependency. Latest-run resolution and
@@ -286,6 +290,7 @@ help:
 	@echo "  make test-llm     - Run tests with structured JSONL output (for AI agents)"
 	@echo "  make test-web     - Run tests with web UI (opens browser with live results)"
 	@echo "  make test-web-report - Run tests with web UI + static report generation"
+	@echo "  make og-preview   - Render OG link-preview card mockups for design review"
 	@echo "  FILTER=X          - Filter tests, e.g. FILTER=PasswordProtection"
 	@echo "  VERBOSE=1         - Show detailed setup steps, e.g. make test VERBOSE=1"
 	@echo ""

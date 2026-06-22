@@ -15,6 +15,13 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Spectre.Console" Version="0.57.0" />
     <PackageReference Include="xunit.v3.runner.utility" Version="3.2.2" />
+    <!-- SVG rasterization for the OG-card logo (OgCard rasterizes logo.svg in-process,
+         so the SVG is the single committed logo source — no second PNG asset). Skia is
+         the only robust cross-platform SVG rasterizer; the Linux native asset ships
+         libSkiaSharp.so for the CI runner (ubuntu-latest, glibc — not the Alpine
+         NoDependencies variant). Windows/macOS natives come bundled with SkiaSharp. -->
+    <PackageReference Include="Svg.Skia" Version="5.0.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +30,7 @@
 
   <ItemGroup>
     <Content Include="Assets\fonts\Inter-SemiBold.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\img\logo.svg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The ASP.NET Core FrameworkReference absorbs Microsoft.Extensions.* transitive

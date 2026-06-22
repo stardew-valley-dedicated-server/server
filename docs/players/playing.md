@@ -2,7 +2,7 @@
 
 ## Differences from Regular Multiplayer
 
-- **Always available**: The server is online 24/7, no need to wait for a host
+- **Always available**: The server is always online, no need to wait for a host
 - **Drop-in gameplay**: Join and leave whenever you want
 - **Time pauses when empty**: Game pauses when no players are connected, resumes when someone joins
 

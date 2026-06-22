@@ -733,7 +733,12 @@ jobs:
           # otherwise terminate the s### or expand to the matched text.
           esc() { printf '%s' "$1" | sed 's/[#&\\]/\\&/g'; }
           og_url=$(esc "${R2_PUBLIC_BASE_URL%/}/${key}/index.html")
-          og_image=$(esc "${R2_PUBLIC_BASE_URL%/}/${key}/og-image.png")
+          # ?v=${run_id} cache-busts the og:image so social scrapers re-fetch it for the
+          # stable latest/ page (overwritten in place each master run). The stored object
+          # key stays og-image.png — the ?v= lives only in the page's meta tag. The query
+          # is constant within a run, and survives the latest/ re-point sed below (which
+          # rewrites the …/${key}/ path prefix, not the trailing ?v=). og_url stays plain.
+          og_image=$(esc "${R2_PUBLIC_BASE_URL%/}/${key}/og-image.png?v=${run_id}")
           sed -i \
             -e "s#__OG_URL__#${og_url}#g" \
             -e "s#__OG_IMAGE__#${og_image}#g" \
@@ -742,8 +747,11 @@ jobs:
           # sync sets each object's Content-Type from its extension (so index.html
           # renders rather than downloads). 30-day retention is a one-time R2 bucket
           # lifecycle rule (operator setup), not a per-run prune here.
+          # max-age=300 bounds how long an already-scraped social cache or r2.dev edge
+          # serves stale bytes (matches the badge.json precedent). Harmless on these
+          # immutable per-run objects; load-bearing on the latest/ mirror sync below.
           if aws s3 sync "$report_dir" "s3://${R2_BUCKET}/${key}" \
-               --endpoint-url "$endpoint" --no-progress; then
+               --endpoint-url "$endpoint" --cache-control "max-age=300" --no-progress; then
             size=$(du -sh "$report_dir" | cut -f1)
             url="${R2_PUBLIC_BASE_URL%/}/${key}/index.html"
             {
@@ -767,7 +775,7 @@ jobs:
                 -e "s#${R2_PUBLIC_BASE_URL%/}/${key}/#${R2_PUBLIC_BASE_URL%/}/${latest_key}/#g" \
                 "$latest_dir/index.html"
               if aws s3 sync "$latest_dir" "s3://${R2_BUCKET}/${latest_key}" \
-                   --endpoint-url "$endpoint" --no-progress --delete; then
+                   --endpoint-url "$endpoint" --cache-control "max-age=300" --no-progress --delete; then
                 echo "Updated stable badge report: ${R2_PUBLIC_BASE_URL%/}/${latest_key}/index.html"
               else
                 echo "::warning::latest/ mirror sync failed — badge link may be stale (per-run report still published)."

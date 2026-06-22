@@ -44,4 +44,4 @@ Use a separate Steam account (with its own copy of Stardew Valley) for the serve
 These are approximate figures based on testing. Actual requirements vary depending on player count, mods, and farm complexity. Monitor resource usage and adjust as needed.
 :::
 
-The server runs continuously (24/7) and uses resources even when no players are connected. For cloud hosting, factor in always-on costs.
+The server runs continuously and uses resources even when no players are connected. For cloud hosting, factor in always-on costs.

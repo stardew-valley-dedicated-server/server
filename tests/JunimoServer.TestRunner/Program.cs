@@ -17,6 +17,13 @@ using Xunit.SimpleRunner;
 // hosts, opening per-host SSH daemon-socket forwards via TunnelManager during
 // preflight), distribute images to remote hosts, hand off to xUnit.
 
+// Design-only OG card preview — renders sample cards to .output/og-preview/ and exits.
+// Branch before any Docker/host/pipe setup: it's sub-second and needs no daemon.
+if (args is ["preview-og", ..])
+{
+    return await OgPreview.RunAsync();
+}
+
 // Parse command-line arguments
 var mode = OutputModeDetector.Detect(args);
 var verbose = OutputModeDetector.IsVerbose(args);

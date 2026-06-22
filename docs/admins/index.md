@@ -4,7 +4,7 @@ description: Set up and run a JunimoServer Stardew Valley dedicated server — D
 
 # Admins
 
-JunimoServer is a Docker-based dedicated server for Stardew Valley multiplayer. Run a farm that stays online 24/7. Players can drop in anytime without needing someone to host.
+JunimoServer is a Docker-based dedicated server for Stardew Valley multiplayer. Run a farm that stays online continuously. Players can drop in anytime without needing someone to host.
 
 ## Quick Start
 
