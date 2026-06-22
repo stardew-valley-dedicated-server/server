@@ -20,7 +20,7 @@
          the only robust cross-platform SVG rasterizer; the Linux native asset ships
          libSkiaSharp.so for the CI runner (ubuntu-latest, glibc — not the Alpine
          NoDependencies variant). Windows/macOS natives come bundled with SkiaSharp. -->
-    <PackageReference Include="Svg.Skia" Version="5.0.0" />
+    <PackageReference Include="Svg.Skia" Version="5.1.1" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
   </ItemGroup>
 
