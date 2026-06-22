@@ -4,14 +4,15 @@ using JunimoServer.Tests.Schema.Events;
 namespace JunimoServer.TestRunner.Rendering;
 
 /// <summary>
-/// Streaming renderer for CI environments with vitest/jest-inspired output.
+/// Streaming renderer for CI environments with vitest/jest-inspired output:
+///   Header → Setup phases → Test results (by class) → Failure details → Summary.
 ///
-/// Output structure:
-///   Header → Setup phases (streamed with spinners) → Test classes (streamed) → Failure details → Summary
-///
-/// Setup steps and tests show a braille spinner animation on TTY terminals,
-/// replaced by ✓/✗ when complete. Non-TTY output uses a static ◌ indicator.
-/// On GitHub Actions: groups and ::error:: annotations emitted.
+/// On a TTY, tests stream live with a braille spinner that becomes ✓/✗, class headers
+/// printed as tests arrive. The broker runs classes interleaved, and a non-TTY sink can't
+/// reposition the cursor — so streaming there would re-emit a class header (and its
+/// ::group::) every time execution flips back to that class, duplicating headers and
+/// breaking groups. So non-TTY buffers per-test result lines and emits them grouped by
+/// class once, at run end. Diagnostics/annotations stream live in both modes.
 /// </summary>
 public sealed class CIRenderer : RendererBase
 {
@@ -21,9 +22,15 @@ public sealed class CIRenderer : RendererBase
     private readonly bool _useColor;
     private readonly bool _isTTY;
 
-    // Test class tracking
+    // Test class tracking (TTY streaming only)
     private string? _currentClassName;
     private bool _currentClassHasGitHubGroup;
+
+    // Non-TTY result lines, grouped by short class name for the end-of-run flush.
+    // _bufferedClassOrder fixes first-seen class order (Dictionary's isn't contractual).
+    // Both guarded by _writeLock.
+    private readonly List<string> _bufferedClassOrder = new();
+    private readonly Dictionary<string, List<string>> _bufferedResults = new();
 
     // Failure collection for bottom summary (event + accumulated pipe output)
     private readonly List<(TestFailedEvent Failure, string? Output)> _failures = new();
@@ -99,8 +106,17 @@ public sealed class CIRenderer : RendererBase
 
     public override void OnRunFinished(RunFinishedEvent e)
     {
-        // Close the last class group
-        EndClassGroup();
+        lock (_writeLock)
+        {
+            if (_isTTY)
+            {
+                EndClassGroup();
+            }
+            else
+            {
+                FlushBufferedResultsLocked();
+            }
+        }
 
         _out.WriteLine();
 
@@ -311,6 +327,12 @@ public sealed class CIRenderer : RendererBase
 
     public override void OnTestStarted(TestStartedEvent e)
     {
+        // Non-TTY buffers results at run end — nothing to stream live here.
+        if (!_isTTY)
+        {
+            return;
+        }
+
         var shortClass = GetShortClassName(e.TestClass);
         EmitClassHeaderIfNew(shortClass);
         var shortTest = GetShortTestName(e.DisplayName);
@@ -469,55 +491,31 @@ public sealed class CIRenderer : RendererBase
     protected override void OnTestPassedCore(TestPassedEvent e)
     {
         var shortTest = GetShortTestName(e.DisplayName);
-        var line = $"   {Green("\u2713")} {shortTest}  {Dim(FormatDuration(e.Duration))}";
-        var output = GetAccumulatedOutput(e.DisplayName);
-
-        lock (_writeLock)
+        var lines = new List<string>
         {
-            StopSpinnerLocked();
-            if (_isTTY)
-            {
-                _out.Write("\r\x1b[2K");
-            }
-
-            _out.WriteLine(line);
-
-            // In verbose mode, show test output inline
-            if (Verbose && !string.IsNullOrWhiteSpace(output))
-            {
-                foreach (var ol in output.Split('\n'))
-                {
-                    _out.WriteLine($"     {Dim(ol.TrimEnd())}");
-                }
-            }
-
-            _out.Flush();
-        }
+            $"   {Green("\u2713")} {shortTest}  {Dim(FormatDuration(e.Duration))}",
+        };
+        AppendVerboseOutput(lines, GetAccumulatedOutput(e.DisplayName));
+        EmitResult(GetShortClassName(e.TestClass), lines);
     }
 
     protected override void OnTestFailedCore(TestFailedEvent e)
     {
         var shortTest = GetShortTestName(e.DisplayName);
         var output = GetAccumulatedOutput(e.DisplayName);
+        var lines = new List<string>
+        {
+            $"   {RedBold("\u2717")} {shortTest}  {Dim(FormatDuration(e.Duration))}",
+            $"     {Red($"\u2192 {FirstLine(e.Message)}")}",
+        };
+        AppendVerboseOutput(lines, output);
 
         lock (_writeLock)
         {
-            StopSpinnerLocked();
-            if (_isTTY)
-            {
-                _out.Write("\r\x1b[2K");
-            }
-
-            _out.WriteLine(
-                $"   {RedBold("\u2717")} {shortTest}  {Dim(FormatDuration(e.Duration))}"
-            );
-
-            // Short inline error (first line only)
-            _out.WriteLine($"     {Red($"\u2192 {FirstLine(e.Message)}")}");
-
             _failures.Add((e, output));
 
-            // GitHub Actions error annotation
+            // The GitHub Actions error annotation attaches to the run, not a log position,
+            // so it streams live in both modes (the result line itself may be buffered).
             if (_isGitHubActions)
             {
                 var escapedMsg = e
@@ -525,36 +523,66 @@ public sealed class CIRenderer : RendererBase
                     .Replace("\r", "%0D")
                     .Replace("\n", "%0A");
                 _err.WriteLine($"::error title={e.TestClass}.{e.TestMethod}::{escapedMsg}");
+                _err.Flush();
             }
 
-            // In verbose mode, show test output inline
-            if (Verbose && !string.IsNullOrWhiteSpace(output))
-            {
-                foreach (var line in output.Split('\n'))
-                {
-                    _out.WriteLine($"     {Dim(line.TrimEnd())}");
-                }
-            }
-
-            _out.Flush();
+            EmitResultLocked(GetShortClassName(e.TestClass), lines);
         }
     }
 
     protected override void OnTestSkippedCore(TestSkippedEvent e)
     {
         var shortTest = GetShortTestName(e.DisplayName);
+        EmitResult(
+            GetShortClassName(e.TestClass),
+            [$"   {Yellow("\u25CB")} {shortTest}  {Dim(e.Reason)}"]
+        );
+    }
 
+    /// <summary>Append a test's accumulated output as indented dim lines, when verbose.</summary>
+    private void AppendVerboseOutput(List<string> lines, string? output)
+    {
+        if (!Verbose || string.IsNullOrWhiteSpace(output))
+        {
+            return;
+        }
+
+        foreach (var ol in output.Split('\n'))
+        {
+            lines.Add($"     {Dim(ol.TrimEnd())}");
+        }
+    }
+
+    private void EmitResult(string className, IReadOnlyList<string> lines)
+    {
         lock (_writeLock)
         {
-            StopSpinnerLocked();
-            if (_isTTY)
-            {
-                _out.Write("\r\x1b[2K");
-            }
-
-            _out.WriteLine($"   {Yellow("\u25CB")} {shortTest}  {Dim(e.Reason)}");
-            _out.Flush();
+            EmitResultLocked(className, lines);
         }
+    }
+
+    /// <summary>
+    /// Emit a test's result lines: buffer them for the grouped end-of-run flush (non-TTY),
+    /// or clear the spinner and stream them (TTY). Must be called while holding _writeLock.
+    /// </summary>
+    private void EmitResultLocked(string className, IReadOnlyList<string> lines)
+    {
+        if (!_isTTY)
+        {
+            foreach (var line in lines)
+            {
+                BufferResultLocked(className, line);
+            }
+            return;
+        }
+
+        StopSpinnerLocked();
+        _out.Write("\r\x1b[2K");
+        foreach (var line in lines)
+        {
+            _out.WriteLine(line);
+        }
+        _out.Flush();
     }
 
     // ── Annotations (Plane C) ──
@@ -725,6 +753,49 @@ public sealed class CIRenderer : RendererBase
             _out.WriteLine("::endgroup::");
             _currentClassHasGitHubGroup = false;
         }
+    }
+
+    /// <summary>Buffer one result line under its class. Hold _writeLock.</summary>
+    private void BufferResultLocked(string className, string line)
+    {
+        if (!_bufferedResults.TryGetValue(className, out var lines))
+        {
+            lines = new List<string>();
+            _bufferedResults[className] = lines;
+            _bufferedClassOrder.Add(className);
+        }
+
+        lines.Add(line);
+    }
+
+    /// <summary>
+    /// Emit all buffered results grouped by class (first-seen order), each header and
+    /// ::group:: exactly once. Hold _writeLock.
+    /// </summary>
+    private void FlushBufferedResultsLocked()
+    {
+        foreach (var className in _bufferedClassOrder)
+        {
+            _out.WriteLine();
+            _out.WriteLine($" {Bold(className)}");
+
+            if (_isGitHubActions)
+            {
+                _out.WriteLine($"::group::{className}");
+            }
+
+            foreach (var line in _bufferedResults[className])
+            {
+                _out.WriteLine(line);
+            }
+
+            if (_isGitHubActions)
+            {
+                _out.WriteLine("::endgroup::");
+            }
+        }
+
+        _out.Flush();
     }
 
     // ── Utilities ──

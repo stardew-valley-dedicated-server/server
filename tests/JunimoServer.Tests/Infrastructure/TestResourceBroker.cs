@@ -2564,10 +2564,95 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var weights = demands.Select(InstancesNeeded).ToList();
         var totalWeight = weights.Sum();
 
-        // If more configs than slots, only top N configs get 1 slot each
+        // More configs than slots: each of the top N configs gets exactly 1 slot;
+        // the rest create on-demand. With one slot apiece, a config whose
+        // non-exclusive demand needs ≥2 instances (InstancesNeeded) cannot keep
+        // its join lane drained — every joining test queues on that instance's
+        // single per-game-loop join gate (ManagedServer._joinGate), producing the
+        // end-of-run join convoy. Reactive expansion can't rescue it: a server
+        // boots in ~41s, so an instance spun up at the tail serves ~0 tests before
+        // the run ends. Front-load instead — give the dominant config a 2nd
+        // prestart instance (its own join gate = a real second lane) by demoting
+        // the smallest single-slot config to on-demand. Total stays ≤ slots, so
+        // no slot over-subscription and no churn (the 2nd instance has the whole
+        // backlog to chew through). Guarded on slots >= 2 so single-slot hosts
+        // (CI) are untouched. See .claude/rules/provision-up-front-when-startup-
+        // exceeds-serviceable-tail.md and PLAN-suite-speedup.md §3.
+        // Scope: only fires when demands.Count > slots. At demands.Count == slots
+        // (e.g. a narrow --filter run) the Hamilton path below caps every config at
+        // 1, so no promotion — the convoy fix targets the saturated full-suite case.
         if (demands.Count > slots)
         {
-            return demands.Take(slots).Select(d => (d, 1)).ToList();
+            var alloc = demands.Take(slots).Select(d => 1).ToList();
+
+            if (slots >= 2)
+            {
+                // Log NonExclusiveTestCount so the ≥2-trigger math is auditable on a
+                // dry run (per PLAN-suite-speedup.md §4.1: confirm the dominant
+                // config's count is ≥ 2×clientsPerInstance before relying on the fix).
+                for (var i = 0; i < slots; i++)
+                {
+                    TestLog.Server(
+                        $"  alloc-candidate {demands[i].Requirements.GetDisplayLabel()}: "
+                            + $"nonExclusive={demands[i].NonExclusiveTestCount}, "
+                            + $"instancesNeeded={weights[i]}"
+                    );
+                }
+
+                // Dominant = the single-slot config whose non-exclusive demand is
+                // largest; it's the only one that can form a convoy. Searched only
+                // within the top-`slots` window: a config that sorts outside it (by
+                // ClassCount, the demands order) already creates on-demand and isn't
+                // a promotion candidate. Relies on the convoy-former ranking inside
+                // the window — true on the full suite, where it's also #1 by class.
+                var dominant = -1;
+                for (var i = 0; i < slots; i++)
+                {
+                    if (
+                        dominant < 0
+                        || demands[i].NonExclusiveTestCount
+                            > demands[dominant].NonExclusiveTestCount
+                    )
+                    {
+                        dominant = i;
+                    }
+                }
+
+                // Donor = the single-slot config with the smallest TestCount that
+                // does NOT itself need a 2nd instance (never demote a config that
+                // would convoy too). It pays only a normal on-demand boot when its
+                // turn comes — the same cost a config ranked just outside the top N
+                // already pays today.
+                var donor = -1;
+                for (var i = 0; i < slots; i++)
+                {
+                    if (i == dominant || weights[i] >= 2)
+                    {
+                        continue;
+                    }
+                    if (donor < 0 || demands[i].TestCount < demands[donor].TestCount)
+                    {
+                        donor = i;
+                    }
+                }
+
+                if (weights[dominant] >= 2 && donor >= 0)
+                {
+                    alloc[dominant] = 2;
+                    alloc[donor] = 0;
+                    TestLog.Server(
+                        $"  promoting {demands[dominant].Requirements.GetDisplayLabel()} to 2 instances "
+                            + $"(demoting {demands[donor].Requirements.GetDisplayLabel()} to on-demand) "
+                            + "to add a second join lane for the dominant config"
+                    );
+                }
+            }
+
+            return demands
+                .Take(slots)
+                .Select((d, i) => (d, alloc[i]))
+                .Where(p => p.Item2 > 0)
+                .ToList();
         }
 
         // Hamilton's method: proportional allocation with largest-remainder distribution

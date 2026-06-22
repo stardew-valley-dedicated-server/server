@@ -498,6 +498,32 @@ public class TestCropsResponse
     public string? Error { get; set; }
 }
 
+/// <summary>One farmer's server-side tile from /test/farmers. Mirrors the server-side DTO.</summary>
+public class TestFarmer
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("tileX")]
+    public int TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int TileY { get; set; }
+}
+
+/// <summary>Response from /test/farmers GET endpoint (test-only). Mirrors the server-side DTO.</summary>
+public class TestFarmersResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("farmers")]
+    public List<TestFarmer> Farmers { get; set; } = new();
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 /// <summary>
 /// Response from /test/festival_state GET endpoint (test-only). Mirrors the server-side
 /// TestFestivalStateResponse DTO — a direct read of the host's festival state.
@@ -1551,6 +1577,39 @@ public class ServerApiClient : IDisposable
         var response = await _httpClient.GetAsync("/test/festival_state", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestFestivalStateResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: poll until farmer <paramref name="farmerId"/> appears at the exact tile
+    /// (<paramref name="tileX"/>,<paramref name="tileY"/>) in the Farm's farmer collection —
+    /// the location-filtered <c>getFarm().farmers</c> that CabinPlacementValidator iterates.
+    /// After a client-side warp the farmer's tile replicates globally before its currentLocation
+    /// does, so it can read as on-tile via a global position lookup while still absent from
+    /// <c>farm.farmers</c>; a test warping a second farmer into a footprint must await THIS
+    /// (membership + tile) before the placement command, else the validator's collision loop
+    /// never sees it and the move is wrongly accepted. GET /test/farmers mirrors that collection.
+    /// </summary>
+    public async Task<bool> WaitForFarmerServerTileAsync(
+        long farmerId,
+        int tileX,
+        int tileY,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
+    {
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_ServerApi_WaitForFarmerServerTile,
+            async () =>
+            {
+                var response = await _httpClient.GetAsync("/test/farmers", ct);
+                response.EnsureSuccessStatusCode();
+                var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(ct);
+                var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
+                return f != null && f.TileX == tileX && f.TileY == tileY;
+            },
+            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
     }
 
     /// <summary>

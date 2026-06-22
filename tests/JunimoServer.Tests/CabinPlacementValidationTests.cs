@@ -183,19 +183,24 @@ public class CabinPlacementValidationTests : TestBase
         await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
 
         // Stand B inside A's prospective footprint.
-        var warpB = await farmerB.Client.Actions.Warp(
-            "Farm",
-            CabinPlacementHelper.ExpectedCabinTile.X + 1,
-            CabinPlacementHelper.ExpectedCabinTile.Y
-        );
+        var footprintTileX = CabinPlacementHelper.ExpectedCabinTile.X + 1;
+        var footprintTileY = CabinPlacementHelper.ExpectedCabinTile.Y;
+        var warpB = await farmerB.Client.Actions.Warp("Farm", footprintTileX, footprintTileY);
         Assert.True(warpB?.Success == true, $"B warp failed: {warpB?.Error}");
-        // WaitForLocationAsync returns non-null only when the location matched ^Farm$ within
-        // the timeout; assert it so a B-not-settled failure surfaces here, not as an opaque
-        // "no rejection" timeout below.
-        var bArrived = await farmerB.Client.WaitForLocationAsync("^Farm$", ct: ct);
+        // The client-side warp lands B instantly in its own view, but the CabinPlacementValidator
+        // reads B's position from the SERVER's farmer collection, which B's position replicates to
+        // only over several ticks. Wait for the server to actually see B on the footprint tile
+        // before issuing !cabin — otherwise the validator reads a stale position, the collision
+        // check misses, the move is silently accepted, and no rejection is ever sent.
+        var bSettled = await ServerApi.WaitForFarmerServerTileAsync(
+            farmerB.Uid,
+            footprintTileX,
+            footprintTileY,
+            ct: ct
+        );
         Assert.True(
-            bArrived is not null,
-            "Farmer B did not reach the Farm before the rejection check"
+            bSettled,
+            "Farmer B's position did not replicate to the server before the rejection check"
         );
 
         var rejected = await PollingHelper.WaitUntilAsync(
