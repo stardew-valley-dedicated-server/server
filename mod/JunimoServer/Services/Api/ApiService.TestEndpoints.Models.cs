@@ -49,6 +49,26 @@ public class TestCropsResponse
     public string? Error { get; set; }
 }
 
+/// <summary>One online farmer's server-side tile, from /test/farmers.</summary>
+public class TestFarmer
+{
+    public long Id { get; set; }
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+}
+
+/// <summary>
+/// Response from /test/farmers (test-only). Each online farmer's instantaneous server-side
+/// tile, read from Game1 — the position the placement validator reads, which the periodic
+/// /players snapshot doesn't carry.
+/// </summary>
+public class TestFarmersResponse
+{
+    public bool Success { get; set; }
+    public List<TestFarmer> Farmers { get; set; } = new();
+    public string? Error { get; set; }
+}
+
 /// <summary>
 /// Response from /test/set_date (test-only date jump).
 /// </summary>

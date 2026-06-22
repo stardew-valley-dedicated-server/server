@@ -61,6 +61,9 @@ public partial class ApiService
                     case "/test/festival_state":
                         await WriteJsonAsync(response, await HandleGetTestFestivalStateAsync());
                         return;
+                    case "/test/farmers":
+                        await WriteJsonAsync(response, await HandleGetTestFarmersAsync(request));
+                        return;
                     case "/test/save_tmp_exists":
                         await WriteJsonAsync(response, HandleGetTestSaveTmpExists(request));
                         return;
@@ -230,6 +233,64 @@ public partial class ApiService
                 result.FestivalEndReady = Game1.netReady.GetNumberReady("festivalEnd");
                 result.FestivalEndRequired = Game1.netReady.GetNumberRequired("festivalEnd");
                 result.TimeOfDay = Game1.timeOfDay;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/farmers",
+        Summary = "Farmers in a location, by the server-side collection CabinPlacementValidator reads (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestFarmersResponse), 200)]
+    private async Task<TestFarmersResponse> HandleGetTestFarmersAsync(HttpListenerRequest request)
+    {
+        // ?location=<name> (default "Farm"): which location's farmer collection to report.
+        // CabinPlacementValidator iterates Game1.getFarm().farmers — a FarmerCollection that
+        // filters Game1.otherFarmers by currentLocation == Farm (FarmerCollection.cs:49,58).
+        // A warped farmer's TilePoint replicates globally before its currentLocation does, so a
+        // test must mirror THIS membership (location-filtered + bounding-box tile), not a global
+        // getOnlineFarmers()+TilePoint read, or it sees the farmer in position before the
+        // validator's collection does and issues !cabin too early.
+        var locationName = request.QueryString["location"] ?? "Farm";
+
+        var result = new TestFarmersResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var location = Game1.getLocationFromName(locationName);
+                if (location == null)
+                {
+                    result.Success = true;
+                    return;
+                }
+
+                foreach (var farmer in location.farmers)
+                {
+                    // The validator tests GetBoundingBox().Intersects(tileRect); its center tile
+                    // is what a single-tile occupancy check resolves to.
+                    var center = farmer.GetBoundingBox().Center;
+                    result.Farmers.Add(
+                        new TestFarmer
+                        {
+                            Id = farmer.UniqueMultiplayerID,
+                            TileX = center.X / 64,
+                            TileY = center.Y / 64,
+                        }
+                    );
+                }
+
                 result.Success = true;
             });
         }
