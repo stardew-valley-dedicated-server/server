@@ -221,7 +221,7 @@ public sealed class ReportGenerator
             <meta name="robots" content="noindex, nofollow" />
             <link rel="canonical" href="__OG_URL__" />
             <meta property="og:type" content="website" />
-            <meta property="og:site_name" content="SDVD E2E Test Report" />
+            <meta property="og:site_name" content="JunimoServer E2E Report" />
             <meta property="og:locale" content="en_US" />
             <meta property="og:title" content="{title}" />
             <meta property="og:description" content="{desc}" />
@@ -239,21 +239,24 @@ public sealed class ReportGenerator
             """;
     }
 
-    private static string BuildTitle(RunSummary s)
+    // internal (not private) so the og-preview harness renders the real title/
+    // description strings — the Discord-unfurl mockup can't drift from production.
+    //
+    // The three unfurl layers carry distinct info, no number twice: title = a bare
+    // verdict (the glance line — no counts, no branch, no sha), description = the
+    // full count breakdown + total + branch, image footer = branch only. The commit
+    // sha is dropped everywhere: it's not actionable from a social card.
+    internal static string BuildTitle(RunSummary s)
     {
-        var git = GitSuffix(s);
         if (s.Status == "aborted")
         {
-            return $"⚪ Run aborted{git}";
+            return "⚪ Aborted";
         }
 
-        var icon = s.Failed > 0 ? "❌" : "✅";
-        return s.Failed > 0
-            ? $"{icon} {s.Failed} failed of {s.TotalTests}{git}"
-            : $"{icon} {s.Passed} passed · 0 failed{git}";
+        return s.Failed > 0 ? "❌ Failed" : "✅ Passed";
     }
 
-    private static string BuildDescription(RunSummary s)
+    internal static string BuildDescription(RunSummary s)
     {
         var parts = new List<string> { $"{s.Passed} passed", $"{s.Failed} failed" };
         if (s.Skipped > 0)
@@ -266,20 +269,19 @@ public sealed class ReportGenerator
             parts.Add($"{s.Canceled} canceled");
         }
 
-        return $"{string.Join(" · ", parts)} of {s.TotalTests} tests{GitSuffix(s)}";
+        parts.Add($"{s.TotalTests} total");
+        return $"{string.Join(" · ", parts)}{BranchSuffix(s)}";
     }
 
-    private static string GitSuffix(RunSummary s)
-    {
-        if (s.GitBranch == null && s.GitSha == null)
-        {
-            return "";
-        }
+    private static string BranchSuffix(RunSummary s) =>
+        s.GitBranch is { } b ? $" — {Truncate(b)}" : "";
 
-        var sha = s.GitSha is { Length: >= 7 } ? s.GitSha[..7] : s.GitSha;
-        var branch = s.GitBranch ?? "?";
-        return sha != null ? $" — {branch} @ {sha}" : $" — {branch}";
-    }
+    // Bound the branch so a long PR slug can't dominate the card; master and
+    // short names pass through untouched.
+    private const int MaxBranchChars = 28;
+
+    internal static string Truncate(string branch) =>
+        branch.Length > MaxBranchChars ? branch[..(MaxBranchChars - 1)] + "…" : branch;
 
     private static string Enc(string value) => WebUtility.HtmlEncode(value);
 

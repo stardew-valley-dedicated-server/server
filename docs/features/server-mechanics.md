@@ -1,6 +1,6 @@
 # Server Mechanics
 
-The server stays online 24/7 without needing a player to host. Several automatic behaviors handle game progression.
+The server stays online continuously without needing a player to host. Several automatic behaviors handle game progression.
 
 ## Host Player
 

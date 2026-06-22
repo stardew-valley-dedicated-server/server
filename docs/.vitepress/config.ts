@@ -50,10 +50,12 @@ export default withMermaid(
         },
         base,
         // _partials/ holds reusable markdown fragments pulled in via <!--@include-->. They are not
-        // standalone pages, so keep them out of routing, search, and the sitemap.
-        srcExclude: ["**/_partials/**"],
+        // standalone pages, so keep them out of routing, search, and the sitemap. README.md is the
+        // contributor build-guide (not a user-facing doc), so exclude it too — otherwise it routes
+        // as /README.html and lands in the sitemap.
+        srcExclude: ["**/_partials/**", "README.md"],
         title: isPreview ? "JunimoServer (Preview)" : "JunimoServer",
-        description: "Stardew Valley dedicated server documentation",
+        description: "A Docker-based dedicated server for Stardew Valley, run as a SMAPI mod.",
         head: [
             ["link", { rel: "icon", href: `${base}logo.svg` }],
             // Page-invariant social tags. Per-page og/twitter title+description+url and
@@ -61,12 +63,16 @@ export default withMermaid(
             // tag here via VitePress's mergeHead.
             ["meta", { property: "og:type", content: "website" }],
             ["meta", { property: "og:site_name", content: "JunimoServer" }],
+            ["meta", { property: "og:locale", content: "en_US" }],
             ["meta", { property: "og:image", content: ogImage }],
             ["meta", { property: "og:image:width", content: "1200" }],
             ["meta", { property: "og:image:height", content: "630" }],
             [
                 "meta",
-                { property: "og:image:alt", content: "JunimoServer Documentation — Stardew Valley Dedicated Server" },
+                {
+                    property: "og:image:alt",
+                    content: "JunimoServer documentation — a Docker-based Stardew Valley dedicated server",
+                },
             ],
             ["meta", { name: "twitter:card", content: "summary_large_image" }],
             ["meta", { name: "twitter:image", content: ogImage }],
@@ -113,18 +119,30 @@ export default withMermaid(
             const suffix = siteConfig.cleanUrls ? "" : ".html";
             const path = pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, suffix);
             const url = `${origin}${base}${path}`;
+            // `title` arrives templated as "Page | JunimoServer" (VitePress's default
+            // titleTemplate). og:site_name already carries the brand, so the social
+            // title uses the page's own title alone — no " | JunimoServer" echo, and
+            // no bare "JunimoServer / JunimoServer" duplicate on the home page (whose
+            // frontmatter title is "Documentation"). The <title> tag stays templated.
+            const socialTitle = pageData.title || siteConfig.site.title;
             return [
-                ["meta", { property: "og:title", content: title }],
+                ["meta", { property: "og:title", content: socialTitle }],
                 ["meta", { property: "og:description", content: description }],
                 ["meta", { property: "og:url", content: url }],
                 ["link", { rel: "canonical", href: url }],
-                ["meta", { name: "twitter:title", content: title }],
+                ["meta", { name: "twitter:title", content: socialTitle }],
                 ["meta", { name: "twitter:description", content: description }],
             ];
         },
         lastUpdated: true,
         sitemap: {
-            hostname: "https://stardew-valley-dedicated-server.github.io",
+            // Include the base path: VitePress feeds each page's relative URL to the
+            // sitemap as `new URL(relativeUrl, hostname)`, so the hostname must carry
+            // the deploy subpath (and its trailing slash — without it `new URL` resolves
+            // against the parent and drops the base). `base` already differs per deploy
+            // (/server/ vs /server/preview/), keeping sitemap locs aligned with the
+            // og:url/canonical tags, which also use `${origin}${base}`.
+            hostname: `${origin}${base}`,
         },
 
         themeConfig: {

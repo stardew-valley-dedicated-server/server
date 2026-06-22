@@ -7,24 +7,15 @@ using SixLabors.ImageSharp.Processing;
 namespace JunimoServer.TestRunner.Rendering.Web;
 
 /// <summary>
-/// Renders the 1200×630 link-preview card (og:image) for a finished run: a
-/// status-tinted background with pass/fail counts, branch @ sha, duration, and
-/// the product wordmark. Text-only (no emoji glyphs — the bundled Inter font has
-/// none); pass/fail are colored dots + words.
+/// Renders the 1200×630 link-preview card (og:image) for a finished run: a dark
+/// gradient with the Junimo logo, pass/fail counts, branch, and duration,
+/// following the shared <see cref="OgCard"/> design spec so it reads as a sibling
+/// of the static docs banner. Text-only (no emoji glyphs — the bundled Inter font
+/// has none). Status color lives only in the top accent line; the headline is
+/// always white so the count, not the color, carries the result.
 /// </summary>
 public static class OgImageGenerator
 {
-    private const int Width = 1200;
-    private const int Height = 630;
-
-    private static readonly Color Bg = Color.ParseHex("0f1115");
-    private static readonly Color Pass = Color.ParseHex("16a34a");
-    private static readonly Color Fail = Color.ParseHex("dc2626");
-    private static readonly Color Grey = Color.ParseHex("6b7280");
-    private static readonly Color Text = Color.ParseHex("e5e7eb");
-    private static readonly Color Muted = Color.ParseHex("9ca3af");
-    private static readonly Color Junimo = Color.ParseHex("77ff6e");
-
     private static readonly FontFamily Family = LoadFont();
 
     private static FontFamily LoadFont()
@@ -40,38 +31,39 @@ public static class OgImageGenerator
     /// </summary>
     public static byte[] Render(RunSummary summary)
     {
+        // Status drives only the top accent line (and the Discord left bar via
+        // theme-color); the headline text stays white.
         var accent =
-            summary.Status == "aborted" ? Grey
-            : summary.Failed > 0 ? Fail
-            : Pass;
+            summary.Status == "aborted" ? OgCard.Grey
+            : summary.Failed > 0 ? OgCard.Fail
+            : OgCard.Pass;
 
-        using var image = new Image<Rgba32>(Width, Height, Bg.ToPixel<Rgba32>());
+        using var image = new Image<Rgba32>(
+            OgCard.Width,
+            OgCard.Height,
+            OgCard.Base.ToPixel<Rgba32>()
+        );
 
         image.Mutate(ctx =>
         {
-            // Left accent bar.
-            ctx.Fill(accent, new RectangleF(0, 0, 16, Height));
+            OgCard.DrawBackground(ctx, accent);
+            OgCard.DrawAccentLine(ctx, accent);
+            OgCard.DrawLogo(ctx, 72, 64, 96, OgCard.Junimo);
 
             var wordmark = Family.CreateFont(34, FontStyle.Regular);
             var headline = Family.CreateFont(96, FontStyle.Regular);
             var sub = Family.CreateFont(40, FontStyle.Regular);
             var meta = Family.CreateFont(34, FontStyle.Regular);
 
-            DrawDot(ctx, 72, 86, 14, Junimo);
-            ctx.DrawText("SDVD E2E Report", wordmark, Muted, new PointF(98, 70));
+            ctx.DrawText("JunimoServer E2E Report", wordmark, OgCard.Muted, new PointF(188, 96));
 
             var headlineText =
                 summary.Status == "aborted"
                     ? "Run aborted"
                     : $"{summary.Passed} passed · {summary.Failed} failed";
-            ctx.DrawText(
-                headlineText,
-                headline,
-                summary.Failed > 0 ? Fail : Text,
-                new PointF(72, 220)
-            );
+            ctx.DrawText(headlineText, headline, OgCard.Text, new PointF(72, 250));
 
-            var counts = new List<string> { $"{summary.TotalTests} tests" };
+            var counts = new List<string> { $"{summary.TotalTests} total" };
             if (summary.Skipped > 0)
             {
                 counts.Add($"{summary.Skipped} skipped");
@@ -87,29 +79,17 @@ public static class OgImageGenerator
                 counts.Add(FormatDuration(ms));
             }
 
-            ctx.DrawText(string.Join("  ·  ", counts), sub, Muted, new PointF(72, 360));
+            ctx.DrawText(string.Join("  ·  ", counts), sub, OgCard.Muted, new PointF(72, 380));
 
-            var branch = summary.GitBranch ?? "unknown";
-            var sha = summary.GitSha is { Length: >= 7 } s ? s[..7] : summary.GitSha;
-            var gitLine = sha != null ? $"{branch} @ {sha}" : branch;
-            ctx.DrawText(gitLine, meta, Text, new PointF(72, Height - 90));
+            // Branch only (no sha — not actionable on a social card), truncated to
+            // match the description's branch suffix via the shared ReportGenerator.
+            var branch = summary.GitBranch is { } b ? ReportGenerator.Truncate(b) : "unknown";
+            ctx.DrawText(branch, meta, OgCard.Text, new PointF(72, OgCard.Height - 90));
         });
 
         using var png = new MemoryStream();
         image.SaveAsPng(png);
         return png.ToArray();
-    }
-
-    private static void DrawDot(
-        IImageProcessingContext ctx,
-        float cx,
-        float cy,
-        float r,
-        Color color
-    )
-    {
-        var circle = new SixLabors.ImageSharp.Drawing.EllipsePolygon(cx, cy, r);
-        ctx.Fill(color, circle);
     }
 
     private static string FormatDuration(long ms)
