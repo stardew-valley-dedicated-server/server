@@ -2,6 +2,7 @@ import {
     ActivityType,
     Client,
     Colors,
+    EmbedBuilder,
     Events,
     GatewayIntentBits,
     type Message,
@@ -404,17 +405,17 @@ async function updateLiveDashboard() {
 
         const status: ServerStatus | null = await fetchServerStatus();
 
-        // Embed content factory
-        const embed: any = {
-            title: "🧑‍🌾 Stardew Valley Server Status Dashboard",
-            timestamp: new Date().toISOString(),
-            footer: { text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` },
-        };
+        const embed = new EmbedBuilder()
+            .setTitle("🧑‍🌾 Stardew Valley Server Status Dashboard")
+            .setTimestamp()
+            .setFooter({ text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` });
 
         if (!status?.isOnline) {
-            embed.color = Colors.Red;
-            embed.description =
-                "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_";
+            embed
+                .setColor(Colors.Red)
+                .setDescription(
+                    "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_",
+                );
         } else {
             const seasonEmojis: Record<string, string> = {
                 spring: "🌸 Spring",
@@ -424,8 +425,7 @@ async function updateLiveDashboard() {
             };
             const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-            embed.color = Colors.Blue;
-            embed.fields = [
+            embed.setColor(Colors.Blue).addFields(
                 { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
                 { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
                 {
@@ -449,7 +449,7 @@ async function updateLiveDashboard() {
                     value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``,
                     inline: false,
                 },
-            ];
+            );
         }
 
         // Dispatch/edit
@@ -643,19 +643,19 @@ client.on(Events.MessageCreate, async (message: Message) => {
             }
             return;
         }
-    }
 
-    // COMMAND: !help
-    if (input === "!help") {
-        const helpLines = [
-            `🤖 **Stardew Server Bot Commands:**`,
-            `• \`!status\` - View current farm date, time, player counts, and invite codes.`,
-            `• \`!players\` - List who is online, and cabin availability.`,
-            `• \`!server\` - Check hardware telemetry (TPS/FPS/RAM) and farm settings.`,
-            `• \`!help\` - Display this command map.`,
-        ];
-        await message.reply(helpLines.join("\n"));
-        return;
+        // COMMAND: !help
+        if (input === "!help") {
+            const helpLines = [
+                `🤖 **Stardew Server Bot Commands:**`,
+                `• \`!status\` - View current farm date, time, player counts, and invite codes.`,
+                `• \`!players\` - List who is online, and cabin availability.`,
+                `• \`!server\` - Check hardware telemetry (TPS/FPS/RAM) and farm settings.`,
+                `• \`!help\` - Display this command map.`,
+            ];
+            await message.reply(helpLines.join("\n"));
+            return;
+        }
     }
 
     // --------------------------------------------------------------------------
