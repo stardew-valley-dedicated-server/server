@@ -1,28 +1,38 @@
-import { Client, Events, GatewayIntentBits, ActivityType, TextChannel, Message, PermissionFlagsBits, Colors } from "discord.js";
+import {
+    ActivityType,
+    Client,
+    Colors,
+    Events,
+    GatewayIntentBits,
+    type Message,
+    PermissionFlagsBits,
+    type TextChannel,
+} from "discord.js";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const API_URL = process.env.API_URL || "http://server:8080";
 const API_KEY = process.env.API_KEY || "";
-const WS_URL = process.env.WS_URL || API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws";
+const WS_URL = process.env.WS_URL || `${API_URL.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
 const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
 const STATUS_DASHBOARD_CHANNEL_ID = process.env.STATUS_DASHBOARD_CHANNEL_ID;
-const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE)  || 30;
-const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED = STATUS_DASHBOARD_REFRESH_RATE < 60 
-    ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds` 
-    : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`
+const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE) || 30;
+const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED =
+    STATUS_DASHBOARD_REFRESH_RATE < 60
+        ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds`
+        : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`;
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
 let targetMessageId: string | null = null;
-const COOLDOWN_DURATION_MS = 30000; 
-const MAX_COMMANDS_PER_WINDOW = 3;
+const COOLDOWN_DURATION_MS = 30000;
+const MAX_COMMANDS_PER_WINDOW = 10;
 const commandHistory = new Map<string, number[]>();
 
 // Discord rate limit for presence updates is ~5 per 20 seconds.
 // 30 seconds is a safe default that won't trigger rate limits.
 const MIN_UPDATE_INTERVAL_MS = 20_000;
 const UPDATE_INTERVAL_MS = Math.max(
-    parseInt(process.env.UPDATE_INTERVAL_MS || "30000", 10),
-                                    MIN_UPDATE_INTERVAL_MS
+    Number.parseInt(process.env.UPDATE_INTERVAL_MS || "30000", 10),
+    MIN_UPDATE_INTERVAL_MS,
 );
 
 if (!DISCORD_BOT_TOKEN) {
@@ -36,7 +46,7 @@ if (!DISCORD_BOT_TOKEN) {
 function getApiHeaders(): HeadersInit {
     const headers: HeadersInit = {};
     if (API_KEY) {
-        headers["Authorization"] = `Bearer ${API_KEY}`;
+        headers.Authorization = `Bearer ${API_KEY}`;
     }
     return headers;
 }
@@ -126,7 +136,9 @@ let wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
  * Starts the WebSocket heartbeat timer.
  */
 function startHeartbeat(): void {
-    if (wsHeartbeatTimer) clearInterval(wsHeartbeatTimer);
+    if (wsHeartbeatTimer) {
+        clearInterval(wsHeartbeatTimer);
+    }
     wsHeartbeatTimer = setInterval(() => {
         if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "ping" }));
@@ -141,13 +153,11 @@ async function fetchServerStatus(): Promise<ServerStatus | null> {
     try {
         const response = await fetch(`${API_URL}/status`, {
             headers: getApiHeaders(),
-                                     signal: AbortSignal.timeout(5000),
+            signal: AbortSignal.timeout(5000),
         });
 
         if (!response.ok) {
-            console.error(
-                `[Discord Bot] API request failed: ${response.status} ${response.statusText}`
-            );
+            console.error(`[Discord Bot] API request failed: ${response.status} ${response.statusText}`);
             return null;
         }
 
@@ -170,7 +180,7 @@ async function updatePresence(): Promise<void> {
 
     let activityName: string;
 
-    if (!status || !status.isOnline) {
+    if (!status?.isOnline) {
         activityName = "Server Offline";
     } else {
         const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
@@ -206,7 +216,9 @@ async function updateBotNickname(): Promise<void> {
         }
     }
 
-    if (!nickname) return;
+    if (!nickname) {
+        return;
+    }
 
     for (const guild of client.guilds.cache.values()) {
         try {
@@ -277,12 +289,16 @@ function connectWebSocket(): void {
                 }
 
                 if (msg.type === "auth_failed") {
-                    console.error(`[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`);
+                    console.error(
+                        `[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`,
+                    );
                     return;
                 }
 
                 // Ignore messages if not authenticated
-                if (!wsAuthenticated) return;
+                if (!wsAuthenticated) {
+                    return;
+                }
 
                 if (msg.type === "chat" && msg.payload) {
                     // Game -> Discord
@@ -311,7 +327,7 @@ function connectWebSocket(): void {
             wsReconnectTimer = setTimeout(connectWebSocket, 5000);
         };
 
-        ws.onerror = (event) => {
+        ws.onerror = (_event) => {
             // WebSocket error events don't contain useful error details in the browser API
             // The actual error will trigger onclose, so we just log that an error occurred
             console.error(`[Discord Bot] WebSocket connection error - will attempt reconnection`);
@@ -335,10 +351,12 @@ function sendChatToGame(author: string, message: string): boolean {
     }
 
     try {
-        ws.send(JSON.stringify({
-            type: "chat_send",
-            payload: { author, message }
-        }));
+        ws.send(
+            JSON.stringify({
+                type: "chat_send",
+                payload: { author, message },
+            }),
+        );
         return true;
     } catch (error) {
         if (error instanceof Error) {
@@ -352,39 +370,34 @@ function sendChatToGame(author: string, message: string): boolean {
 // HELPER FUNCTIONS
 // ============================================================================
 
-
 /**
  * Checks if a user has exceeded their command rate limit.
  */
 function isRateLimited(userId: string): boolean {
     const now = Date.now();
-    
-    if (!commandHistory.has(userId)) {
-        commandHistory.set(userId, [now]);
-        return false;
-    }
 
-    const timestamps = commandHistory.get(userId)!;
-    
-    const validTimestamps = timestamps.filter(time => now - time < COOLDOWN_DURATION_MS);
-    
+    const timestamps = commandHistory.get(userId) ?? [];
+    const validTimestamps = timestamps.filter((time) => now - time < COOLDOWN_DURATION_MS);
+
     if (validTimestamps.length >= MAX_COMMANDS_PER_WINDOW) {
         commandHistory.set(userId, validTimestamps);
         return true;
     }
-    
+
     validTimestamps.push(now);
     commandHistory.set(userId, validTimestamps);
     return false;
 }
 
-
-
 // Auto-updating status dashboard
 async function updateLiveDashboard() {
+    if (!STATUS_DASHBOARD_CHANNEL_ID) {
+        return;
+    }
+
     try {
-        const channel = await client.channels.fetch(STATUS_DASHBOARD_CHANNEL_ID) as TextChannel;
-        if (!channel || !channel.isTextBased()) {
+        const channel = (await client.channels.fetch(STATUS_DASHBOARD_CHANNEL_ID)) as TextChannel;
+        if (!channel?.isTextBased()) {
             console.error("[Dashboard] Target channel not found or is not text-based.");
             return;
         }
@@ -395,27 +408,47 @@ async function updateLiveDashboard() {
         const embed: any = {
             title: "🧑‍🌾 Stardew Valley Server Status Dashboard",
             timestamp: new Date().toISOString(),
-            footer: { text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` }
+            footer: { text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` },
         };
 
-        if (!status || !status.isOnline) {
-            embed.color = Colors.red;
-            embed.description = "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_";
+        if (!status?.isOnline) {
+            embed.color = Colors.Red;
+            embed.description =
+                "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_";
         } else {
             const seasonEmojis: Record<string, string> = {
-                spring: "🌸 Spring", summer: "☀️ Summer", fall: "🍂 Fall", winter: "❄️ Winter"
+                spring: "🌸 Spring",
+                summer: "☀️ Summer",
+                fall: "🍂 Fall",
+                winter: "❄️ Winter",
             };
             const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-            embed.color = Colors.blue;
+            embed.color = Colors.Blue;
             embed.fields = [
                 { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
                 { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
-                { name: "📶 Server Status", value: status.isReady ? "✅ Ready & Running" : "⏳ Saving / Loading", inline: true },
-                { name: "👥 Active Players", value: `**${status.playerCount} / ${status.maxPlayers}** ${status.isPaused ? "_(Paused)_" : ""}`, inline: true },
-                { name: "📅 In-Game Date", value: `Year ${status.year}, ${formattedSeason}, Day ${status.day}`, inline: true },
+                {
+                    name: "📶 Server Status",
+                    value: status.isReady ? "✅ Ready & Running" : "⏳ Saving / Loading",
+                    inline: true,
+                },
+                {
+                    name: "👥 Active Players",
+                    value: `**${status.playerCount} / ${status.maxPlayers}** ${status.isPaused ? "_(Paused)_" : ""}`,
+                    inline: true,
+                },
+                {
+                    name: "📅 In-Game Date",
+                    value: `Year ${status.year}, ${formattedSeason}, Day ${status.day}`,
+                    inline: true,
+                },
                 { name: "⏰ Clock Time", value: formatStardewTime(status.timeOfDay), inline: true },
-                { name: "🔑 Connection Code", value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``, inline: false }
+                {
+                    name: "🔑 Connection Code",
+                    value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``,
+                    inline: false,
+                },
             ];
         }
 
@@ -426,14 +459,14 @@ async function updateLiveDashboard() {
                 await existingMsg.edit({ content: "", embeds: [embed] });
                 console.log("[Dashboard] Live status display updated successfully.");
                 return;
-            } catch (err) {
+            } catch (_err) {
                 console.log("[Dashboard] Saved message ID missing or deleted. Generating a replacement entry...");
             }
         }
 
         // Fallback
         const recentMessages = await channel.messages.fetch({ limit: 10 });
-        const botOldMessage = recentMessages.find(m => m.author.id === client.user?.id);
+        const botOldMessage = recentMessages.find((m) => m.author.id === client.user?.id);
 
         if (botOldMessage) {
             targetMessageId = botOldMessage.id;
@@ -444,7 +477,6 @@ async function updateLiveDashboard() {
             targetMessageId = newMsg.id;
             console.log("[Dashboard] Fresh status message initialized.");
         }
-
     } catch (error) {
         console.error(`[Dashboard] Loop execution failed: ${error}`);
     }
@@ -452,12 +484,16 @@ async function updateLiveDashboard() {
 
 // Helper to transform Stardew's 24h int format (e.g., 600, 1620) into standard time
 function formatStardewTime(timeInt: number): string {
-    if (timeInt === undefined || timeInt === null) return "??:??";
+    if (timeInt === undefined || timeInt === null) {
+        return "??:??";
+    }
     const hours24 = Math.floor(timeInt / 100);
     const minutes = timeInt % 100;
     const ampm = hours24 >= 12 ? "PM" : "AM";
     let hours12 = hours24 % 12;
-    if (hours12 === 0) hours12 = 12;
+    if (hours12 === 0) {
+        hours12 = 12;
+    }
     const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
     return `${hours12}:${minutesStr} ${ampm}`;
 }
@@ -472,7 +508,7 @@ function getFarmTypeName(key: string): string {
         Wilderness: "Wilderness 🦁",
         FourCorners: "Four Corners 🗺️",
         Beach: "Beach 🏖️",
-        MeadowlandsFarm: "Meadowlands 🐓"
+        MeadowlandsFarm: "Meadowlands 🐓",
     };
     return types[key] || key || "Unknown Type";
 }
@@ -482,10 +518,11 @@ function getFarmTypeName(key: string): string {
 // ============================================================================
 client.on(Events.MessageCreate, async (message: Message) => {
     // Ignore bot messages
-    if (message.author.bot) return;
+    if (message.author.bot) {
+        return;
+    }
 
     const input = message.content.trim().toLowerCase();
-
 
     // --------------------------------------------------------------------------
     // BOT COMMAND HANDLING
@@ -496,41 +533,46 @@ client.on(Events.MessageCreate, async (message: Message) => {
     if (isCommand) {
         if (isRateLimited(message.author.id)) {
             try {
-                const reply = await message.reply("⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.");
+                const reply = await message.reply(
+                    "⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.",
+                );
                 setTimeout(() => reply.delete().catch(() => {}), 5000);
             } catch (err) {
                 console.error(`[Rate Limit] Failed to send cooldown warning: ${err}`);
             }
             return;
         }
-        
-    // COMMAND: !status
+
+        // COMMAND: !status
         if (input === "!status") {
             try {
                 const status: ServerStatus | null = await fetchServerStatus();
 
-                if (!status || !status.isOnline) {
+                if (!status?.isOnline) {
                     await message.reply("❌ **Server Status:** The server is currently offline.");
                     return;
                 }
 
                 const seasonEmojis: Record<string, string> = {
-                    spring: "🌸 Spring", summer: "☀️ Summer", fall: "🍂 Fall", winter: "❄️ Winter"
+                    spring: "🌸 Spring",
+                    summer: "☀️ Summer",
+                    fall: "🍂 Fall",
+                    winter: "❄️ Winter",
                 };
                 const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
                 const lines = [
                     `🏡 **Farm Name:** ${status.farmName}`,
                     `🗺️ **Farm Type:** ${getFarmTypeName(status.farmTypeKey)}`,
-            `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
-            `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
-            `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
-            `📡 **Server State:** ${status.isReady ? "Ready ✓" : "Busy (Saving/Transitioning) ⏳"}`,
-            `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``
+                    `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
+                    `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
+                    `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
+                    `📡 **Server State:** ${status.isReady ? "Ready ✓" : "Busy (Saving/Transitioning) ⏳"}`,
+                    `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``,
                 ];
 
                 await message.reply(lines.join("\n"));
-            } catch (e) {
+            } catch (_e) {
                 await message.reply("⚠️ Failed to load server status.");
             }
             return;
@@ -539,27 +581,31 @@ client.on(Events.MessageCreate, async (message: Message) => {
         // COMMAND: !players
         if (input === "!players") {
             try {
+                const sharedSignal = AbortSignal.timeout(5000);
                 const [playersRes, cabinsRes] = await Promise.all([
-                    fetch(`${API_URL}/players`, { headers: getApiHeaders() }).then(r => r.json() as Promise<PlayersResponse>),
-                                                                fetch(`${API_URL}/cabins`, { headers: getApiHeaders() }).then(r => r.json() as Promise<CabinsResponse>)
+                    fetch(`${API_URL}/players`, { headers: getApiHeaders(), signal: sharedSignal }).then(
+                        (r) => r.json() as Promise<PlayersResponse>,
+                    ),
+                    fetch(`${API_URL}/cabins`, { headers: getApiHeaders(), signal: sharedSignal }).then(
+                        (r) => r.json() as Promise<CabinsResponse>,
+                    ),
                 ]);
 
-                const onlineList = playersRes.players.filter(p => p.isOnline).map(p => `• 🟢 **${p.name}**`);
-                const offlineList = playersRes.players.filter(p => !p.isOnline).map(p => `• ⚪ ${p.name}`);
+                const onlineList = playersRes.players.filter((p) => p.isOnline).map((p) => `• 🟢 **${p.name}**`);
 
                 const lines = [
                     `📊 **Roster Information**`,
                     `━━━━━━━━━━━━━━━━━━━━━━━━`,
                     `🟢 **Online Now (${onlineList.length}):**`,
                     onlineList.length ? onlineList.join("\n") : "• Nobody online",
-            `\n🛖 **Cabin Strategy & Real Estate:**`,
-            `• Total Cabins Built: **${cabinsRes.totalCount}**`,
-            `• Assigned to Players: **${cabinsRes.assignedCount}**`,
-            `• Available Vacancies: **${cabinsRes.availableCount}**`
+                    `\n🛖 **Cabin Strategy & Real Estate:**`,
+                    `• Total Cabins Built: **${cabinsRes.totalCount}**`,
+                    `• Assigned to Players: **${cabinsRes.assignedCount}**`,
+                    `• Available Vacancies: **${cabinsRes.availableCount}**`,
                 ];
 
                 await message.reply(lines.join("\n"));
-            } catch (e) {
+            } catch (_e) {
                 await message.reply("⚠️ Failed to parse player lists and cabin layouts.");
             }
             return;
@@ -568,9 +614,12 @@ client.on(Events.MessageCreate, async (message: Message) => {
         // COMMAND: !server
         if (input === "!server") {
             try {
+                const sharedSignal = AbortSignal.timeout(5000);
                 const [stats, settings]: [StatsResponse, SettingsResponse] = await Promise.all([
-                    fetch(`${API_URL}/stats`, { headers: getApiHeaders() }).then(r => r.json()),
-                                                                                            fetch(`${API_URL}/settings`, { headers: getApiHeaders() }).then(r => r.json())
+                    fetch(`${API_URL}/stats`, { headers: getApiHeaders(), signal: sharedSignal }).then((r) => r.json()),
+                    fetch(`${API_URL}/settings`, { headers: getApiHeaders(), signal: sharedSignal }).then((r) =>
+                        r.json(),
+                    ),
                 ]);
 
                 const lines = [
@@ -578,18 +627,18 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `━━━━━━━━━━━━━━━━━━━━━━━━`,
                     `🖥️ **Performance Metrics:**`,
                     `• Tick Speed: **${stats.tps.toFixed(1)} / ${stats.targetTps} TPS** (Ticks Per Sec)`,
-            `• (Web)VNC Frame Rate: **${stats.fps.toFixed(1)} FPS**`,
-            `• Average Tick Time: **${stats.avgTickMs.toFixed(2)} ms**`,
-            `• Ram Overhead: **${stats.memoryMb.toFixed(1)} MB**`,
-            `\n🛠️ **Gameplay Rules:**`,
-            `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
-            `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
-            `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
-            `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://stardew-valley-dedicated-server.github.io/server/features/cabin-strategies.html#cabinstack-default))`
+                    `• (Web)VNC Frame Rate: **${stats.fps.toFixed(1)} FPS**`,
+                    `• Average Tick Time: **${stats.avgTickMs.toFixed(2)} ms**`,
+                    `• Ram Overhead: **${stats.memoryMb.toFixed(1)} MB**`,
+                    `\n🛠️ **Gameplay Rules:**`,
+                    `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
+                    `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
+                    `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
+                    `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://stardew-valley-dedicated-server.github.io/server/features/cabin-strategies.html#cabinstack-default))`,
                 ];
 
                 await message.reply(lines.join("\n"));
-            } catch (e) {
+            } catch (_e) {
                 await message.reply("⚠️ Failed to retrieve system performance diagnostics.");
             }
             return;
@@ -603,7 +652,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
             `• \`!status\` - View current farm date, time, player counts, and invite codes.`,
             `• \`!players\` - List who is online, and cabin availability.`,
             `• \`!server\` - Check hardware telemetry (TPS/FPS/RAM) and farm settings.`,
-          `• \`!help\` - Display this command map.`
+            `• \`!help\` - Display this command map.`,
         ];
         await message.reply(helpLines.join("\n"));
         return;
@@ -613,7 +662,9 @@ client.on(Events.MessageCreate, async (message: Message) => {
     // PART 2: PASSIVE CHAT RELAY
     // --------------------------------------------------------------------------
     // If the message made it past the commands above, check if it's meant for the game chat
-    if (message.channel.id !== DISCORD_CHAT_CHANNEL_ID) return;
+    if (message.channel.id !== DISCORD_CHAT_CHANNEL_ID) {
+        return;
+    }
 
     // Get display name (server nickname if set, otherwise global display name)
     const displayName = message.member?.displayName || message.author.displayName;
@@ -673,10 +724,14 @@ async function performStartupChecks(): Promise<void> {
                     errors.push(`Missing SEND_MESSAGES permission in chat channel "${channel.name}"`);
                 }
                 if (!permissions?.has(PermissionFlagsBits.ReadMessageHistory)) {
-                    warnings.push(`Missing READ_MESSAGE_HISTORY permission in chat channel "${channel.name}" - may miss some messages`);
+                    warnings.push(
+                        `Missing READ_MESSAGE_HISTORY permission in chat channel "${channel.name}" - may miss some messages`,
+                    );
                 }
                 if (!permissions?.has(PermissionFlagsBits.AddReactions)) {
-                    warnings.push(`Missing ADD_REACTIONS permission in chat channel "${channel.name}" - cannot show failure indicators`);
+                    warnings.push(
+                        `Missing ADD_REACTIONS permission in chat channel "${channel.name}" - cannot show failure indicators`,
+                    );
                 }
 
                 console.log(`[Discord Bot] Chat channel: #${channel.name} in ${channel.guild.name}`);
@@ -687,7 +742,9 @@ async function performStartupChecks(): Promise<void> {
     // Check permissions in each guild
     for (const guild of client.guilds.cache.values()) {
         const botMember = guild.members.me;
-        if (!botMember) continue;
+        if (!botMember) {
+            continue;
+        }
 
         // Check nickname permission
         if (!botMember.permissions.has(PermissionFlagsBits.ChangeNickname)) {
