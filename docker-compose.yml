@@ -85,8 +85,13 @@ services:
       DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
       # Channel ID for two-way chat relay (optional)
       DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
+      # Channel ID for status updates (optional, can be same as chat channel)
+      STATUS_DASHBOARD_CHANNEL_ID: "${STATUS_DASHBOARD_CHANNEL_ID:-}"
+      # Refresh rate for status updates (optional, default 30s)
+      STATUS_DASHBOARD_REFRESH_RATE: "${STATUS_DASHBOARD_REFRESH_RATE:-}"
       # API key (must match server's API_KEY if set)
       API_KEY: "${API_KEY:-}"
+
     depends_on:
       - server
     # on-failure: won't restart when disabled (exit 0), will restart on crashes
