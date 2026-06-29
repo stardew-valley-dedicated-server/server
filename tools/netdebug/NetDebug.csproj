@@ -7,6 +7,6 @@
 
   <ItemGroup>
     <PackageReference Include="DnsClient" Version="1.8.0" />
-    <PackageReference Include="Spectre.Console" Version="0.57.0" />
+    <PackageReference Include="Spectre.Console" Version="0.57.1" />
   </ItemGroup>
 </Project>
