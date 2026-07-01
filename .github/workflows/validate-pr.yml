@@ -178,7 +178,7 @@ jobs:
       - name: Cache NuGet mount
         id: nuget-cache
         if: needs.changes.outputs.docker == 'true'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: nuget-cache-mount
           key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
@@ -197,7 +197,7 @@ jobs:
 
       - name: Build Docker image (validation only)
         if: needs.changes.outputs.docker == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./docker/Dockerfile
@@ -250,12 +250,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
 
       - name: Cache NuGet packages
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
