@@ -21,7 +21,7 @@
          libSkiaSharp.so for the CI runner (ubuntu-latest, glibc — not the Alpine
          NoDependencies variant). Windows/macOS natives come bundled with SkiaSharp. -->
     <PackageReference Include="Svg.Skia" Version="5.1.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.150.0" />
   </ItemGroup>
 
   <ItemGroup>
