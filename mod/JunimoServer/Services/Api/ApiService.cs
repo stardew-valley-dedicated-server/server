@@ -59,6 +59,15 @@ public class ServerStatus
     /// <summary>Whether the server is ready to accept new connections (false during day transitions, saving, etc.).</summary>
     public bool IsReady { get; set; }
 
+    /// <summary>
+    /// Whether the day-transition machinery (newDaySync barrier + save + map load) has finished and
+    /// the host is back in normal play — UNLIKE <see cref="IsReady"/>, this ignores post-transition
+    /// festival/wedding activity. Lets a post-day-change settle proceed once the transition itself is
+    /// done instead of dead-waiting through a festival or wedding. Equals <see cref="IsReady"/> on an
+    /// ordinary day. See ApiService.ComputeDayTransitionComplete.
+    /// </summary>
+    public bool DayTransitionComplete { get; set; }
+
     /// <summary>ISO 8601 timestamp of last update.</summary>
     public string LastUpdated { get; set; } = "";
 
@@ -862,6 +871,17 @@ public partial class ApiService : ModService
         // /status
         public bool IsOnline;
         public bool IsReady;
+
+        // "The day transition (newDaySync barrier + save + map load) is complete and we're back in
+        // normal play" — the transition-only subset of GameServer.isGameAvailable, EXCLUDING the
+        // wedding / festival / demolish-lock factors. IsReady (= isGameAvailable) stays false through
+        // an active festival or a queued/running wedding even after the transition itself finished, so
+        // a post-day-change settle that waits on IsReady dead-waits for the whole festival/wedding.
+        // This field flips true the moment the transition barrier clears, regardless of those
+        // post-transition activities, so the settle can proceed and the test's own
+        // festival/wedding polling takes over. On an ordinary day (no festival/wedding) this is
+        // identical to IsReady. See DayChangeWaiter post-transition settle.
+        public bool DayTransitionComplete;
         public int PlayerCount;
         public int MaxPlayers = 4;
         public string FarmName = "";
@@ -926,6 +946,7 @@ public partial class ApiService : ModService
         // first-seen times are tracked on the elements themselves
         // (<see cref="PlayerInfoTracked.FirstSeenAtUtc"/> etc.) — see below.
         public DateTime IsReadyChangedAtUtc;
+        public DateTime DayTransitionCompleteChangedAtUtc;
         public DateTime IsPausedChangedAtUtc;
         public DateTime PlayerCountChangedAtUtc;
         public DateTime FarmNameChangedAtUtc;
@@ -1296,6 +1317,7 @@ public partial class ApiService : ModService
             );
             snap.MaxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
             snap.IsReady = Game1.server?.isGameAvailable() ?? false;
+            snap.DayTransitionComplete = ComputeDayTransitionComplete();
             snap.FarmName = Game1.player?.farmName.Value ?? "";
             snap.Day = Game1.dayOfMonth;
             snap.Season = Game1.currentSeason ?? "";
@@ -1319,6 +1341,11 @@ public partial class ApiService : ModService
                 snap.IsReady,
                 prevSnap.IsReady,
                 prevSnap.IsReadyChangedAtUtc
+            );
+            snap.DayTransitionCompleteChangedAtUtc = CarryOrStamp(
+                snap.DayTransitionComplete,
+                prevSnap.DayTransitionComplete,
+                prevSnap.DayTransitionCompleteChangedAtUtc
             );
             snap.IsPausedChangedAtUtc = CarryOrStamp(
                 snap.IsPaused,
@@ -1579,6 +1606,48 @@ public partial class ApiService : ModService
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// True once the day-transition machinery is finished and the host is back in normal play —
+    /// the transition-only subset of <c>GameServer.isGameAvailable</c>
+    /// (decompiled <c>Network/GameServer.cs:459-470</c>). Mirrors that method's
+    /// <c>flag</c> (intro/day-0), <c>flag3</c> (<c>newDaySync</c> in progress), and
+    /// <c>gameMode == loadingMode</c> checks, but DELIBERATELY OMITS the wedding (<c>flag2</c> +
+    /// <c>weddingsToday</c>), festival (<c>isFestival()</c>), and demolish-lock (<c>flag4</c>)
+    /// factors — those keep <c>isGameAvailable</c> (and thus <c>IsReady</c>) false through a
+    /// festival/wedding that runs AFTER the transition itself completed. A post-day-change settle
+    /// only needs the transition (sync barrier + save + map load) done; the test's own
+    /// festival/wedding polling handles the rest. On an ordinary day this equals <c>IsReady</c>.
+    /// If the decompiled <c>isGameAvailable</c> gains a new transition-phase factor, mirror it here.
+    ///
+    /// Public so <see cref="GameManager.GameManagerService"/> gates /newgame completion on the same
+    /// predicate — its deferred new-day save must finish before the API reports the game created.
+    /// </summary>
+    public static bool ComputeDayTransitionComplete()
+    {
+        if (Game1.gameMode == Game1.loadingMode)
+        {
+            return false; // mid load/save
+        }
+
+        // Intro minigame or the pre-first-day sentinel — not a completed day yet.
+        if (Game1.currentMinigame is StardewValley.Minigames.Intro || Game1.Date.DayOfMonth == 0)
+        {
+            return false;
+        }
+
+        // The day-transition sync barrier (save + per-player newDay handshake) is still running.
+        if (
+            Game1.newDaySync != null
+            && Game1.newDaySync.hasInstance()
+            && !Game1.newDaySync.hasFinished()
+        )
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -2655,6 +2724,7 @@ public partial class ApiService : ModService
                 ServerVersion = version,
                 IsOnline = false,
                 IsReady = false,
+                DayTransitionComplete = false,
                 LastUpdated = snap.CapturedAt,
                 Version = snap.Version,
             };
@@ -2669,6 +2739,7 @@ public partial class ApiService : ModService
             ServerVersion = version,
             IsOnline = true,
             IsReady = snap.IsReady,
+            DayTransitionComplete = snap.DayTransitionComplete,
             LastUpdated = snap.CapturedAt,
             FarmName = snap.FarmName,
             Day = snap.Day,
@@ -3334,6 +3405,7 @@ public partial class ApiService : ModService
         var qs = request.QueryString;
         var since = ParseLong(qs["since"]) ?? 0;
         var isReadyFilter = ParseBool(qs["isReady"]);
+        var dayTransitionCompleteFilter = ParseBool(qs["dayTransitionComplete"]);
         var isPausedFilter = ParseBool(qs["isPaused"]);
         var dayFilter = ParseInt(qs["day"]);
         var playerCountFilter = ParseInt(qs["playerCount"]);
@@ -3347,6 +3419,11 @@ public partial class ApiService : ModService
             }
 
             if (isReadyFilter is bool b && snap.IsReady != b)
+            {
+                return false;
+            }
+
+            if (dayTransitionCompleteFilter is bool dtc && snap.DayTransitionComplete != dtc)
             {
                 return false;
             }
@@ -3386,6 +3463,11 @@ public partial class ApiService : ModService
         if (isReadyFilter is not null)
         {
             changedAt = MaxUtc(changedAt, matched.IsReadyChangedAtUtc);
+        }
+
+        if (dayTransitionCompleteFilter is not null)
+        {
+            changedAt = MaxUtc(changedAt, matched.DayTransitionCompleteChangedAtUtc);
         }
 
         if (isPausedFilter is not null)

@@ -165,17 +165,20 @@ class GameManagerService : ModService
         _saveLoadedSinceRequest = true;
     }
 
-    // Resolve a pending /reload or /newgame completion only AFTER SaveLoaded has fired —
-    // by then every SaveLoaded handler (cabin migration/sync/sweep, EnsureAtLeastXCabins)
-    // has run this tick, so a post-reload snapshot reflects the final world. LoadSave()
-    // /CreateNewGame() only arm the loader (SaveGame.Load sets Game1.currentLoader; the
-    // world loads over later ticks), so resolving when they return would race that work.
-    // Next-tick (not in OnSaveLoaded) so the resolve never depends on SaveLoaded subscriber
-    // order — all handlers run synchronously in the firing tick. The completion TCSs are
-    // non-null only while a request is pending, so a stray SaveLoaded is a no-op here.
+    // Resolve a pending /reload or /newgame completion next-tick after SaveLoaded (not in
+    // OnSaveLoaded, so it doesn't depend on subscriber order), by which point its handlers
+    // (cabin migration/sync/sweep, EnsureAtLeastXCabins) have run and the snapshot is final.
     private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
     {
         if (!_saveLoadedSinceRequest)
+        {
+            return;
+        }
+
+        // /newgame's deferred Game1.NewDay save runs over later ticks, so its gating SaveLoaded can
+        // fire pre-save — returning while the fresh game's save is in flight lets a joining client's
+        // customization race it and vanish on the next reload (AbandonedClaim_SweptOnReload flake).
+        if (_newGameCompletion != null && !Api.ApiService.ComputeDayTransitionComplete())
         {
             return;
         }
