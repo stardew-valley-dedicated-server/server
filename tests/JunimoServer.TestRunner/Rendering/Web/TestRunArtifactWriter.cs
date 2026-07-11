@@ -44,8 +44,12 @@ public sealed class TestRunArtifactWriter
     /// <summary>
     /// Idempotent. Called from the renderer's <c>DisposeAsync</c>, after the setup
     /// pipe has drained — covers both the graceful path and abnormal child exit.
+    /// <paramref name="state"/> is the live <see cref="TestRunState"/>; it carries
+    /// the per-instance stats history that <see cref="RunArtifactView"/> does not
+    /// (those types are private nested in TestRunState), serialized here under the
+    /// state's own lock.
     /// </summary>
-    public void WriteIfNotWritten(RunArtifactView view)
+    public void WriteIfNotWritten(RunArtifactView view, TestRunState state)
     {
         lock (_lock)
         {
@@ -103,6 +107,17 @@ public sealed class TestRunArtifactWriter
             {
                 Console.Error.WriteLine(
                     $"[ArtifactWriter] run-metadata.json (merged) failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteInstanceStats(state);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] instance-stats.jsonl failed: {ex.Message}"
                 );
             }
 
@@ -456,6 +471,22 @@ public sealed class TestRunArtifactWriter
         Directory.CreateDirectory(_runDir!);
         var json = ArtifactPrettyJson.Serialize(merged);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.RunMetadataJson), json);
+    }
+
+    /// <summary>
+    /// Flushes the runner's in-memory per-instance stats history to
+    /// <c>diagnostics/instance-stats.jsonl</c>. The data is collected live by
+    /// <c>ContainerStatsCollector</c> and otherwise reaches only the UI over the
+    /// WebSocket (<c>SetupEventBus</c> is disk-free); this is the only on-disk
+    /// sink for post-mortem container-load analysis.
+    /// </summary>
+    private void WriteInstanceStats(TestRunState state)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteInstanceStatsJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl)
+        );
     }
 
     private void WriteLatestPointer()

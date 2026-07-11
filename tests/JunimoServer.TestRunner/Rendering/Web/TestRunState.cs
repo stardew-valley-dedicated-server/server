@@ -1482,6 +1482,64 @@ public sealed class TestRunState
     }
 
     /// <summary>
+    /// Writes one compact JSON line per <c>(instance, stats sample)</c> to
+    /// <paramref name="path"/> so the per-container CPU/memory/network/game
+    /// history — collected live by <c>ContainerStatsCollector</c> and otherwise
+    /// only held in memory for the UI — survives into the on-disk artifact tree
+    /// for post-mortem load analysis (e.g. "was the host saturated when its SSH
+    /// tunnel dropped?"). Each line carries the instance identity plus the same
+    /// field set the snapshot projects (see <see cref="BuildSnapshot"/>).
+    /// Instances with no samples are skipped, so the file is empty (or absent if
+    /// the caller skips an empty write) when <c>SDVD_TEST_STATS=none</c>.
+    /// </summary>
+    public void WriteInstanceStatsJsonl(string path)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var inst in _instances.Values)
+            {
+                foreach (var s in inst.StatsHistory)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                inst.InstanceId,
+                                inst.HostId,
+                                inst.InstanceType,
+                                inst.ServerKey,
+                                inst.Label,
+                                s.Timestamp,
+                                s.CpuPercent,
+                                s.MemoryMb,
+                                s.CpuCount,
+                                s.TotalMemoryMb,
+                                s.Fps,
+                                s.Tps,
+                                s.AvgTickMs,
+                                s.GameMemoryMb,
+                                s.TargetTps,
+                                s.TargetFps,
+                                s.GcRate,
+                                s.PendingActions,
+                                s.GameThreadWaitMs,
+                                s.NetRxBytesPerSec,
+                                s.NetTxBytesPerSec,
+                                s.BlkReadBytesPerSec,
+                                s.BlkWriteBytesPerSec,
+                                s.MemoryLimitMb,
+                            }
+                        )
+                    );
+                }
+            }
+
+            File.WriteAllLines(path, lines);
+        }
+    }
+
+    /// <summary>
     /// Run-level view for the report's social-media meta tags + OG card. Counts
     /// come from the same test-tree iteration BuildSnapshot uses (the _passed/
     /// _failed fields are only set at run_finished), so they match the published
