@@ -152,6 +152,20 @@ class GameCreatorService : ModService
 
         Game1.multiplayerMode = 2; // Server mode (Game1.IsServer)
 
+        // Restore the id re-roll vanilla's title-screen new-game does in
+        // ResetGameStateOnTitleScreen (which we skip), so a /newgame after a /reload
+        // doesn't inherit the reloaded save's id and reuse its folder. RandomSeed pins
+        // the id via loadForNewGame, so only re-roll when unset. Fresh Random avoids
+        // Game1.random (deterministic here). Redraw guards the negligible folder collision.
+        if (config.RandomSeed is null)
+        {
+            var rng = new Random();
+            do
+            {
+                Game1.uniqueIDForThisGame = (ulong)Utility.RandomLong(rng);
+            } while (SaveGame.IsNewGameSaveNameCollision(SaveGame.FilterFileName(config.FarmName)));
+        }
+
         // From TitleMenu.createdNewCharacter
         Game1.game1.loadForNewGame();
 
