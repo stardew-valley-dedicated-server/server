@@ -431,6 +431,33 @@ public class ServerContainer : IAsyncDisposable
         );
         timeoutCts.CancelAfter(_options.StartupTimeout);
 
+        // Remote hosts only: a tighter "daemon responsiveness" deadline on the docker
+        // create+start. The Docker.DotNet client has an infinite per-call timeout (the
+        // caller CT is the deadline), so when the shared ssh -L daemon-socket forward wedges
+        // mid-stream this call hangs the full StartupTimeout (180s) before failing —
+        // 180s × every queued test is the slow-collapse seen in run 02-12-57Z. A healthy
+        // remote start is ≤~42s (p90/max across recent runs), so 75s flags a wedge decisively
+        // while staying clear of a slow cold boot. The trip is NOT a hard fail: it surfaces as
+        // TimeoutException, which the broker's create seam routes through
+        // DockerHost.PoisonIfTransportFaultAsync — which `ssh -O check`s the master and, if it's
+        // ALIVE (a genuinely slow boot, not a wedge), heals + RecoveredRetry (the create retries)
+        // rather than poisoning. So a too-tight trip self-corrects; only a dead master poisons.
+        using var remoteDaemonCts = CancellationTokenSource.CreateLinkedTokenSource(
+            timeoutCts.Token
+        );
+        if (SshDestination is not null)
+        {
+            var remoteStartTimeoutS =
+                int.TryParse(
+                    Environment.GetEnvironmentVariable("SDVD_REMOTE_DAEMON_START_TIMEOUT_S"),
+                    out var s
+                )
+                && s > 0
+                    ? s
+                    : 75;
+            remoteDaemonCts.CancelAfter(TimeSpan.FromSeconds(remoteStartTimeoutS));
+        }
+
         try
         {
             _logStreamCts = new CancellationTokenSource();
@@ -468,12 +495,16 @@ public class ServerContainer : IAsyncDisposable
                 }
             );
 
-            // WaitAsync(ct) makes cancellation prompt: when the CT fires we throw
+            // WaitAsync makes cancellation prompt: when the CT fires we throw
             // OperationCanceledException within milliseconds, even if Testcontainers'
             // internal wait strategies are mid-ExecAsync (which doesn't poll the CT
             // and can hold us for tens of seconds on a busy daemon). The container
             // start task continues in the background; cleanup is best-effort.
-            await _serverContainer.StartAsync(timeoutCts.Token).WaitAsync(timeoutCts.Token);
+            // remoteDaemonCts == timeoutCts for local hosts; for remote hosts it trips at
+            // the tighter daemon-responsiveness deadline (see above).
+            await _serverContainer
+                .StartAsync(remoteDaemonCts.Token)
+                .WaitAsync(remoteDaemonCts.Token);
             _logCallback?.Invoke($"Game server started");
 
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
@@ -487,6 +518,23 @@ public class ServerContainer : IAsyncDisposable
                     startupMs = sw.ElapsedMilliseconds,
                     host_id = HostId,
                 }
+            );
+        }
+        catch (Exception)
+            when (remoteDaemonCts.IsCancellationRequested
+                && !ct.IsCancellationRequested
+                && !_errorCancellation.IsCancellationRequested
+                && sw.Elapsed < _options.StartupTimeout
+            )
+        {
+            // The remote daemon-responsiveness deadline tripped (not the caller, not a fatal
+            // log error, not the full StartupTimeout). The shared daemon-socket forward is
+            // likely wedged. Surface as TimeoutException so the broker's create seam corroborates
+            // via ssh -O check (PoisonIfTransportFaultAsync): a live master heals + retries, a
+            // dead one poisons the host fast — instead of hanging here to StartupTimeout (180s).
+            throw new TimeoutException(
+                $"server-{_serverIndex} docker start exceeded the remote daemon-responsiveness "
+                    + $"deadline after {sw.ElapsedMilliseconds}ms (daemon-socket forward wedged?)."
             );
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -671,7 +719,11 @@ public class ServerContainer : IAsyncDisposable
         // Only wait for invite code on Steam servers (Galaxy SDK must initialize first)
         var requireInviteCode = _options.WithSteam;
 
-        var client = new ServerApiClient(BaseUrl);
+        var client = new ServerApiClient(
+            BaseUrl,
+            liveBaseUrl: () => BaseUrl,
+            healAsync: HealApiForwardAsync
+        );
         try
         {
             var status = await client.WaitForServerOnline(
@@ -735,11 +787,122 @@ public class ServerContainer : IAsyncDisposable
     }
 
     /// <summary>
-    /// Creates an API client for this server.
+    /// Creates an API client for this server. On remote hosts the client transparently
+    /// heals a dropped SSH forward (re-opens it + retries against the new port) via
+    /// <see cref="BaseUrl"/> (live) and <see cref="HealApiForwardAsync"/>, so an in-flight
+    /// request survives a transient master keepalive blip instead of failing the test.
     /// </summary>
     public ServerApiClient CreateApiClient()
     {
-        return new ServerApiClient(BaseUrl);
+        return new ServerApiClient(
+            BaseUrl,
+            liveBaseUrl: () => BaseUrl,
+            healAsync: HealApiForwardAsync
+        );
+    }
+
+    /// <summary>
+    /// Re-establishes the API <c>ssh -L</c> forward to the same daemon-side mapped
+    /// port, picking a fresh coordinator-side loopback port and updating
+    /// <see cref="ApiPort"/> / <see cref="BaseUrl"/>. A no-op (returns false) on
+    /// local hosts, before <c>StartAsync</c> has mapped the port, or when no SSH
+    /// destination exists.
+    ///
+    /// <para>
+    /// Called by the health watchdog when a probe hits a forward-scoped fault
+    /// (loopback ConnectionRefused) but <c>ssh -O check</c> confirms the master is
+    /// alive: one shared master carries every forward, so a transient keepalive
+    /// blip drops all in-flight <c>-L</c> channels while the host stays reachable.
+    /// Re-opening the forward heals a reused/live server in place instead of
+    /// letting the stale port cascade into a host poison.
+    /// </para>
+    /// </summary>
+    public async Task<bool> ReopenApiForwardAsync(CancellationToken ct = default)
+    {
+        if (SshDestination is null || _serverContainer is null || ApiPort == 0)
+        {
+            return false;
+        }
+
+        var apiMapped = _serverContainer.GetMappedPublicPort(ContainerApiPort);
+        var staleLease = _apiForward;
+        var stalePort = ApiPort;
+
+        // Open the replacement BEFORE disposing the stale lease so a failure to
+        // re-open leaves the old (dead) port in place rather than a null one — the
+        // health watchdog then counts the next probe failure normally.
+        var fresh = await _tunnels.OpenAsync(HostId, SshDestination, SshKeyPath, apiMapped, ct);
+        _apiForward = fresh;
+        ApiPort = fresh.CoordinatorPort;
+
+        if (staleLease != null)
+        {
+            try
+            {
+                await staleLease.DisposeAsync();
+            }
+            catch { }
+        }
+
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+            "server_api_forward_reopened",
+            new
+            {
+                host_id = HostId,
+                stalePort,
+                freshPort = ApiPort,
+                mappedPort = apiMapped,
+            }
+        );
+        return true;
+    }
+
+    private readonly SemaphoreSlim _forwardHealLock = new(1, 1);
+    private long _lastHealedPort;
+
+    /// <summary>
+    /// Corroborates the master is usable (retries <c>-O check</c> + respawns once) and, if
+    /// so, re-opens the API forward — the heal callback wired into <see cref="ServerApiClient"/>
+    /// so an in-flight request that hit a dropped forward retries against the fresh port
+    /// instead of failing the test. Deduplicated: concurrent callers that arrive after a heal
+    /// for the same stale port already completed return true without re-opening again (the
+    /// forward is already fresh). Returns false when the master is genuinely dead — the
+    /// request then surfaces its original fault and the host poisons via the normal path.
+    /// </summary>
+    public async Task<bool> HealApiForwardAsync(CancellationToken ct = default)
+    {
+        if (SshDestination is null)
+        {
+            return false;
+        }
+
+        var portBeforeWait = (long)ApiPort;
+        await _forwardHealLock.WaitAsync(ct);
+        try
+        {
+            // A concurrent caller already re-opened the forward since we hit the fault
+            // (ApiPort moved) — no need to re-open again; the retry will use the fresh port.
+            if (Interlocked.Read(ref _lastHealedPort) != 0 && ApiPort != portBeforeWait)
+            {
+                return true;
+            }
+
+            if (!await _tunnels.EnsureMasterUsableAsync(HostId, ct))
+            {
+                return false;
+            }
+
+            var reopened = await ReopenApiForwardAsync(ct);
+            if (reopened)
+            {
+                Interlocked.Exchange(ref _lastHealedPort, ApiPort);
+            }
+            return reopened;
+        }
+        finally
+        {
+            _forwardHealLock.Release();
+        }
     }
 
     // Matches SMAPI log line prefix: [HH:MM:SS LEVEL Source]

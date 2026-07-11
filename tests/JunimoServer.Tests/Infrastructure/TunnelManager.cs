@@ -47,6 +47,27 @@ public sealed class TunnelManager : IAsyncDisposable
     private readonly Dictionary<string, HostMaster> _masters = new(StringComparer.Ordinal);
     private string _sshPath = "ssh";
 
+    // Caps concurrent `ssh -O` reuse invocations (forward / cancel / check) that hit one
+    // shared ControlMaster's mux listener. An unbounded burst of these can exhaust the
+    // master's accept backlog / fd budget — the master then logs `accept: Resource
+    // temporarily unavailable`, stops answering, and the whole host is lost (see
+    // host-poison-deadlocks-run.md). The spawn itself is exempt (it has no master yet).
+    // Sized generously; override via SDVD_SSH_OP_CONCURRENCY. Process-wide on Default.
+    private readonly SemaphoreSlim _sshOpGate = new(
+        int.TryParse(Environment.GetEnvironmentVariable("SDVD_SSH_OP_CONCURRENCY"), out var c)
+        && c > 0
+            ? c
+            : 6
+    );
+
+    // ControlMaster keepalive: probe every Interval s; declare the host dead after
+    // CountMax consecutive missed probes (so the forward-drop window is Interval×CountMax).
+    private static readonly int KeepAliveInterval = EnvInt("SDVD_SSH_KEEPALIVE_INTERVAL", 15);
+    private static readonly int KeepAliveCountMax = EnvInt("SDVD_SSH_KEEPALIVE_COUNT", 6);
+
+    private static int EnvInt(string name, int fallback) =>
+        int.TryParse(Environment.GetEnvironmentVariable(name), out var v) && v > 0 ? v : fallback;
+
     /// <summary>
     /// Configures the resolved <c>ssh</c> binary path for every subsequent
     /// invocation. Set by <see cref="HostPool.PreflightAsync"/> after the
@@ -220,11 +241,17 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add("Compression=yes");
         psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add("ServerAliveInterval=15");
-        // 2 (not OpenSSH's default 3) → master self-exits ~30s after a silent
-        // drop instead of ~45s, shrinking the IsMasterAliveAsync self-heal window.
+        psi.ArgumentList.Add($"ServerAliveInterval={KeepAliveInterval}");
+        // KeepAliveCountMax × Interval = how long a silent control-channel stall must last
+        // before the master tears down every forward. The old 2×15=30s was SHORTER than the
+        // harness's routine long ops (a docker pull/create can be silent for ~90s+), so a
+        // transient stall during normal work dropped all forwards and cascaded a host poison
+        // (reproduced 2026-06-26; the daemon stayed alive the whole time). Widened to 6×15=90s
+        // so a brief blip is ridden out rather than fatal. The corroborate-then-heal path
+        // (PoisonIfTransportFaultAsync) covers the rarer case where it does drop, so a longer
+        // self-exit window is no longer a liability. Override via SDVD_SSH_KEEPALIVE_*.
         psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add("ServerAliveCountMax=2");
+        psi.ArgumentList.Add($"ServerAliveCountMax={KeepAliveCountMax}");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add("TCPKeepAlive=yes");
         psi.ArgumentList.Add("-o");
@@ -256,7 +283,7 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add($"ControlPath={controlPath}");
         psi.ArgumentList.Add(sshDestination);
-        return await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
+        return await RunSshOpAsync(psi, TimeSpan.FromSeconds(5), ct);
     }
 
     /// <summary>
@@ -298,11 +325,157 @@ public sealed class TunnelManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Confirms the host's ControlMaster is usable, tolerating the transient window where a
+    /// keepalive blip has briefly broken even <c>ssh -O check</c> (the check needs a mux
+    /// channel too, so a single failure right after a drop is a false negative — the master
+    /// usually recovers within seconds while Docker stats keep flowing). Retries the check a
+    /// few times; if it stays down, respawns the master once. Returns false only when the
+    /// master is genuinely unrecoverable, so the caller can stop trying to heal and poison.
+    /// The canonical "is the host actually gone, or just a forward blip?" primitive — used by
+    /// the per-server forward heal and the API-client transparent heal.
+    /// </summary>
+    public async Task<bool> EnsureMasterUsableAsync(string hostId, CancellationToken ct = default)
+    {
+        const int checkAttempts = 4;
+        for (var i = 0; i < checkAttempts; i++)
+        {
+            if (await IsMasterAliveAsync(hostId, ct))
+            {
+                return true;
+            }
+            if (i < checkAttempts - 1)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return false;
+                }
+            }
+        }
+
+        // Check kept failing ⇒ master likely genuinely dead; one respawn attempt.
+        return await TryRespawnMasterAsync(hostId, ct);
+    }
+
     private HostMaster? TryGetMaster(string hostId)
     {
         lock (_lock)
         {
             return _masters.TryGetValue(hostId, out var m) ? m : null;
+        }
+    }
+
+    /// <summary>
+    /// Host ids whose ControlMaster this process OWNS (spawned, can respawn). Empty in the
+    /// xUnit child (it only adopts read-only entries). The parent-side master-health monitor
+    /// iterates these — only the owner can heal a wedged master, and crucially the respawn
+    /// reuses the SAME deterministic ControlPath, so the child's adopted entry keeps working
+    /// transparently (no re-publish needed).
+    /// </summary>
+    public IReadOnlyList<string> GetOwnedHostIds()
+    {
+        lock (_lock)
+        {
+            return _masters.Values.Where(m => m.Owned).Select(m => m.HostId).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Owner-side master health check + heal: if <c>ssh -O check</c> fails (mux wedged or
+    /// process dead), respawn the master at its existing ControlPath. Returns true if the
+    /// master is healthy (already, or after respawn). No-op true for a host this process
+    /// doesn't own. The child CANNOT do this (TryRespawnMasterAsync refuses on !Owned) — that
+    /// is the whole reason this must run in the parent.
+    /// </summary>
+    public async Task<bool> EnsureOwnedMasterHealthyAsync(
+        string hostId,
+        CancellationToken ct = default
+    )
+    {
+        var master = TryGetMaster(hostId);
+        if (master is null || !master.Owned)
+        {
+            return true; // not ours to heal
+        }
+
+        if (await IsMasterAliveAsync(hostId, ct))
+        {
+            return true;
+        }
+
+        // -O check failed ⇒ mux wedged or process gone. Respawn at the same ControlPath so
+        // the child's adopted entry (and its in-flight forward re-opens) recover transparently.
+        EmitSafe("ssh_master_unhealthy_owner", new { host_id = hostId });
+        return await TryRespawnMasterAsync(hostId, ct);
+    }
+
+    /// <summary>
+    /// Attempts to resurrect a dead/unresponsive ControlMaster once: evicts the stale
+    /// entry + socket, then re-runs <see cref="RegisterHostMasterAsync"/> with the
+    /// original destination/key. Returns true if a usable master is back. Used by the
+    /// poison seam before condemning a host — one shared master carries every forward, so
+    /// a transient master death (e.g. <c>accept: Resource temporarily unavailable</c> from
+    /// fd/backlog exhaustion) otherwise loses the whole host even though the VPS is fine.
+    /// Only the owner (parent) can respawn — an adopted child entry has no spawn rights, so
+    /// it returns false and lets the normal poison proceed.
+    /// </summary>
+    public async Task<bool> TryRespawnMasterAsync(string hostId, CancellationToken ct = default)
+    {
+        HostMaster? master = TryGetMaster(hostId);
+        if (master is null)
+        {
+            HydrateFromEnvIfPresent();
+            master = TryGetMaster(hostId);
+        }
+        if (master is null || !master.Owned)
+        {
+            return false;
+        }
+
+        var destination = master.SshDestination;
+        var keyPath = master.SshKeyPath;
+
+        // Best-effort tear down the wedged-but-alive old master first (a mux wedge leaves the
+        // process running but useless), so it doesn't linger orphaned after we re-bind the
+        // ControlPath. Bounded; ignore the result — the file delete below is the hard reset.
+        try
+        {
+            var exitPsi = NewSshPsi();
+            exitPsi.ArgumentList.Add("-O");
+            exitPsi.ArgumentList.Add("exit");
+            exitPsi.ArgumentList.Add("-o");
+            exitPsi.ArgumentList.Add($"ControlPath={master.ControlPath}");
+            exitPsi.ArgumentList.Add(destination);
+            await RunSshOpAsync(exitPsi, TimeSpan.FromSeconds(3), ct);
+        }
+        catch
+        { /* wedged master may not answer -O exit; the socket delete is the fallback */
+        }
+
+        // Evict the dead entry + its socket so RegisterHostMasterAsync's ContainsKey guard
+        // doesn't short-circuit and its `ssh -M` doesn't hit the "socket exists" trap.
+        lock (_lock)
+        {
+            _masters.Remove(hostId);
+        }
+        TryDeleteFile(master.ControlPath);
+
+        EmitSafe("ssh_master_respawn_attempt", new { host_id = hostId });
+        try
+        {
+            await RegisterHostMasterAsync(hostId, destination, keyPath, ct);
+            var alive = await IsMasterAliveAsync(hostId, ct);
+            EmitSafe("ssh_master_respawned", new { host_id = hostId, alive });
+            return alive;
+        }
+        catch (Exception ex)
+        {
+            EmitSafe("ssh_master_respawn_failed", new { host_id = hostId, error = ex.Message });
+            return false;
         }
     }
 
@@ -540,7 +713,7 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add($"127.0.0.1:{coordinatorPort}:{target}");
         psi.ArgumentList.Add(master.SshDestination);
 
-        var (exit, stderr) = await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(5), ct);
+        var (exit, stderr) = await RunSshOpAsync(psi, TimeSpan.FromSeconds(5), ct);
         if (exit == 0)
         {
             return;
@@ -728,11 +901,7 @@ public sealed class TunnelManager : IAsyncDisposable
         string stderr;
         try
         {
-            (exit, stderr) = await RunSshToCompletionAsync(
-                psi,
-                perCancelTimeout,
-                CancellationToken.None
-            );
+            (exit, stderr) = await RunSshOpAsync(psi, perCancelTimeout, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -769,11 +938,7 @@ public sealed class TunnelManager : IAsyncDisposable
         string stderr;
         try
         {
-            (exit, stderr) = await RunSshToCompletionAsync(
-                psi,
-                perCancelTimeout,
-                CancellationToken.None
-            );
+            (exit, stderr) = await RunSshOpAsync(psi, perCancelTimeout, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -874,6 +1039,28 @@ public sealed class TunnelManager : IAsyncDisposable
             CreateNoWindow = true,
         };
         return psi;
+    }
+
+    /// <summary>
+    /// Runs an <c>ssh -O</c> reuse op (forward / cancel / check / exit) under the per-host
+    /// mux-concurrency gate so a burst can't exhaust the shared master's accept backlog.
+    /// The master <c>-M</c> spawn does NOT use this (it has no master to overload yet).
+    /// </summary>
+    private async Task<(int ExitCode, string Stderr)> RunSshOpAsync(
+        ProcessStartInfo psi,
+        TimeSpan timeout,
+        CancellationToken ct
+    )
+    {
+        await _sshOpGate.WaitAsync(ct);
+        try
+        {
+            return await RunSshToCompletionAsync(psi, timeout, ct);
+        }
+        finally
+        {
+            _sshOpGate.Release();
+        }
     }
 
     private static async Task<(int ExitCode, string Stderr)> RunSshToCompletionAsync(

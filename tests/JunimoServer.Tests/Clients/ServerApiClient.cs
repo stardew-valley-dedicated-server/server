@@ -1092,9 +1092,28 @@ public class ServerApiClient : IDisposable
     private readonly string _baseUrl;
 
     public ServerApiClient(string baseUrl)
+        : this(baseUrl, liveBaseUrl: null, healAsync: null) { }
+
+    /// <summary>
+    /// Constructs a client that transparently heals a dropped SSH forward.
+    /// <paramref name="liveBaseUrl"/> returns the server's CURRENT base URL (it changes
+    /// when a forward is re-opened on a new port); <paramref name="healAsync"/> re-opens
+    /// the forward on a forward-scoped fault. Both null ⇒ a plain client (local hosts /
+    /// tests that pass a bare URL) — behaves exactly as before.
+    /// </summary>
+    public ServerApiClient(
+        string baseUrl,
+        Func<string>? liveBaseUrl,
+        Func<CancellationToken, Task<bool>>? healAsync
+    )
     {
         _baseUrl = baseUrl;
-        var handler = new TracingHandler("server") { InnerHandler = new HttpClientHandler() };
+        HttpMessageHandler inner = new HttpClientHandler();
+        if (liveBaseUrl != null && healAsync != null)
+        {
+            inner = new ForwardHealingHandler(liveBaseUrl, healAsync) { InnerHandler = inner };
+        }
+        var handler = new TracingHandler("server") { InnerHandler = inner };
         _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl),

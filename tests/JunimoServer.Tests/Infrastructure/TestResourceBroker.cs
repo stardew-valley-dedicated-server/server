@@ -193,6 +193,25 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// </summary>
     private readonly CancellationTokenSource _runCts = new();
 
+    // Last-resort run watchdog: a deadlock or un-cancelled wait (e.g. a poisoned host
+    // orphaning waiters) can wedge the whole assembly indefinitely — a >1h hang that
+    // produces no summary.json and must be killed by hand. The watchdog touches
+    // _lastProgressTicks on every acquire/release; if NO progress is seen for
+    // RunStallTimeout while leases are still outstanding, it cancels _runCts to break
+    // the deadlock so blocked tests fail fast and the run finalizes. Conservative by
+    // design — the longest legitimate gap is one server cold-start (~120s StartupTimeout)
+    // plus artifact/cleanup, well under the threshold. Override via SDVD_RUN_STALL_TIMEOUT_S.
+    private long _lastProgressTicks = DateTime.UtcNow.Ticks;
+    private int _outstandingLeases;
+    private int _runStallTripped;
+    private Task? _stallWatchdogTask;
+    private static readonly TimeSpan RunStallTimeout = TimeSpan.FromSeconds(
+        int.TryParse(Environment.GetEnvironmentVariable("SDVD_RUN_STALL_TIMEOUT_S"), out var s)
+        && s > 0
+            ? s
+            : 600
+    );
+
     // Upper bound on how long a poisoned server waits for active leases to
     // release before it force-disposes. Must exceed TestBase's artifact phase
     // budget (screenshot ~15s + log save ~5s + video extract ~10s) plus the
@@ -227,10 +246,101 @@ public sealed class TestResourceBroker : IAsyncDisposable
         using (ExecutionContext.SuppressFlow())
         {
             _prestartTask = Task.Run(StartPrestart);
+            // SuppressFlow (asynclocal-pitfalls.md): the watchdog outlives the
+            // constructing test, so its diagnostic emits must not be attributed to it.
+            _stallWatchdogTask = Task.Run(() => RunStallWatchdogLoop(_runCts.Token));
         }
 
         // Start container stats collection (streams via Docker Engine API)
         ContainerStatsCollector.Start();
+    }
+
+    /// <summary>Records run progress (an acquire/release, or a per-test active transition)
+    /// so the stall watchdog can tell a genuinely-wedged run from one that's merely slow.
+    /// Cheap; called on every lease edge AND every test's queue→active transition — the
+    /// latter is what keeps a long KeepConnected class (one lease, many sequential methods)
+    /// from looking stalled between method boundaries.</summary>
+    internal void MarkRunProgress() =>
+        Interlocked.Exchange(ref _lastProgressTicks, DateTime.UtcNow.Ticks);
+
+    /// <summary>A lease was handed to a test: count it and mark progress so the watchdog's
+    /// "outstanding leases but no movement" stall test has fresh inputs.</summary>
+    private ResourceLease TrackLease(ResourceLease lease)
+    {
+        Interlocked.Increment(ref _outstandingLeases);
+        MarkRunProgress();
+        return lease;
+    }
+
+    /// <summary>
+    /// Last-resort deadlock breaker. Wakes periodically; if leases are outstanding but no
+    /// acquire/release has happened for <see cref="RunStallTimeout"/>, the run is wedged
+    /// (a deadlock or an un-cancelled wait that no per-test ct will ever fire). Cancels
+    /// <c>_runCts</c> once so every in-flight broker op faults and blocked tests fail fast,
+    /// letting xUnit finalize the assembly instead of hanging forever. Idempotent via
+    /// <c>_runStallTripped</c>; exits on its own cancellation (normal disposal).
+    /// </summary>
+    private async Task RunStallWatchdogLoop(CancellationToken ct)
+    {
+        // Poll at a fraction of the timeout so detection latency is bounded but cheap.
+        var pollInterval = TimeSpan.FromSeconds(Math.Max(15, RunStallTimeout.TotalSeconds / 8));
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(pollInterval, ct);
+
+                if (
+                    ShutdownCoordinator.IsShuttingDown
+                    || Volatile.Read(ref _outstandingLeases) <= 0
+                )
+                {
+                    continue;
+                }
+
+                var idle =
+                    DateTime.UtcNow
+                    - new DateTime(Interlocked.Read(ref _lastProgressTicks), DateTimeKind.Utc);
+                if (idle < RunStallTimeout)
+                {
+                    continue;
+                }
+
+                if (Interlocked.Exchange(ref _runStallTripped, 1) != 0)
+                {
+                    return; // already tripped
+                }
+
+                InfrastructureEventLog.Emit(
+                    "run_stall_watchdog_tripped",
+                    new
+                    {
+                        idleSeconds = (long)idle.TotalSeconds,
+                        thresholdSeconds = (long)RunStallTimeout.TotalSeconds,
+                        outstandingLeases = Volatile.Read(ref _outstandingLeases),
+                    }
+                );
+                TestLog.Test(
+                    $"[watchdog] run stalled {idle.TotalSeconds:F0}s with "
+                        + $"{Volatile.Read(ref _outstandingLeases)} lease(s) outstanding — "
+                        + "cancelling run to break the deadlock (see run_stall_watchdog_tripped)."
+                );
+                try
+                {
+                    _runCts.Cancel();
+                }
+                catch { }
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal disposal.
+        }
+        catch (Exception ex)
+        {
+            TestLog.Test($"[watchdog] stall watchdog loop error: {ex.Message}");
+        }
     }
 
     private Task StartPrestart()
@@ -1167,7 +1277,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     TestLog.Test(
                         $"{shortTest} got server {displayLabel} on {host.Id} ({server.RefCount} active tests)"
                     );
-                    return new ResourceLease(server, requirements, testName, clientPool);
+                    return TrackLease(
+                        new ResourceLease(server, requirements, testName, clientPool)
+                    );
                 }
 
                 // Server was evicted or poisoned BEFORE AddRef ran; release the
@@ -1282,10 +1394,33 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     host_id = host.Id,
                 }
             );
-            // Poison the host on a transport fault. This catch runs under the
-            // triggering test's EC (fire-and-forget, no SuppressFlow), so
-            // host_disconnected is attributed to the test that hit the dead host.
-            await host.PoisonIfTransportFaultAsync(ex);
+            // Classify + (maybe) poison the host. This catch runs under the triggering test's
+            // EC (fire-and-forget, no SuppressFlow), so host_disconnected is attributed to the
+            // test that hit the dead host. A RecoveredRetry means the master wedged mid-startup
+            // but was respawned and the forwards are healing — retry the creation once so it
+            // lands on the healed forward instead of failing the test (the 2026-06-26
+            // ModFarmDisambiguation failures: startup threw 0.25s before the forward re-opened).
+            var outcome = await host.PoisonIfTransportFaultAsync(ex);
+            if (outcome == DockerHost.TransportFaultOutcome.RecoveredRetry && !host.IsPoisoned)
+            {
+                InfrastructureEventLog.Emit(
+                    "server_creation_retry_after_blip",
+                    new
+                    {
+                        server = key,
+                        host_id = host.Id,
+                        error = ex.Message,
+                    }
+                );
+                // Brief settle so the parent's respawn + forward re-open complete, then retry.
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+                var managed = await CreateServerAsync(key, requirements, host, ct);
+                managed.SetPoisonCallback(OnServerPoisoned);
+                queue.ServerReady();
+                succeeded = true;
+                TestLog.Server($"{displayLabel} ready on {host.Id} (after forward-blip retry)");
+                return managed;
+            }
             throw;
         }
         finally
@@ -1327,7 +1462,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
         var managed = await CreateServerAsync(key, requirements, host, ct);
         managed.AddRef(testName);
         var clientPool = await EnsureClientPoolAsync(host, ct);
-        return new ResourceLease(managed, requirements, testName, clientPool);
+        return TrackLease(new ResourceLease(managed, requirements, testName, clientPool));
     }
 
     private async Task<ManagedServer> CreateServerAsync(
@@ -1559,13 +1694,25 @@ public sealed class TestResourceBroker : IAsyncDisposable
             );
 
             // Only reset the per-host queue if no other healthy instances remain on
-            // this host for this key.
+            // this host for this key. When the HOST itself is poisoned, replacement on
+            // it cannot succeed, so fault the orphaned waiters now (Reset's fresh TCS
+            // would otherwise strand every already-attached waiter until a re-signal
+            // that never comes — the host-poison-deadlocks-run hang). When only the
+            // server is poisoned on a healthy host, replacement can still succeed, so
+            // keep the benign Reset and let it re-signal the new TCS.
             if (
                 _servers.TryGetBest(key, host.Id) == null
                 && _queues.TryGetValue(brokerKey, out var queue)
             )
             {
-                queue.Reset();
+                if (host.IsPoisoned)
+                {
+                    queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
+                }
+                else
+                {
+                    queue.Reset();
+                }
             }
 
             _ = ReplaceServerInBackgroundAsync(key, managed.Requirements, host, managed);
@@ -1582,12 +1729,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 _remainingDemand.TryRemove(key, out _);
             }
 
+            // No replacement will run, so any waiter that raced onto this queue must be
+            // faulted rather than left on an orphaned TCS (pending was 0 at the check
+            // above, so this is normally a no-op — but a racing waiter must not hang).
             if (
                 _servers.TryGetBest(key, host.Id) == null
                 && _queues.TryGetValue(brokerKey, out var queue)
             )
             {
-                queue.Reset();
+                queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
             }
 
             _ = DisposeWithoutReplacementAsync(displayLabel, managed);
@@ -1661,10 +1811,19 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
         var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
         // Ensure queue is in a fresh state for the replacement only if no other
-        // healthy instance exists on this host for this key.
+        // healthy instance exists on this host for this key. A poisoned host can't host
+        // the replacement, so fault any already-attached waiters instead of orphaning
+        // them on a fresh TCS that the failed replacement won't re-signal.
         if (_servers.TryGetBest(key, host.Id) == null && (queue.IsReady || queue.IsFaulted))
         {
-            queue.Reset();
+            if (host.IsPoisoned)
+            {
+                queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
+            }
+            else
+            {
+                queue.Reset();
+            }
         }
 
         _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
@@ -1982,6 +2141,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
 
     internal async Task ReleaseAsync(ManagedServer managed, bool wasExclusive = false)
     {
+        // Pairs with TrackLease at acquire — every ResourceLease routes its release here.
+        // Marking progress on release is what tells the stall watchdog a poison-cancelled
+        // cascade is actively draining (tests failing fast) rather than wedged.
+        Interlocked.Decrement(ref _outstandingLeases);
+        MarkRunProgress();
+
         var remaining = managed.Release();
         var remainingTests = DecrementRemainingDemand(managed.Key);
         var displayLabel = managed.Requirements.GetDisplayLabel();
@@ -2036,7 +2201,11 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 AnnotationLevel.Info,
                 "Server disposed (per-test release)"
             );
-            await managed.DisposeAsync();
+            // Release the slot synchronously so the next test (and TryReuseFreedSlotAsync below, which
+            // gates on ServerCapacity.Available) sees it immediately, then run the heavy container
+            // teardown (recorder stop + extract + retrieve) in the background off this test's critical
+            // path. Mirrors the sibling-sweep pattern below.
+            BackgroundDisposeServer(managed);
             _ = TryReuseFreedSlotAsync(managed.Host);
         }
         else if (remaining <= 0 && GetPendingDemand(managed.Key) <= 0)
@@ -2067,7 +2236,12 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         host_id = host.Id,
                     }
                 );
-                await managed.DisposeAsync();
+                // Background the container teardown (recorder stop + extract + retrieve, ~33s
+                // leaseReleaseMs) off this test's critical path — otherwise a config's last test blocks
+                // on it. The slot is released synchronously inside BackgroundDisposeServer so the
+                // freed-slot reuse below and any waiting config see it immediately. Same pattern as the
+                // sibling sweep that follows.
+                BackgroundDisposeServer(managed);
 
                 // Sweep other idle instances of the same key (any host) that became
                 // orphaned when remainingTests hit 0 but their last ReleaseAsync saw
@@ -2155,6 +2329,31 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 _ = TryReuseFreedSlotAsync(host);
             }
         }
+    }
+
+    /// <summary>
+    /// Releases the server's host slot synchronously, then runs its heavy container teardown (recorder
+    /// stop + per-test clip + full convert/retrieve + container stop) on a background task so it doesn't
+    /// sit on the releasing test's critical path. The synchronous slot release means the next test — and
+    /// the freed-slot reuse / waiting-config checks that gate on <c>ServerCapacity.Available</c> — see the
+    /// slot immediately; <see cref="ManagedServer.ReleaseSlotEarly"/> is idempotent so the backgrounded
+    /// <see cref="ManagedServer.DisposeAsync"/>'s own slot release is a no-op. Same shape as the sibling
+    /// sweep in <see cref="ReleaseAsync"/>. The caller must have already removed <paramref name="managed"/>
+    /// from <c>_servers</c> and emitted <c>server_disposed</c>. Drained at run end via
+    /// <c>Task.WhenAll(_backgroundDisposeTasks)</c> in <see cref="DisposeAsync"/>.
+    /// </summary>
+    private void BackgroundDisposeServer(ManagedServer managed)
+    {
+        try
+        {
+            managed.ReleaseSlotEarly();
+        }
+        catch (Exception ex)
+        {
+            TestLog.Server($"early slot release failed: {ex.Message}");
+        }
+
+        EnqueueBackgroundTask(() => managed.DisposeAsync().AsTask());
     }
 
     /// <summary>

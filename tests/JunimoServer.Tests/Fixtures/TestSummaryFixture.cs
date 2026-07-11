@@ -627,6 +627,16 @@ public class TestSummaryFixture : IAsyncLifetime
             || exceptionType.Contains("Testcontainers")
             || exceptionType.Contains("ServerUnavailableException")
             || exceptionType.Contains("TestRunAbortedException")
+            // Raw transport faults: the E2E harness reaches the server only over the
+            // ssh-forwarded transport, so a Socket/Http/stream fault that surfaces to a test
+            // is infrastructure (a forward/host blip), not a product bug — including a live
+            // server-start wrap like "server-N failed to start: …SocketException", which
+            // carries the SocketException type. (Most such faults are now skipped at acquire
+            // time per AcquireWithInfrastructureSkipAsync; this keeps any that still surface as
+            // a failure correctly bucketed rather than as a "crash".)
+            || exceptionType.Contains("SocketException")
+            || exceptionType.Contains("HttpRequestException")
+            || exceptionType.Contains("EndOfStreamException")
         )
         {
             return "infrastructure";

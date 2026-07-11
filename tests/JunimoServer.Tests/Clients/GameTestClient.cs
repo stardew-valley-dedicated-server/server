@@ -1034,8 +1034,28 @@ public class GameTestClient : IDisposable
         string baseUrl = "http://localhost:5123",
         TimeSpan? defaultWaitTimeout = null
     )
+        : this(baseUrl, defaultWaitTimeout, liveBaseUrl: null, healAsync: null) { }
+
+    /// <summary>
+    /// Constructs a client that transparently heals a dropped SSH forward (re-opens it +
+    /// retries against the new port) so an in-flight request survives a transient master
+    /// keepalive blip instead of failing the test. <paramref name="liveBaseUrl"/> returns
+    /// the client container's CURRENT base URL; <paramref name="healAsync"/> re-opens the
+    /// client's forward. Both null ⇒ a plain client (unchanged behavior).
+    /// </summary>
+    public GameTestClient(
+        string baseUrl,
+        TimeSpan? defaultWaitTimeout,
+        Func<string>? liveBaseUrl,
+        Func<CancellationToken, Task<bool>>? healAsync
+    )
     {
-        var handler = new TracingHandler("test-client") { InnerHandler = new HttpClientHandler() };
+        HttpMessageHandler inner = new HttpClientHandler();
+        if (liveBaseUrl != null && healAsync != null)
+        {
+            inner = new ForwardHealingHandler(liveBaseUrl, healAsync) { InnerHandler = inner };
+        }
+        var handler = new TracingHandler("test-client") { InnerHandler = inner };
         _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl),

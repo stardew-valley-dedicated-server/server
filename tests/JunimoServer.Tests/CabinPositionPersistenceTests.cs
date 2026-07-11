@@ -32,33 +32,24 @@ public class CabinPositionPersistenceTests : TestBase
 
     public override async ValueTask DisposeAsync()
     {
-        // Reset the shared server to a clean default game so the MoveToStack config
-        // and any moved cabins don't leak into sibling tests.
+        // Disconnect the primary so the next test body's own /newgame doesn't 409.
+        // Most tests in this class disconnect mid-body, but a few (two-player and the
+        // dummy reconnect tests) leave the primary connected. No reset /newgame is
+        // needed: this class's config hash (ExistingCabinBehavior=MoveToStack) is
+        // unique to it, so no sibling reuses its server, and every body opens with
+        // its own CreateNewGameOnServerAsync that rebuilds the world from scratch.
         if (Lease != null)
         {
+            // Tolerant: a no-op throw when already at title must not block cleanup.
             try
             {
-                // Disconnect the primary first: /newgame 409s while any client is connected.
-                // Most tests in this class disconnect mid-body, but a few (two-player and the
-                // dummy reconnect tests) leave the primary connected — without this the reset
-                // would 409 and leak CabinStack/None state into the next test. Tolerant: a
-                // no-op throw when already at title must not block the reset.
-                try
-                {
-                    await DisconnectAsync();
-                }
-                catch (Exception ex)
-                {
-                    LogWarning(
-                        $"Primary disconnect during cleanup failed (may already be at title): {ex.Message}"
-                    );
-                }
-
-                await CreateNewGameOnServerAsync(farmType: 0);
+                await DisconnectAsync();
             }
             catch (Exception ex)
             {
-                LogWarning($"Server reset failed during cleanup: {ex.Message}");
+                LogWarning(
+                    $"Primary disconnect during cleanup failed (may already be at title): {ex.Message}"
+                );
             }
         }
         await base.DisposeAsync();

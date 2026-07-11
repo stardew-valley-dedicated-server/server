@@ -542,9 +542,38 @@ internal sealed class ClientPool : IAsyncDisposable
                     }
                 );
                 // Client leasing is a separate mid-run path from server creation;
-                // a tunnel death here must poison too, else it's a blind spot.
-                await _host.PoisonIfTransportFaultAsync(ex);
-                throw;
+                // a tunnel death here must poison too, else it's a blind spot. A
+                // RecoveredRetry means a transient master-wedge that the parent respawned —
+                // retry the client creation once so it lands on the healed forward instead
+                // of failing the test (symmetric with CreateAndResolveAsync).
+                var outcome = await _host.PoisonIfTransportFaultAsync(ex);
+                if (outcome == DockerHost.TransportFaultOutcome.RecoveredRetry && !_host.IsPoisoned)
+                {
+                    InfrastructureEventLog.Emit(
+                        "client_create_retry_after_blip",
+                        new { host_id = _host.Id, error = ex.Message }
+                    );
+                    await Task.Delay(TimeSpan.FromSeconds(3), ct);
+                    client = await CreateClientAsync(requireSteam, ct);
+                    lock (_allClientsLock)
+                    {
+                        _allClients.Add(client);
+                    }
+                    Interlocked.Decrement(ref _inFlightCreations);
+                    if (willAllocateSteam)
+                    {
+                        Interlocked.Decrement(ref _inFlightSteamCreations);
+                    }
+                    inFlightDecremented = true;
+                    InfrastructureEventLog.Emit(
+                        "client_created",
+                        new { clientIndex = client.ClientIndex, reason = "blip_retry" }
+                    );
+                }
+                else
+                {
+                    throw;
+                }
             }
             finally
             {

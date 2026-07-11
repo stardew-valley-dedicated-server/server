@@ -163,7 +163,29 @@ internal sealed class TestLifecycle
                 && !_testBase.TestCtInternal.IsCancellationRequested
             )
             {
-                await _testBase.AssertNoExceptionsAsyncInternal("at end of test (auto)");
+                try
+                {
+                    await _testBase.AssertNoExceptionsAsyncInternal("at end of test (auto)");
+                }
+                catch (Exception ex) when (TestBase.IsInfrastructureTransportFault(ex))
+                {
+                    // The end-of-test /errors check is best-effort: if its own API call can't
+                    // reach the server (a forward/host transport fault during dispose), we
+                    // simply couldn't run the check — that's infrastructure, not a test
+                    // failure. Swallow it rather than convert a passed test into a transport
+                    // failure that trips StopOnFail (the 2026-06-26 DeletedCabin run, where a
+                    // forward blip during this dispose-phase check failed an otherwise-passing
+                    // test). A real server-logged error still surfaces as an AssertException,
+                    // which is NOT transport and is rethrown.
+                    JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                        "end_of_test_check_skipped_transport",
+                        new
+                        {
+                            test = _testBase.TestDisplayNameInternal,
+                            error = $"{ex.GetType().Name}: {ex.Message}",
+                        }
+                    );
+                }
             }
 
             // For KeepConnected tests: check if this is the last test, BEFORE cleanup.
