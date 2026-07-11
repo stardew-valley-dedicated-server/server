@@ -435,7 +435,7 @@ jobs:
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
       # quality channel resolves a stable SDK — no preview pin needed.
       - name: Setup .NET 10.0
-        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.x'
 
@@ -458,7 +458,7 @@ jobs:
       # steam-service) in-process.
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       # The Dockerfile uses a BuildKit `--mount=type=cache` for /root/.nuget/packages
       # that BuildKit does not persist across runs. The cache-dance bridges that:
