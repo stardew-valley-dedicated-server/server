@@ -224,6 +224,7 @@ public class AlwaysOnServer : ModService
                 Game1.player.ignoreCollisions = true;
 
                 PreSeedEarlyGameEvents();
+                PreSeedChoices();
                 HealUpgradedHostFarmhouse();
             }
 
@@ -315,13 +316,10 @@ public class AlwaysOnServer : ModService
         HandleOvernightNamingMenu();
         HandleSkippableEvent();
         HandleMinigame();
-        alwaysOnServerFestivals.HandleFestivalEvents();
         HandleLevelUpMenu();
         // Third-party mod compatibility (see AlwaysOnModCompat)
         modCompat.HandleSpaceCoreLevelUpMenu();
         HandleShippingMenu();
-        HandlePetChoice();
-        HandleCaveChoice();
         HandleCommunityCenterUnlock();
     }
 
@@ -343,6 +341,11 @@ public class AlwaysOnServer : ModService
 
         alwaysOnServerFestivals.HandleFestivalStart();
         alwaysOnServerFestivals.HandleFestivalLeave();
+        // Per-tick: the main-event countdown announce ("Type !event…") and timeout backstop must reach
+        // players promptly. OneSecondUpdateTicked fires every 60 ticks — 12s at SERVER_TPS=5 — which
+        // delayed the announce past clients' wait windows. Countdown/timeout gating is wall-clock based
+        // (DateTime.UtcNow) and one-shot-flagged, so per-tick invocation is safe and more responsive.
+        alwaysOnServerFestivals.HandleFestivalEvents();
     }
 
     private void OnTimeChanged(object sender, TimeChangedEventArgs e)
@@ -530,42 +533,6 @@ public class AlwaysOnServer : ModService
         PlayerIsHidden = !PlayerIsHidden;
     }
 
-    private bool _petChoiceHandled;
-
-    private void HandlePetChoice()
-    {
-        if (!IsAutomating || _petChoiceHandled)
-        {
-            return;
-        }
-
-        if (Game1.player.hasPet())
-        {
-            // Pet already exists (loaded from save). Just rename and mark done.
-            var pet = Game1.player.getPet();
-            pet.Name = Config.PetName;
-            pet.displayName = Config.PetName;
-            _petChoiceHandled = true;
-            return;
-        }
-
-        if (!Config.ShouldCreatePet)
-        {
-            Monitor.Log($"[Automation] Not creating a pet", LogLevel.Info);
-            _petChoiceHandled = true;
-            return;
-        }
-
-        // Call hostActionNamePet directly via reflection, avoiding the throwaway
-        // Event() + namePet() pattern which calls Game1.exitActiveMenu() and
-        // would destroy any active menu (e.g. ReadyCheckDialog from sleep).
-        Monitor.Log($"[Automation] Creating pet '{Config.PetName}'", LogLevel.Info);
-        Helper
-            .Reflection.GetMethod(typeof(Event), "hostActionNamePet")
-            .Invoke(Game1.player, CreateBinaryReader(Config.PetName));
-        _petChoiceHandled = true;
-    }
-
     private static System.IO.BinaryReader CreateBinaryReader(string value)
     {
         var stream = new System.IO.MemoryStream();
@@ -574,30 +541,6 @@ public class AlwaysOnServer : ModService
         writer.Flush();
         stream.Position = 0;
         return new System.IO.BinaryReader(stream);
-    }
-
-    private void HandleCaveChoice()
-    {
-        if (!IsAutomating)
-        {
-            return;
-        }
-
-        // Cave choice unlock
-        if (!Game1.player.eventsSeen.Contains("65"))
-        {
-            Game1.player.eventsSeen.Add("65");
-
-            if (this.Config.FarmCaveChoiceIsMushrooms)
-            {
-                Game1.MasterPlayer.caveChoice.Value = 2;
-                (Game1.getLocationFromName("FarmCave") as FarmCave).setUpMushroomHouse();
-            }
-            else
-            {
-                Game1.MasterPlayer.caveChoice.Value = 1;
-            }
-        }
     }
 
     private void HandleCommunityCenterUnlock()
@@ -1381,6 +1324,66 @@ public class AlwaysOnServer : ModService
         if (!Game1.player.eventsSeen.Contains("980559"))
         {
             Game1.player.eventsSeen.Add("980559");
+        }
+    }
+
+    /// <summary>
+    /// Apply the host's one-time new-game choices (pet, farm cave) deterministically at load. These
+    /// run here — not on the OneSecondUpdateTicked loop, which fires every 12s at SERVER_TPS=5 (see
+    /// one-second-update-ticked-fires-per-game-tick.md) — so the choice is settled before the
+    /// reload/newgame completion contract resolves and before anything (a /test seed, an operator
+    /// command) can write the same state, which the 12s cadence would otherwise race and overwrite.
+    /// Each handler is single-shot on a save-persisted signal (pet existence, eventsSeen "65"), so a
+    /// re-run on /reload is a no-op.
+    /// </summary>
+    private void PreSeedChoices()
+    {
+        HandlePetChoice();
+        HandleCaveChoice();
+    }
+
+    private void HandlePetChoice()
+    {
+        if (Game1.player.hasPet())
+        {
+            // Pet already exists (loaded from save) — just (re)apply the configured name.
+            var pet = Game1.player.getPet();
+            pet.Name = Config.PetName;
+            pet.displayName = Config.PetName;
+            return;
+        }
+
+        if (!Config.ShouldCreatePet)
+        {
+            Monitor.Log($"[Automation] Not creating a pet", LogLevel.Info);
+            return;
+        }
+
+        // Call hostActionNamePet directly via reflection, avoiding the throwaway
+        // Event() + namePet() pattern which calls Game1.exitActiveMenu() and
+        // would destroy any active menu (e.g. ReadyCheckDialog from sleep).
+        Monitor.Log($"[Automation] Creating pet '{Config.PetName}'", LogLevel.Info);
+        Helper
+            .Reflection.GetMethod(typeof(Event), "hostActionNamePet")
+            .Invoke(Game1.player, CreateBinaryReader(Config.PetName));
+    }
+
+    private void HandleCaveChoice()
+    {
+        if (Game1.player.eventsSeen.Contains("65"))
+        {
+            return;
+        }
+        Game1.player.eventsSeen.Add("65");
+
+        if (Config.FarmCaveChoiceIsMushrooms)
+        {
+            Game1.MasterPlayer.caveChoice.Value = 2;
+            (Game1.getLocationFromName("FarmCave") as FarmCave)?.setUpMushroomHouse();
+        }
+        else
+        {
+            Game1.MasterPlayer.caveChoice.Value = 1;
         }
     }
 

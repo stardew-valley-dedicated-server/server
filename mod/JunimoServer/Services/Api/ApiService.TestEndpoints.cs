@@ -832,6 +832,10 @@ public partial class ApiService
                 if (body.CaveChoice.HasValue)
                 {
                     master.caveChoice.Value = body.CaveChoice.Value;
+                    // A real played save where the cave was chosen always has event 65 seen. Seed it
+                    // so the host's cave-choice pre-seed treats the choice as already made and never
+                    // applies the server's mushroom default over the seeded value.
+                    master.eventsSeen.Add("65");
                 }
                 if (!string.IsNullOrEmpty(body.Spouse))
                 {
