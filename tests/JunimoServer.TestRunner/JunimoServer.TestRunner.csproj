@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Spectre.Console" Version="0.57.0" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="xunit.v3.runner.utility" Version="3.2.2" />
     <!-- SVG rasterization for the OG-card logo (OgCard rasterizes logo.svg in-process,
          so the SVG is the single committed logo source — no second PNG asset). Skia is
