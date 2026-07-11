@@ -483,12 +483,13 @@ internal static class SaveImportXmlTransform
     private static long GenerateUniqueId(HashSet<long> existing)
     {
         var rng = new Random();
+        var bytes = new byte[8];
         for (var attempt = 0; attempt < 1000; attempt++)
         {
-            // Full 64-bit spread: two 32-bit draws. Avoid 0 (sentinel for "no owner").
-            long high = (long)(uint)rng.Next(int.MinValue, int.MaxValue);
-            long low = (uint)rng.Next(int.MinValue, int.MaxValue);
-            var candidate = (high << 32) | low;
+            // Unbiased full 64-bit draw (matches engine Utility.RandomLong's NextBytes
+            // shape; a two-int rng.Next draw excludes int.MaxValue). Avoid 0 (no-owner sentinel).
+            rng.NextBytes(bytes);
+            var candidate = BitConverter.ToInt64(bytes, 0);
             if (candidate != 0 && !existing.Contains(candidate))
             {
                 return candidate;
