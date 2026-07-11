@@ -1110,6 +1110,17 @@ public class CabinManagerService : ModService
             indoors.DeleteFarmhand();
         }
 
+        // Vanilla Cabin.demolish() resets every villager homed in the cabin to its canonical home
+        // before removal (Cabin.cs:196-203); our raw-remove path skips it, stranding an NPC that
+        // married this cabin's owner — its DefaultMap stays "FarmHouse<guid>", and the next
+        // NPC.dayUpdate warp-home throws KeyNotFoundException (NPC.cs:6105). Reset them the way
+        // vanilla divorce does. Game1.fixProblems' own stranded-spouse heal (Game1.cs:7489) can't
+        // help: its guard matches "cabin"/"FarmHouse" literally and misses our FarmHouse<guid> name.
+        if (indoors != null && !string.IsNullOrEmpty(deletedName))
+        {
+            ResetVillagersHomedAt(indoors, deletedName);
+        }
+
         farm.buildings.Remove(cabinBuilding);
 
         Diagnostics.ModEventLog.Emit(
@@ -1185,6 +1196,60 @@ public class CabinManagerService : ModService
             {
                 f.lastSleepLocation.Value = null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Reset every villager NPC homed at the cabin being destroyed back to its canonical home,
+    /// mirroring vanilla <c>Cabin.demolish()</c> (Cabin.cs:196-203). A marriage to the cabin's
+    /// farmhand owner sets the villager's <c>DefaultMap</c> to "FarmHouse&lt;guid&gt;"
+    /// (NPC.cs:6366); once the cabin is gone, <c>NPC.dayUpdate</c> warps the villager to that
+    /// now-missing location and throws <c>KeyNotFoundException</c> (NPC.cs:6105) on the next day
+    /// transition. The reset is the same one both vanilla divorce paths use
+    /// (<c>reloadDefaultLocation</c> + warp, NPC.cs:3537).
+    ///
+    /// Matched by <c>DefaultMap</c> string OR current-location identity so a spouse mid-schedule
+    /// outside the cabin (e.g. in Town) is still caught — vanilla's in-cabin-only loop would miss
+    /// it. Idempotent and safe on unowned lobby/editing cabins (no villager is homed there, so the
+    /// scan no-ops). Master-only operations (warp + NetField writes); this server is always master
+    /// (multiplayerMode=2).
+    /// </summary>
+    private void ResetVillagersHomedAt(Cabin indoors, string deletedName)
+    {
+        // Collect first, warp after: Game1.warpCharacter mutates the location's `characters`
+        // collection (Game1.cs:9713), which ForEachVillager iterates live — warping inside the
+        // scan would throw "collection modified". Vanilla demolish() snapshots for the same reason
+        // (new List<NPC>(characters), Cabin.cs:196).
+        var stranded = new List<NPC>();
+        Utility.ForEachVillager(npc =>
+        {
+            if (npc.DefaultMap == deletedName || ReferenceEquals(npc.currentLocation, indoors))
+            {
+                stranded.Add(npc);
+            }
+            return true; // scan every villager
+        });
+
+        foreach (var npc in stranded)
+        {
+            // reloadDefaultLocation derives DefaultMap from characterData; a villager with no data
+            // can't resolve a valid home, so skip it (mirrors Cabin.demolish's guard, Cabin.cs:198).
+            if (!Game1.characterData.ContainsKey(npc.Name))
+            {
+                continue;
+            }
+
+            npc.reloadDefaultLocation();
+            npc.ClearSchedule();
+            Game1.warpCharacter(npc, npc.DefaultMap, npc.DefaultPosition / 64f);
+
+            // Warn, never Error: this runs on the server game thread, where LogLevel.Error trips
+            // ServerContainer's ERROR/FATAL test-poison scan.
+            Monitor.Log(
+                $"Reset villager '{npc.Name}' homed at destroyed cabin '{deletedName}' back to "
+                    + $"'{npc.DefaultMap}' (was stranded by a farmhand↔NPC marriage).",
+                LogLevel.Warn
+            );
         }
     }
 

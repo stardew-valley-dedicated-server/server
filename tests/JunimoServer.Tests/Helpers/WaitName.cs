@@ -178,4 +178,11 @@ public enum WaitName
     Polling_Festival_EndedNoPlayers,
     Polling_Festival_NextFestivalEndedOnLeave,
     Polling_Festival_MainEventStillActive,
+
+    // WeddingTests.cs (5)
+    Polling_Wedding_EngagementReplicated,
+    Polling_Wedding_BothCeremoniesRan,
+    Polling_Wedding_BothClientsRenderedBoth,
+    Polling_Wedding_HostRecoveredAfterCeremonies,
+    Polling_Wedding_HostReturnedHomeAfterCeremonies,
 }

@@ -578,7 +578,11 @@ public class SaveImportTests : TestBase
             state.MasterHasEvent == true,
             $"Master must carry the seeded eventsSeen id '{eventSeen}' (distinct collection from mailReceived)"
         );
-        Assert.Equal(1, state.MasterCaveChoice); // bat/fruit-cave daily regen
+        Assert.True(
+            state.MasterCaveChoice == 1,
+            $"Master must carry the seeded caveChoice=1 (bat/fruit-cave daily regen); got "
+                + $"{state.MasterCaveChoice} (2 = the server's mushroom-cave default leaked back onto the master)"
+        );
         Assert.True(
             state.MasterShadowFriendshipPoints is >= 1250,
             $"Master must carry the Krobus friendship (shadow-pacifism gate), got "

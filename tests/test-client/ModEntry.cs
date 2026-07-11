@@ -32,6 +32,7 @@ public class ModEntry : Mod
     private SkipIntro? _skipIntro;
     private GodTool? _godTool;
     private QiPlaneSkip? _qiPlaneSkip;
+    private WeddingCutscenePlayer? _weddingPlayer;
 
     // Diagnostics
     private HealthWatchdog? _healthWatchdog;
@@ -82,6 +83,12 @@ public class ModEntry : Mod
 
         _qiPlaneSkip = new QiPlaneSkip(Monitor, _harmony);
         _qiPlaneSkip.Apply();
+
+        // Drives a wedding ceremony through to completion by clicking its dialogue boxes, so the
+        // cutscene actually renders on this client (instead of being force-skipped). Driven per-tick
+        // from OnUpdateTicked; render record reset per session from OnSaveLoaded (not per day — a
+        // day-boundary reset would race the ceremonies, see WeddingCutscenePlayer.ResetForNewSession).
+        _weddingPlayer = new WeddingCutscenePlayer(Monitor);
 
         // Apply Steam/Galaxy auth patches (must be before Steam diagnostics)
         var authService = new ClientAuthService(helper, Monitor, _harmony);
@@ -283,6 +290,11 @@ public class ModEntry : Mod
                 menu = MenuDetector.GetCurrentMenu(),
                 connection = MenuDetector.GetConnectionStatus(),
                 farmer = MenuDetector.GetFarmerInfo(),
+                // Wedding ceremonies this client has played through (rendered) today, one per gate.
+                // The E2E test asserts each client rendered BOTH same-day ceremonies — the host-side
+                // spouse-warp signal can't prove client rendering (that warp is master-only).
+                weddingsRendered = _weddingPlayer?.GetRenderedSnapshot()
+                    ?? new List<RenderedCeremony>(),
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             }
         );
@@ -584,6 +596,23 @@ public class ModEntry : Mod
         _server.Post(
             "actions/leave_festival",
             _ => ExecuteOnGameThread(() => _actionsController!.LeaveFestival())
+        );
+
+        // POST /actions/engage_to_npc - Engage this client's player to an NPC (client-authoritative)
+        _server.Post(
+            "actions/engage_to_npc",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<EngageToNpcParams>(req);
+                if (body == null)
+                {
+                    return new EngageToNpcResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.EngageToNpc(body.Npc, body.DaysUntilWedding)
+                );
+            }
         );
 
         // POST /actions/warp - Queue a warp to the given location/tile (async; caller polls /status to confirm)
@@ -1317,6 +1346,18 @@ public class ModEntry : Mod
                 }
             }
         }
+
+        // Drive a wedding ceremony through to completion (clicks its dialogue boxes so it renders).
+        // No-op unless a wedding event is currently up on this client.
+        try
+        {
+            _weddingPlayer?.OnUpdateTicked();
+        }
+        catch (Exception ex)
+        {
+            Monitor.Log($"Error driving wedding cutscene: {ex.Message}", LogLevel.Error);
+            _errorCapture?.CaptureException("WeddingCutscenePlayer", ex);
+        }
     }
 
     private void OnRendered(object? sender, RenderedEventArgs e)
@@ -1430,6 +1471,10 @@ public class ModEntry : Mod
         Monitor.Log($"Save loaded - Farmer: {StardewValley.Game1.player?.Name}", LogLevel.Trace);
         LogSpawnInfo("SaveLoaded");
 
+        // Clear the wedding render record for the new session (SaveLoaded, not DayStarted — see
+        // ResetForNewSession for why the day-boundary reset would race the ceremonies).
+        _weddingPlayer?.ResetForNewSession();
+
         // Increase chat buffer size for testing (default is 10, which truncates long command outputs)
         // !lobby help produces 15 messages; 20 gives headroom. Sequence-based deduplication
         // makes buffer size less critical than before.
@@ -1444,6 +1489,10 @@ public class ModEntry : Mod
     {
         if (e.IsLocalPlayer)
         {
+            // If this warp is the wedding's exit warp (a ceremony just ended), hold a visible beat so
+            // the recorded video lingers on the "teleported home" arrival. No-op otherwise.
+            _weddingPlayer?.PauseAfterWeddingWarp();
+
             Monitor.Log(
                 $"[Spawn] Player warped: {e.OldLocation?.NameOrUniqueName ?? "null"} -> {e.NewLocation?.NameOrUniqueName ?? "null"}",
                 LogLevel.Debug

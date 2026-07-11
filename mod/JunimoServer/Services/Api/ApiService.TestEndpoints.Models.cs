@@ -334,6 +334,51 @@ public class TestImportSaveRequest
     public bool SkipClone { get; set; }
 }
 
+/// <summary>
+/// Response from GET /test/wedding_state (test-only). A direct read of the host's wedding state so an
+/// E2E test can assert a ceremony is active / has ended and observe each spouse NPC's location, without
+/// proxying through a client's location (which reads the Town "Temp" map during the ceremony).
+/// </summary>
+public class TestWeddingStateResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>True while a wedding event is loaded and running on the host (CurrentEvent.isWedding).</summary>
+    public bool IsWeddingActive { get; set; }
+
+    /// <summary>The host's view of the queried farmhand's spouse (NPC name), or null. Lets a test
+    /// confirm the engagement replicated client→host before the day transition.</summary>
+    public string? FarmhandSpouse { get; set; }
+
+    /// <summary>The spouse NPC's current location. The ceremony's endBehaviors ("wedding" case) warps
+    /// the spouse to the couple's Farm porch, so <c>== "Farm"</c> is a durable, ceremony-only signal
+    /// that this couple's ceremony completed (the pre-ceremony finalizer never moves currentLocation).</summary>
+    public string? SpouseCurrentLocation { get; set; }
+
+    // Post-ceremony host-stuck signals (see HandleGetTestWeddingStateAsync). All four must be clear
+    // after a wedding ends or the host is stuck in the fadeout the multi-wedding fix resolves.
+
+    /// <summary>True while any event is up on the host. Stuck-true after a wedding = event never ended.</summary>
+    public bool EventUp { get; set; }
+
+    /// <summary>True while a fade-to-black is armed. Stuck-true after a wedding = the black fadeout never cleared.</summary>
+    public bool FadeToBlack { get; set; }
+
+    /// <summary>True while a dialogue is up. Stuck-true after a wedding = the after-wedding dialogue is dangling.</summary>
+    public bool DialogueUp { get; set; }
+
+    /// <summary>True while the host is on a temporary event map (e.g. the wedding ceremony Town map).
+    /// Stuck-true after a wedding = the host never warped off the ceremony location.</summary>
+    public bool HostLocationIsTemporary { get; set; }
+
+    /// <summary>The host's current location name. After the day's last wedding the host must be returned
+    /// to its FarmHouse idle spot — not left standing on the open Farm map where the wedding exit warp
+    /// drops it (the exit targets getHomeOfFarmer(Game1.player)'s porch). Lets a test assert the host
+    /// ended at home rather than just "not on a temporary map".</summary>
+    public string? HostCurrentLocation { get; set; }
+}
+
 /// <summary>Body for POST /test/console (test-only): a console command name + args to invoke.</summary>
 public class TestConsoleCommandRequest
 {
