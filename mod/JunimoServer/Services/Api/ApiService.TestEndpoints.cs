@@ -123,6 +123,9 @@ public partial class ApiService
                             await HandlePostTestCorruptSaveAsync(request)
                         );
                         return;
+                    case "/test/force_save":
+                        await WriteJsonAsync(response, await HandlePostTestForceSaveAsync());
+                        return;
                 }
                 break;
         }
@@ -1384,6 +1387,63 @@ public partial class ApiService
         {
             return new TestSaveFileOpResponse { Success = false, Error = ex.Message };
         }
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/force_save",
+        Summary = "Persist the current world synchronously, without a day transition (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestForceSaveResponse), 200)]
+    private async Task<TestForceSaveResponse> HandlePostTestForceSaveAsync()
+    {
+        // Flushes in-memory state (seeded Game1 mutations + a connected client's customization) to
+        // the save folder without a sleep/day-transition. Lets save-import source generation shed
+        // the ~full-in-game-day SleepToSaveAsync wait. Mirrors the day-transition save's two steps:
+        //   1. saveFarmhands() clones every connected farmhand's live root into farmhandData
+        //      (Multiplayer.cs:1018-1028 → NetWorldState.SaveFarmhand) — same call the transition
+        //      makes (Game1.cs:8238). A homed/customized connected farmhand survives intact;
+        //      ResetFarmhandState only clears userID/home for a HOMELESS farmhand.
+        //   2. getSaveEnumerator() does the actual file write. SaveGame.Save() normally offloads
+        //      this to a background Task and yields across ticks (SaveGame.cs:296-310), but the
+        //      enumerator itself is fully synchronous (SaveGame.cs:346-546 — the yields are just
+        //      progress markers). Driving it inline writes the save within this one game-thread
+        //      Action, sidestepping the background-task split and the UpdateTicked save-suppression.
+        var result = new TestForceSaveResponse();
+        try
+        {
+            // Full save under load can exceed the 5s default game-thread timeout.
+            await RunOnGameThreadAsync(
+                () =>
+                {
+                    if (Game1.gameMode != 3 || !Game1.IsMasterGame)
+                    {
+                        result.Error =
+                            $"Not in a loaded master game (gameMode={Game1.gameMode}, IsMasterGame={Game1.IsMasterGame})";
+                        return;
+                    }
+
+                    // Game1.multiplayer is protected; reach it via the established reflective accessor.
+                    Helper.GetMultiplayer().saveFarmhands();
+
+                    var save = SaveGame.getSaveEnumerator();
+                    while (save.MoveNext()) { }
+
+                    result.SaveFolderName = Constants.SaveFolderName;
+                    result.Success = true;
+                },
+                timeoutMs: 60000
+            );
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
     }
 
     [ApiEndpoint(

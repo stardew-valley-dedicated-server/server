@@ -314,6 +314,17 @@ public class TestSaveFileOpResponse
     public string TargetSaveName { get; set; } = "";
 }
 
+/// <summary>Response from POST /test/force_save (test-only). Persists the current world to disk
+/// synchronously (no day transition), so save-import source generation can skip SleepToSaveAsync.</summary>
+public class TestForceSaveResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The save folder the world was written to (Constants.SaveFolderName).</summary>
+    public string SaveFolderName { get; set; } = "";
+}
+
 /// <summary>
 /// Body for POST /test/import_save (test-only). Clones a source save folder under a new name, then
 /// runs saves-import on the clone (ExecuteImport rejects importing the active save, so the clone is

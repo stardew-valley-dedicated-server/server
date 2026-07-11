@@ -793,6 +793,19 @@ public class TestSaveFileOpResponse
     public string TargetSaveName { get; set; } = "";
 }
 
+/// <summary>Response from /test/force_save (test-only).</summary>
+public class TestForceSaveResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("saveFolderName")]
+    public string SaveFolderName { get; set; } = "";
+}
+
 /// <summary>Body for /test/import_save (test-only). Mirrors the server-side DTO.</summary>
 public class TestImportSaveRequest
 {
@@ -1884,6 +1897,19 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSaveFileOpResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: persist the current world to disk synchronously, without a day transition — flushes
+    /// in-memory seeded state + a connected client's customization the way SleepToSaveAsync does, but
+    /// in one game-thread call instead of a full in-game day.
+    /// POST /test/force_save
+    /// </summary>
+    public async Task<TestForceSaveResponse?> ForceSave(CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/force_save", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestForceSaveResponse>(ct);
     }
 
     /// <summary>
