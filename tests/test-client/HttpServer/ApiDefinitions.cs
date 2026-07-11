@@ -268,6 +268,16 @@ public class ApiDefinitions
 
     [ApiEndpoint(
         "POST",
+        "/actions/engage_to_npc",
+        Summary = "Engage to an NPC",
+        Description = "Engage this client's player to an NPC (client-authoritative) so the next day-transition queues their wedding.",
+        Tag = "Actions"
+    )]
+    [ApiResponse(typeof(EngageToNpcResult), 200)]
+    private void EngageToNpc() { }
+
+    [ApiEndpoint(
+        "POST",
         "/actions/warp",
         Summary = "Warp the player",
         Description = "Queue an asynchronous warp to a location/tile. Caller must poll /status to confirm arrival.",

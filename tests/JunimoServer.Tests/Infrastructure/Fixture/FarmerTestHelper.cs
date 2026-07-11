@@ -122,19 +122,119 @@ internal sealed class FarmerTestHelper
 
         var name = GenerateName(namePrefix);
         var clientLease = await _testBase.LeaseClientForHelperAsync(ct);
+        return await JoinSecondFarmerAsync(lease, clientLease, name, ct);
+    }
 
-        // Dispose the lease if the join (or its assert) throws — otherwise it leaks client
-        // capacity and leaves a connected client around during cleanup. On success, the
-        // returned SecondFarmer owns disposal.
+    /// <summary>
+    /// Connects BOTH farmers concurrently and returns once both are joined and visible
+    /// server-side. The two client containers are leased up front (overlapping their cold
+    /// start), then both join sequences run together via <see cref="Task.WhenAll(Task[])"/>.
+    ///
+    /// <para>
+    /// The server's game loop processes one farmhand join at a time, so the two joins can't
+    /// land at the literal same instant — both go through the per-server join gate
+    /// (<c>ManagedServer.AcquireJoinGateAsync</c>), which serializes the game-thread join and
+    /// is what stops a concurrent join bouncing back to farmhand selection
+    /// (<c>isGameAvailable() == false</c>). What overlaps is everything else: the second
+    /// client's lease/cold-start and both clients' menu navigation and character creation. So
+    /// instead of farmhand B's whole sequence starting only after A's fully completes, the two
+    /// are present together within seconds of each other — the scenario weddings/multiplayer
+    /// tests want.
+    /// </para>
+    ///
+    /// <para>
+    /// The primary uses the shared connection helpers (held as the test's <c>GameClient</c>);
+    /// the secondary is wrapped as a <see cref="SecondFarmer"/> over its own lease — scope it
+    /// with <c>await using</c> so it disconnects before the class's <c>/newgame</c> reset.
+    /// Both farmers are tracked for cleanup via <see cref="TrackFarmer"/>.
+    /// </para>
+    /// </summary>
+    public async Task<(
+        ClientConnection Primary,
+        SecondFarmer Secondary
+    )> ConnectBothConcurrentlyAsync(
+        string primaryPrefix = "FarmerA",
+        string secondaryPrefix = "FarmerB",
+        CancellationToken ct = default
+    )
+    {
+        var lease = _testBase.LeaseInternal;
+        if (lease == null)
+        {
+            throw new InvalidOperationException("Server not acquired; cannot connect farmers.");
+        }
+
+        // Lease the secondary client up front, concurrently with ensuring the primary client
+        // is ready. The primary join leases its own client lazily, but pre-warming it here lets
+        // the slow part (a cold client container start) of both leases overlap rather than the
+        // secondary's start waiting on the primary's whole join.
+        var primaryName = GenerateName(primaryPrefix);
+        var secondaryName = GenerateName(secondaryPrefix);
+        await _testBase.GetClientAsyncInternal(ct);
+        var secondaryLease = await _testBase.LeaseClientForHelperAsync(ct);
+
+        // Run both joins together. The join gate inside each path serializes the game-thread
+        // portion; the client-side work overlaps. Use WhenAll so a failure in either still
+        // lets the other settle before we observe it (and so the secondary lease is disposed
+        // on its own failure path inside JoinSecondFarmerAsync).
+        var primaryTask = _testBase.Connect.JoinWithRetryAsync(primaryName, ct: ct);
+        var secondaryTask = JoinSecondFarmerAsync(lease, secondaryLease, secondaryName, ct);
+
+        try
+        {
+            await Task.WhenAll(primaryTask, secondaryTask);
+        }
+        catch
+        {
+            // If only one task faulted, the other may have produced a resource that needs
+            // releasing. JoinSecondFarmerAsync already disposes its own lease on failure; a
+            // successful secondary whose primary failed is disposed here so it doesn't leak.
+            if (secondaryTask.IsCompletedSuccessfully)
+            {
+                await secondaryTask.Result.DisposeAsync();
+            }
+            throw;
+        }
+
+        var primaryResult = primaryTask.Result;
+        _testBase.Connect.AssertJoinSuccess(primaryResult);
+        TrackFarmer(primaryName, primaryResult.UniqueMultiplayerId);
+
+        return (new ClientConnection(primaryName, primaryResult), secondaryTask.Result);
+    }
+
+    /// <summary>
+    /// Joins a second farmer over an already-leased client and wraps it as a
+    /// <see cref="SecondFarmer"/>. The join goes through the server's join gate so it
+    /// serializes correctly against the primary join (the game loop processes one farmhand
+    /// join at a time). Disposes the supplied lease if the join throws; on success the
+    /// returned <see cref="SecondFarmer"/> owns disposal.
+    /// </summary>
+    private async Task<SecondFarmer> JoinSecondFarmerAsync(
+        ResourceLease lease,
+        ClientLease clientLease,
+        string name,
+        CancellationToken ct
+    )
+    {
         try
         {
             var conn = new ConnectionHelper(clientLease.Client, serverApi: _testBase.ServerApi);
-            var join = await conn.JoinWorldViaLanAsync(
-                lease.ServerLanAddress,
-                lease.ServerLanPort,
-                name,
-                cancellationToken: ct
-            );
+            await lease.Managed.AcquireJoinGateAsync(ct);
+            JoinWorldResult join;
+            try
+            {
+                join = await conn.JoinWorldViaLanAsync(
+                    lease.ServerLanAddress,
+                    lease.ServerLanPort,
+                    name,
+                    cancellationToken: ct
+                );
+            }
+            finally
+            {
+                lease.Managed.ReleaseJoinGate();
+            }
             Assert.True(
                 join.Success,
                 $"Second farmer '{name}' failed to join via LAN: {join.Error}"
@@ -222,9 +322,14 @@ internal sealed class FarmerTestHelper
         );
 
         await _testBase.DisconnectAsyncInternal();
+        // Cheap presence re-confirmation only — not a customization gate. The pre-disconnect
+        // wait + disconnect-time saveFarmhand() clone already persisted the customized snapshot,
+        // and a disconnected farmhand stays in farmhandData with isCustomized=true (there's no
+        // post-disconnect window where customization reverts). So requireCustomized:false returns
+        // near-instantly instead of paying the slow customization filter again.
         var persisted = await _testBase.ServerApi.WaitForFarmhandByNameAsync(
             farmerName,
-            requireCustomized: true,
+            requireCustomized: false,
             ct: ct
         );
         Assert.True(

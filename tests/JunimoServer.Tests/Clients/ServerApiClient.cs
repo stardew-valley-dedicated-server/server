@@ -567,6 +567,49 @@ public class TestFestivalStateResponse
 }
 
 /// <summary>
+/// Response from /test/wedding_state GET endpoint (test-only). Mirrors the server-side
+/// TestWeddingStateResponse DTO — a direct read of the host's wedding ceremony state, used to assert
+/// ceremony-active / ceremony-ended and each spouse's location after, without proxying through a
+/// client's location (which reads the Town "Temp" map during the ceremony).
+/// </summary>
+public class TestWeddingStateResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("isWeddingActive")]
+    public bool IsWeddingActive { get; set; }
+
+    [JsonPropertyName("farmhandSpouse")]
+    public string? FarmhandSpouse { get; set; }
+
+    [JsonPropertyName("spouseCurrentLocation")]
+    public string? SpouseCurrentLocation { get; set; }
+
+    // Post-ceremony host-stuck signals — all four must be clear after a wedding ends (see
+    // TwoFarmhandNpcWeddings_SameDay_BothCompleteWithoutHangingHost).
+    [JsonPropertyName("eventUp")]
+    public bool EventUp { get; set; }
+
+    [JsonPropertyName("fadeToBlack")]
+    public bool FadeToBlack { get; set; }
+
+    [JsonPropertyName("dialogueUp")]
+    public bool DialogueUp { get; set; }
+
+    [JsonPropertyName("hostLocationIsTemporary")]
+    public bool HostLocationIsTemporary { get; set; }
+
+    // The host's current location name. After the last wedding the host must be back in its FarmHouse,
+    // not left on the open Farm map where the wedding exit warp drops it.
+    [JsonPropertyName("hostCurrentLocation")]
+    public string? HostCurrentLocation { get; set; }
+}
+
+/// <summary>
 /// Response from /test/set_date POST endpoint.
 /// </summary>
 public class TestSetDateResponse
@@ -1588,6 +1631,28 @@ public class ServerApiClient : IDisposable
         var response = await _httpClient.GetAsync("/test/festival_state", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestFestivalStateResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: read the host's wedding ceremony state + wait-gate ready counts, and (when
+    /// <paramref name="farmhandId"/>/<paramref name="npc"/> are given) whether that farmhand is now
+    /// married to the NPC. Used by WeddingTests to assert ceremony-ended + married without proxying
+    /// through the client location (which reads "Temp" during the ceremony). GET /test/wedding_state
+    /// </summary>
+    public async Task<TestWeddingStateResponse?> GetWeddingState(
+        long? farmhandId = null,
+        string? npc = null,
+        CancellationToken ct = default
+    )
+    {
+        var query = "/test/wedding_state";
+        if (farmhandId.HasValue && !string.IsNullOrEmpty(npc))
+        {
+            query += $"?farmhandId={farmhandId.Value}&npc={Uri.EscapeDataString(npc)}";
+        }
+        var response = await _httpClient.GetAsync(query, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestWeddingStateResponse>(ct);
     }
 
     /// <summary>

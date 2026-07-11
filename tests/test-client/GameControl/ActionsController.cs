@@ -155,6 +155,66 @@ public class ActionsController
     }
 
     /// <summary>
+    /// Engage THIS client's player to an NPC so the next day-transition queues their wedding. The
+    /// engagement (spouse + an Engaged friendship with a WeddingDate) must be authored on the client,
+    /// not the host: a farmhand's <see cref="Farmer"/> root is client-authoritative, so the client
+    /// resends its full root each night (<c>Multiplayer.sendFarmhand</c> → <c>MarkReassigned</c>) and
+    /// would overwrite any host-side spouse write before the wedding fires. Setting it here makes the
+    /// engagement durable across the nightly sync, exactly as a real player accepting a proposal does.
+    /// <paramref name="daysUntilWedding"/> sets the WeddingDate (default 1 = the next morning).
+    /// </summary>
+    public EngageToNpcResult EngageToNpc(string npc, int daysUntilWedding = 1)
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new EngageToNpcResult { Success = false, Error = "Not in a game world" };
+        }
+
+        if (string.IsNullOrEmpty(npc))
+        {
+            return new EngageToNpcResult { Success = false, Error = "Missing npc name" };
+        }
+
+        var me = Game1.player;
+        var weddingDate = WorldDate.ForDaysPlayed(
+            Game1.Date.TotalDays + (daysUntilWedding < 0 ? 0 : daysUntilWedding)
+        );
+
+        // A real NPC engagement is gated on houseUpgradeLevel >= 1 (NPC.cs RejectMermaidPendant_
+        // NeedHouseUpgrade) because there is no level-0 marriage map: FarmHouse.updateMap derives
+        // "Maps/FarmHouse_marriage" at level 0, which exists in no SDV install (only
+        // FarmHouse1_marriage/FarmHouse2_marriage do). The cabin's upgradeLevel is owner.HouseUpgrade
+        // Level (FarmHouse.upgradeLevel getter), so bumping this farmhand to level 1 makes the host's
+        // updateFarmLayout resolve FarmHouse1_marriage when the marriage applies — no missing-map crash.
+        if (me.HouseUpgradeLevel < 1)
+        {
+            me.HouseUpgradeLevel = 1;
+        }
+
+        me.spouse = npc;
+        if (!me.friendshipData.TryGetValue(npc, out var friendship) || friendship == null)
+        {
+            friendship = new Friendship(2500);
+            me.friendshipData[npc] = friendship;
+        }
+        friendship.Status = FriendshipStatus.Engaged;
+        friendship.Proposer = me.UniqueMultiplayerID;
+        friendship.WeddingDate = weddingDate;
+
+        _monitor.Log(
+            $"[Wedding] Engaged client to {npc}, wedding in {daysUntilWedding} day(s).",
+            LogLevel.Info
+        );
+
+        return new EngageToNpcResult
+        {
+            Success = true,
+            Spouse = me.spouse,
+            IsEngaged = me.isEngaged(),
+        };
+    }
+
+    /// <summary>
     /// Place a Garden Pot at the given tile on the player's current location. The
     /// IndoorPot ctor reads <c>Game1.currentLocation</c> when initializing its inner
     /// HoeDirt, so the player must already be at <paramref name="locationName"/>.
@@ -399,6 +459,20 @@ public class LeaveFestivalResult
 {
     public bool Success { get; set; }
     public string? Error { get; set; }
+}
+
+public class EngageToNpcResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string? Spouse { get; set; }
+    public bool IsEngaged { get; set; }
+}
+
+public class EngageToNpcParams
+{
+    public string Npc { get; set; } = "";
+    public int DaysUntilWedding { get; set; } = 1;
 }
 
 public class WarpParams
