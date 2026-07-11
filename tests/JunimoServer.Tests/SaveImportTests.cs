@@ -13,7 +13,8 @@ namespace JunimoServer.Tests;
 /// The source co-op save is generated in-process: create a game (the master is the "Server" bot),
 /// then <c>POST /test/seed_import_source</c> makes that master look like a real played human owner
 /// (non-Server name + inventory, plus the world/relationship/house state and FarmHouse contents each
-/// test asserts), then <c>SleepToSaveAsync</c> writes it to disk. <c>POST /test/import_save</c> then
+/// test asserts), then <c>POST /test/force_save</c> writes it to disk synchronously (no day
+/// transition). <c>POST /test/import_save</c> then
 /// CLONES that save under a new folder name (ExecuteImport rejects importing the active save) and
 /// runs the import on the clone, after which <c>ReloadServerAsync</c> loads the transformed clone and
 /// runs the Layer B finalizer.
@@ -56,7 +57,9 @@ public class SaveImportTests : TestBase
             startingCabins: startingCabins
         );
 
-        // A connected, customized, in-world client is required for the day-transition save.
+        // A connected, customized, in-world client is required: force_save's saveFarmhands() clones
+        // each connected farmhand's live (customized) root into farmhandData, the same capture the
+        // day transition does — so the client must be present and customized when it runs.
         var client = await Farmers.ConnectNewAsync(ct: ct);
         try
         {
@@ -74,7 +77,9 @@ public class SaveImportTests : TestBase
             );
             Assert.NotEqual(0, seedResult!.OwnerUid);
 
-            await SleepToSaveAsync(ct);
+            // Persist synchronously instead of a full in-game day transition (SleepToSaveAsync).
+            var saved = await ServerApi.ForceSave(ct);
+            Assert.True(saved?.Success == true, $"ForceSave failed: {saved?.Error}");
             return seedResult;
         }
         finally
