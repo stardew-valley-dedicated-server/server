@@ -3,6 +3,7 @@ import { Icon } from "@iconify/vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { Line } from "vue-chartjs";
 import { useLinkedCharts } from "../composables/useLinkedCharts";
+import { toArtifactUrl } from "../composables/useScreenshotCache";
 import { useSyncedZoom } from "../composables/useSyncedZoom";
 import { useTestUI } from "../composables/useTestUI";
 import type { InstanceHistoryEntry, InstanceSnapshot, SetupStepSnapshot, StatsSnapshotEntry } from "../types/state";
@@ -89,7 +90,7 @@ const props = withDefaults(
         canGoBack: false,
         hasPrev: false,
         hasNext: false,
-        screenshotSrc: (p: string) => `/artifacts/${p}`,
+        screenshotSrc: (p: string) => toArtifactUrl(p),
     },
 );
 

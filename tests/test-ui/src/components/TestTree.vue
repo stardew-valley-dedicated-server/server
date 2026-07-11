@@ -59,23 +59,30 @@ watch(searchQuery, (q) => {
     }
 });
 
-// React to external filter trigger (e.g., clicking "failed" in status bar)
-watch(filterToStatus, (status) => {
-    if (!status) {
-        return;
-    }
-    const s = status as TestStatus;
-    if (allStatuses.includes(s)) {
-        setExclusiveFilter(s);
-        // Expand all so filtered results are visible
-        collapsed.value.clear();
-        userCollapsed.value.clear();
-        // Reset keyboard focus so next arrow key starts from the top of filtered results
-        focusedKey.value = null;
-    }
-    // Reset trigger so it can fire again
-    filterToStatus.value = null;
-});
+// React to external filter trigger (e.g., clicking "failed" in status bar).
+// immediate: the Overview sets filterToStatus *before* this tree mounts (the tree
+// is v-if'd on the tests view), so a lazy watcher would miss that pre-set value —
+// the immediate run applies it on mount.
+watch(
+    filterToStatus,
+    (status) => {
+        if (!status) {
+            return;
+        }
+        const s = status as TestStatus;
+        if (allStatuses.includes(s)) {
+            setExclusiveFilter(s);
+            // Expand all so filtered results are visible
+            collapsed.value.clear();
+            userCollapsed.value.clear();
+            // Reset keyboard focus so next arrow key starts from the top of filtered results
+            focusedKey.value = null;
+        }
+        // Reset trigger so it can fire again
+        filterToStatus.value = null;
+    },
+    { immediate: true },
+);
 
 // Filtered collections: remove tests that don't match, then remove empty classes/collections
 const filteredCollections = computed(() => {
