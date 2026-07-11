@@ -5,6 +5,23 @@ import type { OutputEntry } from "../types/state";
  * survive runner shutdown. Key: artifact path, Value: blob URL.
  */
 
+/**
+ * Build the `/artifacts/...` URL the live runner serves for an artifact path.
+ *
+ * The runner emits ABSOLUTE paths (e.g. `D:\...\TestResults\runs\<run>\tests\...\x.mp4`), but its
+ * `/artifacts/` endpoint is a PhysicalFileProvider rooted at `TestResults/`, so it only resolves a
+ * `runs/<run>/...`-relative URL with forward slashes. Prefixing the absolute path verbatim yields
+ * `/artifacts/D:\...` which 404s — the bug that left screenshots and recordings blank in the live UI.
+ * We anchor on the last `/runs/` segment (matching `relativeRunPath` in useTestStore) and normalise
+ * backslashes. Already-relative or bundle paths are returned unchanged.
+ */
+export function toArtifactUrl(path: string): string {
+    const norm = path.replace(/\\/g, "/");
+    const idx = norm.lastIndexOf("/runs/");
+    const relative = idx >= 0 ? norm.slice(idx + 1) : norm; // drop leading '/'
+    return `/artifacts/${relative}`;
+}
+
 export interface ScreenshotCache {
     /** Resolve a screenshot path to a displayable URL (blob URL or /artifacts/ fallback). */
     screenshotSrc: (path: string) => string;
@@ -32,7 +49,7 @@ export function useScreenshotCache(): ScreenshotCache {
             return; // offline report bundle: media sits next to index.html
         }
         fetchPending.add(artifactPath);
-        fetch(`/artifacts/${artifactPath}`)
+        fetch(toArtifactUrl(artifactPath))
             .then((res) => {
                 if (!res.ok) {
                     throw new Error(`${res.status}`);
@@ -71,7 +88,7 @@ export function useScreenshotCache(): ScreenshotCache {
         if (path.startsWith("artifacts/")) {
             return path;
         }
-        return `/artifacts/${path}`;
+        return toArtifactUrl(path);
     }
 
     function cacheScreenshotsFromOutput(output: OutputEntry[] | null) {

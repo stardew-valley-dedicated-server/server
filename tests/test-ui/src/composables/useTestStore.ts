@@ -100,6 +100,8 @@ export interface TestStore {
     findGlobalStep: (stepName: string) => SetupStepSnapshot | null;
     /** Find a test by display name (for cross-linking from history). */
     findTest: (displayName: string) => TestSnapshot | null;
+    /** The freshest failed test (highest executionOrder), or null if none failed. */
+    findMostRecentFailure: () => TestSnapshot | null;
     /** Send a runtime control command to the runner. WS-first, REST fallback. */
     sendCommand: (cmd: "stop") => Promise<void>;
 }
@@ -422,6 +424,30 @@ export function useTestStore(): TestStore {
             }
         }
         return firstFailed ?? firstRunning ?? mostRecent;
+    }
+
+    // The failure to jump to from "show failed tests" surfaces — the freshest one
+    // (highest executionOrder), matching the Overview's "most recent failure" order.
+    // Falls back to the first failed in tree order when none carry an executionOrder.
+    function findMostRecentFailure(): TestSnapshot | null {
+        let best: TestSnapshot | null = null;
+        let bestOrder = -1;
+        let firstFailed: TestSnapshot | null = null;
+        for (const col of collections.value) {
+            for (const cls of col.classes) {
+                for (const test of cls.tests) {
+                    if (test.status !== "failed") {
+                        continue;
+                    }
+                    firstFailed ??= test;
+                    if (test.executionOrder != null && test.executionOrder > bestOrder) {
+                        bestOrder = test.executionOrder;
+                        best = test;
+                    }
+                }
+            }
+        }
+        return best ?? firstFailed;
     }
 
     function updateTitleFromState() {
@@ -910,7 +936,11 @@ export function useTestStore(): TestStore {
             }
 
             case "recording": {
-                cacheScreenshot(event.recordingPath);
+                // Don't eagerly blob-cache the video — recordings are multi-MB and the <video>
+                // element streams them on demand from the /artifacts/ URL (resolved via
+                // screenshotSrc). Eager-caching every clip would pull tens of MB into memory on a
+                // full run. (Screenshots ARE eagerly cached — they're small and must survive runner
+                // shutdown for the offline view.)
                 const test = findOrCreateTest(event.testCollection, event.testClass, event.displayName);
                 if (test) {
                     test.recordings = test.recordings || [];
@@ -1618,6 +1648,7 @@ export function useTestStore(): TestStore {
         findTest(displayName: string): TestSnapshot | null {
             return findTestByDisplayName(displayName);
         },
+        findMostRecentFailure,
         sendCommand,
     };
 }

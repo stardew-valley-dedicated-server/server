@@ -135,6 +135,13 @@ provide("hoveredNav", hoveredNav);
 function showFailedTests() {
     activeView.value = "tests";
     filterToStatus.value = "failed";
+    // Also open a failure so the output panel isn't empty — this is the "go to
+    // error" action, not just a tree filter. Picking the freshest failure routes
+    // to /tests/<name>; the TestTree filter (above) narrows the tree to failures.
+    const failure = store.findMostRecentFailure();
+    if (failure) {
+        store.selectTest(failure);
+    }
 }
 provide("showFailedTests", showFailedTests);
 
