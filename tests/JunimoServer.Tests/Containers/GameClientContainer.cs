@@ -292,6 +292,28 @@ public class GameClientContainer : IAsyncDisposable
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(_options.StartupTimeout);
 
+        // Remote hosts only: tighter daemon-responsiveness deadline on docker create+start —
+        // same rationale as ServerContainer.StartAsync. A wedged shared daemon-socket forward
+        // otherwise hangs this call the full StartupTimeout (120s). 75s flags it decisively
+        // (healthy client start is well under that); the trip surfaces as TimeoutException, which
+        // ClientPool's create seam routes through PoisonIfTransportFaultAsync (corroborate via
+        // ssh -O check → heal+retry if the master is alive, poison if dead).
+        using var remoteDaemonCts = CancellationTokenSource.CreateLinkedTokenSource(
+            timeoutCts.Token
+        );
+        if (SshDestination is not null)
+        {
+            var remoteStartTimeoutS =
+                int.TryParse(
+                    Environment.GetEnvironmentVariable("SDVD_REMOTE_DAEMON_START_TIMEOUT_S"),
+                    out var s
+                )
+                && s > 0
+                    ? s
+                    : 75;
+            remoteDaemonCts.CancelAfter(TimeSpan.FromSeconds(remoteStartTimeoutS));
+        }
+
         // Start log streaming before container start (same pattern as ServerContainer).
         // Emits each log line to UI via _startupLogCallback during startup phases.
         _containerExitDetected = false;
@@ -340,7 +362,8 @@ public class GameClientContainer : IAsyncDisposable
             // start task continues in the background; cleanup is best-effort.
             // Without this, a 300s per-test timeout can take 360s+ to actually
             // unblock the test body, starving the per-host client-capacity gate.
-            await _container.StartAsync(timeoutCts.Token).WaitAsync(timeoutCts.Token);
+            // remoteDaemonCts == timeoutCts for local hosts; tighter deadline for remote.
+            await _container.StartAsync(remoteDaemonCts.Token).WaitAsync(remoteDaemonCts.Token);
 
             JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
                 "container_started",
@@ -353,6 +376,21 @@ public class GameClientContainer : IAsyncDisposable
                     startupMs = _startSw.ElapsedMilliseconds,
                     host_id = HostId,
                 }
+            );
+        }
+        catch (Exception)
+            when (remoteDaemonCts.IsCancellationRequested
+                && !ct.IsCancellationRequested
+                && _startSw.Elapsed < _options.StartupTimeout
+            )
+        {
+            // Remote daemon-responsiveness deadline tripped (not the caller, not the full
+            // StartupTimeout). Surface as TimeoutException so ClientPool's create seam
+            // corroborates via ssh -O check and poisons-fast-or-retries, instead of hanging
+            // to StartupTimeout. Mirrors ServerContainer.StartAsync.
+            throw new TimeoutException(
+                $"client-{_clientIndex} docker start exceeded the remote daemon-responsiveness "
+                    + $"deadline after {_startSw.ElapsedMilliseconds}ms (daemon-socket forward wedged?)."
             );
         }
         catch (Exception) when (ct.IsCancellationRequested)
@@ -467,9 +505,16 @@ public class GameClientContainer : IAsyncDisposable
             VncPort = _vncForward.CoordinatorPort;
         }
 
-        // Reconfigure the API client with the correct URL
+        // Reconfigure the API client with the correct URL. On remote hosts it transparently
+        // heals a dropped SSH forward (re-open + retry on the new port) so an in-flight join /
+        // navigate survives a master keepalive blip instead of failing the test.
         _apiClient.Dispose();
-        var newClient = new GameTestClient(BaseUrl);
+        var newClient = new GameTestClient(
+            BaseUrl,
+            defaultWaitTimeout: null,
+            liveBaseUrl: () => BaseUrl,
+            healAsync: HealApiForwardAsync
+        );
         // Copy the client reference (GameTestClient is a wrapper, we need to update the internal HttpClient)
         typeof(GameTestClient)
             .GetField(
@@ -653,6 +698,91 @@ public class GameClientContainer : IAsyncDisposable
         if (!isEvent)
         {
             _logCallback?.Invoke(line);
+        }
+    }
+
+    private readonly SemaphoreSlim _forwardHealLock = new(1, 1);
+    private long _lastHealedPort;
+
+    /// <summary>
+    /// Re-opens the client's API <c>ssh -L</c> forward on a fresh loopback port and updates
+    /// <see cref="ApiPort"/> / <see cref="BaseUrl"/>. No-op (false) on local hosts or before
+    /// the port is mapped. Mirrors <c>ServerContainer.ReopenApiForwardAsync</c>.
+    /// </summary>
+    public async Task<bool> ReopenApiForwardAsync(CancellationToken ct = default)
+    {
+        if (SshDestination is null || _container is null || ApiPort == 0)
+        {
+            return false;
+        }
+
+        var apiMapped = _container.GetMappedPublicPort(ContainerApiPort);
+        var staleLease = _apiForward;
+        var stalePort = ApiPort;
+
+        var fresh = await _tunnels.OpenAsync(HostId, SshDestination, SshKeyPath, apiMapped, ct);
+        _apiForward = fresh;
+        ApiPort = fresh.CoordinatorPort;
+
+        if (staleLease != null)
+        {
+            try
+            {
+                await staleLease.DisposeAsync();
+            }
+            catch { }
+        }
+
+        InfrastructureEventLog.Emit(
+            "client_api_forward_reopened",
+            new
+            {
+                host_id = HostId,
+                stalePort,
+                freshPort = ApiPort,
+                mappedPort = apiMapped,
+            }
+        );
+        return true;
+    }
+
+    /// <summary>
+    /// Corroborates the master is usable then re-opens the client forward — the heal callback
+    /// wired into <see cref="GameTestClient"/> so an in-flight join/navigate retries against the
+    /// fresh port. Deduped against concurrent callers. Mirrors
+    /// <c>ServerContainer.HealApiForwardAsync</c>.
+    /// </summary>
+    public async Task<bool> HealApiForwardAsync(CancellationToken ct = default)
+    {
+        if (SshDestination is null)
+        {
+            return false;
+        }
+
+        var portBeforeWait = (long)ApiPort;
+        await _forwardHealLock.WaitAsync(ct);
+        try
+        {
+            if (Interlocked.Read(ref _lastHealedPort) != 0 && ApiPort != portBeforeWait)
+            {
+                return true;
+            }
+
+            if (!await _tunnels.EnsureMasterUsableAsync(HostId, ct))
+            {
+                return false;
+            }
+
+            var reopened = await ReopenApiForwardAsync(ct);
+            if (reopened)
+            {
+                Interlocked.Exchange(ref _lastHealedPort, ApiPort);
+            }
+            return reopened;
+        }
+        finally
+        {
+            _forwardHealLock.Release();
         }
     }
 

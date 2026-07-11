@@ -104,13 +104,34 @@ internal sealed class ServerQueue
     /// <summary>
     /// Resets the queue for server replacement (e.g., after poisoning).
     /// Creates a fresh TCS so new waiters block until the replacement is ready.
-    /// Old waiters attached to the previous TCS via ContinueWith will NOT be
-    /// explicitly woken; they rely on their per-waiter cancellation token for
-    /// cleanup. This is safe because Reset is only called during poison replacement
-    /// or eviction, and those paths call ServerReady/ServerFailed on the new TCS.
+    ///
+    /// <para>
+    /// Old waiters attached to the previous TCS via ContinueWith are NOT woken by the
+    /// no-fault overload; they rely on their per-waiter cancellation token for cleanup.
+    /// That is only safe when the caller WILL re-signal the new TCS (benign reuse /
+    /// eviction). When replacement may never succeed — a poison on the only usable host —
+    /// the old waiters would be orphaned forever (their per-test <c>ct</c> never fires on
+    /// a host poison), wedging the whole run. Use <see cref="Reset(Exception)"/> on those
+    /// paths to fault the orphaned waiters before swapping.
+    /// </para>
     /// </summary>
     public void Reset()
     {
+        _tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>
+    /// Faulting reset for the no-replacement / poison-on-last-host case: faults the
+    /// CURRENT TCS with <paramref name="fault"/> first (waking every already-attached
+    /// waiter with the exception so it fails fast instead of orphaning), THEN swaps in a
+    /// fresh TCS for any future waiter. Use whenever a Reset might not be followed by a
+    /// successful <see cref="ServerReady"/> on the new TCS.
+    /// </summary>
+    public void Reset(Exception fault)
+    {
+        // Fault the old TCS in place — TrySetException reaches the orphaned
+        // ContinueWith waiters; a no-op if it already completed.
+        _tcs.TrySetException(fault);
         _tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

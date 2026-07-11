@@ -1028,7 +1028,40 @@ internal sealed class ManagedServer : IAsyncDisposable
 
                 using var client = Server.CreateApiClient();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var health = await client.GetHealth();
+                // Per-probe deadline. ServerApiClient's own HttpClient.Timeout is 5 min
+                // (sized for long-polls), so without this a -L forward that wedges
+                // MID-STREAM (bytes stop flowing on an established channel — no exception
+                // thrown, so ForwardHealingHandler never engages) freezes THIS probe for
+                // 5 min; the loop never reaches the failure counter, no health.check_*
+                // fires, and the server never poisons (observed: run 02-12-57Z,
+                // host-poison-deadlocks-run.md fu6 — zero health events through the wedge).
+                //
+                // The deadline MUST sit ABOVE ForwardHealingHandler's heal-retry budget
+                // (45s): the watchdog's GetHealth() is wrapped by that handler, so a
+                // CATCHABLE forward blip (listener gone → SocketException) is healed in
+                // place within 45s and the probe then succeeds. Cutting the probe at <45s
+                // would abort a legitimate heal and miscount it as a wedge (real /health
+                // calls in run 01-51 took up to ~160s riding a blip+heal to a 200, with a
+                // ~0.5s-fresh snapshot — the server was alive the whole time). 50s clears
+                // the heal budget with margin while still bounding the mid-stream hang far
+                // below 5 min. A probe deadline is NOT shutdown: surface it as
+                // TimeoutException so it flows through the heal/poison-count path below,
+                // not the outer-ct `break`.
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                probeCts.CancelAfter(ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000));
+                Clients.HealthResponse? health;
+                try
+                {
+                    health = await client.GetHealth(probeCts.Token);
+                }
+                catch (OperationCanceledException)
+                    when (probeCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    throw new TimeoutException(
+                        $"/health probe exceeded {ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000)}ms "
+                            + "(forward wedged mid-stream or server unresponsive)"
+                    );
+                }
                 sw.Stop();
 
                 if (health == null)
@@ -1121,6 +1154,21 @@ internal sealed class ManagedServer : IAsyncDisposable
                     consecutiveFailures = 0;
                     continue;
                 }
+
+                // Forward-scoped fault (loopback ConnectionRefused): the per-server
+                // -L forward's listener is gone, which a transient shared-master
+                // keepalive blip drops for every forward at once while the host stays
+                // reachable. If `ssh -O check` confirms the master is alive, re-open
+                // this server's forward in place and DON'T count it toward poison —
+                // healing a reused/live server instead of cascading into a host
+                // poison (the 2026-06-25 13-test cascade). Master dead ⇒ fall through
+                // to normal failure counting (the host really is gone).
+                if (await TryHealForwardScopedFaultAsync(ex, ct))
+                {
+                    consecutiveFailures = 0;
+                    continue;
+                }
+
                 consecutiveFailures++;
                 lastFailureCode = PoisonReasonCode.HealthCheckError;
                 lastFailureReason = $"Health check threw {ex.GetType().Name}: {ex.Message}";
@@ -1157,6 +1205,53 @@ internal sealed class ManagedServer : IAsyncDisposable
                 PoisonServer(lastFailureReason, lastFailureCode);
                 break;
             }
+        }
+    }
+
+    /// <summary>
+    /// When a health probe throws a <i>forward-scoped</i> transport fault (loopback
+    /// ConnectionRefused — the per-server <c>ssh -L</c> listener is gone), corroborate
+    /// the host is still up via <c>ssh -O check</c> and, if so, re-open this server's
+    /// API forward in place. Returns true when the fault was forward-scoped AND
+    /// healed — the caller then resets the failure streak instead of advancing toward
+    /// poison. Returns false for non-forward faults, local hosts, a dead master, or a
+    /// failed re-open (all of which should count normally).
+    /// </summary>
+    private async Task<bool> TryHealForwardScopedFaultAsync(Exception ex, CancellationToken ct)
+    {
+        var (_, forwardScoped) = TransportFaultClassifier.Classify(ex);
+        if (!forwardScoped || Host.SshDestination is null)
+        {
+            return false;
+        }
+
+        // Establish the master is usable before re-opening the forward (retries -O check +
+        // respawns once — see TunnelManager.EnsureMasterUsableAsync). This runs every
+        // health-watchdog cycle while the forward is dead, so even a longer outage heals on
+        // a later cycle rather than the test eating the whole blip.
+        if (!await TunnelManager.Default.EnsureMasterUsableAsync(Host.Id, ct))
+        {
+            return false;
+        }
+
+        try
+        {
+            var reopened = await Server.ReopenApiForwardAsync(ct);
+            if (reopened)
+            {
+                TestLog.Server(
+                    $"{_displayLabel} healed forward-scoped fault "
+                        + $"({ex.GetType().Name}) — re-opened API forward, host kept"
+                );
+            }
+            return reopened;
+        }
+        catch (Exception healEx)
+        {
+            TestLog.Server(
+                $"{_displayLabel} forward re-open failed after {ex.GetType().Name}: {healEx.Message}"
+            );
+            return false;
         }
     }
 
@@ -1212,6 +1307,15 @@ internal sealed class ManagedServer : IAsyncDisposable
             _errorCts.Cancel();
         }
         catch { }
+
+        // Wake same-class exclusive methods queued on _exclusiveClassTurn. That gate is
+        // released only by the prior method's normal cleanup (ReleaseExclusive), which a
+        // poison-killed method never reaches — so its siblings would WaitAsync forever on
+        // the per-test ct (a host/server poison fires no run-wide cancellation). Releasing
+        // the semaphore lets each sibling proceed past the gate and fail fast on the now-
+        // aborted server. See host-poison-deadlocks-run.md.
+        DrainExclusiveGateOnPoison();
+
         try
         {
             _onPoisoned?.Invoke(this);
@@ -1220,6 +1324,42 @@ internal sealed class ManagedServer : IAsyncDisposable
         {
             TestLog.Server($"{_displayLabel} poison callback failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Unblocks every same-class exclusive waiter when the server is poisoned: releases
+    /// the turn semaphore once per queued waiter and resolves any pending exclusive-done
+    /// TCS. Woken waiters re-check the server state (now <c>_aborted</c>) and fail fast
+    /// via the normal poisoned-lease path instead of hanging on the gate. Idempotent and
+    /// best-effort — a double poison or an already-drained gate is a no-op.
+    /// </summary>
+    private void DrainExclusiveGateOnPoison()
+    {
+        TaskCompletionSource? done;
+        int waiters;
+        lock (_exclusiveLock)
+        {
+            waiters = _exclusiveClassWaiters;
+            done = _exclusiveDone;
+            _exclusiveDone = null;
+            _exclusiveOwnerClass = null;
+        }
+
+        // One permit per queued sibling; each decrements _exclusiveClassWaiters as it
+        // wakes. SemaphoreSlim.Release(0) throws, so guard the count.
+        if (waiters > 0)
+        {
+            try
+            {
+                _exclusiveClassTurn.Release(waiters);
+            }
+            catch (SemaphoreFullException) { }
+            catch (ObjectDisposedException) { }
+        }
+
+        // A non-class exclusive holder waits on this TCS; resolve it so it stops waiting
+        // on a server that will never drain. TrySetResult is a no-op if already resolved.
+        done?.TrySetResult();
     }
 
     /// <summary>

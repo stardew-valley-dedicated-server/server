@@ -186,6 +186,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             _runningTestToken = Lease.Managed.RegisterRunningTest(_testDisplayName);
         }
 
+        // Per-test progress heartbeat for the stall watchdog: a long KeepConnected class
+        // holds one lease across many sequential methods (no acquire/release between them),
+        // so without this its method boundaries would look like a stalled run.
+        TestResourceBroker.Instance.MarkRunProgress();
+
         _budgetCts?.CancelAfter(TestTimeout);
     }
 
@@ -211,12 +216,19 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // The gate is inside the broker (after the server is ready but before AddRef),
         // so deferred server creation/eviction proceeds unblocked while waiting tests
         // don't inflate the refcount.
-        Lease = await TestResourceBroker.Instance.AcquireAsync(
-            requirements,
-            testName,
-            ct,
-            priority
-        );
+        //
+        // A failure here is almost always INFRASTRUCTURE, not a product bug: this E2E
+        // harness reaches the server only over the ssh-forwarded transport, so a
+        // ServerUnavailableException (every create attempt failed / host poisoned) or a
+        // raw Socket/Http/stream fault means a forward/host blip, not a test defect.
+        // Letting it propagate as a normal exception makes xUnit mark the test FAILED,
+        // which trips StopOnFail and cascades the entire shared class (the 2026-06-25
+        // 13-test SaveImport cascade from one ConnectionRefused). Instead: retry once (the
+        // broker replaces a poisoned server, so the retry lands on a fresh instance), and
+        // if it STILL faults on transport, skip-as-infrastructure (xUnit reports skipped,
+        // not failed → no StopOnFail, no red). Non-transport faults and run-abort OCEs are
+        // rethrown unchanged so a real crash/assertion still fails fast.
+        Lease = await AcquireWithInfrastructureSkipAsync(requirements, testName, ct, priority);
         PersistentSession.RecordCapacityAcquired(requirements.Clients);
         acquireSw.Stop();
 
@@ -287,6 +299,95 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         LogTrace($"ServerReady wait: {SetupEventBus.FormatDuration(readySw.Elapsed)}");
 
         ServerStatus = await Lease.Api.GetStatus();
+    }
+
+    /// <summary>
+    /// Broker acquire with infrastructure-skip semantics: retry once on a transport fault
+    /// (the broker replaces a poisoned/failed server, so the retry lands on a fresh instance),
+    /// then convert a persistent transport fault into an <see cref="InfrastructureSkipException"/>
+    /// (xUnit reports the test skipped, not failed → no StopOnFail cascade). A non-transport
+    /// fault or a run-abort cancellation is rethrown unchanged so real crashes still fail fast.
+    /// </summary>
+    private async Task<ResourceLease> AcquireWithInfrastructureSkipAsync(
+        ResourceRequirements requirements,
+        string testName,
+        CancellationToken ct,
+        int priority
+    )
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await TestResourceBroker.Instance.AcquireAsync(
+                    requirements,
+                    testName,
+                    ct,
+                    priority
+                );
+            }
+            catch (Exception ex) when (IsInfrastructureTransportFault(ex, ct))
+            {
+                // First transport fault: retry once on a fresh server before giving up.
+                if (attempt == 1)
+                {
+                    InfrastructureEventLog.Emit(
+                        "server_acquire_retry_after_transport_fault",
+                        new { test = testName, error = $"{ex.GetType().Name}: {ex.Message}" }
+                    );
+                    continue;
+                }
+
+                // Still faulting on transport ⇒ infrastructure, not a product bug. Skip
+                // (xUnit reports skipped, no StopOnFail) rather than fail-and-cascade.
+                InfrastructureEventLog.Emit(
+                    "test_skipped_infrastructure",
+                    new { test = testName, error = $"{ex.GetType().Name}: {ex.Message}" }
+                );
+                throw new InfrastructureSkipException(
+                    $"Infrastructure transport fault acquiring a server ({ex.GetType().Name}: "
+                        + $"{ex.Message}). Skipped — not a test defect."
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when an exception from server acquisition is an infrastructure transport fault
+    /// (a poisoned host or a forward/host transport fault) rather than a product bug or a
+    /// run-abort cancellation. A caller-CT cancellation (StopOnFail/Ctrl-C) is NOT a transport
+    /// fault — let it propagate so it's handled as a cancellation, not a skip.
+    /// </summary>
+    private static bool IsInfrastructureTransportFault(Exception ex, CancellationToken ct) =>
+        !ct.IsCancellationRequested && IsInfrastructureTransportFault(ex);
+
+    /// <summary>
+    /// Type-only classification of an exception as an infrastructure transport fault
+    /// (poisoned host / forward-host transport fault / daemon-responsiveness timeout), with no
+    /// cancellation gate. Used where the caller has already excluded run-abort cancellation
+    /// (e.g. the dispose-phase end-of-test check, which only runs when not cancelled).
+    /// </summary>
+    internal static bool IsInfrastructureTransportFault(Exception ex)
+    {
+        if (ex is ServerUnavailableException || ex is InfrastructureSkipException)
+        {
+            return true;
+        }
+
+        // The daemon-responsiveness TimeoutException (a wedged daemon-socket forward) is
+        // unambiguously infrastructure even though Classify() deliberately treats a *generic*
+        // TimeoutException as non-transport. It reaches the test raw when the master stayed alive
+        // (mux-accept exhaustion: forwards wedge but the master process survives, so the broker's
+        // corroboration finds it "alive" and doesn't poison) — exactly the run 02-12-57Z case.
+        if (TransportFaultClassifier.IsDaemonResponsivenessTimeout(ex))
+        {
+            return true;
+        }
+
+        // Reuse the same classifier the broker poison path uses (walks the inner-exception
+        // chain), so the acquire-time skip and the host-poison decision agree on what counts
+        // as transport. A non-null reason means Socket/Http/EOF/broken-pipe etc.
+        return TransportFaultClassifier.Classify(ex).Reason is not null;
     }
 
     /// <summary>

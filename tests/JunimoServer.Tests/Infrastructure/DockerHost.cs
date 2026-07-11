@@ -303,6 +303,64 @@ public sealed class DockerHost : IAsyncDisposable
     }
 
     /// <summary>
+    /// Re-opens the daemon-socket forward and rebuilds <see cref="ApiClient"/> /
+    /// <see cref="EndpointConfig"/> after a transient master keepalive blip tore the
+    /// forward down (the host stayed alive — <c>ssh -O check</c> passed). Without this the
+    /// host's <c>ApiClient</c> stays pinned to a dead coordinator port and every later
+    /// container op fails with ConnectionRefused even though the daemon is reachable.
+    /// No-op (returns false) for local hosts or before <see cref="InitializeAsync"/> ran.
+    /// Best-effort: opens the replacement before dropping the stale forward so a failure
+    /// leaves the old endpoint in place rather than a null one.
+    /// </summary>
+    internal async Task<bool> HealDaemonForwardAsync(
+        TunnelManager tunnels,
+        CancellationToken ct = default
+    )
+    {
+        if (string.IsNullOrEmpty(SshDestination) || _endpointConfig == null)
+        {
+            return false;
+        }
+
+        var fresh = await tunnels.OpenSocketForwardAsync(
+            Id,
+            SshDestination!,
+            SshKeyPath,
+            RemoteSocketPath,
+            ct
+        );
+
+        ForwardLease? stale;
+        DockerClient? staleClient;
+        lock (_lazyInitLock)
+        {
+            stale = _daemonForward;
+            staleClient = _apiClient;
+            _daemonForward = fresh;
+            var localEndpoint = new Uri($"tcp://localhost:{fresh.CoordinatorPort}");
+            _endpointConfig = DockerEndpointConfig.CreateRemote(localEndpoint);
+            _apiClient = _endpointConfig.CreateDockerClient();
+        }
+
+        try
+        {
+            staleClient?.Dispose();
+        }
+        catch { }
+        if (stale != null)
+        {
+            try
+            {
+                await stale.DisposeAsync();
+            }
+            catch { }
+        }
+
+        InfrastructureEventLog.Emit("host_daemon_forward_healed", new { host_id = Id });
+        return true;
+    }
+
+    /// <summary>
     /// Calibration result for the host's host↔container clock offset.
     /// <c>FromCache</c> is true when this caller observed the value cached
     /// from a prior calibration (no new exec round-trip happened).
@@ -488,28 +546,101 @@ public sealed class DockerHost : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Shared mid-run failure-seam wiring: poison the host iff <paramref name="ex"/>
-    /// was a transport fault. Called from both on-demand container-creation seams
-    /// (<c>TestResourceBroker.CreateAndResolveAsync</c>,
-    /// <c>ClientPool.CreateClientGuardedAsync</c>) so the decision is identical.
-    /// A no-op for application faults; never throws (the probe swallows its own
-    /// errors) — the caller re-throws the original exception afterward.
-    /// </summary>
-    internal async Task PoisonIfTransportFaultAsync(Exception ex)
+    /// <summary>Outcome of <see cref="PoisonIfTransportFaultAsync"/>.</summary>
+    internal enum TransportFaultOutcome
     {
-        var transportReason = TransportFaultClassifier.ClassifyHostTransportFault(ex);
+        /// <summary>Not a transport fault (application error) — caller rethrows.</summary>
+        NotTransport,
 
-        // A bare TimeoutException is ambiguous (slow-but-live server vs dead
-        // tunnel); corroborate via -O check against the master (remote only).
-        // Directly-classified socket/http faults skip this.
-        if (transportReason is null && ex is TimeoutException && SshDestination is not null)
+        /// <summary>A recoverable forward-scoped blip on a still-alive (or respawned) host —
+        /// the host was NOT poisoned and the forwards are healing. The caller should RETRY the
+        /// operation rather than fail; a fresh attempt lands on the healed forward.</summary>
+        RecoveredRetry,
+
+        /// <summary>The host was genuinely gone and got poisoned — caller rethrows; the
+        /// poisoned-host cascade takes over.</summary>
+        Poisoned,
+    }
+
+    /// <summary>
+    /// Shared mid-run failure-seam wiring: classify <paramref name="ex"/> and either poison the
+    /// host (genuine outage), report a recoverable forward blip (host kept, forwards healing —
+    /// caller should retry), or report not-a-transport-fault. Called from both on-demand
+    /// container-creation seams (<c>TestResourceBroker.CreateAndResolveAsync</c>,
+    /// <c>ClientPool.CreateClientGuardedAsync</c>) so the decision is identical. Never throws.
+    /// </summary>
+    internal async Task<TransportFaultOutcome> PoisonIfTransportFaultAsync(Exception ex)
+    {
+        var (transportReason, forwardScoped) = TransportFaultClassifier.Classify(ex);
+
+        // Two paths need corroboration against the master before poisoning the
+        // whole host (remote only — local hosts have no master):
+        //   1. A bare TimeoutException is ambiguous (slow-but-live server vs dead
+        //      tunnel).
+        //   2. A forward-scoped fault (loopback ConnectionRefused / ConnectionReset /
+        //      ConnectionAborted / broken-pipe / EOF). On a loopback -L forward NONE of
+        //      these proves the host died — the connection only ever talks to the local
+        //      forward listener. A transient master keepalive blip drops ALL forwards at
+        //      once while the master + host stay alive (reproduced 2026-06-26: Docker
+        //      stats never stopped). Poisoning the host on this cascades every test on it.
+        // In both cases, a live `ssh -O check` means the host is fine — don't poison; heal
+        // the forwards instead so in-flight/next operations retry against the live daemon.
+        var needsCorroboration =
+            (transportReason is null && ex is TimeoutException) || forwardScoped;
+        if (needsCorroboration && SshDestination is not null)
         {
-            if (!await TunnelManager.Default.IsMasterAliveAsync(Id))
+            var masterAlive = await TunnelManager.Default.IsMasterAliveAsync(Id);
+
+            // Master dead ⇒ try resurrecting it once before condemning the host. One
+            // shared master carries every forward, so a transient master death (fd /
+            // mux-accept-backlog exhaustion — `accept: Resource temporarily unavailable`)
+            // loses the whole host even though the VPS is fine. A successful respawn means
+            // the host is recoverable: don't poison. See host-poison-deadlocks-run.md.
+            if (!masterAlive)
             {
-                transportReason =
-                    $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
+                masterAlive = await TunnelManager.Default.TryRespawnMasterAsync(Id);
             }
+
+            if (masterAlive)
+            {
+                // Host reachable ⇒ a forward/timeout blip or a recovered master, not a host
+                // outage. Re-open the daemon-socket forward NOW so the host's ApiClient stops
+                // pointing at the dead port (it is opened once in InitializeAsync and never
+                // re-opened otherwise — without this every later container op fails
+                // ConnectionRefused even though the daemon is reachable). Per-server -L API
+                // forwards heal separately via the ManagedServer health watchdog. Best-effort.
+                try
+                {
+                    await HealDaemonForwardAsync(TunnelManager.Default);
+                }
+                catch (Exception healEx)
+                {
+                    TestLog.Test($"[ssh] daemon forward heal failed on '{Id}': {healEx.Message}");
+                }
+
+                InfrastructureEventLog.Emit(
+                    "host_forward_fault_not_poisoned",
+                    new
+                    {
+                        host_id = Id,
+                        reason = transportReason,
+                        forwardScoped,
+                        detail = "ssh master alive/respawned; forwards healed, host kept",
+                    }
+                );
+                // Recoverable blip: tell the caller to retry rather than fail — a fresh attempt
+                // lands on the healed forward. Only when the fault was actually transport
+                // (forwardScoped, or a corroborated bare timeout); a non-transport bare timeout
+                // would leave transportReason null AND forwardScoped false → NotTransport.
+                return forwardScoped || transportReason is not null
+                    ? TransportFaultOutcome.RecoveredRetry
+                    : TransportFaultOutcome.NotTransport;
+            }
+
+            // Master dead AND respawn failed ⇒ the host really is gone. Stamp a reason for
+            // the bare-timeout path (forward-scoped already has one).
+            transportReason ??=
+                $"ssh master for {Id} not responding to -O check after {ex.GetType().Name}";
         }
 
         if (transportReason is not null)
@@ -527,7 +658,10 @@ public sealed class DockerHost : IAsyncDisposable
                     $"[ssh] best-effort transport poison failed on '{Id}': {poisonEx.Message}"
                 );
             }
+            return TransportFaultOutcome.Poisoned;
         }
+
+        return TransportFaultOutcome.NotTransport;
     }
 
     /// <summary>

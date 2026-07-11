@@ -114,6 +114,19 @@ var abortCount = 0;
 AssemblyRunner? activeRunner = null;
 SetupPipeServer? setupPipeRef = null;
 
+// Parent-side child-stall watchdog state. `_childLastProgressUtc` is bumped on every test
+// start or pass (the child is making forward progress); the watchdog aborts the run if it
+// goes silent past the threshold (the child wedged and can't self-rescue). Ticks, read/written
+// via Interlocked. Default 12 min — longer than the child's own 600s broker watchdog +
+// 300s per-test timeout so it only fires when those ALSO failed (a true wedge).
+long _childLastProgressUtc = DateTime.UtcNow.Ticks;
+var ChildStallTimeout = TimeSpan.FromSeconds(
+    int.TryParse(Environment.GetEnvironmentVariable("SDVD_CHILD_STALL_TIMEOUT_S"), out var _cs)
+    && _cs > 0
+        ? _cs
+        : 720
+);
+
 // Shared abort body. `cause` becomes the run_aborted event cause and the
 // summary.json abortReason. Re-entrant: the first call starts the graceful
 // teardown + 15s force-kill safety net; subsequent calls go straight to
@@ -392,6 +405,97 @@ void ForceExitNow(string cause)
 // sibling test run started after us — sequential dev runs are the norm,
 // and the cost of false positives is far smaller than the cost of letting
 // the orphan continue.
+// Bumps the child-progress timestamp. Called from the test start/pass callbacks only — a
+// newly dispatched or passing test means the child is alive and moving, resetting the stall
+// clock. Cancellation/failure callbacks deliberately don't bump (see OnTestPassed wiring).
+void MarkChildProgress() =>
+    System.Threading.Interlocked.Exchange(ref _childLastProgressUtc, DateTime.UtcNow.Ticks);
+
+// Parent-side last-resort watchdog: polls the child-progress timestamp and aborts the run if
+// it goes stale past ChildStallTimeout. Runs in the PARENT so it survives a fully-wedged child
+// (where the in-child broker watchdog can't fire). Routes through `abort` (BeginAbort), which
+// writes summary.json DIRECTLY and then force-kills the child after a bounded graceful window
+// — so the run finalizes even when child disposal is itself hung on Docker-over-a-dead-forward
+// (a bare KillTestChildren would only unblock runner.Run() if its return path were clean, which
+// a hung disposal is not). host-poison-deadlocks-run.md, follow-up 6.
+async Task RunChildStallWatchdogAsync(Action<string> abort, CancellationToken ct)
+{
+    var poll = TimeSpan.FromSeconds(30);
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(poll, ct);
+            var idle =
+                DateTime.UtcNow
+                - new DateTime(
+                    System.Threading.Interlocked.Read(ref _childLastProgressUtc),
+                    DateTimeKind.Utc
+                );
+            if (idle < ChildStallTimeout)
+            {
+                continue;
+            }
+
+            Console.Error.WriteLine(
+                $"[stall-watchdog] no test progress for {idle.TotalSeconds:F0}s "
+                    + $"(threshold {ChildStallTimeout.TotalSeconds:F0}s) — aborting wedged run."
+            );
+            try
+            {
+                abort("child-stall-watchdog");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[stall-watchdog] abort failed: {ex.Message}");
+            }
+            return; // one shot — BeginAbort owns finalization + force-kill from here
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Normal: the run finished and the finally cancelled us.
+    }
+}
+
+// Parent-side SSH master-health monitor. Polls each OWNED ControlMaster and respawns it (at
+// the same ControlPath) when `ssh -O check` fails — the master's mux wedging under load is
+// the root of the forward drops, and only the owning parent can heal it. Poll cadence is
+// well under a forward-drop's blast (the child's in-flight ForwardHealingHandler retries for
+// ~45s, so a respawn within ~10-15s lets those retries land on the healed forward).
+async Task RunMasterHealthMonitorAsync(TunnelManager tunnels, CancellationToken ct)
+{
+    var poll = TimeSpan.FromSeconds(10);
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(poll, ct);
+            foreach (var hostId in tunnels.GetOwnedHostIds())
+            {
+                try
+                {
+                    await tunnels.EnsureOwnedMasterHealthyAsync(hostId, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(
+                        $"[master-monitor] heal check failed for '{hostId}': {ex.Message}"
+                    );
+                }
+            }
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Normal: the run finished.
+    }
+}
+
 void KillTestChildren()
 {
     DateTime ourStart;
@@ -804,8 +908,25 @@ try
             exitCode = info.TestsFailed > 0 ? 1 : (info.TotalErrors > 0 ? 2 : 0);
         },
         OnErrorMessage = callbacks.OnErrorMessage,
-        OnTestStarting = callbacks.OnTestStarting,
-        OnTestPassed = callbacks.OnTestPassed,
+        // Progress signals for the stall-watchdog: a test STARTING (xUnit
+        // dispatched a new one) and a test PASSING are unambiguous forward
+        // motion. We deliberately do NOT bump on failed/skipped/finished —
+        // a StopOnFail cascade cancels every queued test at once, firing a
+        // burst of finished/failed callbacks that are the run's death-throes,
+        // not progress. Bumping on those reset the clock by 12 min in run
+        // 02-12-57Z (host-poison-deadlocks-run.md, follow-up 6). A healthy run
+        // always keeps passing tests (max observed gap between passes: 69s), so
+        // pass+start alone keeps the clock fresh with a wide margin under 720s.
+        OnTestStarting = e =>
+        {
+            MarkChildProgress();
+            callbacks.OnTestStarting(e);
+        },
+        OnTestPassed = e =>
+        {
+            MarkChildProgress();
+            callbacks.OnTestPassed(e);
+        },
         OnTestFailed = callbacks.OnTestFailed,
         OnTestSkipped = callbacks.OnTestSkipped,
         // xUnit "not run" tests (filter mismatch and similar) are recorded as
@@ -817,7 +938,8 @@ try
         // observed for ~3 tests/run under heavy queue contention. The
         // generic handler runs AFTER any specific handler per xunit docs;
         // RunnerCallbacks dedupes via TestDisplayName so a typed callback
-        // followed by the generic doesn't double-dispatch.
+        // followed by the generic doesn't double-dispatch. Intentionally not a
+        // progress signal — see OnTestStarting/OnTestPassed above.
         OnTestFinished = callbacks.OnTestFinished,
     };
 
@@ -836,7 +958,42 @@ try
     await using (var runner = new AssemblyRunner(options))
     {
         activeRunner = runner;
-        await runner.Run();
+
+        // Parent-side stall watchdog. The in-child broker watchdog can't fire when the
+        // child wedges (its own Task.Delay loop freezes with every other thread — observed
+        // 2026-06-26 when the SSH master hit `accept: Resource temporarily unavailable` and
+        // froze all 10 child threads, hanging the run >1h). Only the PARENT stays alive in
+        // that case, so the last-resort finalizer must live here: if no test starts or passes
+        // for ChildStallTimeout, abort the run (write summary.json, then force-kill the child)
+        // so it finalizes (as failures) instead of hanging forever.
+        MarkChildProgress();
+        using var stallCts = new CancellationTokenSource();
+        var stallWatchdog = RunChildStallWatchdogAsync(BeginAbort, stallCts.Token);
+
+        // Parent-side SSH master-health monitor. The ControlMaster is OWNED by this parent
+        // process; the xUnit child only adopts a read-only copy, so it cannot respawn a
+        // wedged master (TryRespawnMasterAsync refuses on !Owned) — which is why every
+        // child-side forward heal no-ops when the master's mux wedges under load. Only the
+        // owner can fix it, and respawning at the SAME deterministic ControlPath makes the
+        // child's adopted entry + in-flight forward re-opens recover transparently.
+        var masterMonitor = RunMasterHealthMonitorAsync(tunnelManager, stallCts.Token);
+
+        try
+        {
+            await runner.Run();
+        }
+        finally
+        {
+            stallCts.Cancel();
+            foreach (var bg in new[] { stallWatchdog, masterMonitor })
+            {
+                try
+                {
+                    await bg;
+                }
+                catch (OperationCanceledException) { }
+            }
+        }
     }
 }
 catch (Exception ex)

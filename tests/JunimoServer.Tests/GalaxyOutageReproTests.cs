@@ -73,11 +73,12 @@ public class GalaxyOutageReproTests : TestBase
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // ── Configurable outage dwell. Default holds the cut long enough that Steam's keepalive
-        // registers the loss (steam_session_lost) before restore. A longer dwell can be set without
+        // ── Configurable outage dwell. This is timing margin held AFTER steam_session_lost is
+        // already gate-confirmed below — it lets the Galaxy lobby genuinely drop before restore,
+        // so recovery exercises a dead-lobby re-login rather than a too-fast flap. Override without
         // a rebuild via SDVD_OUTAGE_DWELL_MS (verify-documented-config-is-consumed.md).
         var dwell = TimeSpan.FromMilliseconds(
-            int.TryParse(TestEnvLoader.Get("SDVD_OUTAGE_DWELL_MS"), out var ms) ? ms : 45_000
+            int.TryParse(TestEnvLoader.Get("SDVD_OUTAGE_DWELL_MS"), out var ms) ? ms : 10_000
         );
         // Steam reconnect after a full outage can take minutes; bound it generously.
         var reconnectBudget = TimeSpan.FromMinutes(5);
@@ -126,8 +127,8 @@ public class GalaxyOutageReproTests : TestBase
             );
             Log("Outage confirmed via Steam: steam_session_lost observed.");
 
-            // ── 4. Hold the outage long enough for Steam's keepalive to register the loss
-            // before restore, and for the Galaxy lobby to drop.
+            // ── 4. Steam's loss is already confirmed above; hold the outage long enough for the
+            // Galaxy lobby to drop before restore.
             Log($"Holding outage for {dwell.TotalSeconds:F0}s…");
             await Task.Delay(dwell, ct);
         }
