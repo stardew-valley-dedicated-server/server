@@ -107,6 +107,16 @@ internal sealed class DayChangeWaiter
                         }
                     }
 
+                    // Wait for the day TRANSITION to finish (newDaySync barrier + save + map load),
+                    // NOT for the composite IsReady. IsReady (= GameServer.isGameAvailable) also stays
+                    // false through a post-transition festival or wedding (those keep weddingsToday /
+                    // CurrentEvent.isWedding / isFestival set), so settling on IsReady dead-waits the
+                    // full festival/wedding here — e.g. the same-day-weddings test burned the whole
+                    // 30s DayTransitionSettleTimeout before its own wedding poll even started.
+                    // DayTransitionComplete flips true the moment the transition itself is done,
+                    // regardless of those activities; the caller's scenario poll (festival entry,
+                    // wedding render) then takes over. On an ordinary day it equals IsReady, so
+                    // non-festival/non-wedding tests are unchanged.
                     var readySw = System.Diagnostics.Stopwatch.StartNew();
                     var settled = await PollingHelper.LongPollAsync(
                         WaitName.Polling_TestBase_PostTransitionSettle,
@@ -114,7 +124,7 @@ internal sealed class DayChangeWaiter
                         {
                             var s = await _testBase.ServerApi.WaitForStatusAsync(
                                 since: settleSince,
-                                isReady: true,
+                                dayTransitionComplete: true,
                                 timeout: settleRemaining,
                                 ct: ct
                             );

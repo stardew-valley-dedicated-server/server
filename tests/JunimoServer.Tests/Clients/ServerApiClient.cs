@@ -38,6 +38,11 @@ public class ServerStatus
     [JsonPropertyName("isReady")]
     public bool IsReady { get; set; }
 
+    // Day-transition machinery done (newDaySync + save + map load), ignoring post-transition
+    // festival/wedding — see ApiService.ComputeDayTransitionComplete. Equals IsReady on an ordinary day.
+    [JsonPropertyName("dayTransitionComplete")]
+    public bool DayTransitionComplete { get; set; }
+
     [JsonPropertyName("lastUpdated")]
     public string LastUpdated { get; set; } = string.Empty;
 
@@ -1127,6 +1132,7 @@ public class ServerApiClient : IDisposable
     public async Task<ServerStatus?> WaitForStatusAsync(
         long since,
         bool? isReady = null,
+        bool? dayTransitionComplete = null,
         bool? isPaused = null,
         int? day = null,
         int? playerCount = null,
@@ -1138,6 +1144,11 @@ public class ServerApiClient : IDisposable
         if (isReady is bool b)
         {
             query.Add($"isReady={b.ToString().ToLowerInvariant()}");
+        }
+
+        if (dayTransitionComplete is bool dtc)
+        {
+            query.Add($"dayTransitionComplete={dtc.ToString().ToLowerInvariant()}");
         }
 
         if (isPaused is bool ip)
