@@ -618,37 +618,20 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         {
             // SIGINT triggers ffmpeg's graceful shutdown: finalize current segment, flush
             // segments.csv, and exit. Prior segments are already on disk; only the active
-            // segment needs the trailer written.
-            await SignalFfmpeg("INT", ct);
-
-            for (var i = 0; i < 20; i++) // up to 10s for graceful finalization
+            // segment needs the trailer written. Send-and-wait in ONE exec (signal, then poll
+            // kill -0 inside the shell), not N C#-side poll execs: each docker exec round-trip
+            // costs ~6s under parallel teardown load, so the cost driver is exec count, not
+            // finalize time (.claude/rules/minimize-exec-count-...). Up to ~10s of in-shell
+            // waiting at sub-second granularity for graceful finalization.
+            if (await SignalAndWaitForExitAsync("INT", iterations: 50, ct))
             {
-                if (_containerDead)
-                {
-                    _state = RecorderState.Stopped;
-                    return;
-                }
-                await Task.Delay(500, ct);
-                var check = await _container.ExecAsync(
-                    new[]
-                    {
-                        "sh",
-                        "-c",
-                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
-                            + $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE",
-                    },
-                    ct
+                _state = RecorderState.Stopped;
+                _log($"[Recording] Stopped in {_displayLabel}");
+                InfrastructureEventLog.Emit(
+                    "recording_stopped",
+                    new { container = _displayLabel, via = "sigint" }
                 );
-                if (check.Stdout.Trim().Contains("DONE"))
-                {
-                    _state = RecorderState.Stopped;
-                    _log($"[Recording] Stopped in {_displayLabel}");
-                    InfrastructureEventLog.Emit(
-                        "recording_stopped",
-                        new { container = _displayLabel, via = "sigint" }
-                    );
-                    return;
-                }
+                return;
             }
 
             if (_containerDead)
@@ -657,38 +640,18 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 return;
             }
             _log(
-                $"[Recording] WARNING: ffmpeg not responding to SIGINT in {_displayLabel} after 10s, trying SIGTERM"
+                $"[Recording] WARNING: ffmpeg not responding to SIGINT in {_displayLabel} after ~10s, trying SIGTERM"
             );
-            await SignalFfmpeg("TERM", ct);
 
-            for (var i = 0; i < 6; i++) // up to 3s more
+            if (await SignalAndWaitForExitAsync("TERM", iterations: 15, ct)) // ~3s more
             {
-                if (_containerDead)
-                {
-                    _state = RecorderState.Stopped;
-                    return;
-                }
-                await Task.Delay(500, ct);
-                var check = await _container.ExecAsync(
-                    new[]
-                    {
-                        "sh",
-                        "-c",
-                        $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
-                            + $"[ -n \"$pid\" ] && kill -0 $pid 2>/dev/null && echo RUNNING || echo DONE",
-                    },
-                    ct
+                _state = RecorderState.Stopped;
+                _log($"[Recording] Stopped in {_displayLabel} (after SIGTERM)");
+                InfrastructureEventLog.Emit(
+                    "recording_stopped",
+                    new { container = _displayLabel, via = "sigterm" }
                 );
-                if (check.Stdout.Trim().Contains("DONE"))
-                {
-                    _state = RecorderState.Stopped;
-                    _log($"[Recording] Stopped in {_displayLabel} (after SIGTERM)");
-                    InfrastructureEventLog.Emit(
-                        "recording_stopped",
-                        new { container = _displayLabel, via = "sigterm" }
-                    );
-                    return;
-                }
+                return;
             }
 
             if (_containerDead)
@@ -780,10 +743,18 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             return new ExtractionResult(null, null);
         }
 
-        if (_state != RecorderState.Recording)
+        // Extraction reads finalized segments off disk (ReadSegmentListAsync + SelectCoveringSegments),
+        // so it works in BOTH Recording and Stopped: a graceful StopAsync finalizes the active segment and
+        // flushes segments.csv (its documented post-condition — "all segments finalized on disk, ready for
+        // clip extraction"), so a clip whose window touched the former active segment still finds it as a
+        // finalized covering segment. Accepting Stopped matters because the deferred per-test clip extract
+        // (EnqueueBackgroundTask, runs immediately) can RACE the backgrounded server disposal's StopAsync;
+        // if the stop wins, the clip must still extract off the finalized segments. NotStarted/Failed have
+        // no usable segments.
+        if (_state != RecorderState.Recording && _state != RecorderState.Stopped)
         {
             _log(
-                $"[Recording] WARNING: ExtractClipFromLive called but state is {_state} (expected Recording)"
+                $"[Recording] WARNING: ExtractClipFromLive called but state is {_state} (expected Recording or Stopped)"
             );
             InfrastructureEventLog.Emit(
                 "recording_clip_failed",
@@ -1035,6 +1006,12 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         _log($"[Recording] {_displayLabel}: concatenating TS segments -> MP4 (stream copy)");
         var sw = Stopwatch.StartNew();
 
+        // Per-segment `duration` directive for the concat demuxer — load-bearing at fps=1, where a
+        // one-frame TS self-reports 0.5s (1/(2*fps) fallback, no inter-frame delta) and the demuxer
+        // packs frames at that spacing, halving the timeline (2x-fast playback). InvariantCulture so a
+        // comma-decimal host emits `5.000`, not `5,000` (which ffmpeg misparses). Mirrors BuildExtractCommand.
+        var segDurArg = _segmentTime.ToString("0.000", CultureInfo.InvariantCulture);
+
         try
         {
             var result = await _container.ExecAsync(
@@ -1042,7 +1019,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 {
                     "sh",
                     "-c",
-                    $"ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | sed \"s|.*|file '&'|\" > {RecDir}/concat_all.txt; "
+                    $"ls -1 {RecDir}/seg_*.{SegmentExtension} 2>/dev/null | sort | sed \"s|.*|file '&'\\nduration {segDurArg}|\" > {RecDir}/concat_all.txt; "
                         + $"if [ ! -s {RecDir}/concat_all.txt ]; then "
                         + $"echo 'No segments found for concatenation' >&2; rm -f {RecDir}/concat_all.txt; exit 1; "
                         + $"fi; "
@@ -1710,9 +1687,17 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         script.Add($"rm -f {listPath} {mergedPath}");
 
         // Pass 1: stream-copy-merge the covering source segments into merged.{ext}.
+        // Each file carries an explicit `duration` directive: at fps=1 a one-frame TS self-reports
+        // duration 0.5s (1/(2*fps) fallback, no inter-frame delta), and the concat demuxer trusts it
+        // to place the next segment — packing every frame at 0.5s and halving the merged timeline (2x
+        // playback, wrong -t window). Only the timestamps were compressed; the frames are fine. Safe
+        // for alignment: the actualFirstFramePts math below is a relative delta plus cover0Epoch
+        // (segments.csv), not the merged stream's absolute PTS. InvariantCulture so a comma-decimal
+        // host emits `5.000`, not the unparseable `5,000`.
+        var segDurArg = _segmentTime.ToString("0.000", CultureInfo.InvariantCulture);
         var listLines = string.Join(
             "\\n",
-            coveringSegments.Select(s => $"file '{s.containerPath}'")
+            coveringSegments.Select(s => $"file '{s.containerPath}'\\nduration {segDurArg}")
         );
         script.Add($"printf '{listLines}\\n' > {listPath}");
         script.Add(
@@ -1871,6 +1856,60 @@ internal sealed class ContainerRecorder : IAsyncDisposable
                 MarkContainerDead();
             }
 
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sends <paramref name="signal"/> to the recording ffmpeg, then waits IN-CONTAINER for the process
+    /// to exit (one exec, polling <c>kill -0</c> at 0.2s granularity for up to <paramref name="iterations"/>
+    /// ticks). Returns true if ffmpeg exited within the budget, false on timeout. One round-trip, not N
+    /// C#-side poll execs — the cost driver under parallel teardown is the exec count, not the in-shell
+    /// sleep (.claude/rules/minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md).
+    /// Returns true if there is no pid (already gone). Marks the container dead and returns false on a
+    /// container-dead exec error.
+    /// </summary>
+    private async Task<bool> SignalAndWaitForExitAsync(
+        string signal,
+        int iterations,
+        CancellationToken ct = default
+    )
+    {
+        if (_containerDead)
+        {
+            return true; // nothing to wait for
+        }
+
+        try
+        {
+            var result = await _container.ExecAsync(
+                new[]
+                {
+                    "sh",
+                    "-c",
+                    $"pid=$(cat {RecDir}/ffmpeg.pid 2>/dev/null); "
+                        + $"if [ -z \"$pid\" ]; then echo DONE; exit 0; fi; "
+                        + $"kill -{signal} $pid 2>/dev/null; "
+                        + $"for _i in $(seq 1 {iterations}); do "
+                        + $"kill -0 $pid 2>/dev/null || {{ echo DONE; exit 0; }}; "
+                        + $"sleep 0.2; "
+                        + $"done; "
+                        + $"echo RUNNING",
+                },
+                ct
+            );
+            return result.Stdout.Contains("DONE");
+        }
+        catch (Exception ex)
+        {
+            if (IsContainerDeadError(ex))
+            {
+                MarkContainerDead();
+                return true; // container gone → ffmpeg gone
+            }
+            _log(
+                $"[Recording] WARNING: signal/wait {signal} failed in {_displayLabel}: {ex.Message}"
+            );
             return false;
         }
     }

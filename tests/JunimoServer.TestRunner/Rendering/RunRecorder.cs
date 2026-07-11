@@ -63,6 +63,10 @@ public sealed class RunRecorder
             aborted: aborted,
             abortReason: aborted ? (_externalAbortReason ?? "child_process_terminated") : null
         );
-        _writer.WriteIfNotWritten(view);
+        // Pass State alongside the view: instance stats history lives on
+        // _instances (not projected into the per-test RunArtifactView), and only
+        // TestRunState can serialize it (the InstanceState/-StatsEntry types are
+        // private nested). The writer reads it under TestRunState's own lock.
+        _writer.WriteIfNotWritten(view, State);
     }
 }

@@ -6,7 +6,7 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// Layout under <see cref="TestArtifacts.OutputDir"/> / runs / {id}:
 ///   summary.json, ctrf-report.json, run-metadata.json, run-output.json
-///   diagnostics/infrastructure.jsonl
+///   diagnostics/infrastructure.jsonl, diagnostics/instance-stats.jsonl
 ///   flakiness.jsonl  (also exists at OutputDir for cross-run aggregation)
 ///   tests/{Class}.{Method}/
 ///   _workers/{worker_id}/   (distributed mode only)
@@ -22,6 +22,14 @@ public static class RunArtifactNames
 
     public const string InfrastructureJsonl = "infrastructure.jsonl";
     public const string FlakinessJsonl = "flakiness.jsonl";
+
+    /// <summary>
+    /// Per-instance container/game stats history (one compact JSON line per
+    /// <c>(instance, sample)</c>) under <see cref="DiagnosticsDir"/>. Flushed at
+    /// run-end from the runner's in-memory state for post-mortem load analysis;
+    /// the live UI reads the same data over the WebSocket, not this file.
+    /// </summary>
+    public const string InstanceStatsJsonl = "instance-stats.jsonl";
 
     /// <summary>
     /// Cross-run sidecar (<c>{hostId → bytes}</c>) at <see cref="TestArtifacts.OutputDir"/>
