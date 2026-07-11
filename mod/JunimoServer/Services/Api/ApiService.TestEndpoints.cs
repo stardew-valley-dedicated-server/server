@@ -67,6 +67,12 @@ public partial class ApiService
                     case "/test/save_tmp_exists":
                         await WriteJsonAsync(response, HandleGetTestSaveTmpExists(request));
                         return;
+                    case "/test/wedding_state":
+                        await WriteJsonAsync(
+                            response,
+                            await HandleGetTestWeddingStateAsync(request)
+                        );
+                        return;
                 }
                 break;
             case "POST":
@@ -1415,5 +1421,75 @@ public partial class ApiService
         {
             return new TestSaveFileOpResponse { Success = false, Error = ex.Message };
         }
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/wedding_state",
+        Summary = "Read the host's wedding ceremony state + wait-gate ready counts (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestWeddingStateResponse), 200)]
+    private async Task<TestWeddingStateResponse> HandleGetTestWeddingStateAsync(
+        HttpListenerRequest request
+    )
+    {
+        // ?farmhandId=<id>&npc=<name>: optional, to report whether that farmhand is now married to
+        // the NPC (the post-ceremony assertion). Wedding/gate fields are reported regardless.
+        long.TryParse(request.QueryString["farmhandId"], out var farmhandId);
+        var npc = request.QueryString["npc"];
+
+        var result = new TestWeddingStateResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var ev = Game1.CurrentEvent;
+                result.IsWeddingActive = ev?.isWedding == true;
+
+                // Post-ceremony host-stuck signals: after a wedding the host must not be left mid-event,
+                // faded to black, holding a dialogue, or stranded on a temporary ceremony map. A test
+                // asserts all four are clear to gate the multi-wedding stuck-fadeout regression.
+                result.EventUp = Game1.eventUp;
+                result.FadeToBlack = Game1.fadeToBlack;
+                result.DialogueUp = Game1.dialogueUp;
+                result.HostLocationIsTemporary = Game1.currentLocation?.IsTemporary == true;
+                result.HostCurrentLocation = Game1.currentLocation?.NameOrUniqueName;
+
+                if (farmhandId != 0)
+                {
+                    // The host's view of the farmhand's spouse — used by the test to confirm the
+                    // engagement replicated client→host before the day transition.
+                    var farmhand = Game1.GetPlayer(farmhandId, onlyOnline: true);
+                    if (farmhand != null)
+                    {
+                        result.FarmhandSpouse = farmhand.spouse;
+                    }
+
+                    // The spouse NPC's current location. The ceremony's endBehaviors warps the spouse
+                    // to the couple's Farm porch, so == "Farm" proves that ceremony completed.
+                    if (!string.IsNullOrEmpty(npc))
+                    {
+                        var spouseNpc = Game1.getCharacterFromName(npc);
+                        if (spouseNpc != null)
+                        {
+                            result.SpouseCurrentLocation = spouseNpc
+                                .currentLocation
+                                ?.NameOrUniqueName;
+                        }
+                    }
+                }
+
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
     }
 }
