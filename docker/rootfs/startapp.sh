@@ -182,6 +182,14 @@ init_smapi() {
     cp -rf /data/smapi-config.json ${GAME_DEST_DIR}/smapi-internal/config.user.json
 }
 
+clear_smapi_marker_prompts() {
+    # SMAPI's crash/update marker checks block startup on a raw Console.ReadKey() that our
+    # piped, non-interactive stdin can't answer, hanging the server on the first start after
+    # any crash. Prevent the prompts instead; crash details survive in ErrorLogs/SMAPI-crash.txt.
+    rm -f "${GAME_DEST_DIR}/smapi-internal/StardewModdingAPI.crash.marker" \
+        "${GAME_DEST_DIR}/smapi-internal/StardewModdingAPI.update.marker"
+}
+
 init_mods() {
     rm -rf ${MODS_DEST_DIR}/smapi/
     mkdir -p ${MODS_DEST_DIR}/smapi/
@@ -238,6 +246,7 @@ init_display_settings
 init_stardew
 init_steam_sdk
 init_smapi
+clear_smapi_marker_prompts
 # init_patch_dll # This seems to strip debug symbols from SDV, so currently disabled to avoid issues in Space Core mod
 init_mods
 init_permissions
@@ -257,6 +266,9 @@ mkfifo "${INPUT_FIFO}"
 # Using `script` to create a PTY so SMAPI prints colored output (make it think it's a terminal)
 # Using `tail -f` on the FIFO to keep it open and avoid blocking
 # Note: `script` writes to both stdout (for docker logs) and the typescript file simultaneously
+# Caveat: the PTY covers stdout only, and the FIFO only ever delivers \n-terminated lines — SMAPI
+# prompts that read a raw keystroke (Console.ReadKey: crash/update markers, PressAnyKeyToExit)
+# can't be answered through this channel; prevent them upstream (see clear_smapi_marker_prompts)
 echo "Starting SMAPI..."
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
