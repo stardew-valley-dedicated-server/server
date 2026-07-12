@@ -518,11 +518,9 @@ public sealed class CIRenderer : RendererBase
             // so it streams live in both modes (the result line itself may be buffered).
             if (_isGitHubActions)
             {
-                var escapedMsg = e
-                    .Message.Replace("%", "%25")
-                    .Replace("\r", "%0D")
-                    .Replace("\n", "%0A");
-                _err.WriteLine($"::error title={e.TestClass}.{e.TestMethod}::{escapedMsg}");
+                _err.WriteLine(
+                    $"::error title={e.TestClass}.{e.TestMethod}::{EscapeAnnotation(e.Message)}"
+                );
                 _err.Flush();
             }
 
@@ -688,27 +686,42 @@ public sealed class CIRenderer : RendererBase
 
     public override void OnError(ErrorEvent e)
     {
-        _err.WriteLine(RedBold($" ERROR: {e.Message}"));
-        if (!string.IsNullOrEmpty(e.StackTrace))
+        lock (_writeLock)
         {
-            var sanitized = SanitizeStackTrace(e.StackTrace);
-            foreach (var line in sanitized.Split('\n').Take(10))
+            // Same clear/redraw dance as OnTestAnnotation — errors can arrive
+            // while a spinner is active (e.g. the stall watchdog mid-run).
+            if (_isTTY && _spinnerLabel != null)
             {
-                _err.WriteLine(Dim($"   {line.TrimEnd()}"));
+                _err.Write("\r\x1b[2K");
             }
-        }
 
-        if (_isGitHubActions)
-        {
-            var escapedMsg = e
-                .Message.Replace("%", "%25")
-                .Replace("\r", "%0D")
-                .Replace("\n", "%0A");
-            _err.WriteLine($"::error::{escapedMsg}");
-        }
+            _err.WriteLine(RedBold($" ERROR: {e.Message}"));
+            if (!string.IsNullOrEmpty(e.StackTrace))
+            {
+                var sanitized = SanitizeStackTrace(e.StackTrace);
+                foreach (var line in sanitized.Split('\n').Take(10))
+                {
+                    _err.WriteLine(Dim($"   {line.TrimEnd()}"));
+                }
+            }
 
-        _err.Flush();
+            if (_isGitHubActions)
+            {
+                _err.WriteLine($"::error::{EscapeAnnotation(e.Message)}");
+            }
+
+            if (_isTTY && _spinnerLabel != null)
+            {
+                _out.Write(BuildSpinnerLine(_spinnerFrame));
+            }
+
+            _err.Flush();
+        }
     }
+
+    /// <summary>Escape a message for a GitHub Actions annotation body.</summary>
+    private static string EscapeAnnotation(string message) =>
+        message.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
 
     // ── Dispose ──
 

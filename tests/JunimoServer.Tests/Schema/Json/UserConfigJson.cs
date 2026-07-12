@@ -15,13 +15,7 @@ namespace JunimoServer.Tests.Schema.Json;
 /// </summary>
 public static class UserConfigJson
 {
-    /// <summary>
-    /// Raw options for the rare site that needs its own projection
-    /// (DockerImageBuilder's tolerant index-0 user/pass/token read). Prefer
-    /// the named methods below; reach for this only when the projection
-    /// doesn't fit one of them.
-    /// </summary>
-    public static readonly JsonDocumentOptions Document = new()
+    private static readonly JsonDocumentOptions Document = new()
     {
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip,

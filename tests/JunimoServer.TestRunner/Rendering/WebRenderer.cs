@@ -480,7 +480,9 @@ public sealed class WebRenderer : RendererBase
         ExtractAndEmitVncUrl(e.Message);
     }
 
-    public override void OnError(ErrorEvent e) { }
+    // Stderr echo: abort paths dispose the web server immediately, so the UI
+    // alone would lose the error.
+    public override void OnError(ErrorEvent e) => Console.Error.WriteLine($"ERROR: {e.Message}");
 
     public override void OnSetupPhaseStarted(SetupPhaseStartedEvent e) { }
 

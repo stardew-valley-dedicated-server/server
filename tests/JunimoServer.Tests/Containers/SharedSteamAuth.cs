@@ -485,17 +485,11 @@ public class SharedSteamAuth : IAsyncDisposable
     private static HashSet<string> ExtractUsernames(string? steamAccountsJson)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(steamAccountsJson))
+        foreach (var account in SteamAccount.ParseList(steamAccountsJson))
         {
-            return set;
-        }
-
-        foreach (var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccountsJson))
-        {
-            var user = node["user"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(user))
+            if (!string.IsNullOrWhiteSpace(account.User))
             {
-                set.Add(user);
+                set.Add(account.User);
             }
         }
         return set;
@@ -542,14 +536,11 @@ public class SharedSteamAuth : IAsyncDisposable
         {
             try
             {
-                foreach (
-                    var node in UserConfigJson.ParseArrayStrict("STEAM_ACCOUNTS", steamAccounts)
-                )
+                foreach (var account in SteamAccount.ParseList(steamAccounts))
                 {
-                    var user = node["user"]?.GetValue<string>();
-                    if (!string.IsNullOrWhiteSpace(user))
+                    if (!string.IsNullOrWhiteSpace(account.User))
                     {
-                        set.Add(user);
+                        set.Add(account.User);
                     }
                 }
                 return set;
