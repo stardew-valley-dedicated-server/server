@@ -756,6 +756,7 @@ public partial class ApiService : ModService
     private readonly RoleService _roleService;
     private readonly PasswordProtectionService? _passwordProtectionService;
     private readonly SaveImport.SaveImportService _saveImportService;
+    private readonly NpcIntegrity.NpcSpriteIntegrityService _npcSpriteIntegrity;
 
     // WebSocket client management
     private readonly List<WebSocket> _wsClients = new();
@@ -1016,6 +1017,7 @@ public partial class ApiService : ModService
         CabinManagerService cabinManager,
         RoleService roleService,
         SaveImport.SaveImportService saveImportService,
+        NpcIntegrity.NpcSpriteIntegrityService npcSpriteIntegrity,
         PasswordProtectionService? passwordProtectionService = null
     )
         : base(helper, monitor)
@@ -1025,6 +1027,7 @@ public partial class ApiService : ModService
         _cabinManager = cabinManager;
         _roleService = roleService;
         _saveImportService = saveImportService;
+        _npcSpriteIntegrity = npcSpriteIntegrity;
         _passwordProtectionService = passwordProtectionService;
     }
 

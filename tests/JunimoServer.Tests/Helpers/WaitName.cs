@@ -191,4 +191,8 @@ public enum WaitName
     Polling_LobbyHome_CeremoniesCompleted,
     Polling_LobbyHome_SpousesInCabins,
     Polling_LobbyHome_PoisonHealed,
+
+    // NpcSpriteIntegrityTests.cs (1)
+    /// <summary>Game clock crossed the daytime schedule-departure boundaries after the heal.</summary>
+    Polling_NpcSprite_DaytimeBoundariesCrossed,
 }

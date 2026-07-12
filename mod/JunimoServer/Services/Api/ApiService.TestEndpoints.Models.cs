@@ -433,6 +433,62 @@ public class TestConsoleCommandResponse
     public string? Error { get; set; }
 }
 
+/// <summary>
+/// Response from GET /test/npc_sprite_integrity (test-only). Reports the
+/// NpcSpriteIntegrityService's sweep metadata plus a live scan for sprite-less NPCs, so E2E
+/// tests can prove both the heal outcome and the SaveLoaded/DayStarted wiring (the run
+/// counters only advance when the real event handlers fire — a direct /test/heal_npc_sprites
+/// call can't satisfy them).
+/// </summary>
+public class TestNpcSpriteIntegrityResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Names of NPCs currently missing a sprite (live scan; empty when healthy).</summary>
+    public List<string> SpritelessNpcs { get; set; } = new();
+
+    /// <summary>Context tag of the most recent sweep ("save_loaded", "day_started", "test"), or null.</summary>
+    public string? LastRunContext { get; set; }
+
+    /// <summary>NPCs healed by the most recent sweep.</summary>
+    public int LastRunHealedCount { get; set; }
+
+    /// <summary>Sweeps triggered by the SaveLoaded handler since mod start.</summary>
+    public int SaveLoadedRuns { get; set; }
+
+    /// <summary>Sweeps triggered by the DayStarted handler since mod start.</summary>
+    public int DayStartedRuns { get; set; }
+
+    /// <summary>NPCs healed across all sweeps since mod start.</summary>
+    public int TotalHealed { get; set; }
+}
+
+/// <summary>
+/// Response from POST /test/break_npc_sprite (test-only fault injector — see the handler doc).
+/// </summary>
+public class TestBreakNpcSpriteResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The NPC whose sprite was nulled.</summary>
+    public string NpcName { get; set; } = "";
+
+    /// <summary>True if the NPC had a sprite before the break (sanity signal for the test).</summary>
+    public bool HadSprite { get; set; }
+}
+
+/// <summary>Response from POST /test/heal_npc_sprites (test-only).</summary>
+public class TestHealNpcSpritesResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>NPCs healed by this sweep run.</summary>
+    public int HealedCount { get; set; }
+}
+
 /// <summary>Response from POST /test/import_save.</summary>
 public class TestImportSaveResponse
 {
