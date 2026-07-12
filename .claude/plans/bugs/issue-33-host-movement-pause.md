@@ -9,17 +9,17 @@ pause floor to 6:00 if a true 6:00 pause is wanted).
 Both reported symptoms traced in
 `mod/JunimoServer/Services/AlwaysOnServer/AlwaysOn.cs`:
 
-- **Movement freeze — effectively fixed.** `OnSaveLoaded` (`:194`) calls
-  `EnableAutoMode()` (`:202`, method at `:454`), which immediately calls
-  `Game1.player.Halt()` (`:469`) and enables input suppression via
+- **Movement freeze — effectively fixed.** `OnSaveLoaded` calls
+  `EnableAutoMode()` (`AlwaysOn.cs:216`, method at `:474`), which immediately
+  calls `Game1.player.Halt()` (`:489`) and enables input suppression via
   already-installed Harmony prefixes — before the first update tick. No window
   remains for the host farmer to wander.
 - **6:00-vs-6:10 pause — still present, but intentional.** The empty-server
-  pause condition is `Game1.timeOfDay is >= 610 and <= 2500` (`:764`), with a
-  comment (`:762-763`) explaining the bounds: pause during normal hours, but
-  unpause after 25:00 so the forced pass-out sequence at 26:00 (2:00 AM) can
-  proceed. The 6:10 lower bound means the first in-game 10 minutes tick by
-  before the pause engages.
+  pause condition is `Game1.timeOfDay is >= 610 and <= 2500`
+  (`AlwaysOn.cs:1012`), with a comment explaining the bounds: pause during
+  normal hours, but unpause after 25:00 so the forced pass-out sequence at
+  26:00 (2:00 AM) can proceed. The 6:10 lower bound means the first in-game 10
+  minutes tick by before the pause engages.
 
 ## Task
 
