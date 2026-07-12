@@ -158,6 +158,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     # .NET globalization (SMAPI FailFasts at startup without it)
     libicu67 \
+    # SkiaSharp's native image decoder (Content Patcher EditImage) needs fontconfig to load
+    libfontconfig1 \
     locales \
     procps \
     unzip \
