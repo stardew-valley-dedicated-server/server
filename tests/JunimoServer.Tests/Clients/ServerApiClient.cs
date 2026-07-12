@@ -711,6 +711,70 @@ public class TestStampLobbyHomeResponse
     public string OriginalHome { get; set; } = "";
 }
 
+/// <summary>
+/// Test-side mirror of the server's TestNpcSpriteIntegrityResponse DTO: the sprite-integrity
+/// sweep's run metadata plus a live scan for sprite-less NPCs.
+/// </summary>
+public class TestNpcSpriteIntegrityResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("spritelessNpcs")]
+    public List<string> SpritelessNpcs { get; set; } = new();
+
+    [JsonPropertyName("lastRunContext")]
+    public string? LastRunContext { get; set; }
+
+    [JsonPropertyName("lastRunHealedCount")]
+    public int LastRunHealedCount { get; set; }
+
+    [JsonPropertyName("saveLoadedRuns")]
+    public int SaveLoadedRuns { get; set; }
+
+    [JsonPropertyName("dayStartedRuns")]
+    public int DayStartedRuns { get; set; }
+
+    [JsonPropertyName("totalHealed")]
+    public int TotalHealed { get; set; }
+}
+
+/// <summary>
+/// Test-side mirror of the server's TestBreakNpcSpriteResponse DTO (sprite fault injector).
+/// </summary>
+public class TestBreakNpcSpriteResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("npcName")]
+    public string NpcName { get; set; } = "";
+
+    [JsonPropertyName("hadSprite")]
+    public bool HadSprite { get; set; }
+}
+
+/// <summary>
+/// Test-side mirror of the server's TestHealNpcSpritesResponse DTO.
+/// </summary>
+public class TestHealNpcSpritesResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("healedCount")]
+    public int HealedCount { get; set; }
+}
+
 /// <summary>Body for /test/seed_import_source (test-only). Mirrors the server-side DTO.</summary>
 public class TestSeedImportSourceRequest
 {
@@ -1867,6 +1931,50 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestStampLobbyHomeResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: sprite-integrity sweep metadata + live scan for sprite-less NPCs.
+    /// GET /test/npc_sprite_integrity
+    /// </summary>
+    public async Task<TestNpcSpriteIntegrityResponse?> GetNpcSpriteIntegrity(
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Get, "/test/npc_sprite_integrity", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestNpcSpriteIntegrityResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: null an NPC's Sprite, reproducing a failed load-time sprite rebuild.
+    /// Hazardous state — heal promptly via <see cref="HealNpcSprites"/>.
+    /// POST /test/break_npc_sprite?npc=Name
+    /// </summary>
+    public async Task<TestBreakNpcSpriteResponse?> BreakNpcSprite(
+        string npc,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/break_npc_sprite?npc={Uri.EscapeDataString(npc)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestBreakNpcSpriteResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: run the NPC sprite-integrity heal sweep immediately (same sweep the
+    /// SaveLoaded/DayStarted handlers run).
+    /// POST /test/heal_npc_sprites
+    /// </summary>
+    public async Task<TestHealNpcSpritesResponse?> HealNpcSprites(CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/heal_npc_sprites", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHealNpcSpritesResponse>(ct);
     }
 
     /// <summary>

@@ -73,6 +73,12 @@ public partial class ApiService
                             await HandleGetTestWeddingStateAsync(request)
                         );
                         return;
+                    case "/test/npc_sprite_integrity":
+                        await WriteJsonAsync(
+                            response,
+                            await HandleGetTestNpcSpriteIntegrityAsync()
+                        );
+                        return;
                 }
                 break;
             case "POST":
@@ -131,6 +137,15 @@ public partial class ApiService
                         return;
                     case "/test/force_save":
                         await WriteJsonAsync(response, await HandlePostTestForceSaveAsync());
+                        return;
+                    case "/test/break_npc_sprite":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestBreakNpcSpriteAsync(request)
+                        );
+                        return;
+                    case "/test/heal_npc_sprites":
+                        await WriteJsonAsync(response, await HandlePostTestHealNpcSpritesAsync());
                         return;
                 }
                 break;
@@ -1693,6 +1708,113 @@ public partial class ApiService
                     }
                 }
 
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/npc_sprite_integrity",
+        Summary = "NPC sprite-integrity sweep status + live scan for sprite-less NPCs (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestNpcSpriteIntegrityResponse), 200)]
+    private async Task<TestNpcSpriteIntegrityResponse> HandleGetTestNpcSpriteIntegrityAsync()
+    {
+        var result = new TestNpcSpriteIntegrityResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                result.SpritelessNpcs = _npcSpriteIntegrity.FindSpritelessNpcs();
+                result.LastRunContext = _npcSpriteIntegrity.LastRunContext;
+                result.LastRunHealedCount = _npcSpriteIntegrity.LastRunHealedCount;
+                result.SaveLoadedRuns = _npcSpriteIntegrity.SaveLoadedRuns;
+                result.DayStartedRuns = _npcSpriteIntegrity.DayStartedRuns;
+                result.TotalHealed = _npcSpriteIntegrity.TotalHealed;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Fault injector: reproduces the exact field state a failed load-time sprite rebuild
+    /// leaves behind (NPC.TryLoadSprites swallows a throwing asset load and the NPC survives
+    /// with Sprite == null). The state is hazardous — the engine NREs at the NPC's next
+    /// scheduled departure — so callers heal promptly (/test/heal_npc_sprites) within the
+    /// same quiet in-game window.
+    /// </summary>
+    [ApiEndpoint(
+        "POST",
+        "/test/break_npc_sprite",
+        Summary = "Null an NPC's Sprite, reproducing a failed load-time sprite rebuild (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestBreakNpcSpriteResponse), 200)]
+    private async Task<TestBreakNpcSpriteResponse> HandlePostTestBreakNpcSpriteAsync(
+        HttpListenerRequest request
+    )
+    {
+        var npcName = request.QueryString["npc"] ?? "Abigail";
+        var result = new TestBreakNpcSpriteResponse { NpcName = npcName };
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var npc = Game1.getCharacterFromName(npcName);
+                if (npc == null)
+                {
+                    result.Error = $"NPC '{npcName}' not found";
+                    return;
+                }
+
+                result.HadSprite = npc.Sprite != null;
+                npc.Sprite = null;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/heal_npc_sprites",
+        Summary = "Run the NPC sprite-integrity heal sweep immediately (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestHealNpcSpritesResponse), 200)]
+    private async Task<TestHealNpcSpritesResponse> HandlePostTestHealNpcSpritesAsync()
+    {
+        var result = new TestHealNpcSpritesResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                result.HealedCount = _npcSpriteIntegrity.HealSpritelessNpcs("test");
                 result.Success = true;
             });
         }
