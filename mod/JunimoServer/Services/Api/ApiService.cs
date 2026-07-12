@@ -1625,8 +1625,10 @@ public partial class ApiService : ModService
     /// EnsureAtLeastXCabins) has run. Runs on the game thread (same serialization as the two other
     /// <c>TakeGameStateSnapshot</c> call sites) and doesn't reset the 1 Hz timer, so a test's first
     /// post-reload read sees the migrated world instead of a snapshot captured mid-load.
-    /// No-ops when API is disabled (<c>_instance</c> is still set by the ctor, but a republish with
-    /// no HTTP listener is harmless).
+    /// With API disabled it still republishes (<c>_instance</c> is ctor-set, not gated by
+    /// <c>Entry</c>), which is harmless — a snapshot with no HTTP listener is never read.
+    /// A build failure inside <c>TakeGameStateSnapshot</c> is swallowed there (keeping the prior
+    /// snapshot) as at every call site; completion resolves regardless, by that shared contract.
     /// </summary>
     public static void RefreshSnapshotAtLoadCompletion() => _instance?.TakeGameStateSnapshot();
 
