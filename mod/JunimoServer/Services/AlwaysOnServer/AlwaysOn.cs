@@ -35,8 +35,8 @@ public class AlwaysOnServer : ModService
 
     private bool _warpingSleep;
 
-    // Shipping menu timeout reset, causes menu to be closed when bigger than `Config.EndOfDayTimeOut`
-    private int shippingMenuTimeoutTicks;
+    // Wall-clock start of the stuck-ShippingMenu window (seconds-based, so TPS-independent).
+    private DateTime? _shippingMenuTimeoutStartTime;
 
     private AlwaysOnServerFestivals alwaysOnServerFestivals;
 
@@ -194,7 +194,7 @@ public class AlwaysOnServer : ModService
         clientPaused = false;
         _isShippingMenuActive = false;
         _warpingSleep = false;
-        shippingMenuTimeoutTicks = 0;
+        _shippingMenuTimeoutStartTime = null;
         _weddingStartTime = null;
         _handledWeddingGate = null;
         ServerOptimizerOverrides.SetAutomationInputSuppression(false);
@@ -383,7 +383,7 @@ public class AlwaysOnServer : ModService
             return;
         }
 
-        // Starts a timeout counter in OnUnvalidatedUpdateTick.
+        // Marks the ShippingMenu window active; OnUnvalidatedUpdateTick then times it out.
         // Note: The actual ShippingMenu clicking is handled by HandleShippingMenu()
         // in OnOneSecondUpdateTicked, which properly waits for the intro animation.
         _isShippingMenuActive = true;
@@ -392,11 +392,14 @@ public class AlwaysOnServer : ModService
     private void OnUnvalidatedUpdateTick(object sender, UnvalidatedUpdateTickedEventArgs e)
     {
         // Waiting for ShippingMenu/Save/EndOfDay to timeout
-        if (_isShippingMenuActive && Config.EndOfDayTimeOut != 0)
+        if (_isShippingMenuActive && Config.EndOfDayTimeOutSeconds != 0)
         {
-            shippingMenuTimeoutTicks += 1;
+            _shippingMenuTimeoutStartTime ??= DateTime.UtcNow;
 
-            if (shippingMenuTimeoutTicks >= Config.EndOfDayTimeOut * Env.ServerTps)
+            var elapsedSeconds = (
+                DateTime.UtcNow - _shippingMenuTimeoutStartTime.Value
+            ).TotalSeconds;
+            if (elapsedSeconds >= Config.EndOfDayTimeOutSeconds)
             {
                 // Prevent others from joining after timeout
                 Game1.options.setServerMode("offline");
@@ -407,7 +410,7 @@ public class AlwaysOnServer : ModService
         {
             // Reset the ShippingMenu timeout since the game obviously progressed
             _isShippingMenuActive = false;
-            shippingMenuTimeoutTicks = 0;
+            _shippingMenuTimeoutStartTime = null;
 
             // Set online again in case the game kept going after timing out prematurely
             Game1.options.setServerMode("online");

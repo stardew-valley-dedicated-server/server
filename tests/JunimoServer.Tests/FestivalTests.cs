@@ -10,8 +10,8 @@ namespace JunimoServer.Tests;
 ///
 /// <para>
 /// The headline test is the regression gate for the leave-only auto-end bug: the two
-/// no-main-event festivals (Spirit's Eve, Feast of Winter Star) used to host-end ~0.17 s
-/// after loading (<c>RunLeaveOnly</c> firing <c>TicksToSeconds(10)</c>). The fix removed
+/// no-main-event festivals (Spirit's Eve, Feast of Winter Star) used to host-end almost
+/// immediately after loading (<c>RunLeaveOnly</c> firing its end dialogue). The fix removed
 /// that auto-end so the festival only ends when players leave or the wall-clock timeout
 /// elapses. Nothing automated caught the bug before; these tests are that gate.
 /// </para>
@@ -79,15 +79,15 @@ public class FestivalTests : TestBase
     private static readonly (int X, int Y) TownEntryTile = (35, 35);
     private static readonly (int X, int Y) ForestEntryTile = (34, 13);
 
-    // How long a festival must stay active to prove the 0.17s auto-end is gone. Comfortably
-    // larger than the old window, far below the ~33-min (SpiritsEveTimeOut) wall-clock backstop.
+    // How long a festival must stay active to prove the immediate auto-end is gone. Comfortably
+    // larger than the old window, far below the SpiritsEveTimeOutSeconds wall-clock backstop.
     private static readonly TimeSpan FestivalSettleWindow = TimeSpan.FromSeconds(6);
 
     /// <summary>
     /// Test 1 (the regression gate): Spirit's Eve does NOT auto-end immediately.
     ///
-    /// Pre-fix, <c>RunLeaveOnly</c> fired <c>TryStartEndFestivalDialogue</c> ~0.17 s after
-    /// the festival loaded, ending it before the player could do anything. With the fix the
+    /// Pre-fix, <c>RunLeaveOnly</c> fired <c>TryStartEndFestivalDialogue</c> almost immediately
+    /// after the festival loaded, ending it before the player could do anything. With the fix the
     /// festival stays active until a player leaves or the wall-clock timeout elapses, so it
     /// must still be active several seconds after entry.
     /// </summary>
@@ -108,7 +108,7 @@ public class FestivalTests : TestBase
         );
 
         // The fix is the only thing keeping the festival alive here: pre-fix it would have
-        // ended within ~0.17s. Poll for the whole settle window and fail the moment the
+        // ended almost immediately. Poll for the whole settle window and fail the moment the
         // festival is observed inactive.
         var endedEarly = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Festival_StillActiveAfterSettle,
@@ -124,7 +124,7 @@ public class FestivalTests : TestBase
         Assert.False(
             endedEarly,
             $"Spirit's Eve ended within {FestivalSettleWindow.TotalSeconds:0}s of entry. "
-                + "Pre-fix, RunLeaveOnly's TicksToSeconds(10) ≈ 0.17s auto-end did exactly this; "
+                + "Pre-fix, RunLeaveOnly's immediate auto-end did exactly this; "
                 + "the leave-only fix removed it so the festival must stay active until players leave."
         );
 

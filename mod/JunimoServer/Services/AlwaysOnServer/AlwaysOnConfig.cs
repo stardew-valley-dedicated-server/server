@@ -35,14 +35,14 @@ public class AlwaysOnConfig
 
     public int FestivalExitWarningSeconds { get; set; } = 120;
 
-    public int EndOfDayTimeOut { get; set; } = 120000;
-    public int FairTimeOut { get; set; } = 120000;
-    public int SpiritsEveTimeOut { get; set; } = 120000;
-    public int WinterStarTimeOut { get; set; } = 120000;
+    public int EndOfDayTimeOutSeconds { get; set; } = 2000;
+    public int FairTimeOutSeconds { get; set; } = 2000;
+    public int SpiritsEveTimeOutSeconds { get; set; } = 2000;
+    public int WinterStarTimeOutSeconds { get; set; } = 2000;
 
-    public int EggFestivalTimeOut { get; set; } = 120000;
-    public int FlowerDanceTimeOut { get; set; } = 120000;
-    public int LuauTimeOut { get; set; } = 120000;
-    public int DanceOfJelliesTimeOut { get; set; } = 120000;
-    public int FestivalOfIceTimeOut { get; set; } = 120000;
+    public int EggFestivalTimeOutSeconds { get; set; } = 2000;
+    public int FlowerDanceTimeOutSeconds { get; set; } = 2000;
+    public int LuauTimeOutSeconds { get; set; } = 2000;
+    public int DanceOfJelliesTimeOutSeconds { get; set; } = 2000;
+    public int FestivalOfIceTimeOutSeconds { get; set; } = 2000;
 }
