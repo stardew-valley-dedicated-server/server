@@ -79,7 +79,7 @@ The shell preamble in `StartAsync` sleeps until `CLOCK_REALTIME mod (1/fps) == 0
 
 Resist the urge to use strftime-templated filenames.
 
-**Failure mode under `-strftime 1` + `seg_%s.ts` (or any second-resolution template):** ffmpeg 8.1.1 in this image doesn't support sub-second strftime specifiers (`%N`/`%6N` pass through literally). At `fps=1, segment_time=1`, x11grab's startup serializes the first ~6 PTS-seconds of frames into ~1s of wall-clock during encoder warmup. The strftime expands at segment-open time, so the first 6 segments all open at the same wall-clock second and the muxer **overwrites them** — 3 files on disk where 8 should exist, segments 0-4 lost. Concrete evidence (8-frame test recording, `segments.csv`):
+**Failure mode under `-strftime 1` + `seg_%s.ts` (or any second-resolution template):** ffmpeg (8.1 branch) in this image doesn't support sub-second strftime specifiers (`%N`/`%6N` pass through literally). At `fps=1, segment_time=1`, x11grab's startup serializes the first ~6 PTS-seconds of frames into ~1s of wall-clock during encoder warmup. The strftime expands at segment-open time, so the first 6 segments all open at the same wall-clock second and the muxer **overwrites them** — 3 files on disk where 8 should exist, segments 0-4 lost. Concrete evidence (8-frame test recording, `segments.csv`):
 
 ```
 seg_1778763755.ts,0.000000,1.000000
