@@ -101,7 +101,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.EggHuntCountdownSeconds,
                 AnnounceText = "The Egg Hunt will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => Config.EggFestivalTimeOutSeconds + 3,
+                TimeoutSeconds = () => Config.EggFestivalTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -111,7 +111,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.FlowerDanceCountdownSeconds,
                 AnnounceText = "The Flower Dance will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => Config.FlowerDanceTimeOutSeconds + 1.5,
+                TimeoutSeconds = () => Config.FlowerDanceTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -122,7 +122,7 @@ public class AlwaysOnServerFestivals
                 AnnounceText = "The Soup Tasting will begin in {0:0.#} minutes.",
                 OnAnnounce = AddIridiumStarfruitToSoup,
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => Config.LuauTimeOutSeconds + 1.33,
+                TimeoutSeconds = () => Config.LuauTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -132,7 +132,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.JellyDanceCountdownSeconds,
                 AnnounceText = "The Dance of the Moonlight Jellies will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => Config.DanceOfJelliesTimeOutSeconds + 3,
+                TimeoutSeconds = () => Config.DanceOfJelliesTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -163,7 +163,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.IceFishingCountdownSeconds,
                 AnnounceText = "The Ice Fishing Contest will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => Config.FestivalOfIceTimeOutSeconds + 3,
+                TimeoutSeconds = () => Config.FestivalOfIceTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -450,8 +450,9 @@ public class AlwaysOnServerFestivals
             _started = true;
         }
 
-        // +5 ticks of slack so the main event has been kicked off before we start its timeout / auto-end
-        if (elapsed >= countdownSeconds + 5.0 / 60.0)
+        // Small slack so the main event has been kicked off on an earlier tick before we start
+        // its timeout / auto-end.
+        if (elapsed >= countdownSeconds + 0.1)
         {
             if (spec.TimeoutStart == TimeoutStart.AfterMainEvent)
             {
