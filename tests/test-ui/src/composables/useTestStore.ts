@@ -501,10 +501,9 @@ export function useTestStore(): TestStore {
     }
 
     // Apply a terminal outcome to a test: transition counts, set status, mark the
-    // tree dirty, and hand off auto-selection if a failure was demoted off the
-    // selected slot. Works from any current status (transitionStatus rebalances
-    // whatever was there) and no-ops when status already matches, so it is safe to
-    // call from both producers in either order.
+    // tree dirty, and reconcile auto-selection. Works from any current status
+    // (transitionStatus rebalances whatever was there) and no-ops when status
+    // already matches, so it is safe to call from both producers in either order.
     function setTerminalOutcome(test: TestSnapshot, outcome: "passed" | "failed" | "canceled") {
         if (test.status === outcome) {
             return;
@@ -512,11 +511,17 @@ export function useTestStore(): TestStore {
         transitionStatus(test.status, outcome);
         test.status = outcome;
         markTreeDirty();
-        // A failure demoted off the selected slot (e.g. failed→canceled) hands the
-        // headline back to the freshest remaining real failure; if none remain the
-        // selection stays put (a canceled test never auto-selects, but we don't
-        // proactively deselect either — matching the pre-fix test_failed behavior).
-        if (outcome !== "failed" && selectedTest.value?.displayName === test.displayName) {
+        if (outcome === "failed") {
+            // A genuine failure — including one enrichment upgraded from canceled after
+            // test_failed's OCE guess already skipped selection — jumps to the headline,
+            // matching test_failed's own auto-select. The status===outcome early-return
+            // above keeps an already-failed re-apply from re-selecting.
+            autoSelect(test);
+        } else if (selectedTest.value?.displayName === test.displayName) {
+            // A failure demoted off the selected slot (e.g. failed→canceled) hands the
+            // headline back to the freshest remaining real failure; if none remain the
+            // selection stays put (a canceled test never auto-selects, but we don't
+            // proactively deselect either — matching the pre-fix test_failed behavior).
             const next = findMostRecentFailure();
             if (next) {
                 autoSelect(next);
