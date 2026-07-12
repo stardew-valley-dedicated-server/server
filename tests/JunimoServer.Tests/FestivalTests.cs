@@ -80,7 +80,7 @@ public class FestivalTests : TestBase
     private static readonly (int X, int Y) ForestEntryTile = (34, 13);
 
     // How long a festival must stay active to prove the 0.17s auto-end is gone. Comfortably
-    // larger than the old window, far below the ~33-min (SpiritsEveTimeOutSeconds) wall-clock backstop.
+    // larger than the old window, far below the SpiritsEveTimeOutSeconds wall-clock backstop.
     private static readonly TimeSpan FestivalSettleWindow = TimeSpan.FromSeconds(6);
 
     /// <summary>
