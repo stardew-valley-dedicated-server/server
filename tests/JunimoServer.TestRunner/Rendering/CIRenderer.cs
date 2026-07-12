@@ -12,7 +12,8 @@ namespace JunimoServer.TestRunner.Rendering;
 /// reposition the cursor — so streaming there would re-emit a class header (and its
 /// ::group::) every time execution flips back to that class, duplicating headers and
 /// breaking groups. So non-TTY buffers per-test result lines and emits them grouped by
-/// class once, at run end. Diagnostics/annotations stream live in both modes.
+/// class once, at run end. Diagnostics/annotations stream live in both modes, and
+/// non-TTY additionally emits a periodic PROGRESS line as a mid-run liveness signal.
 /// </summary>
 public sealed class CIRenderer : RendererBase
 {
@@ -63,6 +64,13 @@ public sealed class CIRenderer : RendererBase
     private bool _spinnerIsSetup; // true = setup step spinner, false = test spinner
     private int _terminalWidth;
 
+    // Periodic PROGRESS line for non-TTY sinks — the only mid-run liveness signal there
+    // (no spinner), and what the CI workflow's sticky-comment poll loop greps for.
+    // _runFinished (under _writeLock) stops a tick already in flight at dispose time.
+    private Timer? _progressTimer;
+    private bool _runFinished;
+    private static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(30);
+
     public CIRenderer(bool verbose = false)
         : this(Console.Out, Console.Error, verbose) { }
 
@@ -103,6 +111,33 @@ public sealed class CIRenderer : RendererBase
         _out.WriteLine();
         _out.WriteLine($" {Bold("JunimoServer.Tests")}");
         _out.Flush();
+
+        if (!_isTTY)
+        {
+            _progressTimer = new Timer(ProgressTick, null, ProgressInterval, ProgressInterval);
+        }
+    }
+
+    private void ProgressTick(object? state)
+    {
+        lock (_writeLock)
+        {
+            if (_runFinished)
+            {
+                return;
+            }
+
+            // ::notice:: additionally surfaces the line as a GH Actions log annotation;
+            // omit it on a plain piped local log where the syntax is meaningless.
+            var prefix = _isGitHubActions ? "::notice::" : "";
+            var completed = PassedCount + FailedCount + CanceledCount + SkippedCount;
+            _out.WriteLine(
+                $"{prefix}PROGRESS {completed}/{TotalDiscovered} "
+                    + $"({PassedCount} passed, {FailedCount} failed, "
+                    + $"{CanceledCount} canceled, {SkippedCount} skipped)"
+            );
+            _out.Flush();
+        }
     }
 
     public override void OnDiscoveryComplete(DiscoveryCompleteEvent e)
@@ -114,6 +149,12 @@ public sealed class CIRenderer : RendererBase
     {
         lock (_writeLock)
         {
+            // Setting _runFinished under the lock turns a progress tick that is already
+            // blocked on it into a no-op — Timer.Dispose alone doesn't drain callbacks.
+            _runFinished = true;
+            _progressTimer?.Dispose();
+            _progressTimer = null;
+
             if (_isTTY)
             {
                 EndClassGroup();
@@ -735,6 +776,10 @@ public sealed class CIRenderer : RendererBase
     {
         lock (_writeLock)
         {
+            // Covers aborted runs that never reach OnRunFinished.
+            _runFinished = true;
+            _progressTimer?.Dispose();
+            _progressTimer = null;
             StopSpinnerLocked();
         }
         // Close any open GitHub Actions group

@@ -299,6 +299,33 @@ test("renderBody links: run + report when present, omitted when absent", () => {
     assert.ok(b2.includes("[run](http://r/1)") && !b2.includes("report]("));
 });
 
+test("renderBody: running status renders the 🔵 heading and preserves filter/history", () => {
+    const rows = [
+        {
+            n: 3,
+            result: "passed",
+            resultEmoji: "🟢",
+            sha: "abc1234",
+            filter: "Foo",
+            when: "t",
+            runUrl: "http://r/3",
+            reportUrl: "",
+        },
+    ];
+    const body = helper.renderBody({
+        status: "running",
+        statusEmoji: "🔵",
+        headline: "Running for `abc1234`… 12/96 (11 passed, 1 failed, 0 canceled, 0 skipped)",
+        filter: "Foo",
+        history: rows,
+        requested: false,
+    });
+    assert.ok(body.includes("### 🔵 E2E Tests"));
+    assert.match(body, /Running for `abc1234`… 12\/96/);
+    assert.equal(helper.readFilter(body), "Foo");
+    assert.deepEqual(helper.readHistory(body), rows);
+});
+
 // --- result derivation -------------------------------------------------------------
 
 test("deriveResult: a cancelled job is aborted regardless of a partial summary", () => {
@@ -366,6 +393,7 @@ test("statusToConclusion maps sticky status to a Checks API conclusion", () => {
     assert.equal(helper.statusToConclusion("failed"), "failure");
     assert.equal(helper.statusToConclusion("aborted"), "cancelled");
     assert.equal(helper.statusToConclusion("queued"), undefined);
+    assert.equal(helper.statusToConclusion("running"), undefined);
 });
 
 test("createCheckRun creates against the given head_sha when no check run exists yet", async () => {

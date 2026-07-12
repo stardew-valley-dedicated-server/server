@@ -450,8 +450,9 @@ jobs:
           persist-credentials: false
 
       # SECURITY: the workspace above is PR HEAD — on a fork PR it is untrusted code.
-      # The "Update PR sticky" step runs with the test-vps secrets + pull-requests:write,
-      # so it must NOT require() the sticky helper from that checkout (a fork could edit it
+      # The sticky-writing steps ("Mark PR sticky running", the run step's progress poll,
+      # "Update PR sticky") run with the test-vps secrets + pull-requests:write, so they
+      # must NOT require() the sticky helper from that checkout (a fork could edit it
       # to run arbitrary JS with secrets — CodeQL "Untrusted Checkout TOCTOU"). Pull the
       # helper from the TRUSTED default branch into a separate path and require() that copy.
       # (Building/testing the PR code itself is the intended, fork-pr-gated behaviour; this
@@ -606,6 +607,42 @@ jobs:
             | { grep -v '^SDVD_EVENT ' || true; }
           exit "${PIPESTATUS[0]}"
 
+      # Flip the sticky from "queued" to "running" now that setup is done and the suite
+      # is about to start (the sibling of "Start PR check run" above, for the comment).
+      # Outputs the sticky's comment id so the run step's progress poll can PATCH the
+      # exact comment without re-finding it each tick. continue-on-error: a sticky
+      # hiccup must not fail the run — an empty comment_id just disables the poll.
+      - name: Mark PR sticky running
+        id: mark-running
+        if: needs.gate.outputs.pr_number != ''
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          FILTER: ${{ needs.gate.outputs.filter }}
+        with:
+          script: |
+            // Trusted (default-branch) copy — NOT the PR-HEAD checkout (see "Checkout
+            // trusted sticky helper" above).
+            const helper = require(`${process.env.GITHUB_WORKSPACE}/trusted-helper/.github/scripts/e2e-pr-sticky.js`);
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const existing = await helper.findSticky({ github, owner, repo, issue_number });
+            const history = existing ? helper.readHistory(existing.body) : [];
+            // Keep the checkbox's "(requested)" suffix while the run is in flight — it
+            // is only cleared when fresh results post (the final sticky update).
+            const requested = !!existing && existing.body.includes(helper.RERUN_REQUESTED_LABEL);
+            const id = await helper.upsertSticky({
+              github, owner, repo, issue_number, existing,
+              body: helper.renderBody({
+                status: 'running', statusEmoji: '🔵',
+                headline: `Running for \`${helper.shortSha(process.env.HEAD_SHA)}\`…`,
+                filter: process.env.FILTER || '', history, requested,
+              }),
+            });
+            core.setOutput('comment_id', String(id));
+
       # The whole pipeline in one command. The runner builds all three images
       # in-process (reading STEAM_ACCOUNTS[0] for the Steam --secret login),
       # streams them + the game-data volume to the VPS, then runs the tests there.
@@ -613,6 +650,11 @@ jobs:
       # that class); with no filter the full suite runs. STEAM_ACCOUNTS is required
       # here from the very first run — without it the in-process image build fails
       # with a Steam-login error.
+      #
+      # On PR runs the suite is backgrounded through `tee` and this step's poll loop
+      # lifts CIRenderer's periodic PROGRESS line (stdout is non-TTY here) into the
+      # sticky comment every ~60s — GitHub Actions steps are strictly sequential, so
+      # live progress must come out of this one long-running step, not a sibling.
       - name: Run E2E suite
         env:
           SDVD_DOCKER_HOSTS: ${{ secrets.SDVD_DOCKER_HOSTS }}
@@ -623,12 +665,68 @@ jobs:
           # checkbox; empty (the default) runs the full suite — pass --filter only
           # when a non-whitespace value was provided.
           FILTER: ${{ needs.gate.outputs.filter }}
+          # For the progress poll loop (PR runs only): gh auth to PATCH the sticky
+          # located by "Mark PR sticky running". Empty comment id (no PR context, or
+          # that step failed) means a plain foreground run with no polling.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STICKY_COMMENT_ID: ${{ steps.mark-running.outputs.comment_id }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         run: |
+          args=()
           if [ -n "${FILTER//[[:space:]]/}" ]; then
-            dotnet run --project ./tests/JunimoServer.TestRunner -- --filter "$FILTER"
-          else
-            dotnet run --project ./tests/JunimoServer.TestRunner
+            args=(-- --filter "$FILTER")
           fi
+
+          if [ -z "${STICKY_COMMENT_ID:-}" ]; then
+            exec dotnet run --project ./tests/JunimoServer.TestRunner "${args[@]}"
+          fi
+
+          # The subshell records the runner's own exit code: after `wait` $? would be
+          # tee's, and PIPESTATUS does not cover a backgrounded pipeline. `set +e` in the
+          # subshell: it inherits this step's errexit, which would otherwise abort it on a
+          # runner failure before the echo runs (leaving run.exit empty).
+          : > run.exit
+          ( set +e; dotnet run --project ./tests/JunimoServer.TestRunner "${args[@]}" 2>&1; echo "$?" > run.exit ) | tee run.log &
+          TEE_PID=$!
+
+          update_sticky() {
+            # Render with the TRUSTED helper copy (never the PR-HEAD one — see the
+            # trusted-helper checkout above). Read the live body each tick so history
+            # rows appended by other runs survive the PATCH.
+            gh api "/repos/${GITHUB_REPOSITORY}/issues/comments/${STICKY_COMMENT_ID}" --jq .body > sticky-body.txt \
+              && PROGRESS_LINE="$1" node -e '
+                const fs = require("fs");
+                const helper = require(process.env.GITHUB_WORKSPACE + "/trusted-helper/.github/scripts/e2e-pr-sticky.js");
+                const body = fs.readFileSync("sticky-body.txt", "utf8");
+                const counts = process.env.PROGRESS_LINE.replace(/^PROGRESS /, "");
+                process.stdout.write(helper.renderBody({
+                  status: "running", statusEmoji: "🔵",
+                  headline: "Running for `" + helper.shortSha(process.env.HEAD_SHA) + "`… " + counts,
+                  filter: process.env.FILTER || "",
+                  history: helper.readHistory(body),
+                  requested: body.includes(helper.RERUN_REQUESTED_LABEL),
+                }));
+              ' > sticky-new.txt \
+              && gh api --method PATCH --silent \
+                   "/repos/${GITHUB_REPOSITORY}/issues/comments/${STICKY_COMMENT_ID}" \
+                   -F "body=@sticky-new.txt"
+          }
+
+          last=""
+          while kill -0 "$TEE_PID" 2>/dev/null; do
+            sleep 60
+            progress=$(grep -ao 'PROGRESS [0-9][0-9]*/[0-9][0-9]* ([^)]*)' run.log | tail -n 1 || true)
+            if [ -n "$progress" ] && [ "$progress" != "$last" ]; then
+              # A sticky/API hiccup must never fail the run — retry on the next tick.
+              if update_sticky "$progress"; then last="$progress"; else echo "PROGRESS sticky update failed (non-fatal)"; fi
+            fi
+          done
+          wait "$TEE_PID" || true
+
+          # Propagate the runner's real exit code; a missing run.exit (the subshell was
+          # killed before writing it) counts as failure.
+          RUN_EXIT=$(cat run.exit 2>/dev/null)
+          exit "${RUN_EXIT:-1}"
 
       # Render the runner's ctrf-report.json (TestRunArtifactWriter.WriteCtrfReport,
       # one per CI invocation) into the job Summary tab. summary-report = pass/fail

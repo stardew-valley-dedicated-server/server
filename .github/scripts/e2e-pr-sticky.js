@@ -168,7 +168,7 @@ function deriveResult({ summary, jobStatus, sha, reportUrl }) {
  * next event to recover, a status block, the re-run checkbox, and the collapsed
  * run-history table.
  * @param {object} state
- * @param {'queued'|'passed'|'failed'|'aborted'} state.status - Run status (drives wording).
+ * @param {'queued'|'running'|'passed'|'failed'|'aborted'} state.status - Run status (drives wording).
  * @param {string} state.statusEmoji - Emoji shown in the heading.
  * @param {string} state.headline - Markdown headline line under the heading.
  * @param {string} state.filter - The run filter (empty = full suite).
@@ -239,7 +239,7 @@ function renderBody(state) {
 // PR's real head SHA (`checks: write`), independent of the job's own auto-check.
 const CHECK_RUN_NAME = "E2E Tests";
 
-/** Map a sticky `status` (queued|passed|failed|aborted) to a Checks API `conclusion`. */
+/** Map a sticky `status` (queued|running|passed|failed|aborted) to a Checks API `conclusion`. */
 function statusToConclusion(status) {
     switch (status) {
         case "passed":
@@ -249,7 +249,7 @@ function statusToConclusion(status) {
         case "aborted":
             return "cancelled";
         default:
-            return undefined; // 'queued' has no conclusion (still in_progress/queued)
+            return undefined; // 'queued'/'running' have no conclusion (still in flight)
     }
 }
 
