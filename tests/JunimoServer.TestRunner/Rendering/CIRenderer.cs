@@ -35,6 +35,12 @@ public sealed class CIRenderer : RendererBase
     // Failure collection for bottom summary (event + accumulated pipe output)
     private readonly List<(TestFailedEvent Failure, string? Output)> _failures = new();
 
+    // Display caps for failure detail blocks: stack traces carry their signal
+    // in the top frames, and unbounded output would drown the summary.
+    private const int StackTraceDisplayLines = 10;
+    private const int FailureMessageDisplayLines = 5;
+    private const int TestOutputDisplayLines = 20;
+
     // Spinner animation (TTY only)
     private static readonly string[] SpinnerFrames =
     [
@@ -142,7 +148,7 @@ public sealed class CIRenderer : RendererBase
 
                 // Additional message lines (e.g. inner exception details)
                 var messageLines = f.Message.Split('\n');
-                for (var i = 1; i < messageLines.Length && i < 5; i++)
+                for (var i = 1; i < messageLines.Length && i < FailureMessageDisplayLines; i++)
                 {
                     _out.WriteLine($"   {Red(messageLines[i].TrimEnd())}");
                 }
@@ -153,7 +159,7 @@ public sealed class CIRenderer : RendererBase
                 if (!string.IsNullOrEmpty(f.StackTrace))
                 {
                     var sanitized = SanitizeStackTrace(f.StackTrace);
-                    foreach (var line in sanitized.Split('\n').Take(10))
+                    foreach (var line in sanitized.Split('\n').Take(StackTraceDisplayLines))
                     {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
                     }
@@ -171,7 +177,7 @@ public sealed class CIRenderer : RendererBase
                 if (!string.IsNullOrWhiteSpace(fOutput))
                 {
                     _out.WriteLine($"   {Dim("\u2500\u2500 Output \u2500\u2500")}");
-                    foreach (var line in fOutput.Split('\n').Take(20))
+                    foreach (var line in fOutput.Split('\n').Take(TestOutputDisplayLines))
                     {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
                     }
@@ -699,7 +705,7 @@ public sealed class CIRenderer : RendererBase
             if (!string.IsNullOrEmpty(e.StackTrace))
             {
                 var sanitized = SanitizeStackTrace(e.StackTrace);
-                foreach (var line in sanitized.Split('\n').Take(10))
+                foreach (var line in sanitized.Split('\n').Take(StackTraceDisplayLines))
                 {
                     _err.WriteLine(Dim($"   {line.TrimEnd()}"));
                 }
