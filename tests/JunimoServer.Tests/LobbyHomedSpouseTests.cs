@@ -169,6 +169,11 @@ public class LobbyHomedSpouseSteadyStateTests : TestBase
         // the persisted farmhandData homes — which must stay the real cabins.
         await farmhandB.DisconnectAsync();
         await DisconnectAsync();
+        Assert.True(
+            await ServerApi.WaitForPlayersRemovedByIdAsync(new[] { uidA, uidB }, ct: ct),
+            "Both farmhands must be removed server-side before the server-only nights — "
+                + "otherwise marriageDuties still reads their live roots, not farmhandData."
+        );
 
         for (var night = 4; night <= 5; night++)
         {
