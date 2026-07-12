@@ -59,10 +59,12 @@ public static class SteamAccountSlicer
         IReadOnlyList<DockerHost> hostsInDeclaredOrder
     )
     {
+        // Node-based (not SteamAccount.ParseList) on purpose: slice entries are
+        // re-serialized verbatim for the host's steam-auth container.
         var globalAccounts = UserConfigJson.ParseArrayStrict(
             "STEAM_ACCOUNTS",
             steamAccountsJson,
-            "{user, pass[, refreshToken]}"
+            SteamAccount.ShapeHint
         );
         var n = globalAccounts.Count;
 

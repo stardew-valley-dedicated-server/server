@@ -127,6 +127,19 @@ var ChildStallTimeout = TimeSpan.FromSeconds(
         : 720
 );
 
+// Assemble the offline test-web bundle (SPA + run snapshot + copied media)
+// inside the run dir so it rides along in the uploaded artifact tree and opens
+// over file://. Driven by --report or CI; no-ops with a warning when the SPA
+// hasn't been built; never throws. Abort paths call this directly because they
+// return (or force-kill) before the outer finally.
+void TryGenerateReport()
+{
+    if (generateReport || IsCIEnvironment())
+    {
+        ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir, CollectKnownSecrets());
+    }
+}
+
 // Shared abort body. `cause` becomes the run_aborted event cause and the
 // summary.json abortReason. Re-entrant: the first call starts the graceful
 // teardown + 15s force-kill safety net; subsequent calls go straight to
@@ -169,6 +182,10 @@ void BeginAbort(string cause)
         {
             Console.Error.WriteLine($"[ArtifactWriter] abort-path write failed: {ex.Message}");
         }
+
+        // The force-kill can preempt the outer finally; the graceful path's
+        // duplicate call just overwrites the bundle.
+        TryGenerateReport();
 
         // Push a run_aborted event over the WebSocket so the browser UI flips
         // to the aborted state immediately. Without this, the UI only notices
@@ -387,6 +404,9 @@ void ForceExitNow(string cause)
         {
             Console.Error.WriteLine($"[ArtifactWriter] force-exit write failed: {ex.Message}");
         }
+
+        // Snapshot bundle for the aborted run — same rationale as BeginAbort.
+        TryGenerateReport();
     }
     finally
     {
@@ -437,9 +457,14 @@ async Task RunChildStallWatchdogAsync(Action<string> abort, CancellationToken ct
                 continue;
             }
 
-            Console.Error.WriteLine(
-                $"[stall-watchdog] no test progress for {idle.TotalSeconds:F0}s "
-                    + $"(threshold {ChildStallTimeout.TotalSeconds:F0}s) — aborting wedged run."
+            // OnError (not bare stderr) so the wedge is annotated in CI and lands
+            // in state/artifacts; the renderer is still alive here — BeginAbort
+            // owns artifacts + disposal from this point on.
+            renderer.OnError(
+                new ErrorEvent(
+                    $"[stall-watchdog] no test progress for {idle.TotalSeconds:F0}s "
+                        + $"(threshold {ChildStallTimeout.TotalSeconds:F0}s) — aborting wedged run."
+                )
             );
             try
             {
@@ -594,8 +619,58 @@ if (UnwrapRenderer(renderer) is WebRenderer webRendererReady)
 // (The parent process bypasses SetupEventBus's pipe channel — it owns the
 // renderer in-process; SetupEventBus is for the child where IPC is needed.
 // Existing pattern at RunnerCallbacks.cs:142-144.) The same events surface in
-// the WebUI tree; the existing Console.Error lines stay for terminal users.
+// the WebUI tree; abort failures route through renderer.OnError, which reaches
+// every mode (stderr + ::error:: in CI, error JSONL in LLM, state + web UI via
+// the dispatch guard).
 const string SetupCategory = "Runner";
+
+// Shared epilogue for the parent-side setup-abort seams (preflight, image
+// build, image/game-data distribution). Callers emit their PhaseCompleted(false)
+// first — the ERROR line lands after CIRenderer's ::endgroup:: so it can't be
+// swallowed into the collapsed setup group in the GitHub log.
+async Task<int> AbortRunAsync(string abortReason, string message, object runAbortedPayload)
+{
+    renderer.OnError(new ErrorEvent(message));
+    InfrastructureEventLog.Emit("run_aborted", runAbortedPayload);
+    recorder.SetAbortReason(abortReason);
+    recorder.WriteRunArtifacts();
+    TryGenerateReport();
+    await renderer.DisposeAsync();
+    return 2;
+}
+
+// Distribution-failure abort: one scrubbed OnError per seam (not per host) —
+// transfer errors embed SSH stderr with the VPS user@host, and the run_aborted
+// payload is persisted to infrastructure.parent.jsonl in the public artifact.
+async Task<int> AbortDistributionAsync(
+    string phaseName,
+    string tag,
+    string cause,
+    List<(string HostId, string? Error)> failures
+)
+{
+    var failureLines = failures
+        .Select(f => ScrubForLog($"host '{f.HostId}': {f.Error ?? "unknown"}"))
+        .ToList();
+    renderer.OnSetupPhaseCompleted(
+        new SetupPhaseCompletedEvent(
+            SetupCategory,
+            phaseName,
+            false,
+            $"{failures.Count} host(s) failed"
+        )
+    );
+    return await AbortRunAsync(
+        cause,
+        $"[{tag}] aborted:{Environment.NewLine}" + string.Join(Environment.NewLine, failureLines),
+        new
+        {
+            cause,
+            failures = failures.Count,
+            messages = failureLines,
+        }
+    );
+}
 
 renderer.OnSetupPhaseStarted(new SetupPhaseStartedEvent(SetupCategory, "Preflight"));
 try
@@ -626,18 +701,14 @@ try
 catch (Exception ex)
 {
     var preflightMsg = ScrubForLog(ex.Message);
-    Console.Error.WriteLine($"[HostPool] Preflight failed: {preflightMsg}");
-    InfrastructureEventLog.Emit(
-        "run_aborted",
-        new { cause = "host_preflight", message = preflightMsg }
-    );
     renderer.OnSetupPhaseCompleted(
         new SetupPhaseCompletedEvent(SetupCategory, "Preflight", false, preflightMsg)
     );
-    recorder.SetAbortReason("preflight");
-    recorder.WriteRunArtifacts();
-    await renderer.DisposeAsync();
-    return 2;
+    return await AbortRunAsync(
+        "preflight",
+        $"[HostPool] Preflight failed: {preflightMsg}",
+        new { cause = "preflight", message = preflightMsg }
+    );
 }
 
 // Self-heal stray containers/networks/volumes from prior aborted runs across
@@ -735,13 +806,12 @@ try
 catch (Exception ex)
 {
     var buildMsg = ScrubForLog(ex.Message);
-    Console.Error.WriteLine($"[ImageBuild] Parent-side build failed: {buildMsg}");
-    InfrastructureEventLog.Emit("run_aborted", new { cause = "image_build", message = buildMsg });
     parentBuildProgress.PhaseCompleted("Docker Images", false, buildMsg);
-    recorder.SetAbortReason("image_build");
-    recorder.WriteRunArtifacts();
-    await renderer.DisposeAsync();
-    return 2;
+    return await AbortRunAsync(
+        "image_build",
+        $"[ImageBuild] Parent-side build failed: {buildMsg}",
+        new { cause = "image_build", message = buildMsg }
+    );
 }
 
 // Distribute test images to remote hosts (no-op for local-only fleets).
@@ -759,29 +829,12 @@ try
     var transferFailures = transferResults.Where(r => !r.Success).ToList();
     if (transferFailures.Count > 0)
     {
-        foreach (var f in transferFailures)
-        {
-            Console.Error.WriteLine(
-                $"[ImageTransfer] host '{f.HostId}' failed: {f.Error ?? "unknown"}"
-            );
-        }
-
-        InfrastructureEventLog.Emit(
-            "run_aborted",
-            new { cause = "image_transfer", failures = transferFailures.Count }
+        return await AbortDistributionAsync(
+            "Image distribution",
+            "ImageTransfer",
+            "image_transfer",
+            transferFailures.Select(f => (f.HostId, f.Error)).ToList()
         );
-        renderer.OnSetupPhaseCompleted(
-            new SetupPhaseCompletedEvent(
-                SetupCategory,
-                "Image distribution",
-                false,
-                $"{transferFailures.Count} host(s) failed"
-            )
-        );
-        recorder.SetAbortReason("image_transfer");
-        recorder.WriteRunArtifacts();
-        await renderer.DisposeAsync();
-        return 2;
     }
     renderer.OnSetupPhaseCompleted(
         new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", true)
@@ -790,18 +843,14 @@ try
 catch (Exception ex)
 {
     var transferMsg = ScrubForLog(ex.Message);
-    Console.Error.WriteLine($"[ImageTransfer] aborted: {transferMsg}");
-    InfrastructureEventLog.Emit(
-        "run_aborted",
-        new { cause = "image_transfer_exception", message = transferMsg }
-    );
     renderer.OnSetupPhaseCompleted(
         new SetupPhaseCompletedEvent(SetupCategory, "Image distribution", false, transferMsg)
     );
-    recorder.SetAbortReason("image_transfer_exception");
-    recorder.WriteRunArtifacts();
-    await renderer.DisposeAsync();
-    return 2;
+    return await AbortRunAsync(
+        "image_transfer_exception",
+        $"[ImageTransfer] aborted: {transferMsg}",
+        new { cause = "image_transfer_exception", message = transferMsg }
+    );
 }
 
 // Distribute the Stardew Valley game-data volume from the coordinator to each
@@ -819,27 +868,12 @@ try
     var gdFailures = gdResults.Where(r => !r.Success).ToList();
     if (gdFailures.Count > 0)
     {
-        foreach (var f in gdFailures)
-        {
-            Console.Error.WriteLine($"[GameData] host '{f.HostId}' failed: {f.Error ?? "unknown"}");
-        }
-
-        InfrastructureEventLog.Emit(
-            "run_aborted",
-            new { cause = "game_data_transfer", failures = gdFailures.Count }
+        return await AbortDistributionAsync(
+            "Game data distribution",
+            "GameData",
+            "game_data_transfer",
+            gdFailures.Select(f => (f.HostId, f.Error)).ToList()
         );
-        renderer.OnSetupPhaseCompleted(
-            new SetupPhaseCompletedEvent(
-                SetupCategory,
-                "Game data distribution",
-                false,
-                $"{gdFailures.Count} host(s) failed"
-            )
-        );
-        recorder.SetAbortReason("game_data_transfer");
-        recorder.WriteRunArtifacts();
-        await renderer.DisposeAsync();
-        return 2;
     }
     renderer.OnSetupPhaseCompleted(
         new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", true)
@@ -848,18 +882,14 @@ try
 catch (Exception ex)
 {
     var gameDataMsg = ScrubForLog(ex.Message);
-    Console.Error.WriteLine($"[GameData] aborted: {gameDataMsg}");
-    InfrastructureEventLog.Emit(
-        "run_aborted",
-        new { cause = "game_data_transfer_exception", message = gameDataMsg }
-    );
     renderer.OnSetupPhaseCompleted(
         new SetupPhaseCompletedEvent(SetupCategory, "Game data distribution", false, gameDataMsg)
     );
-    recorder.SetAbortReason("game_data_transfer_exception");
-    recorder.WriteRunArtifacts();
-    await renderer.DisposeAsync();
-    return 2;
+    return await AbortRunAsync(
+        "game_data_transfer_exception",
+        $"[GameData] aborted: {gameDataMsg}",
+        new { cause = "game_data_transfer_exception", message = gameDataMsg }
+    );
 }
 
 // Now that the parent-side build + distribution are complete, expose the
@@ -1010,7 +1040,12 @@ catch (Exception ex)
         }
     );
     recorder.SetAbortReason("exception");
-    throw;
+    // OnError carries the scrubbed message + stack to every mode (renderers
+    // sanitize the stack; a raw exception dump must not reach the public CI
+    // log). Exit code 2 is the abort convention; the outer finally owns
+    // artifacts + report + dispose on this path.
+    renderer.OnError(new ErrorEvent($"Run aborted — {runMsg}", ex.StackTrace));
+    exitCode = 2;
 }
 finally
 {
@@ -1052,15 +1087,8 @@ finally
         Console.Error.WriteLine($"[ArtifactWriter] finally-path write failed: {ex.Message}");
     }
 
-    // Assemble the offline test-web bundle (SPA + run snapshot + copied media)
-    // inside the run dir, so it rides along in the uploaded artifact tree and
-    // opens over file://. One site, every renderer mode — driven by --report or
-    // CI. No-ops with a warning when the SPA hasn't been built. Requires the
-    // final state, so it runs after WriteRunArtifacts.
-    if (generateReport || IsCIEnvironment())
-    {
-        ReportGenerator.TryGenerate(recorder.State, TestArtifacts.RunDir, CollectKnownSecrets());
-    }
+    // Requires the final state, so it runs after WriteRunArtifacts.
+    TryGenerateReport();
 
     // Dev-mode Web runs that completed normally: hold the browser open
     // until the operator presses a key (or signals shutdown). Skipped on
@@ -1144,19 +1172,11 @@ static IReadOnlyCollection<string> CollectKnownSecrets()
     try
     {
         var accountsJson = Environment.GetEnvironmentVariable("STEAM_ACCOUNTS");
-        foreach (
-            var account in JunimoServer.Tests.Schema.Json.UserConfigJson.ParseArrayStrict(
-                "STEAM_ACCOUNTS",
-                accountsJson
-            )
-        )
+        foreach (var account in SteamAccount.ParseList(accountsJson))
         {
-            foreach (var field in new[] { "user", "pass", "refreshToken" })
+            foreach (var value in account.SecretValues)
             {
-                if (account?[field]?.GetValue<string>() is { Length: > 0 } v)
-                {
-                    secrets.Add(v);
-                }
+                secrets.Add(value);
             }
         }
     }

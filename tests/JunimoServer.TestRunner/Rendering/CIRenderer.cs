@@ -35,6 +35,12 @@ public sealed class CIRenderer : RendererBase
     // Failure collection for bottom summary (event + accumulated pipe output)
     private readonly List<(TestFailedEvent Failure, string? Output)> _failures = new();
 
+    // Display caps for failure detail blocks: stack traces carry their signal
+    // in the top frames, and unbounded output would drown the summary.
+    private const int StackTraceDisplayLines = 10;
+    private const int FailureMessageDisplayLines = 5;
+    private const int TestOutputDisplayLines = 20;
+
     // Spinner animation (TTY only)
     private static readonly string[] SpinnerFrames =
     [
@@ -142,7 +148,7 @@ public sealed class CIRenderer : RendererBase
 
                 // Additional message lines (e.g. inner exception details)
                 var messageLines = f.Message.Split('\n');
-                for (var i = 1; i < messageLines.Length && i < 5; i++)
+                for (var i = 1; i < messageLines.Length && i < FailureMessageDisplayLines; i++)
                 {
                     _out.WriteLine($"   {Red(messageLines[i].TrimEnd())}");
                 }
@@ -153,7 +159,7 @@ public sealed class CIRenderer : RendererBase
                 if (!string.IsNullOrEmpty(f.StackTrace))
                 {
                     var sanitized = SanitizeStackTrace(f.StackTrace);
-                    foreach (var line in sanitized.Split('\n').Take(10))
+                    foreach (var line in sanitized.Split('\n').Take(StackTraceDisplayLines))
                     {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
                     }
@@ -171,7 +177,7 @@ public sealed class CIRenderer : RendererBase
                 if (!string.IsNullOrWhiteSpace(fOutput))
                 {
                     _out.WriteLine($"   {Dim("\u2500\u2500 Output \u2500\u2500")}");
-                    foreach (var line in fOutput.Split('\n').Take(20))
+                    foreach (var line in fOutput.Split('\n').Take(TestOutputDisplayLines))
                     {
                         _out.WriteLine($"   {Dim(line.TrimEnd())}");
                     }
@@ -518,11 +524,9 @@ public sealed class CIRenderer : RendererBase
             // so it streams live in both modes (the result line itself may be buffered).
             if (_isGitHubActions)
             {
-                var escapedMsg = e
-                    .Message.Replace("%", "%25")
-                    .Replace("\r", "%0D")
-                    .Replace("\n", "%0A");
-                _err.WriteLine($"::error title={e.TestClass}.{e.TestMethod}::{escapedMsg}");
+                _err.WriteLine(
+                    $"::error title={e.TestClass}.{e.TestMethod}::{EscapeAnnotation(e.Message)}"
+                );
                 _err.Flush();
             }
 
@@ -688,27 +692,42 @@ public sealed class CIRenderer : RendererBase
 
     public override void OnError(ErrorEvent e)
     {
-        _err.WriteLine(RedBold($" ERROR: {e.Message}"));
-        if (!string.IsNullOrEmpty(e.StackTrace))
+        lock (_writeLock)
         {
-            var sanitized = SanitizeStackTrace(e.StackTrace);
-            foreach (var line in sanitized.Split('\n').Take(10))
+            // Same clear/redraw dance as OnTestAnnotation — errors can arrive
+            // while a spinner is active (e.g. the stall watchdog mid-run).
+            if (_isTTY && _spinnerLabel != null)
             {
-                _err.WriteLine(Dim($"   {line.TrimEnd()}"));
+                _err.Write("\r\x1b[2K");
             }
-        }
 
-        if (_isGitHubActions)
-        {
-            var escapedMsg = e
-                .Message.Replace("%", "%25")
-                .Replace("\r", "%0D")
-                .Replace("\n", "%0A");
-            _err.WriteLine($"::error::{escapedMsg}");
-        }
+            _err.WriteLine(RedBold($" ERROR: {e.Message}"));
+            if (!string.IsNullOrEmpty(e.StackTrace))
+            {
+                var sanitized = SanitizeStackTrace(e.StackTrace);
+                foreach (var line in sanitized.Split('\n').Take(StackTraceDisplayLines))
+                {
+                    _err.WriteLine(Dim($"   {line.TrimEnd()}"));
+                }
+            }
 
-        _err.Flush();
+            if (_isGitHubActions)
+            {
+                _err.WriteLine($"::error::{EscapeAnnotation(e.Message)}");
+            }
+
+            if (_isTTY && _spinnerLabel != null)
+            {
+                _out.Write(BuildSpinnerLine(_spinnerFrame));
+            }
+
+            _err.Flush();
+        }
     }
+
+    /// <summary>Escape a message for a GitHub Actions annotation body.</summary>
+    private static string EscapeAnnotation(string message) =>
+        message.Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A");
 
     // ── Dispose ──
 

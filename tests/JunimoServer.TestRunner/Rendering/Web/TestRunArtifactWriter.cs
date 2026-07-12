@@ -403,10 +403,17 @@ public sealed class TestRunArtifactWriter
     /// needs without parsing summary.json: status, counters, paths, degradation
     /// flag. Always written (in both local and coordinator modes). The same
     /// shape is also echoed to stdout as a single JSON line for log scrapers.
+    /// <para>
+    /// <c>status</c> ranks <c>aborted &gt; failed &gt; canceled &gt; passed</c>
+    /// (matching the PR sticky's <c>deriveResult</c>), so an aborted 0-test run
+    /// says <c>"aborted"</c> here. summary.json's <c>result</c> keeps its
+    /// documented orthogonal semantics (see <see cref="ResultStatus"/>); that
+    /// contract and its consumers are untouched.
+    /// </para>
     /// </summary>
     private void WriteRunOutput(RunArtifactView v)
     {
-        var status = ResultStatus(v);
+        var status = v.Aborted ? "aborted" : ResultStatus(v);
         var degradation = BuildDegradation(v);
         var degradationStatus = degradation is null
             ? "clean"
@@ -417,6 +424,8 @@ public sealed class TestRunArtifactWriter
             ["runId"] = _runId,
             ["runDir"] = _runDir,
             ["status"] = status,
+            ["aborted"] = v.Aborted,
+            ["abortReason"] = v.AbortReason,
             ["passed"] = v.Passed,
             ["failed"] = v.Failed,
             ["skipped"] = v.Skipped,
