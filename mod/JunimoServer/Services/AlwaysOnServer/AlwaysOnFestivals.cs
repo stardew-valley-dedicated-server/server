@@ -101,7 +101,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.EggHuntCountdownSeconds,
                 AnnounceText = "The Egg Hunt will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => TicksToSeconds(Config.EggFestivalTimeOut + 180),
+                TimeoutSeconds = () => Config.EggFestivalTimeOutSeconds + 3,
             },
             new FestivalSpec
             {
@@ -111,7 +111,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.FlowerDanceCountdownSeconds,
                 AnnounceText = "The Flower Dance will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => TicksToSeconds(Config.FlowerDanceTimeOut + 90),
+                TimeoutSeconds = () => Config.FlowerDanceTimeOutSeconds + 1.5,
             },
             new FestivalSpec
             {
@@ -122,7 +122,7 @@ public class AlwaysOnServerFestivals
                 AnnounceText = "The Soup Tasting will begin in {0:0.#} minutes.",
                 OnAnnounce = AddIridiumStarfruitToSoup,
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => TicksToSeconds(Config.LuauTimeOut + 80),
+                TimeoutSeconds = () => Config.LuauTimeOutSeconds + 1.33,
             },
             new FestivalSpec
             {
@@ -132,7 +132,7 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.JellyDanceCountdownSeconds,
                 AnnounceText = "The Dance of the Moonlight Jellies will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => TicksToSeconds(Config.DanceOfJelliesTimeOut + 180),
+                TimeoutSeconds = () => Config.DanceOfJelliesTimeOutSeconds + 3,
             },
             new FestivalSpec
             {
@@ -144,7 +144,7 @@ public class AlwaysOnServerFestivals
                 AnnounceText = "The Grange Judging will begin in {0:0.#} minutes.",
                 AutoEndAfterCountdown = true,
                 TimeoutStart = TimeoutStart.OnEntry,
-                TimeoutSeconds = () => TicksToSeconds(Config.FairTimeOut),
+                TimeoutSeconds = () => Config.FairTimeOutSeconds,
                 EndLogText = "Grange display finished, triggering festival end",
             },
             new FestivalSpec
@@ -153,7 +153,7 @@ public class AlwaysOnServerFestivals
                 ResetCutoff = 2400,
                 RestoreHudOnReset = true,
                 HasMainEvent = false,
-                TimeoutSeconds = () => TicksToSeconds(Config.SpiritsEveTimeOut),
+                TimeoutSeconds = () => Config.SpiritsEveTimeOutSeconds,
             },
             new FestivalSpec
             {
@@ -163,22 +163,17 @@ public class AlwaysOnServerFestivals
                 CountdownSeconds = () => Config.IceFishingCountdownSeconds,
                 AnnounceText = "The Ice Fishing Contest will begin in {0:0.#} minutes.",
                 TimeoutStart = TimeoutStart.AfterMainEvent,
-                TimeoutSeconds = () => TicksToSeconds(Config.FestivalOfIceTimeOut + 180),
+                TimeoutSeconds = () => Config.FestivalOfIceTimeOutSeconds + 3,
             },
             new FestivalSpec
             {
                 IsToday = SDateHelper.IsFeastOfWinterStarToday,
                 ResetCutoff = 1410,
                 HasMainEvent = false,
-                TimeoutSeconds = () => TicksToSeconds(Config.WinterStarTimeOut),
+                TimeoutSeconds = () => Config.WinterStarTimeOutSeconds,
             },
         };
     }
-
-    /// <summary>
-    /// Convert a config value (in ticks at 60 TPS) to seconds.
-    /// </summary>
-    private static double TicksToSeconds(int ticks) => ticks / 60.0;
 
     /// <summary>
     /// Get elapsed seconds since a start time, or 0 if not started.
@@ -496,7 +491,6 @@ public class AlwaysOnServerFestivals
         double resetElapsed = ElapsedSeconds(_timeoutStartTime);
         double timeoutSeconds = spec.TimeoutSeconds();
 
-        // FestivalExitWarningSeconds is already seconds (unlike the *TimeOut configs, which are ticks)
         if (!_timeoutWarned && resetElapsed >= timeoutSeconds - Config.FestivalExitWarningSeconds)
         {
             _helper.SendPublicMessage(
