@@ -73,6 +73,14 @@ init_smapi() {
     fi
 }
 
+clear_smapi_marker_prompts() {
+    # SMAPI's crash/update marker checks block startup on a raw Console.ReadKey() that a
+    # headless container's stdin can't answer — a marker left in the shared game volume by
+    # a crashed run would hang every later boot. Prevent the prompts instead.
+    rm -f "${GAME_DEST_DIR}/smapi-internal/StardewModdingAPI.crash.marker" \
+        "${GAME_DEST_DIR}/smapi-internal/StardewModdingAPI.update.marker"
+}
+
 init_mods() {
     # Copy default SMAPI mods (ErrorHandler, ConsoleCommands)
     mkdir -p "${MODS_DEST_DIR}/smapi"
@@ -127,6 +135,7 @@ init_display_settings
 wait_for_game_files
 init_steam_sdk
 init_smapi
+clear_smapi_marker_prompts
 init_mods
 init_permissions
 
