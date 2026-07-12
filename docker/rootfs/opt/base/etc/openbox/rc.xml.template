@@ -160,20 +160,12 @@
      they are maximized, or when they are initially placed.
      Many programs reserve space automatically, but you can use this in other
      cases. -->
-<!-- Top is controlled by polybar -->
 <margins>
-  <top>0</top>
-  <bottom>17</bottom>
-  <left>17</left>
-  <right>17</right>
-</margins>
-
-<marginsDefault>
   <top>0</top>
   <bottom>0</bottom>
   <left>0</left>
   <right>0</right>
-</marginsDefault>
+</margins>
 
 <dock>
   <position>TopLeft</position>
@@ -560,7 +552,5 @@
     </size>
   </application>
 </applications>
-
-<xi:include name="" href="/opt/base/etc/openbox/keybinds.xml"/>
 
 </openbox_config>

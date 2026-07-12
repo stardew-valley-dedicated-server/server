@@ -1,8 +1,0 @@
-#!/bin/sh
-
-# The resize handler is always enabled so the VNC window auto-resizes to the
-# client even when the server booted with SERVER_FPS=0 and rendering was turned
-# on later at runtime (the rendering-toggle button, `rendering <fps>`, or
-# POST /rendering?fps=N). It mirrors polybar/disabled for the same reason.
-
-echo "false"

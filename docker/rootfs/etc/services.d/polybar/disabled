@@ -1,7 +1,0 @@
-#!/bin/sh
-
-# Polybar is always enabled so the rendering-toggle button is available in VNC.
-# The button needs polybar to let an operator set a positive render rate at runtime
-# (recovering from a black screen) even when the server booted with SERVER_FPS=0.
-
-echo "false"

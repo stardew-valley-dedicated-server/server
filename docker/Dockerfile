@@ -156,22 +156,15 @@ RUN apt-get update && apt-get install -y \
     # Base packages
     ca-certificates \
     curl \
+    # .NET globalization (SMAPI FailFasts at startup without it)
+    libicu67 \
     locales \
     procps \
     unzip \
-    x11-utils \
     xz-utils \
-    # GUI packages
-    polybar \
-    rofi \
-    slop \
-    wmctrl \
-    xwallpaper \
     # Additional packages
-    exa \
     htop \
     nano \
-    scrot \
     tcpdump \
     # TigerVNC
     tigervnc-standalone-server \
@@ -203,16 +196,6 @@ RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VER
 # Install vsdbg for remote debugging
 # TODO: Make installation optional for local/debug builds, commented for now
 # RUN curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /root/vsdbg
-
-# Install polybar theme
-RUN add-pkg --virtual build git && \
-    git clone --depth=1 https://github.com/adi1090x/polybar-themes.git && \
-    cd ./polybar-themes && \
-    chmod +x ./setup.sh && \
-    echo "1" | ./setup.sh && \
-    cd .. && \
-    rm -rf ./polybar-themes && \
-    del-pkg build
 
 # Install WebVNC icon
 COPY docker/rootfs/data/images/junimo.png /data/images/junimo.png
