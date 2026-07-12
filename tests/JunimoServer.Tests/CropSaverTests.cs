@@ -52,16 +52,20 @@ public class CropSaverTests : TestBase
 
     /// <summary>
     /// Tile coordinates on open Farm soil south of the FarmHouse front door
-    /// (which is at (64, 15) per vanilla <c>Farm.GetMainFarmHouseEntry()</c>).
-    /// Placing on or directly adjacent to (64, 15) hides the pot behind the
-    /// door sprite or lands on porch tiles where <c>HoeDirt.plant</c> rejects
-    /// the seed. Tile (64, 21) is in the open Farm grass area south of the
-    /// porch — visible on the farmhand screenshot, plantable for any crop.
+    /// (at (64, 15) per vanilla <c>Farm.GetMainFarmHouseEntry()</c>).
+    ///
+    /// <para>
+    /// <c>PlacePotAndPlantCauliflowerAsync</c> clears each pot's 3×3 tile
+    /// neighborhood before placing to make it immune to the overnight weed spawn
+    /// (see that method for why 3×3 suffices). The tile stays on the outdoor,
+    /// non-season-immune Farm, so the seasonal Kill-suppression path under test
+    /// still fires.
+    /// </para>
     ///
     /// <para>
     /// Tests in this class share a server instance (<c>SharedClass</c>) so
     /// each test uses its own tile to avoid "tile occupied" collisions when
-    /// xUnit runs them sequentially against the same Farm.
+    /// the methods run against the same Farm.
     /// </para>
     /// </summary>
     private const int TileA_X = 64;
@@ -169,7 +173,12 @@ public class CropSaverTests : TestBase
         var stillThere = cropsAfter.Crops.SingleOrDefault(c =>
             c.IsInPot && c.LocationName == "Farm" && c.TileX == TileB_X && c.TileY == TileB_Y
         );
-        Assert.NotNull(stillThere);
+        Assert.True(
+            stillThere != null,
+            $"Garden Pot crop missing at Farm ({TileB_X},{TileB_Y}) after Spring 28 → Summer 1 — "
+                + "the IndoorPot was removed (check the server log for 'Garden Pot was destroyed', "
+                + "vanilla's overnight weed spawn spreading onto the pot tile), not merely killed."
+        );
         Assert.True(
             stillThere.IsAlive,
             "Cauliflower in a Garden Pot must survive Spring 28 → Summer 1 with offline owner. "
@@ -323,9 +332,25 @@ public class CropSaverTests : TestBase
         var arrived = await GameClient.WaitForLocationAsync("^Farm$", TimeSpan.FromSeconds(10), ct);
         Assert.NotNull(arrived);
 
-        // clearObstacles=true: the Standard farm spawns rocks/weeds/twigs into
-        // location.Objects at game-creation. Clear whatever sits at the target
-        // tile so the pot placement succeeds regardless of seasonal spawn density.
+        // Clear the pot's 3×3 neighborhood BEFORE placing, leaving the pot as the only
+        // object in it. The one overnight path that destroys the pot is spawnWeedsAndStones
+        // with spawnFromOldWeeds=true (Farm.DayUpdate): it spreads debris only within ±1 of
+        // an existing object and destroys an unprotected object it lands on (a Garden Pot
+        // isn't Fence/Chest/Tapper). An empty neighborhood leaves no source that can reach
+        // the pot, and the pot can't target itself (offset re-rolled non-zero,
+        // GameLocation.cs:15279). The other Summer-1 passes (spawnFromOldWeeds=false debris,
+        // grass spread) only ADD to empty tiles, so they can't remove the pot.
+        // removeObjectsAndSpawned uses a top-left origin, so (tile-1) size 3×3 centers on
+        // the pot. Supersedes PlacePot's single-tile clearObstacles clear below.
+        var cleared = await GameClient.Actions.ClearArea(
+            "Farm",
+            tileX - 1,
+            tileY - 1,
+            width: 3,
+            height: 3
+        );
+        Assert.True(cleared?.Success == true, $"ClearArea failed: {cleared?.Error}");
+
         var place = await GameClient.Actions.PlacePot("Farm", tileX, tileY, clearObstacles: true);
         Assert.True(place?.Success, $"PlacePot failed: {place?.Error}");
 
