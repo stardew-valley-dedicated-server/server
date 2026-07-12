@@ -5,7 +5,8 @@ different symptoms, different root causes, and different fixes.
 
 - **Mode 1 — "Day did not advance" (host time frozen).** `testBodyMs > 120s`, fails the
   `DayChange.WaitAsync` `Assert.True(..., "Day did not advance from Spring 28 → Summer 1")`.
-  INVESTIGATED, not fixed, not yet reproduced with a clean mechanism. Kept below unchanged.
+  FIXED — the alone host isn't `IsMultiplayer`, so `shouldTimePass` gated the clock on
+  `player.forceTimePass`; `HandleAutoPause` now drives it in the pass-out window. See below.
 - **Mode 2 — pot destroyed overnight (`Assert.NotNull(stillThere)` null).** `testBodyMs ≈ 25s`,
   the day *does* advance, but the post-transition crop lookup finds nothing. ROOT-CAUSED and the
   fix is chosen (Option A below). This is the failure in the latest results
@@ -177,12 +178,12 @@ suppress (the crop went out-of-season) — i.e. the test still exercises the pat
 
 ---
 
-# Mode 1 — "Day did not advance" (host time frozen) — INVESTIGATED, not fixed
+# Mode 1 — "Day did not advance" (host time frozen) — FIXED
 
-Status: INVESTIGATED, not fixed. Intermittent. NOT caused by the watchdog/health-probe/daemon-fast-fail work
-(host-poison-deadlocks-run.md) — confirmed: that work touches Program.cs / ManagedServer.cs /
-ServerContainer.cs / GameClientContainer.cs, none of which touch host time progression; the
-session's only `AlwaysOn.cs` change is the festival-handler move.
+Status: FIXED in `AlwaysOn.HandleAutoPause`. Root cause confirmed decompiled-first and the fix
+verified end-to-end (pass-out fires within ~6s of the accelerated clock across 4 consecutive runs;
+was frozen for the full 120s before). The corrected mechanism is below — the earlier "mechanism to
+chase" section had a wrong premise (it assumed the alone host stays `IsMultiplayer`; it does not).
 
 ## Symptom
 `GardenPotCrop_KillSuppressedOnSeasonTransition_WhileOwnerOffline` fails with
@@ -207,29 +208,39 @@ Summer 1. With the owner offline, `HandleAutoSleep` early-returns (`AlwaysOn.cs:
 - So **time froze at ~1:50 AM and never reached the 2 AM forced pass-out within 120s, despite 20×
   clock.** 50 game-minutes at 35ms/min is <2 real seconds — it should have passed out near-instantly.
 
-## The mechanism to chase when fixing (decompiled-first, do NOT rush)
-Vanilla `Game1.shouldTimePass()` (`Game1.cs:9277`), multiplayer branch (`:9291`):
-```csharp
-if (IsMultiplayer && !ignore_multiplayer)
-    return !netWorldState.Value.IsTimePaused;
-```
-This server is `IsMultiplayer`, so time passes iff `!IsTimePaused`. But the mod's `HandleAutoPause`
-(`AlwaysOn.cs:1074`) sets **`IsPaused`**, and `NetWorldState.IsPaused` (`:252`) and
-`IsTimePaused` (`:264`) are **independent fields with no cross-setting** — so `HandleAutoPause` does
-NOT influence the multiplayer `shouldTimePass` branch. The freeze therefore comes from elsewhere
-(some path setting `IsTimePaused`, or a different gate on the alone-host clock). Needs a focused
-decompiled-first trace of what advances `Game1.timeOfDay` on the headless host when `otherFarmers
-.Count == 0` and `IsTimePaused` is the only multiplayer gate. The `IsPaused`/`IsTimePaused`
-distinction is a strong lead but was not confirmed as the freeze cause.
+## Confirmed root cause (decompiled-first)
+`Game1.IsMultiplayer` is defined as `otherFarmers.Count > 0` (`Game1.cs:1799`). The test disconnects
+the owner, so `otherFarmers.Count == 0` and **the host stops being `IsMultiplayer`**. That flips
+which branch of `Game1.shouldTimePass()` (`Game1.cs:9277`) decides the clock:
 
-## Fix options (pick after the trace above)
-1. **Test-only, minimal:** bump `DayChangeTimeout` (or this test's wait) — only correct if the host
-   *does* eventually pass out just slowly under load. The log shows NO progression in 120s, so this
-   likely just masks a real freeze — verify the host actually advances before choosing this.
-2. **Mod fix:** if the alone-host clock is genuinely frozen during the 2500→2600 pass-out window,
-   the forced pass-out needs to drive the transition directly (the host can't rely on the clock
-   ticking to 2600 if time is paused for the lone host). This is a host-automation change — follow
-   `.claude/rules/host-automation.md` (decompiled-first; check `DedicatedServer.cs` for how the
-   game's own dedicated path forces the lone-host day end).
+- **With a client connected** (the `IsMultiplayer && !ignore_multiplayer` branch, `:9291`) the method
+  `return !netWorldState.Value.IsTimePaused` and stops. The master pins `IsTimePaused = false` every
+  Update tick (`Game1.cs:3692`, only `true` under local/split-screen), so time always passes. This is
+  why `HostAutomationTests.HostPassesOut_WhenTimeReaches2AM` — which keeps a farmhand connected — is
+  reliable, and why the earlier "this server is `IsMultiplayer`" premise held *there* but not here.
+- **Alone**, `shouldTimePass` falls past the multiplayer branch to the single-player tail, whose last
+  gate is `if (!player.CanMove && !player.UsingTool) return player.forceTimePass;` (`:9309`).
+  `forceTimePass` defaults `false` and the idle lone host's `CanMove` is intermittently `false`, so
+  the clock stalls before 2600 and the day never ends — a clean pass/fail split against the connected
+  test (the differentiator per `diff-flaky-runs-before-theorizing-mechanism.md`).
 
-Separate from the wedge/finalization work — tracked here so it isn't lost.
+The `IsPaused`/`IsTimePaused` lead was a red herring: alone, the game is never in the multiplayer
+branch, and `Game1.isTimePaused` (the single-player field) is only ever toggled by a debug command.
+`HandleAutoPause`'s existing "unpause after 2500 to allow the pass-out" intent was writing the wrong
+lever (`netWorldState.IsPaused`, which only gates the multiplayer branch) — a no-op for the lone host.
+Vanilla itself doesn't drive a lone-host pass-out either: `DedicatedServer.Tick()` deliberately
+*pauses* when `onlineIds.Count == 0` (`DedicatedServer.cs:294`), so there was no engine path to port.
+
+## Fix (applied)
+In `AlwaysOn.HandleAutoPause`, drive `Game1.player.forceTimePass = true` in the alone, non-festival,
+`timeOfDay > 2500` window — the lever the single-player `shouldTimePass` branch actually reads — so
+the lone host reaches 2600 and vanilla's `startToPassOut()` fires. `forceTimePass` is a local
+`[XmlIgnore] bool` (`Farmer.cs:708`, no replication/save), scoped to the pass-out window so an empty
+server still stays frozen through the day, and vanilla clears it in `dayupdate` (`Farmer.cs:3534`).
+The `IsPaused` write is left byte-for-byte unchanged. This also fixes a **latent production bug**: a
+real 24/7 server with every player offline overnight otherwise freezes at ~2 AM instead of rolling to
+the next day — exactly what `HandleAutoPause`'s own comment always intended to prevent.
+
+The test's misleading "same pattern as HostPassesOut_WhenTimeReaches2AM" comment
+(`CropSaverTests.cs`) is corrected to name the real forceTimePass path (that test keeps a player
+connected and never hits it).

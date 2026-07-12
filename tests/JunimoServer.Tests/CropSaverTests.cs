@@ -136,9 +136,12 @@ public class CropSaverTests : TestBase
             ct
         );
 
-        // Trigger sleep-induced day-transition. SetClockSpeed(20) accelerates
-        // the wait from minutes to seconds; same pattern as
-        // HostAutomationTests.HostPassesOut_WhenTimeReaches2AM.
+        // Advance to the 2:00 AM (2600) forced pass-out. With the owner offline the
+        // host is not IsMultiplayer, so the clock only reaches 2600 because
+        // AlwaysOn.HandleAutoPause drives Game1.player.forceTimePass past 2500 (a
+        // connected-player pass-out like HostPassesOut_WhenTimeReaches2AM never hits
+        // that path — it stays in shouldTimePass's multiplayer branch). SetClockSpeed
+        // accelerates the 2510-2600 run from seconds to sub-second.
         var statusBefore = await ServerApi.GetStatus(ct);
         Assert.NotNull(statusBefore);
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);

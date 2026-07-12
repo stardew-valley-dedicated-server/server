@@ -996,13 +996,20 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Pause the game when there are no clients connected.
-    /// After 2500 (1:00 AM), always unpause to allow the end-of-day pass-out sequence.
+    /// Pause the game when there are no clients connected. During 610-2500 the lone
+    /// host stays frozen; past 2500 it is driven to the 2:00 AM (2600) forced
+    /// pass-out so an empty server still rolls to the next day.
     /// </summary>
     private void HandleAutoPause()
     {
         var numPlayers = Game1.otherFarmers.Count;
         var isFestivalDay = SDateHelper.IsFestivalToday();
+
+        // forceTimePass only matters for the lone host below; with a client
+        // connected the host is IsMultiplayer and shouldTimePass ignores it. Clear
+        // it here so it never lingers true after a client joins mid pass-out window.
+        bool drivePassOut = numPlayers == 0 && !isFestivalDay && Game1.timeOfDay > 2500;
+        Game1.player.forceTimePass = drivePassOut;
 
         if (numPlayers >= 1)
         {
@@ -1012,6 +1019,15 @@ public class AlwaysOnServer : ModService
         {
             // Pause during normal hours (610-2500), but unpause after 2500 to allow
             // the forced pass-out sequence at 2600 (2:00 AM) to proceed.
+            //
+            // IsPaused only gates shouldTimePass's multiplayer branch (Game1.cs:9291,
+            // returns !IsTimePaused). With no clients the host is not IsMultiplayer
+            // (otherFarmers.Count == 0, Game1.cs:1799), so shouldTimePass falls to the
+            // single-player tail whose last gate is `!CanMove && !UsingTool ?
+            // forceTimePass` (Game1.cs:9309) — and the idle host's CanMove is
+            // intermittently false, stalling the clock before 2600. So the unpause
+            // below is a no-op for the lone host; forceTimePass (set above, scoped to
+            // > 2500) is what actually reaches 2600 and fires startToPassOut().
             Game1.netWorldState.Value.IsPaused = Game1.timeOfDay is >= 610 and <= 2500;
         }
     }
