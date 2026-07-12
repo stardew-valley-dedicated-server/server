@@ -209,6 +209,33 @@ public class TestStampClaimResponse
 }
 
 /// <summary>
+/// Response from POST /test/stamp_lobby_home (test-only). Reproduces the lobby-homed-spouse
+/// poisoned-save shape on a live server: ensures a shared lobby cabin exists (position-classified,
+/// so it works on a passwordless server too), synthesizes a marriage between a cabin-homed farmhand
+/// and the given NPC, then points the farmhand's homeLocation/lastSleepLocation and the NPC's
+/// DefaultMap/DefaultPosition/currentLocation at the lobby interior. Used to verify the
+/// CabinManagerService heal sweeps (DayStarted live heal + SaveLoaded migration) restore both.
+/// </summary>
+public class TestStampLobbyHomeResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>UniqueMultiplayerID of the farmhand whose home fields were poisoned.</summary>
+    public long StampedUid { get; set; }
+
+    /// <summary>The NPC married to the farmhand and stranded in the lobby.</summary>
+    public string Npc { get; set; } = "";
+
+    /// <summary>The lobby cabin interior's NameOrUniqueName both victims now point at.</summary>
+    public string LobbyLocation { get; set; } = "";
+
+    /// <summary>The farmhand's homeLocation before poisoning — the heal must restore exactly this
+    /// (ownership-first reassignment returns them to their own cabin).</summary>
+    public string OriginalHome { get; set; } = "";
+}
+
+/// <summary>
 /// Response from POST /test/galaxy_relogin (test-only). Triggers a Galaxy re-sign-in with no outage,
 /// so a test can verify that re-login while Galaxy is healthy and a client is connected does not
 /// disrupt the live lobby or change the invite code (the no-op safety question for the

@@ -101,6 +101,7 @@ public class CabinManagerService : ModService
         Data = new CabinManagerData(helper, monitor);
 
         Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+        Helper.Events.GameLoop.DayStarted += OnDayStarted;
 
         // For None strategy, let vanilla handle starting cabins and skip message
         // interception and farmhouse monitoring. Cabins are real and visible.
@@ -200,7 +201,28 @@ public class CabinManagerService : ModService
         // ClearStaleFarmhandReferences, which has already purged cabin-less orphans.
         ClearAbandonedCabinClaimsOnLoad();
 
+        // Heal farmhands whose durable home/spawn fields point at a lobby interior — the
+        // one-shot migration for saves poisoned by the old lobby redirect (which wrote the
+        // lobby into homeLocation; the client's copy echoed it back nightly). Runs before
+        // EnsureAtLeastXCabins so a heal that consumes a cabin gets the pool topped back up.
+        HealLobbyHomedFarmhands(HealContextSaveLoaded);
+
         EnsureAtLeastXCabins();
+
+        // NPC pass after the farmhand pass: married NPCs re-derive their home from the (now
+        // healed) spouse homeLocation.
+        HealLobbyHomedResidents(HealContextSaveLoaded);
+    }
+
+    private void OnDayStarted(object sender, DayStartedEventArgs e)
+    {
+        // Tripwire sweep (see the heal-context tags in the Lobby-Homed Heal region). Ordering
+        // vs. marriageDuties is deliberately not load-bearing: if marriageDuties already ran
+        // with a poisoned value this morning, the NPC pass pulls the spouse back and the
+        // farmhand pass fixes the source for tomorrow; if the sweep ran first, marriageDuties
+        // reads healed values and the NPC pass no-ops.
+        HealLobbyHomedFarmhands(HealContextDayStarted);
+        HealLobbyHomedResidents(HealContextDayStarted);
     }
 
     private void ClearStaleFarmhandReferences()
@@ -1232,24 +1254,9 @@ public class CabinManagerService : ModService
 
         foreach (var npc in stranded)
         {
-            // reloadDefaultLocation derives DefaultMap from characterData; a villager with no data
-            // can't resolve a valid home, so skip it (mirrors Cabin.demolish's guard, Cabin.cs:198).
-            if (!Game1.characterData.ContainsKey(npc.Name))
-            {
-                continue;
-            }
-
-            npc.reloadDefaultLocation();
-            npc.ClearSchedule();
-            Game1.warpCharacter(npc, npc.DefaultMap, npc.DefaultPosition / 64f);
-
-            // Warn, never Error: this runs on the server game thread, where LogLevel.Error trips
-            // ServerContainer's ERROR/FATAL test-poison scan.
-            Monitor.Log(
-                $"Reset villager '{npc.Name}' homed at destroyed cabin '{deletedName}' back to "
-                    + $"'{npc.DefaultMap}' (was stranded by a farmhand↔NPC marriage).",
-                LogLevel.Warn
-            );
+            // The deleted cabin's farmhand is already removed from farmhandData, so a spouse
+            // NPC resolves getSpouse() == null and takes the unmarried branch (village home).
+            ReHomeNpc(npc, $"destroyed cabin '{deletedName}'", LogLevel.Warn);
         }
     }
 
@@ -1258,7 +1265,7 @@ public class CabinManagerService : ModService
     /// Uses load() for save-deserialization-style initialization (no construction
     /// animations or sounds), then verifies the interior was actually created.
     /// </summary>
-    private Building CreateCabinBuilding(Vector2 tilePosition)
+    public Building CreateCabinBuilding(Vector2 tilePosition)
     {
         var cabin = new Building("Cabin", tilePosition);
         cabin.skinId.Value = "Log Cabin";
@@ -1290,6 +1297,515 @@ public class CabinManagerService : ModService
         }
 
         return cabin;
+    }
+
+    #endregion
+
+    #region Lobby-Homed Heal
+
+    // Context tags for the heal passes. SaveLoaded is the one-shot migration for saves poisoned
+    // by the old lobby redirect (heals expected on the first boot after deploy, logged at Info);
+    // DayStarted is a tripwire whose steady state is zero heals (logged at Warn so an unknown
+    // ingress route surfaces as a signal); Join is PasswordProtectionService's per-join repair.
+    public const string HealContextSaveLoaded = "save_loaded";
+    public const string HealContextDayStarted = "day_started";
+    public const string HealContextJoin = "join";
+
+    private static LogLevel HealLogLevel(string context) =>
+        context == HealContextDayStarted ? LogLevel.Warn : LogLevel.Info;
+
+    /// <summary>
+    /// Ensures a farmhand's durable home fields point at a real (non-lobby) cabin and — in
+    /// the sweep contexts only, never at join — scrubs lobby-poisoned spawn hints. Shared
+    /// core behind the load/day-start sweeps and PasswordProtectionService's join-time
+    /// repair. Reassignment is ownership-first: the
+    /// farmhand's own cabin (matched by owner or farmhandReference) wins over vanilla
+    /// TryAssignFarmhandHome, whose building-order scan could hand an owning farmhand a fresh
+    /// cabin instead of their own.
+    ///
+    /// Field writes only — never warps a live player (an unauthenticated player standing in the
+    /// lobby must stay there until they authenticate). Quiet when there is nothing to fix.
+    /// </summary>
+    public void EnsureFarmhandRealHome(Farmer farmer, string context)
+    {
+        if (farmer == null || farmer.IsMainPlayer)
+        {
+            return; // the host's home is the main FarmHouse by design
+        }
+
+        // Resolve by building iteration, never getLocationFromName: the location-lookup cache
+        // is flushed during day transitions and may not have re-learned structure interiors
+        // (same rationale as PasswordProtectionService.FindPlayerCabin).
+        var beforeHome = farmer.homeLocation.Value ?? "";
+        var homeCabin = FindCabinInteriorByName(beforeHome);
+        var homeValid = homeCabin != null && !LobbyService.IsLobbyCabin(homeCabin.ParentBuilding);
+
+        string reassignPath = null;
+        if (!homeValid)
+        {
+            var owned = FindOwnedCabin(farmer.UniqueMultiplayerID);
+            if (owned != null)
+            {
+                // Re-link the farmhand to THEIR OWN cabin. AssignFarmhand re-sets
+                // farmhandReference + homeLocation in one call and is idempotent for the owner.
+                owned.AssignFarmhand(farmer);
+                reassignPath = "owned_cabin";
+            }
+            else
+            {
+                // Vanilla assignment. Clear the home first — TryAssignFarmhandHome's first
+                // condition short-circuits on ANY resolvable Cabin, lobby included. Null a
+                // lobby lastSleepLocation too: its lastSleepLocation condition would try it
+                // (LobbyService's CanAssignTo postfix already blocks lobby cabins, but don't
+                // lean on a single defense layer).
+                farmer.homeLocation.Value = "";
+                var staleSleepCabin = FindCabinInteriorByName(farmer.lastSleepLocation.Value);
+                if (
+                    staleSleepCabin != null
+                    && LobbyService.IsLobbyCabin(staleSleepCabin.ParentBuilding)
+                )
+                {
+                    farmer.lastSleepLocation.Value = null;
+                }
+
+                if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
+                {
+                    reassignPath = "vanilla_assign";
+                }
+                else
+                {
+                    // Cabin pool exhausted — build one and retry.
+                    EnsureAtLeastXCabins(1);
+                    if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
+                    {
+                        reassignPath = "built_and_assigned";
+                    }
+                }
+            }
+
+            if (reassignPath == null)
+            {
+                // Total failure (build failed twice, e.g. None strategy with an exhausted
+                // position pool). A married farmhand must never be left with an empty
+                // homeLocation — marriageDuties calls RequireLocation on it raw and would
+                // crash the day loop — so restore the old value if it still resolves
+                // (poisoned-but-stable beats crashing); the next sweep retries.
+                if (FindCabinInteriorByName(beforeHome) != null)
+                {
+                    farmer.homeLocation.Value = beforeHome;
+                }
+                Monitor.Log(
+                    $"Could not reassign a real cabin to farmhand "
+                        + $"'{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}, "
+                        + $"home='{beforeHome}', context={context}): no cabin available and building one failed.",
+                    LogLevel.Warn
+                );
+                Diagnostics.ModEventLog.Emit(
+                    "farmhand_home_heal_failed",
+                    new
+                    {
+                        farmhandId = farmer.UniqueMultiplayerID,
+                        beforeHome,
+                        context,
+                    }
+                );
+                return;
+            }
+
+            homeCabin = FindCabinInteriorByName(farmer.homeLocation.Value);
+        }
+
+        // Scrub lobby-poisoned spawn hints even when the home itself is valid: a pre-auth
+        // disconnect persists lobby lastSleepLocation/disconnectLocation (plus disconnectDay =
+        // today) on an entry whose homeLocation was already healed at join — a rejoin on a
+        // later passwordless boot would then take wake-up branch 1 (disconnect fields)
+        // straight into the sealed lobby. These are transient hints re-stamped by real
+        // gameplay, so rewriting them is safe — EXCEPT during an active join under password:
+        // there the lobby hints are load-bearing (the client lands in the lobby via wake-up
+        // branches 1-2, and SendServerIntroduction's explicit lobby-location send keys on
+        // disconnectLocation == lobby), so the join context must leave them alone.
+        var scrubbedLastSleep = false;
+        var scrubbedDisconnect = false;
+        if (context != HealContextJoin)
+        {
+            var sleepCabin = FindCabinInteriorByName(farmer.lastSleepLocation.Value);
+            if (sleepCabin != null && LobbyService.IsLobbyCabin(sleepCabin.ParentBuilding))
+            {
+                if (homeCabin != null)
+                {
+                    farmer.lastSleepLocation.Value = homeCabin.NameOrUniqueName;
+                    farmer.lastSleepPoint.Value = homeCabin.GetPlayerBedSpot();
+                }
+                else
+                {
+                    farmer.lastSleepLocation.Value = null;
+                }
+                scrubbedLastSleep = true;
+            }
+
+            // Scrub lobby disconnect hints only while they can still fire: wake-up branch 1
+            // requires disconnectDay == today's DaysPlayed (its own arming condition), so a
+            // stale-day lobby disconnectLocation is inert. It is also PERMANENT residue on a
+            // connected client's root (the client only rewrites disconnect fields on a real
+            // disconnect, and its nightly resend re-imports them) — scrubbing it would fire
+            // the tripwire every single morning for every lobby-joined farmhand.
+            var disconnectCabin = FindCabinInteriorByName(farmer.disconnectLocation.Value);
+            if (
+                disconnectCabin != null
+                && LobbyService.IsLobbyCabin(disconnectCabin.ParentBuilding)
+                && farmer.disconnectDay.Value == (int)Game1.MasterPlayer.stats.DaysPlayed
+            )
+            {
+                farmer.disconnectLocation.Value = null;
+                farmer.disconnectPosition.Value = Vector2.Zero;
+                farmer.disconnectDay.Value = -1;
+                scrubbedDisconnect = true;
+            }
+        }
+
+        if (reassignPath != null || scrubbedLastSleep || scrubbedDisconnect)
+        {
+            Monitor.Log(
+                $"Healed lobby-homed farmhand '{ChatRedaction.MaskValue(farmer.Name)}' "
+                    + $"(id={farmer.UniqueMultiplayerID}, context={context}): "
+                    + $"home '{beforeHome}' -> '{farmer.homeLocation.Value}'"
+                    + (reassignPath != null ? $" via {reassignPath}" : " (spawn hints only)")
+                    + $", lastSleepScrubbed={scrubbedLastSleep}, disconnectScrubbed={scrubbedDisconnect}",
+                HealLogLevel(context)
+            );
+            Diagnostics.ModEventLog.Emit(
+                "farmhand_home_healed",
+                new
+                {
+                    farmhandId = farmer.UniqueMultiplayerID,
+                    beforeHome,
+                    afterHome = farmer.homeLocation.Value ?? "",
+                    path = reassignPath ?? "spawn_hints_only",
+                    scrubbedLastSleep,
+                    scrubbedDisconnect,
+                    context,
+                }
+            );
+        }
+    }
+
+    /// <summary>
+    /// Heals every farmhand entry via <see cref="EnsureFarmhandRealHome"/>. An online farmhand
+    /// exists as TWO Farmer objects — the persisted farmhandData entry (the clone target of the
+    /// nightly SaveFarmhand) and the live otherFarmers root (what getAllFarmhands hands to
+    /// marriageDuties while they're online) — so both are healed, or the missed one stays
+    /// authoritative for its consumer.
+    /// </summary>
+    private void HealLobbyHomedFarmhands(string context)
+    {
+        var farmhandData = Game1.netWorldState?.Value?.farmhandData;
+        if (farmhandData == null)
+        {
+            return;
+        }
+
+        // Snapshot: a heal can build a cabin (EnsureAtLeastXCabins), which adds a fresh
+        // farmhand entry and would tear a live FieldDict enumeration.
+        var entries = farmhandData
+            .FieldDict.Select(kvp => (Uid: kvp.Key, Farmer: kvp.Value.Value))
+            .ToList();
+
+        foreach (var (uid, persisted) in entries)
+        {
+            if (persisted != null)
+            {
+                EnsureFarmhandRealHome(persisted, context);
+            }
+
+            if (
+                Game1.otherFarmers.TryGetValue(uid, out var live)
+                && !ReferenceEquals(live, persisted)
+            )
+            {
+                EnsureFarmhandRealHome(live, context);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-homes every NPC stranded by a lobby interior: villagers whose DefaultMap is a
+    /// lobby/editing cabin interior, villagers whose DefaultMap resolves to no location at all
+    /// (stranded by an individual lobby destroyed on an older build — the next dayUpdate warp
+    /// would fail loudly), any villager physically inside a lobby interior, and children/pets
+    /// found in lobby interiors. Runs after the farmhand pass so married NPCs re-derive their
+    /// home from a healed spouse homeLocation.
+    /// </summary>
+    private void HealLobbyHomedResidents(string context)
+    {
+        var farm = Game1.getFarm();
+        if (farm == null)
+        {
+            return;
+        }
+
+        // Snapshot matches first: warpCharacter mutates location.characters during iteration.
+        var stranded = new List<NPC>();
+
+        Utility.ForEachVillager(npc =>
+        {
+            if (IsLobbyOrEditingInterior(npc.currentLocation))
+            {
+                stranded.Add(npc);
+            }
+            else if (!string.IsNullOrEmpty(npc.DefaultMap))
+            {
+                var mapCabin = FindCabinInteriorByName(npc.DefaultMap);
+                var isLobbyMap =
+                    mapCabin != null && LobbyService.IsLobbyCabin(mapCabin.ParentBuilding);
+                // Do NOT scope the unresolvable check to existing lobby interiors — a villager
+                // stranded by a destroyed lobby has no interior left to match.
+                var isDanglingMap =
+                    mapCabin == null && Game1.getLocationFromName(npc.DefaultMap) == null;
+                if (isLobbyMap || isDanglingMap)
+                {
+                    stranded.Add(npc);
+                }
+            }
+            return true; // scan every villager
+        });
+
+        // Children and pets aren't villagers (ForEachVillager filters on IsVillager); catch any
+        // physically stranded inside a lobby/editing interior.
+        foreach (var building in farm.buildings)
+        {
+            if (!building.isCabin || !LobbyService.IsLobbyCabin(building))
+            {
+                continue;
+            }
+
+            var interior = building.GetIndoors<Cabin>();
+            if (interior == null)
+            {
+                continue;
+            }
+
+            foreach (var character in interior.characters)
+            {
+                if (character is Child || character is Pet)
+                {
+                    stranded.Add(character);
+                }
+            }
+        }
+
+        foreach (var npc in stranded)
+        {
+            ReHomeNpc(npc, context, HealLogLevel(context));
+        }
+    }
+
+    /// <summary>
+    /// Re-homes a household NPC out of a lobby or destroyed interior. Married villagers are
+    /// re-pointed at their spouse-farmer's home — DefaultMap AND DefaultPosition together, the
+    /// way the engine pairs them (Game1.prepareSpouseForWedding); a stale DefaultPosition would
+    /// re-land the NPC at the (-1000,-1000) sentinel on the next dayUpdate warp. Unmarried
+    /// villagers re-derive their village home from character data (reloadDefaultLocation has no
+    /// married-gate; the gate is at its data-reload call site). Children go to their parent's
+    /// home, pets to the Farm — never repoint Pet.homeLocationName; the bowl is a Farm building
+    /// resolved off it and the pet returns to it on the next dayUpdate.
+    /// </summary>
+    private void ReHomeNpc(NPC npc, string reason, LogLevel logLevel)
+    {
+        var beforeMap = npc.DefaultMap ?? "";
+        var beforeLocation = npc.currentLocation?.NameOrUniqueName ?? "";
+        string branch;
+
+        if (npc is Child child)
+        {
+            // Game1.GetPlayer resolves offline farmhands via farmhandData.
+            var parent = Game1.GetPlayer(child.idOfParent.Value);
+            var parentHome =
+                parent != null ? ResolveRealFarmhouse(parent.homeLocation.Value) : null;
+            if (parentHome != null)
+            {
+                Game1.warpCharacter(
+                    child,
+                    parentHome,
+                    Utility.PointToVector2(parentHome.GetPlayerBedSpot())
+                );
+            }
+            else
+            {
+                var farm = Game1.getFarm();
+                Game1.warpCharacter(
+                    child,
+                    farm,
+                    Utility.PointToVector2(farm.GetMainFarmHouseEntry())
+                );
+            }
+            branch = "child";
+        }
+        else if (npc is Pet)
+        {
+            var farm = Game1.getFarm();
+            Game1.warpCharacter(npc, farm, Utility.PointToVector2(farm.GetMainFarmHouseEntry()));
+            branch = "pet";
+        }
+        else if (
+            npc.isMarried() // getSpouse() alone also matches engaged couples, who don't move in until the wedding
+            && npc.getSpouse() is Farmer spouse
+            && ResolveRealFarmhouse(spouse.homeLocation.Value) is FarmHouse home
+        )
+        {
+            // The level-0 (-1000,-1000) bed-spot sentinel is exact vanilla parity with
+            // marriageDuties, reachable only via synthesized level-0 marriages.
+            var bedSpot = home.getSpouseBedSpot(npc.Name);
+            npc.DefaultMap = spouse.homeLocation.Value;
+            npc.DefaultPosition = Utility.PointToVector2(bedSpot) * 64f;
+            npc.ClearSchedule();
+            Game1.warpCharacter(npc, home, Utility.PointToVector2(bedSpot));
+            branch = "married";
+        }
+        else if (Game1.characterData.ContainsKey(npc.Name))
+        {
+            // A married NPC lands here only when the spouse home is unresolvable — the village
+            // home beats a crash (never RequireLocation on a bad name).
+            npc.reloadDefaultLocation();
+            var target = Game1.getLocationFromName(npc.DefaultMap);
+            if (target == null)
+            {
+                // reloadDefaultLocation keeps the old DefaultMap when character data has no
+                // matching Home entry; warping would throw. Leave the NPC for a later sweep.
+                Monitor.Log(
+                    $"Cannot re-home NPC '{npc.Name}' ({reason}): DefaultMap "
+                        + $"'{npc.DefaultMap}' does not resolve after reloadDefaultLocation.",
+                    LogLevel.Warn
+                );
+                return;
+            }
+            npc.ClearSchedule();
+            Game1.warpCharacter(npc, target, npc.DefaultPosition / 64f);
+            branch = "unmarried";
+        }
+        else
+        {
+            // No character data — no canonical home to derive (mirrors Cabin.demolish's guard).
+            return;
+        }
+
+        Monitor.Log(
+            $"Re-homed NPC '{npc.Name}' ({branch}, {reason}): map '{beforeMap}' -> "
+                + $"'{npc.DefaultMap}', location '{beforeLocation}' -> "
+                + $"'{npc.currentLocation?.NameOrUniqueName}'",
+            logLevel
+        );
+        Diagnostics.ModEventLog.Emit(
+            "npc_rehomed",
+            new
+            {
+                npcName = npc.Name,
+                branch,
+                beforeMap,
+                afterMap = npc.DefaultMap ?? "",
+                beforeLocation,
+                afterLocation = npc.currentLocation?.NameOrUniqueName ?? "",
+                reason,
+            }
+        );
+    }
+
+    /// <summary>
+    /// Finds a cabin interior by NameOrUniqueName via farm-building iteration (lookup-cache
+    /// independent). Returns lobby/editing interiors too — callers classify via
+    /// LobbyService.IsLobbyCabin on the ParentBuilding.
+    /// </summary>
+    private static Cabin FindCabinInteriorByName(string locationName)
+    {
+        if (string.IsNullOrEmpty(locationName))
+        {
+            return null;
+        }
+
+        var farm = Game1.getFarm();
+        if (farm == null)
+        {
+            return null;
+        }
+
+        foreach (var building in farm.buildings)
+        {
+            if (!building.isCabin)
+            {
+                continue;
+            }
+
+            var cabin = building.GetIndoors<Cabin>();
+            if (cabin != null && cabin.NameOrUniqueName == locationName)
+            {
+                return cabin;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the non-lobby cabin owned by the given player (matched by owner id or a defined
+    /// farmhandReference uid), or null. Mirrors the primary lookup of
+    /// PasswordProtectionService.FindPlayerCabin, which returns a warp handle — this one exists
+    /// so EnsureFarmhandRealHome can re-link fields on the farmhand's own cabin.
+    /// </summary>
+    private static Cabin FindOwnedCabin(long playerId)
+    {
+        var farm = Game1.getFarm();
+        if (farm == null)
+        {
+            return null;
+        }
+
+        foreach (var building in farm.buildings)
+        {
+            if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+            {
+                continue;
+            }
+
+            var cabin = building.GetIndoors<Cabin>();
+            if (cabin == null)
+            {
+                continue;
+            }
+
+            if (cabin.owner?.UniqueMultiplayerID == playerId)
+            {
+                return cabin;
+            }
+
+            if (
+                cabin.farmhandReference.defined.Value
+                && cabin.farmhandReference.uid.Value == playerId
+            )
+            {
+                return cabin;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves a location name to a real (non-lobby) FarmHouse — a player cabin interior or
+    /// the main FarmHouse (host household) — or null. Never resolves lobby/editing interiors.
+    /// </summary>
+    private static FarmHouse ResolveRealFarmhouse(string name)
+    {
+        var cabin = FindCabinInteriorByName(name);
+        if (cabin != null)
+        {
+            return LobbyService.IsLobbyCabin(cabin.ParentBuilding) ? null : cabin;
+        }
+
+        return Game1.getLocationFromName(name) as FarmHouse;
+    }
+
+    private static bool IsLobbyOrEditingInterior(GameLocation location)
+    {
+        return location is Cabin cabin && LobbyService.IsLobbyCabin(cabin.ParentBuilding);
     }
 
     #endregion

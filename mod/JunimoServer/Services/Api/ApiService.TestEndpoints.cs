@@ -96,6 +96,12 @@ public partial class ApiService
                     case "/test/stamp_claim":
                         await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
                         return;
+                    case "/test/stamp_lobby_home":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestStampLobbyHomeAsync(request)
+                        );
+                        return;
                     case "/test/galaxy_relogin":
                         await WriteJsonAsync(response, await HandlePostTestGalaxyReloginAsync());
                         return;
@@ -719,6 +725,149 @@ public partial class ApiService
 
                 result.Error =
                     "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/stamp_lobby_home",
+        Summary = "Poison a farmhand + synthesized NPC spouse with lobby home fields (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestStampLobbyHomeResponse), 200)]
+    private async Task<TestStampLobbyHomeResponse> HandlePostTestStampLobbyHomeAsync(
+        HttpListenerRequest request
+    )
+    {
+        var npcName = request.QueryString["npc"] ?? "Abigail";
+
+        var result = new TestStampLobbyHomeResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var farm = Game1.getFarm();
+                if (farm == null)
+                {
+                    result.Error = "No farm loaded";
+                    return;
+                }
+
+                var npc = Game1.getCharacterFromName(npcName);
+                if (npc == null)
+                {
+                    result.Error = $"NPC '{npcName}' not found";
+                    return;
+                }
+
+                // Reproduce the reporter's save shape: a shared lobby cabin exists (created
+                // while a password was set) even though the server now runs without one.
+                // Classification is position-based, so an ownerless cabin at the shared-lobby
+                // tile IS the lobby for every heal/filter path.
+                var lobbyBuilding = farm.buildings.FirstOrDefault(b =>
+                    b.isCabin && CabinPositions.Classify(b) == CabinRole.SharedLobby
+                );
+                if (lobbyBuilding == null)
+                {
+                    var lobbyTile = CabinPositions.SharedLobby.ToVector2();
+                    lobbyBuilding = _cabinManager.CreateCabinBuilding(lobbyTile);
+                    if (!farm.buildStructure(lobbyBuilding, lobbyTile, Game1.player, true))
+                    {
+                        result.Error = "Failed to build the lobby cabin";
+                        return;
+                    }
+
+                    // Lobby cabins are ownerless by design — drop the farmhand that
+                    // buildStructure's construction handler auto-created.
+                    var freshInterior = lobbyBuilding.GetIndoors<Cabin>();
+                    if (freshInterior?.HasOwner == true)
+                    {
+                        freshInterior.DeleteFarmhand();
+                    }
+                }
+
+                var lobbyIndoors = lobbyBuilding.GetIndoors<Cabin>();
+                if (lobbyIndoors == null)
+                {
+                    result.Error = "Lobby cabin has no interior";
+                    return;
+                }
+                var lobbyName = lobbyIndoors.NameOrUniqueName;
+
+                // Target: first farmhand entry homed at a real (non-lobby) cabin.
+                Farmer target = null;
+                foreach (var farmhandRef in Game1.netWorldState.Value.farmhandData.FieldDict.Values)
+                {
+                    var f = farmhandRef.Value;
+                    if (f == null)
+                    {
+                        continue;
+                    }
+
+                    var home = Game1.getLocationFromName(f.homeLocation.Value) as Cabin;
+                    if (
+                        home?.ParentBuilding != null
+                        && !LobbyService.IsLobbyCabin(home.ParentBuilding)
+                    )
+                    {
+                        target = f;
+                        break;
+                    }
+                }
+                if (target == null)
+                {
+                    result.Error = "No farmhand homed at a real cabin to stamp";
+                    return;
+                }
+
+                result.OriginalHome = target.homeLocation.Value ?? "";
+
+                // Synthesize the marriage (farmhand ↔ NPC) — the reporter's couple shape.
+                // Level >= 1 first: there is no level-0 marriage map (FarmHouse_marriage does
+                // not exist), so a married level-0 farmhouse crashes _newDayAfterFade.
+                if (target.HouseUpgradeLevel < 1)
+                {
+                    target.HouseUpgradeLevel = 1;
+                }
+                target.spouse = npcName;
+                if (
+                    !target.friendshipData.TryGetValue(npcName, out var friendship)
+                    || friendship == null
+                )
+                {
+                    friendship = new Friendship(2500);
+                    target.friendshipData[npcName] = friendship;
+                }
+                friendship.Status = FriendshipStatus.Married;
+                friendship.Proposer = target.UniqueMultiplayerID;
+
+                // Poison the farmhand's durable home + spawn hint — what the old lobby
+                // redirect's client echo baked into saves.
+                target.homeLocation.Value = lobbyName;
+                target.lastSleepLocation.Value = lobbyName;
+
+                // Poison the NPC exactly the way a marriageDuties run against the poisoned
+                // home does: DefaultMap = lobby, position = the level-0 spouse-bed sentinel
+                // ((-1000,-1000), the reporter's "debug where" (-999,-999)).
+                var sentinelBedSpot = lobbyIndoors.getSpouseBedSpot(npcName);
+                npc.DefaultMap = lobbyName;
+                npc.DefaultPosition = Utility.PointToVector2(sentinelBedSpot) * 64f;
+                npc.ClearSchedule();
+                Game1.warpCharacter(npc, lobbyIndoors, Utility.PointToVector2(sentinelBedSpot));
+
+                result.StampedUid = target.UniqueMultiplayerID;
+                result.Npc = npcName;
+                result.LobbyLocation = lobbyName;
+                result.Success = true;
             });
         }
         catch (Exception ex)

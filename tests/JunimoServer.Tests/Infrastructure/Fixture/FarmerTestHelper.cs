@@ -219,7 +219,13 @@ internal sealed class FarmerTestHelper
     {
         try
         {
-            var conn = new ConnectionHelper(clientLease.Client, serverApi: _testBase.ServerApi);
+            // Carry the server password so the join core's auto-login (!login) runs for the
+            // second farmer too — a password server otherwise leaves it stuck in the lobby.
+            var conn = new ConnectionHelper(
+                clientLease.Client,
+                new ConnectionOptions { ServerPassword = lease.Password },
+                serverApi: _testBase.ServerApi
+            );
             await lease.Managed.AcquireJoinGateAsync(ct);
             JoinWorldResult join;
             try
