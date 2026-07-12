@@ -6,7 +6,7 @@ paths:
 
 # LogLevel.Error in mod code is test poison
 
-Logging at `LogLevel.Error` (or any line matching `\b(ERROR|FATAL)\b`) from mod code triggers `ServerContainer`'s error cancellation. Use `LogLevel.Warn` or `LogLevel.Trace` for benign-but-noteworthy conditions.
+Logging at `LogLevel.Error` (or any line matching `\b(ERROR|FATAL)\b`) from mod code triggers `ServerContainer`'s error cancellation. Use `LogLevel.Warn` or `LogLevel.Trace` for benign-but-noteworthy conditions. The scan also treats an unprefixed `Process terminated.` line (.NET FailFast, e.g. missing libicu) as fatal, so a runtime hard-crash fails startup instead of masquerading as a transport timeout.
 
 **Why:** `tests/JunimoServer.Tests/Containers/ServerContainer.cs` regex-matches SMAPI log-line headers against `\b(ERROR|FATAL)\b`. A match cancels `_errorCancellation`, which `ManagedServer` ties into test cancellation. The mod has no in-band signal that a log line poisoned a test; the failure surfaces as a downstream timeout or assertion. Multiple times mod code has logged at Error for recoverable conditions and silently failed unrelated tests.
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using JunimoServer.Tests.Schema.Json;
 
 namespace JunimoServer.Tests.Helpers;
@@ -29,6 +30,16 @@ public static class DockerImageBuilder
     private static readonly SemaphoreSlim BuildSemaphore = new(1, 1);
     private const int FileLockMaxRetries = 5;
     private static readonly TimeSpan FileLockRetryDelay = TimeSpan.FromSeconds(2);
+
+    // Recent-output tail kept for build-failure messages.
+    private const int FailureTailLines = 30;
+
+    // make's "*** [target] Error N" recipe trailer — restates the exit code
+    // without adding signal; filtered out of the failure tail.
+    private static readonly Regex MakeErrorTrailer = new(
+        @"^\s*make(\[\d+\])?: \*\*\*",
+        RegexOptions.Compiled
+    );
 
     private static readonly string ImageTag =
         Environment.GetEnvironmentVariable("SDVD_IMAGE_TAG") ?? "local";
@@ -365,6 +376,30 @@ public static class DockerImageBuilder
             Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start '{command} {arguments}'");
 
+        // Bounded tail of recent output for the failure message: the CI renderer
+        // shows InProgress lines only as a transient spinner label, so without
+        // this the operator sees the exit code but never the underlying error.
+        var outputTail = new Queue<string>(FailureTailLines);
+        var outputTailLock = new object();
+
+        void CaptureTail(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return;
+            }
+
+            lock (outputTailLock)
+            {
+                if (outputTail.Count == FailureTailLines)
+                {
+                    outputTail.Dequeue();
+                }
+
+                outputTail.Enqueue(line);
+            }
+        }
+
         // Read stdout / stderr in parallel via local async functions. ReadLineAsync
         // is fully async on .NET 6+; wrapping in Task.Run added thread-pool overhead
         // without any concurrency benefit. Each line streams through the progress
@@ -374,6 +409,7 @@ public static class DockerImageBuilder
             while (await process.StandardOutput.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
                 progress.Step(stepName, SetupStepStatus.InProgress, line);
+                CaptureTail(line);
             }
         }
 
@@ -382,6 +418,7 @@ public static class DockerImageBuilder
             while (await process.StandardError.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
                 progress.Step(stepName, SetupStepStatus.InProgress, line);
+                CaptureTail(line);
             }
         }
 
@@ -405,11 +442,19 @@ public static class DockerImageBuilder
 
         if (process.ExitCode != 0)
         {
-            // Streamed InProgress events above already carried each line through the
-            // progress sink; the InvalidOperationException then surfaces as
-            // SetupStepStatus.Failed in the calling BuildAndEmitStatus.
+            string[] tailLines;
+            lock (outputTailLock)
+            {
+                tailLines = outputTail.Where(l => !MakeErrorTrailer.IsMatch(l)).ToArray();
+            }
+
+            var tailBlock =
+                tailLines.Length > 0
+                    ? $" Last output:{Environment.NewLine}  "
+                        + string.Join($"{Environment.NewLine}  ", tailLines)
+                    : "";
             throw new InvalidOperationException(
-                $"Building {description} failed with exit code {process.ExitCode}."
+                $"Building {description} failed with exit code {process.ExitCode}.{tailBlock}"
             );
         }
     }

@@ -15,7 +15,6 @@ paths:
 **Already-verified dead ends — do NOT re-investigate as boot-band perf wins:**
 - **Xvnc/X cannot be removed.** A live `GraphicsDevice` is needed even at `SERVER_FPS=0` (`RenderingController.ShouldGameDraw` does `GraphicsDevice.Clear`, `RenderingController.cs:108`; MapUtil/ApiService need it).
 - **OpenAPI DLLs are load-bearing** — the spec is generated live at runtime (`ApiService.cs:1580`, `OpenApiGenerator.Generate`).
-- **polybar + resize-handler boot in parallel** with `app` and don't gate startup.
 - **`ntpdate` is absent**, so `init_time_sync` is a few ms, not a stall.
 - A large fraction of the local boot band is **intrinsic Mono + SMAPI Cecil assembly-rewrite bootstrap** — not addressable in the Docker/rootfs layer.
 

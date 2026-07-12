@@ -19,8 +19,7 @@ evidence-backed reply, not two.
   check, and the 10 000 ms timeout all come from the base image
   `jlesage/baseimage-gui:debian-11-v4.11.3` (`docker/Dockerfile:129`) and its
   `cinit` supervisor — not this repo. There is no `is_ready` override for xvnc
-  here (repo-managed `polybar` and `resize-handler` have `is_ready` scripts;
-  xvnc has only `run`), so nothing in this repo can change the readiness
+  here (xvnc has only `run`), so nothing in this repo can change the readiness
   behavior without a base-image-level override.
 - The repo's `docker-compose.yml` uses default bridge networking (no
   `network_mode` anywhere); the failure is reported only under the non-default

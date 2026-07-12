@@ -13,7 +13,7 @@ How to configure `SDVD_DOCKER_HOSTS` for multi-host runs and how `STEAM_ACCOUNTS
 | `clientSlots` | yes | Concurrent client containers this host can run. Sets the upper bound on how many clients a server on this host can serve concurrently. |
 | `endpoint` | no | `ssh://user@machine` for remote daemons. Omit for the local Docker daemon. |
 | `sshKey` | no | Either a path to a private key (relative paths anchor at the project root, `~` is expanded), or inline key material (a `-----BEGIN…` block, written to a 0600 temp file — used in CI so the whole `SDVD_DOCKER_HOSTS` JSON, key included, can live in one secret). Omit to use `~/.ssh/config` + ssh-agent. |
-| `socketPath` | no | Remote Unix socket path. Defaults to `/var/run/docker.sock` (the standard Docker location). Override for hosts where the daemon listens elsewhere — most commonly macOS Docker Desktop's per-user `~/.docker/run/docker.sock`. Ignored for local entries. |
+| `socketPath` | no | Remote daemon Unix socket. Standard Docker installs serve the default `/var/run/docker.sock` — omit it. Set only when the daemon listens elsewhere, e.g. rootless Docker (`/run/user/<uid>/docker.sock`). Ignored for local entries. |
 | `gpu` | no | `true` if this host has an NVIDIA GPU + Container Toolkit. Defaults to `false`. Per-host so a fleet can mix GPU workstations and CPU-only VPSes. |
 | `concurrentStarts` | no | Cap on simultaneous `docker create+start` calls against this daemon. When omitted, falls back to `SDVD_MAX_CONCURRENT_STARTS` (if set) and otherwise to this host's `serverSlots + clientSlots`. Independent across hosts. |
 
@@ -24,7 +24,7 @@ Example:
   {"id": "local", "serverSlots": 3, "clientSlots": 6, "gpu": true},
   {"id": "vps",  "endpoint": "ssh://sdvd-runner@10.0.0.2", "sshKey": "~/.ssh/sdvd_runner",
                  "serverSlots": 2, "clientSlots": 4},
-  {"id": "mac",  "endpoint": "ssh://dev@mac.local", "socketPath": "~/.docker/run/docker.sock",
+  {"id": "rootless", "endpoint": "ssh://dev@rootless-vps", "socketPath": "/run/user/1000/docker.sock",
                  "serverSlots": 1, "clientSlots": 2}
 ]
 ```

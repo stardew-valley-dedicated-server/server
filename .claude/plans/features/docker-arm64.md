@@ -16,7 +16,7 @@
 
 | Native arm64 | Emulated x86-64 under box64 |
 |---|---|
-| Base image, supervisor/services, Xvfb/Xvnc, polybar | `StardewModdingAPI` → game process, incl. its bundled .NET 6 runtime |
+| Base image, supervisor/services, Xvfb/Xvnc | `StardewModdingAPI` → game process, incl. its bundled .NET 6 runtime |
 | ffmpeg (BtbN publishes `linuxarm64` builds), go2rtc (`arm64` asset), tmux | All game-side native libs: SDL2, OpenAL, `libGalaxy64.so`, `libGalaxyCSharpGlue.so`, `steamclient.so`, SkiaSharp, lz4 |
 | `steam-service` sidecar (SteamKit2, pure managed — runs unchanged) | — |
 
