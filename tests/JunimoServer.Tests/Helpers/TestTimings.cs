@@ -159,8 +159,8 @@ public static class TestTimings
     /// <summary>2:00 AM. Game forces performPassoutWarp() at this time.</summary>
     public const int PassOutTime = 2600;
 
-    /// <summary>Start of the auto-pause window (6:10 AM). AlwaysOn pauses when no players connected.</summary>
-    public const int PauseWindowStart = 610;
+    /// <summary>Start of the auto-pause window (6:00 AM). AlwaysOn pauses when no players connected.</summary>
+    public const int PauseWindowStart = 600;
 
     /// <summary>End of the auto-pause window (1:00 AM). After this, game unpauses for pass-out sequence.</summary>
     public const int PauseWindowEnd = 2500;

@@ -26,7 +26,7 @@ namespace JunimoServer.Tests;
 // Exclusive: mutates global calendar state (SetDate/SetClockSpeed) and breaks/heals a
 // villager on the shared server (SharedClass does not serialize methods on its own).
 // Clients = 1: with zero clients AlwaysOn.HandleAutoPause pauses the clock for the whole
-// 610–2500 window, so daytime schedule-departure boundaries — the exact code path under
+// 600–2500 window, so daytime schedule-departure boundaries — the exact code path under
 // test — only ever fire with a player connected.
 [TestServer(Clients = 1, Isolation = IsolationMode.SharedClass, Exclusive = true)]
 public class NpcSpriteIntegrityTests : TestBase
@@ -62,7 +62,7 @@ public class NpcSpriteIntegrityTests : TestBase
         Assert.True(ready?.IsReady == true, "Server must be ready before the settle reload.");
         await ReloadServerAsync();
 
-        // A connected player keeps the clock running (HandleAutoPause pauses 610–2500 when
+        // A connected player keeps the clock running (HandleAutoPause pauses 600–2500 when
         // the server is alone) and receives the world-state time broadcasts the frozen-clock
         // bug starves.
         var farmer = await Farmers.ConnectNewAsync(namePrefix: "SpriteHeal", ct: ct);

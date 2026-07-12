@@ -17,7 +17,7 @@ public class HostAutomationTests : TestBase
     /// <summary>
     /// Verifies that game time does NOT advance when no other player is connected.
     /// The server's AlwaysOn service pauses the game when otherFarmers.Count == 0
-    /// and timeOfDay is between 610 and 2500.
+    /// and timeOfDay is between 600 and 2500.
     ///
     /// Uses Exclusive=true to prevent other tests from acquiring this server
     /// during the verification window.
@@ -57,7 +57,7 @@ public class HostAutomationTests : TestBase
         );
         Assert.True(noPlayers, "Server should have no players connected before testing time pause");
 
-        // Set time to a known mid-day value so we're firmly inside the pause window (610-2500)
+        // Set time to a known mid-day value so we're firmly inside the pause window (600-2500)
         var setTimeResult = await ServerApi.SetTime(TestTimings.Noon, ct);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");

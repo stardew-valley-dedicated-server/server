@@ -406,14 +406,23 @@ public class AlwaysOnServer : ModService
             }
         }
 
-        if (Game1.timeOfDay == 610)
+        // Day start: the game progressed past the end-of-day save, so reset the timeout.
+        // Keyed on 600 not 610 so it still fires when the empty-server auto-pause freezes
+        // the clock at day start. The empty server then sits frozen at 600 all day, so the
+        // guards keep the body a no-op once settled instead of re-running setServerMode.
+        if (Game1.timeOfDay == 600)
         {
-            // Reset the ShippingMenu timeout since the game obviously progressed
-            _isShippingMenuActive = false;
-            _shippingMenuTimeoutStartTime = null;
+            if (_isShippingMenuActive)
+            {
+                _isShippingMenuActive = false;
+                _shippingMenuTimeoutStartTime = null;
+            }
 
-            // Set online again in case the game kept going after timing out prematurely
-            Game1.options.setServerMode("online");
+            // Set online again in case the game kept going after timing out prematurely.
+            if (!Game1.options.enableServer)
+            {
+                Game1.options.setServerMode("online");
+            }
         }
     }
 
@@ -1010,9 +1019,8 @@ public class AlwaysOnServer : ModService
         }
         else if (numPlayers == 0 && !isFestivalDay)
         {
-            // Pause during normal hours (610-2500), but unpause after 2500 to allow
-            // the forced pass-out sequence at 2600 (2:00 AM) to proceed.
-            Game1.netWorldState.Value.IsPaused = Game1.timeOfDay is >= 610 and <= 2500;
+            // The 600 floor pauses at day start (6:00), not after the first 10-minute tick.
+            Game1.netWorldState.Value.IsPaused = Game1.timeOfDay is >= 600 and <= 2500;
         }
     }
 
