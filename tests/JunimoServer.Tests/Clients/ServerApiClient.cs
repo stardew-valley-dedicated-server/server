@@ -684,6 +684,33 @@ public class TestStampClaimResponse
     public string HomeLocation { get; set; } = "";
 }
 
+/// <summary>
+/// Response from /test/stamp_lobby_home POST endpoint (test-only). Mirrors the server-side
+/// TestStampLobbyHomeResponse DTO. Reproduces the lobby-homed-spouse poisoned-save shape: a
+/// farmhand married (synthesized) to an NPC with both their home fields pointing at the shared
+/// lobby cabin interior, so the heal sweeps can be exercised live and across a reload.
+/// </summary>
+public class TestStampLobbyHomeResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("stampedUid")]
+    public long StampedUid { get; set; }
+
+    [JsonPropertyName("npc")]
+    public string Npc { get; set; } = "";
+
+    [JsonPropertyName("lobbyLocation")]
+    public string LobbyLocation { get; set; } = "";
+
+    [JsonPropertyName("originalHome")]
+    public string OriginalHome { get; set; } = "";
+}
+
 /// <summary>Body for /test/seed_import_source (test-only). Mirrors the server-side DTO.</summary>
 public class TestSeedImportSourceRequest
 {
@@ -1819,6 +1846,27 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(HttpMethod.Post, "/test/stamp_claim", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestStampClaimResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: reproduce the lobby-homed-spouse poisoned-save shape — a farmhand married
+    /// (synthesized) to <paramref name="npc"/> with the farmhand's homeLocation/lastSleepLocation
+    /// and the NPC's DefaultMap/position pointing at the shared lobby cabin interior. Used to
+    /// verify the CabinManagerService heal sweeps restore both live (DayStarted) and across a
+    /// reload (SaveLoaded). POST /test/stamp_lobby_home
+    /// </summary>
+    public async Task<TestStampLobbyHomeResponse?> StampLobbyHome(
+        string npc,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/stamp_lobby_home?npc={Uri.EscapeDataString(npc)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestStampLobbyHomeResponse>(ct);
     }
 
     /// <summary>

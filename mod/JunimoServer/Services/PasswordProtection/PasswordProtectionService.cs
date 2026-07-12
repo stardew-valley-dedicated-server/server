@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using HarmonyLib;
+using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -23,6 +24,7 @@ public class PasswordProtectionService : ModService
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
     private readonly LobbyService _lobbyService;
+    private readonly CabinManagerService _cabinManager;
     private static MethodInfo _sendLocationMethod;
 
     /// <summary>
@@ -56,7 +58,8 @@ public class PasswordProtectionService : ModService
         IModHelper helper,
         IMonitor monitor,
         Harmony harmony,
-        LobbyService lobbyService
+        LobbyService lobbyService,
+        CabinManagerService cabinManager
     )
         : base(helper, monitor)
     {
@@ -73,6 +76,7 @@ public class PasswordProtectionService : ModService
         _helper = helper;
         _monitor = monitor;
         _lobbyService = lobbyService;
+        _cabinManager = cabinManager;
 
         ServerPassword = Env.ServerPassword;
         MaxFailedAttempts = Env.MaxLoginAttempts;
@@ -275,65 +279,15 @@ public class PasswordProtectionService : ModService
     }
 
     /// <summary>
-    /// Ensures the player has a valid, real (non-lobby) cabin assignment after
-    /// vanilla's checkFarmhandRequest approves them. We treat homeLocation as
-    /// vanilla's source of truth: if it resolves to a real non-lobby Cabin, accept
-    /// it and return. Otherwise (empty / stale / lobby cabin), clear it and let
-    /// TryAssignFarmhandHome pick a fresh cabin via AssignFarmhand (which sets
-    /// both farmhandReference and homeLocation).
-    ///
-    /// We deliberately do NOT trigger reassignment based on farmhandReference.uid
-    /// mismatches — that field can be transiently out of sync with farmhandData
-    /// due to vanilla netcode timing. FindPlayerCabin handles ref desync at login.
+    /// Ensures the player has a valid, real (non-lobby) cabin assignment after vanilla's
+    /// checkFarmhandRequest approves them. Delegates to the shared reconciliation core in
+    /// CabinManagerService (ownership-first reassignment), which the load/day-start sweeps
+    /// also use. The join context deliberately skips the sweeps' lobby spawn-hint scrub —
+    /// those hints are what land the joining client in the lobby.
     /// </summary>
     private static void EnsureRealCabinAssignment(Farmer farmer)
     {
-        var home = farmer.homeLocation.Value;
-        string reason;
-        if (string.IsNullOrEmpty(home))
-        {
-            reason = "empty";
-        }
-        else
-        {
-            var currentHome = Game1.getLocationFromName(home);
-            if (currentHome is not Cabin homeCabin)
-            {
-                reason = "stale/missing cabin";
-            }
-            else if (
-                homeCabin.ParentBuilding != null
-                && LobbyService.IsLobbyCabin(homeCabin.ParentBuilding)
-            )
-            {
-                reason = "lobby cabin";
-            }
-            else
-            {
-                return; // happy path: homeLocation resolves to a real non-lobby cabin
-            }
-        }
-
-        _instance._monitor.Log(
-            $"[Auth] Clearing homeLocation '{home}' ({reason}) for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID})",
-            LogLevel.Info
-        );
-        farmer.homeLocation.Value = "";
-
-        if (Game1.netWorldState.Value.TryAssignFarmhandHome(farmer))
-        {
-            _instance._monitor.Log(
-                $"[Auth] Reassigned '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) to real cabin: homeLocation='{farmer.homeLocation.Value}'",
-                LogLevel.Info
-            );
-        }
-        else
-        {
-            _instance._monitor.Log(
-                $"[Auth] TryAssignFarmhandHome failed for '{ChatRedaction.MaskValue(farmer.Name)}' (id={farmer.UniqueMultiplayerID}) - no available cabin",
-                LogLevel.Warn
-            );
-        }
+        _instance._cabinManager.EnsureFarmhandRealHome(farmer, CabinManagerService.HealContextJoin);
     }
 
     private static bool ProcessIncomingMessage_Prefix(IncomingMessage message)

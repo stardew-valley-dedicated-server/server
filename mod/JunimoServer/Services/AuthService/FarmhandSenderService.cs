@@ -389,7 +389,6 @@ public class FarmhandSenderService : ModService
         public string LastSleepLocation;
         public Point LastSleepPoint;
         public bool SleptInTemporaryBed;
-        public string HomeLocation;
     }
 
     /// <summary>
@@ -407,7 +406,6 @@ public class FarmhandSenderService : ModService
             LastSleepLocation = farmhand.lastSleepLocation.Value,
             LastSleepPoint = farmhand.lastSleepPoint.Value,
             SleptInTemporaryBed = farmhand.sleptInTemporaryBed.Value,
-            HomeLocation = farmhand.homeLocation.Value,
         };
     }
 
@@ -424,7 +422,6 @@ public class FarmhandSenderService : ModService
         farmhand.lastSleepLocation.Value = data.LastSleepLocation;
         farmhand.lastSleepPoint.Value = data.LastSleepPoint;
         farmhand.sleptInTemporaryBed.Value = data.SleptInTemporaryBed;
-        farmhand.homeLocation.Value = data.HomeLocation;
     }
 
     /// <summary>
@@ -482,9 +479,14 @@ public class FarmhandSenderService : ModService
         // map property. Setting sleptInTemporaryBed bypasses that bed check.
         farmhand.sleptInTemporaryBed.Value = true;
 
-        // ApplyWakeUpPosition Branch 3 (final fallback): uses homeLocation to find a
-        // FarmHouse bed spot. Point it at the lobby cabin so all three branches converge.
-        farmhand.homeLocation.Value = lobbyLocation;
+        // Deliberately NOT redirected: homeLocation. It's the farmhand's durable home pointer —
+        // the client is authoritative for its own Farmer root and clones it back into
+        // farmhandData via the nightly full-root resend (NetWorldState.SaveFarmhand), and
+        // NPC.marriageDuties reads it raw to home the NPC spouse (offline farmhands included).
+        // Pointing it at the lobby persists the lobby as their home (stranded-spouse bug).
+        // ApplyWakeUpPosition branch 3 (the homeLocation fallback) is reachable only when the
+        // lobby name doesn't resolve client-side, where RequireLocation on a lobby homeLocation
+        // throws anyway — the real cabin is strictly safer in that branch.
     }
 
     /// <summary>
