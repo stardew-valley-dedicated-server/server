@@ -241,7 +241,7 @@ public class ConnectionHelper
 
             if (attempt > 1)
             {
-                Log("[Connect] Returning to title for retry...");
+                Log("[Connect] Returning to title for retry");
                 await EnsureDisconnectedAsync();
                 await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
 
@@ -286,7 +286,7 @@ public class ConnectionHelper
         CancellationToken cancellationToken
     )
     {
-        Log($"[Connect] Attempt {attempt}/{maxAttempts} - connecting via invite code...");
+        Log($"[Connect] Attempt {attempt}/{maxAttempts}: connecting via invite code");
 
         try
         {
@@ -377,7 +377,9 @@ public class ConnectionHelper
                 return ConnectionResult.Failed("Load farmhand slots: timeout", attempt);
             }
 
-            Log($"Connected ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})");
+            Log(
+                $"[Connect] Connected ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
+            );
             await CaptureCheckpointIfEnabled("after_connect");
             return ConnectionResult.Succeeded(attempt, farmhands);
         }
@@ -418,7 +420,7 @@ public class ConnectionHelper
 
             if (attempt > 1)
             {
-                Log("[Connect] Returning to title for retry...");
+                Log("[Connect] Returning to title for retry");
                 await EnsureDisconnectedAsync();
                 await Task.Delay(TestTimings.RetryPauseDelay, cancellationToken);
             }
@@ -456,7 +458,7 @@ public class ConnectionHelper
     )
     {
         var fullAddress = port == 24642 ? address : $"{address}:{port}";
-        Log($"[Connect] Attempt {attempt}/{maxAttempts} - connecting via LAN to {fullAddress}...");
+        Log($"[Connect] Attempt {attempt}/{maxAttempts}: connecting via LAN to {fullAddress}");
 
         try
         {
@@ -497,7 +499,7 @@ public class ConnectionHelper
             }
 
             Log(
-                $"Connected via LAN ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
+                $"[Connect] Connected via LAN ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
             );
             await CaptureCheckpointIfEnabled("after_connect");
             return ConnectionResult.Succeeded(attempt, farmhands);
@@ -730,7 +732,7 @@ public class ConnectionHelper
             }
             catch (Exception ex)
             {
-                Log($"[Retry] Disconnect before retry failed: {ex.Message}");
+                Log($"[Join] Disconnect before retry failed: {ex.Message}");
             }
             finally
             {
@@ -870,7 +872,7 @@ public class ConnectionHelper
                     if (loginAttempt > 1)
                     {
                         Log(
-                            $"[Auth] Retrying !login (attempt {loginAttempt}/{TestTimings.AuthLoginMaxAttempts})..."
+                            $"[Auth] Retrying !login (attempt {loginAttempt}/{TestTimings.AuthLoginMaxAttempts})"
                         );
                     }
 
@@ -884,9 +886,7 @@ public class ConnectionHelper
                         continue;
                     }
 
-                    Log(
-                        "[Auth] Waiting for post-auth warp (location change to different cabin)..."
-                    );
+                    Log("[Auth] Waiting for post-auth warp (location change to different cabin)");
                     wasAuthenticated = await _gameClient.WaitForAuthWarpAsync(
                         preAuthLocation!,
                         ct: cancellationToken
@@ -900,7 +900,7 @@ public class ConnectionHelper
                     }
 
                     Log(
-                        $"[Auth] Auth not confirmed within {TestTimings.AuthLoginAttemptTimeout.TotalSeconds}s"
+                        $"[Auth] Not confirmed within {TestTimings.AuthLoginAttemptTimeout.TotalSeconds}s"
                     );
                 }
 
@@ -991,7 +991,7 @@ public class ConnectionHelper
 
         var authStatus = wasAuthenticated ? ", authenticated" : (wasInLobby ? ", in lobby" : "");
         Log(
-            $"Joined world as '{farmerName}' (uid={uid}){authStatus} (attempt {attempt}/{_options.MaxAttempts})"
+            $"[Join] Joined world as '{farmerName}' (uid={uid}){authStatus} (attempt {attempt}/{_options.MaxAttempts})"
         );
         return (
             JoinWorldResult.Succeeded(
@@ -1061,7 +1061,7 @@ public class ConnectionHelper
             if (bounce > 0)
             {
                 Log(
-                    $"[Join] Server bounced back to farmhand selection (attempt {bounce}/{maxBounceRetries}), re-selecting slot..."
+                    $"[Join] Bounce {bounce}/{maxBounceRetries}: server bounced back to farmhand selection, re-selecting slot"
                 );
             }
 
