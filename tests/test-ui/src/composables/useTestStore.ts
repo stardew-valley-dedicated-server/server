@@ -500,6 +500,30 @@ export function useTestStore(): TestStore {
         return collection ? `${collection}:${category}:${phase}` : `${category}:${phase}`;
     }
 
+    // Apply a terminal outcome to a test: transition counts, set status, mark the
+    // tree dirty, and hand off auto-selection if a failure was demoted off the
+    // selected slot. Works from any current status (transitionStatus rebalances
+    // whatever was there) and no-ops when status already matches, so it is safe to
+    // call from both producers in either order.
+    function setTerminalOutcome(test: TestSnapshot, outcome: "passed" | "failed" | "canceled") {
+        if (test.status === outcome) {
+            return;
+        }
+        transitionStatus(test.status, outcome);
+        test.status = outcome;
+        markTreeDirty();
+        // A failure demoted off the selected slot (e.g. failed→canceled) hands the
+        // headline back to the freshest remaining real failure; if none remain the
+        // selection stays put (a canceled test never auto-selects, but we don't
+        // proactively deselect either — matching the pre-fix test_failed behavior).
+        if (outcome !== "failed" && selectedTest.value?.displayName === test.displayName) {
+            const next = findMostRecentFailure();
+            if (next) {
+                autoSelect(next);
+            }
+        }
+    }
+
     function applyEvent(event: TestEvent) {
         switch (event.event) {
             case "populate_tests":
@@ -739,7 +763,9 @@ export function useTestStore(): TestStore {
                     event.exceptionType === "System.Threading.Tasks.TaskCanceledException";
                 if (test) {
                     const oldStatus = test.status;
-                    const newStatus = isCanceled ? "canceled" : "failed";
+                    // Enrichment (test-process verdict) may have arrived first; honor it over the
+                    // exception-type guess, mirroring the runner's SetOutcome source policy.
+                    const newStatus = test.enrichmentOutcome ?? (isCanceled ? "canceled" : "failed");
                     test.status = newStatus;
                     test.durationMs = event.durationMs;
                     test.queueDurationMs = event.queueDurationMs ?? null;
@@ -762,8 +788,8 @@ export function useTestStore(): TestStore {
                     transitionStatus(oldStatus, newStatus);
                     markTreeDirty();
                     markSelectedContentDirty(test);
-                    // Auto-select failed test (but not canceled ones)
-                    if (!isCanceled) {
+                    // Auto-select only a genuine failure (canceled never auto-selects).
+                    if (newStatus === "failed") {
                         autoSelect(test);
                     }
                 }
@@ -997,6 +1023,13 @@ export function useTestStore(): TestStore {
                         lastKeepDisposeMs: event.lastKeepDisposeMs,
                         leaseReleaseMs: event.leaseReleaseMs,
                     };
+                    // The enrichment outcome is the runner's authoritative verdict (it has
+                    // already run SetOutcome). Apply it and cache it for a possibly-later
+                    // test_failed, whose exception-type guess must defer to the cache.
+                    if (event.outcome === "passed" || event.outcome === "failed" || event.outcome === "canceled") {
+                        test.enrichmentOutcome = event.outcome;
+                        setTerminalOutcome(test, event.outcome);
+                    }
                     markSelectedContentDirty(test);
                 }
                 break;
