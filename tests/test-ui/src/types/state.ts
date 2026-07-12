@@ -180,6 +180,11 @@ export interface TestSnapshot {
     serverInstanceId: string | null;
     /** Latest FailureContext.DumpAsync result, or null if no dump captured. */
     failureContext: Record<string, unknown> | null;
+    /** Test-process enrichment verdict, cached so test_failed (which the runner
+     *  emits AFTER enrichment — TestLifecycle.cs:509,523-525) honors it instead
+     *  of re-deriving from the exception type. Mirrors runner
+     *  TestState.EnrichmentOutcome (TestRunState.cs:935). */
+    enrichmentOutcome?: "passed" | "failed" | "canceled";
 }
 
 export interface SetupPhaseSnapshot {
