@@ -830,6 +830,12 @@ public partial class ApiService : ModService
     private volatile GameStateSnapshot _snapshot = new();
     private DateTime _lastSnapshotUpdate;
 
+    // Set in the constructor (DI singleton — single construction) so GameManagerService
+    // can republish the snapshot at /reload and /newgame completion via the static
+    // RefreshSnapshotAtLoadCompletion hook. Mirrors the static-access pattern of
+    // ComputeDayTransitionComplete.
+    private static ApiService? _instance;
+
     // Monotonic snapshot version. Incremented every time a new snapshot is
     // published; used by /wait/* long-poll endpoints to let clients block
     // until the snapshot they care about has changed.
@@ -1029,6 +1035,7 @@ public partial class ApiService : ModService
         _saveImportService = saveImportService;
         _npcSpriteIntegrity = npcSpriteIntegrity;
         _passwordProtectionService = passwordProtectionService;
+        _instance = this;
     }
 
     public override void Entry()
@@ -1610,6 +1617,18 @@ public partial class ApiService : ModService
             }
         }
     }
+
+    /// <summary>
+    /// Republishes the read-only-endpoint snapshot at /reload and /newgame completion, called by
+    /// <see cref="GameManager.GameManagerService"/> on the resolve tick — the point the completion
+    /// contract already guarantees the SaveLoaded chain (cabin migration/sync/sweep,
+    /// EnsureAtLeastXCabins) has run. Runs on the game thread (same serialization as the two other
+    /// <c>TakeGameStateSnapshot</c> call sites) and doesn't reset the 1 Hz timer, so a test's first
+    /// post-reload read sees the migrated world instead of a snapshot captured mid-load.
+    /// No-ops when API is disabled (<c>_instance</c> is still set by the ctor, but a republish with
+    /// no HTTP listener is harmless).
+    /// </summary>
+    public static void RefreshSnapshotAtLoadCompletion() => _instance?.TakeGameStateSnapshot();
 
     /// <summary>
     /// True once the day-transition machinery is finished and the host is back in normal play —
