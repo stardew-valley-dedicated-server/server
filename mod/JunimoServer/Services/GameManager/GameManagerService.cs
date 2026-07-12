@@ -167,7 +167,7 @@ class GameManagerService : ModService
 
     // Resolve a pending /reload or /newgame completion next-tick after SaveLoaded (not in
     // OnSaveLoaded, so it doesn't depend on subscriber order), by which point its handlers
-    // (cabin migration/sync/sweep, EnsureAtLeastXCabins) have run and the snapshot is final.
+    // (cabin migration/sync/sweep, EnsureAtLeastXCabins) have run and the game state is final.
     private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
     {
         if (!_saveLoadedSinceRequest)
@@ -184,6 +184,12 @@ class GameManagerService : ModService
         }
 
         _saveLoadedSinceRequest = false;
+
+        // Republish the read-only-endpoint snapshot before resolving. The 1 Hz periodic snapshot
+        // can have captured the world mid-load, before the SaveLoaded chain above ran; without this
+        // the first post-reload /cabins read races the next periodic refresh and sees a stale layout.
+        // This makes snapshot freshness part of the completion contract for both /reload and /newgame.
+        Api.ApiService.RefreshSnapshotAtLoadCompletion();
 
         _reloadCompletion?.TrySetResult(true);
         _reloadCompletion = null;
