@@ -13,10 +13,13 @@ const helper = require("./e2e-pr-sticky.js");
 
 // A minimal fake of the Octokit surface the helper touches, recording the calls made so
 // tests can assert "found once, wrote to that exact id" without a network.
-function fakeGithub(existingComment) {
+// `existingCheckRuns` seeds what `checks.listForRef` returns (for createCheckRun reuse tests).
+function fakeGithub(existingComment, existingCheckRuns = []) {
     const calls = [];
+    const checkUpdates = []; // raw checks.update args, for key-presence assertions
     return {
         calls,
+        checkUpdates,
         paginate: async () => {
             calls.push("list");
             return existingComment ? [existingComment] : [];
@@ -30,6 +33,24 @@ function fakeGithub(existingComment) {
                 createComment: async () => {
                     calls.push("create");
                     return { data: { id: 999 } };
+                },
+            },
+            checks: {
+                listForRef: async (args) => {
+                    calls.push(`checks.listForRef:${args.filter || "latest"}`);
+                    return { data: { check_runs: existingCheckRuns } };
+                },
+                create: async (args) => {
+                    calls.push(`checks.create#${args.head_sha}`);
+                    return { data: { id: 555 } };
+                },
+                update: async (args) => {
+                    checkUpdates.push(args);
+                    calls.push(
+                        `checks.update#${args.check_run_id}` +
+                            (args.status ? `:${args.status}` : "") +
+                            (args.conclusion ? `:${args.conclusion}` : ""),
+                    );
                 },
             },
         },
@@ -336,6 +357,102 @@ test("deriveResult: a reportUrl is appended to the headline; absent leaves it un
     assert.match(withUrl.headline, /\[▶ Open interactive report\]\(http:\/\/x\/1\)/);
     const noUrl = helper.deriveResult({ summary: { passed: 1, failed: 0 }, jobStatus: "success", sha: "sha" });
     assert.doesNotMatch(noUrl.headline, /Open interactive report/);
+});
+
+// --- check run (PR Checks tab) -------------------------------------------------------
+
+test("statusToConclusion maps sticky status to a Checks API conclusion", () => {
+    assert.equal(helper.statusToConclusion("passed"), "success");
+    assert.equal(helper.statusToConclusion("failed"), "failure");
+    assert.equal(helper.statusToConclusion("aborted"), "cancelled");
+    assert.equal(helper.statusToConclusion("queued"), undefined);
+});
+
+test("createCheckRun creates against the given head_sha when no check run exists yet", async () => {
+    const gh = fakeGithub(null, []);
+    const id = await helper.createCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        head_sha: "deadbee",
+        status: "queued",
+        detailsUrl: "http://x",
+    });
+    assert.equal(id, 555);
+    assert.deepEqual(gh.calls, ["checks.listForRef:all", "checks.create#deadbee"]);
+});
+
+test("createCheckRun reuses a stuck queued check run, re-queuing it", async () => {
+    const gh = fakeGithub(null, [{ id: 222, status: "queued" }]);
+    const id = await helper.createCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        head_sha: "deadbee",
+        status: "queued",
+        detailsUrl: "http://x",
+    });
+    assert.equal(id, 222, "reuses the existing run's id rather than creating a new one");
+    assert.deepEqual(gh.calls, ["checks.listForRef:all", "checks.update#222:queued"]);
+});
+
+test("createCheckRun reuses an in_progress check run WITHOUT regressing it to queued", async () => {
+    const gh = fakeGithub(null, [{ id: 111, status: "in_progress" }]);
+    const id = await helper.createCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        head_sha: "deadbee",
+        status: "queued",
+        detailsUrl: "http://x",
+    });
+    assert.equal(id, 111, "reuses the live run's id rather than creating a new one");
+    assert.deepEqual(gh.calls, ["checks.listForRef:all", "checks.update#111"]);
+    assert.ok(!("status" in gh.checkUpdates[0]), "a live run's status must be left untouched");
+});
+
+test("createCheckRun ignores a completed check run and creates a fresh one", async () => {
+    const gh = fakeGithub(null, [{ id: 111, status: "completed" }]);
+    const id = await helper.createCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        head_sha: "deadbee",
+        status: "queued",
+        detailsUrl: "http://x",
+    });
+    assert.equal(id, 555, "a completed prior run is a finished history row, not reusable");
+    assert.deepEqual(gh.calls, ["checks.listForRef:all", "checks.create#deadbee"]);
+});
+
+test("updateCheckRun: in_progress carries no conclusion; completed carries the mapped conclusion", async () => {
+    const gh = fakeGithub(null);
+    await helper.updateCheckRun({ github: gh, owner: "o", repo: "r", check_run_id: 555, status: "in_progress" });
+    await helper.updateCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        check_run_id: 555,
+        status: "completed",
+        conclusion: "success",
+    });
+    assert.deepEqual(gh.calls, ["checks.update#555:in_progress", "checks.update#555:completed:success"]);
+});
+
+test("updateCheckRun sends `output` only when a summary is given (never an undefined key)", async () => {
+    const gh = fakeGithub(null);
+    await helper.updateCheckRun({ github: gh, owner: "o", repo: "r", check_run_id: 555, status: "in_progress" });
+    assert.ok(!("output" in gh.checkUpdates[0]), "no summary -> no output key at all");
+    await helper.updateCheckRun({
+        github: gh,
+        owner: "o",
+        repo: "r",
+        check_run_id: 555,
+        status: "completed",
+        conclusion: "success",
+        summary: "12 passed",
+    });
+    assert.deepEqual(gh.checkUpdates[1].output, { title: "E2E Tests", summary: "12 passed" });
 });
 
 // --- find-once upsert contract (no lost-update re-fetch) ----------------------------

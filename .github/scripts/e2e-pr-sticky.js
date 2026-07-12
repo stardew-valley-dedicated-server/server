@@ -230,6 +230,95 @@ function renderBody(state) {
     return lines.join("\n");
 }
 
+// --- check run (PR Checks tab) -------------------------------------------------------
+//
+// issue_comment and workflow_dispatch(+pr) runs execute at the DEFAULT branch's SHA
+// (github.sha), never the PR's head SHA, so GitHub Actions' own auto-registered check
+// run for this workflow job lands on master — invisible on the PR's Checks tab. A
+// same-named CodeRabbit-style check requires an explicit Checks API call keyed on the
+// PR's real head SHA (`checks: write`), independent of the job's own auto-check.
+const CHECK_RUN_NAME = "E2E Tests";
+
+/** Map a sticky `status` (queued|passed|failed|aborted) to a Checks API `conclusion`. */
+function statusToConclusion(status) {
+    switch (status) {
+        case "passed":
+            return "success";
+        case "failed":
+            return "failure";
+        case "aborted":
+            return "cancelled";
+        default:
+            return undefined; // 'queued' has no conclusion (still in_progress/queued)
+    }
+}
+
+/**
+ * Create-or-reuse the `E2E Tests` check run on the PR's head SHA (queued/in_progress
+ * state). Only this workflow creates runs with this name (job auto-checks use job names),
+ * so a same-named check run still `in_progress`/`queued` on this SHA is this PR's own:
+ * either a prior attempt that never reached `completed` (a Checks API failure mid-run, a
+ * job that died before its cleanup step) or — the gate runs outside the e2e concurrency
+ * singleton — a run that is still live. Reuse it rather than creating a new row, so
+ * re-running (the sticky's checkbox / repeated `/run-tests-e2e`) doesn't accumulate
+ * stale check-run entries on the PR's "Show all checks" list.
+ * Returns the check_run id to thread through job outputs for the later update call.
+ * @returns {Promise<number>} The reused or newly created check run's id.
+ */
+async function createCheckRun({ github, owner, repo, head_sha, status, detailsUrl }) {
+    // The API's `status` filter is a flat 3-value enum (queued|in_progress|completed —
+    // no combined "not completed" value), so predicate client-side. `filter: "all"`:
+    // the default `latest` collapses to the newest row per name+suite and could hide a
+    // stuck older row from the reuse scan.
+    const { data: existing } = await github.rest.checks.listForRef({
+        owner,
+        repo,
+        ref: head_sha,
+        check_name: CHECK_RUN_NAME,
+        filter: "all",
+    });
+    const reusable = existing.check_runs.find((r) => r.status !== "completed");
+    if (reusable) {
+        // Refresh the row, but never regress a live `in_progress` run back to `queued`
+        // (a re-trigger's gate can land while the previous e2e job still owns the row).
+        // PATCH semantics: an omitted status leaves the current one in place.
+        await github.rest.checks.update({
+            owner,
+            repo,
+            check_run_id: reusable.id,
+            ...(reusable.status === "in_progress" ? {} : { status }),
+            details_url: detailsUrl,
+        });
+        return reusable.id;
+    }
+
+    const { data } = await github.rest.checks.create({
+        owner,
+        repo,
+        name: CHECK_RUN_NAME,
+        head_sha,
+        status, // 'queued' | 'in_progress'
+        details_url: detailsUrl,
+    });
+    return data.id;
+}
+
+/**
+ * Update the `E2E Tests` check run to its final state. `status: 'completed'` requires
+ * `conclusion`; an in-progress transition (no conclusion) just flips status.
+ */
+async function updateCheckRun({ github, owner, repo, check_run_id, status, conclusion, detailsUrl, summary }) {
+    await github.rest.checks.update({
+        owner,
+        repo,
+        check_run_id,
+        status, // 'in_progress' | 'completed'
+        ...(conclusion ? { conclusion } : {}),
+        details_url: detailsUrl,
+        ...(summary ? { output: { title: CHECK_RUN_NAME, summary } } : {}),
+    });
+}
+
 // --- comment upsert -----------------------------------------------------------------
 
 /**
@@ -366,4 +455,7 @@ module.exports = {
     parseCommand,
     isValidFilter,
     shouldFireRerun,
+    statusToConclusion,
+    createCheckRun,
+    updateCheckRun,
 };
