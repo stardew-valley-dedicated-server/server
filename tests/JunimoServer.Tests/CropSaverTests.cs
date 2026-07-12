@@ -127,20 +127,30 @@ public class CropSaverTests : TestBase
         Assert.True(armed.Success, $"SetSaverCrop failed: {armed.Error}");
         Assert.True(armed.Found, "SaverCrop entry must exist before pre-arming extraDays");
 
-        // Disconnect the owner — KillCrop_Prefix is the only suppression path
-        // when the owner is offline. With an online owner the prolong logic
-        // would also keep extraDays steady (line 54: ownerId != 0 && offline).
+        // Connect a second, unrelated farmer to drive the day transition. The crop's
+        // ownerId is already stamped to the primary (the watcher registered the pot
+        // above, before this farmer joins), so this farmer never becomes the owner.
+        await using var driver = await Farmers.ConnectSecondFarmerAsync(ct: ct);
+
+        // Disconnect the crop owner — KillCrop_Prefix suppresses the kill only while
+        // the crop's owner is offline. With an online owner the prolong logic would
+        // also keep extraDays steady (CropSaver.cs:54: ownerId != 0 && offline).
         await Farmers.DisconnectAndWaitForSlotAsync(
             farmhand.JoinResult.UniqueMultiplayerId,
             farmhand.FarmerName,
             ct
         );
 
-        // Trigger sleep-induced day-transition. SetClockSpeed(20) accelerates
-        // the wait from minutes to seconds; same pattern as
-        // HostAutomationTests.HostPassesOut_WhenTimeReaches2AM.
+        // Advance the day the way the server actually supports it: a connected player
+        // sleeps, so the host auto-sleeps (it's the only one not ready) and the group
+        // transitions. The server deliberately does NOT advance an empty server's clock
+        // — driving this via SetClockSpeed with no one connected froze on the lone-host
+        // shouldTimePass gate (~35% "Day did not advance" flake). SetClockSpeed(20) just
+        // accelerates the post-sleep pass-out.
         var statusBefore = await ServerApi.GetStatus(ct);
         Assert.NotNull(statusBefore);
+        var driverSlept = await driver.Client.Actions.Sleep();
+        Assert.True(driverSlept?.Success == true, $"Driver sleep failed: {driverSlept?.Error}");
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
         await ServerApi.SetClockSpeed(20, ct);
         try
@@ -257,7 +267,12 @@ public class CropSaverTests : TestBase
 
         await ServerApi.SetDate("fall", 28, year: 1, ct);
 
-        // Disconnect the owner so branch-2's kill exception (online owner) does
+        // Connect a second, unrelated farmer to drive the day transition. The crop's
+        // ownerId is already stamped to the primary (watcher-registered above), so this
+        // farmer never becomes the owner.
+        await using var driver = await Farmers.ConnectSecondFarmerAsync(ct: ct);
+
+        // Disconnect the crop owner so branch-2's kill exception (online owner) does
         // not apply — the kill would definitely fire here without the fix.
         await Farmers.DisconnectAndWaitForSlotAsync(
             farmhand.JoinResult.UniqueMultiplayerId,
@@ -265,8 +280,13 @@ public class CropSaverTests : TestBase
             ct
         );
 
+        // Advance the day via a connected player's sleep (the server won't advance an
+        // empty server's clock — see the sibling test for the lone-host freeze). The
+        // driver sleeps, the host auto-sleeps, and the group transitions.
         var statusBefore = await ServerApi.GetStatus(ct);
         Assert.NotNull(statusBefore);
+        var driverSlept = await driver.Client.Actions.Sleep();
+        Assert.True(driverSlept?.Success == true, $"Driver sleep failed: {driverSlept?.Error}");
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
         await ServerApi.SetClockSpeed(20, ct);
         try
