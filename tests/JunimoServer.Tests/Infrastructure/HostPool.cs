@@ -21,8 +21,8 @@ namespace JunimoServer.Tests.Infrastructure;
 /// <c>endpoint</c> (omit for local daemon, or <c>ssh://user@host</c>),
 /// <c>sshKey</c> (either a path to a private key — <c>~</c>-expanded — or inline
 /// <c>-----BEGIN…</c> key material, which is written to a 0600 temp file), and
-/// <c>socketPath</c> (remote Unix socket; defaults to <c>/var/run/docker.sock</c>,
-/// override e.g. <c>~/.docker/run/docker.sock</c> for macOS Docker Desktop).
+/// <c>socketPath</c> (remote Unix socket; defaults to <c>/var/run/docker.sock</c> —
+/// set only for daemons listening elsewhere, e.g. rootless Docker).
 /// </para>
 /// <example>
 /// <code>
@@ -30,7 +30,7 @@ namespace JunimoServer.Tests.Infrastructure;
 ///   {"id": "local", "serverSlots": 3, "clientSlots": 6},
 ///   {"id": "vps",   "endpoint": "ssh://sdvd-runner@10.0.0.2", "sshKey": "~/.ssh/sdvd_runner",
 ///                   "serverSlots": 2, "clientSlots": 4},
-///   {"id": "mac",   "endpoint": "ssh://dev@mac.local", "socketPath": "~/.docker/run/docker.sock",
+///   {"id": "rootless", "endpoint": "ssh://dev@rootless-vps", "socketPath": "/run/user/1000/docker.sock",
 ///                   "serverSlots": 1, "clientSlots": 2}
 /// ]'
 /// </code>
@@ -384,7 +384,7 @@ public sealed class HostPool : IAsyncDisposable
     /// (the local daemon is reached via OS default endpoint, no socket-path
     /// concept on this side). Defaults to <c>/var/run/docker.sock</c> for
     /// remote entries; override for hosts where the daemon listens elsewhere
-    /// (macOS Docker Desktop: <c>~/.docker/run/docker.sock</c>). The path is
+    /// (e.g. rootless Docker: <c>/run/user/&lt;uid&gt;/docker.sock</c>). The path is
     /// not expanded coordinator-side — it's threaded into the remote
     /// <c>ssh -L &lt;port&gt;:&lt;path&gt;</c> command and resolved by the remote shell.
     /// </summary>
@@ -441,8 +441,8 @@ public sealed class HostPool : IAsyncDisposable
         /// <summary>
         /// Remote Unix socket path for the daemon. Defaults to
         /// <c>/var/run/docker.sock</c> when omitted. Override for hosts whose
-        /// daemon listens elsewhere — most commonly macOS Docker Desktop, which
-        /// uses <c>~/.docker/run/docker.sock</c> per-user. Ignored for local
+        /// daemon listens elsewhere — e.g. rootless Docker's per-user
+        /// <c>/run/user/&lt;uid&gt;/docker.sock</c>. Ignored for local
         /// entries (no SSH endpoint).
         /// </summary>
         [JsonPropertyName("socketPath")]
