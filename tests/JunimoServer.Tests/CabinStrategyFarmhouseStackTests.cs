@@ -59,16 +59,19 @@ public class CabinStrategyFarmhouseStackTests : TestBase
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
         var baseline = await GetOurCabinAsync(ownerId, ct);
 
-        // "keep all cabins" is unique to the FarmhouseStack gate. Match only this fragment,
-        // not the full phrase: the delivered chat message has a double space ("cabins  in")
-        // that a longer substring would straddle.
-        var rejected = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_CabinPlacement_Rejected,
-            () => Chat.AssertResponseAsync("!cabin", "keep all cabins"),
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct
+        // Static strategy gate, no race — resend is harmless here (self-identifying reply + one
+        // consistent pattern). Match only "keep all cabins" (unique to this gate), not a longer
+        // phrase: the delivered message has a double space ("cabins  in") a substring would straddle.
+        var rejection = await Chat.ResendUntilResponseAsync(
+            "!cabin",
+            "keep all cabins",
+            replyFamilyPrefix: "Can't move cabin",
+            timeout: TestTimings.CabinAssignmentTimeout
         );
-        Assert.True(rejected, "Expected a FarmhouseStack rejection reply");
+        Assert.True(
+            rejection.Matched,
+            $"Expected a FarmhouseStack rejection reply; {rejection.Describe()}"
+        );
 
         // No move, and no intent written on rejection.
         var after = await GetOurCabinAsync(ownerId, ct);

@@ -70,6 +70,19 @@ public class TestFarmersResponse
 }
 
 /// <summary>
+/// Response from /test/object_at_tile (test-only). Whether a placed Object sits on a
+/// (location, tile) server-side, via the same getObjectAtTile lookup CabinPlacementValidator
+/// reaches — so a test can gate a placement command on the obstacle being server-visible,
+/// which the periodic snapshots don't carry.
+/// </summary>
+public class TestObjectAtTileResponse
+{
+    public bool Success { get; set; }
+    public bool Present { get; set; }
+    public string? Error { get; set; }
+}
+
+/// <summary>
 /// Response from /test/set_date (test-only date jump).
 /// </summary>
 public class TestSetDateResponse

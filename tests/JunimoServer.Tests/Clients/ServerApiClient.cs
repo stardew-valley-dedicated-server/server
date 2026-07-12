@@ -529,6 +529,19 @@ public class TestFarmersResponse
     public string? Error { get; set; }
 }
 
+/// <summary>Response from /test/object_at_tile GET endpoint (test-only). Mirrors the server-side DTO.</summary>
+public class TestObjectAtTileResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("present")]
+    public bool Present { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 /// <summary>
 /// Response from /test/festival_state GET endpoint (test-only). Mirrors the server-side
 /// TestFestivalStateResponse DTO — a direct read of the host's festival state.
@@ -1813,6 +1826,58 @@ public class ServerApiClient : IDisposable
                     );
                     var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
                     return f != null && f.TileX == tileX && f.TileY == tileY;
+                }
+                catch (Exception ex)
+                    when (ex
+                            is HttpRequestException
+                                or TaskCanceledException
+                                or OperationCanceledException
+                        && !ct.IsCancellationRequested
+                    )
+                {
+                    // Per-request timeout or connection error, retry.
+                    return false;
+                }
+            },
+            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+    }
+
+    /// <summary>
+    /// Test-only: poll until an Object is present at (<paramref name="tileX"/>,<paramref name="tileY"/>)
+    /// in <paramref name="location"/>, via the same <c>getObjectAtTile</c> lookup CabinPlacementValidator
+    /// reads. A placed Object replicates from the placing client's Game1 to the server over several
+    /// ticks (the cross-process gap <see cref="WaitForFarmerServerTileAsync"/> covers for a farmer); a
+    /// test forcing a rejection must await THIS before the placement command, else the validator sees a
+    /// clear footprint and wrongly ACCEPTS the move. GET /test/object_at_tile.
+    /// </summary>
+    public async Task<bool> WaitForObjectAtServerTileAsync(
+        int tileX,
+        int tileY,
+        string location = "Farm",
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
+    {
+        var url =
+            $"/test/object_at_tile?location={Uri.EscapeDataString(location)}&x={tileX}&y={tileY}";
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_ServerApi_WaitForObjectAtServerTile,
+            async () =>
+            {
+                try
+                {
+                    // Bound each request well under the outer budget: _httpClient.Timeout is 5
+                    // min, so an unbounded request could outlive the poll and hang.
+                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
+                    var response = await _httpClient.GetAsync(url, reqCts.Token);
+                    response.EnsureSuccessStatusCode();
+                    var body = await response.Content.ReadFromJsonAsync<TestObjectAtTileResponse>(
+                        reqCts.Token
+                    );
+                    return body?.Present == true;
                 }
                 catch (Exception ex)
                     when (ex
