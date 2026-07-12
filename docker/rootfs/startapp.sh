@@ -229,28 +229,10 @@ init_steam_sdk() {
     echo "413150" > "${GAME_DEST_DIR}/steam_appid.txt"
 }
 
-init_gui() {
-    # Polybar is managed by the supervisor service (disabled returns "false").
-    # Do NOT start it here. Doing so races with the supervisor's own polybar/run
-    # (which calls `pkill polybar` first), causing the `polybar-msg` call below
-    # to fail with "No active ipc channels" (exit 2) and crash the script.
-
-    if [ "${SERVER_FPS:-0}" != "0" ]; then
-        if [ -e "/data/images/wallpaper-junimo-server.png" ]; then
-            xwallpaper --zoom /data/images/wallpaper-junimo-server.png
-        fi
-
-        # colors-dark.sh calls `polybar-msg cmd restart` which requires polybar
-        # to be running. The supervisor may not have started it yet, so tolerate failure.
-        bash /root/.config/polybar/shades/scripts/colors-dark.sh --light-green || true
-    fi
-}
-
 echo "Initializing SMAPI..."
 
 # Prepare
 init_time_sync
-init_gui
 init_xauthority
 init_display_settings
 init_stardew
