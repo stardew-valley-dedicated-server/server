@@ -64,6 +64,12 @@ public partial class ApiService
                     case "/test/farmers":
                         await WriteJsonAsync(response, await HandleGetTestFarmersAsync(request));
                         return;
+                    case "/test/object_at_tile":
+                        await WriteJsonAsync(
+                            response,
+                            await HandleGetTestObjectAtTileAsync(request)
+                        );
+                        return;
                     case "/test/save_tmp_exists":
                         await WriteJsonAsync(response, HandleGetTestSaveTmpExists(request));
                         return;
@@ -321,6 +327,59 @@ public partial class ApiService
                     );
                 }
 
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/object_at_tile",
+        Summary = "Whether an Object sits on a (location, tile), by the same lookup CabinPlacementValidator reads (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestObjectAtTileResponse), 200)]
+    private async Task<TestObjectAtTileResponse> HandleGetTestObjectAtTileAsync(
+        HttpListenerRequest request
+    )
+    {
+        // ?location=<name> (default "Farm")&x=&y=. Reads getObjectAtTile — the same lookup
+        // CabinPlacementValidator.IsTileBuildable reaches (CabinPlacementValidator.cs:138) — so a
+        // test can gate its !cabin on the obstacle being server-visible, which the periodic
+        // snapshots don't carry (mirrors /test/farmers + WaitForFarmerServerTile for a farmer).
+        var locationName = request.QueryString["location"] ?? "Farm";
+        var result = new TestObjectAtTileResponse();
+
+        if (
+            !int.TryParse(request.QueryString["x"], out var x)
+            || !int.TryParse(request.QueryString["y"], out var y)
+        )
+        {
+            result.Success = false;
+            result.Error = "x and y query parameters are required integers";
+            return result;
+        }
+
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var location = Game1.getLocationFromName(locationName);
+                if (location == null)
+                {
+                    result.Success = true;
+                    return;
+                }
+
+                result.Present = location.getObjectAtTile(x, y) != null;
                 result.Success = true;
             });
         }

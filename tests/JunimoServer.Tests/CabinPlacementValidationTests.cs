@@ -107,16 +107,30 @@ public class CabinPlacementValidationTests : TestBase
         );
         Assert.True(pot?.Success == true, $"PlacePot failed: {pot?.Error}");
 
-        var rejected = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_CabinPlacement_Rejected,
-            // "Can't move cabin" (validator reply), not "Must be on Farm" (off-Farm
-            // bail); resends absorb server-location lag.
-            () => Chat.AssertResponseAsync("!cabin", "Can't move cabin"),
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct
+        // Gate the !cabin on the pot being server-visible: it replicates from the client's Game1
+        // over several ticks, and this site must stay single-shot (a resent-then-accepted move
+        // masks the pot forever — see SendOnceAndCaptureAsync), so an early send would wrongly pass.
+        var potVisible = await ServerApi.WaitForObjectAtServerTileAsync(
+            CabinPlacementHelper.ExpectedCabinTile.X + 1,
+            CabinPlacementHelper.ExpectedCabinTile.Y,
+            ct: ct
+        );
+        Assert.True(
+            potVisible,
+            "Garden Pot did not replicate to the server before the rejection check"
         );
 
-        Assert.True(rejected, "Expected a 'Can't move cabin' rejection reply");
+        // "Can't move cabin" (validator reply), not "Must be on Farm" (off-Farm bail).
+        var rejection = await Chat.SendOnceAndCaptureAsync(
+            "!cabin",
+            "Can't move cabin",
+            replyFamilyPrefix: "Can't move cabin",
+            timeout: TestTimings.CabinAssignmentTimeout
+        );
+        Assert.True(
+            rejection.Matched,
+            $"Expected a 'Can't move cabin' rejection reply; {rejection.Describe()}"
+        );
 
         // Reply alone only proves a message; confirm the move was actually blocked.
         var after = await GetOurCabinAsync(ownerId, ct);
@@ -141,13 +155,18 @@ public class CabinPlacementValidationTests : TestBase
         var ownerId = client.JoinResult.UniqueMultiplayerId;
         var baseline = await GetOurCabinAsync(ownerId, ct);
 
-        var rejected = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_CabinPlacement_Rejected,
-            () => Chat.AssertResponseAsync("!cabin", "Must be on Farm"),
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct
+        // Static gate (fresh farmhand spawns off-Farm), no race — resend is harmless here, used for
+        // the self-identifying reply and one consistent pattern across the rejection sites.
+        var rejection = await Chat.ResendUntilResponseAsync(
+            "!cabin",
+            "Must be on Farm",
+            replyFamilyPrefix: "Must be on Farm",
+            timeout: TestTimings.CabinAssignmentTimeout
         );
-        Assert.True(rejected, "Expected a 'Must be on Farm' rejection reply");
+        Assert.True(
+            rejection.Matched,
+            $"Expected a 'Must be on Farm' rejection reply; {rejection.Describe()}"
+        );
 
         var after = await GetOurCabinAsync(ownerId, ct);
         Assert.True(after.IsHidden, "Cabin should still be hidden after an off-Farm reject");
@@ -203,13 +222,19 @@ public class CabinPlacementValidationTests : TestBase
             "Farmer B's position did not replicate to the server before the rejection check"
         );
 
-        var rejected = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_CabinPlacement_Rejected,
-            () => Chat.AssertResponseAsync("!cabin", "another player is standing there"),
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct
+        // Resend recovers a send that hit a one-tick-lagged server view. Safe (unlike the pot)
+        // because the gate above pins B in farm.farmers and a stationary farmer doesn't leave it,
+        // so no accepted-then-masked window opens — the gate, not the resend, is what makes it safe.
+        var rejection = await Chat.ResendUntilResponseAsync(
+            "!cabin",
+            "another player is standing there",
+            replyFamilyPrefix: "Can't move cabin",
+            timeout: TestTimings.CabinAssignmentTimeout
         );
-        Assert.True(rejected, "Expected an 'another player is standing there' rejection");
+        Assert.True(
+            rejection.Matched,
+            $"Expected an 'another player is standing there' rejection; {rejection.Describe()}"
+        );
 
         var after = await GetOurCabinAsync(ownerIdA, ct);
         Assert.True(after.IsHidden, "A's cabin should still be hidden after rejection");

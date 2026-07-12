@@ -79,7 +79,7 @@ public enum WaitName
     Polling_GameTestClient_WaitForLocation,
     Polling_GameTestClient_WaitForAuthWarp,
 
-    // ServerApiClient.cs (7)
+    // ServerApiClient.cs (8)
     Polling_ServerApi_WaitForPlayerByName,
     Polling_ServerApi_WaitForPlayerById,
     Polling_ServerApi_WaitForPlayersRemovedByName,
@@ -87,6 +87,7 @@ public enum WaitName
     Polling_ServerApi_WaitForFarmhandByName,
     Polling_ServerApi_WaitForFarmhandDeletedByName,
     Polling_ServerApi_WaitForFarmerServerTile,
+    Polling_ServerApi_WaitForObjectAtServerTile,
 
     // SharedSteamAuth.cs (1)
     Polling_SharedSteamAuth_AccountsReady,
