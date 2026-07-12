@@ -988,6 +988,13 @@ public class ServerContainer : IAsyncDisposable
             // Continuation line belonging to the current error
             _currentErrorDetails.Add(line.TrimEnd());
         }
+        else if (line.StartsWith("Process terminated.", StringComparison.Ordinal))
+        {
+            // .NET runtime FailFast (e.g. missing libicu) prints unprefixed to
+            // stderr — start a fatal error block so startup fails as an app
+            // crash instead of masquerading as a daemon/transport timeout.
+            _currentErrorHeader = line;
+        }
     }
 
     private void FlushError()
