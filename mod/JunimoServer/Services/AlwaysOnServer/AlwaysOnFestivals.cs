@@ -440,20 +440,20 @@ public class AlwaysOnServerFestivals
             _announced = true;
         }
 
-        if (!_started && elapsed >= countdownSeconds)
+        if (elapsed >= countdownSeconds)
         {
-            var festivalHost = GetFestivalHost();
-            if (festivalHost != null)
+            // Kick off the main event first, then start its timeout / auto-end — the ordering
+            // here is what guarantees the event is triggered before the backstop begins.
+            if (!_started)
             {
-                Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                var festivalHost = GetFestivalHost();
+                if (festivalHost != null)
+                {
+                    Game1.CurrentEvent.answerDialogueQuestion(festivalHost, "yes");
+                }
+                _started = true;
             }
-            _started = true;
-        }
 
-        // Small slack so the main event has been kicked off on an earlier tick before we start
-        // its timeout / auto-end.
-        if (elapsed >= countdownSeconds + 0.1)
-        {
             if (spec.TimeoutStart == TimeoutStart.AfterMainEvent)
             {
                 RunFestivalTimeout(spec);
