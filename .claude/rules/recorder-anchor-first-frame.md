@@ -94,6 +94,16 @@ seg_1778763757.ts,7.000000,8.000000
 
 Sequence-number filenames are always unique and the anchor doesn't need filename-as-clock anyway (it reads segments.csv).
 
+## Invariant 8 — concat lists need a `duration {_segmentTime}` directive (single-frame-segment 2× compression)
+
+Every `file '<seg>'` line fed to the `-f concat` **demuxer** must be followed by a `duration {_segmentTime}` line. Both call sites: `BuildExtractCommand` pass-1 (per-test clip) and `ConvertToMp4Async` (full recording).
+
+**Failure mode without it (fps=1 only):** at `fps=1, segment_time=1` each segment holds exactly **one** frame. A one-frame MPEG-TS file has no inter-frame delta to measure, so ffprobe/the muxer reports its `duration` as **0.5s** (the `1/(2·fps)` fallback). The `-f concat` *demuxer* trusts each file's self-reported duration to place the next, so N segments pack at 0.5s spacing → the merged stream and the extracted clip come out **2× time-compressed** (`r_frame_rate=2/1`, file ≈ half the real wall-clock, `-t DUR` grabs ~2×DUR of content, playback runs 2× fast). The frames themselves are fine and distinct — `mpdecimate` finds **zero** duplicates; only the *timestamps* are halved. **CI never hit this** because `SERVER_FPS`/`CLIENT_FPS` ≥ 5 there, so each 1s segment holds ≥5 frames and the duration is measurable; only the local `fps=1` config (`.env.test`) triggers it.
+
+**Symptom in the test-UI** (`SyncedVideos.vue` / `useFilmstripCache.ts`): the timeline axis is laid out by `wallClockDuration` (~117s) but the file is ~half that; the filmstrip spreads seek-times across `wallClock` then `Math.min(..., duration-0.01)` **clamps** every thumbnail past the file end to the last frame — so the back half of each track shows the final frame (e.g. the disconnect/title screen) repeated. The scrubber saturates there too. The bug looks like "the test idles for a minute after it's done" but it's the clip being stretched over a too-long axis.
+
+**Fix detail:** `concat:` *protocol* + `-copyts` also yields `1/1` and preserves absolute epoch PTS, but it changes the concat mechanism and touches more of these invariants; the `duration` directive is the surgical one. It rebases the merged PTS to stream-relative, which is **safe** — the `actualFirstFramePts` math (Invariant 6) is a relative delta plus `cover0Epoch` from segments.csv, not the merged stream's absolute PTS. No-op at `fps ≥ 2`.
+
 ## Slack in `SelectCoveringSegments`
 
 `5 * _segmentTime` slack on each side of the cover window. Phase-lock + segments.csv anchor + `-tune zerolatency` keep anchor accuracy within one frame. The remaining slack absorbs x11grab pacing jitter and the row-0 `cover0Epoch` warmup-overshoot fallback. Don't widen to mask future regressions — drift is an upstream symptom, fix the cause. Shrinking to `2 * _segmentTime` is plausible but unverified.
