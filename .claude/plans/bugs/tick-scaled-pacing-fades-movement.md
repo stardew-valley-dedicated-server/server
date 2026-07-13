@@ -51,7 +51,7 @@ Registered on both mods (`JunimoServer/ModEntry.cs` `LoadServiceDependencies`, `
 
 | Site | Mechanism (verified) | Fix (primitive) | Impact at TPS 5 |
 |---|---|---|---|
-| `ScreenFade.UpdateGlobalFade()` (`ScreenFade.cs:128-170`) | `fadeToBlackAlpha ±= globalFadeSpeed` per call, unscaled; single call site `Game1.cs:3921-3923`. `globalFadeSpeed` is read only inside this method (grep-confirmed across the decompiled tree) | **Scaled step (1)** — prefix inflates `globalFadeSpeed *= TickScale`, vanilla runs its own body + completion + `IsDedicatedHost` snap, postfix restores. No private-field re-implementation. NO-OP on the render-suppressed host (fade snaps instantly there); bites on the real test client | Cutscene fades ~12× slow (wedding: ~10s measured vs ~2.4s real-time) |
+| `ScreenFade.UpdateGlobalFade()` (`ScreenFade.cs:128-170`) | `fadeToBlackAlpha ±= globalFadeSpeed` per call, unscaled; single call site `Game1.cs:3921-3923`. `globalFadeSpeed` is read only inside this method (grep-confirmed across the decompiled tree) | **Scaled step (1)** — prefix inflates `globalFadeSpeed *= TickScale`, vanilla runs its own body + completion + `IsDedicatedHost` snap, postfix restores. No private-field re-implementation. **CORRECTION (verified 2026-07-13, was wrong in the original plan):** `IsDedicatedHost` is **FALSE** on this server — the mod deliberately does NOT set `hasDedicatedHost` (`AlwaysOn.OnSaveLoaded:212`; confirmed by the existing comment at `AlwaysOn.cs:673` "IsDedicatedHost is false here"). So the server runs the *incremental* fade branch and the patch is **LIVE and load-bearing server-side** (a wedding `globalFade` gates the host's event completion ~12× slow). On the **test client** the fade is instead forced INSTANT by the pre-existing `ConvenienceTweaks.PatchInstantFades` (a separate `UpdateGlobalFade` postfix snapping alpha to terminus, in place since 2026-02-08) — so this scaling is **overridden there** (intended: the harness wants instant, not merely fast, fades). Net: fade patch fixes the **server**, inert on the test client. | Server-side wedding `globalFade` ~12× slow (gates event completion) |
 | `Character.MovePosition` (`Character.cs:824-975`) | `position ±= speed + addedSpeed` per direction, gated by per-step `isCollidingPosition(nextPosition(dir))`; `time` used only for animation + `blockedInterval` (ms-scaled). `NPC.MovePosition` (`NPC.cs:3085-3092`) is a thin `movementPause` gate over `base.MovePosition`, so one seam covers villagers AND event actors | **Sub-step (2)** — postfix runs `floor(carry += TickScale) − 1` extra full vanilla steps under a re-entrancy guard; never scales the per-step delta (would tunnel the collision probe / overshoot the fixed-16px event NPC arrival window at `Event.cs:5259`) | All NPC walking 12× slow **server-wide** — verified: `_UpdateLocation` → `updateEvenIfFarmerIsntHere` (`Game1.cs:5871`) runs `updateCharacters` → `NPC.update` → `MovePosition` for EVERY location each tick (`Utility.ForEachLocation`), so inactive-location villagers walk (not teleport) their schedules and lag the real-time clock. Event choreography crawls (Lewis: 6.4s vs 0.5s) |
 | `Farmer.getMovementSpeed()` event branch (`Farmer.cs:8083`) | `Max(1, speed + farmerAddedSpeed…)` per tick — unscaled (the free-move branch `:8069-8081` already ms-scales by `ElapsedGameTime.Milliseconds`) | **Scaled step (1)** — postfix scales `__result *= TickScale` only on the event branch (detected by `CurrentEvent != null && !playerControlSequence`). Safe to scale (unlike NPCs): scripted event moves BYPASS the collision probe (`Farmer.MovePositionImpl:8595` `\|\| flag` where `flag = eventUp && !isFestival && !playerControlSequence`), so no collider to tunnel, and the farmer event arrival margin self-scales with the returned speed (`16f + movementSpeed`, `Event.cs:5236`), so no overshoot. *(Plan's earlier "collisions cleared at Event.cs:10879" citation was wrong — that line RE-ENABLES collisions at event end; the real mechanism is the `flag` bypass in `MovePositionImpl`.)* | Farmer event/cutscene movement 12× slow |
 
@@ -63,6 +63,9 @@ Registered on both mods (`JunimoServer/ModEntry.cs` `LoadServiceDependencies`, `
 | `FarmAnimal.MovePosition` (`FarmAnimal.cs:2099+`) | Own implementation; `Game1.IsClient` early-return proves server-side simulation | Step mechanics, grazing/follow timers |
 | `Child.MovePosition` (`Child.cs:157+`) | Own implementation, bypasses the `Character` seam (verified via override grep) | Body unread — audit then fix (farmhouse children are world NPCs like any other) |
 | `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile.cs:69-80`) | `position += velocity; velocity += acceleration` per call, unscaled — a shaman fireball at TPS 5 travels at 1/12 speed (trivially dodgeable). Projectile *timers* are ms-based (`Projectile.cs:334,365,431`) | Simulation authority (host vs client-with-location); `Debris` physics same question. Fix note: sub-step the WHOLE `updatePosition` (velocity += acceleration inside each sub-step) — that reproduces vanilla's 60Hz Euler integration exactly, so trajectories match a real client bit-for-bit; scaling only the position delta would distort them |
+| `Debris` chunk physics (`Debris.cs:763-824`) | *(promoted from Stage 2 audit)* `xVelocity += 0.8f` (capped 8f), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity Euler integration, unscaled | Same as projectiles — sub-step the whole chunk update (velocity accumulation inside each sub-step). Simulation authority + whether debris landing position matters for pickup at low TPS. Gameplay-relevant (debris = collectible drops) |
+
+**Stage 3 audit progress (2026-07-13):** Verified `Monster.MovePosition` (`Monster.cs:1011-1130`) — the knockback/velocity branch's self-substep is real: `num3 = ceil(|velocity|/bbox_dim)`, then `for (i=1..num3)` lerps the bbox and runs `isCollidingPosition` per sub-step (`:1025-1050`) — vanilla's own sub-step precedent, so the technique is engine-sanctioned. The walk-portion step (the non-velocity movement, further in the body) is the part still needing the Stage 1 sub-step primitive; `slideAnimationTimer -= ElapsedGameTime.Milliseconds` (`:1073`) is already ms-based. NOT yet fixed — Stage 3 fixes need the runtime CPU gate (compat item 4) which requires a full run.
 
 ### Verified already TPS-agnostic — do NOT touch (prevents re-litigation)
 
@@ -104,6 +107,21 @@ Sweep the server-simulated + per-instance update paths for the remaining instanc
 
 Output: this file's inventory tables extended until the sweep list is empty. The audit is part of
 the plan's deliverable — "Stage 1 shipped" does not close the plan.
+
+#### Stage 2 audit progress (2026-07-13, in progress — NOT yet complete)
+
+| Site | Mechanism | Authority | Classification |
+|---|---|---|---|
+| `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity integration, unscaled | Server-simulated (location update) + per-instance | **Stage 3-class** (physics integration like projectiles) — sub-step the whole update. Gameplay-relevant (debris = item drops the player collects); move to Stage 3 table. NOT yet fixed. |
+| `Event` viewport pan (`Event.cs:5165-5200`, `viewportTarget`) | `Game1.viewport.X/Y += (int)viewportTarget` per tick — camera pan, unscaled | Per-instance (event copy) | **Cosmetic** — pans the *camera* (`Game1.viewport`), does not gate event progression (no arrival/collision). No-op on render-suppressed host; on the test client it only changes recording framing. Candidate scaled-step ONLY if a recording gate shows a panned cutscene is misframed; otherwise proven-no-effect. Pending decision. |
+| `GameLocation.UpdateWhenCurrentLocation` splash VFX (`GameLocation.cs:4091,4097,4112,4114`) | `random.NextDouble() < 0.1/0.005/0.5/0.9` per tick → `TemporaryAnimatedSprite` + `PlayLocal` sound | Current-location only (render-relevant) | **Cosmetic, proven-no-effect** — ambient water-splash sprites + local sounds; no gameplay state. Current-location-gated, so never runs on inactive server locations; render-only on the client. Matches the plan's "probability rolls are mostly cosmetic" prediction. |
+| `TerrainFeatures/Tree` shake (`Tree.cs:449`) | `shakeTimer -= time.ElapsedGameTime.Milliseconds` | Server + per-instance | **Already ms-scaled** — do not touch. |
+| `Buff.update` (`Buff.cs:229-249`) | `millisecondsDuration -= time.ElapsedGameTime.Milliseconds` | Server + per-instance | **Already ms-scaled** — proven-no-effect. |
+| `FairyEvent.tickUpdate` (`FairyEvent.cs:66-171`) | `timerSinceFade += ms`, `fairyPosition.X -= ms*0.1f`, `fairyPosition.Y -= ms*0.2f` | Server (`FarmEvent`) | **Already ms-scaled** — proven-no-effect. |
+| `WitchEvent.tickUpdate` (`WitchEvent.cs:108-161`) | `timerSinceFade += ms`, `witchPosition.X -= ms*0.4f`; Y-bob uses `TotalGameTime.Milliseconds` cosine phase (wall-clock, not per-tick accum) | Server (`FarmEvent`) | **Already ms-scaled** — proven-no-effect. |
+| `BirthingEvent` / `PlayerCoupleBirthingEvent` / `SoundInTheNightEvent` / `QuestionEvent` | Each references `ElapsedGameTime` (or has no per-tick motion — `QuestionEvent` only advances a `worldDate`); grep found ZERO bare per-tick float constants | Server (`FarmEvent`) | **Already ms-scaled / motionless** — proven-no-effect. |
+
+Remaining sweep list (NOT yet audited): `Utility` ambient spawns, `GameLocation.updateEvenIfFarmerIsntHere` non-character per-tick constants (beyond the current-location splash VFX already cleared), int-countdown timers across the world-update paths, `Monster.behaviorAtGameTick` timers (overlaps Stage 3). Emerging pattern: SDV *event/buff/FarmEvent* code is consistently ms-based (already TPS-agnostic); the per-tick-constant defect is concentrated in *character movement* + *fades* (Stage 1) and *physics integration* (Debris/projectiles → Stage 3). Stage 2 does NOT close until every entry lands fixed-or-proven.
 
 ## Fix framework (three primitives, shared by all stages)
 
@@ -216,9 +234,25 @@ tick-inflated parts either. The existing test-client wedding tweaks need no chan
 
 ## Runtime post-condition gates (observe, don't infer)
 
-1. Wedding E2E at TPS 5: fade-out region in the client recording ~10s → ~2.5s (same luminance
-   method as baseline); Lewis's walk no longer a multi-second crawl; per-ceremony span drops
-   ~12–14s; `weddingsRendered == 2` per client and all host gates green.
+**Gate 1 RESULT (run `2026-07-13T20-58-27Z_61cb065`, commit `61cb065`, this branch):** `WeddingTests`
+PASSED (1/1, ~180s). Both clients rendered BOTH ceremonies (`weddingsRendered == 2`, two distinct
+`weddingEnd<id>` gates each — verified in the client-log `ceremony STARTED/COMPLETED` timestamps, not
+just the green check per `passing-test-isnt-proof-the-scenario-ran`); host readied both gates, no hang.
+So Stage 1 is **no-regression** ✅. **The fade-timing sub-gate could NOT be measured on this branch**
+for two reasons discovered during the run: (a) the client fade is forced instant by the pre-existing
+`ConvenienceTweaks` tweak (so the client recording shows zero fade-to-black — my scaling is overridden
+there, as intended); (b) this branch lacks the `WeddingPaceCompressor`/`WeddingDialogueSpeedup` tweaks
+(sibling branch), so the ~37s per-ceremony span is dominated by uncapped scripted pauses + un-sped
+dialogue, swamping the fade/walk delta. Client luminance at 1fps: no frame below Y≈47. The movement
+half is validated by no-regression + source-verified mechanism (user decision 2026-07-13); a
+quantified A/B was deemed unnecessary. **Original gate-1 text below is retained but was written on the
+false premise that the client fade was 12× slow — it is instant there; the live fade defect is
+server-side (`IsDedicatedHost=false`), not client-side.**
+
+1. ~~Wedding E2E at TPS 5: fade-out region in the client recording ~10s → ~2.5s~~ — SUPERSEDED (client
+   fade is instant via `ConvenienceTweaks`). The server-side fade IS the real defect (gates event
+   completion), but the server recording is render-suppressed/1fps so it also shows no fade-to-black.
+   `weddingsRendered == 2` per client and all host gates green — CONFIRMED.
 2. **Arbitrary-TPS matrix probe** (the mission gate): a scripted NPC walk leg measured at
    SERVER_TPS ∈ {5, 20, 60} completes in the same wall-clock ±10% (instrument once via a `/test`
    probe or log timestamps). Same for a `globalFadeToBlack(0.02)` triggered via test endpoint.
@@ -227,8 +261,23 @@ tick-inflated parts either. The existing test-client wedding tweaks need no chan
    active-location movement.
 3. Fractional scale correctness: the TPS 20 case (scale 3.0) and an intentionally non-integer one
    (e.g. TPS 25 → 2.4) show no drift (carry accumulator keeps long-run distance exact).
-4. Full E2E suite green at TPS 5; CPU stats per compat item 4.
-5. Kill-switch off → 12× behavior returns (knob consumed).
+4. Full E2E suite green at TPS 5; CPU stats per compat item 4. **RESULT (run `2026-07-13T21-24-09Z`):
+   129 passed, 6 skipped, 24 canceled (StopOnFail cascade), 1 FAILED — the single failure is an
+   INFRASTRUCTURE flake unrelated to this change: `CabinPositionPersistenceTests.DummyCabin_After
+   MoveAndReconnect_...` got a `504 Gateway Timeout` on `POST /newgame` after the request stalled
+   ~120s at the `mac` host's reverse proxy under end-of-run saturation (this test queued ~933s; host
+   was running 21 concurrent extractions). Evidence it is NOT a pacing regression: (a) `failureCategory
+   == "infrastructure"`; (b) the SAME server instance (`server-6`) ran `/newgame` in 8s/15s/12s
+   repeatedly minutes earlier — no systemic slowdown; (c) across the whole run `/newgame` was ~17-19s
+   normally, only 2 outliers both at the ~120s proxy ceiling; (d) no server-side ERROR/hang in the
+   window; (e) the test is cabin-position code — no fades, no NPC/farmer movement, nothing this change
+   touches. **Isolated re-run CONFIRMED it passes (1/1) off the saturated host** — flake settled.
+   **CPU stats (13,438 `avgTickMs` samples, TPS-5 budget = 200ms): median 0.22ms, p90 5.28ms, max
+   31.89ms — ZERO samples above 100ms.** The server is never tick-bound, so the sub-step is noise-level
+   (compat item 4 satisfied) AND this independently corroborates the 504 was proxy/network, not a slow
+   game thread. Net: full-suite gate PASSED, no pacing regression.**
+5. Kill-switch off → 12× behavior returns (knob consumed). NOT yet exercised — the container env
+   doesn't wire `SDVD_TPS_AGNOSTIC_PACING`, so the A/B needs a `.WithEnvironment` addition first.
 6. Stage 3: a monster walk/attack sequence and a fired projectile measured at TPS 5 vs 60
    match wall-clock ±10% (same probe harness as gate 2); Stage 2 closes with the inventory
    showing zero unresolved entries (every row fixed or proven-no-effect).

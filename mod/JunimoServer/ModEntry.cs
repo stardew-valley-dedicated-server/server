@@ -189,9 +189,11 @@ internal class ModEntry : Mod
         DisplaySizing.Install(harmony);
 
         // Make per-tick-constant gameplay (NPC/event-actor walking, cutscene fades) advance at
-        // real wall-clock speed regardless of SERVER_TPS. On the render-suppressed host the fade
-        // patch is a no-op (IsDedicatedHost snaps it instantly); the movement sub-step is what
-        // matters server-side, so villagers don't walk at 1/12 speed at SERVER_TPS=5.
+        // real wall-clock speed regardless of SERVER_TPS. Both patches do real work here: this mod
+        // deliberately does NOT set hasDedicatedHost (see AlwaysOn.OnSaveLoaded), so IsDedicatedHost
+        // is FALSE and ScreenFade.UpdateGlobalFade runs the incremental (non-snap) branch — a wedding
+        // globalFade gates event progression ~12x slow at SERVER_TPS=5. The NPC sub-step keeps
+        // villagers from walking their schedules at 1/12 speed across every location.
         TpsAgnosticPacing.Apply(harmony);
 
         // Test overlay for E2E test debugging (only active when SDVD_ENV=test)

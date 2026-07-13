@@ -229,6 +229,14 @@ public static class TpsAgnosticPacing
     /// same wall-clock time at any TPS. <c>globalFadeSpeed</c> is read only inside this method (verified
     /// against the decompiled tree), so inflating it for the call's duration is invisible elsewhere.
     /// Skips scaling when the kill-switch is off (falls through to vanilla pacing).
+    ///
+    /// <para>On the JunimoServer host <c>IsDedicatedHost</c> is FALSE (the mod deliberately leaves
+    /// <c>hasDedicatedHost</c> unset — see <c>AlwaysOn.OnSaveLoaded</c>), so the instant-snap ternary
+    /// takes its ELSE branch and the fade runs the incremental step this patch scales — i.e. the patch
+    /// is live and load-bearing server-side. On the test client the fade is instead forced instant by
+    /// <c>ConvenienceTweaks.PatchInstantFades</c> (a separate postfix that snaps alpha to terminus), so
+    /// this scaling is overridden there — intended: the test harness wants instant fades, not merely
+    /// fast ones.</para>
     /// </summary>
     private static void UpdateGlobalFade_Prefix(ScreenFade __instance, out float __state)
     {
