@@ -101,6 +101,12 @@ public class ModEntry : Mod
         TestOverlay.Apply(_harmony);
         ButtonTutorialSuppressor.Apply(_harmony);
 
+        // Make per-tick-constant gameplay (cutscene fades, NPC/event-actor walking) advance at real
+        // wall-clock speed regardless of CLIENT_TPS. Unlike the render-suppressed host, this client is
+        // a real (non-dedicated) instance, so the fade patch actually bites here — a wedding globalFade
+        // that crawled ~12× slow at CLIENT_TPS=5 now plays in real time.
+        TpsAgnosticPacing.Apply(_harmony);
+
         // Diagnostics
         _healthWatchdog = new HealthWatchdog(helper, Monitor);
         _healthWatchdog.Start();

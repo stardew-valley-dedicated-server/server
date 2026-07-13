@@ -188,6 +188,12 @@ internal class ModEntry : Mod
         // happens on GameLaunched via DisplaySizing.ApplyFromEnv).
         DisplaySizing.Install(harmony);
 
+        // Make per-tick-constant gameplay (NPC/event-actor walking, cutscene fades) advance at
+        // real wall-clock speed regardless of SERVER_TPS. On the render-suppressed host the fade
+        // patch is a no-op (IsDedicatedHost snaps it instantly); the movement sub-step is what
+        // matters server-side, so villagers don't walk at 1/12 speed at SERVER_TPS=5.
+        TpsAgnosticPacing.Apply(harmony);
+
         // Test overlay for E2E test debugging (only active when SDVD_ENV=test)
         if (Env.IsTest)
         {
