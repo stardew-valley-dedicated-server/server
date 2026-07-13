@@ -73,6 +73,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
+          build-args: |
+            SDVD_GIT_SHA=${{ github.sha }}
           secrets: |
             steam_username=${{ secrets.STEAM_USERNAME }}
             steam_password=${{ secrets.STEAM_PASSWORD }}

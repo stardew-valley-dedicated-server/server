@@ -92,6 +92,17 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     -p:PublishTrimmed=true \
     -o /output/netdebug
 
+# Build diagnostics tool
+COPY ./tools/diagnostics /src/diagnostics
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish /src/diagnostics \
+    --configuration Release \
+    --self-contained true \
+    --runtime linux-x64 \
+    -p:PublishSingleFile=true \
+    -p:PublishTrimmed=true \
+    -o /output/diagnostics
+
 # Build server mod
 COPY ./mod /src/mod
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -129,6 +140,7 @@ FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.11.3 AS server
 
 ARG SMAPI_VERSION
 ARG TMUX_VERSION=3.7b
+ARG SDVD_GIT_SHA=unknown
 
 ENV APP_NAME="Stardew Dedicated Server" \
     USER_ID=0 \
@@ -149,7 +161,9 @@ ENV APP_NAME="Stardew Dedicated Server" \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
     SMAPI_VERSION=${SMAPI_VERSION} \
-    SMAPI_MODS_PATH=/data/Mods
+    SMAPI_MODS_PATH=/data/Mods \
+    # Git commit the image was built from (diagnostics tool reads this)
+    SDVD_GIT_SHA=${SDVD_GIT_SHA}
 
 # Install all apt packages in one layer to reduce image size and layers
 RUN apt-get update && apt-get install -y \
@@ -216,6 +230,7 @@ RUN \
 # Copy pre-built tools from build stages
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher
 COPY --from=mod-builder /output/netdebug /opt/netdebug
+COPY --from=mod-builder /output/diagnostics /opt/diagnostics
 
 # Set executable permissions for application scripts and Supervisor services.
 #
