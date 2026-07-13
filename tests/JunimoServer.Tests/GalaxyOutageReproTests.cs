@@ -98,8 +98,13 @@ public class GalaxyOutageReproTests : TestBase
         // can't find it once the container is detached), then cut the network.
         var managed = Lease.Managed;
         var networkId = await NetworkOutageHelper.GetAttachedNetworkIdAsync(Lease, ct);
+        Assert.False(
+            string.IsNullOrEmpty(networkId),
+            "Expected the server container to be attached to a network before the cut — a null id "
+                + "means the container was already gone, so the outage setup is invalid."
+        );
         managed.SuspendHealthChecks();
-        Log($"Health checks suspended; cutting network {networkId[..12]}…");
+        Log($"Health checks suspended; cutting network {networkId![..12]}…");
         // Anchor every post-cut event wait to this instant so the server's own initial-boot
         // emissions (a first steam_session_connected, the pre-outage auth_steam_lobby_created)
         // can never satisfy an outage-recovery wait.
