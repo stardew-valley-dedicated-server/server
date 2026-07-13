@@ -71,7 +71,7 @@ public class GalaxyOutageReproTests : TestBase
     [Fact]
     public async Task TotalConnectivityLoss_RecordsGalaxyReauthSignal()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // ── Configurable outage dwell. This is timing margin held AFTER steam_session_lost is
         // already gate-confirmed below — it lets the Galaxy lobby genuinely drop before restore,
@@ -259,7 +259,7 @@ public class GalaxyOutageReproTests : TestBase
     [Fact]
     public async Task GalaxyReloginGate_WhileHealthy_SkipsAndKeepsClientConnected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var serverSlug = $"server-{Lease!.Managed.Server.ServerIndex}";
 
         // Fully join a client (with auth), so there's a live Galaxy lobby the gate must protect.

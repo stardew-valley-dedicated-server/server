@@ -59,7 +59,7 @@ public class FarmMapTypeTests : TestBase
 
         // Verify cabins were created via API
         // CabinStack maintains at least 1 available cabin automatically
-        var cabinsResponse = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabinsResponse = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabinsResponse);
         Assert.True(
@@ -69,16 +69,13 @@ public class FarmMapTypeTests : TestBase
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
 
         // Verify actual loaded farm type via GetFarmTypeKey()
-        var statusResponse = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusResponse = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusResponse);
         Assert.Equal(expectedFarmTypeKey, statusResponse.FarmTypeKey);
         Log($"Farm type key verified: {statusResponse.FarmTypeKey}");
 
         // Join the server with a test farmer
-        await Farmers.ConnectNewAsync(
-            farmerName: $"Test_{expectedFarmTypeKey}",
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(farmerName: $"Test_{expectedFarmTypeKey}", ct: TestCt);
 
         Log($"Successfully joined {expectedFarmTypeKey} farm!");
     }

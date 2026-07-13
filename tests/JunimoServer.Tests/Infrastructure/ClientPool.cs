@@ -229,13 +229,48 @@ internal sealed class ClientPool : IAsyncDisposable
             }
         }
 
+        // Self-heal: a Steam-required lease with NO Steam-bearing client anywhere in the
+        // pool (bag, leased, or in flight — the last one died via MarkClientDead) can never
+        // be satisfied by a returning client, so the cap and patience waits below would
+        // park it until the run-stall watchdog. Go straight to cold-start create; the
+        // account freed by the death is re-allocated to the fresh container. May exceed
+        // _maxContainers by one transiently when live non-Steam clients hold the cap —
+        // bounded by the allocator slice (a concurrent second Steam lease routes to the
+        // steam-wait branch via _inFlightSteamCreations) and preferable to a wedged run.
+        // The _steamAuthUrl gate mirrors CreateClientAsync's allocation predicate exactly:
+        // without it, an allocator-but-no-auth-url host would create a NON-Steam client here
+        // (no allocation), leave PoolHasAnySteamBearingClient false, and self-heal on every
+        // subsequent lease forever. Such a lease falls through to the cold-start path instead.
+        if (
+            requireSteam
+            && _accountAllocator != null
+            && _steamAuthUrl != null
+            && !PoolHasAnySteamBearingClient()
+        )
+        {
+            TestLog.Client("No Steam-bearing client left in pool; creating a replacement");
+            InfrastructureEventLog.Emit(
+                "steam_client_selfheal",
+                new { availableInBag = _available.Count }
+            );
+            client = await CreateClientGuardedAsync(
+                requireSteam: true,
+                reason: "steam_selfheal",
+                StartPriority.Normal,
+                ct
+            );
+            return new ClientLease(this, client, serverKey);
+        }
+
         // Check container cap: if at limit, wait for a return or discard.
         // Include in-flight creations (from pre-warm or concurrent on-demand)
-        // that haven't registered in _allClients yet.
+        // that haven't registered in _allClients yet. Marked-dead carcasses are
+        // excluded via CountLiveClientsLocked — they hold no leasable client, only
+        // a recording to extract at dispose, so they must not consume a cap slot.
         int currentCount;
         lock (_allClientsLock)
         {
-            currentCount = _allClients.Count + _inFlightCreations;
+            currentCount = CountLiveClientsLocked() + _inFlightCreations;
         }
 
         while (currentCount >= _maxContainers)
@@ -269,7 +304,7 @@ internal sealed class ClientPool : IAsyncDisposable
             // Discard freed a slot; break to create a new one
             lock (_allClientsLock)
             {
-                currentCount = _allClients.Count + _inFlightCreations;
+                currentCount = CountLiveClientsLocked() + _inFlightCreations;
             }
         }
 
@@ -285,7 +320,7 @@ internal sealed class ClientPool : IAsyncDisposable
             int outstandingClients;
             lock (_allClientsLock)
             {
-                outstandingClients = _allClients.Count - _available.Count;
+                outstandingClients = CountLiveClientsLocked() - _available.Count;
             }
             if (outstandingClients > 0)
             {
@@ -329,11 +364,14 @@ internal sealed class ClientPool : IAsyncDisposable
             }
         }
 
-        // Cold-start path: no Steam-bearing client has ever been created on this host
-        // (Steam case), or no client of any kind exists yet (non-Steam case). Create
-        // a new one under the global Docker creation limiter. Steam allocation happens
-        // inside CreateClientAsync via _accountAllocator and binds the account to this
-        // new container for its lifetime — the lease-availability gate above
+        // Cold-start path: no client of any kind exists yet (non-Steam case), or
+        // requireSteam with a null allocator (Steam demanded, no accounts configured —
+        // allocates nothing). A requireSteam lease with an allocator no longer reaches
+        // here: it is served either by the steam-wait branch (a Steam-bearing client
+        // exists) or by the self-heal route above (none does). Create a new container
+        // under the global Docker creation limiter. Steam allocation, when it happens,
+        // is inside CreateClientAsync via _accountAllocator and binds the account to
+        // this new container for its lifetime — the lease-availability gate above
         // (_steamAvailable) is the source of truth thereafter.
         client = await CreateClientGuardedAsync(
             requireSteam,
@@ -441,13 +479,34 @@ internal sealed class ClientPool : IAsyncDisposable
     }
 
     /// <summary>
+    /// Counts clients that still hold a leasable container — everything in
+    /// <c>_allClients</c> except carcasses retired by <see cref="MarkClientDead"/>
+    /// (which linger only for recording extraction at dispose). This is the count
+    /// that gates the container cap; a dead carcass must not consume a cap slot.
+    /// Requires <see cref="_allClientsLock"/> held.
+    /// </summary>
+    private int CountLiveClientsLocked()
+    {
+        int live = 0;
+        foreach (var c in _allClients)
+        {
+            if (!c.IsMarkedDead)
+            {
+                live++;
+            }
+        }
+        return live;
+    }
+
+    /// <summary>
     /// True iff at least one Steam-bearing client exists in this pool — either
     /// already in <c>_allClients</c> (returned to the bag, currently leased, or
     /// pending teardown) or in flight in <see cref="CreateClientAsync"/> after
     /// the allocator handed out an index. When false, a Steam lease must take
-    /// the cold-start cap-and-create path; when true, it must wait on
-    /// <c>_steamAvailable</c> so two concurrent Steam leases never both race
-    /// into cold-start and block on the now-empty allocator.
+    /// the self-heal route in <see cref="LeaseClientAsync"/> (straight to a
+    /// cold-start create); when true, it must wait on <c>_steamAvailable</c> so
+    /// two concurrent Steam leases never both race into cold-start and block on
+    /// the now-empty allocator.
     /// </summary>
     private bool PoolHasAnySteamBearingClient()
     {
@@ -493,8 +552,8 @@ internal sealed class ClientPool : IAsyncDisposable
         // Tracks whether the in-flight counters have been decremented yet, so the
         // catch/outer-finally don't double-decrement. Decremented on the success path
         // right after _allClients.Add (so the client is never double-counted in the
-        // capacity check `_allClients.Count + _inFlightCreations` while recording starts),
-        // and on the failure path in the outer finally.
+        // capacity check `CountLiveClientsLocked() + _inFlightCreations` while recording
+        // starts), and on the failure path in the outer finally.
         var inFlightDecremented = false;
         try
         {
@@ -623,7 +682,34 @@ internal sealed class ClientPool : IAsyncDisposable
         var allocateSteam = requireSteam && _steamAuthUrl != null && _accountAllocator != null;
         if (allocateSteam)
         {
-            steamAccountIndex = await _accountAllocator!.AllocateClientAsync(ct);
+            // Bound the allocation: the semaphore wait is normally ~0s (accounts release
+            // eagerly), so exceeding SteamAccountAllocationBound means no account will be
+            // released (an account leak). Fail fast as infrastructure rather than block to
+            // the run-stall watchdog. The readiness-probe phase swallows cancellation and
+            // dequeues anyway, so this bound only converts the semaphore-starvation case.
+            using var allocCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            allocCts.CancelAfter(TestTimings.SteamAccountAllocationBound);
+            try
+            {
+                steamAccountIndex = await _accountAllocator!.AllocateClientAsync(allocCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                InfrastructureEventLog.Emit(
+                    "steam_account_allocation_timeout",
+                    new
+                    {
+                        clientIndex,
+                        boundSec = (int)TestTimings.SteamAccountAllocationBound.TotalSeconds,
+                    }
+                );
+                throw new InfrastructureSkipException(
+                    $"No Steam client account became available within "
+                        + $"{TestTimings.SteamAccountAllocationBound.TotalSeconds:0}s — all accounts are "
+                        + "held and none released (likely an account leak after a client death). "
+                        + "Skipped — infrastructure, not a test defect."
+                );
+            }
             options.SteamAuthUrl = _steamAuthUrl;
             options.SteamAccountIndex = steamAccountIndex;
             TestLog.Client($"client-{clientIndex} assigned Steam account {steamAccountIndex}");
@@ -823,8 +909,12 @@ internal sealed class ClientPool : IAsyncDisposable
     /// <summary>
     /// Marks a client as dead (won't be reused) but keeps it in <c>_allClients</c>
     /// so <see cref="DisposeAsync"/> can still retrieve the full recording from it.
-    /// Releases the Steam account index back to <see cref="_accountAllocator"/>;
-    /// <see cref="_steamAvailable"/> is not signaled (see <see cref="DiscardClient"/>).
+    /// Sets <see cref="GameClientContainer.IsMarkedDead"/> so the carcass no longer
+    /// counts toward the live container cap. Releases the Steam account index back to
+    /// <see cref="_accountAllocator"/>; <see cref="_steamAvailable"/> is not signaled
+    /// (see <see cref="DiscardClient"/>). When this retires the last Steam-bearing
+    /// client, the next <c>requireSteam</c> lease self-heals via the <c>steam_selfheal</c>
+    /// route in <see cref="LeaseClientAsync"/>.
     /// </summary>
     internal void MarkClientDead(GameClientContainer client)
     {
@@ -842,7 +932,13 @@ internal sealed class ClientPool : IAsyncDisposable
                 new { clientIndex = client.ClientIndex, error = ex.Message }
             );
         }
-        // Keep in _allClients; DisposeAsync will handle cleanup + recording extraction
+        // Retire from the live-count while keeping the carcass in _allClients for
+        // recording extraction at dispose. The lock write-side fences the counting
+        // reads that run under the same lock in LeaseClientAsync.
+        lock (_allClientsLock)
+        {
+            client.IsMarkedDead = true;
+        }
         TestLog.Client($"client-{client.ClientIndex} marked dead (kept for recording extraction)");
         InfrastructureEventLog.Emit("client_marked_dead", new { clientIndex = client.ClientIndex });
         _returnSignal.Release();

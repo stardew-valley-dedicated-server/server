@@ -28,10 +28,7 @@ public class FarmerCreationTests : TestBase
     public async Task CreateFarmer_ExitAndReconnect_FarmerPersists()
     {
         // Join with a new farmer (forces new slot, handles auth automatically)
-        var client = await Farmers.ConnectNewAsync(
-            preferExistingFarmer: false,
-            ct: TestContext.Current.CancellationToken
-        );
+        var client = await Farmers.ConnectNewAsync(preferExistingFarmer: false, ct: TestCt);
         await Exceptions.AssertNoExceptionsAsync("initial connect");
 
         Log($"Created farmer '{client.FarmerName}'");
@@ -51,7 +48,7 @@ public class FarmerCreationTests : TestBase
         // Don't wait for PlayerCount==0; other tests may have clients connected.
         await ServerApi.WaitForPlayerRemovedByIdAsync(
             client.JoinResult.UniqueMultiplayerId,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         // Wait for the server's farmhandData to reflect the customized farmer.
@@ -60,9 +57,9 @@ public class FarmerCreationTests : TestBase
         var farmerPersisted = await ServerApi.WaitForFarmhandByNameAsync(
             client.FarmerName,
             requireCustomized: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
-        var serverFarmhands = await ServerApi.GetFarmhands(TestContext.Current.CancellationToken);
+        var serverFarmhands = await ServerApi.GetFarmhands(TestCt);
 
         // Log server-side state for diagnostics
         if (serverFarmhands?.Farmhands != null)
@@ -93,7 +90,7 @@ public class FarmerCreationTests : TestBase
         await Exceptions.AssertNoExceptionsAsync("after disconnecting");
 
         // Reconnect with retry
-        var reconnectResult = await Connect.WithRetryAsync(TestContext.Current.CancellationToken);
+        var reconnectResult = await Connect.WithRetryAsync(TestCt);
         Connect.AssertConnectionSuccess(reconnectResult);
 
         // Verify the farmer we created exists
@@ -139,7 +136,7 @@ public class FarmerCreationTests : TestBase
         await Connect.EnsureDisconnectedAsync();
 
         // Connect with retry
-        var connectResult = await Connect.WithRetryAsync(TestContext.Current.CancellationToken);
+        var connectResult = await Connect.WithRetryAsync(TestCt);
         Connect.AssertConnectionSuccess(connectResult);
 
         // Verify we have farmhand slots
@@ -163,7 +160,7 @@ public class FarmerCreationTests : TestBase
         await Farmers.ConnectNewAsync(
             favoriteThing: "RetryTesting",
             preferExistingFarmer: false,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         await Exceptions.AssertNoExceptionsAsync("after joining world");

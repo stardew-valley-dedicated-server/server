@@ -38,13 +38,13 @@ public class ModFarmDisambiguationTests : TestBase
 
         // The fixture's entry is the SECOND AdditionalFarms entry (after base MeadowlandsFarm);
         // getting its Id back proves resolution matched on Id, not array position.
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(status);
         Assert.Equal(FixtureFarmId, status.FarmTypeKey);
         Log($"Farm type key verified: {status.FarmTypeKey}");
 
         // Verify the modded farm map built cabins (server-side proof the farm loaded).
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
         Assert.NotNull(cabins);
         Assert.True(cabins.TotalCount >= 1, $"Expected at least 1 cabin, got {cabins.TotalCount}");
 
@@ -65,7 +65,7 @@ public class ModFarmDisambiguationTests : TestBase
 
         // "modded" picks the first non-Meadowlands AdditionalFarms entry; the fixture mod adds
         // exactly one (JunimoTest.SecondFarm), so the keyword must land on it.
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(status);
         Assert.Equal(FixtureFarmId, status.FarmTypeKey);
         Log($"\"modded\" resolved to: {status.FarmTypeKey}");

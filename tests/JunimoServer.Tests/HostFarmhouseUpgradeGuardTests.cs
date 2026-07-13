@@ -20,7 +20,7 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
     [TestServer(Clients = 0, Exclusive = true)]
     public async Task DebugHouseUpgradeCommand_OnHost_IsBlocked(string command)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var response = await ServerApi.RunDebugHouseUpgrade(command, ct);
         Assert.NotNull(response);

@@ -41,7 +41,7 @@ public class CabinConcurrencyTests : TestBase
     [Fact]
     public async Task Join_DoesNotAccumulatePhantomFarmhandEntries()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
         await ServerApi.WaitForFarmhandByNameAsync(
@@ -102,7 +102,7 @@ public class CabinConcurrencyTests : TestBase
     [Fact]
     public async Task SecondFarmerDisconnectAndDelete_DoesNotBreakGrantAdminForFirst()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // First farmer joins and customizes.
         var clientA = await Farmers.ConnectNewAsync(ct: ct);

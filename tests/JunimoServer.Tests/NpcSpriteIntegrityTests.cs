@@ -46,7 +46,7 @@ public class NpcSpriteIntegrityTests : TestBase
     [Fact]
     public async Task BrokenSprite_IsHealed_AndScheduleBoundariesDoNotFreezeClock()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // The boot world becomes reachable a beat before its SaveLoaded handlers finish, so
         // an immediate break could race the boot's own SaveLoaded sweep (which would heal it
@@ -186,7 +186,7 @@ public class NpcSpriteIntegrityTests : TestBase
     [Fact]
     public async Task Sweeps_AreWiredToSaveLoadedAndDayStarted_HealthyWorldHealsNothing()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var ready = await ServerApi.WaitForServerOnline(
             TestTimings.DayChangeTimeout,

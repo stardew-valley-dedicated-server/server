@@ -21,7 +21,7 @@ public class PlayerTrackingTests : TestBase
     [TestServer(Clients = 0, Artifacts = false)]
     public async Task ServerStatus_HasValidGameWorldData()
     {
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestCt);
 
         Assert.NotNull(status);
         Assert.True(status.IsOnline, "Server should be online");
@@ -45,10 +45,10 @@ public class PlayerTrackingTests : TestBase
     public async Task ConnectedClient_TrackedInPlayersAndStatus()
     {
         // Get the client (lazy)
-        await GetClientAsync(TestContext.Current.CancellationToken);
+        await GetClientAsync(TestCt);
 
         // Verify our farmer is not already in the player list
-        var initialPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+        var initialPlayers = await ServerApi.GetPlayers(TestCt);
         var farmerName = Farmers.GenerateName();
         Assert.True(
             initialPlayers?.Players?.All(p =>
@@ -58,20 +58,14 @@ public class PlayerTrackingTests : TestBase
         );
 
         // Join the server and enter the game world
-        var client = await Farmers.ConnectNewAsync(
-            farmerName: farmerName,
-            ct: TestContext.Current.CancellationToken
-        );
+        var client = await Farmers.ConnectNewAsync(farmerName: farmerName, ct: TestCt);
 
         // Verify the client appears in /players (poll until name syncs — this test
         // specifically verifies name-sync behavior, so name-based match is intentional).
-        var playerFound = await ServerApi.WaitForPlayerByNameAsync(
-            farmerName,
-            ct: TestContext.Current.CancellationToken
-        );
+        var playerFound = await ServerApi.WaitForPlayerByNameAsync(farmerName, ct: TestCt);
 
         Assert.True(playerFound, $"Player '{farmerName}' should appear in /players within timeout");
-        var connectedPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+        var connectedPlayers = await ServerApi.GetPlayers(TestCt);
         Assert.NotNull(connectedPlayers);
         Assert.NotEmpty(connectedPlayers.Players);
 
@@ -85,7 +79,7 @@ public class PlayerTrackingTests : TestBase
         // Verify /status reflects a connected player (at least our client is counted).
         // NOTE: We don't snapshot a baseline count because other tests on the shared
         // server may connect/disconnect concurrently, making any baseline unstable.
-        var connectedStatus = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var connectedStatus = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(connectedStatus);
         Assert.True(
             connectedStatus.PlayerCount >= 1,
@@ -97,7 +91,7 @@ public class PlayerTrackingTests : TestBase
         await Farmers.DisconnectAndWaitForSlotAsync(
             client.JoinResult.UniqueMultiplayerId,
             farmerName,
-            TestContext.Current.CancellationToken
+            TestCt
         );
         Log("Verified: player removed from /players after disconnect");
     }

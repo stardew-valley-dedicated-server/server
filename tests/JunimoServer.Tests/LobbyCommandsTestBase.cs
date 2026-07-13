@@ -63,7 +63,7 @@ public abstract class LobbyCommandsTestBase : TestBase
     {
         await EnsureConnectedAsync("LobbyAdmin");
 
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var uid =
             PersistentSession.ConnectedFarmerUid
             ?? throw new InvalidOperationException(
@@ -95,11 +95,7 @@ public abstract class LobbyCommandsTestBase : TestBase
     /// </summary>
     protected async Task SetupAsNonAdmin()
     {
-        await Farmers.ConnectNewAsync(
-            breakSession: true,
-            assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(breakSession: true, assertAuthenticated: true, ct: TestCt);
 
         var welcome = await GameClient.Chat.WaitForMessageContainingAsync(
             "Welcome",

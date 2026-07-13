@@ -40,11 +40,7 @@ public class PasswordProtectionTests : TestBase
     [Fact]
     public async Task NewPlayer_InLobby_HasCorrectStateAndWelcome()
     {
-        await EnsureConnectedAsync(
-            "Lobby",
-            SessionJoinMode.Unauthenticated,
-            TestContext.Current.CancellationToken
-        );
+        await EnsureConnectedAsync("Lobby", SessionJoinMode.Unauthenticated, TestCt);
 
         // Wait for welcome message
         await GameClient.Chat.WaitForMessageContainingAsync(
@@ -55,7 +51,7 @@ public class PasswordProtectionTests : TestBase
         // Verify placement: should be in a lobby cabin
         var state = await GameClient.WaitForLocationAsync(
             "^" + GameTestClient.CabinLocationPrefix,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Log($"Player location: {state?.Location}");
         Assert.NotNull(state);
@@ -84,11 +80,7 @@ public class PasswordProtectionTests : TestBase
     [Fact]
     public async Task Help_Command_WorksInLobby()
     {
-        await EnsureConnectedAsync(
-            "Lobby",
-            SessionJoinMode.Unauthenticated,
-            TestContext.Current.CancellationToken
-        );
+        await EnsureConnectedAsync("Lobby", SessionJoinMode.Unauthenticated, TestCt);
 
         // Wait for welcome message first
         await GameClient.Chat.WaitForMessageContainingAsync(
@@ -104,7 +96,7 @@ public class PasswordProtectionTests : TestBase
         await GameClient.Chat.SendAndWaitForResponseAsync(
             "!help",
             helpResponseKeywords,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         var chatHistory = await GameClient.Chat.GetHistory(20);
@@ -130,11 +122,7 @@ public class PasswordProtectionTests : TestBase
     [Fact]
     public async Task UnauthenticatedPlayer_RegularChat_IsBlocked()
     {
-        await EnsureConnectedAsync(
-            "Lobby",
-            SessionJoinMode.Unauthenticated,
-            TestContext.Current.CancellationToken
-        );
+        await EnsureConnectedAsync("Lobby", SessionJoinMode.Unauthenticated, TestCt);
 
         // Wait for welcome message first
         await GameClient.Chat.WaitForMessageContainingAsync(
@@ -150,7 +138,7 @@ public class PasswordProtectionTests : TestBase
             "hello everyone",
             blockedKeywords,
             matchAll: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         var chatHistory = await GameClient.Chat.GetHistory(20);
@@ -181,7 +169,7 @@ public class PasswordProtectionTests : TestBase
         await PersistentSession.BreakSessionAsync();
 
         // Query the server's configured auth timeout
-        var authStatus = await ServerApi.GetAuthStatus(TestContext.Current.CancellationToken);
+        var authStatus = await ServerApi.GetAuthStatus(TestCt);
         Assert.NotNull(authStatus);
         Assert.True(authStatus.Enabled, "Password protection should be enabled");
 
@@ -194,10 +182,7 @@ public class PasswordProtectionTests : TestBase
 
         // Temporarily lower the timeout so we don't wait 2+ minutes
         const int testTimeout = 5;
-        var setResult = await ServerApi.SetAuthTimeout(
-            testTimeout,
-            TestContext.Current.CancellationToken
-        );
+        var setResult = await ServerApi.SetAuthTimeout(testTimeout, TestCt);
         Assert.NotNull(setResult);
         Assert.True(setResult.Success, $"Failed to set auth timeout: {setResult.Error}");
         Log($"Auth timeout lowered: {originalTimeout}s → {testTimeout}s");
@@ -205,10 +190,7 @@ public class PasswordProtectionTests : TestBase
         try
         {
             // Join the server WITHOUT auto-login (to sit in lobby)
-            await Farmers.ConnectNewAsync(
-                skipAutoLogin: true,
-                ct: TestContext.Current.CancellationToken
-            );
+            await Farmers.ConnectNewAsync(skipAutoLogin: true, ct: TestCt);
 
             // Wait for welcome message to confirm we're in the lobby
             await GameClient.Chat.WaitForMessageContainingAsync(
@@ -227,7 +209,7 @@ public class PasswordProtectionTests : TestBase
                     return s?.IsConnected != true;
                 },
                 kickTimeout,
-                cancellationToken: TestContext.Current.CancellationToken
+                cancellationToken: TestCt
             );
 
             Assert.True(kicked, $"Player should be disconnected after {testTimeout}s auth timeout");
@@ -237,7 +219,7 @@ public class PasswordProtectionTests : TestBase
         finally
         {
             // Restore original timeout for other tests sharing this server
-            await ServerApi.SetAuthTimeout(originalTimeout, TestContext.Current.CancellationToken);
+            await ServerApi.SetAuthTimeout(originalTimeout, TestCt);
             Log($"Auth timeout restored to {originalTimeout}s");
         }
     }
@@ -254,24 +236,21 @@ public class PasswordProtectionTests : TestBase
         var client = await Farmers.ConnectNewAsync(
             breakSession: true,
             assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         var stateAfterAuth = await GameClient.GetState();
         Log($"Location after first auth: {stateAfterAuth?.Location}");
 
         // Reconnect-to-same-farmer needs customized farmhand persisted, not just slot released.
-        await Farmers.DisconnectAndWaitForPersistenceAsync(
-            client.FarmerName,
-            TestContext.Current.CancellationToken
-        );
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, TestCt);
         Log("Disconnected from first session");
 
         // Second session: Reconnect and authenticate
         var reconnect = await Farmers.ReconnectAsync(
             client.FarmerName,
             assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Assert.True(reconnect.JoinResult.WasInLobby, "Should start in lobby on reconnect");
 
@@ -280,7 +259,7 @@ public class PasswordProtectionTests : TestBase
         // (passout message type 29) may still be in flight when join returns.
         var stateAfterReconnect = await GameClient.WaitForLocationAsync(
             "^" + GameTestClient.CabinLocationPrefix,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Log($"Location after reconnect and auth: {stateAfterReconnect?.Location}");
 
@@ -289,7 +268,7 @@ public class PasswordProtectionTests : TestBase
         // Verify this is the player's OWN cabin via the server API.
         var ownedCabin = await WaitForCabinAssignedAsync(
             client.JoinResult.UniqueMultiplayerId,
-            TestContext.Current.CancellationToken
+            TestCt
         );
 
         Assert.NotNull(ownedCabin);
@@ -310,11 +289,7 @@ public class PasswordProtectionTests : TestBase
     public async Task LobbyPlayer_SurvivesDayTransition_CanAuthenticateAfter()
     {
         // Join the server WITHOUT auto-login (sit in lobby)
-        await Farmers.ConnectNewAsync(
-            breakSession: true,
-            skipAutoLogin: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(breakSession: true, skipAutoLogin: true, ct: TestCt);
 
         // Wait for welcome message to confirm we're in the lobby
         await GameClient.Chat.WaitForMessageContainingAsync(
@@ -323,7 +298,7 @@ public class PasswordProtectionTests : TestBase
         );
 
         // Record current day
-        var statusBefore = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusBefore = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusBefore);
         var dayBefore = statusBefore.Day;
         var seasonBefore = statusBefore.Season;
@@ -335,24 +310,16 @@ public class PasswordProtectionTests : TestBase
         // Trigger a day transition by setting time to pass-out which forces the day to advance.
         // The server's host bot auto-sleeps when no authenticated players are connected,
         // and the lobby player is excluded from sleep checks.
-        var setTimeResult = await ServerApi.SetTime(
-            TestTimings.PassOutTime,
-            TestContext.Current.CancellationToken
-        );
+        var setTimeResult = await ServerApi.SetTime(TestTimings.PassOutTime, TestCt);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
         Log("Set time to 2600, waiting for day transition...");
 
         // Wait for day to change and server to finish the transition
-        var dayChanged = await DayChange.WaitAsync(
-            dayBefore,
-            seasonBefore,
-            yearBefore,
-            TestContext.Current.CancellationToken
-        );
+        var dayChanged = await DayChange.WaitAsync(dayBefore, seasonBefore, yearBefore, TestCt);
         Assert.True(dayChanged, "Day should have advanced");
 
-        var statusAfter = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusAfter = await ServerApi.GetStatus(TestCt);
         Log(
             $"After day transition: {statusAfter?.Season} {statusAfter?.Day}, Time {statusAfter?.TimeOfDay}"
         );
@@ -376,7 +343,7 @@ public class PasswordProtectionTests : TestBase
         var authenticated = await GameClient.WaitForAuthWarpAsync(
             preAuthLocation!,
             TimeSpan.FromSeconds(15),
-            TestContext.Current.CancellationToken
+            TestCt
         );
 
         Assert.True(
@@ -408,7 +375,7 @@ public class PasswordProtectionTests : TestBase
         var first = await Farmers.ConnectNewAsync(
             breakSession: true,
             assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         // Disconnect and delete via API — this is the path that calls DestroyCabin,
@@ -416,11 +383,11 @@ public class PasswordProtectionTests : TestBase
         await Farmers.DisconnectAndWaitForSlotAsync(
             first.JoinResult.UniqueMultiplayerId,
             first.FarmerName,
-            TestContext.Current.CancellationToken
+            TestCt
         );
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             first.FarmerName,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Assert.True(
             deleteResult?.Success,
@@ -433,11 +400,7 @@ public class PasswordProtectionTests : TestBase
         // cabin's name as homeLocation, causing FindPlayerCabin to return null
         // at !login time and kick the player. assertAuthenticated throws if the
         // post-auth warp doesn't complete, so its success here proves the fix.
-        await Farmers.ConnectNewAsync(
-            breakSession: true,
-            assertAuthenticated: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(breakSession: true, assertAuthenticated: true, ct: TestCt);
 
         await Exceptions.AssertNoExceptionsAsync("after deleted-cabin re-join cycle");
     }

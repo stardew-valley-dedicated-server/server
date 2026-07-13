@@ -27,7 +27,7 @@ public class NavigationTests : TestBase
         Assert.NotNull(ServerStatus);
         Assert.True(ServerStatus.IsOnline, "Server should be online");
 
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // InviteCode is read from a file, not from the snapshot — long-poll for
         // any newer snapshot via `since`, then check IsOnline + InviteCode in
         // the response body.
@@ -65,7 +65,7 @@ public class NavigationTests : TestBase
     [TestServer(Clients = 0)]
     public async Task ServerApi_GetStatus_ShouldReturnValidResponse()
     {
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var status = await ServerApi.GetStatus(TestCt);
 
         Assert.NotNull(status);
         Assert.NotNull(status.ServerVersion);
@@ -84,7 +84,7 @@ public class NavigationTests : TestBase
     public async Task ServerApi_GetInviteCode_ShouldReturnValidCode()
     {
         // Galaxy invite code may arrive asynchronously; poll briefly
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var hasCode = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Navigation_HasGalaxyInviteCode,
             async () =>
@@ -115,7 +115,7 @@ public class NavigationTests : TestBase
         // (no `since` cursor — the server's health bit is "is the game thread
         // ticking now"), so each iteration returns immediately on a healthy
         // server or after up to WaitMaxTimeout (10s) on a stalled one.
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         HealthResponse? health = null;
         var healthy = await PollingHelper.LongPollAsync(
             WaitName.Polling_Navigation_HealthyOk,

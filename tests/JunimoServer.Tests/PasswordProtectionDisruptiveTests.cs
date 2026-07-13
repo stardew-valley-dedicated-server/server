@@ -37,10 +37,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
     public async Task Login_WithWrongPassword_Fails()
     {
         // Join the server WITHOUT auto-login (to test wrong password manually)
-        await Farmers.ConnectNewAsync(
-            skipAutoLogin: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(skipAutoLogin: true, ct: TestCt);
 
         // Get initial location (should be lobby)
         var stateBefore = await GameClient.GetState();
@@ -86,7 +83,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
     public async Task Login_ExceedsMaxAttempts_KicksPlayer()
     {
         // Query the server's configured max attempts instead of hardcoding
-        var authStatus = await ServerApi.GetAuthStatus(TestContext.Current.CancellationToken);
+        var authStatus = await ServerApi.GetAuthStatus(TestCt);
         Assert.NotNull(authStatus);
         Assert.True(authStatus.Enabled, "Password protection should be enabled");
         var maxAttempts = authStatus.MaxAttempts;
@@ -94,10 +91,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
         Log($"Server max login attempts: {maxAttempts}");
 
         // Join the server WITHOUT auto-login (to test manual wrong passwords)
-        var client = await Farmers.ConnectNewAsync(
-            skipAutoLogin: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        var client = await Farmers.ConnectNewAsync(skipAutoLogin: true, ct: TestCt);
 
         // Wait for welcome message first
         await GameClient.Chat.WaitForMessageContainingAsync(
@@ -115,7 +109,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 var gotResponse = await GameClient.Chat.SendAndWaitForResponseAsync(
                     $"!login wrongpassword{i}",
                     FailureKeywords,
-                    ct: TestContext.Current.CancellationToken
+                    ct: TestCt
                 );
                 Log($"Attempt {i} server response received: {gotResponse}");
             }
@@ -124,9 +118,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 // Final attempt. Server kicks without sending a chat response,
                 // so we can't wait for one. Instead, verify the server saw our
                 // player BEFORE sending, then send and poll for disconnect.
-                var playersBefore = await ServerApi.GetPlayers(
-                    TestContext.Current.CancellationToken
-                );
+                var playersBefore = await ServerApi.GetPlayers(TestCt);
                 var ourPlayer = playersBefore?.Players?.FirstOrDefault(p =>
                     p.Name?.Contains(client.FarmerName, StringComparison.OrdinalIgnoreCase) == true
                 );
@@ -159,7 +151,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
                 return s?.IsConnected != true;
             },
             TestTimings.DisconnectedTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         if (!kicked)
@@ -170,7 +162,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
                     + $"Location={finalState?.Location}, IsInGame={finalState?.IsInGame}"
             );
 
-            var serverPlayers = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+            var serverPlayers = await ServerApi.GetPlayers(TestCt);
             Log(
                 $"KICK FAILED: server players: {serverPlayers?.Players?.Count ?? -1} "
                     + $"[{string.Join(", ", serverPlayers?.Players?.Select(p => p.Name) ?? Array.Empty<string>())}]"

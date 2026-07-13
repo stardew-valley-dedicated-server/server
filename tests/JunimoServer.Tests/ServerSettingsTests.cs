@@ -26,7 +26,7 @@ public class ServerSettingsTests : TestBase
     [Fact]
     public async Task Settings_ReturnsValidResponse()
     {
-        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
+        var settings = await ServerApi.GetSettings(TestCt);
 
         Assert.NotNull(settings);
         Assert.NotNull(settings.Game);
@@ -76,7 +76,7 @@ public class ServerSettingsTests : TestBase
     [MemberData(nameof(DefaultSettingsData))]
     public async Task DefaultSettings_HaveExpectedValues(string settingPath, object expectedValue)
     {
-        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
+        var settings = await ServerApi.GetSettings(TestCt);
         Assert.NotNull(settings);
 
         var actualValue = GetSettingValue(settings, settingPath);
@@ -114,8 +114,8 @@ public class ServerSettingsTests : TestBase
     [Fact]
     public async Task Settings_FarmNameMatchesStatus()
     {
-        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var settings = await ServerApi.GetSettings(TestCt);
+        var status = await ServerApi.GetStatus(TestCt);
 
         Assert.NotNull(settings);
         Assert.NotNull(status);
@@ -130,8 +130,8 @@ public class ServerSettingsTests : TestBase
     [Fact]
     public async Task Settings_MaxPlayersMatchesStatus()
     {
-        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
-        var status = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var settings = await ServerApi.GetSettings(TestCt);
+        var status = await ServerApi.GetStatus(TestCt);
 
         Assert.NotNull(settings);
         Assert.NotNull(status);

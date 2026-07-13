@@ -93,6 +93,13 @@ public class GameClientContainer : IAsyncDisposable
     public int SteamAccountIndex { get; internal set; } = -1;
 
     /// <summary>
+    /// True once <see cref="Infrastructure.ClientPool.MarkClientDead"/> has retired this
+    /// container: it stays in the pool's roster only for recording extraction at dispose
+    /// and must not count toward the live container cap.
+    /// </summary>
+    public bool IsMarkedDead { get; internal set; }
+
+    /// <summary>
     /// Final Galaxy auth state captured from <c>/health</c> when readiness was reached.
     /// Only populated when the container was created with <c>requireGalaxyResolved=true</c>
     /// (i.e. it bears a Steam account). Values mirror the test-client side:

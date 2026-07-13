@@ -49,7 +49,7 @@ public class AbandonedClaimTests : TestBase
     [TestServer(WithSteam = true)]
     public async Task AbandonedClaim_OnDisconnect_IsClearedDurably()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // Connect to the FarmhandMenu without customizing. WithRetryAsync is transport-aware
         // (Steam invite code vs LAN address) and uses the primary client; it stops at the menu.
@@ -160,7 +160,7 @@ public class AbandonedClaimTests : TestBase
     [TestServer(StartingCabins = 2)]
     public async Task AbandonedClaim_SweptOnReload()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(
             farmType: 0,
             cabinStrategy: "CabinStack",

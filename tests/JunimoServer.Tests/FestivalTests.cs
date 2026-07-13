@@ -94,7 +94,7 @@ public class FestivalTests : TestBase
     [Fact]
     public async Task SpiritsEve_DoesNotAutoEndImmediately()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         await EnterFestivalAsync(
             SpiritsEveSeason,
@@ -150,7 +150,7 @@ public class FestivalTests : TestBase
     [Fact]
     public async Task SpiritsEve_EndsWhenPlayerLeaves()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         await EnterFestivalAsync(
             SpiritsEveSeason,
@@ -202,7 +202,7 @@ public class FestivalTests : TestBase
     [Fact]
     public async Task EmptyFestivalEnds_AndNextFestivalIsLeavable()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var farmhand = await EnterFestivalAsync(
             SpiritsEveSeason,
@@ -296,7 +296,7 @@ public class FestivalTests : TestBase
     [Fact]
     public async Task EggFestival_MainEventStartsWithCountdownSkip()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         await EnterFestivalAsync(
             EggSeason,
