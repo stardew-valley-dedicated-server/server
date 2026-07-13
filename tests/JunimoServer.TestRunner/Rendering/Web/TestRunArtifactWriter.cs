@@ -123,6 +123,48 @@ public sealed class TestRunArtifactWriter
 
             try
             {
+                WriteInstanceHistory(state);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] instance-history.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteRunEvents(state);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] run-events.jsonl failed: {ex.Message}");
+            }
+
+            try
+            {
+                WriteTestDetails(state);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] test-details.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteSetupPhases(state);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] setup-phases.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
                 WriteLatestPointer();
             }
             catch (Exception ex)
@@ -495,6 +537,58 @@ public sealed class TestRunArtifactWriter
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteInstanceStatsJsonl(
             Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl)
+        );
+    }
+
+    /// <summary>
+    /// Flushes the per-instance lifecycle narrative to
+    /// <c>diagnostics/instance-history.jsonl</c> — which test held which
+    /// container and why it was poisoned, otherwise only in memory for the UI.
+    /// </summary>
+    private void WriteInstanceHistory(TestRunState state)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteInstanceHistoryJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceHistoryJsonl)
+        );
+    }
+
+    /// <summary>
+    /// Flushes the UI event stream to <c>diagnostics/run-events.jsonl</c> — the
+    /// only on-disk home for xUnit-level diagnostic/error events and the run's
+    /// unified event ordering.
+    /// </summary>
+    private void WriteRunEvents(TestRunState state)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteRunEventsJsonl(Path.Combine(diagnosticsDir, RunArtifactNames.RunEventsJsonl));
+    }
+
+    /// <summary>
+    /// Flushes per-test UI-only extras to <c>diagnostics/test-details.jsonl</c> —
+    /// output, non-failed stack traces, ordering/timing that summary/ctrf omit.
+    /// </summary>
+    private void WriteTestDetails(TestRunState state)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteTestDetailsJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.TestDetailsJsonl)
+        );
+    }
+
+    /// <summary>
+    /// Flushes the prestart/warmup narrative to
+    /// <c>diagnostics/setup-phases.jsonl</c> — the run-start phase/step breakdown.
+    /// </summary>
+    private void WriteSetupPhases(TestRunState state)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteSetupPhasesJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.SetupPhasesJsonl)
         );
     }
 
