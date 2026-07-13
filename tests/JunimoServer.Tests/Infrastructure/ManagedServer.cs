@@ -229,16 +229,13 @@ internal sealed class ManagedServer : IAsyncDisposable
     private readonly SemaphoreSlim _exclusiveClassTurn = new(0); // serializes same-class inheritance
     private readonly object _exclusiveLock = new();
 
-    // Join serialization: the game loop is single-threaded and can only process one
-    // farmhand join at a time. Without this gate, concurrent KeepConnected classes on
-    // the same server all call Connect.JoinWithRetryAsync simultaneously, causing the
-    // server to bounce clients back to farmhand selection (isGameAvailable() == false).
+    // Serializes each join's pre-approval phase per server. Without it, concurrent joins (KeepConnected
+    // classes, or two farmers via ConnectBothConcurrentlyAsync) race the same-slot / farmhand-deletion
+    // window and bounce back to farmhand selection. ConnectionHelper owns the acquire/release timing.
     private readonly SemaphoreSlim _joinGate = new(1, 1);
 
-    /// <summary>
-    /// Serializes farmer join operations on this server instance.
-    /// The game loop can only process one farmhand join at a time.
-    /// </summary>
+    /// <summary>Acquires the per-server join gate. Held only across a join's pre-approval phase
+    /// (see <see cref="ConnectionHelper.AcquireJoinGate"/>), not the whole join.</summary>
     public Task AcquireJoinGateAsync(CancellationToken ct) =>
         WaitTrace.RunAsync(
             WaitName.ManagedServer_JoinGate,

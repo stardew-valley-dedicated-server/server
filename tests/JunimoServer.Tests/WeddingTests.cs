@@ -116,13 +116,9 @@ public class WeddingTests : TestBase
             $"SetDate({WeddingSeason} {EngageDay}) failed: {setDate.Error}"
         );
 
-        // Connect BOTH farmhands CONCURRENTLY — both players present together from the start, not A
-        // then B. The two client containers are leased up front (overlapping their cold start) and both
-        // join sequences run together; the per-server join gate serializes only the game-thread join
-        // (the loop processes one farmhand at a time), so B lands right behind A instead of waiting on
-        // A's whole lease+join. The primary is held as the shared GameClient, the second wrapped as a
-        // SecondFarmer; neither is privileged. await using → farmhandB disconnects before the class's
-        // /newgame reset.
+        // Connect BOTH farmhands CONCURRENTLY — both present from the start, not A then B (the scenario
+        // under test). Neither is privileged: the primary is the shared GameClient, the second a
+        // SecondFarmer. await using → farmhandB disconnects before the class's /newgame reset.
         var (farmhandA, farmhandBConn) = await Farmers.ConnectBothConcurrentlyAsync(
             primaryPrefix: "WeddingA",
             secondaryPrefix: "WeddingB",
