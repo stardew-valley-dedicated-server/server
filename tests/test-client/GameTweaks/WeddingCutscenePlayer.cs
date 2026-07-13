@@ -233,10 +233,10 @@ public class WeddingCutscenePlayer
             return;
         }
 
-        // Click the box the way a player does. The box's own gating handles timing: a first click
-        // completes the typed text, a later click (once its safetyTimer elapses) advances/closes it —
-        // so calling this each tick walks the dialogue forward without us re-implementing the timers
-        // (DialogueBox.receiveLeftClick, decompiled DialogueBox.cs).
+        // Click the box the way a player does. A first click completes the typed text, a later one
+        // advances/closes it — so calling this each tick walks the dialogue forward. During a wedding
+        // WeddingDialogueSpeedup zeroes the box's safetyTimer, so the advance click lands the very next
+        // tick instead of after the vanilla 750ms guard (DialogueBox.receiveLeftClick, decompiled).
         box.receiveLeftClick(0, 0, playSound: false);
     }
 
@@ -248,6 +248,15 @@ public class WeddingCutscenePlayer
     public void PauseAfterWeddingWarp()
     {
         if ((DateTime.UtcNow - _lastCeremonyEndedUtc).TotalMilliseconds > CeremonyEndWarpWindowMs)
+        {
+            return;
+        }
+        // Linger only after the day's LAST ceremony. Game1.pauseTime is the SAME global the script's
+        // `pause` reads, so a linger still active when the next ceremony's first `pause` runs swallows
+        // it (its expiry advances the event early). getAvailableWeddingEvent pops the running ceremony's
+        // farmer before the event runs, so Count > 0 means another wedding is queued — same guard as
+        // AlwaysOn.WarpHostHomeAfterWeddings.
+        if (Game1.weddingsToday is { Count: > 0 })
         {
             return;
         }
@@ -263,8 +272,10 @@ public class WeddingCutscenePlayer
         );
     }
 
-    /// <summary>True once the event has reached its final command — the <c>waitForOtherPlayers</c> gate
-    /// is the last thing left, so the dialogue currently up is the ceremony's closing line.</summary>
+    /// <summary>True when the box currently up belongs to the ceremony's last <c>speak</c> (the "marriage
+    /// pronounced" line). Keys off the last <c>speak</c> index: the terminal <c>waitForOtherPlayers</c> +
+    /// <c>end</c> commands run only after every box has closed, so a box being up means we're at (or past)
+    /// the last speak.</summary>
     private static bool IsAtFinalDialogue(Event ev)
     {
         var commands = ev.eventCommands;
@@ -272,9 +283,32 @@ public class WeddingCutscenePlayer
         {
             return false;
         }
-        // The wait gate is the terminal command in the vanilla wedding script; if we're on (or past)
-        // the second-to-last command with a dialogue up, this is the closing line.
-        return ev.CurrentCommand >= commands.Length - 2;
+
+        int lastSpeakIndex = -1;
+        for (int i = commands.Length - 1; i >= 0; i--)
+        {
+            if (IsCommand(commands[i], "speak"))
+            {
+                lastSpeakIndex = i;
+                break;
+            }
+        }
+
+        return lastSpeakIndex >= 0 && ev.CurrentCommand >= lastSpeakIndex;
+    }
+
+    /// <summary>True if an event-command line's command name (its first space-delimited token) equals
+    /// <paramref name="name"/>. Prefix-checks the raw line rather than splitting it, so scanning the
+    /// command list each tick allocates nothing (a command line is "<c>name</c>" or "<c>name </c>…").</summary>
+    private static bool IsCommand(string? line, string name)
+    {
+        if (line == null || !line.StartsWith(name, System.StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        // Exact command (no args) or the next char is the token separator — not a longer word
+        // that merely starts with `name`.
+        return line.Length == name.Length || line[name.Length] == ' ';
     }
 
     /// <summary>Capture the just-started ceremony into <see cref="_activeCeremony"/>. Not yet added to
