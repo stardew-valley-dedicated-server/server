@@ -35,7 +35,8 @@ public class ServerApiTests : TestBase
                 var players = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
                 return players?.Players?.Count == 0;
             },
-            TestTimings.FarmerDeleteTimeout,
+            // Waits for a prior test's cleanup to drain /players to 0 (cross-test lag).
+            TestTimings.ServerReadyBetweenTests,
             cancellationToken: TestContext.Current.CancellationToken
         );
         Assert.True(noPlayers, "Server should have no players connected");

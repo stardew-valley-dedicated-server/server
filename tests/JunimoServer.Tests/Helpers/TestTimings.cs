@@ -85,13 +85,12 @@ public static class TestTimings
     public static readonly TimeSpan SessionRevalidationBudget = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Total timeout for farmer deletion polling during cleanup.
-    /// The delete API is called immediately after disconnect; if the server
-    /// hasn't processed the disconnect yet ("currently online" error), we
-    /// retry with FastPollInterval until this timeout. Must exceed the
-    /// server's RunOnGameThreadAsync timeout (15s) so that a single 503
-    /// (which takes ~16s wall-clock) doesn't exhaust the entire budget.
-    /// 35s allows one 503 + one successful call with headroom.
+    /// Total budget for the delete-retry loop: poll DELETE /farmhands until it
+    /// succeeds. The delete API is called immediately after disconnect; if the
+    /// server hasn't processed the disconnect yet ("currently online" error), we
+    /// retry with FastPollInterval until this timeout. The server's
+    /// RunOnGameThreadAsync timeout is 5s and a measured delete costs ~0.1s, so
+    /// 35s is ample retry headroom for a briefly-contended game thread.
     /// </summary>
     public static readonly TimeSpan FarmerDeleteTimeout = TimeSpan.FromSeconds(35);
 
@@ -199,10 +198,10 @@ public static class TestTimings
     public static readonly TimeSpan FastPollInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
-    /// Timeout for waiting for cabin assignment to sync after character creation.
-    /// Must exceed the server's RunOnGameThreadAsync timeout (15s) so that at least
-    /// one API call can complete even if the game thread is briefly contended.
-    /// A single 503 takes ~16s wall-clock; 35s allows one 503 + one successful call.
+    /// Budget for a fresh join's slot to appear and customize. The real driver is
+    /// customization/isCustomized sync after a fresh join, which lags well behind
+    /// peer-add (p90 ~20s measured); 35s gives ~1.75x headroom. Also backs
+    /// WaitForFarmhandByNameAsync, which polls for the same appear-and-customize event.
     /// </summary>
     public static readonly TimeSpan CabinAssignmentTimeout = TimeSpan.FromSeconds(35);
 
@@ -224,7 +223,9 @@ public static class TestTimings
     /// Hard timeout for the entire test cleanup phase (disconnect, farmer delete,
     /// exception check, client lease return). Prevents slow HTTP calls from stalling
     /// the global client capacity gate and blocking all subsequent tests.
-    /// Must accommodate at least one 503 retry (~16s) per cleanup phase.
+    /// Covers the serial cleanup budget: bounded disconnect wait (2s,
+    /// FarmerRemovalBudget) + the farmer-delete loop (FarmerDeleteTimeout) + the 10s
+    /// diagnostic exception check.
     /// </summary>
     public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(45);
 

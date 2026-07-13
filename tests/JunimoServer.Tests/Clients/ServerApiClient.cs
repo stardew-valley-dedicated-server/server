@@ -2661,7 +2661,7 @@ public class ServerApiClient : IDisposable
                     return false;
                 }
             },
-            timeout ?? Helpers.TestTimings.FarmerDeleteTimeout,
+            timeout ?? Helpers.TestTimings.FarmerRemovalBudget,
             cancellationToken: ct,
             onTimeoutAsync: async () =>
                 await Helpers.FailureContext.DumpAsync(
@@ -2718,7 +2718,7 @@ public class ServerApiClient : IDisposable
                     return false;
                 }
             },
-            timeout ?? Helpers.TestTimings.FarmerDeleteTimeout,
+            timeout ?? Helpers.TestTimings.FarmerRemovalBudget,
             cancellationToken: ct,
             onTimeoutAsync: async () =>
                 await Helpers.FailureContext.DumpAsync(
@@ -2777,7 +2777,7 @@ public class ServerApiClient : IDisposable
                     return new Helpers.PollingHelper.LongPollResult(false, since);
                 }
             },
-            timeout ?? Helpers.TestTimings.FarmerDeleteTimeout,
+            timeout ?? Helpers.TestTimings.CabinAssignmentTimeout,
             cancellationToken: ct,
             onTimeoutAsync: async () =>
                 await Helpers.FailureContext.DumpAsync(

@@ -106,7 +106,8 @@ public class FarmhandManagementTests : TestBase
                         !f.Name.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase)
                     ) == true;
             },
-            TestTimings.FarmerDeleteTimeout,
+            // Delete already confirmed at :87; this only waits a tick for /farmhands to reflect it.
+            TestTimings.FarmerRemovalBudget,
             cancellationToken: TestContext.Current.CancellationToken
         );
         Assert.True(

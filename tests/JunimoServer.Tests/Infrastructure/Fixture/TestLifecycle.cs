@@ -602,6 +602,7 @@ internal sealed class TestLifecycle
                     var myUids = _testBase.Farmers.CreatedFarmers.Select(f => f.Uid).ToHashSet();
                     var ok = await _testBase.ServerApi.WaitForPlayersRemovedByIdAsync(
                         myUids,
+                        timeout: TestTimings.FarmerRemovalBudget, // 2s — match the PersistentSession disconnect-wait path
                         ct: ct
                     );
                     if (!ok && !ct.IsCancellationRequested)
