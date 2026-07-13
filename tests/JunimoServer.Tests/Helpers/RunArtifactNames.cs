@@ -6,7 +6,9 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// Layout under <see cref="TestArtifacts.OutputDir"/> / runs / {id}:
 ///   summary.json, ctrf-report.json, run-metadata.json, run-output.json
-///   diagnostics/infrastructure.jsonl, diagnostics/instance-stats.jsonl
+///   diagnostics/infrastructure.jsonl, diagnostics/instance-stats.jsonl,
+///   diagnostics/instance-history.jsonl, diagnostics/run-events.jsonl,
+///   diagnostics/test-details.jsonl, diagnostics/setup-phases.jsonl
 ///   flakiness.jsonl  (also exists at OutputDir for cross-run aggregation)
 ///   tests/{Class}.{Method}/
 ///   _workers/{worker_id}/   (distributed mode only)
@@ -30,6 +32,38 @@ public static class RunArtifactNames
     /// the live UI reads the same data over the WebSocket, not this file.
     /// </summary>
     public const string InstanceStatsJsonl = "instance-stats.jsonl";
+
+    /// <summary>
+    /// Per-instance lifecycle narrative (created/leased/returned/disposed/
+    /// poisoned/connected/disconnected + a trailing final-state line) under
+    /// <see cref="DiagnosticsDir"/>. Flushed at run-end from the runner's
+    /// in-memory state; the live UI reads the same data over the WebSocket.
+    /// </summary>
+    public const string InstanceHistoryJsonl = "instance-history.jsonl";
+
+    /// <summary>
+    /// The runner's UI event stream (the sequence replayed to late-connecting
+    /// clients) under <see cref="DiagnosticsDir"/> — uniquely the only on-disk
+    /// home for xUnit-level <c>diagnostic</c>/<c>error</c> events. Sourced from a
+    /// bounded ring buffer; a leading <c>run_events_truncated</c> marker appears
+    /// if the buffer was full at flush.
+    /// </summary>
+    public const string RunEventsJsonl = "run-events.jsonl";
+
+    /// <summary>
+    /// Per-test UI-only extras (output, non-failed stack traces, failure context,
+    /// ordering/timing, used instances) under <see cref="DiagnosticsDir"/> —
+    /// the fields <see cref="SummaryJson"/>/<see cref="CtrfReport"/> carry only
+    /// for failed tests, here for all tests.
+    /// </summary>
+    public const string TestDetailsJsonl = "test-details.jsonl";
+
+    /// <summary>
+    /// Prestart/warmup phase narrative (per phase + step, with timestamps) under
+    /// <see cref="DiagnosticsDir"/>. Run-start scope only; mid-run per-instance
+    /// re-provisioning lives in <see cref="InstanceHistoryJsonl"/>.
+    /// </summary>
+    public const string SetupPhasesJsonl = "setup-phases.jsonl";
 
     /// <summary>
     /// Cross-run sidecar (<c>{hostId → bytes}</c>) at <see cref="TestArtifacts.OutputDir"/>
