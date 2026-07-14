@@ -80,52 +80,61 @@ internal static class HostInspector
         {
             return result;
         }
-        // Recurse: SMAPI's bundled mods live under /data/Mods/smapi/<Mod>/, so a non-recursive scan
-        // would omit them (mirrors SMAPI's own recursive scan).
-        IEnumerable<string> manifests;
+        // EnumerateFiles defers I/O to the loop below, so a traversal race (deletion, permissions)
+        // throws there — the try must wrap the whole walk. Recurse: SMAPI's bundled mods live under
+        // /data/Mods/smapi/<Mod>/, so a non-recursive scan would omit them (mirrors SMAPI's scan).
         try
         {
-            manifests = Directory.EnumerateFiles(
+            var manifests = Directory.EnumerateFiles(
                 Config.ModsPath,
                 "manifest.json",
                 SearchOption.AllDirectories
             );
+            foreach (var manifest in manifests)
+            {
+                try
+                {
+                    // SMAPI tolerates comments/trailing commas in manifest.json; match it or a mod
+                    // with either would be silently dropped from the table.
+                    using var doc = JsonDocument.Parse(
+                        File.ReadAllText(manifest),
+                        Json.ManifestOptions
+                    );
+                    var root = doc.RootElement;
+                    result.Add(
+                        new ModInfo(
+                            Json.Field(root, "Name"),
+                            Json.Field(root, "UniqueID"),
+                            Json.Field(root, "Version"),
+                            Json.Field(root, "Author")
+                        )
+                    );
+                }
+                catch
+                {
+                    // Tolerate malformed / partial manifests.
+                }
+            }
         }
         catch
         {
-            return result;
-        }
-        foreach (var manifest in manifests)
-        {
-            try
-            {
-                // SMAPI tolerates comments/trailing commas in manifest.json; match it or a mod with
-                // either would be silently dropped from the table.
-                using var doc = JsonDocument.Parse(
-                    File.ReadAllText(manifest),
-                    Json.ManifestOptions
-                );
-                var root = doc.RootElement;
-                result.Add(
-                    new ModInfo(
-                        Json.Field(root, "Name"),
-                        Json.Field(root, "UniqueID"),
-                        Json.Field(root, "Version"),
-                        Json.Field(root, "Author")
-                    )
-                );
-            }
-            catch
-            {
-                // Tolerate malformed / partial manifests.
-            }
+            // Traversal failed mid-walk — return whatever was collected before the fault.
         }
         return result;
     }
 
     /// <summary>The crash log's last-modified time if present, formatted ISO 8601 UTC; else null.</summary>
-    public static string? CrashLogModifiedUtc() =>
-        File.Exists(Config.CrashLogPath)
-            ? File.GetLastWriteTimeUtc(Config.CrashLogPath).ToString("o")
-            : null;
+    public static string? CrashLogModifiedUtc()
+    {
+        try
+        {
+            return File.Exists(Config.CrashLogPath)
+                ? File.GetLastWriteTimeUtc(Config.CrashLogPath).ToString("o")
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

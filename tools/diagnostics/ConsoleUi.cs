@@ -56,7 +56,7 @@ internal static class ConsoleUi
         }
         lines.Add(
             new Markup(
-                $"[dim]If ./diagnostics isn't bind-mounted (bare deploy):[/] docker compose cp sdvd-server:{Markup.Escape(zipPath)} ."
+                $"[dim]If ./diagnostics isn't bind-mounted (bare deploy):[/] docker compose cp server:{Markup.Escape(zipPath)} ."
             )
         );
 

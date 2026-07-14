@@ -19,13 +19,17 @@ internal static class SteamAuthProbe
             {
                 return $"reachable, but /health returned HTTP {(int)response.StatusCode}";
             }
-            var (total, loggedIn) = CountAccounts(await response.Content.ReadAsStringAsync());
+            if (CountAccounts(await response.Content.ReadAsStringAsync()) is not { } counts)
+            {
+                // Distinct from "0 configured": we reached /health but couldn't read its shape.
+                return "reachable, but /health returned unreadable account data";
+            }
             // Derive from the count, not the sidecar's top-level `logged_in`: that flag is
             // All(accounts, …), vacuously true with zero accounts — it would read as "logged in"
             // on a server that has no Steam accounts configured at all.
-            return total == 0
+            return counts.total == 0
                 ? "reachable, 0 Steam accounts configured"
-                : $"reachable, {loggedIn}/{total} Steam account(s) logged in";
+                : $"reachable, {counts.loggedIn}/{counts.total} Steam account(s) logged in";
         }
         catch (Exception ex)
         {
@@ -35,9 +39,10 @@ internal static class SteamAuthProbe
 
     /// <summary>
     /// Reads ONLY the `accounts` array length and each entry's `logged_in` bool — deliberately never
-    /// `username` or `steam_id`, so no account identity can leak. Returns (0, 0) on any parse issue.
+    /// `username` or `steam_id`, so no account identity can leak. Returns null (not a zero count) when
+    /// the body is unparseable or lacks the array, so the caller can distinguish it from "0 configured".
     /// </summary>
-    private static (int total, int loggedIn) CountAccounts(string body)
+    private static (int total, int loggedIn)? CountAccounts(string body)
     {
         try
         {
@@ -47,7 +52,7 @@ internal static class SteamAuthProbe
                 || accounts.ValueKind != JsonValueKind.Array
             )
             {
-                return (0, 0);
+                return null;
             }
             var loggedIn = accounts
                 .EnumerateArray()
@@ -59,7 +64,7 @@ internal static class SteamAuthProbe
         }
         catch
         {
-            return (0, 0);
+            return null;
         }
     }
 }
