@@ -3,6 +3,8 @@ using HarmonyLib;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using StardewValley.Characters;
+using StardewValley.Monsters;
 
 namespace JunimoServer.Shared;
 
@@ -87,9 +89,10 @@ public static class TpsAgnosticPacing
     }
 
     /// <summary>
-    /// Registers every Stage-1 pacing patch on the given Harmony instance. Idempotent per instance
-    /// (Harmony rejects a duplicate patch of the same method by the same owner). Call from each mod's
-    /// unconditionally-run startup path.
+    /// Registers every pacing patch on the given Harmony instance (fades, and the movement sub-step for
+    /// villagers/event-actors, monsters, farm animals, children, plus farmer event movement). Idempotent
+    /// per instance (Harmony rejects a duplicate patch of the same method by the same owner). Call from
+    /// each mod's unconditionally-run startup path.
     /// </summary>
     public static void Apply(Harmony harmony)
     {
@@ -110,7 +113,39 @@ public static class TpsAgnosticPacing
             original: AccessTools.Method(typeof(Character), nameof(Character.MovePosition)),
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
-                nameof(Character_MovePosition_Postfix)
+                nameof(MovePosition_SubStep_Postfix)
+            )
+        );
+
+        // Monsters, farm animals, and children each have their OWN MovePosition override that does NOT
+        // route through Character.MovePosition, so the seam above misses them — patch each directly with
+        // the same sub-step postfix (shared carry + re-entrancy guard, virtual dispatch re-invokes the
+        // right override). Each override keeps its per-step collision probe, so sub-stepping preserves
+        // combat/pathing semantics at any TPS. Monster's knockback/velocity branch already self-substeps
+        // large velocities (ceil(|v|/bbox) loop) and decays velocity per call — running the whole method
+        // floor(carry) times reproduces vanilla's 60Hz knockback decay exactly.
+        harmony.Patch(
+            original: AccessTools.Method(typeof(Monster), nameof(Monster.MovePosition)),
+            postfix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_SubStep_Postfix)
+            )
+        );
+        harmony.Patch(
+            original: AccessTools.Method(typeof(FarmAnimal), nameof(FarmAnimal.MovePosition)),
+            postfix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_SubStep_Postfix)
+            )
+        );
+        // Child.MovePosition delegates to base.MovePosition during festivals — that path is already
+        // sub-stepped by the Character seam above, so the Child postfix must skip it to avoid
+        // double-stepping (see Child_MovePosition_Postfix).
+        harmony.Patch(
+            original: AccessTools.Method(typeof(Child), nameof(Child.MovePosition)),
+            postfix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(Child_MovePosition_Postfix)
             )
         );
 
@@ -143,16 +178,29 @@ public static class TpsAgnosticPacing
     [ThreadStatic]
     private static bool _inSubStep;
 
+    // Extra sub-step calls pass a zero-elapsed GameTime (reused, single-threaded game loop). The
+    // per-tick-constant POSITION step (`position ± speed`) does not read `time`, so it still advances;
+    // the ms-based terms in the same body (`blockedInterval += ms`, `slideAnimationTimer -= ms`, the
+    // wall-clock slide-correction `speed * ms/64`, FarmAnimal's `nextFollowDirectionChange -= ms`)
+    // contribute ZERO on the extra calls — so only the real (first) call carries the tick's ms budget.
+    // Without this those accumulators would advance once per sub-step (~12x too fast at TPS 5),
+    // triggering stuck-emote/charge and follow-direction changes far too early.
+    private static readonly GameTime ZeroElapsedGameTime = new GameTime(
+        TimeSpan.Zero,
+        TimeSpan.Zero
+    );
+
     /// <summary>
-    /// Postfix on <see cref="Character.MovePosition"/>. The vanilla call already ran one step; this
-    /// runs the remaining <c>floor(carry += TickScale) - 1</c> steps so total per-tick distance matches
-    /// a 60-TPS tick. Never scales the per-step delta — each extra call is a full vanilla step through
-    /// the same collision/arrival logic, so collision probes and the event NPC arrival window (fixed
-    /// 16px) behave exactly as at 60 TPS.
+    /// Shared sub-step postfix for any <see cref="Character"/> subtype's <c>MovePosition</c> override.
+    /// The vanilla call already ran one full step (carrying this tick's ms budget); this runs the
+    /// remaining <c>floor(carry += TickScale) - 1</c> steps with a zero-elapsed <see cref="GameTime"/> so
+    /// only the per-tick-constant position delta advances (never scaled), while ms-based timers in the
+    /// same body stay counted once. Collision probes, the event NPC arrival window (fixed 16px), and
+    /// monster knockback decay behave exactly as at 60 TPS. Virtual dispatch re-invokes the correct
+    /// override; the shared <see cref="_inSubStep"/> guard stops recursion across all patched overrides.
     /// </summary>
-    private static void Character_MovePosition_Postfix(
+    private static void MovePosition_SubStep_Postfix(
         Character __instance,
-        GameTime time,
         xTile.Dimensions.Rectangle viewport,
         GameLocation currentLocation
     )
@@ -173,16 +221,37 @@ public static class TpsAgnosticPacing
         {
             for (int i = 0; i < extraSteps; i++)
             {
-                // Virtual dispatch: an NPC re-enters through NPC.MovePosition's movementPause gate
-                // (correct — a paused NPC's extra steps no-op too). Farmer/Monster/FarmAnimal/Child
-                // overrides do NOT route through Character.MovePosition, so they are unaffected here.
-                __instance.MovePosition(time, viewport, currentLocation);
+                __instance.MovePosition(ZeroElapsedGameTime, viewport, currentLocation);
             }
         }
         finally
         {
             _inSubStep = false;
         }
+    }
+
+    /// <summary>
+    /// Sub-step postfix for <see cref="Child.MovePosition"/>. Identical to
+    /// <see cref="MovePosition_SubStep_Postfix"/> except it SKIPS the festival case: during a festival
+    /// <c>Child.MovePosition</c> delegates to <c>base.MovePosition</c> (the <see cref="Character"/> seam),
+    /// which the Character postfix already sub-steps — running this postfix too would double-step. The
+    /// festival delegation condition mirrors <c>Child.MovePosition</c> (decompiled): event up, current
+    /// event is a festival.
+    /// </summary>
+    private static void Child_MovePosition_Postfix(
+        Child __instance,
+        xTile.Dimensions.Rectangle viewport,
+        GameLocation currentLocation
+    )
+    {
+        // Mirror Child.MovePosition's festival-delegation guard: that path routes through
+        // base.MovePosition and is sub-stepped by the Character seam, so skip it here.
+        if (Game1.eventUp && Game1.CurrentEvent != null && Game1.CurrentEvent.isFestival)
+        {
+            return;
+        }
+
+        MovePosition_SubStep_Postfix(__instance, viewport, currentLocation);
     }
 
     /// <summary>

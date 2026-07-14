@@ -55,14 +55,46 @@ Registered on both mods (`JunimoServer/ModEntry.cs` `LoadServiceDependencies`, `
 | `Character.MovePosition` (`Character.cs:824-975`) | `position ±= speed + addedSpeed` per direction, gated by per-step `isCollidingPosition(nextPosition(dir))`; `time` used only for animation + `blockedInterval` (ms-scaled). `NPC.MovePosition` (`NPC.cs:3085-3092`) is a thin `movementPause` gate over `base.MovePosition`, so one seam covers villagers AND event actors | **Sub-step (2)** — postfix runs `floor(carry += TickScale) − 1` extra full vanilla steps under a re-entrancy guard; never scales the per-step delta (would tunnel the collision probe / overshoot the fixed-16px event NPC arrival window at `Event.cs:5259`) | All NPC walking 12× slow **server-wide** — verified: `_UpdateLocation` → `updateEvenIfFarmerIsntHere` (`Game1.cs:5871`) runs `updateCharacters` → `NPC.update` → `MovePosition` for EVERY location each tick (`Utility.ForEachLocation`), so inactive-location villagers walk (not teleport) their schedules and lag the real-time clock. Event choreography crawls (Lewis: 6.4s vs 0.5s) |
 | `Farmer.getMovementSpeed()` event branch (`Farmer.cs:8083`) | `Max(1, speed + farmerAddedSpeed…)` per tick — unscaled (the free-move branch `:8069-8081` already ms-scales by `ElapsedGameTime.Milliseconds`) | **Scaled step (1)** — postfix scales `__result *= TickScale` only on the event branch (detected by `CurrentEvent != null && !playerControlSequence`). Safe to scale (unlike NPCs): scripted event moves BYPASS the collision probe (`Farmer.MovePositionImpl:8595` `\|\| flag` where `flag = eventUp && !isFestival && !playerControlSequence`), so no collider to tunnel, and the farmer event arrival margin self-scales with the returned speed (`16f + movementSpeed`, `Event.cs:5236`), so no overshoot. *(Plan's earlier "collisions cleared at Event.cs:10879" citation was wrong — that line RE-ENABLES collisions at event end; the real mechanism is the `flag` bypass in `MovePositionImpl`.)* | Farmer event/cutscene movement 12× slow |
 
-### Tick-scaled, gameplay-relevant — audit the full body, then fix (Stage 3)
+### Stage 3 — creature MOVEMENT: IMPLEMENTED (Monster/FarmAnimal/Child sub-step)
 
-| Site | Verified so far | To audit before fixing |
+Patched with the SAME sub-step primitive as Stage 1 (`MovePosition_SubStep_Postfix`), extended for a
+correctness bug found during Stage 3 (see below). Registered in `TpsAgnosticPacing.Apply`.
+
+| Site | Mechanism (verified) | Fix | Notes |
+|---|---|---|---|
+| `Monster.MovePosition` (`Monster.cs:1011-1200`) | Own impl (not via `Character`). Walk portion is `position ± speed` per direction with per-step `isCollidingPosition` — same shape as `Character`. Knockback branch already self-substeps large velocities (`ceil(|v|/bbox)` lerp loop) and decays velocity per call | **Sub-step (2)** — postfix runs the whole method `floor(carry)-1` extra times. Whole-method sub-step reproduces vanilla 60Hz knockback decay exactly | `slideAnimationTimer`/`blockedInterval`/wall-slide-correction are ms-based — see zero-time fix below |
+| `FarmAnimal.MovePosition` (`FarmAnimal.cs:2099+`) | Own impl; `Game1.IsClient` early-return = server-simulated. `position ± speed` step + per-step `isCollidingPosition` | **Sub-step (2)** | `nextFollowDirectionChange -= ms` is ms-based — zero-time fix applies |
+| `Child.MovePosition` (`Child.cs:157+`) | Own impl gated on `Game1.IsMasterGame`; `position ± speed` + per-step collision. Festival case delegates to `base.MovePosition` (Character seam) | **Sub-step (2)** with a festival-skip guard (that path is already sub-stepped by the Character seam — avoids double-step) | — |
+
+**Zero-time sub-step correction (found + fixed during Stage 3, applies to Stage 1 too):** the original
+Stage 1 postfix re-invoked `MovePosition(time, …)` with the REAL `time`, so ms-based accumulators inside
+the body (`blockedInterval += ms` → stuck-emote/charge; Monster `slideAnimationTimer`, wall-slide
+`speed*ms/64`; FarmAnimal `nextFollowDirectionChange -= ms`) advanced once PER sub-step (~12× too fast at
+TPS 5). Fix: extra sub-steps now pass `ZeroElapsedGameTime`, so the per-tick-constant *position* step
+(which never reads `time`) still advances while every ms-based term contributes zero on the extra calls
+— only the real (first) call carries the tick's ms budget. This corrects a latent bug in the shipped
+Stage 1 Character sub-step (a stuck NPC charged after ~0.4s instead of 5s at TPS 5).
+
+*Known cosmetic limitation of zero-time:* the walk-cycle animation (`Sprite.Animate(time, …)`) does NOT
+advance on the extra zero-time steps, so at low TPS a character's *position* moves at correct wall-clock
+speed but its leg animation still cycles at the tick rate (12× slow at TPS 5). Position/arrival — the
+gameplay-relevant property — is correct; only the sprite cadence is slow. Accepted: animating on the
+extra steps would require passing real `time`, which reintroduces the ms-accumulator over-count. Position
+correctness > animation smoothness.
+
+### Stage 3 — projectiles + debris: AUDITED, DEFERRED (not built) — necessity is marginal on this server
+
+| Site | Mechanism (verified) | Why deferred |
 |---|---|---|
-| `Monster.MovePosition` (`Monster.cs:1011+`) | Own implementation, does NOT route through the `Character` seam (no `base.MovePosition` call). Knockback branch already self-substeps large velocities (`ceil(|v|/bbox)` loop, `:1030-1040`) — vanilla precedent for the technique | The walk portion's step mechanics; knockback decay factors; `behaviorAtGameTick` timers. Decided: fix to vanilla wall-clock combat pacing |
-| `FarmAnimal.MovePosition` (`FarmAnimal.cs:2099+`) | Own implementation; `Game1.IsClient` early-return proves server-side simulation | Step mechanics, grazing/follow timers |
-| `Child.MovePosition` (`Child.cs:157+`) | Own implementation, bypasses the `Character` seam (verified via override grep) | Body unread — audit then fix (farmhouse children are world NPCs like any other) |
-| `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile.cs:69-80`) | `position += velocity; velocity += acceleration` per call, unscaled — a shaman fireball at TPS 5 travels at 1/12 speed (trivially dodgeable). Projectile *timers* are ms-based (`Projectile.cs:334,365,431`) | Simulation authority (host vs client-with-location); `Debris` physics same question. Fix note: sub-step the WHOLE `updatePosition` (velocity += acceleration inside each sub-step) — that reproduces vanilla's 60Hz Euler integration exactly, so trajectories match a real client bit-for-bit; scaling only the position delta would distort them |
+| `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile`) | `velocity += acceleration; position += velocity` per call (all `NetField.Value`), unscaled — a fireball at TPS 5 travels 1/12 speed | (1) **Collision is checked OUTSIDE the physics step** — `Projectile.update` calls `updatePosition` then `isColliding` ONCE per tick, so sub-stepping only `updatePosition` still tunnels; a correct fix must sub-step the collision-bearing slice of `update` and avoid N-counting its `travelTime += ms` grace-period timer. (2) **All projectile-firing monsters are MINE/dungeon monsters** (Ghost, Skeleton, ShadowShaman, SquidKid…) — the dedicated farm server never simulates them; real players fight them client-side at 60 TPS. (3) **No E2E test spawns a monster/projectile and there's no `/test` combat probe**, so no runtime gate exists to validate a fix per the plan's own gate standard. Necessity on this server's actual deployment is marginal; building a combat-probe harness is a disproportionate sub-project. |
+| `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/Euler, unscaled | Physics + pickup + bounce checks are all self-contained in `updateChunks` (no external-collision tunneling, unlike projectiles — more tractable). Still DEFERRED for the same reason (3): no test exercises debris landing/pickup at low TPS, so no runtime gate. Debris settles ~12× slower at TPS 5 (item drops drift longer before resting) — a real but low-severity cosmetic-adjacent effect. |
+
+**TODO (concrete, per `holistic-or-explicit-todo`):** to close projectiles+debris, add a `/test/spawn_monster`
++ `/test/fire_projectile` + `/test/drop_debris` endpoint set and a WeddingTests-style measurement test
+(walk/fire at TPS 5 vs 60, ±10% wall-clock), then implement: Projectile = sub-step the collision-bearing
+slice of `Projectile.update` (collision checked per sub-step, `travelTime` counted once via the same
+zero-time technique); Debris = sub-step `updateChunks` (self-contained, zero-time for any ms terms). Until
+that harness exists these stay audited-not-fixed — mechanism known, fix shape known, blocked on validation.
 | `Debris` chunk physics (`Debris.cs:763-824`) | *(promoted from Stage 2 audit)* `xVelocity += 0.8f` (capped 8f), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity Euler integration, unscaled | Same as projectiles — sub-step the whole chunk update (velocity accumulation inside each sub-step). Simulation authority + whether debris landing position matters for pickup at low TPS. Gameplay-relevant (debris = collectible drops) |
 
 **Stage 3 audit progress (2026-07-13):** Verified `Monster.MovePosition` (`Monster.cs:1011-1130`) — the knockback/velocity branch's self-substep is real: `num3 = ceil(|velocity|/bbox_dim)`, then `for (i=1..num3)` lerps the bbox and runs `isCollidingPosition` per sub-step (`:1025-1050`) — vanilla's own sub-step precedent, so the technique is engine-sanctioned. The walk-portion step (the non-velocity movement, further in the body) is the part still needing the Stage 1 sub-step primitive; `slideAnimationTimer -= ElapsedGameTime.Milliseconds` (`:1073`) is already ms-based. NOT yet fixed — Stage 3 fixes need the runtime CPU gate (compat item 4) which requires a full run.
