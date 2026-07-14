@@ -52,6 +52,20 @@ class Program
 
     private static readonly List<string> FailedSections = new();
 
+    // Track why live reads failed so the report can explain an empty snapshot instead of showing
+    // bare "unknown" everywhere: a connection-level failure on every attempt means the HTTP listener
+    // isn't up yet (server still starting), which reads very differently from an HTTP error status.
+    private static int _readsAttempted;
+    private static int _connectionFailures;
+
+    /// <summary>What the collection run observed about the server, used to caption empty sections.</summary>
+    private enum ServerState
+    {
+        Reachable, // Listener answered; live data is present (may still be pre-save — see NoWorldLoaded).
+        NotAccepting, // Every read failed to connect — listener not up yet (server still starting).
+        NoWorldLoaded, // Listener up, but no save is loaded (booting, or a runtime day/farm-map change).
+    }
+
     private static readonly JsonDocumentOptions ManifestJsonOptions = new()
     {
         CommentHandling = JsonCommentHandling.Skip,
@@ -148,11 +162,13 @@ class Program
     /// </summary>
     private static async Task<string?> TryGet(HttpClient client, string path)
     {
+        _readsAttempted++;
         try
         {
             var response = await client.GetAsync(BaseUrl + path);
             if (!response.IsSuccessStatusCode)
             {
+                // An HTTP error status means the listener is up — not a connection failure.
                 FailedSections.Add($"{path} (HTTP {(int)response.StatusCode})");
                 return null;
             }
@@ -160,6 +176,8 @@ class Program
         }
         catch (Exception ex)
         {
+            // Couldn't reach the listener at all (refused / timed out) — the "still starting" signal.
+            _connectionFailures++;
             FailedSections.Add($"{path} ({ex.GetType().Name})");
             return null;
         }
@@ -167,7 +185,9 @@ class Program
 
     /// <summary>
     /// Probes the steam-auth sidecar's /health from inside the container (same URL the server uses),
-    /// reporting reachability and, when reachable, the logged-in flag. Never throws.
+    /// reporting reachability and a COUNT of configured / logged-in accounts. Reads only the array
+    /// length and the per-account logged_in bools — never the usernames or steam_ids, which are
+    /// sensitive and must not reach the report. Never throws.
     /// </summary>
     private static async Task<string> ProbeSidecar()
     {
@@ -180,14 +200,56 @@ class Program
                 return $"reachable, but /health returned HTTP {(int)response.StatusCode}";
             }
             var body = await response.Content.ReadAsStringAsync();
-            var loggedIn = ReadStringField(body, "logged_in");
-            return string.IsNullOrEmpty(loggedIn)
-                ? "reachable"
-                : $"reachable, logged_in={loggedIn}";
+            var (total, loggedIn) = CountSteamAccounts(body);
+            // Derive the summary from the count, not the sidecar's top-level `logged_in`: that flag is
+            // All(accounts, …), which is vacuously true when zero accounts are configured — reporting
+            // it verbatim would read as "logged in" on a server with no Steam accounts at all.
+            if (total == 0)
+            {
+                return "reachable, 0 Steam accounts configured";
+            }
+            return $"reachable, {loggedIn}/{total} Steam account(s) logged in";
         }
         catch (Exception ex)
         {
             return $"UNREACHABLE ({ex.GetType().Name})";
+        }
+    }
+
+    /// <summary>
+    /// Extracts ONLY the account count and logged-in count from the sidecar /health body. Deliberately
+    /// reads just the `accounts` array length and each entry's `logged_in` bool — never `username` or
+    /// `steam_id`, so no account identity can leak into the report. Returns (0, 0) on any parse issue.
+    /// </summary>
+    private static (int total, int loggedIn) CountSteamAccounts(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (
+                !doc.RootElement.TryGetProperty("accounts", out var accounts)
+                || accounts.ValueKind != JsonValueKind.Array
+            )
+            {
+                return (0, 0);
+            }
+            var total = accounts.GetArrayLength();
+            var loggedIn = 0;
+            foreach (var account in accounts.EnumerateArray())
+            {
+                if (
+                    account.TryGetProperty("logged_in", out var flag)
+                    && flag.ValueKind == JsonValueKind.True
+                )
+                {
+                    loggedIn++;
+                }
+            }
+            return (total, loggedIn);
+        }
+        catch
+        {
+            return (0, 0);
         }
     }
 
@@ -255,6 +317,7 @@ class Program
     )
     {
         var status = json.GetValueOrDefault("/status");
+        var state = DeriveServerState(status);
 
         var sb = new StringBuilder();
         sb.AppendLine("# Server Diagnostics Report");
@@ -276,23 +339,39 @@ class Program
         {
             sb.AppendLine("- HTTP API disabled (API_ENABLED=false) — live-state sections skipped.");
         }
+        else if (state == ServerState.NotAccepting)
+        {
+            sb.AppendLine(
+                "- **Server still starting** — the HTTP API isn't accepting connections yet. Re-run in a few seconds."
+            );
+        }
+        else if (state == ServerState.NoWorldLoaded)
+        {
+            sb.AppendLine(
+                "- **No save loaded** — the server is booting or between saves (e.g. a day transition or farm-map change). Live world sections below reflect this."
+            );
+        }
         else if (FailedSections.Count > 0)
         {
             sb.AppendLine($"- Failed live-state reads: {string.Join(", ", FailedSections)}");
         }
         sb.AppendLine();
 
-        // Runtime / uptime, performance, host, dependencies
-        AppendRuntimeSection(sb, json.GetValueOrDefault("/stats"));
-        AppendPerformanceSection(sb, json.GetValueOrDefault("/stats"));
+        // Reported details (wizard answers, or a fill-in template) up top — it's the human's account
+        // of the problem, the first thing a triager reads before the machine-collected sections.
+        AppendReportedDetailsSection(sb, reported);
+
+        // Uptime, performance, storage, services
+        AppendRuntimeSection(sb, json.GetValueOrDefault("/stats"), state);
+        AppendPerformanceSection(sb, json.GetValueOrDefault("/stats"), state);
         AppendHostSection(sb);
-        AppendDependenciesSection(sb, sidecarStatus);
+        AppendServicesSection(sb, sidecarStatus);
 
         // Server settings
-        AppendJsonSection(sb, "Server settings", json.GetValueOrDefault("/settings"));
+        AppendJsonSection(sb, "Server settings", json.GetValueOrDefault("/settings"), state);
 
-        // Installed server mods
-        sb.AppendLine("## Installed server mods");
+        // Mods
+        sb.AppendLine("## Mods");
         sb.AppendLine();
         AppendModsTable(sb);
         sb.AppendLine();
@@ -301,14 +380,23 @@ class Program
         AppendFarmhandsSection(
             sb,
             json.GetValueOrDefault("/farmhands"),
-            json.GetValueOrDefault("/players")
+            json.GetValueOrDefault("/players"),
+            state
         );
-        AppendCabinsSection(sb, json.GetValueOrDefault("/cabins"));
+        AppendCabinsSection(sb, json.GetValueOrDefault("/cabins"), state);
 
-        // Live diagnostics
-        AppendJsonSection(sb, "Live diagnostics", json.GetValueOrDefault("/diagnostics/state"));
+        // Server state
+        AppendJsonSection(sb, "Server state", json.GetValueOrDefault("/diagnostics/state"), state);
 
-        // Reported details (wizard) or template
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The human's account of the problem: the wizard answers when run interactively, or a fill-in
+    /// template otherwise. Placed near the top of the report since it's what a triager reads first.
+    /// </summary>
+    private static void AppendReportedDetailsSection(StringBuilder sb, ReportedDetails? reported)
+    {
         if (reported != null)
         {
             sb.AppendLine("## Reported details");
@@ -339,17 +427,50 @@ class Program
             );
         }
         sb.AppendLine();
-
-        return sb.ToString();
     }
 
-    private static void AppendJsonSection(StringBuilder sb, string title, string? raw)
+    /// <summary>
+    /// Classifies what the run observed: NotAccepting when every read hit a connection failure (the
+    /// listener isn't up — server still starting), NoWorldLoaded when the listener answered but no
+    /// save is loaded (booting, or a runtime day/farm-map transition), else Reachable.
+    /// </summary>
+    private static ServerState DeriveServerState(string? statusRaw)
+    {
+        if (_readsAttempted > 0 && _connectionFailures == _readsAttempted)
+        {
+            return ServerState.NotAccepting;
+        }
+        // /status answers 200 even offline; isOnline is false until a save is loaded and the game
+        // loop is running (also false through day transitions and farm-map changes at runtime).
+        if (statusRaw != null && !ReadBoolField(statusRaw, "isOnline"))
+        {
+            return ServerState.NoWorldLoaded;
+        }
+        return ServerState.Reachable;
+    }
+
+    /// <summary>The per-state caption used for empty live sections, in prose that fits mid-sentence.</summary>
+    private static string UnavailableReason(ServerState state) =>
+        state switch
+        {
+            ServerState.NotAccepting => "server still starting",
+            ServerState.NoWorldLoaded =>
+                "no save loaded — the server is booting or between saves (e.g. a day transition or farm-map change)",
+            _ => "not available",
+        };
+
+    private static void AppendJsonSection(
+        StringBuilder sb,
+        string title,
+        string? raw,
+        ServerState state
+    )
     {
         sb.AppendLine($"## {title}");
         sb.AppendLine();
         if (raw == null)
         {
-            sb.AppendLine("_Not available._");
+            sb.AppendLine($"_{Capitalize(UnavailableReason(state))}._");
             sb.AppendLine();
             return;
         }
@@ -363,9 +484,9 @@ class Program
     /// Server (mod) uptime from /stats, plus container uptime derived from PID 1's start time
     /// (PID 1 is the base image's init supervisor, so this is when the container booted).
     /// </summary>
-    private static void AppendRuntimeSection(StringBuilder sb, string? statsRaw)
+    private static void AppendRuntimeSection(StringBuilder sb, string? statsRaw, ServerState state)
     {
-        sb.AppendLine("## Runtime");
+        sb.AppendLine("## Uptime");
         sb.AppendLine();
 
         var startedAt = ReadStringField(statsRaw, "startedAtUtc");
@@ -377,7 +498,7 @@ class Program
         }
         else
         {
-            sb.AppendLine("- Server uptime: _not available_");
+            sb.AppendLine($"- Server uptime: _{UnavailableReason(state)}_");
         }
 
         var containerUptime = ContainerUptime();
@@ -389,13 +510,17 @@ class Program
         sb.AppendLine();
     }
 
-    private static void AppendPerformanceSection(StringBuilder sb, string? statsRaw)
+    private static void AppendPerformanceSection(
+        StringBuilder sb,
+        string? statsRaw,
+        ServerState state
+    )
     {
         sb.AppendLine("## Performance");
         sb.AppendLine();
         if (statsRaw == null)
         {
-            sb.AppendLine("_Not available._");
+            sb.AppendLine($"_{Capitalize(UnavailableReason(state))}._");
             sb.AppendLine();
             return;
         }
@@ -411,11 +536,9 @@ class Program
                 new[] { "Game-thread wait", $"{Str(s, "gameThreadWaitMs")} ms" },
                 new[] { "Pending actions", Str(s, "pendingActions") },
                 new[] { "Managed memory", $"{Str(s, "memoryMb")} MB" },
-                new[]
-                {
-                    "GC gen 0 / 1 / 2",
-                    $"{Str(s, "gcGen0")} / {Str(s, "gcGen1")} / {Str(s, "gcGen2")}",
-                },
+                new[] { "GC gen 0 collections", Str(s, "gcGen0") },
+                new[] { "GC gen 1 collections", Str(s, "gcGen1") },
+                new[] { "GC gen 2 collections", Str(s, "gcGen2") },
             };
             AppendTable(sb, new[] { "Metric", "Value" }, rows);
         }
@@ -426,47 +549,41 @@ class Program
         sb.AppendLine();
     }
 
-    /// <summary>Disk free space for the mounted volumes and the last SMAPI crash log (if any).</summary>
+    /// <summary>Disk free space for the mounted volumes, and a pointer to the SMAPI crash log when one is present.</summary>
     private static void AppendHostSection(StringBuilder sb)
     {
-        sb.AppendLine("## Host / container");
+        sb.AppendLine("## Storage");
         sb.AppendLine();
 
         var rows = new List<string[]>();
         foreach (var path in DiskPaths)
         {
-            var (used, total) = DiskUsage(path);
+            var (free, total) = DiskUsage(path);
             rows.Add(
                 new[]
                 {
                     path,
                     total == null
                         ? "_n/a_"
-                        : $"{FormatBytes(used!.Value)} / {FormatBytes(total.Value)}",
+                        : $"{FormatBytes(free!.Value)} free / {FormatBytes(total.Value)}",
                 }
             );
         }
-        AppendTable(sb, new[] { "Volume", "Used / Total" }, rows);
+        AppendTable(sb, new[] { "Volume", "Free / Total" }, rows);
         sb.AppendLine();
 
         var crashLog = $"{ConfigRoot}/ErrorLogs/SMAPI-crash.txt";
         if (File.Exists(crashLog))
         {
             var when = File.GetLastWriteTimeUtc(crashLog).ToString("o");
-            sb.AppendLine(
-                $"- Last SMAPI crash log: present (modified {when}) — included in this zip."
-            );
+            sb.AppendLine($"- SMAPI crash log: present (modified {when}) — included in this zip.");
+            sb.AppendLine();
         }
-        else
-        {
-            sb.AppendLine("- Last SMAPI crash log: none.");
-        }
-        sb.AppendLine();
     }
 
-    private static void AppendDependenciesSection(StringBuilder sb, string sidecarStatus)
+    private static void AppendServicesSection(StringBuilder sb, string sidecarStatus)
     {
-        sb.AppendLine("## Dependencies");
+        sb.AppendLine("## Services");
         sb.AppendLine();
         sb.AppendLine($"- steam-auth ({SteamAuthUrl}): {sidecarStatus}");
         sb.AppendLine();
@@ -494,7 +611,8 @@ class Program
     private static void AppendFarmhandsSection(
         StringBuilder sb,
         string? farmhandsRaw,
-        string? playersRaw
+        string? playersRaw,
+        ServerState state
     )
     {
         sb.AppendLine("## Farmhands");
@@ -503,7 +621,7 @@ class Program
         var farmhands = ReadArray(farmhandsRaw, "farmhands");
         if (farmhands == null)
         {
-            sb.AppendLine("_Not available._");
+            sb.AppendLine($"_{Capitalize(UnavailableReason(state))}._");
             sb.AppendLine();
             return;
         }
@@ -519,27 +637,30 @@ class Program
         foreach (var f in farmhands.Value.EnumerateArray())
         {
             var id = Str(f, "id");
+            // An uncustomized slot has never been claimed by a real player, so it's a free slot
+            // a new player can take. "Customized" is the raw signal; surface its meaning directly.
+            var claimed = GetBool(f, "isCustomized");
             rows.Add(
                 new[]
                 {
                     Str(f, "name"),
                     id,
                     Bool(onlineIds.Contains(id)),
-                    Bool(GetBool(f, "isCustomized")),
+                    claimed ? "claimed" : "free (unclaimed)",
                 }
             );
         }
-        AppendTable(sb, new[] { "Name", "ID", "Connected", "Customized" }, rows);
+        AppendTable(sb, new[] { "Name", "ID", "Connected", "Slot" }, rows);
         sb.AppendLine();
     }
 
-    private static void AppendCabinsSection(StringBuilder sb, string? raw)
+    private static void AppendCabinsSection(StringBuilder sb, string? raw, ServerState state)
     {
         sb.AppendLine("## Cabins");
         sb.AppendLine();
         if (raw == null)
         {
-            sb.AppendLine("_Not available._");
+            sb.AppendLine($"_{Capitalize(UnavailableReason(state))}._");
             sb.AppendLine();
             return;
         }
@@ -551,6 +672,10 @@ class Program
             sb.AppendLine(
                 $"- Total: {Str(root, "totalCount")} · Assigned: {Str(root, "assignedCount")} · Available: {Str(root, "availableCount")}"
             );
+            // "Available" counts cabins the server treats as claimable, which INCLUDES a cabin that
+            // has an owner who hasn't customized their character yet (isAssigned needs
+            // owner.isCustomized). The Status column below spells that middle state out so an
+            // owned-but-available cabin doesn't read as a contradiction.
             sb.AppendLine();
             if (root.TryGetProperty("cabins", out var cabins) && cabins.GetArrayLength() > 0)
             {
@@ -558,18 +683,25 @@ class Program
                 foreach (var c in cabins.EnumerateArray())
                 {
                     var owner = Str(c, "ownerName");
+                    var hasOwner = !string.IsNullOrEmpty(owner);
+                    var assigned = GetBool(c, "isAssigned");
+                    // Three distinct states, collapsed by the API into owner + isAssigned:
+                    var status =
+                        assigned ? "assigned"
+                        : hasOwner ? "owned, setup pending"
+                        : "available";
                     rows.Add(
                         new[]
                         {
                             $"({Str(c, "tileX")}, {Str(c, "tileY")})",
                             Str(c, "type"),
-                            string.IsNullOrEmpty(owner) ? "-" : owner,
-                            Bool(GetBool(c, "isAssigned")),
+                            hasOwner ? owner : "-",
+                            status,
                             Bool(GetBool(c, "isHidden")),
                         }
                     );
                 }
-                AppendTable(sb, new[] { "Tile", "Type", "Owner", "Assigned", "Hidden" }, rows);
+                AppendTable(sb, new[] { "Tile", "Type", "Owner", "Status", "Hidden" }, rows);
             }
         }
         catch
@@ -854,6 +986,28 @@ class Program
         return null;
     }
 
+    /// <summary>Reads a boolean field; treats a missing/non-bool field as false.</summary>
+    private static bool ReadBoolField(string? raw, string field)
+    {
+        if (raw == null)
+        {
+            return false;
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return doc.RootElement.TryGetProperty(field, out var value)
+                && value.ValueKind == JsonValueKind.True;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string Capitalize(string s) =>
+        string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
+
     /// <summary>
     /// Container uptime = system uptime minus PID 1's age. PID 1 is the base image's init supervisor,
     /// so its start marks the container boot. Uses /proc/uptime (seconds since boot) and /proc/1/stat
@@ -889,7 +1043,7 @@ class Program
         }
     }
 
-    private static (long? used, long? total) DiskUsage(string path)
+    private static (long? free, long? total) DiskUsage(string path)
     {
         try
         {
@@ -910,8 +1064,9 @@ class Program
             {
                 return (null, null);
             }
-            var total = drive.TotalSize;
-            return (total - drive.TotalFreeSpace, total);
+            // AvailableFreeSpace (not TotalFreeSpace) is the headroom actually usable by the app —
+            // it excludes root-reserved blocks, so it's the honest "how much room is left" number.
+            return (drive.AvailableFreeSpace, drive.TotalSize);
         }
         catch
         {
