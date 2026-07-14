@@ -1,11 +1,35 @@
 # Make gameplay TPS-agnostic at arbitrary TPS (fades, movement, and the tick-scaled-logic audit)
 
-Planned 2026-07-13, no code changes yet. **Mission:** the server must produce *correct, wall-clock
-gameplay* at any `SERVER_TPS` (production runs arbitrary values; 5 is the proven test/CI value, 60
-the vanilla reference), and the test client must behave like a real-time client at any
-`CLIENT_TPS`. Test speed is a beneficiary, not the goal. Every mechanism claim below was verified
-by reading the cited decompiled source; items not yet read are listed as explicit audit tasks with
-a recipe — nothing is assumed.
+Planned 2026-07-13. **Mission:** the server must produce *correct, wall-clock gameplay* at any
+`SERVER_TPS` (production runs arbitrary values; 5 is the proven test/CI value, 60 the vanilla
+reference), and the test client must behave like a real-time client at any `CLIENT_TPS`. Test speed
+is a beneficiary, not the goal. Every mechanism claim below was verified by reading the cited
+decompiled source; items not yet read are listed as explicit audit tasks with a recipe — nothing is
+assumed.
+
+## STATUS (2026-07-14) — implemented on branch `bugfix/tps-agnostic-pacing`
+
+Worktree: `repos/server-worktrees/tps-agnostic-pacing` (branched off `master`, NOT the sibling
+`wedding-speedup` worktree which a different session owns). **3 commits, NOT pushed** — awaiting
+review:
+- `61cb065` perf: Stage 1 — fade scaled-step, NPC/event-actor sub-step, farmer-event scale, kill-switch, both-mod registration.
+- `5617a33` fix: corrected the wrong `IsDedicatedHost=false` comments + recorded Stage 1 validation.
+- `a4f4c50` perf: Stage 3 creature movement (Monster/FarmAnimal/Child sub-step) + the zero-time ms-timer correctness fix.
+
+All code lives in `mod/JunimoServer.Shared/TpsAgnosticPacing.cs`, registered from
+`mod/JunimoServer/ModEntry.cs` (`LoadServiceDependencies`) and `tests/test-client/ModEntry.cs`
+(`Entry`). Six patches: `ScreenFade.UpdateGlobalFade`, `Character/Monster/FarmAnimal/Child.MovePosition`,
+`Farmer.getMovementSpeed`. Kill-switch env var `SDVD_TPS_AGNOSTIC_PACING` (default on).
+
+**DONE + validated:** Stage 1 (fades + NPC/farmer-event movement) and Stage 3 creature movement.
+WeddingTests green twice (both clients render both ceremonies — scenario confirmed via log, not just
+the check); full suite 129 passed (the lone failure was an unrelated 504 infra flake that passes in
+isolation); CPU noise-level (median tick 0.22ms / 200ms budget).
+
+**OPEN (see "Remaining work to close the plan" at the bottom):**
+1. Stage 2 audit — a few sweep items still unclassified (Utility ambient spawns, world-update int-timers).
+2. Stage 3 projectiles + debris — audited, NOT built; the server DOES simulate mine monsters/projectiles (master-authority), so this is a genuine deferral needing a `/test` combat probe to validate.
+3. Two unexercised runtime gates — kill-switch A/B (not wired into container env) and the arbitrary/non-integer-TPS matrix (the fractional-carry path has never run in a test).
 
 **Strategic boundary (CPU):** TPS 5 exists to cut simulation cost. "TPS-agnostic" therefore means
 wall-clock-correct *outcomes* for gameplay-relevant mechanics — not sub-stepping the whole game
@@ -86,7 +110,7 @@ correctness > animation smoothness.
 
 | Site | Mechanism (verified) | Why deferred |
 |---|---|---|
-| `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile`) | `velocity += acceleration; position += velocity` per call (all `NetField.Value`), unscaled — a fireball at TPS 5 travels 1/12 speed | (1) **Collision is checked OUTSIDE the physics step** — `Projectile.update` calls `updatePosition` then `isColliding` ONCE per tick, so sub-stepping only `updatePosition` still tunnels; a correct fix must sub-step the collision-bearing slice of `update` and avoid N-counting its `travelTime += ms` grace-period timer. (2) **All projectile-firing monsters are MINE/dungeon monsters** (Ghost, Skeleton, ShadowShaman, SquidKid…) — the dedicated farm server never simulates them; real players fight them client-side at 60 TPS. (3) **No E2E test spawns a monster/projectile and there's no `/test` combat probe**, so no runtime gate exists to validate a fix per the plan's own gate standard. Necessity on this server's actual deployment is marginal; building a combat-probe harness is a disproportionate sub-project. |
+| `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile`) | `velocity += acceleration; position += velocity` per call (all `NetField.Value`), unscaled — a fireball at TPS 5 travels 1/12 speed | **The server DOES simulate these** (correction — an earlier draft wrongly said it never does): mine monster AI + firing is gated on `Game1.IsMasterGame`, which is always true here (`multiplayerMode=2`, per `masterplayer-is-player-on-server`), and `MineShaft.UpdateMines` (`Game1.cs:5842`, in the server update loop) ticks every level in `activeMines` — a level is active whenever a client is in it. So a client fighting in the mines at `SERVER_TPS=5` faces server-simulated projectiles crawling at 1/12 speed (trivially dodgeable) — a **real gameplay defect**. Deferred anyway because: (1) **collision is checked OUTSIDE the physics step** — `Projectile.update` calls `updatePosition` then `isColliding` ONCE per tick, so sub-stepping only `updatePosition` still tunnels; a correct fix must sub-step the collision-bearing slice of `update` and count its `travelTime += ms` grace-period timer once (the zero-time technique); (2) **no E2E test spawns a monster/projectile and there is no `/test` combat probe**, so there is no runtime gate to validate a fix per this plan's own gate standard. This is a genuine deferral (build a combat probe + fix), NOT a proven-no-effect. |
 | `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/Euler, unscaled | Physics + pickup + bounce checks are all self-contained in `updateChunks` (no external-collision tunneling, unlike projectiles — more tractable). Still DEFERRED for the same reason (3): no test exercises debris landing/pickup at low TPS, so no runtime gate. Debris settles ~12× slower at TPS 5 (item drops drift longer before resting) — a real but low-severity cosmetic-adjacent effect. |
 
 **TODO (concrete, per `holistic-or-explicit-todo`):** to close projectiles+debris, add a `/test/spawn_monster`
@@ -316,18 +340,21 @@ server-side (`IsDedicatedHost=false`), not client-side.**
 
 ## Resolved decisions & remaining implementation choices
 
-1. **All three stages committed; creature/combat pacing fixed to vanilla wall-clock difficulty**
-   (user decision 2026-07-13). Audit outcomes are restricted to fixed or proven-no-effect —
-   nothing deferred, nothing "acceptable".
+1. **Stages 1 + Stage-3-creature-movement committed; creature/combat pacing being restored to vanilla
+   wall-clock difficulty** (user decision 2026-07-13). Update (2026-07-14): projectiles + debris are a
+   genuine open deferral (real server-side defect, blocked on a `/test` combat harness to validate) —
+   see "Remaining work" item 4. This is NOT "acceptable"/waved-off; it's tracked open work with a
+   concrete recipe. Everything else is fixed or proven-no-effect.
 2. Farmer event movement: **SETTLED — scale** (evidence, 2026-07-13). `Farmer.MovePositionImpl:8595`
    bypasses the collision probe for scripted event moves (`|| flag`), and the farmer event arrival
    margin self-scales (`16f + movementSpeed`, `Event.cs:5236`), so neither collision-tunnel nor
    arrival-overshoot applies — scaling is provably safe here (the two reasons NPCs need sub-step are
    both absent). Sub-step remains the drop-in fallback if a runtime gate shows the groom teleporting.
-3. Projectile/debris simulation authority: the audit determination selects the fix SITE — a
-   host-side patch if server-simulated, or a recorded proof that only real 60 TPS vanilla
-   clients execute the code (in which case there is no defect on any instance we run). Either
-   way the inventory entry closes as fixed-or-proven, never waved off.
+3. Projectile/debris simulation authority: **RESOLVED — server-simulated** (2026-07-14). Monster AI +
+   firing is gated on `Game1.IsMasterGame` (always true here, `multiplayerMode=2`), and
+   `MineShaft.UpdateMines` (`Game1.cs:5842`, server update loop) ticks every level a client is in. So
+   the fix SITE is a **host-side patch** — the defect is real on our server whenever a client is in the
+   mines. (Corrects an earlier draft that wrongly claimed the server never simulates mine monsters.)
 4. The wedding fade's measured ~10s vs the naive 28.6s model: slow phase matches 0.007/tick
    exactly; the terminal ~4s plunge has an unidentified second contributor. **Static narrowing
    done (2026-07-13):** grepping every `fadeToBlackAlpha` writer in `ScreenFade.cs` + `Game1.cs`
@@ -340,3 +367,42 @@ server-side (`IsDedicatedHost=false`), not client-side.**
    *baseline* trace, NOT a second per-tick stepper the patch must also compensate. The remaining
    **runtime gate** (instrument `fadeToBlackAlpha` per tick in one wedding run) is now a confirmation
    of this static conclusion, not an open mechanism question — deferred to the test-run phase.
+
+## Remaining work to close the plan (ordered; nothing left implicit)
+
+The plan closes only when every inventory row is fixed-or-proven and the mission gate (correct
+wall-clock at arbitrary TPS) is observed. What is left, in recommended order:
+
+1. **Non-integer-TPS runtime gate (highest value — the one untested code path).** Every test so far ran
+   at `SERVER_TPS=5` = integer scale 12.0; the fractional-carry branch (`_moveCarry` keeping ~0.4
+   remainders) has NEVER executed under test. Re-run `WeddingTests` (and ideally a schedule-walk probe)
+   at a non-integer `SERVER_TPS` (e.g. 24 → scale 2.5) and confirm NPC/Lewis movement completes in the
+   same wall-clock ±10% with no drift/jitter. Worst case if skipped: at a non-integer production TPS,
+   NPCs walk subtly wrong. Cheapest close: one `make test-llm FILTER=WeddingTests` run with
+   `SERVER_TPS`/`CLIENT_TPS` overridden to 24.
+2. **Kill-switch A/B + config-consumed gate.** Wire `SDVD_TPS_AGNOSTIC_PACING` into the container env
+   (`ServerContainer.cs` + the client container builder, via `.WithEnvironment` reading
+   `TestEnvLoader.Get`), then run `WeddingTests` with it `=false` and confirm movement reverts to ~12×
+   slow (proves the knob is consumed, per `verify-documented-config-is-consumed`). The env var is NOT in
+   any user-facing docs yet, so no operator is currently misled; if/when it's documented, this gate must
+   pass first. Worst case if skipped: the documented escape hatch silently doesn't disable — low
+   severity (default-on is the tested path).
+3. **Stage 2 sweep — finish the audit.** Remaining unclassified per-tick sites: `Utility` ambient
+   spawns, `GameLocation.updateEvenIfFarmerIsntHere` non-character per-tick constants, world-update
+   int-countdown timers. Classify each fixed / proven-no-effect (most SDV world code has been ms-based
+   so far — expect mostly proven-no-effect). Extend the Stage 2 table until the sweep list is empty.
+4. **Stage 3 projectiles + debris (genuine deferral — real defect, needs a harness).** The server DOES
+   simulate mine monsters/projectiles (resolved above), so a fireball at low TPS really crawls for a
+   client in the mines. To close: (a) add a `/test/spawn_monster` + `/test/fire_projectile` +
+   `/test/drop_debris` endpoint set and a measurement test (fire at TPS 5 vs 60, ±10% wall-clock); then
+   (b) implement — Projectile: sub-step the collision-bearing slice of `Projectile.update` (so
+   `isColliding` runs per sub-step, no tunneling) with `travelTime += ms` counted once via the zero-time
+   technique; Debris: sub-step `updateChunks` (self-contained — physics+pickup+bounce all in one loop —
+   zero-time for any ms terms). The creature-movement half already fixes the monsters' *walking*; only
+   their *projectiles* remain slow.
+
+**One durable landmine to remember:** the movement sub-step passes `ZeroElapsedGameTime` to extra steps
+so ms-based accumulators count once. Any future patch that sub-steps a method must apply the same
+technique for any ms-based term inside it (`blockedInterval`, `travelTime`, timers) — running them N×
+per tick is the recurring bug class. The position/velocity per-tick constants are what SHOULD sub-step;
+ms-based timers/corrections must NOT.
