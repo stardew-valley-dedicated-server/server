@@ -38,9 +38,17 @@ internal static class ZipWriter
 
     private static void AddIfExists(ZipArchive archive, string path, string entryName)
     {
-        if (File.Exists(path))
+        try
         {
-            archive.CreateEntryFromFile(path, entryName);
+            if (File.Exists(path))
+            {
+                archive.CreateEntryFromFile(path, entryName);
+            }
+        }
+        catch
+        {
+            // Optional log; a rotation/permission race between the check and the read must not abort
+            // the archive — report.md is already written, so skip this entry and keep the zip.
         }
     }
 
