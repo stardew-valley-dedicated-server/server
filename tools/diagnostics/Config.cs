@@ -6,7 +6,6 @@ namespace Diagnostics;
 /// </summary>
 internal static class Config
 {
-    public static readonly string ApiPort = Env("API_PORT") ?? "8080";
     public static readonly string ApiKey = Env("API_KEY") ?? "";
 
     public static readonly bool ApiEnabled =
@@ -14,7 +13,7 @@ internal static class Config
 
     public static readonly string GitSha = Env("SDVD_GIT_SHA") ?? "unknown";
     public static readonly string SmapiVersion = Env("SMAPI_VERSION") ?? "unknown";
-    public static readonly string BaseUrl = $"http://127.0.0.1:{ApiPort}";
+    public static readonly string BaseUrl = $"http://127.0.0.1:{Env("API_PORT") ?? "8080"}";
 
     /// <summary>Steam auth sidecar URL the server itself uses (docker-compose STEAM_AUTH_URL).</summary>
     public static readonly string SteamAuthUrl = Env("STEAM_AUTH_URL") ?? "http://steam-auth:3001";
