@@ -119,25 +119,25 @@ init_stardew() {
 
     echo "Using steam-auth service for game files..."
 
-    # Check if the game has finished downloading into the shared volume
-    if [ ! -e "${GAME_DOWNLOAD_MARKER}" ]; then
-        echo ""
-        echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
-        echo -e "\e[33m║  Game files not found! Please run setup first:                        ║\e[0m"
-        echo -e "\e[33m║                                                                       ║\e[0m"
-        echo -e "\e[33m║  make setup                                                           ║\e[0m"
-        echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
-        echo ""
-        echo "Waiting for game files to appear..."
+    # The early return above already handled the marker-present case, so the download is still in
+    # flight here. Warn, then poll until it completes (the loop's own check skips safely if the
+    # marker races in before the first iteration).
+    echo ""
+    echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[33m║  Game files not found! Please run setup first:                        ║\e[0m"
+    echo -e "\e[33m║                                                                       ║\e[0m"
+    echo -e "\e[33m║  make setup                                                           ║\e[0m"
+    echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+    echo ""
+    echo "Waiting for game files to appear..."
 
-        # Poll until the download completes (marker appears)
-        while [ ! -e "${GAME_DOWNLOAD_MARKER}" ]; do
-            sleep 5
-            echo "Still waiting for game files at ${STEAM_AUTH_GAME_DIR}..."
-        done
+    # Poll until the download completes (marker appears)
+    while [ ! -e "${GAME_DOWNLOAD_MARKER}" ]; do
+        sleep 5
+        echo "Still waiting for game files at ${STEAM_AUTH_GAME_DIR}..."
+    done
 
-        echo "Game files detected!"
-    fi
+    echo "Game files detected!"
 
     # Symlink the game directory to expected location
     if [ ! -e "${GAME_DEST_DIR}" ]; then
