@@ -473,9 +473,14 @@ run-metadata.json       # coordinator writes
 summary.json            # passed/failed/canceled counts + degradation
 ctrf-report.json        # CTRF format
 diagnostics/
-  infrastructure.jsonl  # structured event stream; host_id field on host-fanned
-                        #   events (container_started/stopped/oom_killed,
-                        #   docker_preflight, image_transfer_*, capacity_*).
+  infrastructure.jsonl    # structured event stream; host_id field on host-fanned
+                          #   events (container_started/stopped/oom_killed,
+                          #   docker_preflight, image_transfer_*, capacity_*).
+  instance-stats.jsonl    # per-instance container/game stats history
+  instance-history.jsonl  # per-instance lifecycle (leased/poisoned/…) + final state
+  run-events.jsonl        # UI event stream; only on-disk home for xUnit diag/error
+  test-details.jsonl      # per-test output, ordering/timing, used instances
+  setup-phases.jsonl      # prestart/warmup phase + step breakdown
 flakiness.jsonl
 tests/
   {Class}.{Method}/     # per-test artifacts (screenshots, recordings)
