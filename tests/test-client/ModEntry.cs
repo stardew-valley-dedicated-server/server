@@ -130,11 +130,13 @@ public class ModEntry : Mod
         // Extended spawn logging
         helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
 
-        // Apply custom TPS if configured (reduces CPU usage for test clients)
+        // Apply custom TPS if configured (reduces CPU usage for test clients). Clamped to [1, 60] like
+        // the server's Env.ServerTps: above vanilla's fixed 60 per-tick gameplay outruns real time, and
+        // TpsAgnosticPacing can only add sub-steps, never skip vanilla's own.
         var clientTps = Environment.GetEnvironmentVariable("CLIENT_TPS");
         if (!string.IsNullOrEmpty(clientTps) && int.TryParse(clientTps, out var tps) && tps != 60)
         {
-            _targetTps = Math.Max(1, tps);
+            _targetTps = Math.Clamp(tps, 1, 60);
             helper.Events.GameLoop.UpdateTicked += OnFirstTickSetTps;
         }
 
