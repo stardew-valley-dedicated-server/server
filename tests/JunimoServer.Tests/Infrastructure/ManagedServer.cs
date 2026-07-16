@@ -939,12 +939,16 @@ internal sealed class ManagedServer : IAsyncDisposable
         StartHealthWatchdog();
 
         // Wire ServerContainer's error detection (SMAPI ERROR/FATAL, Docker API failures)
-        // to ManagedServer's poison mechanism so tests abort immediately.
+        // to ManagedServer's poison mechanism so tests abort immediately. SuspendHealthChecks
+        // gates this too: an intentional transition (new game, reload, network outage) is
+        // expected to emit server ERRORs, and treating those as a poison-worthy crash would
+        // dispose the container mid-test — so one suspend bracket covers both the watchdog and
+        // this log-error scan (see NetworkOutageHelper's class doc).
         Server
             .GetErrorCancellationToken()
             .Register(() =>
             {
-                if (!_poisoned && !ShutdownCoordinator.IsShuttingDown)
+                if (!_poisoned && !_healthSuspended && !ShutdownCoordinator.IsShuttingDown)
                 {
                     var errors = Server.Errors;
                     var reason =
