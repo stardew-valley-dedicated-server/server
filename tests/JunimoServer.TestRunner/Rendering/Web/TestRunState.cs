@@ -1673,7 +1673,7 @@ public sealed class TestRunState
                                     t.StackTrace,
                                     t.FailureContext,
                                     RecordingSkipReasons = t.RecordingSkipReasons.Count > 0
-                                        ? new Dictionary<string, string>(t.RecordingSkipReasons)
+                                        ? t.RecordingSkipReasons
                                         : null,
                                     UsedInstances = t.UsedInstances.Count > 0
                                         ? t.UsedInstances
