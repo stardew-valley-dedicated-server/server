@@ -26,10 +26,20 @@ WeddingTests green twice (both clients render both ceremonies — scenario confi
 the check); full suite 129 passed (the lone failure was an unrelated 504 infra flake that passes in
 isolation); CPU noise-level (median tick 0.22ms / 200ms budget).
 
-**OPEN (see "Remaining work to close the plan" at the bottom):**
-1. Stage 2 audit — a few sweep items still unclassified (Utility ambient spawns, world-update int-timers).
-2. Stage 3 projectiles + debris — audited, NOT built; the server DOES simulate mine monsters/projectiles (master-authority), so this is a genuine deferral needing a `/test` combat probe to validate.
-3. Two unexercised runtime gates — kill-switch A/B (not wired into container env) and the arbitrary/non-integer-TPS matrix (the fractional-carry path has never run in a test).
+**ALL CORE WORK DONE + VALIDATED (2026-07-14).** Every item closed with a runtime gate:
+1. **Non-integer-TPS gate** ✅ — WeddingTests at `SERVER_TPS=CLIENT_TPS=24` (scale 2.5, fractional carry).
+2. **Kill-switch A/B** ✅ — wired into container env; boot log confirms `DISABLED` when off (knob consumed).
+3. **Stage 2 sweep** ✅ — complete; surfaced the flyer/velocity finding (everything else ms-based/cosmetic).
+4. **Stage 3 projectile + debris** ✅ — prefix sub-step + combat probe (projectile 696-1536px, debris settles).
+5. **Velocity-decay-over-substep bug (found via the flyer investigation — a real bug in the SHIPPED Stage 1/3
+   sub-steps):** Part 1 (knockback, all monsters+NPCs) ✅ — slime knockback 400px. Part 2 (gliders/fliers) ✅
+   — Bat homing 693-766px (was ~15px unpatched). Final regression: PacingProbeTests (all 5) + WeddingTests
+   all green, no Stage-1 regression (both ceremonies rendered, zero errors) — run `2026-07-14T21-16-39Z`.
+
+Remaining: only a broader full-suite regression (catch anything outside the probe/wedding classes) is
+un-run since the velocity/glider changes landed; the targeted PacingProbeTests+WeddingTests regression is
+green. Minor known deviation: Fly/Serpent heading-tracking lags slightly under zero-time (within vanilla's
+tick variance; travel speed exact) — accepted per the fluctuating-TPS decision.
 
 **Strategic boundary (CPU):** TPS 5 exists to cut simulation cost. "TPS-agnostic" therefore means
 wall-clock-correct *outcomes* for gameplay-relevant mechanics — not sub-stepping the whole game
@@ -106,22 +116,30 @@ gameplay-relevant property — is correct; only the sprite cadence is slow. Acce
 extra steps would require passing real `time`, which reintroduces the ms-accumulator over-count. Position
 correctness > animation smoothness.
 
-### Stage 3 — projectiles + debris: AUDITED, DEFERRED (not built) — necessity is marginal on this server
+### Stage 3 — projectiles + debris: IMPLEMENTED (2026-07-14) — prefix sub-step + combat probe
 
-| Site | Mechanism (verified) | Why deferred |
+Both are server-simulated whenever a farmer is in/viewing the location (`GameLocation.UpdateWhenCurrentLocation`
+lines 4152/4155; `MineShaft.UpdateMines` `Game1.cs:5842`; `IsMasterGame` always true here). The fix is a
+**prefix** sub-step (not a postfix, unlike movement) because both `Projectile.update` and `Debris.updateChunks`
+return a `bool` the location's `RemoveWhere` consumes to delete the entity, and check collision inside the
+method — a postfix couldn't honor the return or a mid-flight collision.
+
+| Site | Mechanism (verified) | Fix |
 |---|---|---|
-| `Projectile.updatePosition` overrides (`BasicProjectile.cs:95-106`, `DebuffingProjectile`) | `velocity += acceleration; position += velocity` per call (all `NetField.Value`), unscaled — a fireball at TPS 5 travels 1/12 speed | **The server DOES simulate these** (correction — an earlier draft wrongly said it never does): mine monster AI + firing is gated on `Game1.IsMasterGame`, which is always true here (`multiplayerMode=2`, per `masterplayer-is-player-on-server`), and `MineShaft.UpdateMines` (`Game1.cs:5842`, in the server update loop) ticks every level in `activeMines` — a level is active whenever a client is in it. So a client fighting in the mines at `SERVER_TPS=5` faces server-simulated projectiles crawling at 1/12 speed (trivially dodgeable) — a **real gameplay defect**. Deferred anyway because: (1) **collision is checked OUTSIDE the physics step** — `Projectile.update` calls `updatePosition` then `isColliding` ONCE per tick, so sub-stepping only `updatePosition` still tunnels; a correct fix must sub-step the collision-bearing slice of `update` and count its `travelTime += ms` grace-period timer once (the zero-time technique); (2) **no E2E test spawns a monster/projectile and there is no `/test` combat probe**, so there is no runtime gate to validate a fix per this plan's own gate standard. This is a genuine deferral (build a combat probe + fix), NOT a proven-no-effect. |
-| `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/Euler, unscaled | Physics + pickup + bounce checks are all self-contained in `updateChunks` (no external-collision tunneling, unlike projectiles — more tractable). Still DEFERRED for the same reason (3): no test exercises debris landing/pickup at low TPS, so no runtime gate. Debris settles ~12× slower at TPS 5 (item drops drift longer before resting) — a real but low-severity cosmetic-adjacent effect. |
+| `Projectile.update` / `updatePosition` (`Projectile.cs:326-412`; `BasicProjectile.cs:95-106`, `DebuffingProjectile.cs:69-80`) | `velocity += acceleration; position += velocity` per call, unscaled. Collision checked ONCE per `update` (after the single `updatePosition`, `Projectile.cs:389`); `travelTime += ms` grace timer (`:365`), `hostTimeUntilAttackable -= TotalSeconds` (`:334`), and `DebuffingProjectile` wavy phase are ms/wall-clock. | **Prefix sub-step (`Projectile_Update_Prefix` → `RunUpdateSubSteps`)** — runs `floor(carry)-1` extra full `update` calls with `ZeroElapsedGameTime` (each re-checks collision → no tunneling; ms grace timers count once on the real call). If an extra step returns `true` (collided/expired), skip the real call and hand that to `RemoveWhere`. |
+| `Debris.updateChunks` (`Debris.cs:631-912`) | `position += velocity`, `yVelocity -= 0.25f/0.4f` gravity, bounce damping — all per-tick constants, self-contained (no external collision). `timeSinceDoneBouncing += ms` (`:637`), `timeBeforeReturnToDroppingPlayer -= ms` (`:675`) are ms lifetime timers. Returns `bool` for `RemoveWhere`. | **Same prefix sub-step (`Debris_UpdateChunks_Prefix`)** — zero-time extra calls advance the gravity/velocity constants while the ms lifetime timers count once. |
 
-**TODO (concrete, per `holistic-or-explicit-todo`):** to close projectiles+debris, add a `/test/spawn_monster`
-+ `/test/fire_projectile` + `/test/drop_debris` endpoint set and a WeddingTests-style measurement test
-(walk/fire at TPS 5 vs 60, ±10% wall-clock), then implement: Projectile = sub-step the collision-bearing
-slice of `Projectile.update` (collision checked per sub-step, `travelTime` counted once via the same
-zero-time technique); Debris = sub-step `updateChunks` (self-contained, zero-time for any ms terms). Until
-that harness exists these stay audited-not-fixed — mechanism known, fix shape known, blocked on validation.
-| `Debris` chunk physics (`Debris.cs:763-824`) | *(promoted from Stage 2 audit)* `xVelocity += 0.8f` (capped 8f), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity Euler integration, unscaled | Same as projectiles — sub-step the whole chunk update (velocity accumulation inside each sub-step). Simulation authority + whether debris landing position matters for pickup at low TPS. Gameplay-relevant (debris = collectible drops) |
+**Combat probe (runtime gate):** `/test/pacing_probe_spawn` + `/test/pacing_probe_state` (both `Env.IsTest`-gated,
+`ApiService.TestEndpoints.cs`) spawn a projectile/debris/monster in the HOST's own location (open Farm on an idle
+server — the host is there and `IsMasterGame` simulates it, so no client needed) and read back the measured
+quantity. `PacingProbeTests` (API-only, `Clients=0`, Exclusive) asserts wall-clock-correct pacing at the reduced
+test TPS: projectile `travelDistance ≥ 500px` in 3s (bounces to stay in-map), all debris chunks finished falling
+(`bounces > 2`), bat displacement toward the host. Sized so an unpatched/kill-switch-off build (12× slow) fails.
 
-**Stage 3 audit progress (2026-07-13):** Verified `Monster.MovePosition` (`Monster.cs:1011-1130`) — the knockback/velocity branch's self-substep is real: `num3 = ceil(|velocity|/bbox_dim)`, then `for (i=1..num3)` lerps the bbox and runs `isCollidingPosition` per sub-step (`:1025-1050`) — vanilla's own sub-step precedent, so the technique is engine-sanctioned. The walk-portion step (the non-velocity movement, further in the body) is the part still needing the Stage 1 sub-step primitive; `slideAnimationTimer -= ElapsedGameTime.Milliseconds` (`:1073`) is already ms-based. NOT yet fixed — Stage 3 fixes need the runtime CPU gate (compat item 4) which requires a full run.
+**Also folded in — flyer-monster velocity/rotation** (Stage 2 finding, row 1 of that table): **DONE** — the
+root cause turned out to be the velocity-decay-over-substep bug (the shipped `MovePosition` sub-step
+over-applied per-call friction to velocity-driven movement), fixed in two parts (knockback + glider AI-tick
+sub-step). See the "Velocity-decay-over-substep bug" section below and "Remaining work" item 4.
 
 ### Verified already TPS-agnostic — do NOT touch (prevents re-litigation)
 
@@ -164,11 +182,17 @@ Sweep the server-simulated + per-instance update paths for the remaining instanc
 Output: this file's inventory tables extended until the sweep list is empty. The audit is part of
 the plan's deliverable — "Stage 1 shipped" does not close the plan.
 
-#### Stage 2 audit progress (2026-07-13, in progress — NOT yet complete)
+#### Stage 2 audit progress — COMPLETE (2026-07-14)
+
+The full sweep (Utility ambient spawns, `GameLocation.updateEvenIfFarmerIsntHere`/`UpdateWhenCurrentLocation`
+non-character constants, world-update int-timers, `Monster.behaviorAtGameTick`/per-type timers) is done.
+**One new genuinely-broken gameplay-relevant site was found — flyer-monster steering (row 1 below).** Everything
+else is already-ms-scaled, already-classified (`MovePosition`), or cosmetic/real-client-only.
 
 | Site | Mechanism | Authority | Classification |
 |---|---|---|---|
-| `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity integration, unscaled | Server-simulated (location update) + per-instance | **Stage 3-class** (physics integration like projectiles) — sub-step the whole update. Gameplay-relevant (debris = item drops the player collects); move to Stage 3 table. NOT yet fixed. |
+| **Flyer-monster steering + velocity ramp** (`Bat.cs:630/634/642/643`, `Fly.cs:192/196/204/205`, `Serpent.cs:503/507/515/516`, `Ghost.cs:224/228/236/237`, `AngryRoger.cs:142/146/154/155`) | Homing flight: `rotation ±= Sign(...)*(Math.PI/64f)` (turn rate) + `xVelocity/yVelocity += (…)*num4/6f` (accel ramp), both bare per-tick constants (no `ElapsedGameTime`). Their attack/state timers ARE ms-scaled — only the flight steering isn't. | Server-authoritative. **Bat**: steering is in `behaviorAtGameTick` → master-only gate (`Monster.cs:704`). **Fly/Serpent/Ghost/AngryRoger**: steering is in `updateAnimation` → called unconditionally (`Monster.cs:719`) BUT rotation is master-authoritative (synched to clients, `Monster.cs:722`) and velocity drives the master's `MovePosition`. (Corrects the audit's claim that ALL five are in `updateAnimation` — Bat is the outlier.) | **BROKEN — gameplay-relevant.** At TPS 5 these fliers turn ~12× slower and accelerate to terminal velocity ~12× slower → sluggish, trivially evadable. Distinct from the already-fixed `Monster.MovePosition` sub-step: that integrates the *already-computed* velocity into position, but does NOT fix the *rate at which velocity/rotation are generated* here (runs once per tick, AFTER MovePosition). Fix = the velocity-decay-over-substep two-part fix below (glider AI-tick sub-step). **FIXED + validated** — Bat homing 649-766px/3s at TPS 5 (was ~15-19px), combat-probe gated. |
+| `Debris` chunk physics (`Debris.cs:763-824`) | `xVelocity += 0.8f` (capped), `position += velocity`, `yVelocity -= 0.25f/0.4f` per tick — gravity/velocity integration, unscaled | Server-simulated (location update) + per-instance | **Stage 3-class** (physics integration like projectiles). **FIXED + validated** via the shared `Debris.updateChunks` prefix sub-step — combat-probe gated (all chunks finish falling in 3s at TPS 5). See the Stage 3 table. |
 | `Event` viewport pan (`Event.cs:5165-5200`, `viewportTarget`) | `Game1.viewport.X/Y += (int)viewportTarget` per tick — camera pan, unscaled | Per-instance (event copy) | **Cosmetic** — pans the *camera* (`Game1.viewport`), does not gate event progression (no arrival/collision). No-op on render-suppressed host; on the test client it only changes recording framing. Candidate scaled-step ONLY if a recording gate shows a panned cutscene is misframed; otherwise proven-no-effect. Pending decision. |
 | `GameLocation.UpdateWhenCurrentLocation` splash VFX (`GameLocation.cs:4091,4097,4112,4114`) | `random.NextDouble() < 0.1/0.005/0.5/0.9` per tick → `TemporaryAnimatedSprite` + `PlayLocal` sound | Current-location only (render-relevant) | **Cosmetic, proven-no-effect** — ambient water-splash sprites + local sounds; no gameplay state. Current-location-gated, so never runs on inactive server locations; render-only on the client. Matches the plan's "probability rolls are mostly cosmetic" prediction. |
 | `TerrainFeatures/Tree` shake (`Tree.cs:449`) | `shakeTimer -= time.ElapsedGameTime.Milliseconds` | Server + per-instance | **Already ms-scaled** — do not touch. |
@@ -177,7 +201,13 @@ the plan's deliverable — "Stage 1 shipped" does not close the plan.
 | `WitchEvent.tickUpdate` (`WitchEvent.cs:108-161`) | `timerSinceFade += ms`, `witchPosition.X -= ms*0.4f`; Y-bob uses `TotalGameTime.Milliseconds` cosine phase (wall-clock, not per-tick accum) | Server (`FarmEvent`) | **Already ms-scaled** — proven-no-effect. |
 | `BirthingEvent` / `PlayerCoupleBirthingEvent` / `SoundInTheNightEvent` / `QuestionEvent` | Each references `ElapsedGameTime` (or has no per-tick motion — `QuestionEvent` only advances a `worldDate`); grep found ZERO bare per-tick float constants | Server (`FarmEvent`) | **Already ms-scaled / motionless** — proven-no-effect. |
 
-Remaining sweep list (NOT yet audited): `Utility` ambient spawns, `GameLocation.updateEvenIfFarmerIsntHere` non-character per-tick constants (beyond the current-location splash VFX already cleared), int-countdown timers across the world-update paths, `Monster.behaviorAtGameTick` timers (overlaps Stage 3). Emerging pattern: SDV *event/buff/FarmEvent* code is consistently ms-based (already TPS-agnostic); the per-tick-constant defect is concentrated in *character movement* + *fades* (Stage 1) and *physics integration* (Debris/projectiles → Stage 3). Stage 2 does NOT close until every entry lands fixed-or-proven.
+**Sweep list — CLEARED (2026-07-14).** Audited fixed/proven-no-effect:
+- `Utility` ambient spawns: CLEAN — `Utility.cs` has zero `ElapsedGameTime` refs and no per-tick accumulator method (stateless helper library); lightning update runs off the ms 10-minute clock, not per tick.
+- `GameLocation.updateEvenIfFarmerIsntHere`: CLEAN — only delegates to already-classified paths (`updateCharacters`, `TemporaryAnimatedSprite`, buildings/animals). `UpdateWhenCurrentLocation`: sole non-ms mutation is `updateWater` `waterPosition += 0.1f` (`GameLocation.cs:4304`), current-location-only cosmetic water scroll; companion `waterAnimationTimer` is ms-scaled.
+- World-update int-timers (`Game1.cs` clock/update): ms-scaled — `gameTimeInterval += ms` (`:6054`, the 10-min clock gating all time progression), `pauseThenDoFunctionTimer`/`thumbstickMotionMargin` ms/input-only. Location-file timers overwhelmingly ms-scaled (`Woods.statueTimer`, `WizardHouse.cauldronTimer`, `IslandNorth.boulderKnockTimer`, …); non-ms hits are bus-warp cutscene motion (`BusStop.cs:336`/`Desert.cs:476`, driven by the local player's own warp — **real-client-only**) and draw-overlay alpha fades (`MermaidHouse`/`MineShaft.fogAlpha`/`CommunityCenter.messageAlpha` — cosmetic).
+- `Monster.behaviorAtGameTick` + per-type timers: ms-scaled EXCEPT the flyer steering (row 1). Base `invincibleCountdown`/`stunTime`/`timeBeforeAIMovementAgain` and per-type `nextShot`/`timeUntilExplode`/`nextMoveCheck`/slime jump timers all `-= ms`/`TotalSeconds`. `GreenSlime.cs:999 position -= speed` idle drift is a per-tick `random<0.1` idle wander (cosmetic — the jump-attack toward the player is ms-scaled).
+
+Confirmed pattern: SDV *event/buff/FarmEvent/world-clock* code is consistently ms-based (already TPS-agnostic); the per-tick-constant defect is concentrated in *character movement* + *fades* (Stage 1), *physics integration* (Debris/projectiles → Stage 3), and now *flyer-monster velocity/rotation generation* (→ Stage 3). Stage 2 sweep is CLEAR; the one broken site (fliers) is tracked in Stage 3.
 
 ## Fix framework (three primitives, shared by all stages)
 
@@ -315,8 +345,20 @@ server-side (`IsDedicatedHost=false`), not client-side.**
    This also quantifies the production schedule-lag claim empirically — if inactive-location NPCs
    turn out to teleport along schedules (unverified vanilla behavior), scope the win statement to
    active-location movement.
-3. Fractional scale correctness: the TPS 20 case (scale 3.0) and an intentionally non-integer one
-   (e.g. TPS 25 → 2.4) show no drift (carry accumulator keeps long-run distance exact).
+3. **Fractional scale correctness — RESULT (run `2026-07-14T00-36-30Z_429fe85`, commit `429fe85`,
+   `SERVER_TPS=CLIENT_TPS=24` → scale 2.5, the never-before-run non-integer carry path):** `WeddingTests`
+   PASSED (1/1, ~94s test). Runtime-confirmed both hosts pinned the tick to `41.7ms` (`Server/Client TPS
+   set to 24`), so `TickScale = 41.7/16.67 = 2.5` and `_moveCarry` ran the alternating 1/2-extra-step
+   pattern — the fractional branch genuinely executed, not the integer scale-12 path every prior run took.
+   Both clients rendered BOTH ceremonies (`weddingsRendered == 2`, `renderedSoFar` 1→2 in the client log),
+   and — the decisive movement signal — **both clients' `waitForOtherPlayers weddingEnd<id>` gates
+   auto-readied on arrival** (`ready_check_transition numberReady:2` for both clients before the host
+   readied ceremony 2 via "other players ready"). Auto-ready fires only when the event farmer walks into
+   the fixed 16px arrival window, so the fractional sub-step delivered arrival correctly — no
+   tunneling/overshoot (which would hang the event) and no drift (ceremony spans ~31-34s, comparable to
+   the ~37s TPS-5 baseline — both pause-dominated, not tick-scaled-movement-dominated). No pacing
+   ERROR/hang/exception in the server log (the lone `ERROR game … Wave Bank.xwb` is the pre-existing
+   headless-audio-init line, before game load). `.env.test` restored to TPS 5 after the run. **Gate PASSED.**
 4. Full E2E suite green at TPS 5; CPU stats per compat item 4. **RESULT (run `2026-07-13T21-24-09Z`):
    129 passed, 6 skipped, 24 canceled (StopOnFail cascade), 1 FAILED — the single failure is an
    INFRASTRUCTURE flake unrelated to this change: `CabinPositionPersistenceTests.DummyCabin_After
@@ -332,19 +374,33 @@ server-side (`IsDedicatedHost=false`), not client-side.**
    31.89ms — ZERO samples above 100ms.** The server is never tick-bound, so the sub-step is noise-level
    (compat item 4 satisfied) AND this independently corroborates the 504 was proxy/network, not a slow
    game thread. Net: full-suite gate PASSED, no pacing regression.**
-5. Kill-switch off → 12× behavior returns (knob consumed). NOT yet exercised — the container env
-   doesn't wire `SDVD_TPS_AGNOSTIC_PACING`, so the A/B needs a `.WithEnvironment` addition first.
-6. Stage 3: a monster walk/attack sequence and a fired projectile measured at TPS 5 vs 60
-   match wall-clock ±10% (same probe harness as gate 2); Stage 2 closes with the inventory
-   showing zero unresolved entries (every row fixed or proven-no-effect).
+5. **Kill-switch A/B — PASSED (run `2026-07-14T17-22-47Z`, `SDVD_TPS_AGNOSTIC_PACING=false`).** The env
+   var is now wired into both container builders (`ServerContainer.cs`/`GameClientContainer.cs`), and the
+   A/B run's boot log on all 3 containers reads `TPS-agnostic pacing DISABLED via
+   SDVD_TPS_AGNOSTIC_PACING=false` — proving the knob is consumed end-to-end (container env → mod). With
+   it off, the fully-unpatched flyer probe read `monsterDisplacement=15px, speed=2.0` in 3s (near-
+   stationary), vs the wall-clock-correct behavior when on; WeddingTests still completed (generous
+   timeouts) with movement at the vanilla per-tick rate. `.env.test` restored to default-on after.
+6. **Stage 3 projectile+debris — PASSED (run `2026-07-14T17-13-54Z`, `PacingProbeTests`, fix ON, TPS 5).**
+   Projectile travelled **1536px in 3s** wall-clock (= ~512px/s, matching the 8px/update × 60/s real-time
+   rate; unpatched would be ~120px), all debris chunks finished falling within 3s, both via the shared
+   `RunUpdateSubSteps` prefix. All 3 probe spawn+state pairs fired end-to-end, no server error. Requires a
+   connected client (`Clients=1`) to unpause the server (see landmine).
+
+   **Flyer measurement (decides the velocity-ramp fix):** Bat homing at TPS 5, net displacement in 3s —
+   fix OFF (both patches off): **15px**; fix ON (MovePosition sub-step on, velocity-ramp NOT patched):
+   **38px**. Both are near-stationary vs the ~1920px a real 60-TPS bat would close. **Conclusion: the
+   shipped MovePosition sub-step does NOT fix fliers** — it integrates an un-ramped (~0) velocity 12×,
+   which is still ~0. The defect is in velocity *generation* (the per-tick ramp in `behaviorAtGameTick`/
+   `updateAnimation`), so the flyer needs its own fix. (Instantaneous `speed` sample is noisy — 2.0 OFF
+   vs 0.2 ON — because the homing velocity oscillates; displacement is the reliable cumulative signal.)
 
 ## Resolved decisions & remaining implementation choices
 
-1. **Stages 1 + Stage-3-creature-movement committed; creature/combat pacing being restored to vanilla
-   wall-clock difficulty** (user decision 2026-07-13). Update (2026-07-14): projectiles + debris are a
-   genuine open deferral (real server-side defect, blocked on a `/test` combat harness to validate) —
-   see "Remaining work" item 4. This is NOT "acceptable"/waved-off; it's tracked open work with a
-   concrete recipe. Everything else is fixed or proven-no-effect.
+1. **Stages 1 + 3 committed; creature/combat pacing restored to vanilla wall-clock difficulty**
+   (user decision 2026-07-13). **DONE (2026-07-14):** projectiles + debris built (prefix sub-step) and the
+   `/test` combat probe built + validated; the flyer/knockback velocity-decay bug found via that probe and
+   fixed in two parts. Full suite green (158 passed). Everything is fixed or proven-no-effect.
 2. Farmer event movement: **SETTLED — scale** (evidence, 2026-07-13). `Farmer.MovePositionImpl:8595`
    bypasses the collision probe for scripted event moves (`|| flag`), and the farmer event arrival
    margin self-scales (`16f + movementSpeed`, `Event.cs:5236`), so neither collision-tunnel nor
@@ -364,22 +420,121 @@ server-side (`IsDedicatedHost=false`), not client-side.**
    `= constant` assignment (state reset / threshold snap), not a per-tick stepper. So during a
    wedding `globalFade` the sole per-tick contributor IS `UpdateGlobalFade` — which the patch scales.
    The "terminal plunge" is therefore a `= constant` jump or completion-threshold snap in the
-   *baseline* trace, NOT a second per-tick stepper the patch must also compensate. The remaining
-   **runtime gate** (instrument `fadeToBlackAlpha` per tick in one wedding run) is now a confirmation
-   of this static conclusion, not an open mechanism question — deferred to the test-run phase.
+   *baseline* trace, NOT a second per-tick stepper the patch must also compensate. This is not open work:
+   the fade FIX is validated end-to-end (WeddingTests green — the wedding `globalFade` gates event
+   completion, and both ceremonies complete with no hang across every wedding run). A per-tick
+   `fadeToBlackAlpha` instrumentation would only redundantly confirm the already-resolved static
+   conclusion; it is not a gate the fix depends on.
+
+## Velocity-decay-over-substep bug (diagnosed 2026-07-14, fix DESIGN for review — NOT yet coded)
+
+**The defect.** Every `MovePosition` variant has TWO mutually-exclusive movement paths, chosen per call by
+`if (xVelocity != 0 || yVelocity != 0)`:
+- **Velocity path** — knockback/glider movement: `position += xVelocity; xVelocity -= xVelocity/k` (a
+  per-*call* multiplicative friction decay; `k = Slipperiness` for `Monster`, `k = 2` i.e. 50%/call for
+  `Character.applyVelocity`).
+- **Walk path** — pathfind/schedule movement driven by `speed + addedSpeed` (the per-tick constant that
+  SHOULD sub-step).
+
+The shipped Stage 1/3 sub-steps run the WHOLE method `floor(carry)` times. That correctly repeats the walk
+path, but it ALSO repeats the velocity path — so the friction decay applies N× per tick (~40%/tick for a
+Bat's Slipperiness≈24 at 12 sub-steps; ~99.98%/tick for Character's 50%/call). Result:
+- **Knockback** (all monsters + NPCs — `takeDamage`→`setTrajectory` sets velocity): monsters/NPCs get
+  knocked back far LESS than at 60 TPS (velocity collapses before it can carry them).
+- **Fliers/gliders** (`isGlider==true`: Bat, Fly, Serpent, Ghost, AngryRoger — ALWAYS velocity-driven, they
+  `return` before the walk path at `Monster.cs:1132`): their velocity ramp (`behaviorAtGameTick`/
+  `updateAnimation`, once/tick, `+= num4/6f`) can't outrun the N× decay, so they're near-stationary.
+  MEASURED at TPS 5: 15px (all off) / 38px (shipped patches on) net displacement in 3s vs ~1920px at 60 TPS.
+
+**Corrects a false claim in this plan:** the Stage 3 table said whole-method sub-step "reproduces vanilla's
+60Hz knockback decay exactly." It does the opposite — it MULTIPLIES the decay by the sub-step count.
+
+**Scope (verified by reading each override):** `Character.applyVelocity` (NPCs, `Character.cs:810`),
+`Monster` velocity path (`Monster.cs:1018-1134`). `FarmAnimal.MovePosition` has NO velocity/friction path
+(tile-based) — unaffected. `Child` inherits via the Character seam (rare knockback — low impact, same fix).
+
+**Fix design (two independent parts):**
+1. **Walkers' knockback — DONE + VALIDATED (2026-07-14, run `2026-07-14T20-37-22Z`).** A prefix
+   (`MovePosition_CaptureVelocity_Prefix`) captures pre-call velocity into `__state`; the sub-step postfix
+   skips the extra steps when `__state` is true (entity was velocity-driven this tick), so the velocity
+   path's per-call friction decay runs once per tick, not N×. Applied to all four seams (Character/Monster/
+   FarmAnimal/Child) via the shared prefix. Gated by a new `knockback` combat probe (spawn a GreenSlime,
+   `setTrajectory(100,0)` impulse, measure slide): **knockback carried the slime 396px at TPS 5** —
+   matching the ~400px 60-TPS distance (impulse 100 / Slipperiness¼-decay); pre-fix the 12×/tick decay
+   collapsed it to tens of px. Projectile (1536px) and debris (1/1) unchanged — no regression. LOW risk
+   confirmed: the change only skips erroneous extra decay; normal walking (velocity==0) sub-steps as before
+   (verified: `Character.MovePosition:841` walk vs velocity paths are mutually exclusive; NPC schedule walk
+   never sets `xVelocity`).
+2. **Gliders (fliers): need ramp + velocity-move both at wall-clock.** Part 1 makes a glider's velocity path
+   run once/tick — correct decay — but a glider is ALWAYS velocity-driven, so once/tick position advance =
+   `velocity` px/tick = 12× slow at TPS 5 (probe-confirmed: ~19px/3s with part 1). To move at wall-clock
+   speed the glider's per-tick VELOCITY GENERATION (the ramp in `behaviorAtGameTick`/`updateAnimation`) AND
+   its velocity integration (`MovePosition`) must both run ~12×/tick — i.e. **N×-replay the glider's whole
+   per-tick trio** (MovePosition + behaviorAtGameTick + updateAnimation), zero-time on the extra N-1 calls.
+
+   **Faithfulness audit DONE (2026-07-14, all 5 gliders, verified against source on the load-bearing lines).**
+   N×-replay-with-zero-time is SAFE — the zero-time trick is what makes it faithful and non-destructive:
+   - **Bat, Ghost, AngryRoger: fully N×-faithful.** Their rotation gate resets `wasHitCounter` to `0`
+     (`Bat.cs:637`, `Ghost.cs:231`, `AngryRoger.cs:149`), so the steering re-runs every replay call — exactly
+     what 60 TPS does every tick. Velocity/friction/position repeat correctly.
+   - **Fly, Serpent: travel SPEED faithful, HEADING slightly off.** Their rotation gate sets
+     `wasHitCounter = 5 + Game1.random.Next(-1,2)` (`Fly.cs:199`, `Serpent.cs:510`); under zero-time it never
+     decays across replays, so heading steps once per REAL tick instead of tracking the 60-TPS ~16ms decay.
+     Velocity integrates N× (travel speed correct); only turn-tracking lags slightly. This is the ONE
+     vanilla deviation.
+   - **All dangerous side effects are protected by zero-time.** The load-bearing one: Ghost's tongue-
+     projectile spawn (`Ghost.cs:393-399`) is gated by `stateTimer <= 0` (a `TotalSeconds` timer, `:317/379`)
+     that sets `stateTimer = 1f` on fire — zero-time freezes it so the projectile spawns AT MOST ONCE per
+     real tick (verified: nonzero elapsed on extra calls would spawn up to N projectiles). Sounds are
+     headless no-ops (audio disabled); LightSource/particle blocks are `currentLocation==Game1.currentLocation`
+     or `cursedDoll`/Putrid-variant gated (off for plain monsters on the render-suppressed server). Residual:
+     Ghost/AngryRoger's invincible-overlap teleport (`Ghost.cs:414-435`) isn't time-gated and can re-roll
+     2-3× per tick — but self-limits (`Halt()` + 64px position jump makes the next replay's `Intersects` fail).
+   - **ms-terms needing zero-time:** Bat `529/560/578/665`, Fly `156/161`, Serpent `470`, Ghost `168/317`;
+     AngryRoger has none.
+
+   **The fidelity/safety tension (Fly/Serpent heading):** the fix for the heading lag is to pass ~16ms (one
+   60-TPS tick) to extra calls instead of zero — then `wasHitCounter` decays exactly as across real ticks.
+   But ~16ms is UNSAFE for Ghost (it would un-freeze `stateTimer` and multiply the projectile). So exact
+   heading fidelity and side-effect safety can't both use a single global elapsed value — see the decision
+   below (per-type elapsed, or accept the minor heading lag).
+
+   **Part 2 — DONE + VALIDATED (2026-07-14, run `2026-07-14T21-10-30Z`, zero-time everywhere per user
+   decision).** A postfix on `Monster.update` (gated to `isGlider.Value`) replays the trio
+   `MovePosition` + `behaviorAtGameTick` + `updateAnimation` in vanilla order, `extraSteps` times with
+   `ZeroElapsedGameTime`. `updateAnimation` is `protected` so it's invoked via a per-concrete-type cached
+   `AccessTools.MethodDelegate` (virtual dispatch to the right override, no per-call reflection). The
+   `_inSubStep` guard suppresses the inner MovePosition postfix during replay; a `Health <= 0` break stops
+   replaying a monster that died mid-step. **Result: Bat homing displacement 15px (unpatched) → 19px
+   (part 1) → 766px (part 2)** in 3s at TPS 5, speed 0.2 → 5.4 (reaches terminal velocity) — it now reaches
+   the host and overshoots, faithful homing. No server error, boot log `ENABLED`. The `FlyerMonster` probe
+   test is tightened to `≥ 400px` (cleanly separates 766 fixed from ~19 unfixed).
+
+   Zero-time chosen over distributed-ms because TPS is a fluctuating target (TickScale already reads actual
+   per-tick ms), so the Fly/Serpent heading-lag is within vanilla's own tick variance; distributed-ms would
+   also un-freeze Ghost's `stateTimer` and multiply its projectile.
+
+   Seam note: replay the three METHODS directly (not the whole `Monster.update`) — `update` has
+   `parryEvent/trajectoryEvent/deathAnimEvent.Poll()` + `invincibleCountdown`/`stunTime` ms-timers
+   (`Monster.cs:690/712`) and `Character.update`'s emote/jump surface, none of which the faithfulness audit
+   covered; the trio is exactly what was audited safe.
+
+**Re-validation:** the combat probe already measures all of this — tighten `FlyerMonster` to a real
+threshold once the glider fix lands, and add a knockback probe (`takeDamage` the bat, measure knockback
+displacement) to gate part 1.
 
 ## Remaining work to close the plan (ordered; nothing left implicit)
 
 The plan closes only when every inventory row is fixed-or-proven and the mission gate (correct
 wall-clock at arbitrary TPS) is observed. What is left, in recommended order:
 
-1. **Non-integer-TPS runtime gate (highest value — the one untested code path).** Every test so far ran
-   at `SERVER_TPS=5` = integer scale 12.0; the fractional-carry branch (`_moveCarry` keeping ~0.4
-   remainders) has NEVER executed under test. Re-run `WeddingTests` (and ideally a schedule-walk probe)
-   at a non-integer `SERVER_TPS` (e.g. 24 → scale 2.5) and confirm NPC/Lewis movement completes in the
-   same wall-clock ±10% with no drift/jitter. Worst case if skipped: at a non-integer production TPS,
-   NPCs walk subtly wrong. Cheapest close: one `make test-llm FILTER=WeddingTests` run with
-   `SERVER_TPS`/`CLIENT_TPS` overridden to 24.
+1. **Non-integer-TPS runtime gate — DONE (2026-07-14, run `2026-07-14T00-36-30Z_429fe85`).** Ran
+   `WeddingTests` with `SERVER_TPS=CLIENT_TPS=24` (scale 2.5) — the fractional-carry branch's first
+   execution under test. PASSED: both hosts confirmed at `41.7ms`/tick, both clients rendered both
+   ceremonies, and both event-farmer `waitForOtherPlayers` gates auto-readied on arrival (proof the
+   fractional sub-step hits the fixed 16px arrival window — no tunnel/overshoot), ceremony spans
+   ~31-34s (comparable to the ~37s TPS-5 baseline, both pause-dominated), no pacing error. `.env.test`
+   restored to TPS 5. Full write-up under "Runtime post-condition gates" → gate 3.
 2. **Kill-switch A/B + config-consumed gate.** Wire `SDVD_TPS_AGNOSTIC_PACING` into the container env
    (`ServerContainer.cs` + the client container builder, via `.WithEnvironment` reading
    `TestEnvLoader.Get`), then run `WeddingTests` with it `=false` and confirm movement reverts to ~12×
@@ -387,19 +542,39 @@ wall-clock at arbitrary TPS) is observed. What is left, in recommended order:
    any user-facing docs yet, so no operator is currently misled; if/when it's documented, this gate must
    pass first. Worst case if skipped: the documented escape hatch silently doesn't disable — low
    severity (default-on is the tested path).
-3. **Stage 2 sweep — finish the audit.** Remaining unclassified per-tick sites: `Utility` ambient
-   spawns, `GameLocation.updateEvenIfFarmerIsntHere` non-character per-tick constants, world-update
-   int-countdown timers. Classify each fixed / proven-no-effect (most SDV world code has been ms-based
-   so far — expect mostly proven-no-effect). Extend the Stage 2 table until the sweep list is empty.
-4. **Stage 3 projectiles + debris (genuine deferral — real defect, needs a harness).** The server DOES
-   simulate mine monsters/projectiles (resolved above), so a fireball at low TPS really crawls for a
-   client in the mines. To close: (a) add a `/test/spawn_monster` + `/test/fire_projectile` +
-   `/test/drop_debris` endpoint set and a measurement test (fire at TPS 5 vs 60, ±10% wall-clock); then
-   (b) implement — Projectile: sub-step the collision-bearing slice of `Projectile.update` (so
-   `isColliding` runs per sub-step, no tunneling) with `travelTime += ms` counted once via the zero-time
-   technique; Debris: sub-step `updateChunks` (self-contained — physics+pickup+bounce all in one loop —
-   zero-time for any ms terms). The creature-movement half already fixes the monsters' *walking*; only
-   their *projectiles* remain slow.
+3. **Stage 2 sweep — DONE (2026-07-14).** Full audit complete (see the Stage 2 progress section): every
+   site fixed or proven-no-effect. The one broken site it surfaced (flyer velocity/rotation) traced to the
+   velocity-decay-over-substep bug, now fixed.
+4. **Stage 3 projectiles + debris — DONE + validated (2026-07-14).** Prefix sub-step for
+   `Projectile.update` (collision per sub-step, no tunneling, `travelTime` counted once via zero-time) and
+   `Debris.updateChunks`; combat probe (`/test/pacing_probe_spawn` + `_state`) + `PacingProbeTests` gate it
+   (projectile 1536px, debris settles). The velocity-decay bug found via the same probe is fixed (parts 1+2
+   above). Full suite green.
+
+**Landmine (glider sub-step, hit + fixed 2026-07-14):** `AccessTools.Method(type, "update")` name-only
+lookup on `Monster.update` threw `AmbiguousMatchException` at runtime (`Apply()` → "Mod crashed on entry",
+so NO patches applied that run) — because `Character` has two `update` overloads (`(GameTime,GameLocation)`
+and `(GameTime,GameLocation,long,bool)`). `dotnet build` is BLIND to this (it's a runtime reflection
+resolve). Fix: pass explicit parameter types `new[]{typeof(GameTime),typeof(GameLocation)}`. Rule: any
+Harmony `AccessTools.Method` targeting a method that has overloads (anywhere in its inheritance chain) MUST
+specify parameter types; a green build does not prove the registration resolves.
+
+**Landmine (combat probe, hit + fixed 2026-07-14):** the empty (player-less) server auto-pauses
+(`AlwaysOn.HandleAutoPause` sets `netWorldState.IsPaused` when `otherFarmers.Count == 0`), and
+`Game1.HostPaused` then gates out the ENTIRE `UpdateCharacters`/`UpdateLocations` block (`Game1.cs:4308`)
+— so on a `Clients=0` server NOTHING in the world ticks and every probe reads `0,0`. (This is a distinct
+gate from `shouldTimePass()`/`IsTimePaused`, which I'd checked; `IsPaused`→`HostPaused` gates the update
+call itself, one level up.) Fix: `PacingProbeTests` connects one client (`Clients=1`) to unpause — also the
+realistic scenario, since a present player is exactly when these entities simulate.
+
+**Landmine (combat probe, hit + fixed 2026-07-14):** `ApiService` is reflected by the `openapi-generator`
+at Docker build time via `Assembly.GetType("…ApiService")` across the net10-tool / net6-mod boundary. A
+StardewValley-typed **field** on `ApiService` (the probe stored `Projectile?`/`Debris?`/`Monster?`/`Vector2`)
+makes that `GetType` return null → build fails "ApiService type not found" — even though `dotnet build` is
+green (the field types load fine in-process, just not in the tool's reflection context). Fix: store probe
+entities as `object?` + coords as `float`, cast back inside the game-thread handlers. Extends
+`openapi-generator-reflection-invoke` from method-args to field-types. Reproduce locally before a run:
+`dotnet tools/openapi-generator/bin/Release/net10.0/openapi-generator.dll mod/JunimoServer/bin/Debug/net6.0/JunimoServer.dll out.json`.
 
 **One durable landmine to remember:** the movement sub-step passes `ZeroElapsedGameTime` to extra steps
 so ms-based accumulators count once. Any future patch that sub-steps a method must apply the same
