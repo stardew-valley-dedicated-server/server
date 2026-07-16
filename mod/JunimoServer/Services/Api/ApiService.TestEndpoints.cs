@@ -14,7 +14,9 @@ using StardewModdingAPI.Utilities;
 using StardewValley;
 using StardewValley.Characters;
 using StardewValley.Locations;
+using StardewValley.Monsters;
 using StardewValley.Objects;
+using StardewValley.Projectiles;
 using StardewValley.TerrainFeatures;
 
 namespace JunimoServer.Services.Api;
@@ -85,6 +87,12 @@ public partial class ApiService
                             await HandleGetTestNpcSpriteIntegrityAsync()
                         );
                         return;
+                    case "/test/pacing_probe_state":
+                        await WriteJsonAsync(
+                            response,
+                            await HandleGetTestPacingProbeStateAsync(request)
+                        );
+                        return;
                 }
                 break;
             case "POST":
@@ -152,6 +160,12 @@ public partial class ApiService
                         return;
                     case "/test/heal_npc_sprites":
                         await WriteJsonAsync(response, await HandlePostTestHealNpcSpritesAsync());
+                        return;
+                    case "/test/pacing_probe_spawn":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestPacingProbeSpawnAsync(request)
+                        );
                         return;
                 }
                 break;
@@ -1885,5 +1899,303 @@ public partial class ApiService
         }
 
         return result;
+    }
+
+    // === TPS-agnostic-pacing combat probe (test-only) ===
+    // Spawns one per-tick-physics entity (projectile / debris / flyer monster) in the HOST's own
+    // location — which the server simulates (the host is a Farmer there, IsMasterGame always true) — so
+    // the probe needs no connected client. The paired state endpoint reads the entity's measured quantity
+    // so a test can compare wall-clock behavior with SDVD_TPS_AGNOSTIC_PACING on vs off at the same TPS.
+
+    // The spawned probe entities, tracked so the state endpoint can read them back. Typed as object (not
+    // the StardewValley types) and coords as floats so ApiService's field metadata carries NO game-type
+    // references — the OpenAPI generator reflects ApiService via Assembly.GetType across the net10-tool /
+    // net6-mod boundary, and a StardewValley-typed field there makes that GetType return null ("ApiService
+    // type not found", per openapi-generator-reflection-invoke). Cast back inside the handlers, which run
+    // on the game thread where the types are loaded. Referenced only from the game thread (both handlers
+    // marshal via RunOnGameThreadAsync), so no synchronization needed.
+    private object? _probeProjectile;
+    private object? _probeDebris;
+    private object? _probeMonster;
+    private float _probeMonsterSpawnX;
+    private float _probeMonsterSpawnY;
+
+    [ApiEndpoint(
+        "POST",
+        "/test/pacing_probe_spawn",
+        Summary = "Spawn a per-tick-physics probe entity (projectile/debris/monster/knockback) in the host location (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(PacingProbeSpawnResponse), 200)]
+    private async Task<PacingProbeSpawnResponse> HandlePostTestPacingProbeSpawnAsync(
+        HttpListenerRequest request
+    )
+    {
+        var result = new PacingProbeSpawnResponse();
+
+        PacingProbeSpawnRequest? body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body = string.IsNullOrWhiteSpace(json)
+                ? new PacingProbeSpawnRequest()
+                : JsonConvert.DeserializeObject<PacingProbeSpawnRequest>(json);
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = $"Failed to parse body: {ex.Message}";
+            return result;
+        }
+
+        if (!TryParseProbeKind(body?.Kind, out var kind))
+        {
+            result.Success = false;
+            result.Error =
+                $"Unknown probe kind '{body?.Kind}' (expected projectile/debris/monster/knockback).";
+            return result;
+        }
+
+        if (Game1.gameMode != 3 || !Game1.IsServer)
+        {
+            result.Success = false;
+            result.Error = "Server not ready";
+            return result;
+        }
+
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var location = Game1.player.currentLocation;
+                if (location == null)
+                {
+                    result.Error = "Host has no current location";
+                    return;
+                }
+
+                result.LocationName = location.NameOrUniqueName;
+                var origin = Game1.player.Position;
+
+                // Drop all prior probe tracking so a later state read for any kind can only ever see THIS
+                // spawn's entity (no cross-kind bleed if the shared server is reused for a different kind).
+                RemoveProbeMonster(location);
+                _probeProjectile = null;
+                _probeDebris = null;
+
+                switch (kind)
+                {
+                    case PacingProbeKind.Projectile:
+                    {
+                        // Clear any prior probe projectile, then fire one horizontally from the host. A high
+                        // bounce count makes travelDistance accumulate at the wall-clock rate regardless of
+                        // farm geometry — the projectile ricochets off any wall/obstacle instead of being
+                        // destroyed, so the measurement doesn't depend on a clear line of fire.
+                        // damagesMonsters=true so it targets monsters (none on the idle Farm), not the host.
+                        location.projectiles.Clear();
+                        var projectile = new BasicProjectile(
+                            damageToFarmer: 0,
+                            spriteIndex: 0,
+                            bouncesTillDestruct: 100000,
+                            tailLength: 0,
+                            rotationVelocity: 0f,
+                            xVelocity: 8f,
+                            yVelocity: 0f,
+                            startingPosition: origin,
+                            damagesMonsters: true,
+                            location: location,
+                            firer: Game1.player
+                        );
+                        projectile.ignoreTravelGracePeriod.Value = true;
+                        location.projectiles.Add(projectile);
+                        _probeProjectile = projectile;
+                        result.Count = location.projectiles.Count;
+                        break;
+                    }
+                    case PacingProbeKind.Debris:
+                    {
+                        // Drop an object debris well away from the host so its chunks fall and settle
+                        // WITHOUT being magnetized-and-collected (object debris homes to a nearby player
+                        // once done bouncing; 640 px keeps it outside the ~64 px pickup range for the
+                        // measurement window). Clear prior probe debris first for a clean chunk count.
+                        location.debris.Clear();
+                        var dropOrigin = origin + new Vector2(640f, -128f);
+                        var debris = new Debris(
+                            "(O)388", // Wood — an ordinary object drop
+                            dropOrigin,
+                            dropOrigin
+                        );
+                        location.debris.Add(debris);
+                        _probeDebris = debris;
+                        result.Count = location.debris.Count;
+                        break;
+                    }
+                    case PacingProbeKind.Monster:
+                    {
+                        // Spawn a Bat a fixed distance from the host so it homes in; measure how far it closes.
+                        var spawnPos = origin + new Vector2(640f, 0f);
+                        var bat = new Bat(spawnPos) { focusedOnFarmers = true };
+                        location.characters.Add(bat);
+                        _probeMonster = bat;
+                        _probeMonsterSpawnX = spawnPos.X;
+                        _probeMonsterSpawnY = spawnPos.Y;
+                        result.Count = 1;
+                        break;
+                    }
+                    case PacingProbeKind.Knockback:
+                    {
+                        // Spawn a WALKING monster (GreenSlime — not a glider, so at rest its velocity is 0)
+                        // and hit it with a fixed knockback impulse; measure how far the impulse carries it
+                        // before friction stops it. Non-glider is essential: gliders are always
+                        // velocity-driven, which would muddy a clean knockback measurement.
+                        var slimePos = origin + new Vector2(320f, 0f);
+                        var slime = new GreenSlime(slimePos);
+                        location.characters.Add(slime);
+                        // Large impulse along +x, away from the host, so it dominates any velocity the
+                        // slime's own AI adds (its hop toward the player) and gives a clean knockback slide.
+                        // setTrajectory routes through the master-only doSetTrajectory, which sets xVelocity
+                        // when the impulse exceeds current velocity.
+                        slime.setTrajectory(100, 0);
+                        _probeMonster = slime;
+                        _probeMonsterSpawnX = slimePos.X;
+                        _probeMonsterSpawnY = slimePos.Y;
+                        result.Count = 1;
+                        break;
+                    }
+                }
+
+                result.Success = result.Error == null;
+            });
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "GET",
+        "/test/pacing_probe_state",
+        Summary = "Read the current state of the spawned pacing-probe entity (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(PacingProbeStateResponse), 200)]
+    private async Task<PacingProbeStateResponse> HandleGetTestPacingProbeStateAsync(
+        HttpListenerRequest request
+    )
+    {
+        var result = new PacingProbeStateResponse();
+
+        if (!TryParseProbeKind(request.QueryString["kind"], out var kind))
+        {
+            result.Success = false;
+            result.Error = $"Unknown probe kind '{request.QueryString["kind"]}'.";
+            return result;
+        }
+
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var location = Game1.player.currentLocation;
+
+                switch (kind)
+                {
+                    case PacingProbeKind.Projectile:
+                        result.Count = location?.projectiles.Count ?? 0;
+                        result.ProjectileTravelDistance =
+                            (_probeProjectile as Projectile)?.travelDistance ?? 0f;
+                        break;
+                    case PacingProbeKind.Debris:
+                        if (_probeDebris is Debris debris)
+                        {
+                            result.DebrisChunkCount = debris.Chunks.Count;
+                            // "At rest" = finished the ballistic fall: a chunk stops bouncing at
+                            // bounces > 2 (Debris.updateChunks), after which it either rests or magnetizes
+                            // toward a player. Keying on `bounces` (not zero velocity) gives a stable
+                            // "fall complete" signal unaffected by the post-settle magnetize drift.
+                            result.DebrisChunksAtRest = debris.Chunks.Count(c => c.bounces > 2);
+                            result.Count = location?.debris.Count(d => d == debris) ?? 0;
+                        }
+                        break;
+                    case PacingProbeKind.Monster:
+                    case PacingProbeKind.Knockback:
+                        // Both read the tracked monster's net displacement from spawn: Monster = homing
+                        // distance closed, Knockback = distance the impulse carried it before friction.
+                        if (_probeMonster is Monster monster && location != null)
+                        {
+                            result.Count = location.characters.Contains(monster) ? 1 : 0;
+                            result.MonsterDisplacement = Vector2.Distance(
+                                monster.Position,
+                                new Vector2(_probeMonsterSpawnX, _probeMonsterSpawnY)
+                            );
+                            result.MonsterSpeed = (float)
+                                Math.Sqrt(
+                                    monster.xVelocity * monster.xVelocity
+                                        + monster.yVelocity * monster.yVelocity
+                                );
+                        }
+                        break;
+                }
+
+                result.Success = true;
+            });
+
+            // Durably record the measurement in the server log (LogLevel.Info — not Error, which would
+            // poison the test). The console test annotations can scroll out of a tail'd capture; this line
+            // survives in container.log so a run's pacing numbers are always recoverable.
+            Monitor.Log(
+                $"[PacingProbe] {kind}: travelDistance={result.ProjectileTravelDistance:F0} "
+                    + $"debrisAtRest={result.DebrisChunksAtRest}/{result.DebrisChunkCount} "
+                    + $"monsterDisplacement={result.MonsterDisplacement:F0} monsterSpeed={result.MonsterSpeed:F1} "
+                    + $"count={result.Count}",
+                LogLevel.Info
+            );
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    private static bool TryParseProbeKind(string? raw, out PacingProbeKind kind)
+    {
+        switch (raw?.Trim().ToLowerInvariant())
+        {
+            case "projectile":
+                kind = PacingProbeKind.Projectile;
+                return true;
+            case "debris":
+                kind = PacingProbeKind.Debris;
+                return true;
+            case "monster":
+                kind = PacingProbeKind.Monster;
+                return true;
+            case "knockback":
+                kind = PacingProbeKind.Knockback;
+                return true;
+            default:
+                kind = default;
+                return false;
+        }
+    }
+
+    private void RemoveProbeMonster(GameLocation location)
+    {
+        if (_probeMonster is Monster monster && location.characters.Contains(monster))
+        {
+            location.characters.Remove(monster);
+        }
+        _probeMonster = null;
     }
 }
