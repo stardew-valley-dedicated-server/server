@@ -1139,6 +1139,12 @@ public partial class ApiService : ModService
         var actionsProcessed = false;
         while (_pendingGameActions.TryDequeue(out var item))
         {
+            if (item.Completion.Task.IsCanceled)
+            {
+                // The caller's RunOnGameThreadAsync already timed out and returned an error; applying
+                // the mutation now would change world state the caller was told didn't change.
+                continue;
+            }
             actionsProcessed = true;
             try
             {
