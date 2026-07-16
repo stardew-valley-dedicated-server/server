@@ -157,7 +157,10 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>steam_account_allocated</c> / <c>steam_account_released</c> /
 /// <c>steam_account_pool_insufficient</c> (<c>kind:"server"|"client", index?,
 /// remaining?, available?, totalSize?, inUse?</c>) ·
-/// <c>steam_account_release_error</c> (ClientPool release path).</item>
+/// <c>steam_account_release_error</c> (ClientPool release path) ·
+/// <c>steam_account_allocation_timeout</c> (<c>clientIndex, boundSec</c>; a client
+/// Steam-account allocation exceeded <see cref="TestTimings.SteamAccountAllocationBound"/>
+/// — no account released within the bound, so the lease fails fast as infrastructure).</item>
 ///
 /// <item><b>Docker / container lifecycle</b>:
 /// <c>docker_preflight</c> (ContainerStatsCollector.InitializeAsync:
@@ -307,8 +310,11 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>cancellation_detected</c> · <c>farmer_removal_waited</c>.</item>
 ///
 /// <item><b>Client pool</b>:
-/// <c>client_created</c> (<c>clientIndex, durationMs, reason:"prewarm"|"lease_demand"</c>) ·
-/// <c>client_create_failed</c> ·
+/// <c>client_created</c> (<c>clientIndex, durationMs, reason:"prewarm"|"lease_demand"|
+/// "steam_selfheal"|"blip_retry"</c>) · <c>client_create_failed</c> ·
+/// <c>steam_client_selfheal</c> (<c>availableInBag</c>; the last Steam-bearing client died
+/// via <c>client_marked_dead</c>, so the next Steam lease creates a replacement rather than
+/// waiting on a return that can never come) ·
 /// <c>client_acquired</c> (<c>clientIndex, instanceId, serverInstanceId?,
 /// serverKey, steamAccountIndex</c>) ·
 /// <c>client_returned</c> (<c>clientIndex, serverKey, poolAvailable</c>) ·

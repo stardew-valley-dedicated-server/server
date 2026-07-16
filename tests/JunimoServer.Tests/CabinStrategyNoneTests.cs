@@ -64,7 +64,7 @@ public class CabinStrategyNoneTests : TestBase
 
         Log($"Server ready: {Server.BaseUrl}");
 
-        var cabinsResponse = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabinsResponse = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
@@ -85,7 +85,7 @@ public class CabinStrategyNoneTests : TestBase
 
         Log($"Server ready: {Server.BaseUrl}");
 
-        var cabinsResponse = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabinsResponse = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
@@ -113,7 +113,7 @@ public class CabinStrategyNoneTests : TestBase
         _needsServerReset = true;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 1);
 
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var client = await Farmers.ConnectNewAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 

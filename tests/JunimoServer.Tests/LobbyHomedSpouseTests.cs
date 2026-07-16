@@ -58,7 +58,7 @@ public class LobbyHomedSpouseSteadyStateTests : TestBase
     [Fact]
     public async Task MarriedCouples_UnderPassword_HomesStayRealAcrossNightsAndOffline()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var setDate = await ServerApi.SetDate(Season, EngageDay, year: 1, ct);
         Assert.NotNull(setDate);
@@ -394,7 +394,7 @@ public class LobbyHomedSpouseHealTests : TestBase
     [Fact]
     public async Task PoisonedLobbyHomes_HealOnDayStart_AndStayHealedAcrossReload()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // The boot world becomes reachable (IsReady flips) a beat before its SaveLoaded
         // handlers finish, so a stamp can race the boot's own SaveLoaded sweep — which would

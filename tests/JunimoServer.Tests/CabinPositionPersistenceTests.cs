@@ -62,7 +62,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task MoveToStack_PlacedCabinSurvivesReload()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -93,7 +93,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task MoveToStack_UnclaimedCabinSweptOnReload()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // None strategy starts cabins at real, visible map positions. After switching
         // to CabinStack + MoveToStack and reloading, those unclaimed cabins (no /cabin
         // intent) must be pulled into the hidden stack.
@@ -129,7 +129,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task StrategySwitch_NoneToCabinStack_PlacedCabinSurvives()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -162,7 +162,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task Deletion_ClearsSavedPositionIntent()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -215,7 +215,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task ResetCabin_ReturnsCabinToStackAndClearsIntent()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -273,7 +273,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task SameSweep_KeepsPlacedCabin_SweepsUntouchedCabin()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 2);
 
         var clientA = await Farmers.ConnectNewAsync(ct: ct);
@@ -353,7 +353,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task TwoPlayers_PlaceCabinsToDistinctTiles()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var clientA = await Farmers.ConnectNewAsync(ct: ct);
@@ -421,7 +421,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task DummyCabin_ReconnectAfterMove_JoinSucceedsAndMasterUnchanged()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -455,7 +455,7 @@ public class CabinPositionPersistenceTests : TestBase
     [Fact]
     public async Task DummyCabin_AfterMoveAndReconnect_ClientSeesDoorDeadDummyAtStack()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);

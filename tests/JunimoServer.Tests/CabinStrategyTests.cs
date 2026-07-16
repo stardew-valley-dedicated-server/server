@@ -29,8 +29,8 @@ public class CabinStrategyTests : TestBase
     [TestServer(Clients = 0)]
     public async Task Cabins_StrategyMatchesSettings()
     {
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
-        var settings = await ServerApi.GetSettings(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
+        var settings = await ServerApi.GetSettings(TestCt);
 
         Assert.NotNull(cabins);
         Assert.NotNull(settings);
@@ -46,7 +46,7 @@ public class CabinStrategyTests : TestBase
     [TestServer(Clients = 0)]
     public async Task DefaultCabinStack_HasAtLeastOneAvailableCabin()
     {
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabins);
         Assert.True(
@@ -63,7 +63,7 @@ public class CabinStrategyTests : TestBase
     [TestServer(Clients = 0)]
     public async Task Cabins_CountsAreConsistent()
     {
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabins);
         Assert.Equal(cabins.TotalCount, cabins.AssignedCount + cabins.AvailableCount);
@@ -81,7 +81,7 @@ public class CabinStrategyTests : TestBase
     [TestServer(Clients = 0)]
     public async Task CabinStack_AllCabinsAreHidden()
     {
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
 
         Assert.NotNull(cabins);
         Assert.Equal("CabinStack", cabins.Strategy);
@@ -137,25 +137,25 @@ public class CabinStrategyTests : TestBase
     public async Task CabinStack_AfterPlayerJoins_CabinReplenished()
     {
         // Record state before join
-        var cabinsBefore = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabinsBefore = await ServerApi.GetCabins(TestCt);
         Assert.NotNull(cabinsBefore);
         var availableBefore = cabinsBefore.AvailableCount;
         Log($"Before join: total={cabinsBefore.TotalCount}, available={availableBefore}");
 
         // Join and enter world (consumes one cabin slot via customization)
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Disconnect and wait for the server to release the farmhand slot
         await Farmers.DisconnectAndWaitForSlotAsync(
             client.JoinResult.UniqueMultiplayerId,
             client.FarmerName,
-            TestContext.Current.CancellationToken
+            TestCt
         );
 
         // Rejoin world to trigger cabin replenishment. sendServerIntroduction (and thus
         // OnServerJoined -> EnsureAtLeastXCabins) only fires after farmhand slot selection,
         // not when merely reaching the farmhand screen. A full rejoin is required.
-        await Farmers.ReconnectAsync(client.FarmerName, ct: TestContext.Current.CancellationToken);
+        await Farmers.ReconnectAsync(client.FarmerName, ct: TestCt);
 
         // Poll until our farmer's cabin appears as assigned AND at least 1 available
         // (replenishment). Must check for our specific farmer; other tests on a shared
@@ -166,7 +166,7 @@ public class CabinStrategyTests : TestBase
             WaitName.Polling_CabinStrategy_OurCabinAssigned,
             async () =>
             {
-                cabinsAfter = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+                cabinsAfter = await ServerApi.GetCabins(TestCt);
                 ourCabin = cabinsAfter?.Cabins.FirstOrDefault(c =>
                     c.OwnerName.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase)
                     && c.IsAssigned
@@ -177,7 +177,7 @@ public class CabinStrategyTests : TestBase
                 return ourCabin != null && cabinsAfter?.AvailableCount >= 1;
             },
             TestTimings.CabinAssignmentTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.True(
@@ -197,17 +197,14 @@ public class CabinStrategyTests : TestBase
     [Fact]
     public async Task CabinStack_PlayerJoin_CabinAssignedToPlayer()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Poll until cabin ownership appears (server needs time to sync farmhand
         // isCustomized flag and Name after character creation)
-        var ownedCabin = await WaitForCabinAssignedAsync(
-            client.FarmerName,
-            TestContext.Current.CancellationToken
-        );
+        var ownedCabin = await WaitForCabinAssignedAsync(client.FarmerName, TestCt);
 
         // Log all cabins for diagnostics
-        var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+        var cabins = await ServerApi.GetCabins(TestCt);
         Log($"Cabins after join ({cabins!.Cabins.Count} total):");
         foreach (var c in cabins.Cabins)
         {
@@ -230,7 +227,7 @@ public class CabinStrategyTests : TestBase
     [Fact]
     public async Task Cabins_OurFarmerAppearsInBothEndpoints()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Poll until our farmer appears in both /cabins and /farmhands
         CabinInfoResponse? ourCabin = null;
@@ -239,7 +236,7 @@ public class CabinStrategyTests : TestBase
             WaitName.Polling_CabinStrategy_FarmerSyncedCabinAndFarmhand,
             async () =>
             {
-                var cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+                var cabins = await ServerApi.GetCabins(TestCt);
                 var farmhands = await ServerApi.GetFarmhands();
                 ourCabin = cabins?.Cabins.FirstOrDefault(c =>
                     c.OwnerName.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase)
@@ -252,7 +249,7 @@ public class CabinStrategyTests : TestBase
                 return ourCabin != null && ourFarmhand != null;
             },
             TestTimings.CabinAssignmentTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.True(
@@ -271,17 +268,14 @@ public class CabinStrategyTests : TestBase
     public async Task Cabins_AfterDeletion_SlotIsFreed()
     {
         // Create, join, disconnect, and wait for persistence
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
-        await Farmers.DisconnectAndWaitForPersistenceAsync(
-            client.FarmerName,
-            TestContext.Current.CancellationToken
-        );
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, TestCt);
 
         // Delete the farmhand
         Log($"Deleting farmhand '{client.FarmerName}'...");
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             client.FarmerName,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Assert.True(
             deleteResult?.Success,
@@ -300,7 +294,7 @@ public class CabinStrategyTests : TestBase
             WaitName.Polling_CabinStrategy_FarmerDeletionReflected,
             async () =>
             {
-                cabins = await ServerApi.GetCabins(TestContext.Current.CancellationToken);
+                cabins = await ServerApi.GetCabins(TestCt);
                 farmhands = await ServerApi.GetFarmhands();
                 if (cabins == null || farmhands == null)
                 {
@@ -314,7 +308,7 @@ public class CabinStrategyTests : TestBase
                 return ourFarmerGone && cabins.AvailableCount >= 1;
             },
             TestTimings.NetworkSyncTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         var customizedCount = farmhands!.Farmhands.Count(f => f.IsCustomized);

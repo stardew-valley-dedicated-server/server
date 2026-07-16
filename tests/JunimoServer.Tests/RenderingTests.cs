@@ -57,11 +57,8 @@ public class RenderingTests : TestBase
         // failed mid-change and left rendering in an unknown state.
         try
         {
-            await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
-            await Task.Delay(
-                TestTimings.RenderingToggleDelay,
-                TestContext.Current.CancellationToken
-            );
+            await ServerApi.SetServerFps(0, TestCt);
+            await Task.Delay(TestTimings.RenderingToggleDelay, TestCt);
         }
         catch (Exception ex)
         {
@@ -73,37 +70,31 @@ public class RenderingTests : TestBase
     public async Task ServerApi_SetServerFps_EnableAndDisable_ShouldUpdateState()
     {
         // Initial state: rendering disabled (set by InitializeAsync)
-        var initialStatus = await ServerApi.GetRendering(TestContext.Current.CancellationToken);
+        var initialStatus = await ServerApi.GetRendering(TestCt);
         Assert.NotNull(initialStatus);
         Assert.Equal(0, initialStatus.Fps);
 
         // Enable at a positive rate
-        var enableResponse = await ServerApi.SetServerFps(
-            EnabledFps,
-            TestContext.Current.CancellationToken
-        );
+        var enableResponse = await ServerApi.SetServerFps(EnabledFps, TestCt);
         Assert.NotNull(enableResponse);
         Assert.True(enableResponse.Success, enableResponse.Error ?? "Enable failed");
         Assert.Equal(EnabledFps, enableResponse.Fps);
         Assert.Equal(0, enableResponse.PreviousFps);
 
         // Verify GET reflects the change
-        var enabledStatus = await ServerApi.GetRendering(TestContext.Current.CancellationToken);
+        var enabledStatus = await ServerApi.GetRendering(TestCt);
         Assert.NotNull(enabledStatus);
         Assert.Equal(EnabledFps, enabledStatus.Fps);
 
         // Disable again (fps 0)
-        var disableResponse = await ServerApi.SetServerFps(
-            0,
-            TestContext.Current.CancellationToken
-        );
+        var disableResponse = await ServerApi.SetServerFps(0, TestCt);
         Assert.NotNull(disableResponse);
         Assert.True(disableResponse.Success, disableResponse.Error ?? "Disable failed");
         Assert.Equal(0, disableResponse.Fps);
         Assert.Equal(EnabledFps, disableResponse.PreviousFps);
 
         // Verify GET reflects the change
-        var disabledStatus = await ServerApi.GetRendering(TestContext.Current.CancellationToken);
+        var disabledStatus = await ServerApi.GetRendering(TestCt);
         Assert.NotNull(disabledStatus);
         Assert.Equal(0, disabledStatus.Fps);
     }
@@ -117,7 +108,7 @@ public class RenderingTests : TestBase
         // brightness (nighttime, day-transition fade, etc.).
 
         // Step 1: Ensure rendering is OFF, poll until the test overlay disappears.
-        await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
+        await ServerApi.SetServerFps(0, TestCt);
 
         int disabledBrightness = 0;
         var isDark = await PollingHelper.WaitUntilAsync(
@@ -141,7 +132,7 @@ public class RenderingTests : TestBase
             },
             TimeSpan.FromSeconds(5),
             pollInterval: TimeSpan.FromMilliseconds(500),
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.True(
@@ -150,7 +141,7 @@ public class RenderingTests : TestBase
         );
 
         // Step 2: Enable rendering, poll until the test overlay appears.
-        await ServerApi.SetServerFps(EnabledFps, TestContext.Current.CancellationToken);
+        await ServerApi.SetServerFps(EnabledFps, TestCt);
 
         int enabledBrightness = 0;
         var overlayVisible = await PollingHelper.WaitUntilAsync(
@@ -174,7 +165,7 @@ public class RenderingTests : TestBase
             },
             TimeSpan.FromSeconds(10),
             pollInterval: TimeSpan.FromMilliseconds(500),
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.True(
@@ -183,7 +174,7 @@ public class RenderingTests : TestBase
         );
 
         // Step 3: Disable rendering again and poll until the test overlay disappears.
-        await ServerApi.SetServerFps(0, TestContext.Current.CancellationToken);
+        await ServerApi.SetServerFps(0, TestCt);
 
         int reDisabledBrightness = 0;
         var wentDark = await PollingHelper.WaitUntilAsync(
@@ -207,7 +198,7 @@ public class RenderingTests : TestBase
             },
             TimeSpan.FromSeconds(5),
             pollInterval: TimeSpan.FromMilliseconds(500),
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.True(
@@ -239,7 +230,7 @@ public class RenderingTests : TestBase
     /// </summary>
     private async Task<(int brightness, byte[]? pngBytes)> CaptureTestOverlayBrightnessAsync()
     {
-        var result = await ServerApi.GetScreenshot(TestContext.Current.CancellationToken);
+        var result = await ServerApi.GetScreenshot(TestCt);
         if (result?.Success != true || result.Base64Png == null)
         {
             return (0, null);

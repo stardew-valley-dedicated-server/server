@@ -49,7 +49,7 @@ public class CabinStrategyFarmhouseStackTests : TestBase
     [Fact]
     public async Task FarmhouseStack_RejectsCabinMove()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "FarmhouseStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);

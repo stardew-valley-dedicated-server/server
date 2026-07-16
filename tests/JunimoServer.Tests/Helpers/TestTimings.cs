@@ -38,6 +38,17 @@ public static class TestTimings
     public static readonly TimeSpan SteamAccountReadyTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Bound on a single client Steam-account allocation in ClientPool.CreateClientAsync.
+    /// Worst legitimate case is ~0s semaphore wait (accounts release eagerly on
+    /// death/discard/dispose) plus the ≤90s readiness-probe phase inside
+    /// SteamAccountAllocator.AllocateAsync (AllocationReadinessBudget), so 120s cannot
+    /// false-trip. Expiry means no account will ever be released (an account leak), so
+    /// the lease fails fast as infrastructure (InfrastructureSkipException) instead of
+    /// blocking to the run-stall watchdog.
+    /// </summary>
+    public static readonly TimeSpan SteamAccountAllocationBound = TimeSpan.FromSeconds(120);
+
+    /// <summary>
     /// Timeout for stopping Docker containers during cleanup.
     /// </summary>
     public static readonly TimeSpan ContainerStopTimeout = TimeSpan.FromSeconds(10);

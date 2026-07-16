@@ -106,7 +106,7 @@ public class WeddingTests : TestBase
     [Fact]
     public async Task TwoFarmhandNpcWeddings_SameDay_BothCompleteWithoutHangingHost()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // Land on the day before the weddings.
         var setDate = await ServerApi.SetDate(WeddingSeason, EngageDay, year: 1, ct);

@@ -95,7 +95,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_DemotesOwnerAndBindsUserId()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest { OwnerName = "Alice" },
             ct
@@ -161,7 +161,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_MovesFarmhouseContentsToCabin()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest
             {
@@ -226,7 +226,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_UpgradedHouse_BuildPath_MovesContents()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // startingCabins:1 → no spare assignable cabin → TryAssignFarmhandHome fails → build path.
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest
@@ -291,7 +291,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_RelocatesPetToCabin()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest { OwnerName = "Dave", SpawnPet = true },
             ct
@@ -348,7 +348,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_MovesCellarContentsToOwnerCellar()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest { OwnerName = "Liam", PlaceCellarItem = true },
             ct
@@ -399,7 +399,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_AsIs_PreservesOwnerAsHost()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // Seed the master as a real owner so the source isn't a clone-blank Server master; as-is
         // keeps that owner AS the host (the headline trap, which this test pins as intended for a
         // single-player-style import).
@@ -455,7 +455,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_MalformedSave_LeavesFileByteUnchanged()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await GenerateSourceSaveAsync(new TestSeedImportSourceRequest { OwnerName = "Frank" }, ct);
 
         // Clone the valid active save to a fresh folder, then corrupt the clone's <player> — one
@@ -526,7 +526,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_CarriesMasterGatedState()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         const string mailFlag = "ccDoorUnlock";
         const string eventSeen = "191393";
         var seed = await GenerateSourceSaveAsync(
@@ -625,7 +625,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_FinalizeIsSingleShot_AcrossReloads()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest { OwnerName = "Judy", PlaceChest = true },
             ct
@@ -708,7 +708,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_SwapHost_RejectsUserIdCollision()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // Seed a spare uncustomized farmhand slot with SyntheticBindId (before the save, so the clone
         // carries it). A swap binding the SAME id must then be rejected by the cross-farmhand
         // userID-collision walk (LAN won't stamp a userID on its own).
@@ -760,7 +760,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_Reload_RefusesWhenClientConnected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         // Master is "Nina"; a finalized swap would flip it to "Server", so "Nina" persisting proves no reload.
         await GenerateSourceSaveAsync(new TestSeedImportSourceRequest { OwnerName = "Nina" }, ct);
 
@@ -807,7 +807,7 @@ public class SaveImportTests : TestBase
     [Fact]
     public async Task Import_ForceReload_KicksThenFinalizes()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var seed = await GenerateSourceSaveAsync(
             new TestSeedImportSourceRequest { OwnerName = "Omar" },
             ct

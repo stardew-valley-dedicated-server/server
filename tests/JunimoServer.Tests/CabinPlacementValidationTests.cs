@@ -51,7 +51,7 @@ public class CabinPlacementValidationTests : TestBase
     [Fact]
     public async Task ValidPlacement_MovesCabinToFarmerTilePlusOne()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -88,7 +88,7 @@ public class CabinPlacementValidationTests : TestBase
     [Fact]
     public async Task ObstacleInFootprint_RejectsAndDoesNotMove()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -148,7 +148,7 @@ public class CabinPlacementValidationTests : TestBase
     [Fact]
     public async Task OffFarm_RejectsAndDoesNotMove()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -191,7 +191,7 @@ public class CabinPlacementValidationTests : TestBase
     [Fact]
     public async Task AnotherPlayerInFootprint_RejectsAndDoesNotMove()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
         var clientA = await Farmers.ConnectNewAsync(ct: ct);

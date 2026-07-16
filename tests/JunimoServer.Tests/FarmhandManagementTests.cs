@@ -28,20 +28,20 @@ public class FarmhandManagementTests : TestBase
     )]
     public async Task ServerFarmhands_ReflectCustomizationState()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Check server-side farmhand list (poll until name syncs and customized flag is set)
         var found = await ServerApi.WaitForFarmhandByNameAsync(
             client.FarmerName,
             requireCustomized: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         Assert.True(
             found,
             $"Farmhand '{client.FarmerName}' should appear in /farmhands within timeout"
         );
-        var farmhands = await ServerApi.GetFarmhands(TestContext.Current.CancellationToken);
+        var farmhands = await ServerApi.GetFarmhands(TestCt);
         Assert.NotNull(farmhands);
         Assert.NotEmpty(farmhands.Farmhands);
 
@@ -74,19 +74,16 @@ public class FarmhandManagementTests : TestBase
     [Fact]
     public async Task DeleteFarmhand_WhenOffline_Succeeds()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Disconnect and wait for persistence
-        await Farmers.DisconnectAndWaitForPersistenceAsync(
-            client.FarmerName,
-            TestContext.Current.CancellationToken
-        );
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, TestCt);
 
         // Delete the farmhand
         Log($"Deleting offline farmhand '{client.FarmerName}'...");
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             client.FarmerName,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         Assert.True(
@@ -107,7 +104,7 @@ public class FarmhandManagementTests : TestBase
                     ) == true;
             },
             TestTimings.FarmerDeleteTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
         Assert.True(
             isGone,
@@ -128,18 +125,15 @@ public class FarmhandManagementTests : TestBase
     public async Task DeleteFarmhand_SlotBecomesReusable()
     {
         // Create first farmer, disconnect, and wait for persistence
-        var client1 = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
-        await Farmers.DisconnectAndWaitForPersistenceAsync(
-            client1.FarmerName,
-            TestContext.Current.CancellationToken
-        );
+        var client1 = await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
         Log($"After first join: farmer '{client1.FarmerName}' exists");
 
         // Delete farmer1 (poll until server processes disconnect)
         Log($"Deleting farmhand '{client1.FarmerName}'...");
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             client1.FarmerName,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
         Assert.True(
             deleteResult?.Success,
@@ -148,7 +142,7 @@ public class FarmhandManagementTests : TestBase
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == client1.JoinResult.UniqueMultiplayerId);
 
         // Verify slot is available (uncustomized)
-        var afterDelete = await ServerApi.GetFarmhands(TestContext.Current.CancellationToken);
+        var afterDelete = await ServerApi.GetFarmhands(TestCt);
         Assert.NotNull(afterDelete);
         var uncustomizedSlots = afterDelete.Farmhands.Count(f => !f.IsCustomized);
         Assert.True(
@@ -158,13 +152,13 @@ public class FarmhandManagementTests : TestBase
         Log($"After delete: {uncustomizedSlots} uncustomized slot(s) available");
 
         // Create second farmer using the freed slot
-        var client2 = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client2 = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Verify farmer2 exists (poll until name syncs)
         var farmer2Found = await ServerApi.WaitForFarmhandByNameAsync(
             client2.FarmerName,
             requireCustomized: true,
-            ct: TestContext.Current.CancellationToken
+            ct: TestCt
         );
 
         Assert.True(farmer2Found, $"Farmer '{client2.FarmerName}' should exist after reusing slot");
@@ -178,7 +172,7 @@ public class FarmhandManagementTests : TestBase
     [Fact]
     public async Task DeleteFarmhand_WhenOnline_Fails()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Try to delete while still connected - should fail. Use the UID overload
         // because fresh joiners may not have name-synced yet.
@@ -187,7 +181,7 @@ public class FarmhandManagementTests : TestBase
         );
         var deleteResult = await ServerApi.DeleteFarmhandById(
             client.JoinResult.UniqueMultiplayerId,
-            TestContext.Current.CancellationToken
+            TestCt
         );
         Assert.NotNull(deleteResult);
         Assert.False(deleteResult.Success, "Delete should fail for an online farmhand");
@@ -196,10 +190,7 @@ public class FarmhandManagementTests : TestBase
         Log($"Delete correctly refused: {deleteResult.Error}");
 
         // Verify the farmhand still exists (poll until name syncs)
-        var stillFound = await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName,
-            ct: TestContext.Current.CancellationToken
-        );
+        var stillFound = await ServerApi.WaitForFarmhandByNameAsync(client.FarmerName, ct: TestCt);
 
         Assert.True(
             stillFound,

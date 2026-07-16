@@ -24,7 +24,7 @@ public class NoPasswordTests : TestBase
     [Fact]
     public async Task NewPlayer_JoinsDirectly_WhenNoPasswordConfigured()
     {
-        await EnsureConnectedAsync("NoPwd", ct: TestContext.Current.CancellationToken);
+        await EnsureConnectedAsync("NoPwd", ct: TestCt);
 
         // Get current location
         var state = await GameClient.GetState();
@@ -48,10 +48,7 @@ public class NoPasswordTests : TestBase
     {
         // This test needs a fresh connection; we're asserting about messages
         // received on join, so we can't reuse an existing session.
-        await Farmers.ConnectNewAsync(
-            breakSession: true,
-            ct: TestContext.Current.CancellationToken
-        );
+        await Farmers.ConnectNewAsync(breakSession: true, ct: TestCt);
 
         // Poll for the delivery window. If auth messages appear at any point,
         // the test fails immediately instead of waiting the full duration.
@@ -71,7 +68,7 @@ public class NoPasswordTests : TestBase
                     ) == true;
             },
             TestTimings.ChatDeliveryDelay,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         // Should NOT have received any auth messages
@@ -98,7 +95,7 @@ public class NoPasswordTests : TestBase
     [Fact]
     public async Task Player_CanInteract_WithoutAuthentication()
     {
-        await EnsureConnectedAsync("NoPwd", ct: TestContext.Current.CancellationToken);
+        await EnsureConnectedAsync("NoPwd", ct: TestCt);
 
         // Verify we're connected and in-game
         var state = await GameClient.GetState();
@@ -132,7 +129,7 @@ public class NoPasswordTests : TestBase
                 return countAfter > countBefore;
             },
             TestTimings.ChatCommandTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         // Should see the message in chat history (not blocked)

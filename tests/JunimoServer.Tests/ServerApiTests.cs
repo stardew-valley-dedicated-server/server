@@ -32,11 +32,11 @@ public class ServerApiTests : TestBase
             WaitName.Polling_ServerApi_NoPlayersConnected,
             async () =>
             {
-                var players = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+                var players = await ServerApi.GetPlayers(TestCt);
                 return players?.Players?.Count == 0;
             },
             TestTimings.FarmerDeleteTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
         Assert.True(noPlayers, "Server should have no players connected");
         Log("Verified: no players connected");
@@ -49,15 +49,12 @@ public class ServerApiTests : TestBase
     [TestServer(Artifacts = true)]
     public async Task GetPlayers_WhenPlayerConnected_ShowsPlayer()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Poll until player appears in the /players API
         PlayersResponse? response = null;
-        await ServerApi.WaitForPlayerByNameAsync(
-            client.FarmerName,
-            ct: TestContext.Current.CancellationToken
-        );
-        response = await ServerApi.GetPlayers(TestContext.Current.CancellationToken);
+        await ServerApi.WaitForPlayerByNameAsync(client.FarmerName, ct: TestCt);
+        response = await ServerApi.GetPlayers(TestCt);
 
         Assert.NotNull(response);
         Assert.NotNull(response.Players);
@@ -84,10 +81,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task SetTime_WithValidValue_Succeeds()
     {
-        var response = await ServerApi.SetTime(
-            TestTimings.Noon,
-            TestContext.Current.CancellationToken
-        );
+        var response = await ServerApi.SetTime(TestTimings.Noon, TestCt);
 
         Assert.NotNull(response);
         Assert.True(response.Success, response.Error ?? "SetTime failed");
@@ -104,7 +98,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task SetTime_OutOfRange_ReturnsError(int timeValue, string description)
     {
-        var response = await ServerApi.SetTime(timeValue, TestContext.Current.CancellationToken);
+        var response = await ServerApi.SetTime(timeValue, TestCt);
 
         Assert.NotNull(response);
         Assert.False(response.Success, $"Expected failure for {description} ({timeValue})");
@@ -124,10 +118,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task DeleteFarmhandByName_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.DeleteFarmhandByName(
-            "NonExistentFarmer12345",
-            TestContext.Current.CancellationToken
-        );
+        var response = await ServerApi.DeleteFarmhandByName("NonExistentFarmer12345", TestCt);
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -143,10 +134,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task DeleteFarmhandById_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.DeleteFarmhandById(
-            999999999L,
-            TestContext.Current.CancellationToken
-        );
+        var response = await ServerApi.DeleteFarmhandById(999999999L, TestCt);
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -162,10 +150,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task GrantAdminByName_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.GrantAdminByName(
-            "NonExistentAdmin12345",
-            TestContext.Current.CancellationToken
-        );
+        var response = await ServerApi.GrantAdminByName("NonExistentAdmin12345", TestCt);
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -181,10 +166,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task GrantAdminById_WhenNotExists_ReturnsNotFoundError()
     {
-        var response = await ServerApi.GrantAdminById(
-            999999999L,
-            TestContext.Current.CancellationToken
-        );
+        var response = await ServerApi.GrantAdminById(999999999L, TestCt);
 
         Assert.NotNull(response);
         Assert.False(response.Success);
@@ -204,7 +186,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task GetOpenApiSpec_ReturnsValidJson()
     {
-        var spec = await ServerApi.GetOpenApiSpec(TestContext.Current.CancellationToken);
+        var spec = await ServerApi.GetOpenApiSpec(TestCt);
 
         Assert.NotNull(spec);
         Assert.NotEmpty(spec);
@@ -236,7 +218,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task Api_HandlesConcurrentRequests()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         var tasks = new List<Task<ServerStatus?>>
         {
             ServerApi.GetStatus(ct),
@@ -271,7 +253,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task WebSocket_CanConnect()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         using var ws = new ClientWebSocket();
         var wsUrl = ServerApi.GetWebSocketUrl();
         Log($"Connecting to WebSocket: {wsUrl}");
@@ -291,7 +273,7 @@ public class ServerApiTests : TestBase
     [TestServer(Clients = 0)]
     public async Task WebSocket_PingPong()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         using var ws = new ClientWebSocket();
         var wsUrl = ServerApi.GetWebSocketUrl();
 
@@ -324,10 +306,10 @@ public class ServerApiTests : TestBase
     public async Task WebSocket_ChatSend_MessageAppearsInGame()
     {
         // Connect a player to receive the chat message
-        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Send message via WebSocket API
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         using var ws = new ClientWebSocket();
         var wsUrl = ServerApi.GetWebSocketUrl();
         await ws.ConnectAsync(new Uri(wsUrl), ct);
@@ -354,7 +336,7 @@ public class ServerApiTests : TestBase
                     ) == true;
             },
             TestTimings.ChatCommandTimeout,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: TestCt
         );
 
         Assert.NotNull(chatHistory);

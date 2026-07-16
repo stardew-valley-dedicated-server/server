@@ -28,7 +28,7 @@ public class HostAutomationTests : TestBase
     {
         await Connect.EnsureDisconnectedAsync();
 
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         Log($"Exclusive access granted, refs={Lease!.RefCount}");
 
         // Wait until no other players are connected (previous test may still be cleaning up).
@@ -148,9 +148,9 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task TimeAdvances_WhenPlayerConnected()
     {
-        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        await Farmers.ConnectNewAsync(ct: TestCt);
 
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // Set time to a known value so the measurement is clean
         var setTimeResult = await ServerApi.SetTime(TestTimings.Noon, ct);
@@ -253,10 +253,10 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task HostAutoSleeps_WhenPlayerSleeps()
     {
-        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Record the current day
-        var statusBefore = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusBefore = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusBefore);
         var dayBefore = statusBefore.Day;
         var seasonBefore = statusBefore.Season;
@@ -292,7 +292,7 @@ public class HostAutomationTests : TestBase
             seasonBefore,
             yearBefore,
             checkConnection: true,
-            TestContext.Current.CancellationToken
+            TestCt
         );
 
         Assert.False(
@@ -306,7 +306,7 @@ public class HostAutomationTests : TestBase
             "Day should have advanced after farmhand slept and host auto-slept"
         );
 
-        var statusAfter = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusAfter = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusAfter);
         Log(
             $"After sleep: {statusAfter.Season} {statusAfter.Day}, Year {statusAfter.Year}, Time {statusAfter.TimeOfDay}"
@@ -332,10 +332,10 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task HostPassesOut_WhenTimeReaches2AM()
     {
-        await Farmers.ConnectNewAsync(ct: TestContext.Current.CancellationToken);
+        await Farmers.ConnectNewAsync(ct: TestCt);
 
         // Record the current day
-        var statusBefore = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusBefore = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusBefore);
         var dayBefore = statusBefore.Day;
         var seasonBefore = statusBefore.Season;
@@ -345,16 +345,13 @@ public class HostAutomationTests : TestBase
         );
 
         // Set time to 2550, just one 10-minute tick before 2:00 AM (2600).
-        var setTimeResult = await ServerApi.SetTime(
-            TestTimings.PrePassOutTime,
-            TestContext.Current.CancellationToken
-        );
+        var setTimeResult = await ServerApi.SetTime(TestTimings.PrePassOutTime, TestCt);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
         Log($"Set time to {setTimeResult.TimeOfDay}, waiting for 2:00 AM pass-out...");
 
         // Speed up clock 10x so the tick from 2550→2600 takes ~0.7s instead of ~7s
-        var speedResult = await ServerApi.SetClockSpeed(10, TestContext.Current.CancellationToken);
+        var speedResult = await ServerApi.SetClockSpeed(10, TestCt);
         Assert.True(speedResult?.Success, $"SetClockSpeed failed: {speedResult?.Error}");
 
         bool dayChanged;
@@ -362,21 +359,16 @@ public class HostAutomationTests : TestBase
         {
             // Wait for the day to transition.
             // At 2600, the game forces pass-out → sleep ready check → day transition.
-            dayChanged = await DayChange.WaitAsync(
-                dayBefore,
-                seasonBefore,
-                yearBefore,
-                TestContext.Current.CancellationToken
-            );
+            dayChanged = await DayChange.WaitAsync(dayBefore, seasonBefore, yearBefore, TestCt);
         }
         finally
         {
             // Always restore clock speed
-            await ServerApi.SetClockSpeed(1, TestContext.Current.CancellationToken);
+            await ServerApi.SetClockSpeed(1, TestCt);
         }
         Assert.True(dayChanged, "Day should have advanced after 2:00 AM pass-out");
 
-        var statusAfter = await ServerApi.GetStatus(TestContext.Current.CancellationToken);
+        var statusAfter = await ServerApi.GetStatus(TestCt);
         Assert.NotNull(statusAfter);
         Log(
             $"After pass-out: {statusAfter.Season} {statusAfter.Day}, Year {statusAfter.Year}, Time {statusAfter.TimeOfDay}"
@@ -407,7 +399,7 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task HostCompletesQiPlaneEvent_AcrossFpsMatrix(int fps)
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await Farmers.ConnectNewAsync(ct: ct);
 
         var initialRendering = await ServerApi.GetRendering(ct);

@@ -85,7 +85,7 @@ public class CropSaverTests : TestBase
     [Fact]
     public async Task GardenPotCrop_IsRegisteredWithCropSaverWatcher()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
         await PlacePotAndPlantCauliflowerAsync(TileA_X, TileA_Y, ct);
         await AssertWatcherRegistersPotAsync("Farm", TileA_X, TileA_Y, ct);
     }
@@ -93,7 +93,7 @@ public class CropSaverTests : TestBase
     [Fact]
     public async Task GardenPotCrop_KillSuppressedOnSeasonTransition_WhileOwnerOffline()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         var farmhand = await PlacePotAndPlantCauliflowerAsync(TileB_X, TileB_Y, ct);
         await AssertWatcherRegistersPotAsync("Farm", TileB_X, TileB_Y, ct);
@@ -200,7 +200,7 @@ public class CropSaverTests : TestBase
     [Fact]
     public async Task PotCropInImmuneLocation_SurvivesPastDateOfDeath_WhileOwnerOffline()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestCt;
 
         // Plant a Pumpkin in a Garden Pot inside the farmhand's own cabin
         // interior — an indoor (season-immune) location, exercising the same fix
