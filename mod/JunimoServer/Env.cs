@@ -30,9 +30,11 @@ internal class Env
 
     /// <summary>
     /// Target game ticks per second. Lower values reduce CPU usage.
-    /// Default: 60 (game default). Minimum: 1.
+    /// Default: 60 (game default). Clamped to [1, 60]: above vanilla's fixed 60 every per-tick-constant
+    /// gameplay path (movement, physics) runs faster than real time, and <c>TpsAgnosticPacing</c> can
+    /// only add sub-steps, never skip vanilla's own.
     /// </summary>
-    public static readonly int ServerTps = Math.Max(1, ParseInt("SERVER_TPS", 60));
+    public static readonly int ServerTps = Math.Clamp(ParseInt("SERVER_TPS", 60), 1, 60);
 
     /// <summary>
     /// Target frames per second for the server's draw loop.

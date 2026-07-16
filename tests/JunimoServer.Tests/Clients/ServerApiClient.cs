@@ -644,6 +644,55 @@ public class TestSetDateResponse
 }
 
 /// <summary>
+/// Response from POST /test/pacing_probe_spawn (test-only).
+/// </summary>
+public class PacingProbeSpawnResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("locationName")]
+    public string? LocationName { get; set; }
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+}
+
+/// <summary>
+/// Response from GET /test/pacing_probe_state (test-only). Only the field(s) matching the spawned kind
+/// are meaningful.
+/// </summary>
+public class PacingProbeStateResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("projectileTravelDistance")]
+    public float ProjectileTravelDistance { get; set; }
+
+    [JsonPropertyName("debrisChunksAtRest")]
+    public int DebrisChunksAtRest { get; set; }
+
+    [JsonPropertyName("debrisChunkCount")]
+    public int DebrisChunkCount { get; set; }
+
+    [JsonPropertyName("monsterDisplacement")]
+    public float MonsterDisplacement { get; set; }
+
+    [JsonPropertyName("monsterSpeed")]
+    public float MonsterSpeed { get; set; }
+}
+
+/// <summary>
 /// Response from /test/farmevent POST endpoint (test-only).
 /// </summary>
 public class TestFarmEventResponse
@@ -1923,6 +1972,46 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSetDateResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: spawn a per-tick-physics probe entity (projectile/debris/monster) in the host's
+    /// location, which the server simulates. Paired with <see cref="GetPacingProbeState"/> to measure
+    /// wall-clock pacing with the TPS-agnostic patches on vs off. POST /test/pacing_probe_spawn
+    /// </summary>
+    public async Task<PacingProbeSpawnResponse?> SpawnPacingProbe(
+        string kind,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/pacing_probe_spawn",
+            ct,
+            () => JsonContent.Create(new { kind })
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PacingProbeSpawnResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: read the current state of the spawned pacing-probe entity of the given kind.
+    /// GET /test/pacing_probe_state?kind=...
+    /// </summary>
+    public async Task<PacingProbeStateResponse?> GetPacingProbeState(
+        string kind,
+        CancellationToken ct = default
+    )
+    {
+        // Retry on 503: this endpoint marshals onto the game thread and is read once (not polled), so a
+        // transient game-thread-busy has no self-healing poll to fall back on.
+        var response = await SendWithRetryAsync(
+            HttpMethod.Get,
+            $"/test/pacing_probe_state?kind={Uri.EscapeDataString(kind)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PacingProbeStateResponse>(ct);
     }
 
     /// <summary>

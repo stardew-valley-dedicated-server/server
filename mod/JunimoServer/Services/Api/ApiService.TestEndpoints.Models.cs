@@ -530,3 +530,72 @@ public class TestImportSaveResponse
     /// <summary>SHA-256 (base64) of the target main file after import.</summary>
     public string PostImportMainFileHash { get; set; } = "";
 }
+
+/// <summary>
+/// Which per-tick-physics entity to spawn/measure with the TPS-agnostic-pacing probe.
+/// </summary>
+public enum PacingProbeKind
+{
+    /// <summary>A <c>BasicProjectile</c> fired horizontally — measures <c>travelDistance</c> (the fix keeps
+    /// wall-clock travel speed constant across TPS).</summary>
+    Projectile,
+
+    /// <summary>An object <c>Debris</c> drop — measures how many chunks have come to rest (the fix keeps the
+    /// settle time wall-clock-constant).</summary>
+    Debris,
+
+    /// <summary>A <c>Bat</c> monster — measures its net displacement toward the host (the fix keeps the
+    /// velocity-ramp/turn rate wall-clock-constant so it closes distance at the same speed at any TPS).</summary>
+    Monster,
+
+    /// <summary>A walking monster (<c>GreenSlime</c>) given a fixed knockback impulse via
+    /// <c>setTrajectory</c> — measures how far the knockback carries it before friction stops it (the fix
+    /// makes the per-call velocity-friction decay run once per tick, so knockback distance is
+    /// wall-clock-constant instead of collapsing under the sub-step at low TPS).</summary>
+    Knockback,
+}
+
+/// <summary>Request body for POST /test/pacing_probe_spawn.</summary>
+public class PacingProbeSpawnRequest
+{
+    /// <summary>"projectile", "debris", "monster", or "knockback" (case-insensitive).</summary>
+    public string? Kind { get; set; }
+}
+
+/// <summary>Response for POST /test/pacing_probe_spawn.</summary>
+public class PacingProbeSpawnResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The host location the probe entity was spawned in (for the test's log context).</summary>
+    public string? LocationName { get; set; }
+
+    /// <summary>Number of probe entities of this kind now present (should be 1 after a clean spawn).</summary>
+    public int Count { get; set; }
+}
+
+/// <summary>Response for GET /test/pacing_probe_state. Only the field(s) relevant to the spawned kind are meaningful.</summary>
+public class PacingProbeStateResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Number of probe entities of the requested kind still present.</summary>
+    public int Count { get; set; }
+
+    /// <summary>Projectile: accumulated <c>travelDistance</c> in pixels (monotonic per update). 0 if gone.</summary>
+    public float ProjectileTravelDistance { get; set; }
+
+    /// <summary>Debris: number of chunks that have finished their ballistic fall (bounces &gt; 2).</summary>
+    public int DebrisChunksAtRest { get; set; }
+
+    /// <summary>Debris: total chunk count of the probe debris.</summary>
+    public int DebrisChunkCount { get; set; }
+
+    /// <summary>Monster: net pixel displacement from the spawn position (how far it has travelled/homed).</summary>
+    public float MonsterDisplacement { get; set; }
+
+    /// <summary>Monster: current speed magnitude (sqrt(xVel²+yVel²)) — the velocity-ramp signal.</summary>
+    public float MonsterSpeed { get; set; }
+}
