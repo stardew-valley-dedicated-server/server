@@ -410,6 +410,12 @@ public static class TpsAgnosticPacing
     /// tick's extra-step count of times under the re-entrancy guard, short-circuiting if a step signals
     /// removal. Returns <c>true</c> to let the original run (no extra step removed the entity), or
     /// <c>false</c> with <paramref name="removeResult"/> set to skip the original and delete the entity.
+    ///
+    /// <para>The zero-time extras run BEFORE the real call, so ms grace/lifetime timers are consumed at
+    /// the end of the tick's batch instead of the start — a ≤1-tick phase error that is symmetric (real
+    /// call first would expire them up to a tick early instead of late) and inherent to not distributing
+    /// the tick's ms across sub-steps, which is unsafe (see the glider docstring's Ghost one-shot
+    /// hazard). Extras-first also lets a prefix skip the original cleanly on removal.</para>
     /// </summary>
     private static bool RunUpdateSubSteps(Func<bool> extraStep, ref bool removeResult)
     {
@@ -543,6 +549,10 @@ public static class TpsAgnosticPacing
     /// Advances the per-tick carry accumulator by <see cref="TickScale"/> and returns
     /// <c>floor(carry) - 1</c>, keeping the fractional remainder for the next tick so long-run distance
     /// stays exact at non-integer scales. Recomputed once per game tick and shared across all callers.
+    ///
+    /// <para>Additive only: a <see cref="TickScale"/> below 1 (TPS above 60) would need vanilla's own
+    /// step SKIPPED some ticks, which this primitive can't do — so both mods clamp TPS to at most 60
+    /// (<c>Env.ServerTps</c>, test-client <c>ModEntry</c>) and the scale is structurally ≥ 1.</para>
     /// </summary>
     private static int ExtraStepsThisTick()
     {
