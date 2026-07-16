@@ -1917,6 +1917,7 @@ public partial class ApiService
     private object? _probeProjectile;
     private object? _probeDebris;
     private object? _probeMonster;
+    private object? _probeLocation;
     private float _probeMonsterSpawnX;
     private float _probeMonsterSpawnY;
 
@@ -1981,22 +1982,22 @@ public partial class ApiService
                 result.LocationName = location.NameOrUniqueName;
                 var origin = Game1.player.Position;
 
-                // Drop all prior probe tracking so a later state read for any kind can only ever see THIS
-                // spawn's entity (no cross-kind bleed if the shared server is reused for a different kind).
-                RemoveProbeMonster(location);
-                _probeProjectile = null;
-                _probeDebris = null;
+                // Remove all prior probe entities (by identity, from their own spawn location) so a later
+                // state read for any kind can only ever see THIS spawn's entity, and no leaked entity can
+                // contaminate it (a leftover probe projectile ricochets forever and damages monsters, so
+                // it could hit a later monster/knockback probe). Unrelated world entities are untouched.
+                RemoveTrackedProbes();
+                _probeLocation = location;
 
                 switch (kind)
                 {
                     case PacingProbeKind.Projectile:
                     {
-                        // Clear any prior probe projectile, then fire one horizontally from the host. A high
-                        // bounce count makes travelDistance accumulate at the wall-clock rate regardless of
-                        // farm geometry — the projectile ricochets off any wall/obstacle instead of being
-                        // destroyed, so the measurement doesn't depend on a clear line of fire.
+                        // Fire one projectile horizontally from the host. A high bounce count makes
+                        // travelDistance accumulate at the wall-clock rate regardless of farm geometry —
+                        // the projectile ricochets off any wall/obstacle instead of being destroyed, so
+                        // the measurement doesn't depend on a clear line of fire.
                         // damagesMonsters=true so it targets monsters (none on the idle Farm), not the host.
-                        location.projectiles.Clear();
                         var projectile = new BasicProjectile(
                             damageToFarmer: 0,
                             spriteIndex: 0,
@@ -2013,7 +2014,7 @@ public partial class ApiService
                         projectile.ignoreTravelGracePeriod.Value = true;
                         location.projectiles.Add(projectile);
                         _probeProjectile = projectile;
-                        result.Count = location.projectiles.Count;
+                        result.Count = 1;
                         break;
                     }
                     case PacingProbeKind.Debris:
@@ -2021,8 +2022,7 @@ public partial class ApiService
                         // Drop an object debris well away from the host so its chunks fall and settle
                         // WITHOUT being magnetized-and-collected (object debris homes to a nearby player
                         // once done bouncing; 640 px keeps it outside the ~64 px pickup range for the
-                        // measurement window). Clear prior probe debris first for a clean chunk count.
-                        location.debris.Clear();
+                        // measurement window).
                         var dropOrigin = origin + new Vector2(640f, -128f);
                         var debris = new Debris(
                             "(O)388", // Wood — an ordinary object drop
@@ -2031,7 +2031,7 @@ public partial class ApiService
                         );
                         location.debris.Add(debris);
                         _probeDebris = debris;
-                        result.Count = location.debris.Count;
+                        result.Count = 1;
                         break;
                     }
                     case PacingProbeKind.Monster:
@@ -2104,14 +2104,21 @@ public partial class ApiService
         {
             await RunOnGameThreadAsync(() =>
             {
-                var location = Game1.player.currentLocation;
+                // Count = "is the tracked probe still in its spawn location" — by identity, so unrelated
+                // world entities of the same kind never inflate it.
+                var location = _probeLocation as GameLocation;
 
                 switch (kind)
                 {
                     case PacingProbeKind.Projectile:
-                        result.Count = location?.projectiles.Count ?? 0;
-                        result.ProjectileTravelDistance =
-                            (_probeProjectile as Projectile)?.travelDistance ?? 0f;
+                        if (_probeProjectile is Projectile projectile)
+                        {
+                            result.Count =
+                                location != null && location.projectiles.Contains(projectile)
+                                    ? 1
+                                    : 0;
+                            result.ProjectileTravelDistance = projectile.travelDistance;
+                        }
                         break;
                     case PacingProbeKind.Debris:
                         if (_probeDebris is Debris debris)
@@ -2122,16 +2129,18 @@ public partial class ApiService
                             // toward a player. Keying on `bounces` (not zero velocity) gives a stable
                             // "fall complete" signal unaffected by the post-settle magnetize drift.
                             result.DebrisChunksAtRest = debris.Chunks.Count(c => c.bounces > 2);
-                            result.Count = location?.debris.Count(d => d == debris) ?? 0;
+                            result.Count =
+                                location != null && location.debris.Contains(debris) ? 1 : 0;
                         }
                         break;
                     case PacingProbeKind.Monster:
                     case PacingProbeKind.Knockback:
                         // Both read the tracked monster's net displacement from spawn: Monster = homing
                         // distance closed, Knockback = distance the impulse carried it before friction.
-                        if (_probeMonster is Monster monster && location != null)
+                        if (_probeMonster is Monster monster)
                         {
-                            result.Count = location.characters.Contains(monster) ? 1 : 0;
+                            result.Count =
+                                location != null && location.characters.Contains(monster) ? 1 : 0;
                             result.MonsterDisplacement = Vector2.Distance(
                                 monster.Position,
                                 new Vector2(_probeMonsterSpawnX, _probeMonsterSpawnY)
@@ -2190,12 +2199,30 @@ public partial class ApiService
         }
     }
 
-    private void RemoveProbeMonster(GameLocation location)
+    /// <summary>
+    /// Removes every tracked probe entity by identity from the location it was spawned in (the host may
+    /// have moved since), then drops all tracking. Game thread only, like the fields it clears.
+    /// </summary>
+    private void RemoveTrackedProbes()
     {
-        if (_probeMonster is Monster monster && location.characters.Contains(monster))
+        if (_probeLocation is GameLocation location)
         {
-            location.characters.Remove(monster);
+            if (_probeMonster is Monster monster)
+            {
+                location.characters.Remove(monster);
+            }
+            if (_probeProjectile is Projectile projectile)
+            {
+                location.projectiles.Remove(projectile);
+            }
+            if (_probeDebris is Debris debris)
+            {
+                location.debris.Remove(debris);
+            }
         }
         _probeMonster = null;
+        _probeProjectile = null;
+        _probeDebris = null;
+        _probeLocation = null;
     }
 }
