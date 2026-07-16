@@ -1540,6 +1540,235 @@ public sealed class TestRunState
     }
 
     /// <summary>
+    /// Writes the per-instance lifecycle narrative to <paramref name="path"/>:
+    /// one compact JSON line per <c>History</c> entry (created/leased/returned/
+    /// disposed/poisoned/connected/disconnected), each carrying the instance
+    /// identity — so a post-mortem reader can reconstruct which test held which
+    /// container and why it was poisoned. The <c>SetupEventBus</c> is disk-free,
+    /// so this is the only on-disk home for that narrative.
+    /// Instances with no history are skipped, so the file is empty when no
+    /// instance lifecycle was recorded.
+    /// </summary>
+    public void WriteInstanceHistoryJsonl(string path)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var inst in _instances.Values)
+            {
+                foreach (var h in inst.History)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                inst.InstanceId,
+                                inst.HostId,
+                                inst.InstanceType,
+                                inst.ServerKey,
+                                inst.Label,
+                                h.Timestamp,
+                                h.Event,
+                                h.TestName,
+                                h.Reason,
+                                h.ServerInstanceId,
+                                h.ClientInstanceId,
+                            }
+                        )
+                    );
+                }
+
+                // Trailing final-state line so the current status fields (which the
+                // history transitions don't fully carry) survive too.
+                lines.Add(
+                    Serialize(
+                        new
+                        {
+                            inst.InstanceId,
+                            inst.HostId,
+                            inst.InstanceType,
+                            inst.ServerKey,
+                            inst.Label,
+                            Event = "final_state",
+                            inst.Status,
+                            inst.Connected,
+                            inst.Disposed,
+                            inst.CurrentTest,
+                            inst.PoisonReason,
+                            inst.ConnectedServerId,
+                            inst.VncUrl,
+                            inst.SetupStatus,
+                            inst.RecordingPath,
+                        }
+                    )
+                );
+            }
+
+            File.WriteAllLines(path, lines);
+        }
+    }
+
+    /// <summary>
+    /// Writes the runner's in-memory UI event stream (the sequence the UI replays
+    /// to late-connecting clients) to <paramref name="path"/>, one compact JSON
+    /// line per <c>_eventLog</c> entry. Uniquely preserves the <c>diagnostic</c>
+    /// and <c>error</c> events (from xUnit's <c>OnDiagnosticMessage</c>/
+    /// <c>OnErrorMessage</c>), which land nowhere else on disk, plus the unified
+    /// ordering of the run's event stream.
+    /// <para>
+    /// <c>_eventLog</c> is a bounded ring buffer (<see cref="MaxEventLogSize"/>);
+    /// a normal run stays well under the cap, but if it was full at flush this
+    /// prepends a <c>run_events_truncated</c> marker so a ring-buffer-evicted log
+    /// is never mistaken for a complete one. The cap bounds live memory and is
+    /// deliberately not raised here.
+    /// </para>
+    /// </summary>
+    public void WriteRunEventsJsonl(string path)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            if (_eventLog.Count >= MaxEventLogSize)
+            {
+                lines.Add(Serialize(new { Event = "run_events_truncated", Cap = MaxEventLogSize }));
+            }
+
+            foreach (var evt in _eventLog)
+            {
+                lines.Add(Serialize(evt));
+            }
+
+            File.WriteAllLines(path, lines);
+        }
+    }
+
+    /// <summary>
+    /// Writes the per-test UI-only extras to <paramref name="path"/>, one compact
+    /// JSON line per test — the fields that <c>summary.json</c>/<c>ctrf</c> don't
+    /// carry for non-failed tests (output, non-failed stack traces, failure
+    /// context, ordering/timing, used instances). The internal-only
+    /// reconciliation-provenance fields (<c>EnrichmentOutcome</c>,
+    /// <c>OutcomeSource</c>) are deliberately excluded — they're not observable
+    /// state.
+    /// </summary>
+    public void WriteTestDetailsJsonl(string path)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var col in _collections.Values)
+            {
+                foreach (var cls in col.Classes.Values)
+                {
+                    foreach (var t in cls.Tests.Values)
+                    {
+                        lines.Add(
+                            Serialize(
+                                new
+                                {
+                                    t.ClassName,
+                                    t.DisplayName,
+                                    t.Status,
+                                    Output = t.Output.Count > 0 ? t.Output : null,
+                                    t.StackTrace,
+                                    t.FailureContext,
+                                    RecordingSkipReasons = t.RecordingSkipReasons.Count > 0
+                                        ? t.RecordingSkipReasons
+                                        : null,
+                                    UsedInstances = t.UsedInstances.Count > 0
+                                        ? t.UsedInstances
+                                        : null,
+                                    t.DiscoveryOrder,
+                                    t.ExecutionOrder,
+                                    t.StartTime,
+                                    t.RunningStartTime,
+                                    Recordings = t.Recordings.Count > 0
+                                        ? t
+                                            .Recordings.Select(r => new
+                                            {
+                                                r.Path,
+                                                r.Source,
+                                                r.TimelineOffset,
+                                                r.WallClockDuration,
+                                            })
+                                            .ToList()
+                                        : null,
+                                }
+                            )
+                        );
+                    }
+                }
+            }
+
+            File.WriteAllLines(path, lines);
+        }
+    }
+
+    /// <summary>
+    /// Writes the run-start prestart/warmup narrative to <paramref name="path"/>,
+    /// one compact JSON line per <c>(phase, step)</c> from <c>_setupPhases</c> —
+    /// the parent-side phases (preflight, cleanup, image/game-data distribution)
+    /// and child-side per-collection prestart phases with their step-level
+    /// breakdown. Scope is prestart-only: mid-run per-instance re-provisioning
+    /// lives in <see cref="WriteInstanceHistoryJsonl"/>, not here.
+    /// A phase with no steps still writes its own line so an in-progress or
+    /// failed phase is visible.
+    /// </summary>
+    public void WriteSetupPhasesJsonl(string path)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var p in _setupPhases)
+            {
+                if (p.Steps.Count == 0)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                p.Category,
+                                Phase = p.PhaseName,
+                                p.CollectionName,
+                                p.Status,
+                                p.StartTime,
+                                p.EndTime,
+                                Error = p.ErrorMessage,
+                            }
+                        )
+                    );
+                    continue;
+                }
+
+                foreach (var s in p.Steps)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                p.Category,
+                                Phase = p.PhaseName,
+                                p.CollectionName,
+                                p.Status,
+                                p.StartTime,
+                                p.EndTime,
+                                Error = p.ErrorMessage,
+                                Step = s.StepName,
+                                StepStatus = s.Status,
+                                s.Details,
+                                Output = s.Output.Count > 0 ? s.Output : null,
+                                s.Timestamp,
+                            }
+                        )
+                    );
+                }
+            }
+
+            File.WriteAllLines(path, lines);
+        }
+    }
+
+    /// <summary>
     /// Run-level view for the report's social-media meta tags + OG card. Counts
     /// come from the same test-tree iteration BuildSnapshot uses (the _passed/
     /// _failed fields are only set at run_finished), so they match the published
