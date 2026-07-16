@@ -54,6 +54,11 @@ server-settings.json
 # Test artifacts (screenshots, etc.)
 TestResults/
 
+# diagnostics-command output (bind-mounted from the server container). Anchored to the compose
+# working dirs — NOT a bare `diagnostics/`, which would also ignore the tool source in tools/.
+/diagnostics/
+/docker/modern/diagnostics/
+
 # Dependency folders
 node_modules/
 

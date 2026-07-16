@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using JunimoServer.Services.CabinManager;
+using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameManager;
 using JunimoServer.Services.PasswordProtection;
@@ -52,6 +53,9 @@ public class ServerStatus
 
     /// <summary>Server mod version.</summary>
     public string ServerVersion { get; set; } = "";
+
+    /// <summary>Stardew Valley game version (Game1.version, e.g. "1.6.15").</summary>
+    public string GameVersion { get; set; } = "";
 
     /// <summary>Whether the server is online and hosting.</summary>
     public bool IsOnline { get; set; }
@@ -374,6 +378,12 @@ public class StatsResponse
 
     /// <summary>Rolling average game thread wait time in milliseconds (60-sample window).</summary>
     public double GameThreadWaitMs { get; set; }
+
+    /// <summary>ISO 8601 UTC time the mod started, or null if not yet available.</summary>
+    public string? StartedAtUtc { get; set; }
+
+    /// <summary>Seconds the mod has been running, or null if the start time isn't available.</summary>
+    public long? UptimeSeconds { get; set; }
 }
 
 /// <summary>
@@ -897,6 +907,7 @@ public partial class ApiService : ModService
         public int Year;
         public int TimeOfDay;
         public string FarmTypeKey = "";
+        public string GameVersion = "";
         public bool IsPaused;
 
         // /players
@@ -1302,6 +1313,10 @@ public partial class ApiService : ModService
                 CapturedAt = capturedAt.ToString("o"),
                 CapturedAtUtc = capturedAt,
             };
+
+            // Game version is a process-wide engine constant (Game1.version), available before a
+            // save loads — set it before the offline early-return so /status reports it even offline.
+            snap.GameVersion = Game1.version ?? "";
 
             // IsOnline always tracked (its change is observable independently
             // of the early-return branch below).
@@ -2746,6 +2761,7 @@ public partial class ApiService : ModService
                 PlayerCount = 0,
                 MaxPlayers = 4,
                 ServerVersion = version,
+                GameVersion = snap.GameVersion,
                 IsOnline = false,
                 IsReady = false,
                 DayTransitionComplete = false,
@@ -2761,6 +2777,7 @@ public partial class ApiService : ModService
             SteamInviteCode = steamInviteCode,
             GogInviteCode = gogInviteCode,
             ServerVersion = version,
+            GameVersion = snap.GameVersion,
             IsOnline = true,
             IsReady = snap.IsReady,
             DayTransitionComplete = snap.DayTransitionComplete,
@@ -4006,6 +4023,7 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(StatsResponse), 200)]
     private StatsResponse HandleGetStats()
     {
+        var startedAt = ServerCommand.StartTimeUtc;
         return new StatsResponse
         {
             Fps = Math.Round(Volatile.Read(ref _currentFps), 1),
@@ -4017,6 +4035,8 @@ public partial class ApiService : ModService
             GcGen2 = GC.CollectionCount(2),
             PendingActions = _pendingGameActions.Count,
             GameThreadWaitMs = Math.Round(Volatile.Read(ref _avgGameThreadWaitMs), 2),
+            StartedAtUtc = startedAt?.ToString("o"),
+            UptimeSeconds = startedAt is { } t ? (long)(DateTime.UtcNow - t).TotalSeconds : null,
         };
     }
 
