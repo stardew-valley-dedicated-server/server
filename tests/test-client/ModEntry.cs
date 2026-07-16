@@ -105,7 +105,7 @@ public class ModEntry : Mod
         // wall-clock speed regardless of CLIENT_TPS. Unlike the render-suppressed host, this client is
         // a real (non-dedicated) instance, so the fade patch actually bites here — a wedding globalFade
         // that crawled ~12× slow at CLIENT_TPS=5 now plays in real time.
-        TpsAgnosticPacing.Apply(_harmony);
+        TpsAgnosticPacing.Apply(_harmony, Monitor);
 
         // Diagnostics
         _healthWatchdog = new HealthWatchdog(helper, Monitor);

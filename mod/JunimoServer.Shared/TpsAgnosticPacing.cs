@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
 using StardewValley.Characters;
 using StardewValley.Monsters;
+using StardewValley.Projectiles;
 
 namespace JunimoServer.Shared;
 
@@ -93,9 +96,22 @@ public static class TpsAgnosticPacing
     /// villagers/event-actors, monsters, farm animals, children, plus farmer event movement). Idempotent
     /// per instance (Harmony rejects a duplicate patch of the same method by the same owner). Call from
     /// each mod's unconditionally-run startup path.
+    ///
+    /// <para>The patches are always installed; the per-call <see cref="Enabled"/> gate makes them pass
+    /// through to vanilla when the kill-switch is off. The boot log line records which mode is active so
+    /// an A/B run (or an operator on a low-TPS server) can confirm the knob was consumed.</para>
     /// </summary>
-    public static void Apply(Harmony harmony)
+    public static void Apply(Harmony harmony, IMonitor monitor)
     {
+        monitor.Log(
+            Enabled
+                ? "TPS-agnostic pacing ENABLED — fades and creature/event movement run at wall-clock "
+                    + "speed at any TPS."
+                : $"TPS-agnostic pacing DISABLED via {KillSwitchEnvVar}=false — fades/movement run at "
+                    + "the vanilla per-tick rate (~60/TPS× slower at reduced TPS).",
+            LogLevel.Info
+        );
+
         // Fades: scale the per-call globalFade delta (primitive 1 — a continuous quantity with no
         // collision/trigger semantics, so a scaled delta is exact). Prefix inflates globalFadeSpeed by
         // TickScale, vanilla runs its own body + completion, postfix restores it.
@@ -108,9 +124,15 @@ public static class TpsAgnosticPacing
         // NPC / event-actor walking: sub-step the vanilla per-tick move (primitive 2 — stepwise logic
         // with per-step collision/arrival semantics, so we run the step floor(carry) times rather than
         // scaling the delta). Postfix on Character.MovePosition covers villagers AND event actors, since
-        // NPC.MovePosition is a thin movementPause gate over base.MovePosition.
+        // NPC.MovePosition is a thin movementPause gate over base.MovePosition. The paired prefix captures
+        // pre-call velocity so the postfix can tell whether this tick took the velocity path (knockback)
+        // vs the walk path — only the walk path sub-steps (see MovePosition_SubStep_Postfix).
         harmony.Patch(
             original: AccessTools.Method(typeof(Character), nameof(Character.MovePosition)),
+            prefix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_CaptureVelocity_Prefix)
+            ),
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
                 nameof(MovePosition_SubStep_Postfix)
@@ -119,13 +141,16 @@ public static class TpsAgnosticPacing
 
         // Monsters, farm animals, and children each have their OWN MovePosition override that does NOT
         // route through Character.MovePosition, so the seam above misses them — patch each directly with
-        // the same sub-step postfix (shared carry + re-entrancy guard, virtual dispatch re-invokes the
-        // right override). Each override keeps its per-step collision probe, so sub-stepping preserves
-        // combat/pathing semantics at any TPS. Monster's knockback/velocity branch already self-substeps
-        // large velocities (ceil(|v|/bbox) loop) and decays velocity per call — running the whole method
-        // floor(carry) times reproduces vanilla's 60Hz knockback decay exactly.
+        // the same prefix+postfix (shared carry + re-entrancy guard, virtual dispatch re-invokes the right
+        // override). Each override keeps its per-step collision probe, so sub-stepping preserves
+        // combat/pathing semantics at any TPS. The velocity/knockback path (present in Character and
+        // Monster) runs once per tick, never sub-stepped — its friction decay is per-call (see postfix).
         harmony.Patch(
             original: AccessTools.Method(typeof(Monster), nameof(Monster.MovePosition)),
+            prefix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_CaptureVelocity_Prefix)
+            ),
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
                 nameof(MovePosition_SubStep_Postfix)
@@ -133,6 +158,10 @@ public static class TpsAgnosticPacing
         );
         harmony.Patch(
             original: AccessTools.Method(typeof(FarmAnimal), nameof(FarmAnimal.MovePosition)),
+            prefix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_CaptureVelocity_Prefix)
+            ),
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
                 nameof(MovePosition_SubStep_Postfix)
@@ -143,6 +172,10 @@ public static class TpsAgnosticPacing
         // double-stepping (see Child_MovePosition_Postfix).
         harmony.Patch(
             original: AccessTools.Method(typeof(Child), nameof(Child.MovePosition)),
+            prefix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(MovePosition_CaptureVelocity_Prefix)
+            ),
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
                 nameof(Child_MovePosition_Postfix)
@@ -159,6 +192,53 @@ public static class TpsAgnosticPacing
             postfix: new HarmonyMethod(
                 typeof(TpsAgnosticPacing),
                 nameof(Farmer_GetMovementSpeed_Postfix)
+            )
+        );
+
+        // Projectiles: sub-step the WHOLE Projectile.update (primitive 2 as a PREFIX, not a postfix).
+        // update() advances one physics step (updatePosition) AND checks collision once, then returns a
+        // bool the location's RemoveWhere consumes to delete the projectile. A postfix can't honor that
+        // return or a mid-flight collision, so we run the extra steps as full update() calls in the
+        // prefix (each re-checks collision — no tunneling) with a zero-elapsed GameTime so the ms grace
+        // timers (travelTime, hostTimeUntilAttackable, DebuffingProjectile's wavy phase) count once. If
+        // any extra step signals removal/collision, we skip the real call and hand its result to
+        // RemoveWhere. The server drives this whenever a client is in/viewing the location (incl.
+        // MineShaft.UpdateMines), so a fireball at reduced TPS otherwise crawls at 60/TPS× speed.
+        harmony.Patch(
+            original: AccessTools.Method(typeof(Projectile), nameof(Projectile.update)),
+            prefix: new HarmonyMethod(typeof(TpsAgnosticPacing), nameof(Projectile_Update_Prefix))
+        );
+
+        // Debris chunk physics: same prefix sub-step. updateChunks is fully self-contained (velocity/
+        // gravity integration + pickup + wall/rest bounce, no external collision) and returns a bool for
+        // RemoveWhere. Zero-elapsed extra calls keep the per-tick gravity/velocity constants advancing
+        // while the ms lifetime timers (timeSinceDoneBouncing, timeBeforeReturnToDroppingPlayer) count
+        // once. Debris settles ~60/TPS× too slowly otherwise (item drops drift before resting/collecting).
+        harmony.Patch(
+            original: AccessTools.Method(typeof(Debris), nameof(Debris.updateChunks)),
+            prefix: new HarmonyMethod(typeof(TpsAgnosticPacing), nameof(Debris_UpdateChunks_Prefix))
+        );
+
+        // Gliders (fliers: Bat/Fly/Serpent/Ghost/AngryRoger — isGlider==true, always velocity-driven).
+        // Their per-tick movement is: MovePosition (position += velocity; velocity *= decay) + the velocity
+        // GENERATION in behaviorAtGameTick/updateAnimation (the ramp `xVelocity += num/6f`, turn
+        // `rotation += PI/64f`). Part 1 (the velocity-path skip) makes MovePosition run once/tick, which is
+        // correct decay but leaves the glider advancing only `velocity` px/tick = 60/TPS× slow. To reach
+        // wall-clock speed the whole trio must replay N×/tick, in order, zero-time on extras so the ms
+        // timers (and the one-shot side effects they gate — notably Ghost's tongue-projectile spawn) fire
+        // once. Postfix on Monster.update fires once/tick per monster; it replays the trio for gliders.
+        // Disambiguate: Character has two update overloads — update(GameTime, GameLocation) and
+        // update(GameTime, GameLocation, long, bool) — so name-only lookup throws AmbiguousMatchException.
+        // Monster overrides the 2-arg one; specify its parameter types.
+        harmony.Patch(
+            original: AccessTools.Method(
+                typeof(Monster),
+                nameof(Monster.update),
+                new[] { typeof(GameTime), typeof(GameLocation) }
+            ),
+            postfix: new HarmonyMethod(
+                typeof(TpsAgnosticPacing),
+                nameof(Monster_Update_Glider_Postfix)
             )
         );
     }
@@ -178,34 +258,64 @@ public static class TpsAgnosticPacing
     [ThreadStatic]
     private static bool _inSubStep;
 
-    // Extra sub-step calls pass a zero-elapsed GameTime (reused, single-threaded game loop). The
-    // per-tick-constant POSITION step (`position ± speed`) does not read `time`, so it still advances;
-    // the ms-based terms in the same body (`blockedInterval += ms`, `slideAnimationTimer -= ms`, the
-    // wall-clock slide-correction `speed * ms/64`, FarmAnimal's `nextFollowDirectionChange -= ms`)
-    // contribute ZERO on the extra calls — so only the real (first) call carries the tick's ms budget.
-    // Without this those accumulators would advance once per sub-step (~12x too fast at TPS 5),
-    // triggering stuck-emote/charge and follow-direction changes far too early.
+    // Extra sub-step calls pass this zero-elapsed GameTime (reused; single-threaded loop). Per-tick-constant
+    // steps (`position ± speed`, gravity, velocity ramp) don't read `time` so they still advance, while every
+    // ms/TotalSeconds term in the same body contributes ZERO on extras — only the real call carries the tick's
+    // ms budget. Without it those timers would advance ~12× too fast at TPS 5 (stuck-emote, follow-direction
+    // changes, and — critically — the one-shot effects they gate, e.g. Ghost's projectile spawn).
     private static readonly GameTime ZeroElapsedGameTime = new GameTime(
         TimeSpan.Zero,
         TimeSpan.Zero
     );
 
     /// <summary>
+    /// Prefix paired with <see cref="MovePosition_SubStep_Postfix"/>: captures the entity's velocity
+    /// BEFORE the vanilla call so the postfix can tell whether this tick took the velocity path (knockback
+    /// / glider) or the walk path. Read post-call would be wrong — the velocity path decays (and may zero)
+    /// the velocity within the same call.
+    /// </summary>
+    private static void MovePosition_CaptureVelocity_Prefix(Character __instance, out bool __state)
+    {
+        // True when the entity is velocity-driven this tick (knockback for any character, or a glider's
+        // always-on flight). Captured before vanilla runs, since vanilla's velocity path mutates it.
+        __state = __instance.xVelocity != 0f || __instance.yVelocity != 0f;
+    }
+
+    /// <summary>
     /// Shared sub-step postfix for any <see cref="Character"/> subtype's <c>MovePosition</c> override.
     /// The vanilla call already ran one full step (carrying this tick's ms budget); this runs the
     /// remaining <c>floor(carry += TickScale) - 1</c> steps with a zero-elapsed <see cref="GameTime"/> so
     /// only the per-tick-constant position delta advances (never scaled), while ms-based timers in the
-    /// same body stay counted once. Collision probes, the event NPC arrival window (fixed 16px), and
-    /// monster knockback decay behave exactly as at 60 TPS. Virtual dispatch re-invokes the correct
-    /// override; the shared <see cref="_inSubStep"/> guard stops recursion across all patched overrides.
+    /// same body stay counted once. Collision probes and the event NPC arrival window (fixed 16px) behave
+    /// exactly as at 60 TPS. Virtual dispatch re-invokes the correct override; the shared
+    /// <see cref="_inSubStep"/> guard stops recursion across all patched overrides.
+    ///
+    /// <para><b>Velocity path is once-per-tick, NOT sub-stepped.</b> Every <c>MovePosition</c> variant
+    /// takes a velocity path (`position += xVelocity; xVelocity -= xVelocity/k`) whenever
+    /// <c>xVelocity/yVelocity != 0</c> — knockback for any character, and the always-on movement of gliders
+    /// (fliers). That friction decay is per-CALL, so repeating the call would decay velocity N× per tick
+    /// (~40%/tick for a Bat, ~99% for the base <c>Character.applyVelocity</c>'s 50%/call), collapsing
+    /// knockback distance. So when the entity is velocity-driven this tick we skip the extra steps: the
+    /// real call already ran the velocity path once, which is the correct per-tick decay. (Gliders then
+    /// advance only once/tick — still slow at low TPS — and need their own ramp+move sub-step, the glider
+    /// seam below. The walk path, driven by the per-tick constant <c>speed</c>, is what SHOULD sub-step.)</para>
     /// </summary>
     private static void MovePosition_SubStep_Postfix(
         Character __instance,
         xTile.Dimensions.Rectangle viewport,
-        GameLocation currentLocation
+        GameLocation currentLocation,
+        bool __state
     )
     {
         if (!Enabled || _inSubStep)
+        {
+            return;
+        }
+
+        // Velocity-driven this tick (knockback / glider): the real call already ran the velocity path with
+        // its once-per-tick friction decay. Repeating it would over-decay (the per-call `xVelocity -=
+        // xVelocity/k` compounds), so do NOT sub-step — there is no per-tick-constant walk step to repeat.
+        if (__state)
         {
             return;
         }
@@ -241,7 +351,8 @@ public static class TpsAgnosticPacing
     private static void Child_MovePosition_Postfix(
         Child __instance,
         xTile.Dimensions.Rectangle viewport,
-        GameLocation currentLocation
+        GameLocation currentLocation,
+        bool __state
     )
     {
         // Mirror Child.MovePosition's festival-delegation guard: that path routes through
@@ -251,7 +362,180 @@ public static class TpsAgnosticPacing
             return;
         }
 
-        MovePosition_SubStep_Postfix(__instance, viewport, currentLocation);
+        MovePosition_SubStep_Postfix(__instance, viewport, currentLocation, __state);
+    }
+
+    /// <summary>
+    /// Prefix on <see cref="Projectile.update"/>. Runs the extra sub-steps this tick as full
+    /// <c>update</c> calls (each re-checks collision, so a fast projectile can't tunnel a target/wall),
+    /// each with a zero-elapsed <see cref="GameTime"/> so the ms grace timers count only on the real
+    /// call. If an extra step returns <c>true</c> (collided/expired → remove), the real call is skipped
+    /// and that result is handed to the location's <c>RemoveWhere</c>; otherwise the original runs
+    /// normally with the tick's real <see cref="GameTime"/>.
+    /// </summary>
+    private static bool Projectile_Update_Prefix(
+        Projectile __instance,
+        GameTime time,
+        GameLocation location,
+        ref bool __result
+    )
+    {
+        return RunUpdateSubSteps(
+            extraStep: () => __instance.update(ZeroElapsedGameTime, location),
+            ref __result
+        );
+    }
+
+    /// <summary>
+    /// Prefix on <see cref="Debris.updateChunks"/>. Same sub-step-as-prefix pattern as
+    /// <see cref="Projectile_Update_Prefix"/>: the zero-elapsed extra calls advance the per-tick
+    /// gravity/velocity constants while the ms lifetime timers count once, and any extra step's
+    /// <c>true</c> return (chunks emptied / lifetime expired) is propagated to <c>RemoveWhere</c>.
+    /// </summary>
+    private static bool Debris_UpdateChunks_Prefix(
+        Debris __instance,
+        GameTime time,
+        GameLocation location,
+        ref bool __result
+    )
+    {
+        return RunUpdateSubSteps(
+            extraStep: () => __instance.updateChunks(ZeroElapsedGameTime, location),
+            ref __result
+        );
+    }
+
+    /// <summary>
+    /// Shared core for the projectile/debris update prefixes: run <paramref name="extraStep"/> the
+    /// tick's extra-step count of times under the re-entrancy guard, short-circuiting if a step signals
+    /// removal. Returns <c>true</c> to let the original run (no extra step removed the entity), or
+    /// <c>false</c> with <paramref name="removeResult"/> set to skip the original and delete the entity.
+    /// </summary>
+    private static bool RunUpdateSubSteps(Func<bool> extraStep, ref bool removeResult)
+    {
+        if (!Enabled || _inSubStep)
+        {
+            return true;
+        }
+
+        int extraSteps = ExtraStepsThisTick();
+        if (extraSteps <= 0)
+        {
+            return true;
+        }
+
+        _inSubStep = true;
+        try
+        {
+            for (int i = 0; i < extraSteps; i++)
+            {
+                if (extraStep())
+                {
+                    // An extra step collided/expired: remove the entity now and skip the real call so
+                    // collision/removal fires exactly once, on the step that reached it.
+                    removeResult = true;
+                    return false;
+                }
+            }
+        }
+        finally
+        {
+            _inSubStep = false;
+        }
+
+        // No extra step removed it — let the real (first) call run with the tick's real GameTime.
+        return true;
+    }
+
+    // === Glider (flier) whole-AI-tick sub-step ===
+
+    // updateAnimation is `protected virtual`, so it can't be called directly from here. Cache one open
+    // delegate per concrete glider type (keyed on the runtime type so virtual dispatch lands on the right
+    // override — Fly.updateAnimation vs Bat.updateAnimation). Built once per type, then reused every tick
+    // (no per-call reflection on the game thread). The game loop is single-threaded, so a plain Dictionary
+    // is fine.
+    private static readonly Dictionary<Type, Action<Monster, GameTime>> _updateAnimationByType =
+        new();
+
+    private static readonly Action<Monster, GameTime> _noopUpdateAnimation = (_, _) => { };
+
+    private static Action<Monster, GameTime> GetUpdateAnimation(Monster monster)
+    {
+        var type = monster.GetType();
+        if (!_updateAnimationByType.TryGetValue(type, out var call))
+        {
+            // MethodDelegate over the concrete type's updateAnimation binds to that override, so a Fly
+            // instance runs Fly.updateAnimation. Fall back to a no-op if a (modded) glider type has no
+            // resolvable updateAnimation — never throw on the per-tick hot path; it still gets move + AI.
+            var method = AccessTools.Method(type, "updateAnimation", new[] { typeof(GameTime) });
+            call =
+                method != null
+                    ? AccessTools.MethodDelegate<Action<Monster, GameTime>>(method)
+                    : _noopUpdateAnimation;
+            _updateAnimationByType[type] = call;
+        }
+        return call;
+    }
+
+    /// <summary>
+    /// Postfix on <see cref="Monster.update"/> that gives GLIDERS wall-clock movement at reduced TPS. A
+    /// glider is always velocity-driven, so its real <c>MovePosition</c> (post part-1) advanced position
+    /// once this tick and its ramp (in <c>behaviorAtGameTick</c>/<c>updateAnimation</c>) generated velocity
+    /// once. This replays the whole per-tick trio — <c>MovePosition</c> + <c>behaviorAtGameTick</c> +
+    /// <c>updateAnimation</c>, in vanilla order — the tick's extra-step count of times, with a zero-elapsed
+    /// <see cref="GameTime"/> so ms/TotalSeconds timers (and the one-shot side effects they gate, e.g.
+    /// Ghost's projectile spawn) fire only on the real call. Non-gliders are untouched (their walk path is
+    /// already sub-stepped by the MovePosition seam; their velocity path is knockback, handled by part 1).
+    ///
+    /// <para><b>Why zero-time, and its one accepted deviation.</b> Zero-time on the extra calls is
+    /// load-bearing for SAFETY: it freezes each monster's ms/TotalSeconds timers so the one-shot effects
+    /// behind them fire at most once per real tick — most importantly Ghost's tongue-projectile spawn
+    /// (gated by a <c>stateTimer</c> that a nonzero elapsed would let cross repeatedly, firing N
+    /// projectiles). The travel SPEED is exact regardless (velocity integrates N×). The cost: Bat, Ghost,
+    /// and AngryRoger reset their heading gate to <c>wasHitCounter = 0</c>, so their steering re-runs every
+    /// replay (fully faithful) — but Fly and Serpent set <c>wasHitCounter = 5 + random</c>, which zero-time
+    /// never decays across replays, so their HEADING updates once per real tick instead of tracking the
+    /// 60-TPS ~16ms decay. Net: Fly/Serpent re-aim at a moving target slightly slower than true 60 TPS
+    /// (their speed is unaffected). This is accepted — TPS is a fluctuating target so exact heading is
+    /// already approximate, and the alternative (distributing the tick's ms across sub-steps) would
+    /// re-introduce the Ghost N-projectile bug. Do NOT switch these extra calls to a nonzero elapsed time
+    /// to "fix" Fly/Serpent heading without first guarding every ms-gated one-shot effect (Ghost is the
+    /// dangerous one).</para>
+    /// </summary>
+    private static void Monster_Update_Glider_Postfix(Monster __instance, GameLocation location)
+    {
+        if (!Enabled || _inSubStep || !__instance.isGlider.Value)
+        {
+            return;
+        }
+
+        int extraSteps = ExtraStepsThisTick();
+        if (extraSteps <= 0)
+        {
+            return;
+        }
+
+        var updateAnimation = GetUpdateAnimation(__instance);
+        var viewport = Game1.viewport;
+
+        _inSubStep = true;
+        try
+        {
+            for (int i = 0; i < extraSteps && __instance.Health > 0; i++)
+            {
+                // Vanilla per-tick order: move on the current velocity, then regenerate velocity/heading
+                // for the next step. Zero-time so friction decays once-per-real-tick-worth per step (the
+                // per-tick constant, correct to repeat) while ms timers contribute nothing on extras. The
+                // Health guard stops replaying a monster any of these calls just killed (NaN/off-map death).
+                __instance.MovePosition(ZeroElapsedGameTime, viewport, location);
+                __instance.behaviorAtGameTick(ZeroElapsedGameTime);
+                updateAnimation(__instance, ZeroElapsedGameTime);
+            }
+        }
+        finally
+        {
+            _inSubStep = false;
+        }
     }
 
     /// <summary>
