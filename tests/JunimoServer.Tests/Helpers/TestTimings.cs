@@ -220,12 +220,13 @@ public static class TestTimings
     public static readonly TimeSpan TaskCleanupTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Hard timeout for the entire test cleanup phase (disconnect, farmer delete,
-    /// exception check, client lease return). Prevents slow HTTP calls from stalling
-    /// the global client capacity gate and blocking all subsequent tests.
-    /// Covers the serial cleanup budget: bounded disconnect wait (2s,
-    /// FarmerRemovalBudget) + the farmer-delete loop (FarmerDeleteTimeout) + the 10s
-    /// diagnostic exception check.
+    /// Backstop timeout on the serial cleanup phase (disconnect, farmer delete,
+    /// exception check, client lease return) so a wedged HTTP or lease call can't
+    /// stall the global client capacity gate and block subsequent tests. This is a
+    /// stall guard, not the sum of the phase budgets: the phase ceilings
+    /// (DisconnectedTimeout 10s + FarmerRemovalBudget 2s + FarmerDeleteTimeout 35s +
+    /// 10s diagnostic check) can exceed 45s, and DeleteFarmerAsync runs its own
+    /// deadline without honoring the cleanup token, so this cannot preempt it.
     /// </summary>
     public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(45);
 
