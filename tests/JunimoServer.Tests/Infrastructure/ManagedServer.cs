@@ -244,7 +244,8 @@ internal sealed class ManagedServer : IAsyncDisposable
             snapshot: () => new { server = Key }
         );
 
-    /// <summary>Releases the join gate after a farmer join completes or fails.</summary>
+    /// <summary>Releases the per-server join gate at the join's approval point (or via the safety-net
+    /// finally on a pre-approval failure); see <see cref="ConnectionHelper.AcquireJoinGate"/>.</summary>
     public void ReleaseJoinGate() => _joinGate.Release();
 
     /// <summary>True if an exclusive test currently holds the gate on this instance.</summary>
