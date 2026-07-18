@@ -12,7 +12,9 @@ using StardewValley.Projectiles;
 namespace JunimoServer.Shared;
 
 /// <summary>
-/// Makes per-tick-constant gameplay code produce correct wall-clock outcomes at any tick rate.
+/// Makes per-tick-constant gameplay code produce correct wall-clock outcomes at any tick rate. (One
+/// disclosed exception: knockback slides are distance-exact but duration-stretched — see
+/// <see cref="MovePosition_SubStep_Postfix"/>.)
 ///
 /// <para>
 /// Vanilla runs a hard-fixed 60 ticks/sec, so it freely mixes millisecond-accumulating code
@@ -199,11 +201,14 @@ public static class TpsAgnosticPacing
         // update() advances one physics step (updatePosition) AND checks collision once, then returns a
         // bool the location's RemoveWhere consumes to delete the projectile. A postfix can't honor that
         // return or a mid-flight collision, so we run the extra steps as full update() calls in the
-        // prefix (each re-checks collision — no tunneling) with a zero-elapsed GameTime so the ms grace
-        // timers (travelTime, hostTimeUntilAttackable, DebuffingProjectile's wavy phase) count once. If
-        // any extra step signals removal/collision, we skip the real call and hand its result to
-        // RemoveWhere. The server drives this whenever a client is in/viewing the location (incl.
-        // MineShaft.UpdateMines), so a fireball at reduced TPS otherwise crawls at 60/TPS× speed.
+        // prefix (each re-checks collision — no tunneling) with a zero-ELAPSED GameTime so the ms grace
+        // timers (travelTime, hostTimeUntilAttackable) count once. The extras' TotalGameTime is NOT
+        // zeroed: DebuffingProjectile's wavy motion is a per-call position offset sampled from the
+        // total clock, and at a zeroed total every extra call would add the constant t=0 offset
+        // (0, +8 px) — a systematic drift, ~+440 px/s at TPS 5 (see SubStepTimeFor). If any extra step
+        // signals removal/collision, we skip the real call and hand its result to RemoveWhere. The
+        // server drives this whenever a client is in/viewing the location (incl. MineShaft.UpdateMines),
+        // so a fireball at reduced TPS otherwise crawls at 60/TPS× speed.
         harmony.Patch(
             original: AccessTools.Method(typeof(Projectile), nameof(Projectile.update)),
             prefix: new HarmonyMethod(typeof(TpsAgnosticPacing), nameof(Projectile_Update_Prefix))
@@ -258,15 +263,43 @@ public static class TpsAgnosticPacing
     [ThreadStatic]
     private static bool _inSubStep;
 
-    // Extra sub-step calls pass this zero-elapsed GameTime (reused; single-threaded loop). Per-tick-constant
-    // steps (`position ± speed`, gravity, velocity ramp) don't read `time` so they still advance, while every
-    // ms/TotalSeconds term in the same body contributes ZERO on extras — only the real call carries the tick's
-    // ms budget. Without it those timers would advance ~12× too fast at TPS 5 (stuck-emote, follow-direction
-    // changes, and — critically — the one-shot effects they gate, e.g. Ghost's projectile spawn).
+    // Extra MOVEMENT/GLIDER sub-step calls pass this zero-elapsed GameTime (reused; single-threaded
+    // loop). Per-tick-constant steps (`position ± speed`, gravity, velocity ramp) don't read `time` so
+    // they still advance, while every ms/TotalSeconds term in the same body contributes ZERO on extras —
+    // only the real call carries the tick's ms budget. Without it those timers would advance ~12× too
+    // fast at TPS 5 (stuck-emote, follow-direction changes, and — critically — the one-shot effects they
+    // gate, e.g. Ghost's projectile spawn). The zeroed TotalGameTime is harmless on these paths (the only
+    // consumers are cosmetic draw bobs); projectile/debris extras use SubStepTimeFor instead.
     private static readonly GameTime ZeroElapsedGameTime = new GameTime(
         TimeSpan.Zero,
         TimeSpan.Zero
     );
+
+    // Projectile/debris extras get a zero ELAPSED time (ms grace/lifetime timers count once) but a real,
+    // per-step-advancing TOTAL clock: DebuffingProjectile.updatePosition adds a wavy position offset of
+    // (sin, cos)(TotalGameTime.Milliseconds·π/128)·8 per CALL, so a zeroed total turns each extra call
+    // into a constant (0, +8 px) bias — ~+440 px/s of spurious drift at TPS 5, comparable to the bolt's
+    // own speed. Advancing the total by one vanilla tick per extra step instead samples the exact phase
+    // grid the wobble sees at 60 TPS. Reused instance (single-threaded loop); nothing else in the
+    // projectile/debris update paths reads the passed TotalGameTime (verified against the decompiled
+    // tree — Debris reads only Game1.currentGameTime for its cosmetic bob).
+    private static readonly GameTime SubStepGameTime = new GameTime(TimeSpan.Zero, TimeSpan.Zero);
+
+    private static readonly long VanillaTickTicks = (long)(
+        VanillaTickMs * TimeSpan.TicksPerMillisecond
+    );
+
+    /// <summary>
+    /// The GameTime for a projectile/debris extra sub-step: elapsed zero, total advanced
+    /// <paramref name="step"/> vanilla ticks past the real call's total. Mutates and returns the shared
+    /// <see cref="SubStepGameTime"/> — valid only for the duration of the sub-step call.
+    /// </summary>
+    private static GameTime SubStepTimeFor(GameTime realTime, int step)
+    {
+        SubStepGameTime.TotalGameTime =
+            realTime.TotalGameTime + new TimeSpan(VanillaTickTicks * step);
+        return SubStepGameTime;
+    }
 
     /// <summary>
     /// Prefix paired with <see cref="MovePosition_SubStep_Postfix"/>: captures the entity's velocity
@@ -299,6 +332,16 @@ public static class TpsAgnosticPacing
     /// real call already ran the velocity path once, which is the correct per-tick decay. (Gliders then
     /// advance only once/tick — still slow at low TPS — and need their own ramp+move sub-step, the glider
     /// seam below. The walk path, driven by the per-tick constant <c>speed</c>, is what SHOULD sub-step.)</para>
+    ///
+    /// <para><b>Deliberate trade-off: knockback duration stretches 60/TPS×.</b> Once-per-tick decay
+    /// preserves total slide DISTANCE (the per-call decay sequence sums the same regardless of call
+    /// rate) but not slide TIME: the ~26 decay calls a knocked-back GreenSlime takes to snap to zero run
+    /// one per tick, so a slide that lasts ~0.4s at 60 TPS lasts ~5s at TPS 5 — and while any velocity
+    /// remains, <c>__state</c> suppresses the walk sub-steps too, so the monster cannot chase for the
+    /// whole stretched slide. Accepted: replaying the velocity path per sub-step was measured to
+    /// collapse knockback to tens of px (the velocity-decay bug this design fixed — plan doc, run
+    /// 2026-07-14T20-37-22Z), and the knockback probe gates distance, which is the combat-relevant
+    /// outcome. Wall-clock knockback is therefore distance-exact, duration-stretched at reduced TPS.</para>
     /// </summary>
     private static void MovePosition_SubStep_Postfix(
         Character __instance,
@@ -368,10 +411,11 @@ public static class TpsAgnosticPacing
     /// <summary>
     /// Prefix on <see cref="Projectile.update"/>. Runs the extra sub-steps this tick as full
     /// <c>update</c> calls (each re-checks collision, so a fast projectile can't tunnel a target/wall),
-    /// each with a zero-elapsed <see cref="GameTime"/> so the ms grace timers count only on the real
-    /// call. If an extra step returns <c>true</c> (collided/expired → remove), the real call is skipped
-    /// and that result is handed to the location's <c>RemoveWhere</c>; otherwise the original runs
-    /// normally with the tick's real <see cref="GameTime"/>.
+    /// each with a zero-elapsed <see cref="GameTime"/> (advancing total — see
+    /// <see cref="SubStepTimeFor"/>) so the ms grace timers count only on the real call. If an extra
+    /// step returns <c>true</c> (collided/expired → remove), the real call is skipped and that result
+    /// is handed to the location's <c>RemoveWhere</c>; otherwise the original runs normally with the
+    /// tick's real <see cref="GameTime"/>.
     /// </summary>
     private static bool Projectile_Update_Prefix(
         Projectile __instance,
@@ -381,7 +425,9 @@ public static class TpsAgnosticPacing
     )
     {
         return RunUpdateSubSteps(
-            extraStep: () => __instance.update(ZeroElapsedGameTime, location),
+            (__instance, location),
+            static (s, subStepTime) => s.__instance.update(subStepTime, s.location),
+            time,
             ref __result
         );
     }
@@ -400,7 +446,9 @@ public static class TpsAgnosticPacing
     )
     {
         return RunUpdateSubSteps(
-            extraStep: () => __instance.updateChunks(ZeroElapsedGameTime, location),
+            (__instance, location),
+            static (s, subStepTime) => s.__instance.updateChunks(subStepTime, s.location),
+            time,
             ref __result
         );
     }
@@ -410,14 +458,22 @@ public static class TpsAgnosticPacing
     /// tick's extra-step count of times under the re-entrancy guard, short-circuiting if a step signals
     /// removal. Returns <c>true</c> to let the original run (no extra step removed the entity), or
     /// <c>false</c> with <paramref name="removeResult"/> set to skip the original and delete the entity.
+    /// The <typeparamref name="TState"/> tuple + static lambda shape is load-bearing: these prefixes run
+    /// per entity per tick at any TPS (a structural no-op at 60), and a capturing closure here would
+    /// allocate a display class + delegate on the game thread every call.
     ///
-    /// <para>The zero-time extras run BEFORE the real call, so ms grace/lifetime timers are consumed at
-    /// the end of the tick's batch instead of the start — a ≤1-tick phase error that is symmetric (real
-    /// call first would expire them up to a tick early instead of late) and inherent to not distributing
-    /// the tick's ms across sub-steps, which is unsafe (see the glider docstring's Ghost one-shot
-    /// hazard). Extras-first also lets a prefix skip the original cleanly on removal.</para>
+    /// <para>The extras run BEFORE the real call, so ms grace/lifetime timers are consumed at the end
+    /// of the tick's batch instead of the start — a ≤1-tick phase error that is symmetric (real call
+    /// first would expire them up to a tick early instead of late) and inherent to not distributing the
+    /// tick's ms across sub-steps, which is unsafe (see the glider docstring's Ghost one-shot hazard).
+    /// Extras-first also lets a prefix skip the original cleanly on removal.</para>
     /// </summary>
-    private static bool RunUpdateSubSteps(Func<bool> extraStep, ref bool removeResult)
+    private static bool RunUpdateSubSteps<TState>(
+        TState state,
+        Func<TState, GameTime, bool> extraStep,
+        GameTime time,
+        ref bool removeResult
+    )
     {
         if (!Enabled || _inSubStep)
         {
@@ -433,9 +489,9 @@ public static class TpsAgnosticPacing
         _inSubStep = true;
         try
         {
-            for (int i = 0; i < extraSteps; i++)
+            for (int i = 1; i <= extraSteps; i++)
             {
-                if (extraStep())
+                if (extraStep(state, SubStepTimeFor(time, i)))
                 {
                     // An extra step collided/expired: remove the entity now and skip the real call so
                     // collision/removal fires exactly once, on the step that reached it.
@@ -492,6 +548,9 @@ public static class TpsAgnosticPacing
     /// <see cref="GameTime"/> so ms/TotalSeconds timers (and the one-shot side effects they gate, e.g.
     /// Ghost's projectile spawn) fire only on the real call. Non-gliders are untouched (their walk path is
     /// already sub-stepped by the MovePosition seam; their velocity path is knockback, handled by part 1).
+    /// The replay mirrors <c>Monster.update</c>'s own gates — master-only, farmers-present, and the stun
+    /// gate on <c>behaviorAtGameTick</c> — since a postfix still runs after the target early-returns (see
+    /// the inline comments for each gate's failure mode).
     ///
     /// <para><b>Why zero-time, and its one accepted deviation.</b> Zero-time on the extra calls is
     /// load-bearing for SAFETY: it freezes each monster's ms/TotalSeconds timers so the one-shot effects
@@ -515,6 +574,23 @@ public static class TpsAgnosticPacing
             return;
         }
 
+        // Mirror Monster.update's own early-outs (Monster.cs:696-718) — a postfix still runs after
+        // them, so each must be re-checked or the replay simulates a monster vanilla just froze:
+        // - Non-master (test client): vanilla runs neither updateMovement (Character.cs master gate)
+        //   nor behaviorAtGameTick (Monster.cs:704) on a slave monster — its position is net-synced
+        //   from the master, and a local replay would fight the next server delta (rubber-banding).
+        // - No farmers in the location: vanilla freezes the monster entirely (Monster.cs:696), but
+        //   MineShaft.UpdateMines still calls Monster.update for every aged-in level (MineShaft.cs:
+        //   4842-4851), so without this gate a glider in a farmer-less mine level replays full AI
+        //   ticks homing on findPlayer()'s Game1.player fallback — cross-map drift plus CPU waste.
+        // (Monster.update's rafting gate, Monster.cs:700, is deliberately not mirrored: isRafting is
+        // set only by the legacy Raft tool, unobtainable in 1.6, and reading Player runs a findPlayer
+        // scan per glider per tick.)
+        if (!Game1.IsMasterGame || !location.farmers.Any())
+        {
+            return;
+        }
+
         int extraSteps = ExtraStepsThisTick();
         if (extraSteps <= 0)
         {
@@ -534,7 +610,16 @@ public static class TpsAgnosticPacing
                 // per-tick constant, correct to repeat) while ms timers contribute nothing on extras. The
                 // Health guard stops replaying a monster any of these calls just killed (NaN/off-map death).
                 __instance.MovePosition(ZeroElapsedGameTime, viewport, location);
-                __instance.behaviorAtGameTick(ZeroElapsedGameTime);
+                // Stun mirrors Monster.cs:706: behaviorAtGameTick is skipped while stunned (a Bat's
+                // steering/ramp lives there and must freeze), while updateAnimation still runs — vanilla
+                // does NOT stun-gate it, so Fly/Serpent/Ghost (whose steering lives there) keep steering
+                // under stun exactly as at 60 TPS. MovePosition needs no mirror: its own stunTime guard
+                // (Monster.cs:1013) makes it a no-op while stunned. stunTime itself is ms-decremented on
+                // the real call only, so the replay never shortens the stun.
+                if (__instance.stunTime.Value <= 0)
+                {
+                    __instance.behaviorAtGameTick(ZeroElapsedGameTime);
+                }
                 updateAnimation(__instance, ZeroElapsedGameTime);
             }
         }
@@ -624,7 +709,9 @@ public static class TpsAgnosticPacing
     /// <see cref="TickScale"/> — the free-move branch already ms-scales in vanilla, so we detect it by
     /// its signature (it multiplies by <c>ElapsedGameTime.Milliseconds</c>, making it already
     /// wall-clock-correct) and leave it untouched. The event branch is the one that returns a raw
-    /// <c>Max(1, speed + farmerAddedSpeed…)</c> per tick with no ms scaling.
+    /// <c>Max(1, speed + farmerAddedSpeed…)</c> per tick with no ms scaling. Scaling applies only to
+    /// farmers THIS process drives through the event (local player + fake event-actor copies); remote
+    /// farmers keep the vanilla value because their consumer here is net extrapolation, not movement.
     /// </summary>
     private static void Farmer_GetMovementSpeed_Postfix(Farmer __instance, ref float __result)
     {
@@ -638,6 +725,17 @@ public static class TpsAgnosticPacing
         // the scripted-event branch (event up, not player-controlled) needs compensation.
         var ev = Game1.CurrentEvent;
         if (ev == null || ev.playerControlSequence)
+        {
+            return;
+        }
+
+        // Scale only farmers the local event instance is moving: the local player and the fake actor
+        // copies events create for everyone else (CreateFakeEventFarmer stamps isFakeEventActor). For a
+        // REMOTE farmer's real instance, getMovementSpeed is consumed as the NetPosition extrapolation
+        // cap (Farmer.UpdateIfOtherPlayer/Update → position.UpdateExtrapolation) while the event is up —
+        // scaling that would let the remote farmer's predicted position overshoot ×TickScale between
+        // net deltas (rubber-banding), with no movement benefit since this process never moves them.
+        if (!__instance.IsLocalPlayer && !__instance.isFakeEventActor)
         {
             return;
         }
