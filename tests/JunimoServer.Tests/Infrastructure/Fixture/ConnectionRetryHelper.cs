@@ -78,8 +78,8 @@ internal sealed class ConnectionRetryHelper
         using var _phase = TestIdentityContext.PushPhase("connect");
         var joinSw = System.Diagnostics.Stopwatch.StartNew();
 
+        // Join gate is acquired/released inside JoinWorldCoreAsync (wired in TestBase.GetClientAsync).
         var lease = _testBase.LeaseInternal!;
-        await lease.Managed.AcquireJoinGateAsync(ct);
         try
         {
             var result = lease.RequiresSteamConnection
@@ -125,10 +125,6 @@ internal sealed class ConnectionRetryHelper
             _testBase.ThrowIfServerErrorInternal(ex, "joining world");
             throw;
         }
-        finally
-        {
-            lease.Managed.ReleaseJoinGate();
-        }
     }
 
     /// <summary>
@@ -143,8 +139,8 @@ internal sealed class ConnectionRetryHelper
     {
         await _testBase.GetClientAsyncInternal(ct);
         var joinSw = System.Diagnostics.Stopwatch.StartNew();
+        // The per-server join gate is acquired/released inside JoinWorldCoreAsync (see JoinWithRetryAsync).
         var lease = _testBase.LeaseInternal!;
-        await lease.Managed.AcquireJoinGateAsync(ct);
         try
         {
             var result = lease.RequiresSteamConnection
@@ -184,10 +180,6 @@ internal sealed class ConnectionRetryHelper
         {
             _testBase.ThrowIfServerErrorInternal(ex, "joining world");
             throw;
-        }
-        finally
-        {
-            lease.Managed.ReleaseJoinGate();
         }
     }
 

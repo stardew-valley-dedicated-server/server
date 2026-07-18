@@ -164,6 +164,26 @@ public class ConnectionHelper
     /// </summary>
     public Func<string, Task>? OnCheckpointScreenshot { get; set; }
 
+    /// <summary>
+    /// Optional per-server join gate, set by the caller from <c>ManagedServer</c>.
+    /// <see cref="JoinWorldCoreAsync"/> holds it from just before each connect attempt until the server
+    /// APPROVES the join, then releases so the creation/world-ready tail overlaps the next queued join
+    /// instead of serializing the whole join. The gate exists to serialize the pre-approval same-slot /
+    /// farmhand-deletion races; those are resolved by approval, which is signalled per slot type:
+    /// <list type="bullet">
+    /// <item>uncustomized — the character-customization menu, which the client opens only from
+    /// receiveServerIntroduction → setUpGame (Client.cs:280,226-228), sent only after
+    /// checkFarmhandRequest assigned the home and added the player (GameServer.cs:567,577,602 — both
+    /// strictly precede the send), so the slot is committed out of a concurrent joiner's pool by then;</item>
+    /// <item>already-customized — world-ready.</item>
+    /// </list>
+    /// Both null (the connect-only paths) means no gating.
+    /// </summary>
+    public Func<CancellationToken, Task>? AcquireJoinGate { get; set; }
+
+    /// <summary>Releases the gate acquired by <see cref="AcquireJoinGate"/>.</summary>
+    public Action? ReleaseJoinGate { get; set; }
+
     public ConnectionHelper(
         GameTestClient gameClient,
         ConnectionOptions? options = null,
@@ -588,6 +608,44 @@ public class ConnectionHelper
     }
 
     /// <summary>
+    /// Holds at most one per-server join-gate token, releasing it exactly once. Makes the early
+    /// (approval) release and the safety-net (finally) release idempotent, so no path double-releases
+    /// the gate or leaks a token across a retry.
+    /// </summary>
+    private sealed class JoinGateHolder
+    {
+        private readonly Func<CancellationToken, Task>? _acquire;
+        private readonly Action? _release;
+        private bool _held;
+
+        public JoinGateHolder(Func<CancellationToken, Task>? acquire, Action? release)
+        {
+            _acquire = acquire;
+            _release = release;
+        }
+
+        public async Task AcquireAsync(CancellationToken ct)
+        {
+            if (_acquire == null || _held)
+            {
+                return;
+            }
+            await _acquire(ct);
+            _held = true;
+        }
+
+        public void Release()
+        {
+            if (!_held)
+            {
+                return;
+            }
+            _held = false;
+            _release?.Invoke();
+        }
+    }
+
+    /// <summary>
     /// Shared implementation for JoinWorldAsync and JoinWorldViaLanAsync.
     /// Owns the single retry loop. connectOnceAsync performs one attempt with no internal retries.
     /// </summary>
@@ -614,8 +672,14 @@ public class ConnectionHelper
                 new { attempt, maxAttempts = _options.MaxAttempts }
             );
 
+            // One hold per attempt, released early at approval; the finally is the safety net. See
+            // AcquireJoinGate.
+            var gate = new JoinGateHolder(AcquireJoinGate, ReleaseJoinGate);
+
             try
             {
+                await gate.AcquireAsync(cancellationToken);
+
                 // Connect to server (single attempt; this method owns the retry loop)
                 var connectResult = await connectOnceAsync(
                     attempt,
@@ -658,7 +722,8 @@ public class ConnectionHelper
                 }
                 else
                 {
-                    // Complete the join (slot selection, character creation, auto-login)
+                    // Complete the join (slot selection, character creation, auto-login). gate.Release
+                    // fires at the approval point (see AcquireJoinGate).
                     var (joinResult, completeError) = await CompleteJoinAsync(
                         connectResult.Farmhands,
                         farmerName,
@@ -666,6 +731,7 @@ public class ConnectionHelper
                         preferExistingFarmer,
                         skipAutoLogin,
                         attempt,
+                        gate.Release,
                         cancellationToken
                     );
 
@@ -713,6 +779,11 @@ public class ConnectionHelper
                     );
                 }
             }
+            finally
+            {
+                // Safety net: releases on any path that didn't reach the approval point. Idempotent.
+                gate.Release();
+            }
 
             // Return to title before retry
             EmitDiagnostic("join_retry_cleanup_started", new { attempt });
@@ -756,6 +827,8 @@ public class ConnectionHelper
     /// <summary>
     /// Handles the post-connection join flow: slot selection, character creation, and auto-login.
     /// Returns (result, null) on success, or (null, error) if the attempt should be retried.
+    /// <paramref name="releaseGate"/> is the idempotent join-gate release, called at the approval point
+    /// (see <see cref="AcquireJoinGate"/>).
     /// </summary>
     private async Task<(JoinWorldResult? Result, string? Error)> CompleteJoinAsync(
         FarmhandsResponse farmhands,
@@ -764,6 +837,7 @@ public class ConnectionHelper
         bool preferExistingFarmer,
         bool skipAutoLogin,
         int attempt,
+        Action releaseGate,
         CancellationToken cancellationToken
     )
     {
@@ -791,11 +865,13 @@ public class ConnectionHelper
         // We detect this and re-select the slot.
         if (!targetSlot.IsCustomized)
         {
+            // Releases the gate at the character-menu approval point; holds it across bounce re-selects.
             var (characterCreated, charError) = await SelectSlotAndCreateCharacterAsync(
                 targetSlot,
                 farmerName,
                 favoriteThing,
                 preferExistingFarmer,
+                releaseGate,
                 cancellationToken
             );
             if (!characterCreated)
@@ -818,6 +894,10 @@ public class ConnectionHelper
         {
             return (null, $"Wait for world ready: {worldWait?.Error ?? "timeout"}");
         }
+
+        // Customized slots have no character-menu signal — release at world-ready instead. Idempotent
+        // no-op for the uncustomized path (already released at the menu).
+        releaseGate();
 
         await CaptureCheckpointIfEnabled("after_join");
 
@@ -1046,6 +1126,7 @@ public class ConnectionHelper
         string farmerName,
         string favoriteThing,
         bool preferExistingFarmer,
+        Action releaseGate,
         CancellationToken cancellationToken
     )
     {
@@ -1163,6 +1244,9 @@ public class ConnectionHelper
                                     bounce,
                                 }
                             );
+                            // Uncustomized approval point — slot is committed, safe to release (see
+                            // AcquireJoinGate). Only this terminal branch releases; the bounce path doesn't.
+                            releaseGate();
                         }
                         else if (result.Condition == "farmhand-menu")
                         {

@@ -2767,8 +2767,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // the rest create on-demand. With one slot apiece, a config whose
         // non-exclusive demand needs ≥2 instances (InstancesNeeded) cannot keep
         // its join lane drained — every joining test queues on that instance's
-        // single per-game-loop join gate (ManagedServer._joinGate), producing the
-        // end-of-run join convoy. Reactive expansion can't rescue it: a server
+        // single join gate (ManagedServer._joinGate, one pre-approval lane per
+        // instance), producing the end-of-run join convoy. Reactive expansion
+        // can't rescue it: a server
         // boots in ~41s, so an instance spun up at the tail serves ~0 tests before
         // the run ends. Front-load instead — give the dominant config a 2nd
         // prestart instance (its own join gate = a real second lane) by demoting
