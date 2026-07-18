@@ -2166,6 +2166,7 @@ public partial class ApiService
                 // Count = "is the tracked probe still in its spawn location" — by identity, so unrelated
                 // world entities of the same kind never inflate it.
                 var location = _probeLocation as GameLocation;
+                result.ServerTicks = Game1.ticks;
 
                 switch (kind)
                 {
@@ -2223,7 +2224,7 @@ public partial class ApiService
                 $"[PacingProbe] {kind}: travelDistance={result.ProjectileTravelDistance:F0} "
                     + $"debrisAtRest={result.DebrisChunksAtRest}/{result.DebrisChunkCount} "
                     + $"monsterDisplacement={result.MonsterDisplacement:F0} monsterSpeed={result.MonsterSpeed:F1} "
-                    + $"count={result.Count}",
+                    + $"count={result.Count} ticks={result.ServerTicks}",
                 LogLevel.Info
             );
         }

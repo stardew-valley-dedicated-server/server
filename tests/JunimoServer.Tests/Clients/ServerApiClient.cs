@@ -699,6 +699,10 @@ public class PacingProbeStateResponse
     [JsonPropertyName("count")]
     public int Count { get; set; }
 
+    /// <summary>Game1.ticks at the read, atomic with the entity fields — see the mod-side DTO.</summary>
+    [JsonPropertyName("serverTicks")]
+    public int ServerTicks { get; set; }
+
     [JsonPropertyName("projectileTravelDistance")]
     public float ProjectileTravelDistance { get; set; }
 

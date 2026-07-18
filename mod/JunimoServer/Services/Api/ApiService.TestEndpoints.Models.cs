@@ -598,6 +598,13 @@ public class PacingProbeStateResponse
     /// <summary>Number of probe entities of the requested kind still present.</summary>
     public int Count { get; set; }
 
+    /// <summary>
+    /// <c>Game1.ticks</c> at the moment the state was read (same game-thread action as the entity
+    /// fields, so the pair is atomic). Two reads give a tick-denominated rate — e.g. px/tick =
+    /// Δ<see cref="ProjectileTravelDistance"/>/Δticks — immune to HTTP/scheduler wall-clock jitter.
+    /// </summary>
+    public int ServerTicks { get; set; }
+
     /// <summary>Projectile: accumulated <c>travelDistance</c> in pixels (monotonic per update). 0 if gone.</summary>
     public float ProjectileTravelDistance { get; set; }
 

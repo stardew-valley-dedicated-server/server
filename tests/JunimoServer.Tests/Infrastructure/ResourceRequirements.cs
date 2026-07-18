@@ -23,7 +23,8 @@ public sealed record ResourceRequirements(
     string? TestMethodName,
     bool Exclusive = false,
     string ExistingCabinBehavior = "KeepExisting",
-    bool FixtureFarmMod = false
+    bool FixtureFarmMod = false,
+    int ServerTps = 0
 )
 {
     private static int _perTestCounter;
@@ -53,19 +54,21 @@ public sealed record ResourceRequirements(
         var connection = WithSteam ? "steam" : "lan";
         var pw = Password != null ? "+pw" : "";
         var fixture = FixtureFarmMod ? "+fixturemod" : "";
-        return $"{connection}{pw}{fixture}-farm{FarmType}-{CabinStrategy}-c{StartingCabins}";
+        var tps = ServerTps > 0 ? $"-tps{ServerTps}" : "";
+        return $"{connection}{pw}{fixture}-farm{FarmType}-{CabinStrategy}-c{StartingCabins}{tps}";
     }
 
     /// <summary>
     /// Hash of server-affecting config fields (not Clients, which doesn't affect server identity).
     /// FixtureFarmMod changes which mods load, which is server identity — so it enters the key.
+    /// ServerTps changes the container's tick rate, which is server identity too.
     /// </summary>
     private string ComputeConfigHash()
     {
         var configString =
             $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}"
             + $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}"
-            + $"|{FixtureFarmMod}";
+            + $"|{FixtureFarmMod}|{ServerTps}";
         var bytes = Encoding.UTF8.GetBytes(configString);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..12].ToLowerInvariant();
@@ -104,7 +107,8 @@ public sealed record ResourceRequirements(
             TestMethodName: testMethodName,
             Exclusive: attr.Exclusive,
             ExistingCabinBehavior: attr.ExistingCabinBehavior,
-            FixtureFarmMod: attr.FixtureFarmMod
+            FixtureFarmMod: attr.FixtureFarmMod,
+            ServerTps: attr.ServerTps
         );
 
     /// <summary>
@@ -122,6 +126,7 @@ public sealed record ResourceRequirements(
             AllowIpConnections = AllowIpConnections,
             WithSteam = WithSteam,
             FixtureFarmMod = FixtureFarmMod,
+            ServerTps = ServerTps,
         };
         return options;
     }
