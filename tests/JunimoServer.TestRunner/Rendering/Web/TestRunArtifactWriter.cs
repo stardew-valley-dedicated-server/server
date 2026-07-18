@@ -47,9 +47,14 @@ public sealed class TestRunArtifactWriter
     /// <paramref name="state"/> is the live <see cref="TestRunState"/>; it carries
     /// the per-instance stats history that <see cref="RunArtifactView"/> does not
     /// (those types are private nested in TestRunState), serialized here under the
-    /// state's own lock.
+    /// state's own lock. <paramref name="knownSecrets"/> is masked out of every
+    /// diagnostics jsonl sink — the runs tree is uploaded as a public CI artifact.
     /// </summary>
-    public void WriteIfNotWritten(RunArtifactView view, TestRunState state)
+    public void WriteIfNotWritten(
+        RunArtifactView view,
+        TestRunState state,
+        IReadOnlyCollection<string> knownSecrets
+    )
     {
         lock (_lock)
         {
@@ -112,7 +117,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteInstanceStats(state);
+                WriteInstanceStats(state, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -123,7 +128,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteInstanceHistory(state);
+                WriteInstanceHistory(state, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -134,7 +139,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteRunEvents(state);
+                WriteRunEvents(state, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -143,7 +148,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteTestDetails(state);
+                WriteTestDetails(state, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -154,7 +159,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteSetupPhases(state);
+                WriteSetupPhases(state, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -531,26 +536,30 @@ public sealed class TestRunArtifactWriter
     /// WebSocket (<c>SetupEventBus</c> is disk-free); this is the only on-disk
     /// sink for post-mortem container-load analysis.
     /// </summary>
-    private void WriteInstanceStats(TestRunState state)
+    private void WriteInstanceStats(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteInstanceStatsJsonl(
-            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl)
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl),
+            knownSecrets
         );
     }
 
     /// <summary>
     /// Flushes the per-instance lifecycle narrative to
-    /// <c>diagnostics/instance-history.jsonl</c> — which test held which
-    /// container and why it was poisoned, otherwise only in memory for the UI.
+    /// <c>diagnostics/instance-history.jsonl</c> — the instance-keyed
+    /// consolidated view (final state, connect/disconnect transitions,
+    /// VNC/recording paths) that <c>infrastructure.jsonl</c>'s event stream
+    /// doesn't carry.
     /// </summary>
-    private void WriteInstanceHistory(TestRunState state)
+    private void WriteInstanceHistory(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteInstanceHistoryJsonl(
-            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceHistoryJsonl)
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceHistoryJsonl),
+            knownSecrets
         );
     }
 
@@ -559,23 +568,27 @@ public sealed class TestRunArtifactWriter
     /// only on-disk home for xUnit-level diagnostic/error events and the run's
     /// unified event ordering.
     /// </summary>
-    private void WriteRunEvents(TestRunState state)
+    private void WriteRunEvents(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
-        state.WriteRunEventsJsonl(Path.Combine(diagnosticsDir, RunArtifactNames.RunEventsJsonl));
+        state.WriteRunEventsJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.RunEventsJsonl),
+            knownSecrets
+        );
     }
 
     /// <summary>
     /// Flushes per-test UI-only extras to <c>diagnostics/test-details.jsonl</c> —
     /// output, non-failed stack traces, ordering/timing that summary/ctrf omit.
     /// </summary>
-    private void WriteTestDetails(TestRunState state)
+    private void WriteTestDetails(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteTestDetailsJsonl(
-            Path.Combine(diagnosticsDir, RunArtifactNames.TestDetailsJsonl)
+            Path.Combine(diagnosticsDir, RunArtifactNames.TestDetailsJsonl),
+            knownSecrets
         );
     }
 
@@ -583,12 +596,13 @@ public sealed class TestRunArtifactWriter
     /// Flushes the prestart/warmup narrative to
     /// <c>diagnostics/setup-phases.jsonl</c> — the run-start phase/step breakdown.
     /// </summary>
-    private void WriteSetupPhases(TestRunState state)
+    private void WriteSetupPhases(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteSetupPhasesJsonl(
-            Path.Combine(diagnosticsDir, RunArtifactNames.SetupPhasesJsonl)
+            Path.Combine(diagnosticsDir, RunArtifactNames.SetupPhasesJsonl),
+            knownSecrets
         );
     }
 

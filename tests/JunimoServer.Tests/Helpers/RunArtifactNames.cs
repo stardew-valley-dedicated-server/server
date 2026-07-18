@@ -34,16 +34,18 @@ public static class RunArtifactNames
     public const string InstanceStatsJsonl = "instance-stats.jsonl";
 
     /// <summary>
-    /// Per-instance lifecycle narrative (created/leased/returned/disposed/
-    /// poisoned/connected/disconnected + a trailing final-state line) under
-    /// <see cref="DiagnosticsDir"/>. Flushed at run-end from the runner's
-    /// in-memory state; the live UI reads the same data over the WebSocket.
+    /// Per-instance lifecycle narrative under <see cref="DiagnosticsDir"/>: one
+    /// line per history event <c>TestRunState</c> records, plus a trailing
+    /// final-state line per instance. Complements <see cref="InfrastructureJsonl"/>
+    /// (the event-by-event lifecycle with test attribution) with the
+    /// instance-keyed consolidated view, connect/disconnect transitions and
+    /// VNC/recording paths. Flushed at run-end from the runner's in-memory state.
     /// </summary>
     public const string InstanceHistoryJsonl = "instance-history.jsonl";
 
     /// <summary>
-    /// The runner's UI event stream (the sequence replayed to late-connecting
-    /// clients) under <see cref="DiagnosticsDir"/> — uniquely the only on-disk
+    /// The runner's UI event stream (every event broadcast live over the
+    /// WebSocket) under <see cref="DiagnosticsDir"/> — uniquely the only on-disk
     /// home for xUnit-level <c>diagnostic</c>/<c>error</c> events. Sourced from a
     /// bounded ring buffer; a leading <c>run_events_truncated</c> marker appears
     /// if the buffer was full at flush.

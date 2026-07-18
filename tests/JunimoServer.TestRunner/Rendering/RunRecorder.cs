@@ -28,6 +28,11 @@ public sealed class RunRecorder
 {
     private readonly TestRunArtifactWriter _writer = new();
 
+    // Deferred to write time (not captured at construction): the secrets set
+    // includes each remote host's SSH destination, and HostPool is only
+    // populated during preflight — after this recorder is constructed.
+    private readonly Func<IReadOnlyCollection<string>> _collectKnownSecrets;
+
     // Volatile because OnRunFinished writes from the dispatch thread and
     // BeginAbort's force-kill thread reads from a thread-pool thread. Without it
     // the abort handler can label a graceful run as aborted via a stale read.
@@ -39,6 +44,11 @@ public sealed class RunRecorder
     private string? _externalAbortReason;
 
     public TestRunState State { get; } = new();
+
+    public RunRecorder(Func<IReadOnlyCollection<string>> collectKnownSecrets)
+    {
+        _collectKnownSecrets = collectKnownSecrets;
+    }
 
     public bool IsRunFinished => _isRunFinished;
 
@@ -67,6 +77,6 @@ public sealed class RunRecorder
         // _instances (not projected into the per-test RunArtifactView), and only
         // TestRunState can serialize it (the InstanceState/-StatsEntry types are
         // private nested). The writer reads it under TestRunState's own lock.
-        _writer.WriteIfNotWritten(view, State);
+        _writer.WriteIfNotWritten(view, State, _collectKnownSecrets());
     }
 }
