@@ -8,7 +8,7 @@
     "test": "node --test \".github/scripts/**/*.test.js\""
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.3",
+    "@biomejs/biome": "2.5.5",
     "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^21.0.0",
     "lefthook": "^2.1.4"
