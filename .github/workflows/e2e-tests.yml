@@ -492,7 +492,7 @@ jobs:
       # builds inside Docker; the runner does not). .NET 10 is GA, so the default
       # quality channel resolves a stable SDK — no preview pin needed.
       - name: Setup .NET 10.0
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
