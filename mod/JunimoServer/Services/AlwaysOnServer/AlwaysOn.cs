@@ -1010,6 +1010,18 @@ public class AlwaysOnServer : ModService
     /// </summary>
     private void HandleAutoPause()
     {
+        // Never hold the pause while a day transition is in flight: HostPaused gates
+        // Game1.UpdateOther (Game1.cs:4308 → 6436), which pumps the newDay screen fade — a
+        // pause during that phase parks the transition indefinitely. An empty server's
+        // /newgame day-0 transition starts at 6:00, inside the pause window below (see
+        // .claude/plans/bugs/newgame-504-after-forced-reload.md). Same predicate the /newgame
+        // completion gate uses; the pause re-engages the tick after the transition settles.
+        if (!Api.ApiService.ComputeDayTransitionComplete())
+        {
+            Game1.netWorldState.Value.IsPaused = false;
+            return;
+        }
+
         var numPlayers = Game1.otherFarmers.Count;
         var isFestivalDay = SDateHelper.IsFestivalToday();
 
