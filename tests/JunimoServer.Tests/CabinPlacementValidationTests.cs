@@ -56,6 +56,7 @@ public class CabinPlacementValidationTests : TestBase
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(client, ct);
 
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
 
@@ -93,6 +94,7 @@ public class CabinPlacementValidationTests : TestBase
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(client, ct);
 
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
         var baseline = await GetOurCabinAsync(ownerId, ct);
@@ -107,9 +109,22 @@ public class CabinPlacementValidationTests : TestBase
         );
         Assert.True(pot?.Success == true, $"PlacePot failed: {pot?.Error}");
 
-        // Gate the !cabin on the pot being server-visible: it replicates from the client's Game1
-        // over several ticks, and this site must stay single-shot (a resent-then-accepted move
-        // masks the pot forever — see SendOnceAndCaptureAsync), so an early send would wrongly pass.
+        // Gate the single-shot !cabin on both server-side inputs to the validator, because this site
+        // can't resend to recover a mistimed send (a resent-then-accepted move masks the pot forever
+        // — see SendOnceAndCaptureAsync), so an early send silently mis-passes. Both the farmer's
+        // position (footprint origin, CabinCommand reads farmer.Tile) and the pot (the obstacle)
+        // are client actions that replicate to the server over several ticks; wait for each.
+        var farmerSettled = await ServerApi.WaitForFarmerServerTileAsync(
+            ownerId,
+            CabinPlacementHelper.FarmerTileX,
+            CabinPlacementHelper.FarmerTileY,
+            ct: ct
+        );
+        Assert.True(
+            farmerSettled,
+            "Our farmer did not replicate onto the Farm before the rejection check"
+        );
+
         var potVisible = await ServerApi.WaitForObjectAtServerTileAsync(
             CabinPlacementHelper.ExpectedCabinTile.X + 1,
             CabinPlacementHelper.ExpectedCabinTile.Y,
@@ -153,6 +168,7 @@ public class CabinPlacementValidationTests : TestBase
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(client, ct);
         var baseline = await GetOurCabinAsync(ownerId, ct);
 
         // Static gate (fresh farmhand spawns off-Farm), no race — resend is harmless here, used for
@@ -196,6 +212,7 @@ public class CabinPlacementValidationTests : TestBase
 
         var clientA = await Farmers.ConnectNewAsync(ct: ct);
         var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(clientA, ct);
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
         var baseline = await GetOurCabinAsync(ownerIdA, ct);
 
@@ -244,6 +261,31 @@ public class CabinPlacementValidationTests : TestBase
     }
 
     #region Helpers
+
+    /// <summary>
+    /// Blocks until the just-joined farmhand is customized server-side. ConnectNewAsync returns
+    /// on the join handshake, but the join then keeps churning: the cabin backfill assigns the
+    /// slot and the farmhand's Farmer root finishes registering over the next ticks. Mutating the
+    /// world (warp, place a pot) during that window is unreliable — a client-placed object reaches
+    /// the server, then the still-settling join drops it, so the validator sees a clear footprint
+    /// and !cabin is silently accepted. Customized-in-/farmhands is the settled signal (built from
+    /// getAllFarmhands, per tests-assert-via-http-api.md), reached only once the join is done.
+    /// </summary>
+    private async Task SettleJoinAsync(
+        Infrastructure.Fixture.FarmerTestHelper.ClientConnection client,
+        CancellationToken ct
+    )
+    {
+        var settled = await ServerApi.WaitForFarmhandByNameAsync(
+            client.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        Assert.True(
+            settled,
+            $"Farmhand '{client.FarmerName}' was not customized server-side before world setup"
+        );
+    }
 
     private async Task<CabinInfoResponse> GetOurCabinAsync(long ownerId, CancellationToken ct)
     {
