@@ -314,7 +314,8 @@ internal static class SaveImportXmlTransform
             }
         }
 
-        // Moved owner present in <farmhands> with isCustomized + stamped userID.
+        // Moved owner present in <farmhands>, customized, with an EMPTY userID (the bind lives
+        // in the ownership map, never in the XML — see the userID assertion below).
         var farmhands = SelectSingle(root, "farmhands");
         var ownerEntry = farmhands
             ?.SelectNodes("Farmer")

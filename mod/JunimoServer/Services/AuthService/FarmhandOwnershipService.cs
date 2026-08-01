@@ -304,6 +304,20 @@ public class FarmhandOwnershipService : ModService
             && existing.Id == id
         )
         {
+            // Same identity: no rebind needed, but an operator origin must still win over a
+            // claim origin (it exempts the record from the abandoned-claim sweep — the
+            // durability a same-identity rebind is asking for). The reverse downgrade is
+            // never applied: an owner rejoin must not weaken a pre-assignment.
+            if (origin == OriginOperator && existing.Origin != OriginOperator)
+            {
+                existing.Origin = OriginOperator;
+                Write();
+                Monitor.Log(
+                    $"[Ownership] Upgraded farmhand {farmhandUid} record to operator origin",
+                    LogLevel.Debug
+                );
+            }
+
             return;
         }
 
