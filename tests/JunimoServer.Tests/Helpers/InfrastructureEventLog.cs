@@ -210,8 +210,20 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>exitCode != 0</c>) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
 /// tail</c>; emitted at teardown only when the <c>-E</c> log is non-empty —
 /// carries the master's death line, e.g. "Timeout, server not responding.") ·
+/// <c>ssh_master_unhealthy_owner</c> (<c>host_id,
+/// cause:"mux_check_failed"|"datapath_wedged"</c>; owner-side monitor verdict
+/// before a respawn — the <c>/_ping</c> canary through the host's socket forward
+/// catches the wedge mode where <c>-O check</c> still passes) ·
+/// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill</c>; see
+/// <see cref="Infrastructure.TunnelManager"/> for kill-outcome variants) ·
+/// <c>ssh_master_respawned</c> (<c>host_id, alive</c>) ·
+/// <c>ssh_master_respawn_failed</c> (<c>host_id, error</c>) ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
+/// <c>tunnel_forward_reopened</c> / <c>tunnel_forward_reopen_failed</c>
+/// (<c>host_id, coordinator_port, mapped_port?, remote_socket?, durationMs,
+/// message?</c>; same-port restoration of this process's registered forwards
+/// after a master respawn or a canary-detected forward drop) ·
 /// <c>tunnel_forward_failed</c> (<c>host_id, coordinator_port?, mapped_port?,
 /// remote_socket?, reason:"forward_failed"|"probe_timeout"|"cancelled"|
 /// "port_collision_retry", message, attempt, attempts</c>; per attempt) ·

@@ -45,13 +45,20 @@ public sealed class TunnelManager : IAsyncDisposable
     private readonly object _lock = new();
     private readonly Dictionary<ForwardKey, ForwardEntry> _forwards = new();
     private readonly Dictionary<string, HostMaster> _masters = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _canaryWedgeStreaks = new(StringComparer.Ordinal);
     private string _sshPath = "ssh";
+
+    // Set at DrainAsync entry. Teardown owns master lifecycle from that point: the
+    // owner-side health monitor must not respawn a master (or re-open forwards) that
+    // drain is concurrently exiting — that leaves an orphan master squatting the
+    // ControlPath for ControlPersist minutes after the run.
+    private volatile bool _draining;
 
     // Caps concurrent `ssh -O` reuse invocations (forward / cancel / check) that hit one
     // shared ControlMaster's mux listener. An unbounded burst of these can exhaust the
     // master's accept backlog / fd budget — the master then logs `accept: Resource
-    // temporarily unavailable`, stops answering, and the whole host is lost (see
-    // host-poison-deadlocks-run.md). The spawn itself is exempt (it has no master yet).
+    // temporarily unavailable` and stops answering, forcing the owner-side monitor to
+    // respawn it. The spawn itself is exempt (it has no master yet).
     // Sized generously; override via SDVD_SSH_OP_CONCURRENCY. Process-wide on Default.
     private readonly SemaphoreSlim _sshOpGate = new(
         int.TryParse(Environment.GetEnvironmentVariable("SDVD_SSH_OP_CONCURRENCY"), out var c)
@@ -198,6 +205,8 @@ public sealed class TunnelManager : IAsyncDisposable
                 ControlPath = controlPath,
                 LogPath = logPath,
                 Owned = true,
+                MasterPid = ParseMasterPid(checkStderr),
+                SpawnedAtUtc = DateTime.UtcNow,
             };
         }
 
@@ -284,6 +293,30 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add($"ControlPath={controlPath}");
         psi.ArgumentList.Add(sshDestination);
         return await RunSshOpAsync(psi, TimeSpan.FromSeconds(5), ct);
+    }
+
+    /// <summary>
+    /// Parses the master's pid from <c>ssh -O check</c>'s "Master running (pid=N)" stderr
+    /// line. Null when absent — the kill path then skips (degrades to the old behavior of
+    /// leaving the process behind).
+    /// </summary>
+    private static int? ParseMasterPid(string checkStderr)
+    {
+        const string marker = "pid=";
+        var start = checkStderr.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += marker.Length;
+        var end = start;
+        while (end < checkStderr.Length && char.IsAsciiDigit(checkStderr[end]))
+        {
+            end++;
+        }
+
+        return int.TryParse(checkStderr.AsSpan(start, end - start), out var pid) ? pid : null;
     }
 
     /// <summary>
@@ -385,46 +418,214 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Owner-side master health check + heal: if <c>ssh -O check</c> fails (mux wedged or
-    /// process dead), respawn the master at its existing ControlPath. Returns true if the
-    /// master is healthy (already, or after respawn). No-op true for a host this process
-    /// doesn't own. The child CANNOT do this (TryRespawnMasterAsync refuses on !Owned) — that
-    /// is the whole reason this must run in the parent.
+    /// Owner-side master health check + heal. Two probes, because the master has two
+    /// independent failure surfaces:
+    /// <list type="bullet">
+    ///   <item><b>Mux path</b> — <c>ssh -O check</c>. Fails when the mux listener wedged
+    ///     or the process died.</item>
+    ///   <item><b>Data path</b> — a canary request through the host's socket forward
+    ///     (the Docker daemon's <c>/_ping</c>). Catches the wedge mode where the master
+    ///     still answers <c>-O check</c> but black-holes NEW forwarded connections
+    ///     (accepted into the kernel backlog, never serviced) while established channels
+    ///     keep flowing — invisible to every other probe, and it hangs consumers instead
+    ///     of failing them fast.</item>
+    /// </list>
+    /// A wedged data path (two consecutive polls, debounced against transfer-load slowness)
+    /// or a failed mux check respawns the master at its existing ControlPath; a canary
+    /// <i>connection-refused</i> means the forward listener dropped while the master is fine
+    /// (keepalive blip), so only the owner-registered forwards are re-opened in place.
+    /// Returns true if the master is healthy (already, or after respawn). No-op true for a
+    /// host this process doesn't own — the child CANNOT respawn (TryRespawnMasterAsync
+    /// refuses on !Owned), which is why this must run in the parent.
     /// </summary>
     public async Task<bool> EnsureOwnedMasterHealthyAsync(
         string hostId,
         CancellationToken ct = default
     )
     {
+        if (_draining)
+        {
+            return true; // teardown owns master lifecycle now
+        }
+
         var master = TryGetMaster(hostId);
         if (master is null || !master.Owned)
         {
             return true; // not ours to heal
         }
 
+        string cause;
         if (await IsMasterAliveAsync(hostId, ct))
         {
-            return true;
+            var canary = await ProbeSocketForwardDataPathAsync(hostId, ct);
+            if (canary == SocketForwardProbeResult.Dropped)
+            {
+                ResetCanaryWedgeStreak(hostId);
+                await ReopenRegisteredForwardsAsync(hostId, ct);
+                return true;
+            }
+            if (canary != SocketForwardProbeResult.Wedged)
+            {
+                ResetCanaryWedgeStreak(hostId);
+                return true;
+            }
+            if (IncrementCanaryWedgeStreak(hostId) < 2)
+            {
+                return true; // single wedged poll: could be transfer-load slowness
+            }
+            cause = "datapath_wedged";
+        }
+        else
+        {
+            cause = "mux_check_failed";
         }
 
-        // -O check failed ⇒ mux wedged or process gone. Respawn at the same ControlPath so
-        // the child's adopted entry (and its in-flight forward re-opens) recover transparently.
-        EmitSafe("ssh_master_unhealthy_owner", new { host_id = hostId });
+        ResetCanaryWedgeStreak(hostId);
+
+        // Respawn at the same ControlPath so the child's adopted entry (and its in-flight
+        // forward re-opens) recover transparently.
+        EmitSafe("ssh_master_unhealthy_owner", new { host_id = hostId, cause });
         return await TryRespawnMasterAsync(hostId, ct);
     }
 
+    private int IncrementCanaryWedgeStreak(string hostId)
+    {
+        lock (_lock)
+        {
+            var next = _canaryWedgeStreaks.TryGetValue(hostId, out var n) ? n + 1 : 1;
+            _canaryWedgeStreaks[hostId] = next;
+            return next;
+        }
+    }
+
+    private void ResetCanaryWedgeStreak(string hostId)
+    {
+        lock (_lock)
+        {
+            _canaryWedgeStreaks.Remove(hostId);
+        }
+    }
+
+    private enum SocketForwardProbeResult
+    {
+        /// <summary>No socket forward registered for the host (or probe glitch) — no signal.</summary>
+        NotApplicable,
+
+        /// <summary>The daemon answered through the forward: data path works.</summary>
+        Healthy,
+
+        /// <summary>Connected but no byte within the deadline: accepted-and-never-serviced.</summary>
+        Wedged,
+
+        /// <summary>Connect refused / stream reset: the forward listener is gone.</summary>
+        Dropped,
+    }
+
     /// <summary>
-    /// Attempts to resurrect a dead/unresponsive ControlMaster once: evicts the stale
-    /// entry + socket, then re-runs <see cref="RegisterHostMasterAsync"/> with the
-    /// original destination/key. Returns true if a usable master is back. Used by the
-    /// poison seam before condemning a host — one shared master carries every forward, so
-    /// a transient master death (e.g. <c>accept: Resource temporarily unavailable</c> from
-    /// fd/backlog exhaustion) otherwise loses the whole host even though the VPS is fine.
+    /// Canary for the master's data path: one HTTP <c>GET /_ping</c> to the Docker daemon
+    /// through the host's registered socket forward. Pure TCP — no <c>ssh -O</c> op, so it
+    /// doesn't consume the mux gate and works even when the mux listener is dead.
+    /// </summary>
+    private async Task<SocketForwardProbeResult> ProbeSocketForwardDataPathAsync(
+        string hostId,
+        CancellationToken ct
+    )
+    {
+        ForwardEntry? entry;
+        lock (_lock)
+        {
+            entry = _forwards.Values.FirstOrDefault(f =>
+                f.HostId == hostId && f.RemoteSocketPath is not null
+            );
+        }
+        if (entry is null)
+        {
+            return SocketForwardProbeResult.NotApplicable;
+        }
+
+        try
+        {
+            using var client = new TcpClient();
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            connectCts.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                await client.ConnectAsync(
+                    IPAddress.Loopback,
+                    entry.CoordinatorPort,
+                    connectCts.Token
+                );
+            }
+            catch (SocketException)
+            {
+                return SocketForwardProbeResult.Dropped;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Loopback connect only stalls when the listener's backlog is full of
+                // never-accepted connections — the wedge signature, not a slow daemon.
+                return SocketForwardProbeResult.Wedged;
+            }
+
+            var stream = client.GetStream();
+            var request = Encoding.ASCII.GetBytes(
+                "GET /_ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+            );
+            using var ioCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            ioCts.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                await stream.WriteAsync(request, ioCts.Token);
+                var buffer = new byte[1];
+                var read = await stream.ReadAsync(buffer, ioCts.Token);
+                return read > 0
+                    ? SocketForwardProbeResult.Healthy
+                    : SocketForwardProbeResult.Dropped;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return SocketForwardProbeResult.Wedged;
+            }
+            catch (IOException)
+            {
+                return SocketForwardProbeResult.Dropped;
+            }
+            catch (SocketException)
+            {
+                return SocketForwardProbeResult.Dropped;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // outer ct: caller is shutting down
+        }
+        catch
+        {
+            return SocketForwardProbeResult.NotApplicable; // probe glitch must not condemn a host
+        }
+    }
+
+    /// <summary>
+    /// Attempts to resurrect a dead/unresponsive ControlMaster once: kills the old master
+    /// process (a wedged master survives <c>-O exit</c> — its mux is the broken part — and
+    /// left alive it squats every forward port, turning would-be fast
+    /// <c>ConnectionRefused</c> faults into unclassifiable hangs), evicts the stale entry +
+    /// socket, re-runs <see cref="RegisterHostMasterAsync"/> with the original
+    /// destination/key, then re-opens this process's registered forwards at their original
+    /// coordinator ports. Returns true if a usable master is back. Used by the poison seam
+    /// and the owner-side monitor — one shared master carries every forward, so a transient
+    /// master death (e.g. <c>accept: Resource temporarily unavailable</c> from fd/backlog
+    /// exhaustion) otherwise loses the whole host even though the host is fine.
     /// Only the owner (parent) can respawn — an adopted child entry has no spawn rights, so
     /// it returns false and lets the normal poison proceed.
     /// </summary>
     public async Task<bool> TryRespawnMasterAsync(string hostId, CancellationToken ct = default)
     {
+        if (_draining)
+        {
+            return false; // teardown owns master lifecycle now
+        }
+
         HostMaster? master = TryGetMaster(hostId);
         if (master is null)
         {
@@ -439,9 +640,7 @@ public sealed class TunnelManager : IAsyncDisposable
         var destination = master.SshDestination;
         var keyPath = master.SshKeyPath;
 
-        // Best-effort tear down the wedged-but-alive old master first (a mux wedge leaves the
-        // process running but useless), so it doesn't linger orphaned after we re-bind the
-        // ControlPath. Bounded; ignore the result — the file delete below is the hard reset.
+        // Best-effort clean shutdown first. Bounded; a wedged master won't answer.
         try
         {
             var exitPsi = NewSshPsi();
@@ -453,8 +652,14 @@ public sealed class TunnelManager : IAsyncDisposable
             await RunSshOpAsync(exitPsi, TimeSpan.FromSeconds(3), ct);
         }
         catch
-        { /* wedged master may not answer -O exit; the socket delete is the fallback */
+        { /* wedged master may not answer -O exit; the kill below is the hard reset */
         }
+
+        // Hard reset: the old process must be GONE before the same-port forward re-open
+        // below, and every connection it still holds must die fast rather than hang.
+        // Established streams through it (container log/stats) are severed too — their
+        // readers reconnect through the restored forwards or surface a classifiable fault.
+        var oldMasterKill = TryKillMasterProcess(master);
 
         // Evict the dead entry + its socket so RegisterHostMasterAsync's ContainsKey guard
         // doesn't short-circuit and its `ssh -M` doesn't hit the "socket exists" trap.
@@ -464,18 +669,186 @@ public sealed class TunnelManager : IAsyncDisposable
         }
         TryDeleteFile(master.ControlPath);
 
-        EmitSafe("ssh_master_respawn_attempt", new { host_id = hostId });
+        EmitSafe(
+            "ssh_master_respawn_attempt",
+            new
+            {
+                host_id = hostId,
+                oldPid = master.MasterPid,
+                oldMasterKill,
+            }
+        );
         try
         {
             await RegisterHostMasterAsync(hostId, destination, keyPath, ct);
             var alive = await IsMasterAliveAsync(hostId, ct);
             EmitSafe("ssh_master_respawned", new { host_id = hostId, alive });
+            if (alive)
+            {
+                // Same-port restoration for forwards THIS process registered (the parent's
+                // daemon-socket forward — its port is pinned in Docker.DotNet endpoints and
+                // published to the child via env, so a new port would strand every client).
+                // Forwards other processes registered (the child's per-server API forwards)
+                // heal lazily through their own seams: with the old master killed, their
+                // stale ports now fail fast as forward-scoped faults.
+                await ReopenRegisteredForwardsAsync(hostId, ct);
+            }
             return alive;
         }
         catch (Exception ex)
         {
             EmitSafe("ssh_master_respawn_failed", new { host_id = hostId, error = ex.Message });
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Kills the old master process by pid, triple-guarded so a stale or OS-reused pid can
+    /// never hit an unrelated process: the process must be named <c>ssh</c>, must run the
+    /// resolved ssh binary (when both paths are comparable), and must have started within
+    /// two minutes of the master's spawn. Returns a short outcome string for the
+    /// <c>ssh_master_respawn_attempt</c> event. Pid identity note: Cygwin/MSYS pids equal
+    /// Windows pids since msys2-runtime 3.4 (Git for Windows ≥ 2.39), and
+    /// <see cref="SshBinaryResolver"/> already mandates Git for Windows ssh.
+    /// </summary>
+    private string TryKillMasterProcess(HostMaster master)
+    {
+        if (master.MasterPid is not int pid)
+        {
+            return "skipped_unknown_pid";
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+
+            if (!process.ProcessName.Equals("ssh", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"skipped_name_mismatch({process.ProcessName})";
+            }
+
+            if (
+                Math.Abs((process.StartTime.ToUniversalTime() - master.SpawnedAtUtc).TotalSeconds)
+                > 120
+            )
+            {
+                return "skipped_start_time_mismatch";
+            }
+
+            // Best-effort binary check; MainModule can be unreadable (access, bitness).
+            try
+            {
+                var modulePath = process.MainModule?.FileName;
+                if (
+                    modulePath is not null
+                    && Path.IsPathRooted(_sshPath)
+                    && !string.Equals(
+                        Path.GetFullPath(modulePath),
+                        Path.GetFullPath(_sshPath),
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return $"skipped_binary_mismatch({modulePath})";
+                }
+            }
+            catch
+            { /* unreadable module: name + start-time guards carry the decision */
+            }
+
+            process.Kill();
+            process.WaitForExit(2000);
+            return "killed";
+        }
+        catch (ArgumentException)
+        {
+            return "already_exited";
+        }
+        catch (InvalidOperationException)
+        {
+            return "already_exited";
+        }
+        catch (Exception ex)
+        {
+            return $"failed({ex.GetType().Name})";
+        }
+    }
+
+    /// <summary>
+    /// Re-opens every forward THIS process registered for <paramref name="hostId"/> at its
+    /// ORIGINAL coordinator port, after a master respawn (the old master's listeners died
+    /// with it) or a canary-detected forward drop. Same-port is the point: consumers pin
+    /// these ports (the daemon-socket forward feeds Docker.DotNet endpoints in both
+    /// processes via <see cref="Helpers.RunArtifactNames.HostTunnelsEnv"/>) and have no
+    /// re-resolve path. Per-forward failures are evented and skipped — a partial reopen
+    /// beats none.
+    /// </summary>
+    private async Task ReopenRegisteredForwardsAsync(string hostId, CancellationToken ct)
+    {
+        ForwardEntry[] entries;
+        lock (_lock)
+        {
+            entries = _forwards.Values.Where(f => f.HostId == hostId).ToArray();
+        }
+        if (entries.Length == 0)
+        {
+            return;
+        }
+
+        var master = TryGetMaster(hostId);
+        if (master is null)
+        {
+            return;
+        }
+
+        foreach (var entry in entries)
+        {
+            var startedAt = Stopwatch.GetTimestamp();
+            try
+            {
+                await OpenForwardOnMasterAsync(
+                    master,
+                    entry.CoordinatorPort,
+                    entry.MappedPort,
+                    entry.RemoteSocketPath,
+                    ct
+                );
+                await ProbeListenerAsync(entry.CoordinatorPort, TimeSpan.FromSeconds(2), ct);
+                EmitSafe(
+                    "tunnel_forward_reopened",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = entry.CoordinatorPort,
+                        mapped_port = entry.RemoteSocketPath is null
+                            ? (int?)entry.MappedPort
+                            : null,
+                        remote_socket = entry.RemoteSocketPath,
+                        durationMs = ElapsedMs(startedAt),
+                    }
+                );
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                EmitSafe(
+                    "tunnel_forward_reopen_failed",
+                    new
+                    {
+                        host_id = hostId,
+                        coordinator_port = entry.CoordinatorPort,
+                        mapped_port = entry.RemoteSocketPath is null
+                            ? (int?)entry.MappedPort
+                            : null,
+                        remote_socket = entry.RemoteSocketPath,
+                        message = ex.Message,
+                        durationMs = ElapsedMs(startedAt),
+                    }
+                );
+            }
         }
     }
 
@@ -818,6 +1191,8 @@ public sealed class TunnelManager : IAsyncDisposable
     /// </summary>
     public async Task DrainAsync(TimeSpan timeout, TimeSpan perCancelTimeout)
     {
+        _draining = true;
+
         ForwardEntry[] forwardSnapshot;
         HostMaster[] masterSnapshot;
         lock (_lock)
@@ -1490,6 +1865,20 @@ public sealed class TunnelManager : IAsyncDisposable
         /// the child does not own the parent's sockets.
         /// </summary>
         public required bool Owned { get; init; }
+
+        /// <summary>
+        /// OS pid of the live master process, parsed from <c>ssh -O check</c>'s
+        /// "Master running (pid=N)" line. Owned masters only (null on adopted child
+        /// entries — the child never kills); null when the parse missed, which
+        /// downgrades the respawn-path kill to a no-op.
+        /// </summary>
+        public int? MasterPid { get; init; }
+
+        /// <summary>
+        /// When the master was spawned. Guards the respawn-path kill against OS pid
+        /// reuse: only a process whose start time is near this is eligible.
+        /// </summary>
+        public DateTime SpawnedAtUtc { get; init; }
     }
 
     private sealed class HostMasterEnvEntry

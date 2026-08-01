@@ -1023,6 +1023,7 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         while (!ct.IsCancellationRequested)
         {
+            var probeDeadlineHit = false;
             try
             {
                 await Task.Delay(intervalMs, ct);
@@ -1082,6 +1083,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 catch (OperationCanceledException)
                     when (probeCts.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
+                    probeDeadlineHit = true;
                     throw new TimeoutException(
                         $"/health probe exceeded {ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000)}ms "
                             + "(forward wedged mid-stream or server unresponsive)"
@@ -1194,6 +1196,29 @@ internal sealed class ManagedServer : IAsyncDisposable
                     continue;
                 }
 
+                // Hang-mode twin of the fault above: a wedged master black-holes NEW
+                // connections (accepted, never serviced), so the probe hits its deadline
+                // instead of throwing a classifiable transport fault. Same corroborate-
+                // then-reopen heal, but the strike below STILL counts: only a succeeding
+                // probe resets the streak, so a genuinely hung server (whose forward is
+                // fine) still reaches maxFailures — the heal can't keep it alive forever.
+                if (probeDeadlineHit && Host.SshDestination is not null)
+                {
+                    try
+                    {
+                        if (await Server.HealApiForwardAsync(ct))
+                        {
+                            TestLog.Server(
+                                $"{_displayLabel} re-opened API forward after probe timeout "
+                                    + $"(strike {consecutiveFailures + 1}/{maxFailures} still counts)"
+                            );
+                        }
+                    }
+                    catch
+                    { /* heal is best-effort; the strike accounting below is the backstop */
+                    }
+                }
+
                 consecutiveFailures++;
                 lastFailureCode = PoisonReasonCode.HealthCheckError;
                 lastFailureReason = $"Health check threw {ex.GetType().Name}: {ex.Message}";
@@ -1235,9 +1260,12 @@ internal sealed class ManagedServer : IAsyncDisposable
 
     /// <summary>
     /// When a health probe throws a <i>forward-scoped</i> transport fault (loopback
-    /// ConnectionRefused — the per-server <c>ssh -L</c> listener is gone), corroborate
-    /// the host is still up via <c>ssh -O check</c> and, if so, re-open this server's
-    /// API forward in place. Returns true when the fault was forward-scoped AND
+    /// ConnectionRefused — the per-server <c>ssh -L</c> listener is gone), heal via
+    /// <see cref="Containers.ServerContainer.HealApiForwardAsync"/>: corroborate the
+    /// master is usable (retries <c>-O check</c> + respawns once), re-open this server's
+    /// API forward, deduplicated against a concurrent in-flight-request heal. This runs
+    /// every health-watchdog cycle while the forward is dead, so even a longer outage
+    /// heals on a later cycle. Returns true when the fault was forward-scoped AND
     /// healed — the caller then resets the failure streak instead of advancing toward
     /// poison. Returns false for non-forward faults, local hosts, a dead master, or a
     /// failed re-open (all of which should count normally).
@@ -1250,26 +1278,17 @@ internal sealed class ManagedServer : IAsyncDisposable
             return false;
         }
 
-        // Establish the master is usable before re-opening the forward (retries -O check +
-        // respawns once — see TunnelManager.EnsureMasterUsableAsync). This runs every
-        // health-watchdog cycle while the forward is dead, so even a longer outage heals on
-        // a later cycle rather than the test eating the whole blip.
-        if (!await TunnelManager.Default.EnsureMasterUsableAsync(Host.Id, ct))
-        {
-            return false;
-        }
-
         try
         {
-            var reopened = await Server.ReopenApiForwardAsync(ct);
-            if (reopened)
+            var healed = await Server.HealApiForwardAsync(ct);
+            if (healed)
             {
                 TestLog.Server(
                     $"{_displayLabel} healed forward-scoped fault "
                         + $"({ex.GetType().Name}) — re-opened API forward, host kept"
                 );
             }
-            return reopened;
+            return healed;
         }
         catch (Exception healEx)
         {
