@@ -437,7 +437,8 @@ internal sealed class PersistentSessionCoordinator
         if (HoldsExclusive)
         {
             HoldsExclusive = false;
-            _testBase.LeaseInternal?.Managed.ReleaseExclusive();
+            var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
+            _testBase.LeaseInternal?.Managed.ReleaseExclusive(testName);
         }
     }
 

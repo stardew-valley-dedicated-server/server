@@ -559,13 +559,38 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// refs, the gate stays held and non-class tests remain blocked. Only when the
     /// last same-class ref releases does the TCS complete.
     /// </summary>
-    public void ReleaseExclusive()
+    public void ReleaseExclusive(string? callerTestName)
     {
+        var callerClass = ExtractClassName(callerTestName);
         TaskCompletionSource? done;
         lock (_exclusiveLock)
         {
             if (_exclusiveDone == null)
             {
+                return;
+            }
+
+            // Only the class that owns the gate may release it. An Exclusive+KeepConnected
+            // test releases from two disposal sites (ResourceLease.DisposeAsync and
+            // PersistentSessionCoordinator.ReleaseExclusiveGate); if the second call lands
+            // after another class has since claimed the gate, releasing here would silently
+            // erase that class's gate, letting non-exclusive tests join mid-exclusive.
+            if (
+                callerClass != null
+                && _exclusiveOwnerClass != null
+                && _exclusiveOwnerClass != callerClass
+            )
+            {
+                InfrastructureEventLog.Emit(
+                    "exclusive_release_rejected",
+                    new
+                    {
+                        server = Key,
+                        instanceId = InstanceId,
+                        ownerClass = _exclusiveOwnerClass,
+                        callerClass,
+                    }
+                );
                 return;
             }
 

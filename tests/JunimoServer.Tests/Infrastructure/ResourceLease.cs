@@ -174,7 +174,7 @@ public sealed class ResourceLease : IAsyncDisposable
         // can proceed as soon as our ref is gone.
         if (_exclusive)
         {
-            _managed.ReleaseExclusive();
+            _managed.ReleaseExclusive(_testName);
         }
 
         try

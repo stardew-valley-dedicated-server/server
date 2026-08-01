@@ -1264,7 +1264,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         server.Release();
                         if (requirements.Exclusive)
                         {
-                            server.ReleaseExclusive();
+                            server.ReleaseExclusive(testName);
                         }
 
                         TestLog.Test(
