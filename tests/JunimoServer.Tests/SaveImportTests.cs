@@ -770,8 +770,10 @@ public class SaveImportTests : TestBase
                 }
                 // Pick any other unowned slot as the rebind target (the injected stamp was
                 // released by the load-time abandoned-claim sweep, so spare slots are fresh).
+                // Must be UNcustomized: the tail assertion proves an operator-origin record
+                // survives the load-time sweep, and the sweep only inspects uncustomized slots.
                 var spare = state.FarmhandData.FirstOrDefault(f =>
-                    f.UniqueMultiplayerId != ownerUid && !f.HasOwner
+                    f.UniqueMultiplayerId != ownerUid && !f.HasOwner && !f.IsCustomized
                 );
                 rebindTargetUid = spare?.UniqueMultiplayerId ?? 0;
                 return rebindTargetUid != 0;

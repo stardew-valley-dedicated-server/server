@@ -318,6 +318,8 @@ namespace JunimoServer.Tests.Helpers;
 /// kind:"with_ref"|"gate_only", inheritedFromClass</c>) ·
 /// <c>exclusive_released</c> (<c>server, instanceId,
 /// kind:"ended"|"passed_to_same_class", ownerClass?, waiters?</c>) ·
+/// <c>exclusive_release_rejected</c> (<c>server, instanceId, ownerClass,
+/// callerClass</c>; a stale cross-class release no-oped instead of erasing the gate) ·
 /// <c>session_created</c> · <c>session_disposed</c> ·
 /// <c>cancellation_detected</c> · <c>farmer_removal_waited</c>.</item>
 ///

@@ -278,10 +278,12 @@ public class CoopController
                     {
                         try
                         {
-                            // Access only basic properties that don't trigger serialization
+                            // Access only basic properties that don't trigger serialization.
+                            // Uid first: visibility tests match slots by uid, so it must be
+                            // populated even when a later property read throws.
+                            slotInfo.UniqueMultiplayerId = farmer.UniqueMultiplayerID;
                             slotInfo.Name = farmer.Name ?? "";
                             slotInfo.IsCustomized = farmer.isCustomized.Value;
-                            slotInfo.UniqueMultiplayerId = farmer.UniqueMultiplayerID;
                         }
                         catch (Exception ex)
                         {

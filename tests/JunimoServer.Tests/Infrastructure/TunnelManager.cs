@@ -757,8 +757,9 @@ public sealed class TunnelManager : IAsyncDisposable
             }
 
             process.Kill();
-            process.WaitForExit(2000);
-            return "killed";
+            // A survivor still squats the forward ports — surface it so the same-port
+            // reopen's bind failure is self-explaining.
+            return process.WaitForExit(2000) ? "killed" : "killed_exit_timeout";
         }
         catch (ArgumentException)
         {
