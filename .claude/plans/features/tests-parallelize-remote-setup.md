@@ -6,7 +6,10 @@
 > materializes `host.ApiClient`"), but the mesh raises transfer throughput
 > substantially (SSH path measured ~13 MB/s), which shrinks the wall-clock win of
 > overlapping the two transfer buckets — re-measure on the post-mesh transport before
-> implementing.
+> implementing. One concrete dependency: `ImageDistributor` treats an empty
+> `SshDestination` as "local host, skip transfer" (`ImageDistributor.cs:102-105`), so a
+> direct `tcp://` mesh host would silently get no images until that check moves to a
+> transport-neutral remote-daemon predicate (the mesh plan's `DockerHost.IsRemoteDaemon`).
 
 ## Context
 

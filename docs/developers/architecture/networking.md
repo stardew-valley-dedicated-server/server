@@ -60,7 +60,9 @@ Direct IP connections for specific use cases:
 - Carries no platform identity: farmhands created over direct IP form a shared pool among
   direct-IP players, while Steam/GOG-owned farmhands are hidden from and unclaimable over
   direct IP (enforced server-side by `FarmhandOwnershipService`, keyed on the connection's
-  transport identity)
+  transport identity; gate and visibility narrowing are active only while
+  `EnforceFarmhandOwnership` is enabled — the default — though ownership keeps being
+  recorded regardless)
 
 ## Key Implementation Files
 

@@ -203,7 +203,9 @@ are hidden from direct-IP players.
 Set it to `false` only when one person plays the same farmhand from two transports — for example
 Steam at their desk plus a second device connecting over direct IP. Strict ownership cannot express
 that dual identity, so such setups disable enforcement; claims keep being recorded while it is off,
-and re-enabling restores enforcement with an up-to-date ownership map.
+and re-enabling restores enforcement with an up-to-date ownership map. Be aware the setting is
+server-wide: while it is `false`, the server-side ownership lock is off for every farmhand on the
+server — not just that player's — and only the game's weaker built-in checks remain.
 
 To hand a farmhand to a different account (or unlock one), use the
 [`farmhand` console command](/admins/operations/commands#farmhand). Ownership records are stored in

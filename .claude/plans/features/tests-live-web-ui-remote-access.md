@@ -7,8 +7,10 @@
 > [`tests-local-ci-runners.md`](tests-local-ci-runners.md)'s Tailscale step), this
 > plan's goal reduces to binding `WebRenderer` to the tailnet interface and opening
 > `http://<runner-mesh-ip>:<webPort>` from any mesh device — no carrier, no VPS
-> listener, no token relay. Re-plan on that basis before implementing; don't build
-> Option A on the to-be-deleted master.
+> listener, no token relay. "No token relay" is not "no token gate": mesh reachability
+> is not authentication, so the re-plan must keep `WebRenderer` validating
+> `SDVD_WEB_TOKEN` on HTTP, WebSocket, and artifact access. Re-plan on that basis
+> before implementing; don't build Option A on the to-be-deleted master.
 
 ## Context
 
@@ -27,7 +29,7 @@ preferably **without a third-party service**. The VPS the harness reaches over S
 the WebRenderer binds to `127.0.0.1`. Something must carry the loopback server outward.
 There are two viable carriers:
 
-### Option A — Reverse SSH to the public VPS (NO third party) — chosen
+### Option A — Reverse SSH to the public VPS (NO third party) — was chosen; superseded by the update above
 
 `ssh -R <vps>:<port>:127.0.0.1:<webPort>` rides the **SSH ControlMaster the harness
 already opens to the VPS** for every run (`TunnelManager.SpawnMasterAsync`, `RegisterHostMasterAsync`).

@@ -38,7 +38,7 @@ Configurable by the server admin. Default is shared wallet (all players share on
 
 ### Can another player take over my farmer?
 
-No. Your farmer is locked to the Steam or GOG account that created it — other players don't even see it in their farmer list. The exception is farmers created over a direct IP connection: direct IP carries no account identity, so those farmers are shared among all direct-IP players. Server admins can transfer or unlock a farmer with the [`farmhand` command](/admins/operations/commands#farmhand).
+No. Your farmer is locked to the connection identity that created it — for Steam/GOG players that means your account, and other players don't even see it in their farmer list. (Steam note: joining through the host's friends list and joining with the invite code count as two different identities, so stick to one join method.) The exception is farmers created over a direct IP connection: direct IP carries no account identity, so those farmers are shared among all direct-IP players. Server admins can transfer or unlock a farmer with the [`farmhand` command](/admins/operations/commands#farmhand).
 
 ## Technical
 
@@ -94,7 +94,7 @@ See [VNC](/admins/operations/vnc#why-is-vnc-showing-a-black-screen) if you speci
 
 ### I connected, but my farmer isn't in the list
 
-You most likely joined a different way than when you created the farmer. Farmers are tied to how you connect: one created via a Steam or GOG invite code belongs to that account and never shows up over direct IP (and the other way around — a farmer created over direct IP is only offered to direct-IP players). Reconnect the same way you originally joined. If you genuinely need to move a farmer to another account or connection method, ask the server admin to use the [`farmhand` command](/admins/operations/commands#farmhand).
+You most likely joined a different way than when you created the farmer. Farmers are tied to how you connect: one created via a Steam or GOG invite code belongs to that account and never shows up over direct IP (and the other way around — a farmer created over direct IP is only offered to direct-IP players). On Steam, even the host's friends list and the invite code count as two different join methods. Reconnect the same way you originally joined. If you genuinely need to move a farmer to another account or connection method, ask the server admin to use the [`farmhand` command](/admins/operations/commands#farmhand).
 
 ### Server won't start
 

@@ -61,7 +61,8 @@ Skipped `--reload`? Run `saves reload` (or restart) to load it.
   overrides the binding. Once the save has loaded, fix it with
   [`farmhand rebind <name> <id>`](/admins/operations/commands#farmhand) (or `farmhand release <name>`
   to unlock the slot entirely). As a tripwire, the import logs a warning when the supplied id
-  already identifies another farmhand in the save — usually a sign the wrong connect-log line was
+  already identifies another farmhand in the save — expected (and safe to ignore) when that player
+  deliberately owns several farmers; otherwise it usually means the wrong connect-log line was
   copied.
 - **One player, several farmers.** The same id may own more than one farmhand — binding an id that
   already owns a farmhand in the save is fine and nothing is rejected.
