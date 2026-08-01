@@ -1,5 +1,25 @@
 # Wire up the Mac M5 as a remote E2E test runner (local LAN + CI)
 
+> **Update 2026-08-02 — data plane planned to change; reach layer unaffected.**
+> [`tests-mesh-vpn-host-transport.md`](tests-mesh-vpn-host-transport.md) supersedes this
+> plan's **SSH data plane**: the long-run direction is that meshed hosts are dialed
+> directly (`"endpoint": "tcp://<tailnet-ip>:<port>"` with dockerd exposed on the tailnet
+> interface), and the SSH ControlMaster / daemon-socket-forward path gets deleted.
+> Trigger: run `2026-08-01T18-27-56Z_3348fc9`, where the shared ControlMaster wedged
+> half-alive at peak load and took down the whole run (a recovery layer now exists in
+> `TunnelManager`/`ManagedServer`, but the layer itself is slated for removal).
+> Everything else here survives unchanged and is prerequisite work for the mesh plan:
+> Tailscale enrollment/ACLs/workflow step, Mac provisioning, coexistence + concurrency
+> analysis, and the fork-PR security gating. If implementing before the mesh migration
+> lands, expect the SSH-specific pieces (keyscan/host-key step, inline `sshKey` secret,
+> the "wedged SSH master" timeout rationale) to be replaced by that plan's Phase 3/4.
+>
+> Status drift note: **Part 1 is already operational** (run artifacts show `host_id=mac`
+> over SSH from the dev coordinator) — and the Mac's daemon is **OrbStack**, not Docker
+> Desktop as assumed below (`docker_preflight`: `operatingSystem=OrbStack`, aarch64).
+> Re-verify the Docker-Desktop-specific details (socket path, Rosetta toggle location)
+> against OrbStack when executing Part 2.
+
 ## Context
 
 The goal is to use a local Apple-Silicon Mac (M5, Docker Desktop) as a **remote Docker

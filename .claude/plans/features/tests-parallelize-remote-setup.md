@@ -1,5 +1,13 @@
 # Parallelize remote-host setup: preflight → fan-out(A, B)
 
+> **Update 2026-08-02:** structurally unaffected by
+> [`tests-mesh-vpn-host-transport.md`](tests-mesh-vpn-host-transport.md) (the fan-out
+> is transport-agnostic; "preflight opens the SSH forwards" becomes "preflight
+> materializes `host.ApiClient`"), but the mesh raises transfer throughput
+> substantially (SSH path measured ~13 MB/s), which shrinks the wall-clock win of
+> overlapping the two transfer buckets — re-measure on the post-mesh transport before
+> implementing.
+
 ## Context
 
 The test runner's per-run setup (`tests/JunimoServer.TestRunner/Program.cs`, ~lines

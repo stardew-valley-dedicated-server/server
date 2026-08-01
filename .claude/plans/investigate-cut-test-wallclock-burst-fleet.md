@@ -1,5 +1,14 @@
 # Investigate: cut E2E wall-clock via more remote Docker capacity (burst fleet)
 
+> **Update 2026-08-02:**
+> [`features/tests-mesh-vpn-host-transport.md`](features/tests-mesh-vpn-host-transport.md)
+> plans to replace the SSH transport with mesh-VPN direct dials. If that lands first,
+> the follow-up Terraform build should provision burst hosts as **mesh nodes**
+> (cloud-init: join tailnet with an ephemeral auth key + expose dockerd on the tailnet
+> interface) instead of installing ssh keys. Also note the per-Docker-API-call and
+> transfer throughput figures measured over SSH will improve under mesh — re-baseline
+> before sizing the fleet from them.
+
 ## Goal
 
 Cut full-suite wall-clock by adding remote Docker host capacity, because the single VPS (`vps-1`) can't carry more parallelism. Decide **wide (several medium hosts) vs fat (one large host)**, sized and costed for **burst** use (spin up per run, destroy after — NOT always-on monthly), under the hard **amd64-only** constraint.

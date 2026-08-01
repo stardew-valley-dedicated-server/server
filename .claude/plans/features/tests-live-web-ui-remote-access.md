@@ -1,5 +1,15 @@
 # Plan: True-live remote access to the E2E test-UI during an in-progress CI run
 
+> **Update 2026-08-02 — chosen carrier slated for removal.** Option A rides the SSH
+> ControlMaster (`TunnelManager` reverse forward), which
+> [`tests-mesh-vpn-host-transport.md`](tests-mesh-vpn-host-transport.md) plans to delete
+> outright. Once the coordinator is on the mesh anyway (already implied by
+> [`tests-local-ci-runners.md`](tests-local-ci-runners.md)'s Tailscale step), this
+> plan's goal reduces to binding `WebRenderer` to the tailnet interface and opening
+> `http://<runner-mesh-ip>:<webPort>` from any mesh device — no carrier, no VPS
+> listener, no token relay. Re-plan on that basis before implementing; don't build
+> Option A on the to-be-deleted master.
+
 ## Context
 
 There is no way to watch the test-UI of a running E2E CI job from outside. The
