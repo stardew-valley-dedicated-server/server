@@ -2749,7 +2749,10 @@ public partial class ApiService : ModService
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
         var snap = _snapshot;
 
-        // Derive invite codes from file (thread-safe file read)
+        // Derive invite codes from file (thread-safe file read). The S-code is exposed only
+        // once the Galaxy lobby carries the SteamLobbyId stamp — a vanilla Steam client
+        // completes an S-code join by reading that stamp, so showing the code any earlier
+        // (e.g. on GameServer init alone) hands out a code that still fails to join.
         var inviteCode = InviteCodeFile.Read(Monitor);
         string? steamInviteCode = null;
         string? gogInviteCode = null;
@@ -2757,7 +2760,7 @@ public partial class ApiService : ModService
         {
             var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
             gogInviteCode = GalaxyNetHelper.GalaxyInvitePrefix + baseCode;
-            if (SteamGameServer.SteamGameServerService.IsInitialized)
+            if (Auth.GalaxyAuthService.SteamLobbyPublished)
             {
                 steamInviteCode = GalaxyNetHelper.SteamInvitePrefix + baseCode;
             }
