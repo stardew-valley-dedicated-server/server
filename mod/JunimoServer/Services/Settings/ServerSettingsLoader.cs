@@ -67,6 +67,12 @@ public class ServerSettingsLoader
     public bool AllowIpConnections => _settings.Server.AllowIpConnections;
 
     /// <summary>
+    /// Whether the farmhand ownership gate and transport-scoped visibility narrowing are
+    /// enforced (see <see cref="ServerRuntimeSettings.EnforceFarmhandOwnership"/>).
+    /// </summary>
+    public bool EnforceFarmhandOwnership => _settings.Server.EnforceFarmhandOwnership;
+
+    /// <summary>
     /// Lobby mode for password protection: Shared or Individual.
     /// </summary>
     public LobbyMode LobbyMode => ParseLobbyMode(_settings.Server.LobbyMode);

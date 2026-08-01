@@ -88,6 +88,24 @@ of letting the server take over their farmer. `--reload` loads the save right aw
 next restart, and `--force-reload` (or `--force` on `saves reload`) kicks connected players first. The
 full walkthrough is on the [Importing Saves](/admins/operations/importing-saves) page.
 
+### farmhand
+
+Manage farmhand ownership (see
+[Farmhand Ownership](/admins/configuration/server-settings#farmhand-ownership)):
+
+| Command | Description |
+|---------|-------------|
+| `farmhand release <name\|uid>` | Unlock a farmhand: it becomes visible and claimable on every connection method, and the next player to select it becomes the owner |
+| `farmhand rebind <name\|uid> <platformId>` | Re-point a farmhand's ownership to another platform id (e.g. a player who switched accounts) |
+
+The platform id is the Steam64 or GOG Galaxy id shown in the server's
+`Client connected via ... (platform id ...)` log line when that player connects. The same id may own
+several farmhands, so rebinding to an id that already owns one is fine. Rebinding a farmhand nobody
+has customized yet is also fine — the pre-assignment sticks until that player claims it.
+
+Both commands take effect immediately. When the server is empty, the change is also written to disk
+on the spot (no day transition needed); with players online it is written at the next day save.
+
 ### rendering
 
 Control visual rendering for performance:

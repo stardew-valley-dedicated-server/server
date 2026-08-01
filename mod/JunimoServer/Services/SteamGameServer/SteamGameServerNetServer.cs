@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Network;
@@ -490,10 +491,12 @@ internal sealed class SteamGameServerNetServer : HookableServer
 
         string connectionId = ConnectionDataToId(connectionData);
         onConnect(connectionId);
-        // Pass Steam ID as userId so farmhand ownership can be verified on reconnect
-        string odId = steamId.m_SteamID.ToString();
+        // userId is "" like vanilla SteamNetServer: the param is NOT a trusted identity
+        // (client stamps are Galaxy-space, the connection's Steam64 is a different id space).
+        // Ownership visibility/enforcement resolve the Steam64 from the connectionId via
+        // ConnectionTransport (FarmhandSenderService filter + FarmhandOwnershipService gate).
         _gameServer.sendAvailableFarmhands(
-            odId,
+            "",
             connectionId,
             (outgoing) => SendMessageToConnection(callback.m_hConn, outgoing)
         );
@@ -553,49 +556,33 @@ internal sealed class SteamGameServerNetServer : HookableServer
         CloseConnection(callback.m_hConn);
     }
 
+    // Format owner for the SN_ connection-id shape; parsed by ConnectionTransport (the one
+    // in-tree parser for this format).
     private string ConnectionDataToId(ConnectionData connection)
     {
-        return $"SN_{connection.SteamId.m_SteamID}_{connection.Connection.m_HSteamNetConnection}";
+        return $"{ConnectionTransport.SteamPrefix}{connection.SteamId.m_SteamID}_{connection.Connection.m_HSteamNetConnection}";
     }
 
     private ConnectionData IdToConnectionData(string connectionId)
     {
-        // Validate input format: must be "SN_{steamId}_{connectionHandle}"
         if (
-            string.IsNullOrEmpty(connectionId)
-            || connectionId.Length <= 3
-            || !connectionId.StartsWith("SN_")
+            !ConnectionTransport.TryParseSteamConnectionId(
+                connectionId,
+                out var steamId,
+                out var connHandle
+            )
         )
         {
-            return null;
-        }
+            // Other transports' ids land here via GameServer fan-out — only a malformed id
+            // that claims the SN_ prefix is log-worthy.
+            if (connectionId?.StartsWith(ConnectionTransport.SteamPrefix) == true)
+            {
+                _monitor.Log(
+                    $"[IdToConnectionData] Malformed SN_ id: {connectionId}",
+                    LogLevel.Debug
+                );
+            }
 
-        string text = connectionId.Substring(3);
-        int separatorIndex = text.IndexOf('_');
-        if (separatorIndex <= 0 || separatorIndex >= text.Length - 1)
-        {
-            return null;
-        }
-
-        // Use TryParse for safe parsing (prevents exceptions from malformed input)
-        string steamIdPart = text.Substring(0, separatorIndex);
-        string connHandlePart = text.Substring(separatorIndex + 1);
-
-        if (!ulong.TryParse(steamIdPart, out ulong steamId))
-        {
-            _monitor.Log(
-                $"[IdToConnectionData] Invalid Steam ID format: {steamIdPart}",
-                LogLevel.Debug
-            );
-            return null;
-        }
-
-        if (!uint.TryParse(connHandlePart, out uint connHandle))
-        {
-            _monitor.Log(
-                $"[IdToConnectionData] Invalid connection handle format: {connHandlePart}",
-                LogLevel.Debug
-            );
             return null;
         }
 

@@ -281,6 +281,7 @@ public class CoopController
                             // Access only basic properties that don't trigger serialization
                             slotInfo.Name = farmer.Name ?? "";
                             slotInfo.IsCustomized = farmer.isCustomized.Value;
+                            slotInfo.UniqueMultiplayerId = farmer.UniqueMultiplayerID;
                         }
                         catch (Exception ex)
                         {
@@ -554,6 +555,10 @@ public class FarmhandSlotInfo
     public bool IsEmpty { get; set; }
     public string? Name { get; set; }
     public string? FarmName { get; set; }
+
+    /// <summary>The slot farmhand's UniqueMultiplayerID — lets visibility tests match a
+    /// server-side slot (uncustomized slots have no Name to match on).</summary>
+    public long UniqueMultiplayerId { get; set; }
 }
 
 public class SteamLobbyDiagnostics

@@ -251,6 +251,15 @@ public class DiagnosticsCabinState
     /// not the raw ID: /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
     public bool OwnerHasUserId { get; set; }
 
+    /// <summary>Whether the cabin owner (its farmhand) has a server-side ownership record
+    /// (recorded at the join gate's approve moment or by a save-import bind). Bool, not the raw
+    /// ID — same unauthenticated-endpoint rule as <see cref="OwnerHasUserId"/>.</summary>
+    public bool OwnerHasOwner { get; set; }
+
+    /// <summary>Platform tag of the cabin owner's ownership record ("steam"/"galaxy"), or ""
+    /// when unowned.</summary>
+    public string OwnerPlatform { get; set; } = "";
+
     public string HomeLocationOfOwner { get; set; } = "";
     public bool FarmhandReferenceDefined { get; set; }
     public long FarmhandReferenceUid { get; set; }
@@ -285,6 +294,18 @@ public class DiagnosticsFarmhandState
     /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID:
     /// /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
     public bool HasUserId { get; set; }
+
+    /// <summary>Whether this slot has a server-side ownership record (recorded at the join
+    /// gate's approve moment or by a save-import bind). Bool, not the raw ID — same
+    /// unauthenticated-endpoint rule as <see cref="HasUserId"/>.</summary>
+    public bool HasOwner { get; set; }
+
+    /// <summary>Platform tag of the ownership record ("steam"/"galaxy"), or "" when unowned.</summary>
+    public string OwnerPlatform { get; set; } = "";
+
+    /// <summary>Whether the slot is operator-released: claimable by any transport, first
+    /// successful claim becomes the owner.</summary>
+    public bool Released { get; set; }
 }
 
 public class ReadyCheckState
@@ -757,6 +778,7 @@ public partial class ApiService : ModService
     private readonly PasswordProtectionService? _passwordProtectionService;
     private readonly SaveImport.SaveImportService _saveImportService;
     private readonly NpcIntegrity.NpcSpriteIntegrityService _npcSpriteIntegrity;
+    private readonly Auth.FarmhandOwnershipService _farmhandOwnership;
 
     // WebSocket client management
     private readonly List<WebSocket> _wsClients = new();
@@ -1024,6 +1046,7 @@ public partial class ApiService : ModService
         RoleService roleService,
         SaveImport.SaveImportService saveImportService,
         NpcIntegrity.NpcSpriteIntegrityService npcSpriteIntegrity,
+        Auth.FarmhandOwnershipService farmhandOwnership,
         PasswordProtectionService? passwordProtectionService = null
     )
         : base(helper, monitor)
@@ -1034,6 +1057,7 @@ public partial class ApiService : ModService
         _roleService = roleService;
         _saveImportService = saveImportService;
         _npcSpriteIntegrity = npcSpriteIntegrity;
+        _farmhandOwnership = farmhandOwnership;
         _passwordProtectionService = passwordProtectionService;
         _instance = this;
     }
@@ -3074,7 +3098,7 @@ public partial class ApiService : ModService
         return resp;
     }
 
-    private static List<DiagnosticsCabinState> ReadCabinDiagnostics()
+    private List<DiagnosticsCabinState> ReadCabinDiagnostics()
     {
         var list = new List<DiagnosticsCabinState>();
         var farm = Game1.getFarm();
@@ -3094,6 +3118,11 @@ public partial class ApiService : ModService
 
                 var cabin = building.GetIndoors<StardewValley.Locations.Cabin>();
                 var owner = cabin?.owner;
+                Auth.FarmhandOwnerRecord ownerRecord = null;
+                if (owner != null)
+                {
+                    _farmhandOwnership.TryGetOwner(owner.UniqueMultiplayerID, out ownerRecord);
+                }
                 list.Add(
                     new DiagnosticsCabinState
                     {
@@ -3104,6 +3133,8 @@ public partial class ApiService : ModService
                         OwnerName = owner?.Name ?? "",
                         OwnerIsCustomized = owner?.isCustomized?.Value ?? false,
                         OwnerHasUserId = !string.IsNullOrEmpty(owner?.userID?.Value),
+                        OwnerHasOwner = ownerRecord != null,
+                        OwnerPlatform = ownerRecord?.Platform ?? "",
                         HomeLocationOfOwner = owner?.homeLocation?.Value ?? "",
                         FarmhandReferenceDefined =
                             cabin?.farmhandReference?.defined?.Value ?? false,
@@ -3139,7 +3170,7 @@ public partial class ApiService : ModService
         return cellar?.objects?.Count() ?? 0;
     }
 
-    private static List<DiagnosticsFarmhandState> ReadFarmhandDiagnostics()
+    private List<DiagnosticsFarmhandState> ReadFarmhandDiagnostics()
     {
         var list = new List<DiagnosticsFarmhandState>();
         var farmhandData = Game1.netWorldState?.Value?.farmhandData;
@@ -3158,6 +3189,8 @@ public partial class ApiService : ModService
                     continue;
                 }
 
+                Auth.FarmhandOwnerRecord ownerRecord = null;
+                _farmhandOwnership.TryGetOwner(f.UniqueMultiplayerID, out ownerRecord);
                 list.Add(
                     new DiagnosticsFarmhandState
                     {
@@ -3167,6 +3200,9 @@ public partial class ApiService : ModService
                         HomeLocation = f.homeLocation?.Value ?? "",
                         LastSleepLocation = f.lastSleepLocation?.Value ?? "",
                         HasUserId = !string.IsNullOrEmpty(f.userID?.Value),
+                        HasOwner = ownerRecord != null,
+                        OwnerPlatform = ownerRecord?.Platform ?? "",
+                        Released = _farmhandOwnership.IsReleased(f.UniqueMultiplayerID),
                     }
                 );
             }
@@ -4652,6 +4688,10 @@ public partial class ApiService : ModService
                     LogLevel.Warn
                 );
                 Game1.netWorldState.Value.farmhandData.Remove(farmhandId);
+                // DestroyCabin drops the owner record on the cabin path; this direct-removal
+                // fallback must too, or the deleted slot's record lingers until the next load's
+                // self-heal.
+                _farmhandOwnership.RemoveOwner(farmhandId);
             }
             else
             {

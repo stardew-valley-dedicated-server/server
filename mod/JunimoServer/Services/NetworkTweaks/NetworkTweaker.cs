@@ -18,7 +18,11 @@ public class NetworkTweaker : ModService
     private readonly ServerSettingsLoader _settings;
     private bool _networkSettingsApplied;
     private static IMonitor _monitor = null!;
-    private static readonly MethodInfo RejectFarmhandRequestMethod = AccessTools.Method(
+
+    /// <summary>Shared reflection handle for the private <c>GameServer.rejectFarmhandRequest</c>.
+    /// Also used by <c>FarmhandOwnershipService</c>'s gate prefix — one handle, not per-caller
+    /// reflection copies.</summary>
+    internal static readonly MethodInfo RejectFarmhandRequestMethod = AccessTools.Method(
         typeof(GameServer),
         "rejectFarmhandRequest"
     );

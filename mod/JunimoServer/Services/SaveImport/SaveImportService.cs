@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Xml;
 using JunimoServer.Services.GameLoader;
 using StardewModdingAPI;
@@ -14,8 +15,8 @@ namespace JunimoServer.Services.SaveImport;
 ///     <c>&lt;player&gt;</c> owner into a customized cabin farmhand bound to the userId, install a
 ///     fresh blank "Server" master, persist a finalize intent, and point the next boot at it.
 ///
-/// All engine-touching finalizer work (cabin build, AssignFarmhand, contents/NPC move, userID
-/// re-stamp) lives in <c>CabinManagerService</c> (Layer B), which reads/clears the intent via
+/// All engine-touching finalizer work (cabin build, AssignFarmhand, contents/NPC move,
+/// ownership-map bind) lives in <c>CabinManagerService</c> (Layer B), which reads/clears the intent via
 /// <see cref="TryReadIntent"/>/<see cref="ClearIntent"/>. DI is one-way: <c>CabinManagerService</c>
 /// injects this service, never the reverse — a mutual injection would be a constructor cycle that
 /// the eager DI container fails the process on. Layer A is engine-free, so this service depends only
@@ -127,7 +128,7 @@ public class SaveImportService : ModService
         // save's <player> into a blank Server master and reparented the owner into <farmhands>,
         // recording a finalize intent that Layer B consumes on the next boot to home+bind the owner.
         // Running as-is now would clear that intent (below) and boot the swapped save with no
-        // finalizer — the cabin-less owner's userID gets cleared mid-load and their farmhouse
+        // finalizer — the owner is never homed or ownership-bound and their farmhouse
         // contents/NPCs never move (a half-applied swap with no in-product recovery). Direct the
         // operator to reboot to finalize, or restore a backup to truly revert to as-is.
         var pending = TryReadIntent();
@@ -199,7 +200,7 @@ public class SaveImportService : ModService
 
         // ID validation: accept any non-empty all-digit ulong (Steam64 OR Galaxy-uint64 — no
         // 7656119… prefix check, which would reject every legitimate GOG bind).
-        if (!IsValidPlatformId(userId))
+        if (!Auth.FarmhandOwnershipService.IsValidPlatformId(userId))
         {
             return Fail(
                 result,
@@ -208,17 +209,18 @@ public class SaveImportService : ModService
             );
         }
 
-        // Swap on a LAN-configured server: the bind is recorded but authCheck can't enforce it on LAN
-        // (every client's getUserID() is "", so the userID match never runs). The bind's job is to
-        // scope the demoted owner's farmhand to that platform account so only they can select it; on
-        // LAN it's inert — the slot isn't ownership-locked and any LAN player could select it. Warn,
-        // proceed (the demotion into a cabin is still useful).
+        // Swap on a LAN-only server: the bind is recorded in the ownership map and the join gate
+        // enforces it — but no LAN connection ever carries a platform identity, so on a pure-LAN
+        // server the bound farmhand is hidden/locked for EVERYONE until the owner connects via
+        // Steam/GOG (impossible here) or the operator runs `farmhand release`. Warn, proceed
+        // (the demotion into a cabin is still useful; release makes the slot claimable by the
+        // next player on any transport, LAN included).
         if (IsLanServer())
         {
             _monitor.Log(
-                "This server is LAN — --swap-host-to records the bind but LAN can't enforce it, so the "
-                    + "demoted owner's farmhand won't be scoped to the intended account (any LAN player "
-                    + "could select it); use a Steam/GOG server for the bind to take effect.",
+                "This server is LAN-only — --swap-host-to binds the demoted owner's farmhand to a "
+                    + "platform identity no LAN client can present, so the slot will be locked until "
+                    + "`farmhand release <name>` re-opens it (or the server gains Steam/GOG connectivity).",
                 LogLevel.Warn
             );
         }
@@ -240,7 +242,7 @@ public class SaveImportService : ModService
         long ownerUid;
         try
         {
-            SaveImportXmlTransform.ApplySwap(doc, userId, out newMasterUid, out ownerUid);
+            SaveImportXmlTransform.ApplySwap(doc, out newMasterUid, out ownerUid);
         }
         catch (SaveImportAlreadySwappedException)
         {
@@ -258,6 +260,29 @@ public class SaveImportService : ModService
         result.FormerOwnerName = TryReadOwnerNameFromDoc(doc, ownerUid);
         result.FormerOwnerUid = ownerUid;
 
+        // Typo tripwire, warn-only (operator data is trusted; multiple ownership is legal and
+        // `farmhand rebind` corrects a wrong bind after boot): the supplied id already
+        // identifying ANOTHER farmhand in this save usually means the wrong connect-log line
+        // was copied.
+        var stampCollision = SaveImportXmlTransform.FindStampCollision(
+            doc.DocumentElement!,
+            userId,
+            ownerUid
+        );
+        var recordCollision = Auth
+            .FarmhandOwnershipService.PeekStore(Path.GetDirectoryName(mainFile)!)
+            .Any(kv => kv.Key != ownerUid && kv.Value?.Id == userId);
+        if (stampCollision != null || recordCollision)
+        {
+            _monitor.Log(
+                $"Note: id '{userId}' already identifies another farmhand in this save"
+                    + (stampCollision != null ? $" ('{stampCollision}')" : "")
+                    + ". Are you sure it's the right id? If not, correct it after boot with "
+                    + "`farmhand rebind <name> <id>`.",
+                LogLevel.Warn
+            );
+        }
+
         // ── Fault-tolerant write: .tmp → validate → atomic rename. ──
         var tmpFile = mainFile + ".tmp";
         try
@@ -273,8 +298,7 @@ public class SaveImportService : ModService
             SaveImportXmlTransform.ValidatePostTransform(
                 reparsed.DocumentElement!,
                 newMasterUid,
-                ownerUid,
-                userId
+                ownerUid
             );
 
             // Atomic rename of the main file. File.Replace requires dest to exist (it does here);
@@ -382,7 +406,7 @@ public class SaveImportService : ModService
     /// Same id → true no-op. Different id while the intent is still pending (pre-reboot) → re-point
     /// <see cref="PendingFinalize.UserId"/> in place (the owner is already correctly reparented).
     /// Different id after the finalizer already consumed the intent → can't re-bind via intent;
-    /// direct the operator to /unlinkPlayer or restore-and-reimport.
+    /// direct the operator to <c>farmhand rebind</c> or restore-and-reimport.
     /// </summary>
     private ImportResult HandleAlreadySwappedReRun(
         ImportResult result,
@@ -406,25 +430,13 @@ public class SaveImportService : ModService
                 return result;
             }
 
-            // Different id, pending not yet consumed: re-point in place. Re-run the userID-collision
-            // guard against the new id first (the demoted owner is already reparented; only the bind
-            // changes). The owner already carries the new structure, so check the transformed file's
-            // farmhands for a conflict with the new id.
-            var conflict = FindUserIdConflictInSave(saveName, userId, pending.OwnerUid);
-            if (conflict != null)
-            {
-                return Fail(
-                    result,
-                    $"The new id collides with existing farmhand '{conflict}'; pending bind unchanged."
-                );
-            }
-
+            // Different id, pending not yet consumed: re-point in place (the demoted owner is
+            // already reparented; only the bind changes). The bind lives solely in the intent —
+            // the save carries no userID stamp — so updating the intent IS the re-point. No
+            // uniqueness check: ownership records are per-farmhand, so an id that already owns
+            // another farmhand is the supported multiple-ownership case, not a conflict.
             pending.UserId = userId;
             WriteIntent(pending);
-            // Also rewrite the on-disk <userID> so the file and intent agree — otherwise a finalizer
-            // abort before its live re-stamp would leave the owner bound to the OLD id (defeating the
-            // whole point of re-pointing). Best-effort: the live re-stamp from the intent is primary.
-            TryRewriteOwnerUserIdInSave(saveName, pending.OwnerUid, userId);
             _gameLoader.SetSaveNameToLoad(saveName);
             _monitor.Log($"Updated pending bind for '{saveName}' to the new id.", LogLevel.Warn);
             result.Success = true;
@@ -439,7 +451,8 @@ public class SaveImportService : ModService
         return Fail(
             result,
             $"'{saveName}' is already host-swapped and the bind is already applied. To change it, "
-                + "use /unlinkPlayer + reconnect, or restore a backup and re-import."
+                + "use `farmhand rebind <name> <id>` (or `farmhand release <name>`), or restore a "
+                + "backup and re-import."
         );
     }
 
@@ -511,18 +524,6 @@ public class SaveImportService : ModService
 
     // ── Small read-only helpers ──────────────────────────────────────────────────────
 
-    // A platform userID (Steam64 or GOG Galaxy id) is a non-empty decimal that fits in ulong. Use
-    // ulong.TryParse (invariant, no sign/whitespace) — NOT `All(char.IsDigit)`, which accepts both
-    // ulong-overflowing strings and non-ASCII Unicode decimal digits, either of which stamps a bind
-    // no real client's getUserID() can ever match (a permanently unauthenticatable cabin).
-    private static bool IsValidPlatformId(string id) =>
-        ulong.TryParse(
-            id,
-            System.Globalization.NumberStyles.None,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out _
-        );
-
     private static bool IsLanServer() =>
         string.IsNullOrEmpty(Environment.GetEnvironmentVariable("STEAM_AUTH_URL"));
 
@@ -563,110 +564,6 @@ public class SaveImportService : ModService
             // best-effort label only
         }
         return null;
-    }
-
-    /// <summary>
-    /// Scans an on-disk save's farmhands (and the owner) for a <c>&lt;userID&gt;</c> matching
-    /// <paramref name="userId"/>, EXCLUDING the demoted owner identified by
-    /// <paramref name="excludeOwnerUid"/> (whose bind is the one being changed). Returns the
-    /// conflicting farmer's name, or null.
-    /// </summary>
-    private static string? FindUserIdConflictInSave(
-        string saveName,
-        string userId,
-        long excludeOwnerUid
-    )
-    {
-        try
-        {
-            var mainFile = Path.Combine(Constants.SavesPath, saveName, saveName);
-            var doc = new XmlDocument();
-            doc.Load(mainFile);
-            var farmhands = doc.SelectNodes("//SaveGame/farmhands/Farmer");
-            if (farmhands == null)
-            {
-                return null;
-            }
-            foreach (XmlElement f in farmhands)
-            {
-                var uidText = f.SelectSingleNode("UniqueMultiplayerID")?.InnerText;
-                if (long.TryParse(uidText, out var uid) && uid == excludeOwnerUid)
-                {
-                    continue;
-                }
-                if ((f.SelectSingleNode("userID")?.InnerText ?? "") == userId)
-                {
-                    var name = f.SelectSingleNode("name")?.InnerText;
-                    return string.IsNullOrEmpty(name) ? "(unnamed)" : name;
-                }
-            }
-        }
-        catch
-        {
-            // If we can't read it, don't block the re-point; the finalizer's own guards still apply.
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Rewrites the demoted owner's <c>&lt;userID&gt;</c> in the save file to <paramref name="userId"/>
-    /// (temp-then-atomic-rename), so a re-pointed bind is correct on disk too — not just in the intent.
-    /// Without this, a finalizer abort before the live userID re-stamp would leave the owner bound to
-    /// the OLD id (the value vanilla's ResetFarmhandState read from the file at load). Returns false if
-    /// the owner or file can't be resolved (caller treats the file write as best-effort; the live
-    /// re-stamp from the intent is still the primary path).
-    /// </summary>
-    private bool TryRewriteOwnerUserIdInSave(string saveName, long ownerUid, string userId)
-    {
-        try
-        {
-            var mainFile = Path.Combine(Constants.SavesPath, saveName, saveName);
-            var doc = new XmlDocument();
-            doc.Load(mainFile);
-            var farmhands = doc.SelectNodes("//SaveGame/farmhands/Farmer");
-            if (farmhands == null)
-            {
-                return false;
-            }
-            foreach (XmlElement f in farmhands)
-            {
-                var uidText = f.SelectSingleNode("UniqueMultiplayerID")?.InnerText;
-                if (!long.TryParse(uidText, out var uid) || uid != ownerUid)
-                {
-                    continue;
-                }
-                var userIdNode = f.SelectSingleNode("userID");
-                if (userIdNode == null)
-                {
-                    userIdNode = doc.CreateElement("userID");
-                    f.PrependChild(userIdNode);
-                }
-                userIdNode.InnerText = userId;
-
-                var tmp = mainFile + ".tmp";
-                try
-                {
-                    doc.Save(tmp);
-                    File.Replace(tmp, mainFile, destinationBackupFileName: null);
-                }
-                catch
-                {
-                    TryDelete(tmp); // never leave a junk .tmp on the volume
-                    throw;
-                }
-                return true;
-            }
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _monitor.Log(
-                $"Re-point: could not rewrite the on-disk bind for '{saveName}' ({ex.Message}); the "
-                    + "live finalizer re-stamp from the updated intent still applies on a clean boot.",
-                LogLevel.Warn
-            );
-            return false;
-        }
     }
 
     private ImportResult Fail(ImportResult result, string message)

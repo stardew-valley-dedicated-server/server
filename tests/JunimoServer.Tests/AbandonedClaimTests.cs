@@ -108,7 +108,9 @@ public class AbandonedClaimTests : TestBase
             $"Player uid={stuckUid} was not removed from /players after disconnect"
         );
 
-        // Regression gate: the persisted entry's userID must be cleared. A pre-fix
+        // Regression gate: the persisted entry's userID AND ownership record must be cleared.
+        // A real Steam claim also writes an ownership record at the join gate's approve moment,
+        // so the heal has to release both or the slot stays gate-locked to the ghost. A pre-fix
         // cabin.owner-only clear (live copy) leaves the persisted entry stuck and fails here.
         var healed = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_AbandonedClaim_DisconnectHealConfirmed,
@@ -124,9 +126,10 @@ public class AbandonedClaimTests : TestBase
                 var entry = state.FarmhandData.FirstOrDefault(f =>
                     f.UniqueMultiplayerId == stuckUid
                 );
-                // Healed when no surviving view of the slot still carries the userID claim.
-                var cabinClear = cabin == null || !cabin.OwnerHasUserId;
-                var farmhandClear = entry == null || !entry.HasUserId;
+                // Healed when no surviving view of the slot still carries the userID claim or
+                // an ownership record.
+                var cabinClear = cabin == null || (!cabin.OwnerHasUserId && !cabin.OwnerHasOwner);
+                var farmhandClear = entry == null || (!entry.HasUserId && !entry.HasOwner);
                 return cabinClear && farmhandClear;
             },
             TestTimings.CabinAssignmentTimeout,
@@ -135,8 +138,8 @@ public class AbandonedClaimTests : TestBase
         Assert.True(
             healed,
             $"Abandoned claim on uid={stuckUid} was not cleared on the persisted farmhandData "
-                + $"entry after disconnect (the disconnect hook must clear farmhandData, not just the "
-                + $"discarded live otherFarmers copy)"
+                + $"entry after disconnect (the disconnect hook must clear farmhandData's stamp AND "
+                + $"the ownership record, not just the discarded live otherFarmers copy)"
         );
         Log($"Disconnect heal confirmed durable for uid={stuckUid}");
     }
@@ -187,7 +190,9 @@ public class AbandonedClaimTests : TestBase
         );
 
         // Construct the stuck-but-homed claim on a spare uncustomized slot, server-side.
-        var stamp = await ServerApi.StampClaim(ct);
+        // withOwner also writes a synthetic ownership record, so the sweep must clear BOTH the
+        // stamp and the map entry (a map-only or map+stamp claim locks the slot via the gate).
+        var stamp = await ServerApi.StampClaim(withOwner: true, ct);
         Assert.True(stamp?.Success == true, $"StampClaim failed: {stamp?.Error}");
         var stuckUid = stamp!.StampedUid;
         Assert.NotEqual(0, stuckUid);
@@ -196,8 +201,9 @@ public class AbandonedClaimTests : TestBase
             string.IsNullOrEmpty(stamp.HomeLocation),
             "Stamped slot must be homed (homeLocation resolving to a cabin) to exercise the homed sweep path"
         );
+        Assert.True(stamp.StampedOwner, "StampClaim should have written the ownership record too");
         Log(
-            $"Stamped abandoned claim on uid={stuckUid} (userId='{stamp.StampedUserId}', home='{stamp.HomeLocation}')"
+            $"Stamped abandoned claim on uid={stuckUid} (userId='{stamp.StampedUserId}', home='{stamp.HomeLocation}', withOwner=true)"
         );
 
         // Confirm the stuck state is present server-side before the save.
@@ -207,6 +213,7 @@ public class AbandonedClaimTests : TestBase
         );
         Assert.NotNull(preEntry);
         Assert.True(preEntry!.HasUserId, "Stamped slot should carry a userId before save");
+        Assert.True(preEntry.HasOwner, "Stamped slot should carry an ownership record before save");
         Assert.False(
             preEntry.IsCustomized,
             "Stamped slot must be uncustomized (abandoned-claim shape)"
@@ -234,8 +241,9 @@ public class AbandonedClaimTests : TestBase
                 var entry = postState.FarmhandData.FirstOrDefault(f =>
                     f.UniqueMultiplayerId == stuckUid
                 );
-                // Cleared when the slot's entry is gone or no longer carries the userID claim.
-                return entry == null || !entry.HasUserId;
+                // Cleared when the slot's entry is gone or no longer carries the userID claim
+                // or the ownership record.
+                return entry == null || (!entry.HasUserId && !entry.HasOwner);
             },
             TestTimings.CabinAssignmentTimeout,
             cancellationToken: ct
@@ -243,8 +251,8 @@ public class AbandonedClaimTests : TestBase
         Assert.True(
             swept,
             $"Abandoned claim on uid={stuckUid} was not released by the save-load sweep after reload "
-                + $"(ClearAbandonedCabinClaimsOnLoad must clear a stuck-but-homed claim that vanilla's "
-                + $"load-time ResetFarmhandState leaves intact)"
+                + $"(ClearAbandonedCabinClaimsOnLoad must clear a stuck-but-homed claim — stamp AND "
+                + $"ownership record — that vanilla's load-time ResetFarmhandState leaves intact)"
         );
         Log($"Save-load sweep confirmed for uid={stuckUid}");
 

@@ -99,6 +99,49 @@ Refresh tokens are saved to `/data/steam-session/session-{username}.json` and re
 4. Steam-auth uses SteamKit2 to get an encrypted app ticket from Steam
 5. Ticket is returned and used to generate an invite code with "G" prefix
 
+## Auth vs Transport: What the Sidecar Replaces (and What It Can't)
+
+The sidecar fully replaces the Steam client for **authentication** — but Steam network
+**sessions** are a separate layer, and the distinction decides which flows can run headless.
+
+An `encryptedAppTicket` is a static, signed identity proof designed to be shown to third
+parties. GOG's backend accepts it as a login (`GalaxyInstance.User().SignInSteam(ticket)`), so
+every Galaxy-side feature runs headless with sidecar tickets. Steam's own relay network (SDR)
+is different: relays only carry traffic for endpoints holding live session certificates, and
+Valve opens such sessions through exactly two doors:
+
+| Door | API family | Headless? | Identity granted |
+|------|-----------|-----------|------------------|
+| User session | `SteamAPI.Init()` → attaches to a running Steam client process | No | The account's personal Steam64 (`7656…`) |
+| GameServer session | `SteamGameServer.Init()` + `LogOnAnonymous()` | Yes (by design, for dedicated servers) | An ephemeral gameserver ID (`90…`), no account involved |
+
+There is no API that turns a ticket into a Steam network session — deliberately, since
+otherwise any headless process could impersonate a live user endpoint (the unforgeability the
+mod's farmhand-ownership gate relies on).
+
+**Consequences in this codebase:**
+
+- The **server** never needs a user session: SDR *listening* uses the GameServer door
+  (`SteamGameServerNetworkingSockets`, `Callback.CreateGameServer` —
+  `SteamGameServerNetServer.cs`), the Steam lobby is managed by the sidecar's SteamKit2
+  account session (GameServer mode has no `SteamMatchmaking`), and Galaxy hosting uses a
+  sidecar ticket. Steam credentials exist for the ticket/lobby plumbing, not for SDR.
+- A **vanilla client dialing SDR** is the one operation in the whole system gated on the user
+  door. The decompiled chain (`decompiled/sdv-1.6.15-24356/StardewValley/SDKs/Steam/`):
+  `SteamHelper.cs:60` `SteamAPI.Init()` (attach to the Steam client; the app ticket itself is
+  then requested from the logged-on user session) → `SteamNetClient.cs:204`
+  `SteamMatchmaking.JoinLobby` → `:163` `SteamMatchmaking.GetLobbyGameServer` (resolves the
+  host's gameserver ID) → `:131` `SteamNetworkingSockets.ConnectP2P` — all user-mode APIs
+  with no GameServer-mode counterpart for a *player* connection.
+- **Test clients** therefore authenticate fully (real account, real ticket, real Galaxy
+  logon — same chain as the server) but transport over Galaxy P2P: the test-client mod
+  redirects Hybrid (S-prefix invite) joins to `GalaxyNetClient`
+  (`tests/test-client/Auth/ClientAuthService.cs`, `CreateClient_Prefix`). Client-side SDR is
+  never dialed in the harness; the server's SDR listener runs but is only exercised in
+  production. A GameServer-door dialer for the test client (real SDR traffic under a
+  gameserver identity) is planned in
+  `.claude/plans/features/tests-sdr-client-transport.md`.
+
 ## File Filtering
 
 The download process skips unnecessary files to reduce download size:

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using JunimoServer.Services.AlwaysOn;
+using JunimoServer.Services.Auth;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
@@ -295,11 +296,13 @@ internal class ModEntry : Mod
         var persistentOptions = _services.GetRequiredService<PersistentOptions>();
         var settings = _services.GetRequiredService<ServerSettingsLoader>();
         var saveImport = _services.GetRequiredService<SaveImportService>();
+        var farmhandOwnership = _services.GetRequiredService<FarmhandOwnershipService>();
 
         RenderingCommand.Register(Helper, Monitor);
         SettingsCommand.Register(Helper, Monitor, gameLoader, persistentOptions, settings);
         CabinsConsoleCommand.Register(Helper, Monitor, cabinManager, persistentOptions);
         SavesCommand.Register(Helper, Monitor, saveImport);
+        FarmhandCommand.Register(Helper, Monitor, farmhandOwnership);
     }
 
     private void RegisterChatCommands()

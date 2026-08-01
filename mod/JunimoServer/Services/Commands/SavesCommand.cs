@@ -8,7 +8,6 @@ using JunimoServer.Services.GameManager;
 using JunimoServer.Services.SaveImport;
 using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 using StardewValley;
 
 namespace JunimoServer.Services.Commands;
@@ -166,19 +165,17 @@ internal static class SavesCommand
 
     /// <summary>
     /// Guard + kick + in-process reload, shared by import <c>--reload</c> and <c>saves reload</c>.
-    /// Console commands run off the game thread, so the work is marshalled on via a one-shot
-    /// <see cref="UpdateTickedEventArgs"/> handler (the RenderingCommand pattern). Refuses (returns)
+    /// Marshalled onto the game loop via <see cref="GameThreadOneShot"/>. Refuses (returns)
     /// when clients are connected and <paramref name="force"/> is false.
     /// </summary>
     private static void TryReloadActiveWorld(bool force, string contextLine)
     {
-        void Apply(object sender, UpdateTickedEventArgs e)
-        {
-            _helper.Events.GameLoop.UpdateTicked -= Apply;
-
-            // A throw from this UpdateTicked handler logs at Error, which trips the test-poison scan
-            // (debugging.md); catch to Warn, as GameManagerService.ConditionallyStartGame does.
-            try
+        GameThreadOneShot.Run(
+            _helper,
+            _monitor,
+            $"in-process reload ({contextLine})",
+            requireLoadedSave: false,
+            action: () =>
             {
                 // No world loaded (e.g. still at title): nothing to reload; a queued import waits for restart.
                 if (!Game1.hasLoadedGame || Game1.player == null)
@@ -191,15 +188,7 @@ internal static class SavesCommand
                     return;
                 }
 
-                // bare otherFarmers.Count is unreliable during an active event (host-automation.md
-                // invariant 7); mirror AlwaysOnFestivals.CountOnlineOtherPlayers.
-                var others = Game1
-                    .getOnlineFarmers()
-                    .Where(f =>
-                        f.UniqueMultiplayerID != Game1.player.UniqueMultiplayerID
-                        && !Game1.Multiplayer.isDisconnecting(f)
-                    )
-                    .ToList();
+                var others = OnlineFarmers.Others();
 
                 if (others.Count > 0 && !force)
                 {
@@ -258,16 +247,7 @@ internal static class SavesCommand
                         }
                     });
             }
-            catch (Exception ex)
-            {
-                _monitor.Log(
-                    $"In-process reload failed ({contextLine}): {ex.Message}",
-                    LogLevel.Warn
-                );
-            }
-        }
-
-        _helper.Events.GameLoop.UpdateTicked += Apply;
+        );
     }
 
     private static void ListSaves()

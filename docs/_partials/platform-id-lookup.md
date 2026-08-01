@@ -7,6 +7,10 @@ If the profile uses a custom name instead (`steamcommunity.com/id/somename`), pa
 lookup site such as [steamid.io](https://steamid.io) or [steamid.xyz](https://steamid.xyz) and copy the
 **steamID64** it reports.
 
-**GOG.** Log in at [gog.com](https://www.gog.com) in a browser, open
-[gog.com/userData.json](https://www.gog.com/userData.json), and copy the **`galaxyUserId`** value. Make
-sure you take `galaxyUserId` and not `userId`, which is a separate, shorter number.
+**GOG.** Use the server log: have the player connect to the server once (reaching the farmer-selection
+screen is enough), then look for the `Client connected via Galaxy P2P (platform id ...)` line — that
+number is their id. The ids shown on the GOG website (such as `galaxyUserId` in your account data) are
+encoded differently from the id the game presents on a connection, so they will **not** match.
+
+The same `Client connected via ...` log line also shows a Steam player's Steam64, so the connect log
+works as a single lookup path for both platforms.

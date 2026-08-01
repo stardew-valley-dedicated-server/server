@@ -73,7 +73,16 @@ public sealed class ResourceLease : IAsyncDisposable
     }
 
     /// <summary>Lease a client on demand. NOT called automatically.</summary>
-    public async Task<ClientLease> LeaseClientAsync(CancellationToken ct = default)
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="requireSteam">Override for the lease's Steam requirement. Defaults to the
+    /// server's <c>WithSteam</c> (the primary client must match the server's transport). Pass
+    /// <c>false</c> for a lease that will only ever connect via LAN (the second-farmer helper):
+    /// on a Steam server the pool holds a single Steam-bearing client, so a second
+    /// Steam-required lease in one test deadlocks against the test's own primary.</param>
+    public async Task<ClientLease> LeaseClientAsync(
+        CancellationToken ct = default,
+        bool? requireSteam = null
+    )
     {
         if (_managed.IsPoisoned)
         {
@@ -85,7 +94,7 @@ public sealed class ResourceLease : IAsyncDisposable
         var lease = await _clientPool.LeaseClientAsync(
             _managed.Key,
             ct,
-            requireSteam: _requirements.WithSteam
+            requireSteam: requireSteam ?? _requirements.WithSteam
         );
         lease.EmitLeased(_testName, _managed.InstanceId);
         if (_managed.InstanceId != null)

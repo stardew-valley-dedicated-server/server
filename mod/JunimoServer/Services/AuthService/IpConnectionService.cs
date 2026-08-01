@@ -7,7 +7,8 @@ namespace JunimoServer.Services.Auth;
 
 /// <summary>
 /// Controls whether IP connections are allowed.
-/// Disabled by default because IP connections don't send user IDs needed for farmhand ownership.
+/// Disabled by default: IP connections carry no platform identity, so farmhands created over IP
+/// stay in the LAN pool (selectable by any IP client) instead of being ownership-locked.
 /// Configure via Server.AllowIpConnections in server-settings.json.
 /// </summary>
 public class IpConnectionService : ModService
@@ -37,7 +38,8 @@ public class IpConnectionService : ModService
         {
             Monitor.Log("IP connections enabled (AllowIpConnections=true)", LogLevel.Info);
             Monitor.Log(
-                "Warning: IP clients don't provide user IDs - farmhand ownership may not work correctly.",
+                "Warning: IP clients carry no platform identity - farmhands they create stay in "
+                    + "the shared LAN pool and can't be ownership-locked.",
                 LogLevel.Warn
             );
         }

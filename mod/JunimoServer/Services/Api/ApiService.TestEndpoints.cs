@@ -106,7 +106,10 @@ public partial class ApiService
                         );
                         return;
                     case "/test/stamp_claim":
-                        await WriteJsonAsync(response, await HandlePostTestStampClaimAsync());
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestStampClaimAsync(request)
+                        );
                         return;
                     case "/test/stamp_lobby_home":
                         await WriteJsonAsync(
@@ -143,6 +146,12 @@ public partial class ApiService
                         return;
                     case "/test/force_save":
                         await WriteJsonAsync(response, await HandlePostTestForceSaveAsync());
+                        return;
+                    case "/test/set_ip_connections":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestSetIpConnectionsAsync(request)
+                        );
                         return;
                     case "/test/break_npc_sprite":
                         await WriteJsonAsync(
@@ -732,16 +741,71 @@ public partial class ApiService
 
     [ApiEndpoint(
         "POST",
+        "/test/set_ip_connections",
+        Summary = "Flip the LAN/IP door at runtime (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestSetIpConnectionsResponse), 200)]
+    private async Task<TestSetIpConnectionsResponse> HandlePostTestSetIpConnectionsAsync(
+        HttpListenerRequest request
+    )
+    {
+        // Vanilla consults Game1.options.ipConnectionsEnabled per incoming Lidgren connection
+        // attempt (LidgrenServer.cs:152,158) — the listener always runs and this flag IS the
+        // door, the same one IpConnectionService sets from Server.AllowIpConnections at
+        // SaveLoaded. Flipping it at runtime therefore reproduces the production IP-off
+        // posture exactly, letting the shared steam test server exercise the platform-only
+        // configuration without forking the per-run steam server config (a per-host-slice
+        // account-cost constraint, see test-broker-invariants.md).
+        var enabled = string.Equals(
+            request.QueryString["enabled"],
+            "true",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        var result = new TestSetIpConnectionsResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                Game1.options.ipConnectionsEnabled = enabled;
+                result.Enabled = enabled;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
         "/test/stamp_claim",
         Summary = "Stamp a synthetic abandoned slot claim onto an uncustomized homed farmhand (test-only)",
         Tag = "Test"
     )]
     [ApiResponse(typeof(TestStampClaimResponse), 200)]
-    private async Task<TestStampClaimResponse> HandlePostTestStampClaimAsync()
+    private async Task<TestStampClaimResponse> HandlePostTestStampClaimAsync(
+        HttpListenerRequest request
+    )
     {
         // Synthetic platform id mimicking a Steam/GOG stamp. Fixed so a test could match it,
         // but the test only needs StampedUid; the value just has to be non-empty.
         const string syntheticUserId = "test-stuck-claim-9999";
+
+        // Synthetic Steam64 for the optional ownership record (?withOwner=true) — the
+        // map-only/map+stamp abandoned-claim shapes the heal and sweep must clear.
+        const string syntheticOwnerId = "76561198000009999";
+        var withOwner = string.Equals(
+            request.QueryString["withOwner"],
+            "true",
+            StringComparison.OrdinalIgnoreCase
+        );
 
         var result = new TestStampClaimResponse();
         try
@@ -789,6 +853,15 @@ public partial class ApiService
                     // (the slot's home should already be its cabin; set it to be deterministic).
                     owner.homeLocation.Value = cabin.NameOrUniqueName;
                     owner.userID.Value = syntheticUserId;
+                    if (withOwner)
+                    {
+                        _farmhandOwnership.RecordOwner(
+                            owner.UniqueMultiplayerID,
+                            ConnectionTransport.PlatformSteam,
+                            syntheticOwnerId
+                        );
+                        result.StampedOwner = true;
+                    }
 
                     result.StampedUid = owner.UniqueMultiplayerID;
                     result.StampedUserId = syntheticUserId;
@@ -1622,17 +1695,10 @@ public partial class ApiService
     private async Task<TestForceSaveResponse> HandlePostTestForceSaveAsync()
     {
         // Flushes in-memory state (seeded Game1 mutations + a connected client's customization) to
-        // the save folder without a sleep/day-transition. Lets save-import source generation shed
-        // the ~full-in-game-day SleepToSaveAsync wait. Mirrors the day-transition save's two steps:
-        //   1. saveFarmhands() clones every connected farmhand's live root into farmhandData
-        //      (Multiplayer.cs:1018-1028 → NetWorldState.SaveFarmhand) — same call the transition
-        //      makes (Game1.cs:8238). A homed/customized connected farmhand survives intact;
-        //      ResetFarmhandState only clears userID/home for a HOMELESS farmhand.
-        //   2. getSaveEnumerator() does the actual file write. SaveGame.Save() normally offloads
-        //      this to a background Task and yields across ticks (SaveGame.cs:296-310), but the
-        //      enumerator itself is fully synchronous (SaveGame.cs:346-546 — the yields are just
-        //      progress markers). Driving it inline writes the save within this one game-thread
-        //      Action, sidestepping the background-task split and the UpdateTicked save-suppression.
+        // the save folder without a sleep/day-transition — see SaveNow for the mechanism. Lets
+        // save-import source generation shed the ~full-in-game-day SleepToSaveAsync wait. The
+        // connected-farmhand caveat in SaveNow is acceptable here: test flows control exactly who
+        // is connected when they force a save.
         var result = new TestForceSaveResponse();
         try
         {
@@ -1640,18 +1706,11 @@ public partial class ApiService
             await RunOnGameThreadAsync(
                 () =>
                 {
-                    if (Game1.gameMode != 3 || !Game1.IsMasterGame)
+                    if (!SaveNow.TrySave(Helper, out var error))
                     {
-                        result.Error =
-                            $"Not in a loaded master game (gameMode={Game1.gameMode}, IsMasterGame={Game1.IsMasterGame})";
+                        result.Error = error;
                         return;
                     }
-
-                    // Game1.multiplayer is protected; reach it via the established reflective accessor.
-                    Helper.GetMultiplayer().saveFarmhands();
-
-                    var save = SaveGame.getSaveEnumerator();
-                    while (save.MoveNext()) { }
 
                     result.SaveFolderName = Constants.SaveFolderName;
                     result.Success = true;

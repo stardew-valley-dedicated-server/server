@@ -50,6 +50,7 @@ This file is auto-created with defaults on first server startup. If the file doe
     "ExistingCabinBehavior": "KeepExisting",
     "VerboseLogging": false,
     "AllowIpConnections": false,
+    "EnforceFarmhandOwnership": true,
     "LobbyMode": "Shared",
     "ActiveLobbyLayout": "default",
     "AdminSteamIds": [],
@@ -142,6 +143,7 @@ These settings apply on every startup and can be changed between runs.
 | `ExistingCabinBehavior` | How to handle visible cabins | `"KeepExisting"` |
 | `VerboseLogging` | Enable detailed debug logging | `false` |
 | `AllowIpConnections` | Allow direct IP connections | `false` |
+| `EnforceFarmhandOwnership` | Lock each farmhand to the platform account that claimed it | `true` |
 | `LobbyMode` | Lobby mode for password protection | `"Shared"` |
 | `ActiveLobbyLayout` | Active lobby layout name | `"default"` |
 | `AdminSteamIds` | Platform ids (Steam or GOG) auto-granted admin on join | `[]` |
@@ -183,10 +185,30 @@ You can switch this in-game with the `!changewallet shared` / `!changewallet sep
 ### Direct IP Connections
 
 ::: warning
-Direct IP connections don't provide user IDs, so the server can't track farmhand ownership. Players may lose access to their farmhands if they reconnect from a different IP.
+Direct IP connections carry no platform identity, so farmhands created over direct IP can't be locked
+to a specific player — anyone connecting over direct IP can select them. Farmhands claimed via
+Steam/GOG stay protected either way (see [Farmhand Ownership](#farmhand-ownership)).
 :::
 
 Only enable if you need it for specific network configurations.
+
+### Farmhand Ownership
+
+With `EnforceFarmhandOwnership` enabled (the default), the server records which platform account
+(Steam or GOG) claims each farmhand and from then on shows and admits that farmhand only to the same
+account. Farmhands created over direct IP remain selectable by any direct-IP player (there is no
+identity to lock them to), but they are hidden from Steam/GOG players — and platform-owned farmhands
+are hidden from direct-IP players.
+
+Set it to `false` only when one person plays the same farmhand from two transports — for example
+Steam at their desk plus a second device connecting over direct IP. Strict ownership cannot express
+that dual identity, so such setups disable enforcement; claims keep being recorded while it is off,
+and re-enabling restores enforcement with an up-to-date ownership map.
+
+To hand a farmhand to a different account (or unlock one), use the
+[`farmhand` console command](/admins/operations/commands#farmhand). Ownership records are stored in
+a small file inside the save folder, so they travel with backups, restores, and `Saves`-folder
+migrations to another server.
 
 ### Network Broadcast Period
 

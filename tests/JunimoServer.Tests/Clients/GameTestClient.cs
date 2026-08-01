@@ -143,6 +143,11 @@ public class FarmhandSlot
 
     [JsonPropertyName("isEmpty")]
     public bool IsEmpty { get; set; }
+
+    /// <summary>The slot farmhand's UniqueMultiplayerID — matches server-side uids so
+    /// visibility tests can assert a specific slot's presence/absence in the client list.</summary>
+    [JsonPropertyName("uniqueMultiplayerId")]
+    public long UniqueMultiplayerId { get; set; }
 }
 
 public class FarmhandsResponse

@@ -18,7 +18,6 @@ public class TestServerAttribute : Attribute
     private int? _clients;
     private string? _cabinStrategy;
     private string? _existingCabinBehavior;
-    private bool? _allowIpConnections;
     private IsolationMode? _isolation;
     private int? _priority;
     private bool? _keepConnected;
@@ -94,11 +93,6 @@ public class TestServerAttribute : Attribute
     {
         get => _existingCabinBehavior ?? "KeepExisting";
         set => _existingCabinBehavior = value;
-    }
-    public bool AllowIpConnections
-    {
-        get => _allowIpConnections ?? false;
-        set => _allowIpConnections = value;
     }
     public IsolationMode Isolation
     {
@@ -178,7 +172,6 @@ public class TestServerAttribute : Attribute
         merged._maxPlayers = method._maxPlayers ?? _maxPlayers;
         merged._cabinStrategy = method._cabinStrategy ?? _cabinStrategy;
         merged._existingCabinBehavior = method._existingCabinBehavior ?? _existingCabinBehavior;
-        merged._allowIpConnections = method._allowIpConnections ?? _allowIpConnections;
         merged._isolation = method._isolation ?? _isolation;
         merged._priority = method._priority ?? _priority;
         merged._keepConnected = method._keepConnected ?? _keepConnected;

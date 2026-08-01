@@ -219,6 +219,10 @@ public class TestStampClaimResponse
 
     /// <summary>The slot's homeLocation after stamping (must resolve to a Cabin for the homed-path test).</summary>
     public string HomeLocation { get; set; } = "";
+
+    /// <summary>Whether a synthetic ownership record was also written (<c>?withOwner=true</c>),
+    /// so sweep tests can prove the heal clears the map alongside the stamp.</summary>
+    public bool StampedOwner { get; set; }
 }
 
 /// <summary>
@@ -363,6 +367,16 @@ public class TestForceSaveResponse
 
     /// <summary>The save folder the world was written to (Constants.SaveFolderName).</summary>
     public string SaveFolderName { get; set; } = "";
+}
+
+/// <summary>Response from POST /test/set_ip_connections (test-only).</summary>
+public class TestSetIpConnectionsResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>The applied state of Game1.options.ipConnectionsEnabled.</summary>
+    public bool Enabled { get; set; }
 }
 
 /// <summary>
