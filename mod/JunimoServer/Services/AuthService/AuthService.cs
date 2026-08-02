@@ -776,7 +776,9 @@ public class GalaxyAuthService : ModService
                 return;
             }
             // Set the SteamLobbyId in Galaxy lobby metadata — this is what vanilla SteamNetClient
-            // reads to join the Steam lobby.
+            // reads to join the Steam lobby. setLobbyData surfaces no completion callback here,
+            // so "published" is optimistic by one SDK propagation hop — the best local signal
+            // available; a client racing that hop just retries the S-code join a moment later.
             galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
             _steamLobbyPublished = true;
             _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);

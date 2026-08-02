@@ -367,6 +367,28 @@ public class FarmhandOwnershipService : ModService
         return true;
     }
 
+    /// <summary>Batch variant of <see cref="RemoveOwner"/> for sweeps: one store write no
+    /// matter how many records fall.</summary>
+    public void RemoveOwners(IReadOnlyCollection<long> farmhandUids)
+    {
+        if (farmhandUids.Count == 0 || !EnsureLoaded())
+        {
+            return;
+        }
+
+        var removed = farmhandUids.Where(_records.Remove).ToList();
+        if (removed.Count == 0)
+        {
+            return;
+        }
+
+        Write();
+        Monitor.Log(
+            $"[Ownership] Removed {removed.Count} record(s): {string.Join(", ", removed)}",
+            LogLevel.Debug
+        );
+    }
+
     /// <summary>
     /// Load-time refresh + self-heal: re-read the store from disk (the folder may have been
     /// replaced by an import between sessions), then drop records whose farmhand no longer

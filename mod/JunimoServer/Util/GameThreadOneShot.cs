@@ -38,7 +38,9 @@ public static class GameThreadOneShot
             }
             catch (Exception ex)
             {
-                monitor.Log($"{what} failed: {ex.Message}", LogLevel.Warn);
+                // Full exception (not just Message): the operator's console is the only
+                // surface these failures reach, and a stackless one-liner is undebuggable.
+                monitor.Log($"{what} failed: {ex}", LogLevel.Warn);
             }
         }
 

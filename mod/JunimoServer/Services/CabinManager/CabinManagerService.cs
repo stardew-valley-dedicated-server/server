@@ -311,8 +311,8 @@ public class CabinManagerService : ModService
         foreach (var key in toRemove)
         {
             farmhandData.Remove(key);
-            farmhandOwnership.RemoveOwner(key);
         }
+        farmhandOwnership.RemoveOwners(toRemove);
 
         if (toRemove.Count > 0 || homeCleared > 0 || lastSleepCleared > 0)
         {

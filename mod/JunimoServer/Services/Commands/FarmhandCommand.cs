@@ -101,7 +101,8 @@ internal static class FarmhandCommand
         }
 
         var uid = farmhand.UniqueMultiplayerID;
-        var hadRecord = _ownership.TryGetOwner(uid, out _) || _ownership.IsReleased(uid);
+        var hadOwner = _ownership.TryGetOwner(uid, out _);
+        var wasReleased = _ownership.IsReleased(uid);
         var hadStamp = ClearStamp(farmhand, uid);
 
         if (!farmhand.isCustomized.Value)
@@ -126,9 +127,13 @@ internal static class FarmhandCommand
         }
 
         _ownership.MarkReleased(uid);
+        var ownershipNote =
+            hadOwner ? "cleared"
+            : wasReleased ? "was already released"
+            : "was absent";
         _monitor.Log(
             $"Released farmhand '{ChatRedaction.MaskValue(farmhand.Name)}' (uid={uid}): "
-                + $"ownership {(hadRecord ? "cleared" : "was absent")}, stamp {(hadStamp ? "cleared" : "was absent")}. "
+                + $"ownership {ownershipNote}, stamp {(hadStamp ? "cleared" : "was absent")}. "
                 + "The next Steam/GOG player to select it becomes the owner "
                 + "(a direct-IP claim returns it to the shared LAN pool instead). "
                 + PersistenceNote(),
