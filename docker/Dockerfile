@@ -224,10 +224,13 @@ COPY --from=mod-builder /output/netdebug /opt/netdebug
 # Note: .dep files can be executable scripts (return boolean) or empty markers. The ! -empty check
 # makes only non-empty files executable, handling both cases correctly.
 #
-# xrdb/min_running_time=0 exempts the xrdb one-shot from cinit's 500ms min-uptime ready-gate.
-# xrdb loads X resources and exits fast; under host load it can finish in <500ms, which cinit
-# otherwise reads as an immediate crash and tears the whole container down (exit 1). min_running_time
-# is a VALUE file cinit reads — it must stay non-executable, or cinit tries to run it (fails 126).
+# xrdb/min_running_time=0 declares the xrdb one-shot as expected-to-exit-immediately (the same
+# value the base image uses for its own always-exiting services). cinit treats a service exiting
+# before min_running_time (default 500ms) as a failed start and tears the whole container down
+# (exit 1) — and xrdb (load X resources, exit) only outlives 500ms when it happens to spend that
+# long waiting on a still-warming Xvnc, a timing race a one-shot must not have to win.
+# min_running_time is a VALUE file cinit reads — it must stay non-executable, or cinit tries to
+# run it (fails 126).
 COPY docker/rootfs/etc/services.d /tmp/services/
 RUN find /tmp/services -type f ! -empty ! -name min_running_time -exec chmod +x {} \; && \
     find /tmp/services -type f -name min_running_time -exec chmod 0644 {} \;
