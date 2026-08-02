@@ -39,17 +39,17 @@ namespace JunimoServer.Tests;
 [TestServer(Isolation = IsolationMode.SharedAssembly, Exclusive = true)]
 public class FarmhandVisibilityTests : TestBase
 {
-    public FarmhandVisibilityTests() { }
-
     /// <summary>
     /// A platform-stamped (uncustomized) slot must be hidden from a LAN client's list — LAN
     /// carries no identity, so it can never be the stamp's owner. The fresh slot stays
     /// available. Pre-fix, the stamped slot could be the one exposed slot (enumeration-order
     /// dependent) and LAN clients could claim it — the vanilla free-for-all this closes.
     ///
-    /// SharedClass isolation gives this test its own LAN server instance: the /newgame +
-    /// stamp + list sequence must not interleave with the other classes on the shared
-    /// lan-c2 config (SaveImportTests, AbandonedClaimTests) that also reset the world.
+    /// SharedClass does NOT mint a separate server — the pool key is config-{hash} for
+    /// SharedClass and SharedAssembly alike (ResourceRequirements.GetServerKey), so this
+    /// test shares the lan-c2 instance with SaveImportTests and AbandonedClaimTests. The
+    /// inherited class-level Exclusive gate is what keeps the /newgame + stamp + list
+    /// sequence from interleaving with those classes' world resets.
     /// </summary>
     [Fact]
     [TestServer(Isolation = IsolationMode.SharedClass, StartingCabins = 2)]

@@ -95,7 +95,7 @@ Manage farmhand ownership (see
 
 | Command | Description |
 |---------|-------------|
-| `farmhand release <name\|uid>` | Unlock a farmhand: it becomes visible and claimable on every connection method, and the next player to select it becomes the owner |
+| `farmhand release <name\|uid>` | Unlock a farmhand: it becomes visible and claimable on every connection method; the next Steam/GOG player to select it becomes the owner, while a direct-IP claim returns it to the shared [LAN pool](/admins/configuration/server-settings#direct-ip-connections) |
 | `farmhand rebind <name\|uid> <platformId>` | Re-point a farmhand's ownership to another platform id (e.g. a player who switched accounts) |
 
 The platform id is the Steam64 or GOG Galaxy id shown in the server's

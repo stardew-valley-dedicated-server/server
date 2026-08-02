@@ -129,7 +129,8 @@ internal static class FarmhandCommand
         _monitor.Log(
             $"Released farmhand '{ChatRedaction.MaskValue(farmhand.Name)}' (uid={uid}): "
                 + $"ownership {(hadRecord ? "cleared" : "was absent")}, stamp {(hadStamp ? "cleared" : "was absent")}. "
-                + "The next player to select it (any transport) becomes the owner. "
+                + "The next Steam/GOG player to select it becomes the owner "
+                + "(a direct-IP claim returns it to the shared LAN pool instead). "
                 + PersistenceNote(),
             LogLevel.Info
         );
@@ -156,7 +157,7 @@ internal static class FarmhandCommand
         var uid = farmhand.UniqueMultiplayerID;
         var platform = FarmhandOwnershipService.ClassifyPlatformId(platformId);
         _ownership.RecordOwner(uid, platform, platformId, FarmhandOwnershipService.OriginOperator);
-        var hadStamp = ClearStamp(farmhand, uid);
+        ClearStamp(farmhand, uid);
 
         _monitor.Log(
             $"Rebound farmhand '{ChatRedaction.MaskValue(farmhand.Name)}' (uid={uid}) to a {platform} identity. "
