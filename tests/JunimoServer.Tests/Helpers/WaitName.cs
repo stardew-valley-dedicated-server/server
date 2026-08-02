@@ -111,13 +111,15 @@ public enum WaitName
     Polling_AbandonedClaim_DisconnectHealConfirmed,
     Polling_AbandonedClaim_SweptOnReload,
 
-    // FarmhandVisibilityTests.cs (6)
+    // FarmhandVisibilityTests.cs (8)
     Polling_FarmhandVisibility_OwnershipRecorded,
     Polling_FarmhandVisibility_SteamFarmhandMapped,
     Polling_FarmhandVisibility_ReleaseMapped,
     Polling_FarmhandVisibility_Released,
     Polling_FarmhandVisibility_Reowned,
     Polling_FarmhandVisibility_IpOffOwnership,
+    Polling_FarmhandVisibility_IpOffReleased,
+    Polling_FarmhandVisibility_IpOffReowned,
 
     // SaveImportTests.cs (14)
     Polling_SaveImport_SwapFinalized,

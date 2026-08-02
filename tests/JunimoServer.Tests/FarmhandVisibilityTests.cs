@@ -304,7 +304,9 @@ public class FarmhandVisibilityTests : TestBase
             $"Player uid={uid} was not removed after disconnect"
         );
 
-        var dayBefore = (await ServerApi.GetDiagnosticsState(ct))!.DayOfMonth;
+        var stateBefore = await ServerApi.GetDiagnosticsState(ct);
+        Assert.True(stateBefore != null, "GET /diagnostics/state returned null before release");
+        var dayBefore = stateBefore!.DayOfMonth;
 
         var cmd = await ServerApi.RunConsoleCommand(
             "farmhand",
@@ -323,7 +325,12 @@ public class FarmhandVisibilityTests : TestBase
         );
 
         // The release-triggered save on the empty server must not advance the day.
-        Assert.Equal(dayBefore, (await ServerApi.GetDiagnosticsState(ct))!.DayOfMonth);
+        var stateAfter = await ServerApi.GetDiagnosticsState(ct);
+        Assert.True(stateAfter != null, "GET /diagnostics/state returned null after release");
+        Assert.True(
+            dayBefore == stateAfter!.DayOfMonth,
+            $"Release-triggered save must not advance the day (before={dayBefore}, after={stateAfter.DayOfMonth})"
+        );
         Log($"Released farmhand uid={uid} (day unchanged)");
 
         // Cross-transport claimability, list side: a fresh LAN client now sees the slot.
@@ -381,6 +388,7 @@ public class FarmhandVisibilityTests : TestBase
             toggled?.Success == true && !toggled.Enabled,
             $"IP door should be closed: {toggled?.Error}"
         );
+        var bodyCompleted = false;
         try
         {
             var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -410,7 +418,7 @@ public class FarmhandVisibilityTests : TestBase
                 await WaitOwnershipStateAsync(
                     uid,
                     e => e is { Released: true, HasOwner: false },
-                    WaitName.Polling_FarmhandVisibility_Released,
+                    WaitName.Polling_FarmhandVisibility_IpOffReleased,
                     ct
                 ),
                 $"Farmhand uid={uid} should be released with the IP door closed"
@@ -422,22 +430,44 @@ public class FarmhandVisibilityTests : TestBase
                 await WaitOwnershipStateAsync(
                     uid,
                     e => e is { HasOwner: true, Released: false },
-                    WaitName.Polling_FarmhandVisibility_Reowned,
+                    WaitName.Polling_FarmhandVisibility_IpOffReowned,
                     ct
                 ),
                 $"Farmhand uid={uid} should be re-owned through the platform door under IP-off"
             );
             Log($"IP-off posture: release + platform reclaim whole for uid={uid}");
+            bodyCompleted = true;
         }
         finally
         {
             // Load-bearing restore: the shared steam server must keep its LAN door for the
             // mixed-transport tests. CancellationToken.None so a canceled test still restores.
-            var restored = await ServerApi.SetIpConnections(true, CancellationToken.None);
-            Assert.True(
-                restored?.Success == true && restored.Enabled,
-                $"IP door restore failed: {restored?.Error}"
-            );
+            // Assert only when the body succeeded — a throw here would mask the body's own
+            // exception; on a failed body the restore failure is logged, and a stuck-closed
+            // door surfaces loudly in the next mixed-transport test's LAN connect anyway.
+            string? restoreFailure = null;
+            try
+            {
+                var restored = await ServerApi.SetIpConnections(true, CancellationToken.None);
+                if (restored?.Success != true || !restored.Enabled)
+                {
+                    restoreFailure = restored?.Error ?? "null/failed SetIpConnections response";
+                }
+            }
+            catch (Exception ex)
+            {
+                restoreFailure = ex.Message;
+            }
+
+            if (restoreFailure != null)
+            {
+                Log($"IP door restore failed: {restoreFailure}");
+            }
+
+            if (bodyCompleted)
+            {
+                Assert.True(restoreFailure == null, $"IP door restore failed: {restoreFailure}");
+            }
         }
     }
 
