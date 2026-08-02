@@ -139,7 +139,11 @@ internal sealed class PersistentSessionCoordinator
             var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
             if (attr.Exclusive && IsUsingPersistentSession)
             {
-                await _testBase.LeaseInternal.Managed.AcquireExclusiveGateOnlyAsync(testName, ct);
+                _testBase.LeaseInternal.ExclusiveToken =
+                    await _testBase.LeaseInternal.Managed.AcquireExclusiveGateOnlyAsync(
+                        testName,
+                        ct
+                    );
                 HoldsExclusive = true;
             }
             else if (attr.Exclusive && !IsUsingPersistentSession)
@@ -438,7 +442,8 @@ internal sealed class PersistentSessionCoordinator
         {
             HoldsExclusive = false;
             var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
-            _testBase.LeaseInternal?.Managed.ReleaseExclusive(testName);
+            var lease = _testBase.LeaseInternal;
+            lease?.Managed.ReleaseExclusive(lease.ExclusiveToken, testName);
         }
     }
 

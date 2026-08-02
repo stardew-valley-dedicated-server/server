@@ -225,6 +225,14 @@ internal sealed class ManagedServer : IAsyncDisposable
     //     each other to drain
     private volatile TaskCompletionSource? _exclusiveDone;
     private string? _exclusiveOwnerClass;
+
+    // Ownership token: every successful acquisition gets a fresh token, and only the token
+    // of the CURRENTLY-ACTIVE acquisition may release. Class-name matching is not enough —
+    // the double-disposal shape (ResourceLease.DisposeAsync + the coordinator's
+    // ReleaseExclusiveGate) can land its second call while the SAME class's next method
+    // holds the gate, and a class-granular guard would honor that stale release.
+    private long _exclusiveOwnerToken; // 0 = none; guarded by _exclusiveLock
+    private long _exclusiveNextToken = 1; // guarded by _exclusiveLock
     private int _exclusiveClassWaiters; // same-class methods waiting to inherit the gate
     private readonly SemaphoreSlim _exclusiveClassTurn = new(0); // serializes same-class inheritance
     private readonly object _exclusiveLock = new();
@@ -346,8 +354,11 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// same class. Non-class tests remain blocked between methods, preventing
     /// interference (e.g., /newgame wiping state). Methods within the class still
     /// serialize via the drain-to-1 wait.
+    ///
+    /// Returns the acquisition's ownership token — the value <see cref="ReleaseExclusive"/>
+    /// requires to release this acquisition.
     /// </summary>
-    public async Task AddRefAndAcquireExclusiveAsync(
+    public async Task<long> AddRefAndAcquireExclusiveAsync(
         string? testName,
         CancellationToken ct,
         Func<Task>? releaseAndReacquireCapacity = null,
@@ -357,6 +368,7 @@ internal sealed class ManagedServer : IAsyncDisposable
         var callerClass = ExtractClassName(testName);
         var inheritedFromClass = false;
         var reservationConsumed = false;
+        long token = 0;
 
         while (true)
         {
@@ -374,6 +386,8 @@ internal sealed class ManagedServer : IAsyncDisposable
                         TaskCreationOptions.RunContinuationsAsynchronously
                     );
                     _exclusiveOwnerClass = callerClass;
+                    token = _exclusiveNextToken++;
+                    _exclusiveOwnerToken = token;
                     // Drain any stale semaphore permits from a prior cancelled session.
                     while (_exclusiveClassTurn.CurrentCount > 0)
                     {
@@ -390,8 +404,10 @@ internal sealed class ManagedServer : IAsyncDisposable
                     // Same class already holds the gate; register as waiter so
                     // ReleaseExclusive knows not to complete the TCS.
                     // Don't AddRef yet; wait for the prior method to finish first
-                    // to serialize methods within the class.
+                    // to serialize methods within the class. The token becomes the
+                    // active one only when this waiter's turn arrives below.
                     _exclusiveClassWaiters++;
+                    token = _exclusiveNextToken++;
                     inheritedFromClass = true;
                     break;
                 }
@@ -438,6 +454,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                         var done = _exclusiveDone;
                         _exclusiveDone = null;
                         _exclusiveOwnerClass = null;
+                        _exclusiveOwnerToken = 0;
                         done?.TrySetResult();
                     }
                 }
@@ -454,6 +471,7 @@ internal sealed class ManagedServer : IAsyncDisposable
             lock (_exclusiveLock)
             {
                 _exclusiveClassWaiters--;
+                _exclusiveOwnerToken = token;
             }
             AddRef(testName, consumeReservation);
             reservationConsumed = consumeReservation;
@@ -472,7 +490,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                     inheritedFromClass = true,
                 }
             );
-            return;
+            return token;
         }
 
         TestLog.Server($"{_displayLabel} waiting for refs to drain (current={_refCount})");
@@ -532,6 +550,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                     var done = _exclusiveDone;
                     _exclusiveDone = null;
                     _exclusiveOwnerClass = null;
+                    _exclusiveOwnerToken = 0;
                     done?.TrySetResult();
                 }
             }
@@ -552,16 +571,21 @@ internal sealed class ManagedServer : IAsyncDisposable
                 inheritedFromClass = false,
             }
         );
+        return token;
     }
 
     /// <summary>
-    /// Releases exclusive access. If other methods from the same class still hold
-    /// refs, the gate stays held and non-class tests remain blocked. Only when the
-    /// last same-class ref releases does the TCS complete.
+    /// Releases exclusive access. Only the token returned by the acquisition that
+    /// currently holds the gate may release it; <paramref name="callerTestName"/> is
+    /// diagnostics-only. A stale token — the double-disposal shape's second call
+    /// (ResourceLease.DisposeAsync + the coordinator's ReleaseExclusiveGate) landing
+    /// after the gate moved on, whether to another class or to the same class's next
+    /// method — is rejected, keeping the gate and its waiters intact. If other methods
+    /// from the same class are queued, a valid release passes the turn and the gate
+    /// stays held; only the last same-class release completes the TCS.
     /// </summary>
-    public void ReleaseExclusive(string? callerTestName)
+    public void ReleaseExclusive(long token, string? callerTestName)
     {
-        var callerClass = ExtractClassName(callerTestName);
         TaskCompletionSource? done;
         lock (_exclusiveLock)
         {
@@ -570,16 +594,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 return;
             }
 
-            // Only the class that owns the gate may release it. An Exclusive+KeepConnected
-            // test releases from two disposal sites (ResourceLease.DisposeAsync and
-            // PersistentSessionCoordinator.ReleaseExclusiveGate); if the second call lands
-            // after another class has since claimed the gate, releasing here would silently
-            // erase that class's gate, letting non-exclusive tests join mid-exclusive.
-            if (
-                callerClass != null
-                && _exclusiveOwnerClass != null
-                && _exclusiveOwnerClass != callerClass
-            )
+            if (token == 0 || token != _exclusiveOwnerToken)
             {
                 InfrastructureEventLog.Emit(
                     "exclusive_release_rejected",
@@ -588,11 +603,16 @@ internal sealed class ManagedServer : IAsyncDisposable
                         server = Key,
                         instanceId = InstanceId,
                         ownerClass = _exclusiveOwnerClass,
-                        callerClass,
+                        callerClass = ExtractClassName(callerTestName),
+                        reason = token == 0 ? "no_token" : "stale_token",
                     }
                 );
                 return;
             }
+
+            // Invalidate before passing/ending so this acquisition can't release twice —
+            // its second disposal-site call becomes a stale_token no-op.
+            _exclusiveOwnerToken = 0;
 
             // Same-class methods are waiting; signal the next one via semaphore.
             // The TCS stays held so non-class tests remain blocked.
@@ -644,10 +664,14 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// not the exclusive class semaphore. If another exclusive from the same class
     /// already holds the gate, this returns immediately (the turn lock guarantees
     /// the prior method has already finished).
+    ///
+    /// Returns the acquisition's ownership token for <see cref="ReleaseExclusive"/>
+    /// (0 on the same-class no-op race — release-inert by design).
     /// </summary>
-    public async Task AcquireExclusiveGateOnlyAsync(string? testName, CancellationToken ct)
+    public async Task<long> AcquireExclusiveGateOnlyAsync(string? testName, CancellationToken ct)
     {
         var callerClass = ExtractClassName(testName);
+        long token;
 
         while (true)
         {
@@ -663,6 +687,8 @@ internal sealed class ManagedServer : IAsyncDisposable
                         TaskCreationOptions.RunContinuationsAsynchronously
                     );
                     _exclusiveOwnerClass = callerClass;
+                    token = _exclusiveNextToken++;
+                    _exclusiveOwnerToken = token;
                     break;
                 }
 
@@ -673,7 +699,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // because the turn lock serializes methods. Safe to treat as a no-op race.
                 if (callerClass != null && _exclusiveOwnerClass == callerClass)
                 {
-                    return;
+                    return 0;
                 }
             }
 
@@ -720,6 +746,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 inheritedFromClass = false,
             }
         );
+        return token;
     }
 
     public bool IsAborted => _aborted;
@@ -1387,6 +1414,7 @@ internal sealed class ManagedServer : IAsyncDisposable
             done = _exclusiveDone;
             _exclusiveDone = null;
             _exclusiveOwnerClass = null;
+            _exclusiveOwnerToken = 0;
         }
 
         // One permit per queued sibling; each decrements _exclusiveClassWaiters as it

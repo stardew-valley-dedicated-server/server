@@ -146,6 +146,14 @@ public sealed class ResourceLease : IAsyncDisposable
     /// </summary>
     internal ManagedServer Managed => _managed;
 
+    /// <summary>
+    /// Ownership token of the exclusive-gate acquisition this lease's disposal releases.
+    /// Written by the broker on a fresh exclusive acquire, and overwritten per-test by the
+    /// KeepConnected coordinator's gate-only acquire — the current acquisition is the one a
+    /// release must name. 0 (never acquired) is release-inert.
+    /// </summary>
+    internal long ExclusiveToken { get; set; }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -174,7 +182,7 @@ public sealed class ResourceLease : IAsyncDisposable
         // can proceed as soon as our ref is gone.
         if (_exclusive)
         {
-            _managed.ReleaseExclusive(_testName);
+            _managed.ReleaseExclusive(ExclusiveToken, _testName);
         }
 
         try
