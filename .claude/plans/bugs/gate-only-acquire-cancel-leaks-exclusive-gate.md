@@ -33,10 +33,14 @@ silent-wedge shape.
 
 ## Fix sketch
 
-Wrap the post-claim waits in try/catch mirroring `AddRefAndAcquireExclusiveAsync`'s cleanup: on
-throw, under `_exclusiveLock`, if this acquisition's token is still the active one (or the gate
-owner is still this claim and no same-class waiters queued), null `_exclusiveDone` /
-`_exclusiveOwnerClass` / `_exclusiveOwnerToken` and `TrySetResult` the TCS; rethrow. Cost: ~12
-lines. Deterministically guard-testable in `ExclusiveGateOwnershipTests` (same in-memory harness):
-acquire with a pre-cancelled ct while a reflected `_refCount > 1` keeps the drain loop alive,
-assert the throw leaves `HasExclusiveGate == false`.
+Wrap the post-claim waits in try/catch; on throw, call `ReleaseExclusive(token, testName)` and
+rethrow. Token-specific by construction — no owner-class fallback (a class-granular fallback
+could clear a successor claim, the same weakness the token exists to close; review feedback).
+Reusing `ReleaseExclusive` also inherits the correct waiter semantics for free: same-class
+*gate-only* callers return 0 and never queue, but same-class callers arriving via
+`AddRefAndAcquireExclusiveAsync` DO register as `_exclusiveClassWaiters` behind a held gate, and
+a valid release passes them the turn instead of nulling the TCS out from under them. Cost: ~6
+lines. Deterministic guard tests (`ExclusiveGateOwnershipTests` harness): (1) acquire with a
+pre-cancelled ct while a reflected `_refCount > 1` keeps the drain loop alive → the throw leaves
+`HasExclusiveGate == false`; (2) a successor acquisition from another class then completes —
+`HasExclusiveGate == false` alone does not prove the TCS was released.
