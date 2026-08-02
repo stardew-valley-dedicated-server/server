@@ -598,8 +598,8 @@ public class FarmhandOwnershipService : ModService
 
         // Info, not Debug: a rejection is the operator's only clue when a player reports a
         // missing/locked farmhand (e.g. the same Steam account presenting a different identity
-        // after switching between friends-list and invite-code joins — not correlatable
-        // server-side, see steam-auth.md).
+        // after switching doors — friends list / S-code use the Steam connection's Steam64,
+        // the G-code uses the Galaxy id; not correlatable server-side, see steam-auth.md).
         var reason = verdict switch
         {
             ClaimVerdict.RejectOwnedByOther =>

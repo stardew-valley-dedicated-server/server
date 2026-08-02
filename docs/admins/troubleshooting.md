@@ -118,10 +118,12 @@ offered only to direct-IP players.
 
 1. Ask how they connected — the usual cause is joining via direct IP after creating the farmer via
    an invite code (or the other way around). Reconnecting the original way restores the farmer.
-2. Steam-specific: joining through the host's **friends list** and joining with the **invite code**
-   present two different identities for the same Steam account (they use different connection
-   doors), so a farmer created one way is hidden the other way. The identities cannot be linked
-   automatically — have the player rejoin the way they created the farmer, or rebind (below).
+2. Steam-specific: the same Steam account presents **two different identities depending on the
+   join door**. The friends list and the S-prefixed invite code both connect through Steam and
+   present the account's Steam id; the G-prefixed (GOG) code connects through Galaxy and presents
+   a different id for the same account. A farmer created through one door is hidden behind the
+   other, and the two identities cannot be linked automatically — have the player rejoin through
+   the door they created the farmer with, or rebind (below).
 3. To move a farmer to another account or connection method, use
    [`farmhand rebind <name> <id>`](/admins/operations/commands#farmhand) with the id from the
    `Client connected via ...` log line, or `farmhand release <name>` to unlock the slot so the
