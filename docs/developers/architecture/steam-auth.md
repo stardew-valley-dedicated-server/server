@@ -142,6 +142,25 @@ mod's farmhand-ownership gate relies on).
   gameserver identity) is planned in
   `.claude/plans/features/tests-sdr-client-transport.md`.
 
+### Which identity a joining player presents (per door)
+
+The door a *player* joins through decides the transport identity their connection carries —
+and therefore which identity the farmhand-ownership map records:
+
+| Join path | Transport | Identity the server sees |
+|-----------|-----------|--------------------------|
+| Friends list / S-prefix invite code | Steam SDR (`SN_…` connection id) | The account's Steam64 (`7656…`) |
+| G-prefix invite code | Galaxy P2P (`GN_…` connection id) | The account's GOG Galaxy uint64 |
+| Direct IP | Lidgren LAN (`L_…` connection id) | None |
+
+The same Steam account therefore presents two unrelated ids depending on the door: the
+Steam64 and the Galaxy pseudo-id share no id space and cannot be correlated server-side
+(client-declared `userID` stamps are Galaxy-space on *both* platform transports, never the
+Steam64). A player who owns a farmhand through one door and rejoins through the other is
+rejected by the ownership gate; the operator fix is `farmhand rebind` with the id from the
+new door's connect-log line. `ConnectionTransport` (mod) is the canonical parser for these
+connection-id shapes.
+
 ## File Filtering
 
 The download process skips unnecessary files to reduce download size:

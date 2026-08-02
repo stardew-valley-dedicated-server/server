@@ -225,7 +225,8 @@ COPY --from=mod-builder /output/netdebug /opt/netdebug
 # makes only non-empty files executable, handling both cases correctly.
 #
 # xrdb/min_running_time=0 declares the xrdb one-shot as expected-to-exit-immediately (the same
-# value the base image uses for its own always-exiting services). cinit treats a service exiting
+# value the base image ships for its own always-exiting services — verified in the built
+# image's /etc/services.d). cinit treats a service exiting
 # before min_running_time (default 500ms) as a failed start and tears the whole container down
 # (exit 1) — and xrdb (load X resources, exit) only outlives 500ms when it happens to spend that
 # long waiting on a still-warming Xvnc, a timing race a one-shot must not have to win.
