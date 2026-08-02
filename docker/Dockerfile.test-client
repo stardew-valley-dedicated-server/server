@@ -161,6 +161,15 @@ RUN \
 # Copy SMAPI config (client-specific settings)
 COPY docker/rootfs-test-client/data/smapi-config.json /data/smapi-config.json
 
+# Declare the xrdb one-shot as expected-to-exit-immediately (0 = no floor, matching the
+# app/min_running_time the base image ships — verified in the built image's /etc/services.d).
+# cinit treats a service exiting before min_running_time
+# (default 500ms) as a failed start and tears the whole container down (exit 1) — and xrdb
+# (load X resources, exit) only outlives 500ms when it happens to spend that long waiting on
+# a still-warming Xvnc, a timing race a one-shot must not have to win.
+# --chmod=0644: cinit READS this value file; an exec bit makes cinit try to run it (fails 126).
+COPY --chmod=0644 docker/rootfs-test-client/etc/services.d/xrdb/min_running_time /etc/services.d/xrdb/min_running_time
+
 # Copy startup script
 COPY docker/rootfs-test-client/startapp.sh /startapp.sh
 RUN chmod +x /startapp.sh

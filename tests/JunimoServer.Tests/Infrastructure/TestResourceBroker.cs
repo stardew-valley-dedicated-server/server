@@ -1160,6 +1160,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // Verify the server is still valid, then claim it.
                 if (_servers.Contains(key, server) && !server.IsPoisoned)
                 {
+                    long exclusiveToken = 0;
                     if (requirements.Exclusive)
                     {
                         // Exclusive: acquire gate, add ref, hold gate until test finishes.
@@ -1167,7 +1168,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         // Uses ReleaseAndReacquireAsync to atomically enqueue a reacquire
                         // waiter (int.MinValue priority) THEN release slots, so the drain
                         // serves us before other waiters that would block on our gate.
-                        await server.AddRefAndAcquireExclusiveAsync(
+                        exclusiveToken = await server.AddRefAndAcquireExclusiveAsync(
                             testName,
                             ct,
                             releaseAndReacquireCapacity: async () =>
@@ -1264,7 +1265,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         server.Release();
                         if (requirements.Exclusive)
                         {
-                            server.ReleaseExclusive();
+                            server.ReleaseExclusive(exclusiveToken, testName);
                         }
 
                         TestLog.Test(
@@ -1279,6 +1280,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     );
                     return TrackLease(
                         new ResourceLease(server, requirements, testName, clientPool)
+                        {
+                            ExclusiveToken = exclusiveToken,
+                        }
                     );
                 }
 

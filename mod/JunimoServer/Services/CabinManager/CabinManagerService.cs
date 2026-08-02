@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using JunimoServer.Services.Auth;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
 using JunimoServer.Services.PersistentOption;
@@ -55,6 +56,10 @@ public class CabinManagerService : ModService
     // own private code (Layer B). A mutual injection would be a startup-fatal constructor cycle.
     private readonly SaveImportService saveImportService;
 
+    // Ownership map lifecycle: every site that clears a stamp or deletes a farmhand entry
+    // must drop the matching owner record too, or the slot stays locked to a ghost.
+    private readonly FarmhandOwnershipService farmhandOwnership;
+
     private static readonly int minEmptyCabins = 1;
 
     private readonly HashSet<long> farmersInFarmhouse = new HashSet<long>();
@@ -81,7 +86,8 @@ public class CabinManagerService : ModService
         RoleService roleService,
         MessageInterceptorsService messageInterceptorsService,
         PersistentOptions options,
-        SaveImportService saveImportService
+        SaveImportService saveImportService,
+        FarmhandOwnershipService farmhandOwnership
     )
         : base(helper, monitor)
     {
@@ -97,6 +103,7 @@ public class CabinManagerService : ModService
         this.roleService = roleService;
         this.options = options;
         this.saveImportService = saveImportService;
+        this.farmhandOwnership = farmhandOwnership;
 
         Data = new CabinManagerData(helper, monitor);
 
@@ -166,13 +173,12 @@ public class CabinManagerService : ModService
     private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
     {
         // Save-import Layer B finalizer — MUST be the first statement, before Data.Read() and the
-        // whole reconciliation chain. Ordering is load-bearing three ways: (1) the demoted owner is
+        // whole reconciliation chain. Ordering is load-bearing two ways: (1) the demoted owner is
         // homed+bound before the reconciliation absorbs it; (2) running before
         // ClearStaleFarmhandReferences means the owner's homeLocation is already the new cabin (not
-        // the stale FarmHouse), so that sweep leaves it alone; (3) running before
-        // ClearAbandonedCabinClaimsOnLoad (which only clears uncustomized farmhands) plus keeping
-        // the owner isCustomized=true both protect the fresh userID stamp. No-op (zero cost) on
-        // normal loads with no pending import.
+        // the stale FarmHouse), so that sweep leaves it alone. (The abandoned-claim sweep can't
+        // touch the bind either way: the owner is isCustomized=true and the record is
+        // operator-origin.) No-op (zero cost) on normal loads with no pending import.
         TryFinalizeOnLoad();
 
         Data.Read();
@@ -306,6 +312,7 @@ public class CabinManagerService : ModService
         {
             farmhandData.Remove(key);
         }
+        farmhandOwnership.RemoveOwners(toRemove);
 
         if (toRemove.Count > 0 || homeCleared > 0 || lastSleepCleared > 0)
         {
@@ -857,35 +864,42 @@ public class CabinManagerService : ModService
 
     /// <summary>
     /// Releases an abandoned slot claim on a single farmhand entry. A claim is "abandoned" when
-    /// the farmhand has a userID set (a player clicked the slot, which stamps their platform ID
-    /// via vanilla Client.sendPlayerIntroduction) but isCustomized is false (they quit before
-    /// finishing character creation). Vanilla FarmhandMenu then greys the slot out for every
-    /// other player, locking it to the ghost. Clearing userID re-opens the slot.
+    /// the slot carries any ownership marker — a userID stamp (a player clicked the slot, which
+    /// stamps their platform ID via vanilla Client.sendPlayerIntroduction) and/or an ownership-map
+    /// record (written at the join gate's approve moment) — but isCustomized is false (they quit
+    /// before finishing character creation). Vanilla FarmhandMenu greys a stamped slot for every
+    /// other player, and the ownership gate locks a mapped slot to the ghost; a map-only claim is
+    /// real too (a Galaxy-auth-failed Steam client stamps nothing, but the gate recorder maps it
+    /// at approve), so an empty stamp must NOT early-return. Clearing both re-opens the slot.
+    ///
+    /// Operator-origin records (farmhand rebind / save-import bind) are NOT abandoned claims —
+    /// a pre-assignment on a not-yet-customized slot is deliberate and must survive restarts and
+    /// the assignee's own quit-during-character-creation; only the ghost stamp is cleared then.
     ///
     /// Caller-agnostic: both the disconnect heal (CleanupAbandonedCabinClaim) and the save-load
-    /// sweep (ClearAbandonedCabinClaimsOnLoad) pass the persisted farmhandData entry. The only
-    /// mutation is the userID NetString value write; the rest of the farmhand stays in its
+    /// sweep (ClearAbandonedCabinClaimsOnLoad) pass the persisted farmhandData entry. The
+    /// farmhand mutation is only the userID NetString value write; the rest stays in its
     /// default uncustomized state. Returns true if a claim was cleared.
     /// </summary>
     private bool TryClearAbandonedClaim(Farmer farmhand)
     {
-        if (farmhand == null)
+        if (farmhand == null || farmhand.isCustomized.Value)
         {
-            return false;
+            return false; // no entry / real player — must not touch
         }
 
-        if (string.IsNullOrEmpty(farmhand.userID.Value))
+        var hasStamp = !string.IsNullOrEmpty(farmhand.userID.Value);
+        var hasOwner = farmhandOwnership.TryGetOwner(farmhand.UniqueMultiplayerID, out var owner);
+        var clearOwner = hasOwner && owner.Origin != FarmhandOwnershipService.OriginOperator;
+        if (!hasStamp && !clearOwner)
         {
-            return false; // no claim
-        }
-
-        if (farmhand.isCustomized.Value)
-        {
-            return false; // real player — must not touch
+            return false; // no claim (or only a deliberate operator pre-assignment)
         }
 
         Monitor.Log(
-            $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', slot was claimed but not customized)",
+            $"Releasing abandoned cabin claim (userID='{ChatRedaction.MaskValue(farmhand.userID.Value)}', "
+                + $"hadOwnerRecord={hasOwner}, ownerRecordKept={hasOwner && !clearOwner}, "
+                + "slot was claimed but not customized)",
             LogLevel.Info
         );
         Diagnostics.ModEventLog.Emit(
@@ -894,9 +908,16 @@ public class CabinManagerService : ModService
             {
                 clearedUserId = farmhand.userID.Value,
                 ownerUniqueMultiplayerId = farmhand.UniqueMultiplayerID,
+                hadOwnerRecord = hasOwner,
+                ownerRecordKept = hasOwner && !clearOwner,
             }
         );
         farmhand.userID.Value = "";
+        if (clearOwner)
+        {
+            farmhandOwnership.RemoveOwner(farmhand.UniqueMultiplayerID);
+        }
+
         return true;
     }
 
@@ -1130,6 +1151,11 @@ public class CabinManagerService : ModService
         if (indoors != null && indoors.HasOwner)
         {
             indoors.DeleteFarmhand();
+        }
+
+        if (ownerId != 0)
+        {
+            farmhandOwnership.RemoveOwner(ownerId);
         }
 
         // Vanilla Cabin.demolish() resets every villager homed in the cabin to its canonical home
@@ -1815,10 +1841,11 @@ public class CabinManagerService : ModService
     /// <summary>
     /// One-shot save-import finalizer. Reads the pending finalize intent (written by
     /// <see cref="SaveImportService.ExecuteImport"/> during a swap import); if present and for this
-    /// save, demotes the imported owner into a known cabin, moves their farmhouse contents and
-    /// household NPCs into it, and re-stamps their platform userID. Self-heals (Warn + clear +
-    /// return) on any pre-condition miss, and clears the intent on EVERY exit (including a throw
-    /// after a world mutation) so a failed finalize never retries against an already-changed world.
+    /// save, binds the demoted owner's platform identity in the ownership map (first, so any
+    /// later failure leaves them claimable), then homes them into a known cabin and moves their
+    /// farmhouse contents and household NPCs into it. Self-heals (Warn + clear + return) on any
+    /// pre-condition miss, and clears the intent on EVERY exit (including a throw after a world
+    /// mutation) so a failed finalize never retries against an already-changed world.
     /// </summary>
     private void TryFinalizeOnLoad()
     {
@@ -1870,18 +1897,34 @@ public class CabinManagerService : ModService
 
         try
         {
-            // Step 4 — resolve the owner's cabin handle (reuse an auto-assigned cabin if the load
+            // Step 4 — record the bind FIRST (idempotent map write; depends only on the owner uid
+            // and the intent's userId), so a failure in any later cabin/content step still leaves
+            // the demoted owner claimable by their platform identity. Also clear any legacy userID
+            // stamp: the map is what the join gate and visibility filter enforce; a stamp would
+            // additionally trigger vanilla client-side graying by Galaxy-space compare, which
+            // would show the bound owner their own farmhand as LOCKED on any Steam/GOG client
+            // (no transport ever presents a Steam64 as getUserID()).
+            failedStep = "bind_ownership";
+            farmhandOwnership.RecordOwner(
+                owner.UniqueMultiplayerID,
+                FarmhandOwnershipService.ClassifyPlatformId(intent.UserId),
+                intent.UserId,
+                FarmhandOwnershipService.OriginOperator
+            );
+            owner.userID.Value = "";
+
+            // Step 5 — resolve the owner's cabin handle (reuse an auto-assigned cabin if the load
             // coroutine already homed the owner into a spare one, else build a fresh cabin).
             failedStep = "resolve_cabin";
             var cabin = ResolveOrBuildOwnerCabin(owner, out var builtFresh);
             if (cabin == null)
             {
-                // Loud-fail at Warn (not Error). The owner stays a customized-but-cabin-less
-                // farmhand (progress intact, recoverable by a later reassignment); never proceed to
-                // the world-mutating steps.
+                // Loud-fail at Warn (not Error). The owner stays a customized, cabin-less but
+                // BOUND farmhand (progress intact, claimable; a later reassignment can re-home);
+                // never proceed to the world-mutating steps.
                 Monitor.Log(
                     $"Save-import: could not resolve or build a cabin for owner {intent.OwnerUid}; "
-                        + "finalize aborted (owner kept, progress intact).",
+                        + "finalize aborted (owner kept and bound, progress intact).",
                     LogLevel.Warn
                 );
                 Diagnostics.ModEventLog.Emit(
@@ -1902,25 +1945,19 @@ public class CabinManagerService : ModService
 
             var farmHouse = Game1.getLocationFromName("FarmHouse") as FarmHouse;
 
-            // Step 5 — move the owner's farmhouse contents into the cabin.
+            // Step 6 — move the owner's farmhouse contents into the cabin.
             failedStep = "move_contents";
             contentsMoved = TransferFarmhouseContentsToCabin(farmHouse, cabin, builtFresh);
 
-            // Step 6 — relocate the owner's household NPCs (pet, spouse, children) into the cabin.
+            // Step 7 — relocate the owner's household NPCs (pet, spouse, children) into the cabin.
             failedStep = "relocate_household";
             npcsMoved = RelocateHouseholdToCabin(farmHouse, cabin, owner);
 
-            // Step 7 — move the owner's cellar contents (casks/wine, built in the master-keyed
+            // Step 8 — move the owner's cellar contents (casks/wine, built in the master-keyed
             // "Cellar"-1 while they were the master) into the cellar the engine reassigns to them as
             // a farmhand. Counts toward contentsMoved.
             failedStep = "move_cellar";
             contentsMoved += TransferOwnerCellarContents(owner, cabin);
-
-            // Step 8 — re-stamp userID (idempotent whether vanilla cleared or preserved it). Owner
-            // is now homed + customized + bound; on any later reload it is homed → ResetFarmhandState
-            // early-returns → userID survives.
-            failedStep = "restamp_userid";
-            owner.userID.Value = intent.UserId;
 
             // Success — count it so the single-shot test can prove the finalizer ran exactly once
             // across reloads (a re-fire would bump this past 1).
@@ -1944,12 +1981,13 @@ public class CabinManagerService : ModService
         }
         catch (Exception ex)
         {
-            // A throw after a world mutation leaves a partially-moved-but-stable world. The owner is
-            // already customized + cabin-homed (progress intact), so a missing content/NPC move is a
-            // recoverable cosmetic gap, not a boot-loop. Warn (never Error) + emit partial.
+            // A throw after a world mutation leaves a partially-moved-but-stable world. The owner
+            // is already bound (step 4 runs first) and customized (progress intact), so a missing
+            // content/NPC move is a recoverable cosmetic gap, not a boot-loop. Warn (never Error)
+            // + emit partial.
             Monitor.Log(
                 $"Save-import finalize failed at step '{failedStep}': {ex.Message}. World is partially "
-                    + "moved but stable; owner kept. Intent cleared (no retry).",
+                    + "moved but stable; owner kept and bound. Intent cleared (no retry).",
                 LogLevel.Warn
             );
             Diagnostics.ModEventLog.Emit(

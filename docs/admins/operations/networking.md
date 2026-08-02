@@ -30,7 +30,10 @@ GOG clients connect using Galaxy P2P networking. Invite codes start with "G". Wo
 Disabled by default. Enable via `AllowIpConnections` in `server-settings.json`.
 
 ::: warning
-Direct IP connections don't provide user IDs. Players may lose farmhand ownership if they reconnect from a different IP.
+Direct IP connections carry no Steam/GOG account identity. Farmers created over direct IP are
+shared among all direct-IP players, and farmers owned by a Steam/GOG account are not visible or
+joinable over direct IP — even for the account's own player. See
+[Farmhand Ownership](/admins/configuration/server-settings#farmhand-ownership).
 :::
 
 ## Ports

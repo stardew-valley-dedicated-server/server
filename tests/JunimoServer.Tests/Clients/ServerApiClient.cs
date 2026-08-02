@@ -247,6 +247,15 @@ public class DiagnosticsCabinState
     [JsonPropertyName("ownerHasUserId")]
     public bool OwnerHasUserId { get; set; }
 
+    /// <summary>Whether the cabin owner has a server-side ownership record (join-gate recorder
+    /// or save-import bind). Bool, not the raw ID.</summary>
+    [JsonPropertyName("ownerHasOwner")]
+    public bool OwnerHasOwner { get; set; }
+
+    /// <summary>Platform tag of the cabin owner's ownership record ("steam"/"galaxy"), or "".</summary>
+    [JsonPropertyName("ownerPlatform")]
+    public string OwnerPlatform { get; set; } = "";
+
     [JsonPropertyName("homeLocationOfOwner")]
     public string HomeLocationOfOwner { get; set; } = "";
 
@@ -291,6 +300,20 @@ public class DiagnosticsFarmhandState
     /// (/diagnostics/state is unauthenticated).</summary>
     [JsonPropertyName("hasUserId")]
     public bool HasUserId { get; set; }
+
+    /// <summary>Whether this slot has a server-side ownership record (join-gate recorder or
+    /// save-import bind). Bool, not the raw ID.</summary>
+    [JsonPropertyName("hasOwner")]
+    public bool HasOwner { get; set; }
+
+    /// <summary>Platform tag of the ownership record ("steam"/"galaxy"), or "" when unowned.</summary>
+    [JsonPropertyName("ownerPlatform")]
+    public string OwnerPlatform { get; set; } = "";
+
+    /// <summary>Whether the slot is operator-released: claimable by any transport, first
+    /// successful claim becomes the owner.</summary>
+    [JsonPropertyName("released")]
+    public bool Released { get; set; }
 }
 
 public class ReadyCheckState
@@ -695,6 +718,10 @@ public class TestStampClaimResponse
 
     [JsonPropertyName("homeLocation")]
     public string HomeLocation { get; set; } = "";
+
+    /// <summary>Whether a synthetic ownership record was also written (withOwner=true).</summary>
+    [JsonPropertyName("stampedOwner")]
+    public bool StampedOwner { get; set; }
 }
 
 /// <summary>
@@ -908,6 +935,20 @@ public class TestForceSaveResponse
 
     [JsonPropertyName("saveFolderName")]
     public string SaveFolderName { get; set; } = "";
+}
+
+/// <summary>Response from /test/set_ip_connections (test-only).</summary>
+public class TestSetIpConnectionsResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>The applied state of Game1.options.ipConnectionsEnabled.</summary>
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
 }
 
 /// <summary>Body for /test/import_save (test-only). Mirrors the server-side DTO.</summary>
@@ -1970,9 +2011,20 @@ public class ServerApiClient : IDisposable
     /// persist such a claim to disk for a sweep test.
     /// POST /test/stamp_claim
     /// </summary>
-    public async Task<TestStampClaimResponse?> StampClaim(CancellationToken ct = default)
+    public async Task<TestStampClaimResponse?> StampClaim(CancellationToken ct = default) =>
+        await StampClaim(withOwner: false, ct);
+
+    /// <summary>
+    /// As <see cref="StampClaim(CancellationToken)"/>; <paramref name="withOwner"/> also writes a
+    /// synthetic ownership record so sweep tests can assert the heal clears map + stamp together.
+    /// </summary>
+    public async Task<TestStampClaimResponse?> StampClaim(
+        bool withOwner,
+        CancellationToken ct = default
+    )
     {
-        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/stamp_claim", ct);
+        var query = withOwner ? "?withOwner=true" : "";
+        var response = await SendWithRetryAsync(HttpMethod.Post, $"/test/stamp_claim{query}", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestStampClaimResponse>(ct);
     }
@@ -2150,6 +2202,25 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(HttpMethod.Post, "/test/force_save", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestForceSaveResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: flip the LAN/IP door (Game1.options.ipConnectionsEnabled) at runtime, so the
+    /// shared steam server can exercise the production IP-off posture without a config fork.
+    /// POST /test/set_ip_connections?enabled=...
+    /// </summary>
+    public async Task<TestSetIpConnectionsResponse?> SetIpConnections(
+        bool enabled,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/set_ip_connections?enabled={(enabled ? "true" : "false")}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestSetIpConnectionsResponse>(ct);
     }
 
     /// <summary>

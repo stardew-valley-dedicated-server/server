@@ -31,6 +31,7 @@ public class FarmhandSenderService : ModService
     private static IModHelper _helper;
     private static LobbyService _lobbyService;
     private static CabinManagerService _cabinManager;
+    private static FarmhandOwnershipService _farmhandOwnership;
 
     // Cache the serializer globally
     private static readonly object SerializerLock = new object();
@@ -60,7 +61,8 @@ public class FarmhandSenderService : ModService
         IModHelper helper,
         Harmony harmony,
         LobbyService lobbyService,
-        CabinManagerService cabinManager
+        CabinManagerService cabinManager,
+        FarmhandOwnershipService farmhandOwnership
     )
     {
         if (_instance != null)
@@ -77,6 +79,7 @@ public class FarmhandSenderService : ModService
         _helper = helper;
         _lobbyService = lobbyService;
         _cabinManager = cabinManager;
+        _farmhandOwnership = farmhandOwnership;
 
         harmony.Patch(
             original: AccessTools.Method(
@@ -88,35 +91,6 @@ public class FarmhandSenderService : ModService
                 nameof(SendAvailableFarmhands_Prefix)
             )
         );
-    }
-
-    /// <summary>
-    /// Parses the transport type from a connection ID.
-    /// Connection ID formats: "GN_..." (Galaxy), "SN_..." (Steam SDR), "L_..." (LAN/Lidgren)
-    /// </summary>
-    private static string GetTransportName(string connectionId)
-    {
-        if (string.IsNullOrEmpty(connectionId))
-        {
-            return "Unknown";
-        }
-
-        if (connectionId.StartsWith("GN_"))
-        {
-            return "Galaxy P2P";
-        }
-
-        if (connectionId.StartsWith("SN_"))
-        {
-            return "Steam SDR";
-        }
-
-        if (connectionId.StartsWith("L_"))
-        {
-            return "LAN";
-        }
-
-        return "Unknown";
     }
 
     /// <summary>
@@ -136,7 +110,8 @@ public class FarmhandSenderService : ModService
         var isConnectionActive = __instance.isConnectionActive;
         var IsFarmhandAvailable = __instance.IsFarmhandAvailable;
 
-        var transport = GetTransportName(connectionId);
+        var transport = ConnectionTransport.GetTransportName(connectionId);
+        var hasIdentity = ConnectionTransport.TryResolveIdentity(connectionId, out var identity);
         var connectionInfoDump = _monitor.Dump(
             new
             {
@@ -146,8 +121,15 @@ public class FarmhandSenderService : ModService
             }
         );
 
-        // Log the incoming connection with transport info
-        _monitor.Log($"Client connected via {transport}", LogLevel.Info);
+        // Log the incoming connection with transport info. The platform id is the
+        // copy-pasteable value operators use for `saves import --swap-host-to` and
+        // `farmhand rebind` (a GOG website "profile id" is NOT the Galaxy uint64 the
+        // transport presents — this log line is the discoverable source).
+        _monitor.Log(
+            $"Client connected via {transport}"
+                + (hasIdentity ? $" (platform id {identity.Id})" : ""),
+            LogLevel.Info
+        );
 
         // Queue the request until the game is ready
         if (!isGameAvailable())
@@ -274,7 +256,7 @@ public class FarmhandSenderService : ModService
                 !farmhand.isActive()
                 || Game1.Multiplayer.isDisconnecting(farmhand.UniqueMultiplayerID);
             var isWithCabinAndInventoryUnlocked = IsFarmhandAvailable(farmhand);
-            var isSelectable = IsFarmhandSelectableByUserId(farmhand, userId);
+            var isSelectable = IsFarmhandSelectable(farmhand, hasIdentity, identity);
             var isLobbyCabin = IsLobbyCabinFarmhand(farmhand);
             var isReservedByOther =
                 !farmhand.isCustomized.Value && reservedIds.Contains(farmhand.UniqueMultiplayerID);
@@ -490,21 +472,43 @@ public class FarmhandSenderService : ModService
     }
 
     /// <summary>
-    /// Farmhands are tied to players via platform userID, but only for Steam/GOG
-    /// connections (IP connections bypass it entirely). Steam SDR provides a Steam ID
-    /// while farmhand.userID may be a Galaxy ID (different ID spaces), so we show all
-    /// owned farmhands and let authCheck() verify during join.
+    /// Transport-scoped visibility filter — the single list site. Decides from the
+    /// connection's transport identity (never the client-declared userId, which is spoofable
+    /// and empty on SDR) via the one ownership matrix,
+    /// <see cref="FarmhandOwnershipService.EvaluateClaim"/> — this filter is UX narrowing,
+    /// the checkFarmhandRequest gate is the enforcement.
     /// </summary>
-    private static bool IsFarmhandSelectableByUserId(Farmer farmhand, string userId)
+    private static bool IsFarmhandSelectable(
+        Farmer farmhand,
+        bool hasIdentity,
+        TransportIdentity identity
+    )
     {
-        // UNCLAIMED: allow if farmhand creation enabled
-        if (string.IsNullOrEmpty(farmhand.userID.Value))
+        if (_farmhandOwnership == null || !_farmhandOwnership.EnforcementEnabled)
         {
-            return Game1.options.enableFarmhandCreation;
+            // Permissive mode: the pre-ownership behavior (show every claimed slot; vanilla
+            // client-side graying and the join gate's disabled state make claims legal).
+            if (string.IsNullOrEmpty(farmhand.userID.Value))
+            {
+                return Game1.options.enableFarmhandCreation;
+            }
+
+            return true;
         }
 
-        // OWNED: show to all clients, authCheck() during join handles verification
-        return true;
+        var verdict = _farmhandOwnership.EvaluateClaim(
+            farmhand,
+            hasIdentity,
+            identity,
+            atJoin: false,
+            claimedUserId: null
+        );
+        return verdict switch
+        {
+            ClaimVerdict.Allow => true,
+            ClaimVerdict.AllowFresh => Game1.options.enableFarmhandCreation,
+            _ => false,
+        };
     }
 
     private static bool IsLobbyCabinFarmhand(Farmer farmhand)

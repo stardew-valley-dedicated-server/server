@@ -17,7 +17,10 @@ namespace JunimoServer.Services.SaveImport;
 ///    no embedded template to drift) and blanking it per the three-bucket policy below.
 /// 2. Reparents the original <c>&lt;player&gt;</c> into <c>&lt;farmhands&gt;</c> (a node move —
 ///    <c>&lt;player&gt;</c> and each <c>&lt;farmhands&gt;/&lt;Farmer&gt;</c> share the identical
-///    <c>Farmer</c> schema), stamping it customized + the supplied platform userID.
+///    <c>Farmer</c> schema), stamped customized. The platform bind is NOT written into the XML:
+///    it travels via the finalize intent into the server-side ownership map (Layer B), and the
+///    owner's <c>&lt;userID&gt;</c> stays empty so vanilla client-side graying (a Galaxy-space
+///    compare no transport identity can ever satisfy) can't lock the owner out of their slot.
 ///
 /// The clone-blank policy (clear-personal-progress-only, keep-every-world/relationship-relevant
 /// field) is derived directly from the serialized members of
@@ -137,21 +140,10 @@ internal static class SaveImportXmlTransform
     /// must discard the document (write nothing) on throw.
     /// </summary>
     /// <param name="doc">The parsed save document (mutated in place).</param>
-    /// <param name="userId">The platform userID to bind the demoted owner to (validated non-empty).</param>
     /// <param name="newMasterUid">Out: the fresh UniqueMultiplayerID generated for the blank master.</param>
     /// <param name="ownerUid">Out: the demoted owner's UniqueMultiplayerID (carried unchanged).</param>
-    public static void ApplySwap(
-        XmlDocument doc,
-        string userId,
-        out long newMasterUid,
-        out long ownerUid
-    )
+    public static void ApplySwap(XmlDocument doc, out long newMasterUid, out long ownerUid)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            throw new SaveImportException("Internal: ApplySwap called with an empty userId.");
-        }
-
         var root = doc.DocumentElement;
         if (root == null || root.Name != "SaveGame")
         {
@@ -179,28 +171,18 @@ internal static class SaveImportXmlTransform
 
         var farmhandsContainer = GetOrCreateFarmhandsContainer(root, player);
 
-        // userID-collision guard: the supplied bind id must not already match any existing
-        // farmhand's <userID> (or the owner's own pre-existing one) — authCheck is raw string
-        // equality with no uniqueness guarantee, so a collision would let the bound player land on
-        // the wrong cabin and lock out the legitimate owner. Walk every farmhand userID first.
-        var conflict = FindUserIdConflict(farmhandsContainer, player, userId);
-        if (conflict != null)
-        {
-            throw new SaveImportException(
-                $"The supplied user id collides with existing farmhand '{conflict}' in this save. "
-                    + "Pick the correct id, or restore a backup if you re-imported a save the player is already in."
-            );
-        }
-
         ownerUid = ReadUid(player);
 
         // 1. Build the blank Server master by cloning the original <player> and blanking it.
         var blankMaster = (XmlElement)player.CloneNode(deep: true);
         newMasterUid = BlankInto(blankMaster, farmhandsContainer, player);
 
-        // 2. Reparent the original <player> into <farmhands>, stamped customized + userID.
+        // 2. Reparent the original <player> into <farmhands>, stamped customized. The userID is
+        // cleared, never stamped: the bind lives in the server-side ownership map (Layer B), and
+        // per-farmhand ownership records make bind-id uniqueness a non-constraint (the same
+        // platform identity may own several farmhands).
         SetScalarElement(player, "isCustomized", "true");
-        SetScalarElement(player, "userID", userId);
+        SetScalarElement(player, "userID", "");
         // Leave the owner's homeLocation as-is (FarmHouse for a former master). Layer B re-homes it;
         // do NOT create a cabin / touch farmhandReference here (brittle engine-generated names).
 
@@ -215,7 +197,7 @@ internal static class SaveImportXmlTransform
         //    the deserializer, which selects by element name).
         root.PrependChild(blankMaster);
 
-        ValidatePostTransform(root, newMasterUid, ownerUid, userId);
+        ValidatePostTransform(root, newMasterUid, ownerUid);
     }
 
     /// <summary>
@@ -281,8 +263,7 @@ internal static class SaveImportXmlTransform
     public static void ValidatePostTransform(
         XmlElement root,
         long expectedMasterUid,
-        long expectedOwnerUid,
-        string expectedUserId
+        long expectedOwnerUid
     )
     {
         var player = SelectSingle(root, "player");
@@ -333,7 +314,8 @@ internal static class SaveImportXmlTransform
             }
         }
 
-        // Moved owner present in <farmhands> with isCustomized + stamped userID.
+        // Moved owner present in <farmhands>, customized, with an EMPTY userID (the bind lives
+        // in the ownership map, never in the XML — see the userID assertion below).
         var farmhands = SelectSingle(root, "farmhands");
         var ownerEntry = farmhands
             ?.SelectNodes("Farmer")
@@ -351,10 +333,12 @@ internal static class SaveImportXmlTransform
                 "Post-transform validation: demoted owner is not customized."
             );
         }
-        if (ReadScalar(ownerEntry, "userID") != expectedUserId)
+        // The bind lives in the ownership map (via the finalize intent), never in the XML — a
+        // stamped userID here would gray the owner's slot on every vanilla Steam/GOG client.
+        if (ReadScalar(ownerEntry, "userID") != "")
         {
             throw new SaveImportException(
-                "Post-transform validation: demoted owner userID was not stamped."
+                "Post-transform validation: demoted owner carries a userID stamp (must be empty)."
             );
         }
 
@@ -397,7 +381,7 @@ internal static class SaveImportXmlTransform
         return info;
     }
 
-    // ── Detection / collision helpers ──────────────────────────────────────────────
+    // ── Detection helpers ──────────────────────────────────────────────────────────
 
     /// <summary>
     /// True if <paramref name="player"/> is a Server master produced by a prior import. Requires the
@@ -424,23 +408,28 @@ internal static class SaveImportXmlTransform
     }
 
     /// <summary>
-    /// Returns the name of the first farmhand (or the owner) whose <c>&lt;userID&gt;</c> equals
-    /// <paramref name="userId"/>, or null if none collides.
+    /// Typo tripwire for <c>--swap-host-to</c>: the name of a farmhand (other than
+    /// <paramref name="excludeUid"/>) whose legacy userID stamp equals the supplied bind id,
+    /// or null. Warn-only at the call site — multiple ownership is supported, so a match is
+    /// suspicious (usually the wrong connect-log line), never invalid.
     /// </summary>
-    private static string? FindUserIdConflict(
-        XmlElement farmhandsContainer,
-        XmlElement originalPlayer,
-        string userId
-    )
+    public static string? FindStampCollision(XmlElement root, string userId, long excludeUid)
     {
-        foreach (var farmer in EnumerateFarmers(farmhandsContainer, originalPlayer))
+        var farmhandsContainer = SelectSingle(root, "farmhands");
+        if (farmhandsContainer == null)
         {
-            if (ReadScalar(farmer, "userID") == userId)
+            return null;
+        }
+
+        foreach (XmlElement f in farmhandsContainer.SelectNodes("Farmer")!)
+        {
+            if (ReadUid(f) != excludeUid && ReadScalar(f, "userID") == userId)
             {
-                var name = ReadScalar(farmer, "name");
+                var name = ReadScalar(f, "name");
                 return string.IsNullOrEmpty(name) ? "(unnamed)" : name;
             }
         }
+
         return null;
     }
 
@@ -462,18 +451,6 @@ internal static class SaveImportXmlTransform
             set.Add(ReadUid(owner));
         }
         return set;
-    }
-
-    private static IEnumerable<XmlElement> EnumerateFarmers(
-        XmlElement farmhandsContainer,
-        XmlElement originalPlayer
-    )
-    {
-        foreach (XmlElement f in farmhandsContainer.SelectNodes("Farmer")!)
-        {
-            yield return f;
-        }
-        yield return originalPlayer;
     }
 
     /// <summary>

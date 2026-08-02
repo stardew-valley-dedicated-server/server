@@ -210,8 +210,23 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>exitCode != 0</c>) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
 /// tail</c>; emitted at teardown only when the <c>-E</c> log is non-empty —
 /// carries the master's death line, e.g. "Timeout, server not responding.") ·
+/// <c>ssh_master_unhealthy_owner</c> (<c>host_id, cause</c>; see
+/// <see cref="Infrastructure.TunnelManager"/> for cause variants — owner-side
+/// monitor verdict before a respawn; the <c>/_ping</c> canary through the host's
+/// socket forward catches the wedge mode where <c>-O check</c> still passes) ·
+/// <c>ssh_master_pid_unparsed</c> (<c>host_id, stderr</c>; the master registered
+/// without a parseable pid, so a later respawn's hard-reset kill degrades to a
+/// skip — loud here because at kill time it would be silent) ·
+/// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill</c>; see
+/// <see cref="Infrastructure.TunnelManager"/> for kill-outcome variants) ·
+/// <c>ssh_master_respawned</c> (<c>host_id, alive</c>) ·
+/// <c>ssh_master_respawn_failed</c> (<c>host_id, error</c>) ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
+/// <c>tunnel_forward_reopened</c> / <c>tunnel_forward_reopen_failed</c>
+/// (<c>host_id, coordinator_port, mapped_port?, remote_socket?, durationMs,
+/// message?</c>; same-port restoration of this process's registered forwards
+/// after a master respawn or a canary-detected forward drop) ·
 /// <c>tunnel_forward_failed</c> (<c>host_id, coordinator_port?, mapped_port?,
 /// remote_socket?, reason:"forward_failed"|"probe_timeout"|"cancelled"|
 /// "port_collision_retry", message, attempt, attempts</c>; per attempt) ·
@@ -306,6 +321,8 @@ namespace JunimoServer.Tests.Helpers;
 /// kind:"with_ref"|"gate_only", inheritedFromClass</c>) ·
 /// <c>exclusive_released</c> (<c>server, instanceId,
 /// kind:"ended"|"passed_to_same_class", ownerClass?, waiters?</c>) ·
+/// <c>exclusive_release_rejected</c> (<c>server, instanceId, ownerClass,
+/// callerClass</c>; a stale cross-class release no-oped instead of erasing the gate) ·
 /// <c>session_created</c> · <c>session_disposed</c> ·
 /// <c>cancellation_detected</c> · <c>farmer_removal_waited</c>.</item>
 ///

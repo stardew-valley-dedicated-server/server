@@ -223,8 +223,18 @@ COPY --from=mod-builder /output/netdebug /opt/netdebug
 # /etc/services.d after copying all system files. This avoids modifying base image service files.
 # Note: .dep files can be executable scripts (return boolean) or empty markers. The ! -empty check
 # makes only non-empty files executable, handling both cases correctly.
+#
+# xrdb/min_running_time=0 declares the xrdb one-shot as expected-to-exit-immediately (the same
+# value the base image ships for its own always-exiting services — verified in the built
+# image's /etc/services.d). cinit treats a service exiting
+# before min_running_time (default 500ms) as a failed start and tears the whole container down
+# (exit 1) — and xrdb (load X resources, exit) only outlives 500ms when it happens to spend that
+# long waiting on a still-warming Xvnc, a timing race a one-shot must not have to win.
+# min_running_time is a VALUE file cinit reads — it must stay non-executable, or cinit tries to
+# run it (fails 126).
 COPY docker/rootfs/etc/services.d /tmp/services/
-RUN find /tmp/services -type f ! -empty -exec chmod +x {} \;
+RUN find /tmp/services -type f ! -empty ! -name min_running_time -exec chmod +x {} \; && \
+    find /tmp/services -type f -name min_running_time -exec chmod 0644 {} \;
 
 # Copy system files (merges with base image)
 COPY docker/rootfs/ /

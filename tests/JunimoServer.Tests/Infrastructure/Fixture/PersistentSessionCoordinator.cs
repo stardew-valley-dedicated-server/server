@@ -139,7 +139,17 @@ internal sealed class PersistentSessionCoordinator
             var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
             if (attr.Exclusive && IsUsingPersistentSession)
             {
-                await _testBase.LeaseInternal.Managed.AcquireExclusiveGateOnlyAsync(testName, ct);
+                var gateToken = await _testBase.LeaseInternal.Managed.AcquireExclusiveGateOnlyAsync(
+                    testName,
+                    ct
+                );
+                // 0 = the same-class no-op race (this class's prior acquisition still holds
+                // the gate) — keep that acquisition's token so the end-of-test release can
+                // still free the gate.
+                if (gateToken != 0)
+                {
+                    _testBase.LeaseInternal.ExclusiveToken = gateToken;
+                }
                 HoldsExclusive = true;
             }
             else if (attr.Exclusive && !IsUsingPersistentSession)
@@ -437,7 +447,9 @@ internal sealed class PersistentSessionCoordinator
         if (HoldsExclusive)
         {
             HoldsExclusive = false;
-            _testBase.LeaseInternal?.Managed.ReleaseExclusive();
+            var testName = _displayName.Length > 0 ? _displayName : _testBase.GetType().Name;
+            var lease = _testBase.LeaseInternal;
+            lease?.Managed.ReleaseExclusive(lease.ExclusiveToken, testName);
         }
     }
 

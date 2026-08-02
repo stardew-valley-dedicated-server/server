@@ -58,10 +58,16 @@ Skipped `--reload`? Run `saves reload` (or restart) to load it.
 - **Importing is one-way.** There is no supported way to move server progress back into a local
   single-player or co-op game, so import once you are ready to continue the farm on the server.
 - **Wrong id?** Re-run the import with the correct `--swap-host-to` id before the save loads, and it
-  overrides the binding. Once the save has loaded, copy the original folder in again (step 1) and
-  re-import to start fresh.
-- **Id already in use.** If the id you give already belongs to another farmhand in that save, the import
-  refuses and names it. Double-check you have the right player's id.
+  overrides the binding. Once the save has loaded, fix it with
+  [`farmhand rebind <name> <id>`](/admins/operations/commands#farmhand) (or `farmhand release <name>`
+  to unlock the slot entirely). As a tripwire, the import logs a warning when the supplied id
+  already identifies another farmhand in the save — expected (and safe to ignore) when that player
+  deliberately owns several farmers; otherwise it usually means the wrong connect-log line was
+  copied.
+- **One player, several farmers.** The same id may own more than one farmhand — binding an id that
+  already owns a farmhand in the save is fine and nothing is rejected.
+- **Ownership travels with the save.** Bindings are stored in a small file inside the save folder,
+  so backups, restores, and moving the `Saves` folder to another server all keep them.
 
 ## See also
 

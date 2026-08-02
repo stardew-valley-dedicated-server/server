@@ -193,7 +193,7 @@ public class FestivalTests : TestBase
     /// is still leavable — guarding both the no-online-players end and the per-festival state reset.
     ///
     /// Disconnecting the only client leaves nobody online at the festival; the host's
-    /// <c>HandleFestivalLeave</c> no-online-players branch (<c>CountOnlineOtherPlayers() == 0</c>)
+    /// <c>HandleFestivalLeave</c> no-online-players branch (<c>OnlineFarmers.CountOthers() == 0</c>)
     /// ends it gracefully via the host's own festivalEnd ready. Then a fresh client enters a later
     /// festival (Festival of Ice) and votes to leave: that leave must be honoured, which it isn't
     /// if a stale <c>_startedFestivalEnd</c> survives the empty festival (the engine sets
@@ -236,7 +236,7 @@ public class FestivalTests : TestBase
         Assert.True(
             emptyEnded,
             "An empty festival (no online players left) should end via HandleFestivalLeave's "
-                + "CountOnlineOtherPlayers() == 0 branch — otherFarmers.Count can't reach 0 during a "
+                + "OnlineFarmers.CountOthers() == 0 branch — otherFarmers.Count can't reach 0 during a "
                 + "festival, so the end must key off the online (non-disconnecting) count."
         );
         LogSuccess("Empty Spirit's Eve ended with no online players present");

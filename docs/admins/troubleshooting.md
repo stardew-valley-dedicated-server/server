@@ -87,7 +87,7 @@ If you are using the **same Steam account** for both the server and your game cl
 
 **Solution:** Use a **separate Steam account** for the server. The server account must own a copy of Stardew Valley.
 
-If a dedicated account isn't available, connect as the host via direct IP instead of invite code, and have other players use the invite code.
+If a dedicated account isn't available, connect as the host via direct IP instead of invite code, and have other players use the invite code. Note that a farmer created over direct IP isn't tied to your Steam account (see [Farmhand Ownership](/admins/configuration/server-settings#farmhand-ownership)).
 :::
 
 This is the most common cause when:
@@ -108,6 +108,29 @@ If "Hairpinning: Not supported":
 - Have players connect from mobile hotspot
 - Use a VPN service
 - Enable direct IP connections (if acceptable for your use case)
+
+### A player's farmer is missing from their selection list
+
+Farmers are scoped to the connection's platform identity (see
+[Farmhand Ownership](/admins/configuration/server-settings#farmhand-ownership)): a farmer created
+via a Steam/GOG invite code is offered only to that account, and a farmer created over direct IP is
+offered only to direct-IP players.
+
+1. Ask how they connected — the usual cause is joining via direct IP after creating the farmer via
+   an invite code (or the other way around). Reconnecting the original way restores the farmer.
+2. Steam-specific: the same Steam account presents **two different identities depending on the
+   join door**. The friends list and the S-prefixed invite code both connect through Steam and
+   present the account's Steam id; the G-prefixed (GOG) code connects through Galaxy and presents
+   a different id for the same account. A farmer created through one door is hidden behind the
+   other, and the two identities cannot be linked automatically — have the player rejoin through
+   the door they created the farmer with, or rebind (below).
+3. To move a farmer to another account or connection method, use
+   [`farmhand rebind <name> <id>`](/admins/operations/commands#farmhand) with the id from the
+   `Client connected via ...` log line, or `farmhand release <name>` to unlock the slot so the
+   next player to select it (on any connection method) becomes its owner.
+
+Every rejected selection attempt is logged at Info level with the reason (and, where applicable, a
+ready-to-run fix command) — check the server log when a player reports a locked or missing farmer.
 
 ### Intermittent disconnections
 

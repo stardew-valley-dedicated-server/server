@@ -225,6 +225,14 @@ internal sealed class ManagedServer : IAsyncDisposable
     //     each other to drain
     private volatile TaskCompletionSource? _exclusiveDone;
     private string? _exclusiveOwnerClass;
+
+    // Ownership token: every successful acquisition gets a fresh token, and only the token
+    // of the CURRENTLY-ACTIVE acquisition may release. Class-name matching is not enough —
+    // the double-disposal shape (ResourceLease.DisposeAsync + the coordinator's
+    // ReleaseExclusiveGate) can land its second call while the SAME class's next method
+    // holds the gate, and a class-granular guard would honor that stale release.
+    private long _exclusiveOwnerToken; // 0 = none; guarded by _exclusiveLock
+    private long _exclusiveNextToken = 1; // guarded by _exclusiveLock
     private int _exclusiveClassWaiters; // same-class methods waiting to inherit the gate
     private readonly SemaphoreSlim _exclusiveClassTurn = new(0); // serializes same-class inheritance
     private readonly object _exclusiveLock = new();
@@ -346,8 +354,11 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// same class. Non-class tests remain blocked between methods, preventing
     /// interference (e.g., /newgame wiping state). Methods within the class still
     /// serialize via the drain-to-1 wait.
+    ///
+    /// Returns the acquisition's ownership token — the value <see cref="ReleaseExclusive"/>
+    /// requires to release this acquisition.
     /// </summary>
-    public async Task AddRefAndAcquireExclusiveAsync(
+    public async Task<long> AddRefAndAcquireExclusiveAsync(
         string? testName,
         CancellationToken ct,
         Func<Task>? releaseAndReacquireCapacity = null,
@@ -357,6 +368,7 @@ internal sealed class ManagedServer : IAsyncDisposable
         var callerClass = ExtractClassName(testName);
         var inheritedFromClass = false;
         var reservationConsumed = false;
+        long token = 0;
 
         while (true)
         {
@@ -374,6 +386,8 @@ internal sealed class ManagedServer : IAsyncDisposable
                         TaskCreationOptions.RunContinuationsAsynchronously
                     );
                     _exclusiveOwnerClass = callerClass;
+                    token = _exclusiveNextToken++;
+                    _exclusiveOwnerToken = token;
                     // Drain any stale semaphore permits from a prior cancelled session.
                     while (_exclusiveClassTurn.CurrentCount > 0)
                     {
@@ -390,8 +404,10 @@ internal sealed class ManagedServer : IAsyncDisposable
                     // Same class already holds the gate; register as waiter so
                     // ReleaseExclusive knows not to complete the TCS.
                     // Don't AddRef yet; wait for the prior method to finish first
-                    // to serialize methods within the class.
+                    // to serialize methods within the class. The token becomes the
+                    // active one only when this waiter's turn arrives below.
                     _exclusiveClassWaiters++;
+                    token = _exclusiveNextToken++;
                     inheritedFromClass = true;
                     break;
                 }
@@ -438,6 +454,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                         var done = _exclusiveDone;
                         _exclusiveDone = null;
                         _exclusiveOwnerClass = null;
+                        _exclusiveOwnerToken = 0;
                         done?.TrySetResult();
                     }
                 }
@@ -454,6 +471,7 @@ internal sealed class ManagedServer : IAsyncDisposable
             lock (_exclusiveLock)
             {
                 _exclusiveClassWaiters--;
+                _exclusiveOwnerToken = token;
             }
             AddRef(testName, consumeReservation);
             reservationConsumed = consumeReservation;
@@ -472,7 +490,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                     inheritedFromClass = true,
                 }
             );
-            return;
+            return token;
         }
 
         TestLog.Server($"{_displayLabel} waiting for refs to drain (current={_refCount})");
@@ -532,6 +550,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                     var done = _exclusiveDone;
                     _exclusiveDone = null;
                     _exclusiveOwnerClass = null;
+                    _exclusiveOwnerToken = 0;
                     done?.TrySetResult();
                 }
             }
@@ -552,14 +571,20 @@ internal sealed class ManagedServer : IAsyncDisposable
                 inheritedFromClass = false,
             }
         );
+        return token;
     }
 
     /// <summary>
-    /// Releases exclusive access. If other methods from the same class still hold
-    /// refs, the gate stays held and non-class tests remain blocked. Only when the
-    /// last same-class ref releases does the TCS complete.
+    /// Releases exclusive access. Only the token returned by the acquisition that
+    /// currently holds the gate may release it; <paramref name="callerTestName"/> is
+    /// diagnostics-only. A stale token — the double-disposal shape's second call
+    /// (ResourceLease.DisposeAsync + the coordinator's ReleaseExclusiveGate) landing
+    /// after the gate moved on, whether to another class or to the same class's next
+    /// method — is rejected, keeping the gate and its waiters intact. If other methods
+    /// from the same class are queued, a valid release passes the turn and the gate
+    /// stays held; only the last same-class release completes the TCS.
     /// </summary>
-    public void ReleaseExclusive()
+    public void ReleaseExclusive(long token, string? callerTestName)
     {
         TaskCompletionSource? done;
         lock (_exclusiveLock)
@@ -568,6 +593,26 @@ internal sealed class ManagedServer : IAsyncDisposable
             {
                 return;
             }
+
+            if (token == 0 || token != _exclusiveOwnerToken)
+            {
+                InfrastructureEventLog.Emit(
+                    "exclusive_release_rejected",
+                    new
+                    {
+                        server = Key,
+                        instanceId = InstanceId,
+                        ownerClass = _exclusiveOwnerClass,
+                        callerClass = ExtractClassName(callerTestName),
+                        reason = token == 0 ? "no_token" : "stale_token",
+                    }
+                );
+                return;
+            }
+
+            // Invalidate before passing/ending so this acquisition can't release twice —
+            // its second disposal-site call becomes a stale_token no-op.
+            _exclusiveOwnerToken = 0;
 
             // Same-class methods are waiting; signal the next one via semaphore.
             // The TCS stays held so non-class tests remain blocked.
@@ -619,10 +664,14 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// not the exclusive class semaphore. If another exclusive from the same class
     /// already holds the gate, this returns immediately (the turn lock guarantees
     /// the prior method has already finished).
+    ///
+    /// Returns the acquisition's ownership token for <see cref="ReleaseExclusive"/>
+    /// (0 on the same-class no-op race — release-inert by design).
     /// </summary>
-    public async Task AcquireExclusiveGateOnlyAsync(string? testName, CancellationToken ct)
+    public async Task<long> AcquireExclusiveGateOnlyAsync(string? testName, CancellationToken ct)
     {
         var callerClass = ExtractClassName(testName);
+        long token;
 
         while (true)
         {
@@ -638,6 +687,8 @@ internal sealed class ManagedServer : IAsyncDisposable
                         TaskCreationOptions.RunContinuationsAsynchronously
                     );
                     _exclusiveOwnerClass = callerClass;
+                    token = _exclusiveNextToken++;
+                    _exclusiveOwnerToken = token;
                     break;
                 }
 
@@ -648,7 +699,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // because the turn lock serializes methods. Safe to treat as a no-op race.
                 if (callerClass != null && _exclusiveOwnerClass == callerClass)
                 {
-                    return;
+                    return 0;
                 }
             }
 
@@ -695,6 +746,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 inheritedFromClass = false,
             }
         );
+        return token;
     }
 
     public bool IsAborted => _aborted;
@@ -998,6 +1050,7 @@ internal sealed class ManagedServer : IAsyncDisposable
 
         while (!ct.IsCancellationRequested)
         {
+            var probeDeadlineHit = false;
             try
             {
                 await Task.Delay(intervalMs, ct);
@@ -1057,6 +1110,7 @@ internal sealed class ManagedServer : IAsyncDisposable
                 catch (OperationCanceledException)
                     when (probeCts.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
+                    probeDeadlineHit = true;
                     throw new TimeoutException(
                         $"/health probe exceeded {ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000)}ms "
                             + "(forward wedged mid-stream or server unresponsive)"
@@ -1169,6 +1223,29 @@ internal sealed class ManagedServer : IAsyncDisposable
                     continue;
                 }
 
+                // Hang-mode twin of the fault above: a wedged master black-holes NEW
+                // connections (accepted, never serviced), so the probe hits its deadline
+                // instead of throwing a classifiable transport fault. Same corroborate-
+                // then-reopen heal, but the strike below STILL counts: only a succeeding
+                // probe resets the streak, so a genuinely hung server (whose forward is
+                // fine) still reaches maxFailures — the heal can't keep it alive forever.
+                if (probeDeadlineHit && Host.SshDestination is not null)
+                {
+                    try
+                    {
+                        if (await Server.HealApiForwardAsync(ct))
+                        {
+                            TestLog.Server(
+                                $"{_displayLabel} re-opened API forward after probe timeout "
+                                    + $"(strike {consecutiveFailures + 1}/{maxFailures} still counts)"
+                            );
+                        }
+                    }
+                    catch
+                    { /* heal is best-effort; the strike accounting below is the backstop */
+                    }
+                }
+
                 consecutiveFailures++;
                 lastFailureCode = PoisonReasonCode.HealthCheckError;
                 lastFailureReason = $"Health check threw {ex.GetType().Name}: {ex.Message}";
@@ -1210,9 +1287,12 @@ internal sealed class ManagedServer : IAsyncDisposable
 
     /// <summary>
     /// When a health probe throws a <i>forward-scoped</i> transport fault (loopback
-    /// ConnectionRefused — the per-server <c>ssh -L</c> listener is gone), corroborate
-    /// the host is still up via <c>ssh -O check</c> and, if so, re-open this server's
-    /// API forward in place. Returns true when the fault was forward-scoped AND
+    /// ConnectionRefused — the per-server <c>ssh -L</c> listener is gone), heal via
+    /// <see cref="Containers.ServerContainer.HealApiForwardAsync"/>: corroborate the
+    /// master is usable (retries <c>-O check</c> + respawns once), re-open this server's
+    /// API forward, deduplicated against a concurrent in-flight-request heal. This runs
+    /// every health-watchdog cycle while the forward is dead, so even a longer outage
+    /// heals on a later cycle. Returns true when the fault was forward-scoped AND
     /// healed — the caller then resets the failure streak instead of advancing toward
     /// poison. Returns false for non-forward faults, local hosts, a dead master, or a
     /// failed re-open (all of which should count normally).
@@ -1225,26 +1305,17 @@ internal sealed class ManagedServer : IAsyncDisposable
             return false;
         }
 
-        // Establish the master is usable before re-opening the forward (retries -O check +
-        // respawns once — see TunnelManager.EnsureMasterUsableAsync). This runs every
-        // health-watchdog cycle while the forward is dead, so even a longer outage heals on
-        // a later cycle rather than the test eating the whole blip.
-        if (!await TunnelManager.Default.EnsureMasterUsableAsync(Host.Id, ct))
-        {
-            return false;
-        }
-
         try
         {
-            var reopened = await Server.ReopenApiForwardAsync(ct);
-            if (reopened)
+            var healed = await Server.HealApiForwardAsync(ct);
+            if (healed)
             {
                 TestLog.Server(
                     $"{_displayLabel} healed forward-scoped fault "
                         + $"({ex.GetType().Name}) — re-opened API forward, host kept"
                 );
             }
-            return reopened;
+            return healed;
         }
         catch (Exception healEx)
         {
@@ -1343,6 +1414,7 @@ internal sealed class ManagedServer : IAsyncDisposable
             done = _exclusiveDone;
             _exclusiveDone = null;
             _exclusiveOwnerClass = null;
+            _exclusiveOwnerToken = 0;
         }
 
         // One permit per queued sibling; each decrements _exclusiveClassWaiters as it

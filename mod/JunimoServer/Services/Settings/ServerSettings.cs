@@ -52,6 +52,17 @@ public class ServerRuntimeSettings
     public bool AllowIpConnections { get; set; } = false;
 
     /// <summary>
+    /// Server-authoritative farmhand ownership: farmhands are visible/claimable only by the
+    /// transport identity (Steam64 / GOG Galaxy id) that first claimed them, and IP-created
+    /// farmhands stay in the LAN pool. Disable for setups where one player uses the same
+    /// farmhand from two transports (e.g. Steam at the desk plus a second device over direct
+    /// IP) — strict mode cannot express that dual identity. Ownership keeps being recorded
+    /// while disabled, so re-enabling restores enforcement with an up-to-date map.
+    /// Default: true
+    /// </summary>
+    public bool EnforceFarmhandOwnership { get; set; } = true;
+
+    /// <summary>
     /// Lobby mode for password protection: "Shared" or "Individual".
     /// Shared: All unauthenticated players wait in the same lobby cabin.
     /// Individual: Each player gets their own isolated lobby cabin.

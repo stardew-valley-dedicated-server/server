@@ -259,7 +259,7 @@ public class AlwaysOnServerFestivals
             var numberReady = Game1.netReady.GetNumberReady("festivalStart");
             var numberRequired = Game1.netReady.GetNumberRequired("festivalStart");
             _monitor.Log(
-                $"[Festival] online={CountOnlineOtherPlayers()}, otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
+                $"[Festival] online={OnlineFarmers.CountOthers()}, otherFarmers={Game1.otherFarmers.Count}, isFestival={Game1.CurrentEvent?.isFestival}, warping={_warpingToFestival}, ready={numberReady}/{numberRequired}, CheckOthersReady={CheckOthersReady("festivalStart")}",
                 LogLevel.Trace
             );
         }
@@ -268,7 +268,7 @@ public class AlwaysOnServerFestivals
         // Consistent with the no-players end check; CurrentEvent is null here so otherFarmers
         // would be live, but use the same online count so a player disconnecting mid-warp-in is
         // seen immediately rather than one removeDisconnectedFarmers pass later.
-        if (CountOnlineOtherPlayers() == 0)
+        if (OnlineFarmers.CountOthers() == 0)
         {
             return;
         }
@@ -354,30 +354,6 @@ public class AlwaysOnServerFestivals
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Count online non-host players, excluding any mid-disconnect, mirroring how the game's
-    /// <c>DedicatedServer</c> builds its <c>onlineIds</c> set (DedicatedServer.cs:286-293).
-    ///
-    /// <para>
-    /// Do NOT use <c>Game1.otherFarmers.Count</c> for "is the festival empty?". A player who
-    /// disconnects mid-festival is only <i>marked</i> in <c>disconnectingFarmers</c>; the actual
-    /// <c>Game1.otherFarmers.Remove</c> runs in <c>Multiplayer.removeDisconnectedFarmers</c>, which
-    /// is gated on <c>Game1.CurrentEvent == null</c> (Multiplayer.cs:1821). So during a festival
-    /// the count never drops — and gating the no-players force-end on it would hang the festival
-    /// forever (event up → not removed → count stays 1 → never ends → event stays up).
-    /// <c>isDisconnecting</c> is the signal the engine itself uses to see through that.
-    /// </para>
-    /// </summary>
-    private static int CountOnlineOtherPlayers()
-    {
-        return Game1
-            .getOnlineFarmers()
-            .Count(f =>
-                f.UniqueMultiplayerID != Game1.player.UniqueMultiplayerID
-                && !Game1.Multiplayer.isDisconnecting(f)
-            );
     }
 
     /// <summary>
@@ -528,8 +504,8 @@ public class AlwaysOnServerFestivals
         // DedicatedServer.Tick's onlineIds.Count == 0 branch (DedicatedServer.cs:294-308), which
         // ends via TryStartEndFestivalDialogue (force: false) — with no one else online the host's
         // own festivalEnd ready satisfies the check and the festival ends gracefully. Counts
-        // online non-disconnecting players, NOT otherFarmers.Count (see CountOnlineOtherPlayers).
-        if (CountOnlineOtherPlayers() == 0)
+        // online non-disconnecting players, NOT otherFarmers.Count (see OnlineFarmers).
+        if (OnlineFarmers.CountOthers() == 0)
         {
             EndFestival(
                 "No players remaining at festival, ending and sending host home",
@@ -544,7 +520,7 @@ public class AlwaysOnServerFestivals
             var endReady = Game1.netReady.GetNumberReady("festivalEnd");
             var endRequired = Game1.netReady.GetNumberRequired("festivalEnd");
             _monitor.Log(
-                $"[FestivalLeave] online={CountOnlineOtherPlayers()}, ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
+                $"[FestivalLeave] online={OnlineFarmers.CountOthers()}, ready={endReady}/{endRequired}, CheckOthersReady={CheckOthersReady("festivalEnd")}",
                 LogLevel.Trace
             );
         }

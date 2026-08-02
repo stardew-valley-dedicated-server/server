@@ -56,4 +56,4 @@ When tests fail, follow the runbook at `docs/developers/testing/test-failure-run
 
 - **Commits**: Conventional commits enforced by commitlint (`feat:`, `fix:`, `perf:`, `docs:`, `test:`, `chore:`, `refactor:`, `ci:`, `build:`)
 - **Decompiled sources**: Reference at `decompiled/sdv-1.6.15-24356/` for tracing game mechanics
-- **Helpers are integration-tested, not unit-tested**: `tests/JunimoServer.Tests/` is E2E only — there is no unit-test layer. Verification of new helper code (e.g., wait-tracing primitives) is done by inspecting the JSONL output of a real run, not by isolated unit tests.
+- **Helpers are integration-tested, not unit-tested**: `tests/JunimoServer.Tests/` is E2E-first — verification of new helper code (e.g., wait-tracing primitives) is done by inspecting the JSONL output of a real run, not by isolated unit tests. Sole exception: deterministic in-memory guards for timing races a live run cannot reliably reproduce (e.g., `ExclusiveGateOwnershipTests`, a ~1ms double-release window).

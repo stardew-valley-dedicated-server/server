@@ -1,5 +1,17 @@
 # Plan: True-live remote access to the E2E test-UI during an in-progress CI run
 
+> **Update 2026-08-02 — chosen carrier slated for removal.** Option A rides the SSH
+> ControlMaster (`TunnelManager` reverse forward), which
+> [`tests-mesh-vpn-host-transport.md`](tests-mesh-vpn-host-transport.md) plans to delete
+> outright. Once the coordinator is on the mesh anyway (already implied by
+> [`tests-local-ci-runners.md`](tests-local-ci-runners.md)'s Tailscale step), this
+> plan's goal reduces to binding `WebRenderer` to the tailnet interface and opening
+> `http://<runner-mesh-ip>:<webPort>` from any mesh device — no carrier, no VPS
+> listener, no token relay. "No token relay" is not "no token gate": mesh reachability
+> is not authentication, so the re-plan must keep `WebRenderer` validating
+> `SDVD_WEB_TOKEN` on HTTP, WebSocket, and artifact access. Re-plan on that basis
+> before implementing; don't build Option A on the to-be-deleted master.
+
 ## Context
 
 There is no way to watch the test-UI of a running E2E CI job from outside. The
@@ -17,7 +29,7 @@ preferably **without a third-party service**. The VPS the harness reaches over S
 the WebRenderer binds to `127.0.0.1`. Something must carry the loopback server outward.
 There are two viable carriers:
 
-### Option A — Reverse SSH to the public VPS (NO third party) — chosen
+### Option A — Reverse SSH to the public VPS (NO third party) — was chosen; superseded by the update above
 
 `ssh -R <vps>:<port>:127.0.0.1:<webPort>` rides the **SSH ControlMaster the harness
 already opens to the VPS** for every run (`TunnelManager.SpawnMasterAsync`, `RegisterHostMasterAsync`).
@@ -57,7 +69,7 @@ report, so it's no *new* vendor.
   a `cloudflared` binary is downloaded per run; the hostname is random and scraped from
   its log; background-process lifecycle to manage.
 
-**Recommendation: Option A (reverse-SSH).** It satisfies the no-third-party preference,
+**Superseded recommendation (historical — do not implement; see the update note at the top): Option A (reverse-SSH).** It satisfies the no-third-party preference,
 keeps un-redacted test data inside the project's own infrastructure, reuses the
 already-trusted SSH channel, and is small code. Its costs are a one-time sshd
 `GatewayPorts` + firewall change and a build-time check of the `-O forward -R` support
@@ -106,7 +118,11 @@ runs stay byte-for-byte unchanged.
 
 ---
 
-## Changes
+## Changes (historical — written for the superseded Option A)
+
+> Steps 1-3 (live flag, fixed port, token gate) carry over to the tailnet re-plan conceptually;
+> steps 4-5 are the reverse-SSH carrier and VPS publishing that the re-plan removes. Do not
+> implement from this section.
 
 ### 1. Runner: add a `--live` flag (run WebRenderer in CI)
 
@@ -297,7 +313,7 @@ need a cert on the VPS (out of scope for v1).
 
 ---
 
-## Verification (end-to-end)
+## Verification (end-to-end) (historical — verifies the superseded Option A carrier)
 
 1. **Build gates.** `dotnet build ./tests/JunimoServer.TestRunner`. (No test-ui change, so
    `make build-test-ui` is only needed if an SPA file was touched.)

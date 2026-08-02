@@ -111,7 +111,17 @@ public enum WaitName
     Polling_AbandonedClaim_DisconnectHealConfirmed,
     Polling_AbandonedClaim_SweptOnReload,
 
-    // SaveImportTests.cs (10)
+    // FarmhandVisibilityTests.cs (8)
+    Polling_FarmhandVisibility_OwnershipRecorded,
+    Polling_FarmhandVisibility_SteamFarmhandMapped,
+    Polling_FarmhandVisibility_ReleaseMapped,
+    Polling_FarmhandVisibility_Released,
+    Polling_FarmhandVisibility_Reowned,
+    Polling_FarmhandVisibility_IpOffOwnership,
+    Polling_FarmhandVisibility_IpOffReleased,
+    Polling_FarmhandVisibility_IpOffReowned,
+
+    // SaveImportTests.cs (14)
     Polling_SaveImport_SwapFinalized,
     Polling_SaveImport_ContentsMoved,
     Polling_SaveImport_ContentsMovedUpgraded,
@@ -122,6 +132,10 @@ public enum WaitName
     Polling_SaveImport_SecondReloadNoop,
     Polling_SaveImport_MasterGatedState,
     Polling_SaveImport_ForceReloadKicksAndFinalizes,
+    Polling_SaveImport_MultiOwnershipBound,
+    Polling_SaveImport_MultiOwnershipRebound,
+    Polling_SaveImport_ReleasedState,
+    Polling_SaveImport_OwnershipStateReloaded,
 
     // FarmhandManagementTests.cs (1)
     Polling_FarmhandManagement_FarmhandGone,

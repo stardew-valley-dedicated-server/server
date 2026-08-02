@@ -380,11 +380,10 @@ public class PasswordProtectionTests : TestBase
 
         // Disconnect and delete via API — this is the path that calls DestroyCabin,
         // which fans out homeLocation cleanup to any surviving farmhandData entries.
-        await Farmers.DisconnectAndWaitForSlotAsync(
-            first.JoinResult.UniqueMultiplayerId,
-            first.FarmerName,
-            TestCt
-        );
+        // Wait for the customized snapshot to be server-visible BEFORE disconnecting: the name
+        // net-syncs after the join gate returns, so disconnecting too early makes saveFarmhand()
+        // persist an empty-name entry that the by-name delete below can't find (name never synced).
+        await Farmers.DisconnectAndWaitForPersistenceAsync(first.FarmerName, TestCt);
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             first.FarmerName,
             ct: TestCt

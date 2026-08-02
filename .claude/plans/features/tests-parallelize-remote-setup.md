@@ -1,5 +1,16 @@
 # Parallelize remote-host setup: preflight → fan-out(A, B)
 
+> **Update 2026-08-02:** structurally unaffected by
+> [`tests-mesh-vpn-host-transport.md`](tests-mesh-vpn-host-transport.md) (the fan-out
+> is transport-agnostic; "preflight opens the SSH forwards" becomes "preflight
+> materializes `host.ApiClient`"), but the mesh raises transfer throughput
+> substantially (SSH path measured ~13 MB/s), which shrinks the wall-clock win of
+> overlapping the two transfer buckets — re-measure on the post-mesh transport before
+> implementing. One concrete dependency: `ImageDistributor` treats an empty
+> `SshDestination` as "local host, skip transfer" (`ImageDistributor.cs:102-105`), so a
+> direct `tcp://` mesh host would silently get no images until that check moves to a
+> transport-neutral remote-daemon predicate (the mesh plan's `DockerHost.IsRemoteDaemon`).
+
 ## Context
 
 The test runner's per-run setup (`tests/JunimoServer.TestRunner/Program.cs`, ~lines

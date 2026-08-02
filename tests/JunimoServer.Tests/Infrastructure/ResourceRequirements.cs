@@ -90,8 +90,15 @@ public sealed record ResourceRequirements(
             MaxPlayers: attr.MaxPlayers,
             Clients: attr.Clients,
             CabinStrategy: attr.CabinStrategy,
-            // Without Steam there's no invite code path; force IP connections on
-            AllowIpConnections: attr.WithSteam ? attr.AllowIpConnections : true,
+            // Always on. LAN servers need it (no invite-code path), and steam servers keep it
+            // on too so mixed-transport tests don't fork the steam config: each host slice's
+            // allocator partitions off ONE server account (SteamAccountAllocator index 0) — a
+            // cost-minimization policy (accounts are paid), not an infra limit — so a second
+            // steam config's prestart blocks on that slice's server account and wedges the
+            // run unless a second steam-capable host slice exists. Production's IP-off posture
+            // is covered via the runtime /test/set_ip_connections toggle instead. The extra
+            // Lidgren listener is idle for invite-code-only tests.
+            AllowIpConnections: true,
             Isolation: attr.Isolation,
             TestClassName: testClassName,
             TestMethodName: testMethodName,

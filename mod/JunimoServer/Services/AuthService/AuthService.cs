@@ -85,6 +85,18 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static volatile bool _pendingGalaxyLobbyUpdate;
 
+    /// <summary>
+    /// True once the CURRENT Galaxy lobby carries the SteamLobbyId stamp — the metadata a
+    /// vanilla Steam client reads to complete an S-code join. This, not GameServer init, is
+    /// what makes the S-prefixed invite code actually joinable, so /status gates the code's
+    /// exposure on it. Cleared whenever the stamp goes stale: session loss, shutdown, or a
+    /// freshly-created lobby id whose stamp is still queued for the next game tick.
+    /// </summary>
+    private static volatile bool _steamLobbyPublished;
+
+    /// <summary>See <see cref="_steamLobbyPublished"/>.</summary>
+    public static bool SteamLobbyPublished => _steamLobbyPublished;
+
     /// <summary>True while a background re-sign-in ticket fetch is in flight; see
     /// <see cref="BeginGalaxyReSignIn"/>. Task-written, game-thread read, so volatile.</summary>
     private static volatile bool _galaxyReSignInInFlight;
@@ -224,6 +236,7 @@ public class GalaxyAuthService : ModService
         _lobbyCreationAttempted = false;
         _lastSteamLobbyPrivacy = null;
         _pendingGalaxyLobbyUpdate = false;
+        _steamLobbyPublished = false;
 
         // Abandon a prior session's in-flight re-login — else it consumes a stale (gen-bumped) ticket
         // or re-stamps against the just-cleared lobby. The next reconnect re-arms it.
@@ -696,7 +709,9 @@ public class GalaxyAuthService : ModService
                             new { lobbyId = _steamLobbyId.ToString(), maxMembers = maxLobbyMembers }
                         );
 
-                        // Schedule Galaxy lobby update for next game tick (Galaxy SDK is not thread-safe)
+                        // Schedule Galaxy lobby update for next game tick (Galaxy SDK is not
+                        // thread-safe). Until that tick stamps it, the S-code isn't joinable.
+                        _steamLobbyPublished = false;
                         _pendingGalaxyLobbyUpdate = true;
                     }
                     else
@@ -745,6 +760,7 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static void UpdateGalaxyLobbyWithSteamLobbyId()
     {
+        _steamLobbyPublished = false;
         if (_steamLobbyId == 0)
         {
             _monitor.Log("Cannot update Galaxy lobby: Steam lobby ID not set", LogLevel.Warn);
@@ -760,8 +776,11 @@ public class GalaxyAuthService : ModService
                 return;
             }
             // Set the SteamLobbyId in Galaxy lobby metadata — this is what vanilla SteamNetClient
-            // reads to join the Steam lobby.
+            // reads to join the Steam lobby. setLobbyData surfaces no completion callback here,
+            // so "published" is optimistic by one SDK propagation hop — the best local signal
+            // available; a client racing that hop just retries the S-code join a moment later.
             galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
+            _steamLobbyPublished = true;
             _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);
         }
         catch (Exception ex)
@@ -1341,6 +1360,7 @@ public class GalaxyAuthService : ModService
         // Reset lobby state
         _steamLobbyId = 0;
         _lobbyCreationAttempted = false;
+        _steamLobbyPublished = false;
 
         // Reset Galaxy init state
         _galaxyInitComplete = false;

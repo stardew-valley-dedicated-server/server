@@ -1,7 +1,7 @@
 using System;
 using JunimoServer.Services.ServerOptim;
+using JunimoServer.Util;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
 
 namespace JunimoServer.Services.Commands;
 
@@ -52,16 +52,14 @@ public class RenderingCommand
             return;
         }
 
-        // Marshal the mutation onto the game loop. SetServerFps writes
-        // Game1.mapDisplayDevice, which must run on the game thread; SMAPI console
-        // commands run on a background thread. Mirrors ApiService.RunOnGameThreadAsync.
-        // A one-shot UpdateTicked handler runs once on the next tick, then unsubscribes.
-        void Apply(object sender, UpdateTickedEventArgs e)
-        {
-            _helper.Events.GameLoop.UpdateTicked -= Apply;
-            ServerOptimizerOverrides.SetServerFps(newFps, _monitor);
-        }
-
-        _helper.Events.GameLoop.UpdateTicked += Apply;
+        // SetServerFps writes Game1.mapDisplayDevice — game-thread-only. Works pre-load, so
+        // no loaded-save requirement.
+        GameThreadOneShot.Run(
+            _helper,
+            _monitor,
+            "rendering command",
+            () => ServerOptimizerOverrides.SetServerFps(newFps, _monitor),
+            requireLoadedSave: false
+        );
     }
 }
