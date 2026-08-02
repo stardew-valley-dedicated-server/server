@@ -46,6 +46,7 @@ public sealed class TunnelManager : IAsyncDisposable
     private readonly Dictionary<ForwardKey, ForwardEntry> _forwards = new();
     private readonly Dictionary<string, HostMaster> _masters = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _canaryWedgeStreaks = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _reopenFailStreaks = new(StringComparer.Ordinal);
     private string _sshPath = "ssh";
 
     // Set at DrainAsync entry. Teardown owns master lifecycle from that point: the
@@ -195,6 +196,16 @@ public sealed class TunnelManager : IAsyncDisposable
             );
         }
 
+        var masterPid = ParseMasterPid(checkStderr);
+        if (masterPid is null)
+        {
+            // Without a pid the respawn path's hard reset silently degrades to
+            // "skipped_unknown_pid" — surface the parse miss at registration (an `ssh -O
+            // check` output-format change would otherwise disable the kill path with no
+            // signal until a wedge needs it).
+            EmitSafe("ssh_master_pid_unparsed", new { host_id = hostId, stderr = checkStderr });
+        }
+
         lock (_lock)
         {
             _masters[hostId] = new HostMaster
@@ -205,7 +216,7 @@ public sealed class TunnelManager : IAsyncDisposable
                 ControlPath = controlPath,
                 LogPath = logPath,
                 Owned = true,
-                MasterPid = ParseMasterPid(checkStderr),
+                MasterPid = masterPid,
                 SpawnedAtUtc = DateTime.UtcNow,
             };
         }
@@ -433,7 +444,11 @@ public sealed class TunnelManager : IAsyncDisposable
     /// A wedged data path (two consecutive polls, debounced against transfer-load slowness)
     /// or a failed mux check respawns the master at its existing ControlPath; a canary
     /// <i>connection-refused</i> means the forward listener dropped while the master is fine
-    /// (keepalive blip), so only the owner-registered forwards are re-opened in place.
+    /// (keepalive blip), so only the owner-registered forwards are re-opened in place
+    /// (skipping ones whose listener still accepts). If that in-place reopen fails on two
+    /// consecutive polls, it escalates to a respawn too (cause <c>forward_reopen_failing</c>)
+    /// — otherwise a permanently unrecoverable forward (e.g. an orphan squatting the pinned
+    /// port) would loop reopen-failure events under a monitor that keeps reporting healthy.
     /// Returns true if the master is healthy (already, or after respawn). No-op true for a
     /// host this process doesn't own — the child CANNOT respawn (TryRespawnMasterAsync
     /// refuses on !Owned), which is why this must run in the parent.
@@ -460,27 +475,43 @@ public sealed class TunnelManager : IAsyncDisposable
             var canary = await ProbeSocketForwardDataPathAsync(hostId, ct);
             if (canary == SocketForwardProbeResult.Dropped)
             {
-                ResetCanaryWedgeStreak(hostId);
-                await ReopenRegisteredForwardsAsync(hostId, ct);
-                return true;
+                ResetStreak(_canaryWedgeStreaks, hostId);
+                if (await ReopenRegisteredForwardsAsync(hostId, skipAliveListeners: true, ct))
+                {
+                    ResetStreak(_reopenFailStreaks, hostId);
+                    return true;
+                }
+                if (IncrementStreak(_reopenFailStreaks, hostId) < 2)
+                {
+                    return true; // single miss: the in-place reopen may just be racing the drop
+                }
+                // In-place reopen keeps failing (e.g. an orphan process squats the pinned
+                // port) — without this escalation the monitor would report healthy forever
+                // while every poll emits tunnel_forward_reopen_failed.
+                cause = "forward_reopen_failing";
             }
-            if (canary != SocketForwardProbeResult.Wedged)
+            else if (canary != SocketForwardProbeResult.Wedged)
             {
-                ResetCanaryWedgeStreak(hostId);
+                ResetStreak(_canaryWedgeStreaks, hostId);
+                ResetStreak(_reopenFailStreaks, hostId);
                 return true;
             }
-            if (IncrementCanaryWedgeStreak(hostId) < 2)
+            else if (IncrementStreak(_canaryWedgeStreaks, hostId) < 2)
             {
                 return true; // single wedged poll: could be transfer-load slowness
             }
-            cause = "datapath_wedged";
+            else
+            {
+                cause = "datapath_wedged";
+            }
         }
         else
         {
             cause = "mux_check_failed";
         }
 
-        ResetCanaryWedgeStreak(hostId);
+        ResetStreak(_canaryWedgeStreaks, hostId);
+        ResetStreak(_reopenFailStreaks, hostId);
 
         // Respawn at the same ControlPath so the child's adopted entry (and its in-flight
         // forward re-opens) recover transparently.
@@ -488,21 +519,21 @@ public sealed class TunnelManager : IAsyncDisposable
         return await TryRespawnMasterAsync(hostId, ct);
     }
 
-    private int IncrementCanaryWedgeStreak(string hostId)
+    private int IncrementStreak(Dictionary<string, int> streaks, string hostId)
     {
         lock (_lock)
         {
-            var next = _canaryWedgeStreaks.TryGetValue(hostId, out var n) ? n + 1 : 1;
-            _canaryWedgeStreaks[hostId] = next;
+            var next = streaks.TryGetValue(hostId, out var n) ? n + 1 : 1;
+            streaks[hostId] = next;
             return next;
         }
     }
 
-    private void ResetCanaryWedgeStreak(string hostId)
+    private void ResetStreak(Dictionary<string, int> streaks, string hostId)
     {
         lock (_lock)
         {
-            _canaryWedgeStreaks.Remove(hostId);
+            streaks.Remove(hostId);
         }
     }
 
@@ -691,7 +722,7 @@ public sealed class TunnelManager : IAsyncDisposable
                 // Forwards other processes registered (the child's per-server API forwards)
                 // heal lazily through their own seams: with the old master killed, their
                 // stale ports now fail fast as forward-scoped faults.
-                await ReopenRegisteredForwardsAsync(hostId, ct);
+                await ReopenRegisteredForwardsAsync(hostId, skipAliveListeners: false, ct);
             }
             return alive;
         }
@@ -703,10 +734,12 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Kills the old master process by pid, triple-guarded so a stale or OS-reused pid can
-    /// never hit an unrelated process: the process must be named <c>ssh</c>, must run the
-    /// resolved ssh binary (when both paths are comparable), and must have started within
-    /// two minutes of the master's spawn. Returns a short outcome string for the
+    /// Kills the old master process by pid, triple-guarded against a stale or OS-reused pid:
+    /// the process must be named <c>ssh</c>, must run the resolved ssh binary (when both
+    /// paths are comparable), and must have started within two minutes of the master's
+    /// spawn. The guards make a mis-kill unlikely, not impossible — an ssh master another
+    /// coordinator on this box spawned inside that window matches all three, so a reused
+    /// pid can still cost that run its host. Returns a short outcome string for the
     /// <c>ssh_master_respawn_attempt</c> event. Pid identity note: Cygwin/MSYS pids equal
     /// Windows pids since msys2-runtime 3.4 (Git for Windows ≥ 2.39), and
     /// <see cref="SshBinaryResolver"/> already mandates Git for Windows ssh.
@@ -782,9 +815,20 @@ public sealed class TunnelManager : IAsyncDisposable
     /// these ports (the daemon-socket forward feeds Docker.DotNet endpoints in both
     /// processes via <see cref="Helpers.RunArtifactNames.HostTunnelsEnv"/>) and have no
     /// re-resolve path. Per-forward failures are evented and skipped — a partial reopen
-    /// beats none.
+    /// beats none. Returns false when any forward could not be reopened (the monitor's
+    /// escalation signal).
+    ///
+    /// <paramref name="skipAliveListeners"/> is for the canary-drop path only, where the
+    /// master is unchanged: a forward whose local listener still accepts is live, and
+    /// reopening it would just bind-collide into a noise event. Post-respawn reopens must
+    /// NOT skip — the old master's listeners died with it, and a squatting orphan's
+    /// listener must surface as the bind failure it causes, not be mistaken for healthy.
     /// </summary>
-    private async Task ReopenRegisteredForwardsAsync(string hostId, CancellationToken ct)
+    private async Task<bool> ReopenRegisteredForwardsAsync(
+        string hostId,
+        bool skipAliveListeners,
+        CancellationToken ct
+    )
     {
         ForwardEntry[] entries;
         lock (_lock)
@@ -793,17 +837,23 @@ public sealed class TunnelManager : IAsyncDisposable
         }
         if (entries.Length == 0)
         {
-            return;
+            return true;
         }
 
         var master = TryGetMaster(hostId);
         if (master is null)
         {
-            return;
+            return false;
         }
 
+        var allReopened = true;
         foreach (var entry in entries)
         {
+            if (skipAliveListeners && await IsListenerAcceptingAsync(entry.CoordinatorPort, ct))
+            {
+                continue;
+            }
+
             var startedAt = Stopwatch.GetTimestamp();
             try
             {
@@ -835,6 +885,7 @@ public sealed class TunnelManager : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                allReopened = false;
                 EmitSafe(
                     "tunnel_forward_reopen_failed",
                     new
@@ -850,6 +901,31 @@ public sealed class TunnelManager : IAsyncDisposable
                     }
                 );
             }
+        }
+
+        return allReopened;
+    }
+
+    /// <summary>Quick accept-probe backing <c>skipAliveListeners</c>; false on refuse or
+    /// a 200ms silence (a wedged-but-accepting listener is the Wedged branch's business,
+    /// not this probe's).</summary>
+    private static async Task<bool> IsListenerAcceptingAsync(int port, CancellationToken ct)
+    {
+        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        attemptCts.CancelAfter(TimeSpan.FromMilliseconds(200));
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port, attemptCts.Token);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -1202,6 +1278,8 @@ public sealed class TunnelManager : IAsyncDisposable
             _forwards.Clear();
             masterSnapshot = _masters.Values.ToArray();
             _masters.Clear();
+            _canaryWedgeStreaks.Clear();
+            _reopenFailStreaks.Clear();
         }
 
         if (forwardSnapshot.Length > 0)

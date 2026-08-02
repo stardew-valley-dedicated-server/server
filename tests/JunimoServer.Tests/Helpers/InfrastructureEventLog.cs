@@ -210,10 +210,13 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>exitCode != 0</c>) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
 /// tail</c>; emitted at teardown only when the <c>-E</c> log is non-empty —
 /// carries the master's death line, e.g. "Timeout, server not responding.") ·
-/// <c>ssh_master_unhealthy_owner</c> (<c>host_id,
-/// cause:"mux_check_failed"|"datapath_wedged"</c>; owner-side monitor verdict
-/// before a respawn — the <c>/_ping</c> canary through the host's socket forward
-/// catches the wedge mode where <c>-O check</c> still passes) ·
+/// <c>ssh_master_unhealthy_owner</c> (<c>host_id, cause</c>; see
+/// <see cref="Infrastructure.TunnelManager"/> for cause variants — owner-side
+/// monitor verdict before a respawn; the <c>/_ping</c> canary through the host's
+/// socket forward catches the wedge mode where <c>-O check</c> still passes) ·
+/// <c>ssh_master_pid_unparsed</c> (<c>host_id, stderr</c>; the master registered
+/// without a parseable pid, so a later respawn's hard-reset kill degrades to a
+/// skip — loud here because at kill time it would be silent) ·
 /// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill</c>; see
 /// <see cref="Infrastructure.TunnelManager"/> for kill-outcome variants) ·
 /// <c>ssh_master_respawned</c> (<c>host_id, alive</c>) ·
