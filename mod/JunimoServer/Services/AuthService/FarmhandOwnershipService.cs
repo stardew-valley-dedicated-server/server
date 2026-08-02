@@ -121,6 +121,25 @@ public class FarmhandOwnershipService : ModService
             )
         );
 
+        // Protects ownership-bound slots from the game's save-load re-homing. When a save
+        // loads, ResetFarmhandState re-checks every farmhand's home; one whose cabin doesn't
+        // resolve is assigned another cabin, and Cabin.CanAssignTo allows taking a cabin
+        // whose farmhand is not yet customized (isUnclaimedFarmhand sees neither stamps nor
+        // the ownership map) — Cabin.AssignFarmhand then permanently DELETES that displaced
+        // farmhand (Cabin.cs:100 → FarmerTeam.DeleteFarmhand → farmhandData.Remove). This
+        // happens routinely at load, so without the guard an operator pre-assignment (a
+        // rebind on a not-yet-customized slot) can be destroyed by the next reload.
+        harmony.Patch(
+            original: AccessTools.Method(
+                typeof(StardewValley.Locations.Cabin),
+                nameof(StardewValley.Locations.Cabin.CanAssignTo)
+            ),
+            postfix: new HarmonyMethod(
+                typeof(FarmhandOwnershipService),
+                nameof(CanAssignTo_ProtectOwnedSlot_Postfix)
+            )
+        );
+
         Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
     }
 
@@ -600,5 +619,37 @@ public class FarmhandOwnershipService : ModService
             new object[] { userId, connectionId, farmer, sendMessage }
         );
         return false;
+    }
+
+    /// <summary>
+    /// POSTFIX on <c>Cabin.CanAssignTo</c>. Vanilla answers true whenever the cabin's
+    /// current farmhand is merely uncustomized (<c>isUnclaimedFarmhand</c> sees neither
+    /// stamps nor the ownership map), and every caller that gets a true proceeds to
+    /// <c>Cabin.AssignFarmhand</c>, which permanently DELETES the displaced farmhand. That
+    /// mostly fires during save load, when the game re-homes any farmhand whose cabin
+    /// doesn't resolve. Narrow the answer: a cabin whose farmhand has an ownership record
+    /// may only be assigned to that same farmhand, so operator pre-assignments and mid-join
+    /// claims survive a reload. Released markers and swept claim records leave no record
+    /// behind, so freed slots stay reusable.
+    /// </summary>
+    public static void CanAssignTo_ProtectOwnedSlot_Postfix(
+        StardewValley.Locations.Cabin __instance,
+        Farmer farmhand,
+        ref bool __result
+    )
+    {
+        if (!__result || _instance == null || farmhand == null)
+        {
+            return;
+        }
+
+        if (
+            __instance.HasOwner
+            && __instance.OwnerId != farmhand.UniqueMultiplayerID
+            && _instance.TryGetOwner(__instance.OwnerId, out _)
+        )
+        {
+            __result = false;
+        }
     }
 }
