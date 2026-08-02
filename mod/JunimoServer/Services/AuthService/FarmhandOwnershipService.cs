@@ -395,7 +395,8 @@ public class FarmhandOwnershipService : ModService
 
         Write();
         Monitor.Log(
-            $"[Ownership] Dropped {orphans.Count} record(s) for farmhands no longer in the save",
+            $"[Ownership] Dropped {orphans.Count} record(s) for farmhands no longer in the save: "
+                + string.Join(", ", orphans),
             LogLevel.Debug
         );
     }

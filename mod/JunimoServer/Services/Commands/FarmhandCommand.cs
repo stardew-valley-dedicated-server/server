@@ -119,7 +119,7 @@ internal static class FarmhandCommand
 
             _monitor.Log(
                 $"Released uncustomized farmhand slot (uid={uid}): claim markers cleared, slot open again. "
-                    + PersistenceNote(hadStamp),
+                    + PersistenceNote(),
                 LogLevel.Info
             );
             return;
@@ -130,7 +130,7 @@ internal static class FarmhandCommand
             $"Released farmhand '{ChatRedaction.MaskValue(farmhand.Name)}' (uid={uid}): "
                 + $"ownership {(hadRecord ? "cleared" : "was absent")}, stamp {(hadStamp ? "cleared" : "was absent")}. "
                 + "The next player to select it (any transport) becomes the owner. "
-                + PersistenceNote(hadStamp),
+                + PersistenceNote(),
             LogLevel.Info
         );
     }
@@ -160,7 +160,7 @@ internal static class FarmhandCommand
 
         _monitor.Log(
             $"Rebound farmhand '{ChatRedaction.MaskValue(farmhand.Name)}' (uid={uid}) to a {platform} identity. "
-                + PersistenceNote(hadStamp),
+                + PersistenceNote(),
             LogLevel.Info
         );
     }
@@ -182,22 +182,20 @@ internal static class FarmhandCommand
     }
 
     /// <summary>
-    /// The ownership store writes through immediately; only a cleared stamp lives in the save
-    /// file. On an empty server the save is written on the spot (the paused start-of-day state
-    /// satisfies every save precondition); with players online the next day-save persists it —
-    /// guaranteed to happen while players are on, so no save-now is attempted (mid-day
+    /// The ownership store writes through immediately, but the record points at world state
+    /// that may exist only in memory — a cleared stamp, or the target farmhand itself (a
+    /// cabin-backfilled slot created since the last save is in no file yet, and a record
+    /// bound to it evaporates via the orphan-drop on the next load). So on an empty server
+    /// the world is saved on the spot (the paused start-of-day state satisfies every save
+    /// precondition); with players online the next day-save persists it — guaranteed to
+    /// happen while players are on, and no save-now is attempted (mid-day
     /// <c>saveFarmhands</c> outside the sleep barrier is unsafe, see <see cref="SaveNow"/>).
     /// </summary>
-    private static string PersistenceNote(bool stampCleared)
+    private static string PersistenceNote()
     {
-        if (!stampCleared)
-        {
-            return "Persisted.";
-        }
-
         if (OnlineFarmers.CountOthers() > 0)
         {
-            return "Live now; the stamp change hits disk at the next day-save.";
+            return "Live now; hits disk at the next day-save.";
         }
 
         return SaveNow.TrySave(_helper, out var error)
