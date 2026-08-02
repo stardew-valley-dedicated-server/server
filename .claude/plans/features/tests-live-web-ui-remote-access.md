@@ -69,7 +69,7 @@ report, so it's no *new* vendor.
   a `cloudflared` binary is downloaded per run; the hostname is random and scraped from
   its log; background-process lifecycle to manage.
 
-**Recommendation: Option A (reverse-SSH).** It satisfies the no-third-party preference,
+**Superseded recommendation (historical — do not implement; see the update note at the top): Option A (reverse-SSH).** It satisfies the no-third-party preference,
 keeps un-redacted test data inside the project's own infrastructure, reuses the
 already-trusted SSH channel, and is small code. Its costs are a one-time sshd
 `GatewayPorts` + firewall change and a build-time check of the `-O forward -R` support
@@ -118,7 +118,11 @@ runs stay byte-for-byte unchanged.
 
 ---
 
-## Changes
+## Changes (historical — written for the superseded Option A)
+
+> Steps 1-3 (live flag, fixed port, token gate) carry over to the tailnet re-plan conceptually;
+> steps 4-5 are the reverse-SSH carrier and VPS publishing that the re-plan removes. Do not
+> implement from this section.
 
 ### 1. Runner: add a `--live` flag (run WebRenderer in CI)
 
@@ -309,7 +313,7 @@ need a cert on the VPS (out of scope for v1).
 
 ---
 
-## Verification (end-to-end)
+## Verification (end-to-end) (historical — verifies the superseded Option A carrier)
 
 1. **Build gates.** `dotnet build ./tests/JunimoServer.TestRunner`. (No test-ui change, so
    `make build-test-ui` is only needed if an SPA file was touched.)
