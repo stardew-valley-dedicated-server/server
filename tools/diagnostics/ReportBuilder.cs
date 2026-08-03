@@ -169,9 +169,9 @@ internal sealed class ReportBuilder
     private void Uptime()
     {
         Heading("Uptime");
-        var stats = _server.Stats.Json;
-        var startedAt = Json.Field(stats, "startedAtUtc");
-        var uptimeSeconds = Json.FieldLong(stats, "uptimeSeconds");
+        var read = _server.Stats;
+        var startedAt = Json.Field(read.Json, "startedAtUtc");
+        var uptimeSeconds = Json.FieldLong(read.Json, "uptimeSeconds");
         if (!string.IsNullOrEmpty(startedAt) && uptimeSeconds is { } up)
         {
             _sb.AppendLine($"- Server started: {startedAt}");
@@ -179,7 +179,9 @@ internal sealed class ReportBuilder
         }
         else
         {
-            _sb.AppendLine($"- Server uptime: {_state.UnavailableReason()}");
+            // Detail is empty when the read succeeded but the fields were missing, so this reads the
+            // same as the sections that use AppendUnavailable without claiming a failure that isn't.
+            _sb.AppendLine($"- Server uptime: {_state.UnavailableReason()}{read.Detail}");
         }
 
         var containerUptime = HostInspector.ContainerUptime();
