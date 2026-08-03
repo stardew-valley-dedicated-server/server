@@ -179,8 +179,6 @@ internal sealed class ReportBuilder
         }
         else
         {
-            // Detail is empty when the read succeeded but the fields were missing, so this reads the
-            // same as the sections that use AppendUnavailable without claiming a failure that isn't.
             _sb.AppendLine($"- Server uptime: {_state.UnavailableReason()}{read.Detail}");
         }
 
