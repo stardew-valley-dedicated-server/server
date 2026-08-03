@@ -119,6 +119,13 @@ init_stardew() {
 
     echo "Using steam-auth service for game files..."
 
+    # Game files but no marker (volume populated by hand, or before the marker existed). That looks
+    # identical to a half-finished download, so still wait — but say why, or it reads as a hang.
+    if [ -e "${GAME_EXECUTABLE}" ]; then
+        echo "Game files are present but the download-completion marker is missing."
+        echo "Waiting for steam-auth to re-verify them (it only writes the marker once the depot is complete)."
+    fi
+
     # The early return above already handled the marker-present case, so the download is still in
     # flight here. Warn, then poll until it completes (the loop's own check skips safely if the
     # marker races in before the first iteration).

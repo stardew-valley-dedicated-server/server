@@ -33,7 +33,7 @@ internal static class SteamAuthProbe
         }
         catch (Exception ex)
         {
-            return $"UNREACHABLE ({ex.GetType().Name})";
+            return $"**unreachable** ({ex.GetType().Name})";
         }
     }
 
@@ -54,12 +54,7 @@ internal static class SteamAuthProbe
             {
                 return null;
             }
-            var loggedIn = accounts
-                .EnumerateArray()
-                .Count(a =>
-                    a.TryGetProperty("logged_in", out var flag)
-                    && flag.ValueKind == JsonValueKind.True
-                );
+            var loggedIn = accounts.EnumerateArray().Count(a => Json.FieldBool(a, "logged_in"));
             return (accounts.GetArrayLength(), loggedIn);
         }
         catch

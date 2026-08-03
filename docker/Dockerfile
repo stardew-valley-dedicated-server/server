@@ -140,7 +140,6 @@ FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.11.3 AS server
 
 ARG SMAPI_VERSION
 ARG TMUX_VERSION=3.7b
-ARG SDVD_GIT_SHA=unknown
 
 ENV APP_NAME="Stardew Dedicated Server" \
     USER_ID=0 \
@@ -161,9 +160,7 @@ ENV APP_NAME="Stardew Dedicated Server" \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
     SMAPI_VERSION=${SMAPI_VERSION} \
-    SMAPI_MODS_PATH=/data/Mods \
-    # Git commit the image was built from (diagnostics tool reads this)
-    SDVD_GIT_SHA=${SDVD_GIT_SHA}
+    SMAPI_MODS_PATH=/data/Mods
 
 # Install all apt packages in one layer to reduce image size and layers
 RUN apt-get update && apt-get install -y \
@@ -269,6 +266,12 @@ COPY --from=mod-builder /output/TestFarmMod /opt/test-fixtures/TestFarmMod
 
 # Copy OpenAPI spec (for extraction via: docker cp or docker run --rm sdvd/server cat /data/openapi.json)
 COPY --from=mod-builder /output/openapi.json /data/openapi.json
+
+# Git commit the image was built from (the diagnostics tool reports it). Declared last, not with the
+# ARGs up top: its value changes every build and a changed ARG/ENV invalidates every layer after it —
+# up top that re-ran the apt install and the ffmpeg/tmux downloads. Nothing in the build consumes it.
+ARG SDVD_GIT_SHA=unknown
+ENV SDVD_GIT_SHA=${SDVD_GIT_SHA}
 
 # Game files and save data are in volumes (game downloaded at runtime)
 VOLUME [ "/data/game", "/config/xdg/config/StardewValley" ]

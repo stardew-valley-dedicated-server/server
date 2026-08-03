@@ -8,6 +8,8 @@ internal sealed class ReportedDetails
     public string? ClientMods { get; set; }
     public string? ClientModList { get; set; }
     public string? AffectedPlayer { get; set; }
+    public string? Platforms { get; set; }
+    public string? Hosting { get; set; }
     public string? Reproducibility { get; set; }
     public string? StartedAfterChange { get; set; }
 }
@@ -38,7 +40,20 @@ internal static class Wizard
         }
 
         details.AffectedPlayer = AskText(
-            "Which player is affected ([white]your name on the server[/]), and on what platform ([white]Steam / GOG / OS[/])?"
+            "Which player is affected ([white]your name on the server[/])?"
+        );
+        // Device platform is human-only knowledge: the server sees the transport (Steam / Galaxy /
+        // LAN), and mobile ships with the Galaxy SDK, so a Galaxy connection is PC-GOG or iOS or
+        // Android indistinguishably.
+        details.Platforms = AskText(
+            "Which platforms are the relevant clients on? ([white]e.g. PC-Steam, PC-GOG, iOS, Android, Switch[/])"
+        );
+        details.Hosting = AskChoice(
+            "Where is this server hosted relative to the players?",
+            "Remote (VPS / cloud / different network)",
+            "Same local network (LAN) as the players",
+            "Mixed (some local, some remote)",
+            "Not sure"
         );
         details.Reproducibility = AskChoice(
             "Does it happen [white]every time[/] or just [white]once[/]?",

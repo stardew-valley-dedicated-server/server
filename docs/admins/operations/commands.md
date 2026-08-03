@@ -48,19 +48,25 @@ GitHub issue:
 docker compose exec -it server diagnostics
 ```
 
-It bundles the server's build identity, settings, installed server mods, connected
-players/farmhands/cabins, live diagnostics, and the server logs into a single timestamped zip. The
-file lands **on the host** at `./diagnostics/state-<timestamp>.zip` (via the `./diagnostics` bind
-mount) — no `docker cp` needed. `make diagnostics` runs the same command.
+It bundles the server's build identity, health, settings, container configuration, installed server
+mods, connected players/farmhands/cabins, live diagnostics, and the server logs into a single
+timestamped zip. The file lands **on the host** at `./diagnostics/state-<timestamp>.zip` (via the
+`./diagnostics` bind mount) — no `docker cp` needed. `make diagnostics` runs the same command.
 
 Run with `-it` (a terminal) and the tool prompts for the few things the server can't see itself —
-client-side mods, the affected player and platform, and reproducibility — all optional. Without
-`-it` (e.g. `docker compose exec server diagnostics`) it skips the prompts and writes a short
-"Technical details to include" template into the report for you to fill in.
+client-side mods, the affected player, client platforms, whether the server is local or remote, and
+reproducibility — all optional. Without `-it` (e.g. `docker compose exec server diagnostics`) it
+skips the prompts and writes a short "Technical details to include" template into the report for you
+to fill in.
 
 The zip contains `report.md` (a readable summary plus your answers), `server-output.log`,
-`SMAPI-latest.txt`, and `SMAPI-crash.txt` (only if a crash occurred). It is not a "file a bug"
-form — describe your problem in your own words first, then attach this for the technical facts.
+`SMAPI-latest.txt`, and `SMAPI-crash.txt` (only if a crash occurred). Logs are included as-is,
+trimmed to their last 32 MB. The report echoes this server's own container settings (tick rate, API,
+logging); passwords and API keys are shown only as set/not set, never by value. It is not a "file a
+bug" form — describe your problem in your own words first, then attach this for the technical facts.
+
+> The command ships in the standard server image only. The [modern (Alpine)
+> image](./modern-docker.md) does not include it.
 
 ## Server Console Commands
 

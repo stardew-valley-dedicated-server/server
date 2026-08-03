@@ -36,6 +36,29 @@ internal static class ConsoleUi
         AnsiConsole.Write(panel);
     }
 
+    public static void PrintWriteFailure(Exception ex)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(
+            new Panel(
+                new Rows(
+                    new Markup(
+                        $"[red]Couldn't write the diagnostics zip:[/] {Markup.Escape(ex.Message)}"
+                    ),
+                    new Markup(
+                        $"[dim]Check free space and that[/] [white]{Markup.Escape(Config.OutputDir)}[/] [dim]is writable, then re-run.[/]"
+                    )
+                )
+            )
+            {
+                Header = new PanelHeader(" Failed ", Justify.Center),
+                Border = BoxBorder.Rounded,
+                BorderStyle = new Style(Color.Red),
+                Padding = new Padding(2, 1),
+            }
+        );
+    }
+
     public static void PrintDone(string zipPath, bool interactive)
     {
         var hostPath = "./diagnostics/" + Path.GetFileName(zipPath);

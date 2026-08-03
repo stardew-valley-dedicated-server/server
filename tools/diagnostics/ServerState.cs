@@ -9,7 +9,10 @@ internal enum ServerState
     /// <summary>Listener answered; live data is present (may still be pre-save — see NoWorldLoaded).</summary>
     Reachable,
 
-    /// <summary>Every read failed to connect — the listener isn't up yet (server still starting).</summary>
+    /// <summary>
+    /// Every read failed to connect: the listener isn't up. Still starting, stopped, or crashed —
+    /// the collection run can't tell those apart, so neither can the report.
+    /// </summary>
     NotAccepting,
 
     /// <summary>Listener up, but no save is loaded (booting, or a runtime day/farm-map change).</summary>
@@ -22,7 +25,7 @@ internal static class ServerStateText
     public static string UnavailableReason(this ServerState state) =>
         state switch
         {
-            ServerState.NotAccepting => "server still starting",
+            ServerState.NotAccepting => "HTTP API not responding",
             ServerState.NoWorldLoaded =>
                 "no save loaded — the server is booting or between saves (e.g. a day transition or farm-map change)",
             _ => "not available",

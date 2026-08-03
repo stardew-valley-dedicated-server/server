@@ -29,19 +29,43 @@ internal static class Config
     public static readonly string[] DiskPaths = { "/data/game", ConfigRoot, "/data/settings" };
 
     /// <summary>
-    /// Endpoints the report collects. /stats and /diagnostics/state are public; the rest need the
-    /// key (sending Bearer on all is harmless).
+    /// Whether the report echoes this variable, by prefix — so a var added to Env.cs or compose shows
+    /// up without a list to maintain, including a stray test-mode flag. Scoped to prefixes this
+    /// project owns because an operator's compose can hold anything and the report goes on a public
+    /// issue; STEAM_* is excluded as the sidecar's account config.
     /// </summary>
-    public static readonly string[] Endpoints =
+    public static bool IsReportedEnv(string name) =>
+        ReportedPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal));
+
+    private static readonly string[] ReportedPrefixes =
     {
-        "/status",
-        "/stats",
-        "/diagnostics/state",
-        "/settings",
-        "/players",
-        "/farmhands",
-        "/cabins",
+        "SDVD_",
+        "SERVER_",
+        "API_",
+        "AUTH_",
+        "SMAPI_",
+        "VNC_",
+        "DISPLAY_",
+        "ALLOW_",
+        "ENABLE_",
+        "FORCE_",
+        "HEALTH_",
+        "VERBOSE_",
+        "SETTINGS_",
+        "MAX_LOGIN_",
+        "TEST_",
     };
+
+    /// <summary>
+    /// Whether a value is replaced by set/not-set: that auth is configured is diagnostic, the secret
+    /// isn't. Matched by name pattern, not a fixed list, so a newly added secret is covered before
+    /// anyone thinks to list it.
+    /// </summary>
+    public static bool IsSecretEnv(string name) =>
+        name.Contains("KEY", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("PASSWORD", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("TOKEN", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("SECRET", StringComparison.OrdinalIgnoreCase);
 
     private static string? Env(string name) => Environment.GetEnvironmentVariable(name);
 }

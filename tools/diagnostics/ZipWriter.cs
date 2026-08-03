@@ -1,10 +1,18 @@
 using System.IO.Compression;
+using System.Text;
 
 namespace Diagnostics;
 
 /// <summary>Bundles the report and the server's logs into a single timestamped zip on the host.</summary>
 internal static class ZipWriter
 {
+    /// <summary>
+    /// Per-log cap. Nothing rotates the console typescript (truncated only on container restart), so
+    /// long uptime grows it unbounded. The tail keeps the zip attachable and safe to write on a
+    /// disk-starved host.
+    /// </summary>
+    private const long MaxLogBytes = 32L * 1024 * 1024;
+
     public static string Write(string report)
     {
         Directory.CreateDirectory(Config.OutputDir);
@@ -36,14 +44,38 @@ internal static class ZipWriter
         return zipPath;
     }
 
+    /// <summary>Adds a log, keeping only its last <see cref="MaxLogBytes"/> and saying so in-band.</summary>
     private static void AddIfExists(ZipArchive archive, string path, string entryName)
     {
         try
         {
-            if (File.Exists(path))
+            if (!File.Exists(path))
             {
-                archive.CreateEntryFromFile(path, entryName);
+                return;
             }
+
+            // Shared read: the server is still appending to these files while we copy.
+            using var source = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete
+            );
+            var entry = archive.CreateEntry(entryName);
+            entry.LastWriteTime = File.GetLastWriteTimeUtc(path);
+            using var target = entry.Open();
+
+            var skipped = source.Length - MaxLogBytes;
+            if (skipped > 0)
+            {
+                source.Seek(skipped, SeekOrigin.Begin);
+                var note =
+                    $"[diagnostics] Truncated: kept the last {Format.Bytes(MaxLogBytes)} of "
+                    + $"{Format.Bytes(source.Length)}; older output was dropped. The first line "
+                    + $"below may start mid-line.\n";
+                target.Write(Encoding.UTF8.GetBytes(note));
+            }
+            source.CopyTo(target);
         }
         catch
         {

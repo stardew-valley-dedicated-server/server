@@ -34,7 +34,14 @@ internal static class Format
 
     public static string YesNo(bool value) => value ? "yes" : "no";
 
-    /// <summary>Free-text field for the report: the value, or an italic placeholder when empty.</summary>
-    public static string BlankOr(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "_(blank)_" : value;
+    /// <summary>Tri-state form: an absent value reads as unknown rather than defaulting to "no".</summary>
+    public static string YesNo(bool? value) => value is { } known ? YesNo(known) : "unknown";
+
+    /// <summary>A wizard answer, or a placeholder when the operator skipped it.</summary>
+    public static string OrBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "(blank)" : value;
+
+    /// <summary>A collected value, or a placeholder when the response didn't carry it.</summary>
+    public static string OrUnknown(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "unknown" : value;
 }

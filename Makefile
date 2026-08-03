@@ -43,12 +43,12 @@ else
     TIMESTAMP := $(shell date -u '+%Y-%m-%dT%H-%M-%S')Z
 endif
 
-# Short git commit the image is built from, with a "-dirty" suffix when the working tree has
-# uncommitted changes. Baked into the image (SDVD_GIT_SHA) so the diagnostics tool can report the
-# exact source of a local/dev build. One git command (no shell operators) so it works under both
-# bash and Windows-native make; empty outside a git checkout, where the Dockerfile ARG defaults to
-# "unknown". CI passes its own SDVD_GIT_SHA (github.sha), which overrides this via the CLI variable.
-GIT_SHA := $(shell git describe --always --dirty --exclude='*')
+# Short git commit ("-dirty" when the tree is modified), baked in as SDVD_GIT_SHA so the diagnostics
+# tool can identify a local build. `--match=` matches no tag, leaving --always to yield the bare
+# commit; unquoted because cmd.exe would pass the quotes through to git. Empty outside a git checkout,
+# where build-server omits the --build-arg so the Dockerfile default applies (passing it empty would
+# set the ARG to ""). CI builds via docker/build-push-action and passes its own github.sha.
+GIT_SHA := $(shell git describe --always --dirty --match=)
 
 # Install development dependencies
 install:
@@ -66,7 +66,7 @@ build-server:
 	@docker buildx build \
 		--platform=linux/amd64 \
 		--build-arg BUILD_CONFIGURATION=$(BUILD_CONFIGURATION) \
-		--build-arg SDVD_GIT_SHA=$(GIT_SHA) \
+		$(if $(GIT_SHA),--build-arg SDVD_GIT_SHA=$(GIT_SHA)) \
 		-t $(IMAGE_NAME):$(IMAGE_VERSION) \
 		$(if $(filter-out local,$(IMAGE_VERSION)),-t $(IMAGE_NAME):latest) \
 		--secret id=steam_username,env=STEAM_USERNAME \

@@ -12,6 +12,12 @@ internal sealed record ModInfo(string Name, string UniqueId, string Version, str
 /// </summary>
 internal static class HostInspector
 {
+    private static readonly JsonDocumentOptions ManifestOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
     /// <summary>
     /// Container uptime = system uptime minus PID 1's age. PID 1 is the base image's init supervisor,
     /// so its start marks the container boot. Uses /proc/uptime (seconds since boot) and /proc/1/stat
@@ -96,10 +102,7 @@ internal static class HostInspector
                 {
                     // SMAPI tolerates comments/trailing commas in manifest.json; match it or a mod
                     // with either would be silently dropped from the table.
-                    using var doc = JsonDocument.Parse(
-                        File.ReadAllText(manifest),
-                        Json.ManifestOptions
-                    );
+                    using var doc = JsonDocument.Parse(File.ReadAllText(manifest), ManifestOptions);
                     var root = doc.RootElement;
                     result.Add(
                         new ModInfo(

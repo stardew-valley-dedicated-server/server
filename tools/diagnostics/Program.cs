@@ -23,8 +23,7 @@ internal static class Program
         var reported = interactive ? Wizard.Run() : null;
 
         var server = new ServerClient();
-        var sidecarStatus = "not checked";
-        await AnsiConsole
+        var sidecarStatus = await AnsiConsole
             .Status()
             .Spinner(Spinner.Known.Dots)
             .StartAsync(
@@ -38,19 +37,30 @@ internal static class Program
                         );
                     }
                     ctx.Status("[dim]Probing steam-auth sidecar...[/]");
-                    sidecarStatus = await SteamAuthProbe.ProbeAsync();
+                    return await SteamAuthProbe.ProbeAsync();
                 }
             );
 
         var report = new ReportBuilder(server, reported, sidecarStatus).Build();
 
-        var zipPath = await AnsiConsole
-            .Status()
-            .Spinner(Spinner.Known.Dots)
-            .StartAsync(
-                "Building diagnostics zip...",
-                _ => Task.FromResult(ZipWriter.Write(report))
-            );
+        string zipPath;
+        try
+        {
+            zipPath = await AnsiConsole
+                .Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync(
+                    "Building diagnostics zip...",
+                    _ => Task.FromResult(ZipWriter.Write(report))
+                );
+        }
+        catch (Exception ex)
+        {
+            // Collection degrades gracefully; this write is the one step a distressed server (full
+            // disk, read-only mount) can still fail — say why instead of dumping a stack.
+            ConsoleUi.PrintWriteFailure(ex);
+            return 1;
+        }
 
         ConsoleUi.PrintDone(zipPath, interactive);
         return 0;

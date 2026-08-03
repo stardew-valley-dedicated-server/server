@@ -6,7 +6,7 @@ namespace Diagnostics;
 internal static class Markdown
 {
     /// <summary>
-    /// Appends a GitHub-flavored table with every column padded to a uniform width across the header,
+    /// Appends a GitHub-flavored table with each column padded to a uniform width across the header,
     /// separator, and body — so the raw markdown source reads as aligned columns. Cell values are
     /// sanitized first: a stray pipe or newline (mod names, authors, paths are arbitrary) would
     /// otherwise split a cell into extra columns or rows.
@@ -16,6 +16,9 @@ internal static class Markdown
         var safeHeaders = headers.Select(Sanitize).ToArray();
         var safeRows = rows.Select(r => r.Select(Sanitize).ToArray()).ToList();
 
+        // Last column sized to its header only: padding just grows a cell, so a long value there
+        // runs past the separator instead of stretching every row.
+        var lastCol = safeHeaders.Length - 1;
         var widths = new int[safeHeaders.Length];
         for (int c = 0; c < safeHeaders.Length; c++)
         {
@@ -23,7 +26,7 @@ internal static class Markdown
         }
         foreach (var row in safeRows)
         {
-            for (int c = 0; c < safeHeaders.Length; c++)
+            for (int c = 0; c < lastCol; c++)
             {
                 widths[c] = Math.Max(widths[c], row[c].Length);
             }
