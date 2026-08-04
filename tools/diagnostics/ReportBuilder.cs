@@ -53,32 +53,41 @@ internal sealed class ReportBuilder
     {
         var status = _server.Status.Json;
         Heading("Build identity");
-        _sb.AppendLine(
-            $"- Server version: `{Format.OrUnknown(Json.Field(status, "serverVersion"))}`"
+        Markdown.Table(
+            _sb,
+            new[] { "Component", "Version" },
+            new List<string[]>
+            {
+                new[] { "Server", Format.OrUnknown(Json.Field(status, "serverVersion")) },
+                new[] { "Game", Format.OrUnknown(Json.Field(status, "gameVersion")) },
+                new[] { "Git commit", Format.OrUnknown(Config.GitSha) },
+                new[] { "SMAPI", Format.OrUnknown(Config.SmapiVersion) },
+            }
         );
-        _sb.AppendLine($"- Game version: `{Format.OrUnknown(Json.Field(status, "gameVersion"))}`");
-        _sb.AppendLine($"- Git commit: `{Config.GitSha}`");
-        _sb.AppendLine($"- SMAPI version: `{Config.SmapiVersion}`");
+        _sb.AppendLine();
 
+        // The run-wide state note sits outside the table: it's a paragraph telling the reader how to
+        // read every live section below, not another build fact.
         if (!Config.ApiEnabled)
         {
-            _sb.AppendLine(
-                "- HTTP API disabled (API_ENABLED=false) — live-state sections skipped."
-            );
+            _sb.AppendLine("HTTP API disabled (API_ENABLED=false) — live-state sections skipped.");
+            _sb.AppendLine();
         }
         else if (_state == ServerState.NotAccepting)
         {
             _sb.AppendLine(
-                "- **HTTP API not responding** — every request was refused. The server is still "
+                "**HTTP API not responding** — every request was refused. The server is still "
                     + "starting, has stopped, or crashed; the logs in this zip say which. If it was "
                     + "started seconds ago, re-run."
             );
+            _sb.AppendLine();
         }
         else if (_state == ServerState.NoWorldLoaded)
         {
             _sb.AppendLine(
-                "- **No save loaded** — the server is booting or between saves (e.g. a day transition or farm-map change). Live world sections below reflect this."
+                "**No save loaded** — the server is booting or between saves (e.g. a day transition or farm-map change). Live world sections below reflect this."
             );
+            _sb.AppendLine();
         }
         else
         {
@@ -86,10 +95,10 @@ internal sealed class ReportBuilder
             if (failures.Count > 0)
             {
                 var listed = failures.Select(f => $"{f.Path}{f.Read.Detail}");
-                _sb.AppendLine($"- Failed live-state reads: {string.Join(", ", listed)}");
+                _sb.AppendLine($"Failed live-state reads: {string.Join(", ", listed)}");
+                _sb.AppendLine();
             }
         }
-        _sb.AppendLine();
     }
 
     private void ReportedDetails()
@@ -97,18 +106,29 @@ internal sealed class ReportBuilder
         if (_reported != null)
         {
             Heading("Reported details");
-            _sb.AppendLine($"- Client-side mods: {Format.OrBlank(_reported.ClientMods)}");
+            var rows = new List<string[]>
+            {
+                new[] { "Client-side mods", Format.OrBlank(_reported.ClientMods) },
+            };
             if (!string.IsNullOrWhiteSpace(_reported.ClientModList))
             {
-                _sb.AppendLine($"  - Which: {_reported.ClientModList}");
+                rows.Add(new[] { "Which mods", _reported.ClientModList });
             }
-            _sb.AppendLine($"- Affected player: {Format.OrBlank(_reported.AffectedPlayer)}");
-            _sb.AppendLine($"- Client platforms: {Format.OrBlank(_reported.Platforms)}");
-            _sb.AppendLine($"- Hosting: {Format.OrBlank(_reported.Hosting)}");
-            _sb.AppendLine($"- Reproducibility: {Format.OrBlank(_reported.Reproducibility)}");
-            _sb.AppendLine(
-                $"- Started after a change: {Format.OrBlank(_reported.StartedAfterChange)}"
+            rows.Add(new[] { "Affected player", Format.OrBlank(_reported.AffectedPlayer) });
+            rows.Add(new[] { "Client platforms", Format.OrBlank(_reported.Platforms) });
+            rows.Add(
+                new[]
+                {
+                    "Shared Steam account (server + client)",
+                    Format.OrBlank(_reported.SharedSteamAccount),
+                }
             );
+            rows.Add(new[] { "Hosting", Format.OrBlank(_reported.Hosting) });
+            rows.Add(new[] { "Reproducibility", Format.OrBlank(_reported.Reproducibility) });
+            rows.Add(
+                new[] { "Started after a change", Format.OrBlank(_reported.StartedAfterChange) }
+            );
+            Markdown.Table(_sb, new[] { "Detail", "Answer" }, rows);
         }
         else
         {
@@ -121,6 +141,9 @@ internal sealed class ReportBuilder
             _sb.AppendLine("- **Affected player:** your name on the server.");
             _sb.AppendLine(
                 "- **Client platforms:** which platforms are the relevant clients on (e.g. PC-Steam, PC-GOG, iOS, Android, Switch)?"
+            );
+            _sb.AppendLine(
+                "- **Shared Steam account:** do you use the same Steam account for the server and for a game client?"
             );
             _sb.AppendLine(
                 "- **Hosting:** is the server on the same local network as the players, remote (VPS / cloud), or mixed?"
@@ -146,23 +169,39 @@ internal sealed class ReportBuilder
             return;
         }
 
-        _sb.AppendLine(
-            Json.FieldBool(read.Json, "isFrozen")
-                ? "- **Game loop frozen** — the API answers but the game thread has stopped ticking. "
-                    + "The server is stuck, not slow."
-                : "- Game loop: ticking."
-        );
-        _sb.AppendLine(
-            Json.FieldLong(read.Json, "lastTickMs") is { } ms
-                ? $"- Since last tick: {ms} ms"
-                : "- Since last tick: no tick recorded since process start"
-        );
-        _sb.AppendLine($"- Total ticks: {Format.OrUnknown(Json.Field(read.Json, "tickCount"))}");
-        // Null when the mod's own isGameAvailable() probe threw.
-        _sb.AppendLine(
-            $"- Game server available: {Format.YesNo(Json.FieldNullableBool(read.Json, "gameAvailable"))}"
+        var frozen = Json.FieldBool(read.Json, "isFrozen");
+        Markdown.Table(
+            _sb,
+            new[] { "Check", "Value" },
+            new List<string[]>
+            {
+                new[] { "Game loop", frozen ? "**frozen**" : "ticking" },
+                new[]
+                {
+                    "Since last tick",
+                    Json.FieldLong(read.Json, "lastTickMs") is { } ms
+                        ? $"{ms} ms"
+                        : "no tick recorded since process start",
+                },
+                new[] { "Total ticks", Format.OrUnknown(Json.Field(read.Json, "tickCount")) },
+                // Null when the mod's own isGameAvailable() probe threw.
+                new[]
+                {
+                    "Game server available",
+                    Format.YesNo(Json.FieldNullableBool(read.Json, "gameAvailable")),
+                },
+            }
         );
         _sb.AppendLine();
+
+        if (frozen)
+        {
+            _sb.AppendLine(
+                "**Game loop frozen** — the API answers but the game thread has stopped ticking. "
+                    + "The server is stuck, not slow."
+            );
+            _sb.AppendLine();
+        }
     }
 
     /// <summary>Mod uptime from /stats, plus container boot uptime from PID 1's start time.</summary>
@@ -172,22 +211,26 @@ internal sealed class ReportBuilder
         var read = _server.Stats;
         var startedAt = Json.Field(read.Json, "startedAtUtc");
         var uptimeSeconds = Json.FieldLong(read.Json, "uptimeSeconds");
+        var rows = new List<string[]>();
         if (!string.IsNullOrEmpty(startedAt) && uptimeSeconds is { } up)
         {
-            _sb.AppendLine($"- Server started: {startedAt}");
-            _sb.AppendLine($"- Server uptime: {Format.Duration(TimeSpan.FromSeconds(up))}");
+            rows.Add(new[] { "Server started", startedAt });
+            rows.Add(new[] { "Server uptime", Format.Duration(TimeSpan.FromSeconds(up)) });
         }
         else
         {
-            _sb.AppendLine($"- Server uptime: {_state.UnavailableReason()}{read.Detail}");
+            rows.Add(new[] { "Server uptime", $"{_state.UnavailableReason()}{read.Detail}" });
         }
 
         var containerUptime = HostInspector.ContainerUptime();
-        _sb.AppendLine(
-            containerUptime is { } c
-                ? $"- Container uptime: {Format.Duration(c)}"
-                : "- Container uptime: not available"
+        rows.Add(
+            new[]
+            {
+                "Container uptime",
+                containerUptime is { } c ? Format.Duration(c) : Format.NotAvailable,
+            }
         );
+        Markdown.Table(_sb, new[] { "Metric", "Value" }, rows);
         _sb.AppendLine();
     }
 
@@ -229,7 +272,7 @@ internal sealed class ReportBuilder
                 {
                     path,
                     total == null
-                        ? "n/a"
+                        ? Format.NotAvailable
                         : $"{Format.Bytes(free!.Value)} free / {Format.Bytes(total.Value)}",
                 }
             );
@@ -250,7 +293,15 @@ internal sealed class ReportBuilder
     private void Services()
     {
         Heading("Services");
-        _sb.AppendLine($"- steam-auth ({Config.SteamAuthUrl}): {_sidecarStatus}");
+        Markdown.Table(
+            _sb,
+            new[] { "Service", "Endpoint", "Status" },
+            new List<string[]>
+            {
+                // Backticked so markdown renders the URL as-is instead of autolinking it.
+                new[] { "steam-auth", $"`{Config.SteamAuthUrl}`", _sidecarStatus },
+            }
+        );
         _sb.AppendLine();
     }
 
@@ -284,11 +335,12 @@ internal sealed class ReportBuilder
         // Compose passes optional vars through as "" (`API_KEY: "${API_KEY:-}"`), so present-but-empty
         // is the normal shape of an unconfigured setting, not a value worth printing.
         var value = Environment.GetEnvironmentVariable(name);
-        if (Config.IsSecretEnv(name))
+        if (string.IsNullOrEmpty(value))
         {
-            return string.IsNullOrEmpty(value) ? "not set" : "set (redacted)";
+            return Format.NotSet;
         }
-        return string.IsNullOrEmpty(value) ? "not set" : value;
+        // No "set" prefix needed: an unset secret already reads as "(not set)" above.
+        return Config.IsSecretEnv(name) ? Format.Redacted : value;
     }
 
     private void Mods()
@@ -334,10 +386,14 @@ internal sealed class ReportBuilder
         foreach (var f in farmhands)
         {
             var id = Cell(f, "id");
+            var name = Cell(f, "name");
             rows.Add(
                 new[]
                 {
-                    Cell(f, "name"),
+                    // An unclaimed slot has no name yet — the Slot column says which case this is.
+                    string.IsNullOrEmpty(name)
+                        ? Format.Nothing
+                        : name,
                     id,
                     Format.YesNo(onlineIds.Contains(id)),
                     Json.FieldBool(f, "isCustomized") ? "claimed" : "free (unclaimed)",
@@ -358,13 +414,23 @@ internal sealed class ReportBuilder
             return;
         }
         var root = read.Json;
-        _sb.AppendLine($"- Strategy: {Cell(root, "strategy")}");
-        _sb.AppendLine(
-            $"- Total: {Cell(root, "totalCount")} · Assigned: {Cell(root, "assignedCount")} · Available: {Cell(root, "availableCount")}"
-        );
         // "Available" counts cabins the server treats as claimable, which INCLUDES a cabin owned
         // by a player who hasn't customized their character yet (isAssigned needs owner.isCustomized).
         // The Status column spells that middle state out so it doesn't read as a contradiction.
+        Markdown.Table(
+            _sb,
+            new[] { "Strategy", "Total", "Assigned", "Available" },
+            new List<string[]>
+            {
+                new[]
+                {
+                    Cell(root, "strategy"),
+                    Cell(root, "totalCount"),
+                    Cell(root, "assignedCount"),
+                    Cell(root, "availableCount"),
+                },
+            }
+        );
         _sb.AppendLine();
 
         var rows = new List<string[]>();
@@ -381,7 +447,7 @@ internal sealed class ReportBuilder
                 {
                     $"({Cell(c, "tileX")}, {Cell(c, "tileY")})",
                     Cell(c, "type"),
-                    hasOwner ? owner : "-",
+                    hasOwner ? owner : Format.Nothing,
                     status,
                     Format.YesNo(Json.FieldBool(c, "isHidden")),
                 }

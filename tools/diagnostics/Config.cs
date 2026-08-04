@@ -11,8 +11,8 @@ internal static class Config
     public static readonly bool ApiEnabled =
         (Env("API_ENABLED") ?? "true").ToLowerInvariant() != "false";
 
-    public static readonly string GitSha = Env("SDVD_GIT_SHA") ?? "unknown";
-    public static readonly string SmapiVersion = Env("SMAPI_VERSION") ?? "unknown";
+    public static readonly string GitSha = Env("SDVD_GIT_SHA") ?? "";
+    public static readonly string SmapiVersion = Env("SMAPI_VERSION") ?? "";
     public static readonly string BaseUrl = $"http://127.0.0.1:{Env("API_PORT") ?? "8080"}";
 
     /// <summary>Steam auth sidecar URL the server itself uses (docker-compose STEAM_AUTH_URL).</summary>

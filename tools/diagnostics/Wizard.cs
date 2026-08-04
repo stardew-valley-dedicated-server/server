@@ -9,6 +9,7 @@ internal sealed class ReportedDetails
     public string? ClientModList { get; set; }
     public string? AffectedPlayer { get; set; }
     public string? Platforms { get; set; }
+    public string? SharedSteamAccount { get; set; }
     public string? Hosting { get; set; }
     public string? Reproducibility { get; set; }
     public string? StartedAfterChange { get; set; }
@@ -47,6 +48,16 @@ internal static class Wizard
         // Android indistinguishably.
         details.Platforms = AskText(
             "Which platforms are the relevant clients on? ([white]e.g. PC-Steam, PC-GOG, iOS, Android, Switch[/])"
+        );
+        // Steam allows one live session per account: a client signing in with the server's account
+        // logs the server out, so every reconnect fails with a still-valid invite code. Common enough
+        // to ask up front — it explains a whole class of "connection failed" reports on its own.
+        details.SharedSteamAccount = AskChoice(
+            "Do you use the [white]same Steam account[/] for the server and for a game client?",
+            "No — the server has its own Steam account",
+            "Yes — the same account runs the server and plays",
+            "Not sure",
+            "Not using Steam"
         );
         details.Hosting = AskChoice(
             "Where is this server hosted relative to the players?",

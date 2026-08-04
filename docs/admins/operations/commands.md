@@ -54,8 +54,8 @@ timestamped zip. The file lands **on the host** at `./diagnostics/state-<timesta
 `./diagnostics` bind mount) — no `docker cp` needed. `make diagnostics` runs the same command.
 
 Run with `-it` (a terminal) and the tool prompts for the few things the server can't see itself —
-client-side mods, the affected player, client platforms, whether the server is local or remote, and
-reproducibility — all optional. Without `-it` (e.g. `docker compose exec server diagnostics`) it
+client-side mods, the affected player, client platforms, whether the server shares a Steam account
+with a game client, whether the server is local or remote, and reproducibility — all optional. Without `-it` (e.g. `docker compose exec server diagnostics`) it
 skips the prompts and writes a short "Technical details to include" template into the report for you
 to fill in.
 
