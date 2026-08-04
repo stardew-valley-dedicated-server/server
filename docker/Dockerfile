@@ -92,6 +92,17 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     -p:PublishTrimmed=true \
     -o /output/netdebug
 
+# Build diagnostics tool
+COPY ./tools/diagnostics /src/diagnostics
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish /src/diagnostics \
+    --configuration Release \
+    --self-contained true \
+    --runtime linux-x64 \
+    -p:PublishSingleFile=true \
+    -p:PublishTrimmed=true \
+    -o /output/diagnostics
+
 # Build server mod
 COPY ./mod /src/mod
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -216,6 +227,7 @@ RUN \
 # Copy pre-built tools from build stages
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher
 COPY --from=mod-builder /output/netdebug /opt/netdebug
+COPY --from=mod-builder /output/diagnostics /opt/diagnostics
 
 # Set executable permissions for application scripts and Supervisor services.
 #
@@ -254,6 +266,12 @@ COPY --from=mod-builder /output/TestFarmMod /opt/test-fixtures/TestFarmMod
 
 # Copy OpenAPI spec (for extraction via: docker cp or docker run --rm sdvd/server cat /data/openapi.json)
 COPY --from=mod-builder /output/openapi.json /data/openapi.json
+
+# Git commit the image was built from (the diagnostics tool reports it). Declared last, not with the
+# ARGs up top: its value changes every build and a changed ARG/ENV invalidates every layer after it —
+# up top that re-ran the apt install and the ffmpeg/tmux downloads. Nothing in the build consumes it.
+ARG SDVD_GIT_SHA=unknown
+ENV SDVD_GIT_SHA=${SDVD_GIT_SHA}
 
 # Game files and save data are in volumes (game downloaded at runtime)
 VOLUME [ "/data/game", "/config/xdg/config/StardewValley" ]

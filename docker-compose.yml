@@ -18,6 +18,7 @@ services:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
       - ./.local-container/settings:/data/settings
+      - ./diagnostics:/data/diagnostics
     environment:
       # Steam auth service URL (for runtime ticket requests)
       STEAM_AUTH_URL: "http://steam-auth:${STEAM_AUTH_PORT:-3001}"

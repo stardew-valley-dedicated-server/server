@@ -14,6 +14,12 @@ public class ServerCommand
     private static IMonitor _monitor;
     private static DateTime _startTimeUtc;
 
+    /// <summary>
+    /// UTC time the mod started (set in <see cref="Register"/>), or null if not yet registered.
+    /// Exposed so the HTTP API can report uptime, not just the <c>info</c> command.
+    /// </summary>
+    public static DateTime? StartTimeUtc => _startTimeUtc == default ? null : _startTimeUtc;
+
     public static void Register(
         IModHelper helper,
         IMonitor monitor,

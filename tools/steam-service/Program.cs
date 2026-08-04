@@ -177,6 +177,39 @@ async Task LoginAccountAsync(
     }
 }
 
+/// <summary>
+/// Logs an account in for the interactive `setup`/`login` commands: honors configured credentials
+/// non-interactively (token → saved session → password, same chain as `serve`), and falls back to
+/// the interactive password/QR flow only when there's no saved session and no credentials.
+/// </summary>
+async Task LoginOrInteractiveAsync(
+    int idx,
+    SteamAuthService svc,
+    (string user, string? pass, string? token) cfg
+)
+{
+    if (svc.HasSavedSession() || cfg.token != null || cfg.pass != null)
+    {
+        Logger.Log($"[SteamService] Account {idx}: Logging in with configured credentials...");
+        await svc.EnsureLoggedInAsync(
+            new SteamAuthService.LoginConfig(cfg.user, cfg.pass, cfg.token)
+        );
+    }
+    else
+    {
+        Logger.Log(
+            $"[SteamService] Account {idx}: No saved session or credentials, starting interactive login..."
+        );
+        await svc.LoginInteractiveAsync();
+    }
+
+    Logger.Log(
+        svc.IsLoggedIn
+            ? $"[SteamService] Account {idx}: Logged in as {svc.SteamId}"
+            : $"[SteamService] Account {idx}: Login failed"
+    );
+}
+
 // ============================================================================
 // Discover accounts early (needed for all commands)
 // ============================================================================
@@ -224,32 +257,10 @@ switch (command)
             foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
             {
                 Logger.Log($"[SteamService] --- Account {idx}: {svc.Username} ---");
-                if (svc.HasSavedSession())
+                await LoginOrInteractiveAsync(idx, svc, accountConfigs[idx]);
+                if (svc.IsLoggedIn && downloadAccount == null)
                 {
-                    Logger.Log($"[SteamService] Account {idx}: Found saved session, logging in...");
-                    await svc.EnsureLoggedInAsync(
-                        new SteamAuthService.LoginConfig(svc.Username, null, null)
-                    );
-                }
-                else
-                {
-                    Logger.Log(
-                        $"[SteamService] Account {idx}: No saved session, starting interactive login..."
-                    );
-                    await svc.LoginInteractiveAsync();
-                }
-
-                if (svc.IsLoggedIn)
-                {
-                    Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
-                    if (downloadAccount == null)
-                    {
-                        downloadAccount = svc;
-                    }
-                }
-                else
-                {
-                    Logger.Log($"[SteamService] Account {idx}: Login failed");
+                    downloadAccount = svc;
                 }
             }
 
@@ -279,29 +290,7 @@ switch (command)
             foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
             {
                 Logger.Log($"[SteamService] --- Account {idx}: {svc.Username} ---");
-                if (svc.HasSavedSession())
-                {
-                    Logger.Log($"[SteamService] Account {idx}: Found saved session, logging in...");
-                    await svc.EnsureLoggedInAsync(
-                        new SteamAuthService.LoginConfig(svc.Username, null, null)
-                    );
-                }
-                else
-                {
-                    Logger.Log(
-                        $"[SteamService] Account {idx}: No saved session, starting interactive login..."
-                    );
-                    await svc.LoginInteractiveAsync();
-                }
-
-                if (svc.IsLoggedIn)
-                {
-                    Logger.Log($"[SteamService] Account {idx}: Logged in as {svc.SteamId}");
-                }
-                else
-                {
-                    Logger.Log($"[SteamService] Account {idx}: Login failed");
-                }
+                await LoginOrInteractiveAsync(idx, svc, accountConfigs[idx]);
             }
         }
         break;
@@ -756,6 +745,48 @@ async Task RunHttpServerAsync(
     });
 
     await Task.WhenAll(loginTasks);
+
+    // First-run bootstrap: if the game depot isn't present yet, download it in the background so a
+    // fresh `docker compose up` self-provisions instead of waiting for a manual `setup`. Keyed on the
+    // download-complete marker (same signal startapp.sh gates on), so a half-finished prior download
+    // resumes rather than being mistaken for done. Runs off the request path (HTTP server + /health
+    // come up first). On shutdown the task isn't cancelled — Disconnect() aborts the in-flight
+    // download, which is resumable on the next boot; a failed download is likewise retried next boot.
+    var gameDownloadMarker = Path.Combine(gameDir, $".download-manifest-{StardewValleyAppId}");
+    if (!File.Exists(gameDownloadMarker))
+    {
+        var bootstrapAccount = accts.Values.FirstOrDefault(s => s.IsLoggedIn);
+        if (bootstrapAccount == null)
+        {
+            Logger.Log(
+                "[SteamService] Game files missing and no account is logged in — cannot auto-download. "
+                    + "Check credentials, or run `setup` manually."
+            );
+        }
+        else
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    Logger.Log("[SteamService] Game files not found, downloading on first run...");
+                    await bootstrapAccount.DownloadGameAsync(StardewValleyAppId);
+                    if (!args.Contains("--skip-sdk"))
+                    {
+                        await bootstrapAccount.DownloadGameAsync(
+                            SteamworksSdkAppId,
+                            Path.Combine(gameDir, ".steam-sdk")
+                        );
+                    }
+                    Logger.Log("[SteamService] First-run game download complete.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[SteamService] First-run game download failed: {ex.Message}");
+                }
+            });
+        }
+    }
 
     await app.RunAsync();
 }

@@ -43,6 +43,13 @@ else
     TIMESTAMP := $(shell date -u '+%Y-%m-%dT%H-%M-%S')Z
 endif
 
+# Short git commit ("-dirty" when the tree is modified), baked in as SDVD_GIT_SHA so the diagnostics
+# tool can identify a local build. `--match=` matches no tag, leaving --always to yield the bare
+# commit; unquoted because cmd.exe would pass the quotes through to git. Empty outside a git checkout,
+# where build-server omits the --build-arg so the Dockerfile default applies (passing it empty would
+# set the ARG to ""). CI builds via docker/build-push-action and passes its own github.sha.
+GIT_SHA := $(shell git describe --always --dirty --match=)
+
 # Install development dependencies
 install:
 	@echo Installing development dependencies...
@@ -59,6 +66,7 @@ build-server:
 	@docker buildx build \
 		--platform=linux/amd64 \
 		--build-arg BUILD_CONFIGURATION=$(BUILD_CONFIGURATION) \
+		$(if $(GIT_SHA),--build-arg SDVD_GIT_SHA=$(GIT_SHA)) \
 		-t $(IMAGE_NAME):$(IMAGE_VERSION) \
 		$(if $(filter-out local,$(IMAGE_VERSION)),-t $(IMAGE_NAME):latest) \
 		--secret id=steam_username,env=STEAM_USERNAME \
@@ -121,6 +129,10 @@ down:
 # Attach to interactive split-pane server CLI
 cli:
 	@docker compose exec server attach-cli
+
+# Collect a server-state diagnostics bundle (wizard + zip on the host under ./diagnostics)
+diagnostics:
+	@docker compose exec -it server diagnostics
 
 # View server logs (escape sequence to reset colors)
 logs:
@@ -279,6 +291,7 @@ help:
 	@echo "  make logs     - View server logs"
 	@echo "  make dumplogs - Dump server logs to file on host"
 	@echo "  make cli      - Attach to interactive server console (tmux-based)"
+	@echo "  make diagnostics - Collect a server-state diagnostics zip (host ./diagnostics/)"
 	@echo "  make down     - Stop the server"
 	@echo "  make restart  - Restart the server (preserves volumes)"
 	@echo "  make docs     - Start docs dev server (requires built image)"
