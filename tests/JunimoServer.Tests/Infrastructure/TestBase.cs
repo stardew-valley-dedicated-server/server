@@ -417,7 +417,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             SetupEventBus.EmitInstanceLeased(
                 lease.InstanceId,
                 _testDisplayName,
-                serverLease.Managed?.InstanceId
+                serverLease.Managed.InstanceId
             );
         }
 
@@ -438,12 +438,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         _connection = new ConnectionHelper(lease.Client, connectionOptions, ServerApi);
 
         // Wire the per-server join gate onto the join core (see ConnectionHelper.AcquireJoinGate).
-        var managed = serverLease.Managed;
-        if (managed != null)
-        {
-            _connection.AcquireJoinGate = managed.AcquireJoinGateAsync;
-            _connection.ReleaseJoinGate = managed.ReleaseJoinGate;
-        }
+        _connection.AcquireJoinGate = serverLease.Managed.AcquireJoinGateAsync;
+        _connection.ReleaseJoinGate = serverLease.Managed.ReleaseJoinGate;
 
         _connection.OnCheckpointScreenshot = async (label) =>
         {

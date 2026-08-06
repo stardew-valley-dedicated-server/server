@@ -2773,15 +2773,14 @@ public sealed class TestResourceBroker : IAsyncDisposable
         // its join lane drained — every joining test queues on that instance's
         // single join gate (ManagedServer._joinGate, one pre-approval lane per
         // instance), producing the end-of-run join convoy. Reactive expansion
-        // can't rescue it: a server
-        // boots in ~41s, so an instance spun up at the tail serves ~0 tests before
-        // the run ends. Front-load instead — give the dominant config a 2nd
-        // prestart instance (its own join gate = a real second lane) by demoting
-        // the smallest single-slot config to on-demand. Total stays ≤ slots, so
-        // no slot over-subscription and no churn (the 2nd instance has the whole
-        // backlog to chew through). Guarded on slots >= 2 so single-slot hosts
-        // (CI) are untouched. See .claude/rules/provision-up-front-when-startup-
-        // exceeds-serviceable-tail.md and PLAN-suite-speedup.md §3.
+        // can't rescue it: a server boots in ~41s, so an instance spun up at the
+        // tail serves ~0 tests before the run ends. Front-load instead — give the
+        // dominant config a 2nd prestart instance (its own join gate = a real
+        // second lane) by demoting the smallest single-slot config to on-demand.
+        // Total stays ≤ slots, so no slot over-subscription and no churn (the 2nd
+        // instance has the whole backlog to chew through). Guarded on slots >= 2
+        // so single-slot hosts (CI) are untouched. See PLAN-suite-speedup.md §3 and
+        // .claude/rules/provision-up-front-when-startup-exceeds-serviceable-tail.md.
         // Scope: only fires when demands.Count > slots. At demands.Count == slots
         // (e.g. a narrow --filter run) the Hamilton path below caps every config at
         // 1, so no promotion — the convoy fix targets the saturated full-suite case.
