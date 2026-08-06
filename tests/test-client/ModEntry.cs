@@ -33,6 +33,8 @@ public class ModEntry : Mod
     private GodTool? _godTool;
     private QiPlaneSkip? _qiPlaneSkip;
     private WeddingCutscenePlayer? _weddingPlayer;
+    private WeddingPaceCompressor? _weddingPaceCompressor;
+    private WeddingDialogueSpeedup? _weddingDialogueSpeedup;
 
     // Diagnostics
     private HealthWatchdog? _healthWatchdog;
@@ -89,6 +91,12 @@ public class ModEntry : Mod
         // from OnUpdateTicked; render record reset per session from OnSaveLoaded (not per day — a
         // day-boundary reset would race the ceremonies, see WeddingCutscenePlayer.ResetForNewSession).
         _weddingPlayer = new WeddingCutscenePlayer(Monitor);
+
+        _weddingPaceCompressor = new WeddingPaceCompressor(helper, Monitor);
+        _weddingPaceCompressor.Apply();
+
+        _weddingDialogueSpeedup = new WeddingDialogueSpeedup(Monitor, _harmony);
+        _weddingDialogueSpeedup.Apply();
 
         // Apply Steam/Galaxy auth patches (must be before Steam diagnostics)
         var authService = new ClientAuthService(helper, Monitor, _harmony);

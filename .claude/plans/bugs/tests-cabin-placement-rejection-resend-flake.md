@@ -224,3 +224,71 @@ every existing caller unchanged). Change 3 adds a new test-only endpoint + clien
 established pair (`/test/farmers` + `WaitForFarmerServerTileAsync`); the endpoint is gated to the
 test API surface and reads game state read-only on the game thread. No production mod/server logic
 changes.
+
+---
+
+# Update 2026-08-03 — the fix shipped and `ObstacleInFootprint` still failed
+
+Status: all three changes above are **in the tree** — `ChatTestHelper.ResendUntilResponseAsync` /
+`SendOnceAndCaptureAsync` + `CommandResponse.Describe()` (`ChatTestHelper.cs:127-172`), and the
+pot-visibility gate `ServerApi.WaitForObjectAtServerTileAsync` at
+`CabinPlacementValidationTests.cs:113-121`. The flake recurred anyway, on the *other* method.
+
+## The occurrence
+
+Run `2026-08-03T10-36-17Z_38d72b9`,
+`CabinPlacementValidationTests.ObstacleInFootprint_RejectsAndDoesNotMove`:
+
+```
+Expected a 'Can't move cabin' rejection reply; no reply observed (command accepted or no response sent)
+```
+
+The `Describe()` channel worked as designed — the failure self-identifies as **scenario 1** (no
+reply in the `"Can't move cabin"` family at all), not scenario 2.
+
+## What this rules out
+
+The plan's root cause for this method — the Garden Pot not yet replicated server-side when `!cabin`
+runs — **is excluded**. The pot gate (`:113-121`) asserts `potVisible` *before* the command is sent,
+and it passed; had it failed, the reported message would have been "Garden Pot did not replicate to
+the server before the rejection check". The site also correctly stayed single-shot
+(`SendOnceAndCaptureAsync`), so the self-overlap masking path is not in play either.
+
+## What the server shows (`containers/server-1/container.log`)
+
+```
+[10:44:04 TRACE JunimoServer] [ChatCommands] OnChatMessage: !cabin
+[10:44:04 TRACE JunimoServer] [ChatCommands] Found command: cabin
+```
+
+…and then **nothing**: no `"Can't move cabin"` reply, no cabin move/relocate, no `cabin_*` event, no
+error, through to the test's 35s timeout and client disconnect at `10:44:40`. The handler was
+entered and produced no observable outcome.
+
+That does not fit either scenario in the original framing (both assumed the validator *ran* and
+either accepted or rejected for a different reason).
+
+## Next read
+
+`CabinCommand.cs:24-85` — every branch either sends a reply or moves the cabin, so "entered, nothing
+happened" needs explaining. In order:
+
+1. **Did the cabin actually move?** A silent accept is the benign reading, but the success path's
+   logging needs checking — nothing in the 10:44 window mentions a relocate, and the test failed
+   before its own "confirm the move was blocked" assertion could run.
+2. **Did the handler throw?** `ChatCommands.cs:171-172` calls `command.Action(...)` with **no
+   try/catch**, so an exception would propagate to the SMAPI event and surface as an `ERROR` line —
+   none is present, which argues against it. `Game1.GetPlayer(msg.SourceFarmer)` returning null
+   (`CabinCommand.cs:44`) would NRE on the next line, so this is worth confirming rather than
+   assuming.
+3. **Did the reply get sent but not captured?** `SendPrivateMessage` → client chat history is the
+   assertion's channel; the client recording for that test would show whether the text ever
+   rendered.
+
+Do (1) and (3) from artifacts before adding instrumentation — the client recording is already on
+disk (run artifacts under `TestResults/runs/` are local and get pruned).
+
+## Relationship to PR #494
+
+None. The precedent for this failure family predates it (`e8f9535`, 2026-06-22), and the
+`!cabin` path involves no join sequencing.

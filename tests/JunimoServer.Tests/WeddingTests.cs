@@ -56,7 +56,7 @@ namespace JunimoServer.Tests;
 /// video shows them). The test client drives each ceremony through the honest player path — the
 /// <c>WeddingCutscenePlayer</c> tweak clicks each <c>speak</c> dialogue box per tick, so the cutscene
 /// advances and renders frame-by-frame to its <c>waitForOtherPlayers</c> gate (which auto-readies on
-/// arrival), with deliberate ~2.5s pauses at the "couple assembled" and "marriage pronounced" beats so
+/// arrival), with deliberate ~1.5s pauses at the "couple assembled" and "marriage pronounced" beats so
 /// it's obvious in the video. Each distinct ceremony a client renders is recorded in
 /// <c>/status.weddingsRendered</c> (one entry per <c>weddingEnd&lt;farmerId&gt;</c> gate) — a client
 /// that force-skipped the ceremony would render nothing, so this is the proof the cutscene actually ran.
@@ -90,10 +90,10 @@ public class WeddingTests : TestBase
     private const string SpouseNpcB = "Penny";
 
     // How long for both clients to fully RENDER both ceremonies before we consider the server hung.
-    // Each client plays each cutscene through at CLIENT_TPS=5 — every speak box costs ~750ms safetyTimer
-    // (~4 ticks) plus typing, and WeddingCutscenePlayer adds two ~2.5s "make it visible" beats per
-    // ceremony — so two ceremonies × two clients runs minutes, not seconds. Sized well above that; a
-    // genuine hang (a ceremony that never starts/renders, or a host stall) still blows past it.
+    // Each client plays each cutscene through at CLIENT_TPS=5 (scripted pauses, dialogue clicks, and two
+    // 1.5s "make it visible" beats per ceremony), so two ceremonies × two clients takes tens of seconds
+    // even with the pace speedups. Deliberately oversized headroom: a genuine hang (a ceremony that never
+    // starts/renders, or a host stall) still blows past it.
     private static readonly TimeSpan CeremoniesResolveTimeout = TimeSpan.FromSeconds(240);
 
     /// <summary>
@@ -116,13 +116,9 @@ public class WeddingTests : TestBase
             $"SetDate({WeddingSeason} {EngageDay}) failed: {setDate.Error}"
         );
 
-        // Connect BOTH farmhands CONCURRENTLY — both players present together from the start, not A
-        // then B. The two client containers are leased up front (overlapping their cold start) and both
-        // join sequences run together; the per-server join gate serializes only the game-thread join
-        // (the loop processes one farmhand at a time), so B lands right behind A instead of waiting on
-        // A's whole lease+join. The primary is held as the shared GameClient, the second wrapped as a
-        // SecondFarmer; neither is privileged. await using → farmhandB disconnects before the class's
-        // /newgame reset.
+        // Connect BOTH farmhands CONCURRENTLY — both present from the start, not A then B (the scenario
+        // under test). Neither is privileged: the primary is the shared GameClient, the second a
+        // SecondFarmer. await using → farmhandB disconnects before the class's /newgame reset.
         var (farmhandA, farmhandBConn) = await Farmers.ConnectBothConcurrentlyAsync(
             primaryPrefix: "WeddingA",
             secondaryPrefix: "WeddingB",

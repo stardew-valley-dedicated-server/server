@@ -46,7 +46,7 @@ Load-bearing invariants for the test resource broker, capacity gating, and sessi
 
 - **`config-{hash}` keys identify reusable servers.** Same config produces the same server key, regardless of `SharedAssembly` vs `SharedClass` lifetime — the broker reuses an existing matching server.
 - **Config hash inputs**: password, starting cabins, farm type, max players, allow IP connections, Steam authentication, cabin strategy. Changing any of these splits the cache.
-- **Different `clientsNeeded` test demand produces different config hashes.** `StartingCabins` is derived from a test's `[TestServer(Clients = N)]` value, so two tests requesting different N split the cache even with otherwise identical config.
+- **`Clients` does NOT split the cache.** It is excluded from the hash, and `StartingCabins` — which is in the hash — defaults to `Math.Max(4, hosts.Max(h => h.ClientCapacity.Capacity) * 3)` (`TestServerAttribute.cs:71-77`), i.e. host client capacity, *not* the test's `Clients` value. So two classes requesting different `Clients` share one server unless something else in the hash differs. Only an explicit `StartingCabins = N` splits it.
 
 ## Diagnostic Snapshots
 
