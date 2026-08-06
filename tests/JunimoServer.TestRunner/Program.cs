@@ -81,7 +81,7 @@ var hostPool = HostPool.Instance;
 // — minutes of work on a cold remote host) can still write summary.json. The
 // renderer never owns this state — the writer fires from Program.cs's outer
 // finally regardless of which renderer mode is active.
-var recorder = new RunRecorder();
+var recorder = new RunRecorder(CollectKnownSecrets);
 recorder.SeedRunIdentity(TestArtifacts.RunDir, RunMetadata.RunId!);
 
 // Create renderer based on mode, then wrap in a fault-isolation guard so a
@@ -1126,6 +1126,12 @@ finally
     // without blocking a thread-pool thread.
     await InfrastructureEventLog.ShutdownAsync();
 
+    // The infra logs are appended live by their own writers (child + parent), so
+    // they can only be scrubbed here, after both have closed. run-metadata.json
+    // gets the same pass: in local mode the test child writes it directly,
+    // bypassing the artifact writer's scrubbed rewrite.
+    ScrubRunFilesInPlace();
+
     JunimoServer.Tests.Helpers.ShutdownCoordinator.SignalGracefulComplete();
 
     // Clean exit only: skip the EmergencyCleanup bulk Docker sweep on
@@ -1160,10 +1166,47 @@ static bool IsCIEnvironment() =>
 static string ScrubForLog(string message) => ReportRedactor.Scrub(message, CollectKnownSecrets());
 
 /// <summary>
-/// Collects the sensitive values the runner knows, for the report redactor to mask out
-/// of the published (public) snapshot: Steam credentials from <c>STEAM_ACCOUNTS</c> and
-/// each remote host's <c>user@host</c> + bare host from <see cref="HostPool"/>. Best-effort
-/// — any failure yields an empty set (the redactor's regex pass still runs).
+/// Rewrites the run files whose producers append live during the run (so a
+/// scrub-at-write isn't possible) with their secrets masked: the child- and
+/// parent-process infrastructure logs, plus the child-written run-metadata.json.
+/// Best-effort per file; a failure leaves that file unscrubbed and logs why.
+/// </summary>
+static void ScrubRunFilesInPlace()
+{
+    var secrets = CollectKnownSecrets();
+    var diagnosticsDir = Path.Combine(TestArtifacts.RunDir, RunArtifactNames.DiagnosticsDir);
+    string[] paths =
+    [
+        Path.Combine(diagnosticsDir, RunArtifactNames.InfrastructureJsonl),
+        Path.Combine(diagnosticsDir, RunArtifactNames.ParentInfrastructureJsonl),
+        Path.Combine(TestArtifacts.RunDir, RunArtifactNames.RunMetadataJson),
+    ];
+    foreach (var path in paths)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            File.WriteAllText(path, ReportRedactor.Scrub(File.ReadAllText(path), secrets));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[ArtifactWriter] scrub of {Path.GetFileName(path)} failed: {ex.Message}"
+            );
+        }
+    }
+}
+
+/// <summary>
+/// Collects the sensitive values the runner knows, for <see cref="ReportRedactor"/> to mask
+/// out of everything published — the report snapshot, the diagnostics jsonl sinks, CI log
+/// lines: Steam credentials from <c>STEAM_ACCOUNTS</c> and each remote host's
+/// <c>user@host</c> + bare host from <see cref="HostPool"/>. Best-effort — any failure
+/// yields an empty set (the redactor's regex pass still runs).
 /// </summary>
 static IReadOnlyCollection<string> CollectKnownSecrets()
 {

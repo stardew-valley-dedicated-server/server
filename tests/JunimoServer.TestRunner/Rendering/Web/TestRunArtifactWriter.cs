@@ -47,9 +47,15 @@ public sealed class TestRunArtifactWriter
     /// <paramref name="state"/> is the live <see cref="TestRunState"/>; it carries
     /// the per-instance stats history that <see cref="RunArtifactView"/> does not
     /// (those types are private nested in TestRunState), serialized here under the
-    /// state's own lock.
+    /// state's own lock. <paramref name="knownSecrets"/> is masked out of every
+    /// artifact this writer produces (the json reports and the diagnostics jsonl
+    /// sinks) — the runs tree is uploaded as a public CI artifact.
     /// </summary>
-    public void WriteIfNotWritten(RunArtifactView view, TestRunState state)
+    public void WriteIfNotWritten(
+        RunArtifactView view,
+        TestRunState state,
+        IReadOnlyCollection<string> knownSecrets
+    )
     {
         lock (_lock)
         {
@@ -74,7 +80,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteSummaryJson(view);
+                WriteSummaryJson(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -83,7 +89,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteCtrfReport(view);
+                WriteCtrfReport(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -92,7 +98,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteRunOutput(view);
+                WriteRunOutput(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -101,7 +107,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteRunMetadataMerged(view);
+                WriteRunMetadataMerged(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -112,12 +118,54 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteInstanceStats(state);
+                WriteInstanceStats(state, knownSecrets);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine(
                     $"[ArtifactWriter] instance-stats.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteInstanceHistory(state, knownSecrets);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] instance-history.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteRunEvents(state, knownSecrets);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ArtifactWriter] run-events.jsonl failed: {ex.Message}");
+            }
+
+            try
+            {
+                WriteTestDetails(state, knownSecrets);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] test-details.jsonl failed: {ex.Message}"
+                );
+            }
+
+            try
+            {
+                WriteSetupPhases(state, knownSecrets);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"[ArtifactWriter] setup-phases.jsonl failed: {ex.Message}"
                 );
             }
 
@@ -132,7 +180,7 @@ public sealed class TestRunArtifactWriter
         }
     }
 
-    private void WriteSummaryJson(RunArtifactView v)
+    private void WriteSummaryJson(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var failures = new List<Dictionary<string, object?>>();
         long activeDurationTotalMs = 0;
@@ -212,7 +260,7 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(summary);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(summary), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.SummaryJson), json);
     }
 
@@ -263,7 +311,7 @@ public sealed class TestRunArtifactWriter
         };
     }
 
-    private void WriteCtrfReport(RunArtifactView v)
+    private void WriteCtrfReport(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var tests = new List<Dictionary<string, object?>>();
 
@@ -394,7 +442,7 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(report);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(report), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.CtrfReport), json);
     }
 
@@ -411,7 +459,7 @@ public sealed class TestRunArtifactWriter
     /// contract and its consumers are untouched.
     /// </para>
     /// </summary>
-    private void WriteRunOutput(RunArtifactView v)
+    private void WriteRunOutput(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var status = v.Aborted ? "aborted" : ResultStatus(v);
         var degradation = BuildDegradation(v);
@@ -437,11 +485,11 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(output);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(output), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.RunOutputJson), json);
 
         // One-line JSON to stdout so CI scrapers can parse the run summary directly.
-        Console.WriteLine(JsonSerializer.Serialize(output));
+        Console.WriteLine(ReportRedactor.Scrub(JsonSerializer.Serialize(output), knownSecrets));
     }
 
     /// <summary>
@@ -451,7 +499,7 @@ public sealed class TestRunArtifactWriter
     /// is null and this writer is a no-op (the local test-child already wrote
     /// its own run-metadata.json directly).
     /// </summary>
-    private void WriteRunMetadataMerged(RunArtifactView v)
+    private void WriteRunMetadataMerged(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         if (v.WorkerRunMetadata is null || v.WorkerRunMetadata.Count == 0)
         {
@@ -478,7 +526,7 @@ public sealed class TestRunArtifactWriter
         merged["workers"] = v.WorkerRunMetadata.Select(w => (object)w.Clone()).ToList();
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(merged);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(merged), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.RunMetadataJson), json);
     }
 
@@ -489,12 +537,73 @@ public sealed class TestRunArtifactWriter
     /// WebSocket (<c>SetupEventBus</c> is disk-free); this is the only on-disk
     /// sink for post-mortem container-load analysis.
     /// </summary>
-    private void WriteInstanceStats(TestRunState state)
+    private void WriteInstanceStats(TestRunState state, IReadOnlyCollection<string> knownSecrets)
     {
         var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
         Directory.CreateDirectory(diagnosticsDir);
         state.WriteInstanceStatsJsonl(
-            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl)
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceStatsJsonl),
+            knownSecrets
+        );
+    }
+
+    /// <summary>
+    /// Flushes the per-instance lifecycle narrative to
+    /// <c>diagnostics/instance-history.jsonl</c> — the instance-keyed
+    /// consolidated view (final state, connect/disconnect transitions,
+    /// VNC/recording paths) that <c>infrastructure.jsonl</c>'s event stream
+    /// doesn't carry.
+    /// </summary>
+    private void WriteInstanceHistory(TestRunState state, IReadOnlyCollection<string> knownSecrets)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteInstanceHistoryJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.InstanceHistoryJsonl),
+            knownSecrets
+        );
+    }
+
+    /// <summary>
+    /// Flushes the UI event stream to <c>diagnostics/run-events.jsonl</c> — the
+    /// only on-disk home for xUnit-level diagnostic/error events and the run's
+    /// unified event ordering.
+    /// </summary>
+    private void WriteRunEvents(TestRunState state, IReadOnlyCollection<string> knownSecrets)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteRunEventsJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.RunEventsJsonl),
+            knownSecrets
+        );
+    }
+
+    /// <summary>
+    /// Flushes per-test UI-only extras to <c>diagnostics/test-details.jsonl</c> —
+    /// output, non-failed stack traces, ordering/timing that summary/ctrf omit.
+    /// </summary>
+    private void WriteTestDetails(TestRunState state, IReadOnlyCollection<string> knownSecrets)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteTestDetailsJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.TestDetailsJsonl),
+            knownSecrets
+        );
+    }
+
+    /// <summary>
+    /// Flushes the prestart/warmup narrative to
+    /// <c>diagnostics/setup-phases.jsonl</c> — the run-start phase/step breakdown.
+    /// </summary>
+    private void WriteSetupPhases(TestRunState state, IReadOnlyCollection<string> knownSecrets)
+    {
+        var diagnosticsDir = Path.Combine(_runDir!, RunArtifactNames.DiagnosticsDir);
+        Directory.CreateDirectory(diagnosticsDir);
+        state.WriteSetupPhasesJsonl(
+            Path.Combine(diagnosticsDir, RunArtifactNames.SetupPhasesJsonl),
+            knownSecrets
         );
     }
 

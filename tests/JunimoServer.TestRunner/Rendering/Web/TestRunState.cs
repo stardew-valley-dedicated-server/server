@@ -46,6 +46,7 @@ public sealed class TestRunState
     // Event log (bounded)
     private const int MaxEventLogSize = 5000;
     private readonly List<object> _eventLog = new();
+    private int _evictedEventCount;
 
     // Errors
     private readonly List<ErrorState> _errors = new();
@@ -503,7 +504,9 @@ public sealed class TestRunState
                 e.DisplayName,
                 DurationMs = test.DurationMs,
                 QueueDurationMs = test.QueueDurationMs,
-                Output = test.Output,
+                // Copy: the stored event is re-serialized at the run-events flush;
+                // a live reference would leak later-appended lines into it.
+                Output = test.Output.ToList(),
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -558,7 +561,8 @@ public sealed class TestRunState
                 e.ExceptionType,
                 StackTrace = RendererBase.SanitizeStackTrace(e.StackTrace ?? ""),
                 e.ScreenshotPath,
-                Output = test.Output,
+                // Copy — see ApplyTestPassed (screenshots append to Output after this).
+                Output = test.Output.ToList(),
             };
             AddEventLog(evt);
             return Serialize(evt);
@@ -860,15 +864,18 @@ public sealed class TestRunState
     /// </summary>
     public string SerializeRunMetadataEvent(RunMetadataEvent e)
     {
-        var evt = new
+        lock (_lock)
         {
-            Event = "run_metadata",
-            e.Timestamp,
-            RunDir = e.RunDir,
-            Data = e.Data,
-        };
-        AddEventLog(evt);
-        return Serialize(evt);
+            var evt = new
+            {
+                Event = "run_metadata",
+                e.Timestamp,
+                RunDir = e.RunDir,
+                Data = e.Data,
+            };
+            AddEventLog(evt);
+            return Serialize(evt);
+        }
     }
 
     /// <summary>
@@ -1492,7 +1499,7 @@ public sealed class TestRunState
     /// Instances with no samples are skipped, so the file is empty (or absent if
     /// the caller skips an empty write) when <c>SDVD_TEST_STATS=none</c>.
     /// </summary>
-    public void WriteInstanceStatsJsonl(string path)
+    public void WriteInstanceStatsJsonl(string path, IReadOnlyCollection<string> knownSecrets)
     {
         lock (_lock)
         {
@@ -1535,8 +1542,264 @@ public sealed class TestRunState
                 }
             }
 
-            File.WriteAllLines(path, lines);
+            WriteRedactedLines(path, lines, knownSecrets);
         }
+    }
+
+    /// <summary>
+    /// Writes the per-instance lifecycle narrative to <paramref name="path"/>:
+    /// one compact JSON line per <c>History</c> entry (every event
+    /// <see cref="ApplyInstanceCreated"/>/<see cref="ApplyInstanceStatus"/>
+    /// record), each carrying the instance identity, plus a trailing
+    /// <c>final_state</c> line per instance — so the file is empty only when no
+    /// instances were registered. The lifecycle is also on disk in
+    /// <c>infrastructure.jsonl</c> (event-by-event <c>server_*</c>/<c>client_*</c>
+    /// entries with test attribution); this sink adds the instance-keyed
+    /// consolidated view plus what the infra log doesn't carry:
+    /// <c>final_state</c>, connect/disconnect transitions, <c>VncUrl</c>,
+    /// <c>RecordingPath</c>.
+    /// </summary>
+    public void WriteInstanceHistoryJsonl(string path, IReadOnlyCollection<string> knownSecrets)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var inst in _instances.Values)
+            {
+                foreach (var h in inst.History)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                inst.InstanceId,
+                                inst.HostId,
+                                inst.InstanceType,
+                                inst.ServerKey,
+                                inst.Label,
+                                h.Timestamp,
+                                h.Event,
+                                h.TestName,
+                                h.Reason,
+                                h.ServerInstanceId,
+                                h.ClientInstanceId,
+                            }
+                        )
+                    );
+                }
+
+                // Trailing final-state line so the current status fields (which the
+                // history transitions don't fully carry) survive too.
+                lines.Add(
+                    Serialize(
+                        new
+                        {
+                            inst.InstanceId,
+                            inst.HostId,
+                            inst.InstanceType,
+                            inst.ServerKey,
+                            inst.Label,
+                            Event = "final_state",
+                            inst.Status,
+                            inst.Connected,
+                            inst.Disposed,
+                            inst.CurrentTest,
+                            inst.PoisonReason,
+                            inst.ConnectedServerId,
+                            inst.VncUrl,
+                            inst.SetupStatus,
+                            inst.RecordingPath,
+                        }
+                    )
+                );
+            }
+
+            WriteRedactedLines(path, lines, knownSecrets);
+        }
+    }
+
+    /// <summary>
+    /// Writes the runner's in-memory UI event log (every event broadcast live to
+    /// WebSocket clients; late-connecting clients hydrate from the snapshot, so
+    /// this flush is the log's only reader) to <paramref name="path"/>, one
+    /// compact JSON line per <c>_eventLog</c> entry. Uniquely preserves the
+    /// <c>diagnostic</c> and <c>error</c> events (from xUnit's
+    /// <c>OnDiagnosticMessage</c>/<c>OnErrorMessage</c>), which land nowhere else
+    /// on disk, plus the unified ordering of the run's event stream.
+    /// <para>
+    /// <c>_eventLog</c> is a bounded ring buffer (<see cref="MaxEventLogSize"/>);
+    /// a normal run stays well under the cap, but if entries were evicted this
+    /// prepends a <c>run_events_truncated</c> marker (with the evicted count) so
+    /// a ring-buffer-evicted log is never mistaken for a complete one. The cap
+    /// bounds live memory and is deliberately not raised here.
+    /// </para>
+    /// </summary>
+    public void WriteRunEventsJsonl(string path, IReadOnlyCollection<string> knownSecrets)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            if (_evictedEventCount > 0)
+            {
+                lines.Add(
+                    Serialize(
+                        new
+                        {
+                            Event = "run_events_truncated",
+                            Cap = MaxEventLogSize,
+                            Evicted = _evictedEventCount,
+                        }
+                    )
+                );
+            }
+
+            foreach (var evt in _eventLog)
+            {
+                lines.Add(Serialize(evt));
+            }
+
+            WriteRedactedLines(path, lines, knownSecrets);
+        }
+    }
+
+    /// <summary>
+    /// Writes the per-test UI-only extras to <paramref name="path"/>, one compact
+    /// JSON line per test — the fields that <c>summary.json</c>/<c>ctrf</c> don't
+    /// carry for non-failed tests (output, non-failed stack traces, failure
+    /// context, ordering/timing, used instances). The internal-only
+    /// reconciliation-provenance fields (<c>EnrichmentOutcome</c>,
+    /// <c>OutcomeSource</c>) are deliberately excluded — they're not observable
+    /// state.
+    /// </summary>
+    public void WriteTestDetailsJsonl(string path, IReadOnlyCollection<string> knownSecrets)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var col in _collections.Values)
+            {
+                foreach (var cls in col.Classes.Values)
+                {
+                    foreach (var t in cls.Tests.Values)
+                    {
+                        lines.Add(
+                            Serialize(
+                                new
+                                {
+                                    t.ClassName,
+                                    t.DisplayName,
+                                    t.Status,
+                                    Output = t.Output.Count > 0 ? t.Output : null,
+                                    t.StackTrace,
+                                    t.FailureContext,
+                                    RecordingSkipReasons = t.RecordingSkipReasons.Count > 0
+                                        ? t.RecordingSkipReasons
+                                        : null,
+                                    UsedInstances = t.UsedInstances.Count > 0
+                                        ? t.UsedInstances
+                                        : null,
+                                    t.DiscoveryOrder,
+                                    t.ExecutionOrder,
+                                    t.StartTime,
+                                    t.RunningStartTime,
+                                    Recordings = t.Recordings.Count > 0
+                                        ? t
+                                            .Recordings.Select(r => new
+                                            {
+                                                r.Path,
+                                                r.Source,
+                                                r.TimelineOffset,
+                                                r.WallClockDuration,
+                                            })
+                                            .ToList()
+                                        : null,
+                                }
+                            )
+                        );
+                    }
+                }
+            }
+
+            WriteRedactedLines(path, lines, knownSecrets);
+        }
+    }
+
+    /// <summary>
+    /// Writes the run-start prestart/warmup narrative to <paramref name="path"/>,
+    /// one compact JSON line per <c>(phase, step)</c> from <c>_setupPhases</c> —
+    /// the parent-side phases (preflight, cleanup, image/game-data distribution)
+    /// and child-side per-collection prestart phases with their step-level
+    /// breakdown. Scope is prestart-only: mid-run per-instance re-provisioning
+    /// lives in <see cref="WriteInstanceHistoryJsonl"/>, not here.
+    /// A phase with no steps still writes its own line so an in-progress or
+    /// failed phase is visible.
+    /// </summary>
+    public void WriteSetupPhasesJsonl(string path, IReadOnlyCollection<string> knownSecrets)
+    {
+        lock (_lock)
+        {
+            var lines = new List<string>();
+            foreach (var p in _setupPhases)
+            {
+                if (p.Steps.Count == 0)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                p.Category,
+                                Phase = p.PhaseName,
+                                p.CollectionName,
+                                p.Status,
+                                p.StartTime,
+                                p.EndTime,
+                                Error = p.ErrorMessage,
+                            }
+                        )
+                    );
+                    continue;
+                }
+
+                foreach (var s in p.Steps)
+                {
+                    lines.Add(
+                        Serialize(
+                            new
+                            {
+                                p.Category,
+                                Phase = p.PhaseName,
+                                p.CollectionName,
+                                p.Status,
+                                p.StartTime,
+                                p.EndTime,
+                                Error = p.ErrorMessage,
+                                Step = s.StepName,
+                                StepStatus = s.Status,
+                                s.Details,
+                                Output = s.Output.Count > 0 ? s.Output : null,
+                                s.Timestamp,
+                            }
+                        )
+                    );
+                }
+            }
+
+            WriteRedactedLines(path, lines, knownSecrets);
+        }
+    }
+
+    /// <summary>
+    /// The diagnostics tree rides in CI's public run-artifact upload, so every
+    /// sink line is scrubbed through <see cref="ReportRedactor"/> (same secrets
+    /// set as the published report) before it reaches disk.
+    /// </summary>
+    private static void WriteRedactedLines(
+        string path,
+        List<string> lines,
+        IReadOnlyCollection<string> knownSecrets
+    )
+    {
+        File.WriteAllLines(path, lines.Select(l => ReportRedactor.Scrub(l, knownSecrets)));
     }
 
     /// <summary>
@@ -2068,6 +2331,7 @@ public sealed class TestRunState
         if (_eventLog.Count >= MaxEventLogSize)
         {
             _eventLog.RemoveAt(0);
+            _evictedEventCount++;
         }
 
         _eventLog.Add(evt);

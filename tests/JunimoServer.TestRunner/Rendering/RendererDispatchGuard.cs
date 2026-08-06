@@ -256,7 +256,7 @@ public sealed class RendererDispatchGuard : ITestRenderer
     {
         // ApplyRunMetadata is void+idempotent; SerializeRunMetadataEvent
         // produces the broadcast JSON and has the AddEventLog side-effect
-        // that contributes to the WS-snapshot history.
+        // that lands the event in run-events.jsonl.
         ApplyState(nameof(OnRunMetadata) + ":apply", () => _recorder.State.ApplyRunMetadata(e));
         string? json = null;
         try
