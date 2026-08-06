@@ -47,8 +47,8 @@ public static class RunArtifactNames
     /// The runner's UI event stream (every event broadcast live over the
     /// WebSocket) under <see cref="DiagnosticsDir"/> — uniquely the only on-disk
     /// home for xUnit-level <c>diagnostic</c>/<c>error</c> events. Sourced from a
-    /// bounded ring buffer; a leading <c>run_events_truncated</c> marker appears
-    /// if the buffer was full at flush.
+    /// bounded ring buffer; a leading <c>run_events_truncated</c> marker (with
+    /// the evicted count) appears if the buffer evicted entries.
     /// </summary>
     public const string RunEventsJsonl = "run-events.jsonl";
 

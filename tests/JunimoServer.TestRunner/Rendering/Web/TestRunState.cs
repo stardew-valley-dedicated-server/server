@@ -46,6 +46,7 @@ public sealed class TestRunState
     // Event log (bounded)
     private const int MaxEventLogSize = 5000;
     private readonly List<object> _eventLog = new();
+    private int _evictedEventCount;
 
     // Errors
     private readonly List<ErrorState> _errors = new();
@@ -1627,10 +1628,10 @@ public sealed class TestRunState
     /// on disk, plus the unified ordering of the run's event stream.
     /// <para>
     /// <c>_eventLog</c> is a bounded ring buffer (<see cref="MaxEventLogSize"/>);
-    /// a normal run stays well under the cap, but if it was full at flush this
-    /// prepends a <c>run_events_truncated</c> marker so a ring-buffer-evicted log
-    /// is never mistaken for a complete one. The cap bounds live memory and is
-    /// deliberately not raised here.
+    /// a normal run stays well under the cap, but if entries were evicted this
+    /// prepends a <c>run_events_truncated</c> marker (with the evicted count) so
+    /// a ring-buffer-evicted log is never mistaken for a complete one. The cap
+    /// bounds live memory and is deliberately not raised here.
     /// </para>
     /// </summary>
     public void WriteRunEventsJsonl(string path, IReadOnlyCollection<string> knownSecrets)
@@ -1638,9 +1639,18 @@ public sealed class TestRunState
         lock (_lock)
         {
             var lines = new List<string>();
-            if (_eventLog.Count >= MaxEventLogSize)
+            if (_evictedEventCount > 0)
             {
-                lines.Add(Serialize(new { Event = "run_events_truncated", Cap = MaxEventLogSize }));
+                lines.Add(
+                    Serialize(
+                        new
+                        {
+                            Event = "run_events_truncated",
+                            Cap = MaxEventLogSize,
+                            Evicted = _evictedEventCount,
+                        }
+                    )
+                );
             }
 
             foreach (var evt in _eventLog)
@@ -2321,6 +2331,7 @@ public sealed class TestRunState
         if (_eventLog.Count >= MaxEventLogSize)
         {
             _eventLog.RemoveAt(0);
+            _evictedEventCount++;
         }
 
         _eventLog.Add(evt);

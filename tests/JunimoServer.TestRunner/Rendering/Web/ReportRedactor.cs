@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace JunimoServer.TestRunner.Rendering.Web;
@@ -12,7 +13,9 @@ namespace JunimoServer.TestRunner.Rendering.Web;
 /// would corrupt benign version strings like <c>Unix 6.1.0.17</c>):</para>
 /// <list type="number">
 ///   <item>Known-value pass — literal replacement of values the runner actually knows
-///   (VPS host/IP, Steam credentials), longest-first. Zero ambiguity.</item>
+///   (VPS host/IP, Steam credentials), longest-first, in both raw and JSON-escaped
+///   form so a secret embedded in serialized JSON text is still matched. Zero
+///   ambiguity.</item>
 ///   <item>High-confidence regex — shapes that don't collide with benign text: private-key
 ///   blocks, <c>/run/secrets</c> snippets, <c>key=value</c> secret assignments, SSH
 ///   <c>user@host</c> destinations.</item>
@@ -69,13 +72,22 @@ public static class ReportRedactor
         var result = snapshotJson;
 
         // 1. Known values — longest-first so e.g. "user@host" is masked before the bare
-        //    "host" substring it contains.
+        //    "host" substring it contains. Each secret is replaced in both its raw and
+        //    JSON-escaped form: the emitters' default encoder escapes quotes, backslashes,
+        //    non-ASCII, and HTML-sensitive chars like '+', so a secret containing any of
+        //    those appears in serialized JSON only as its escaped spelling.
         foreach (
             var secret in knownSecrets.Where(s => s.Length >= 3).OrderByDescending(s => s.Length)
         )
         {
             var masked = LooksLikeIp(secret) ? MaskIp(secret) : MaskValue(secret);
             result = result.Replace(secret, masked);
+
+            var escaped = JsonSerializer.Serialize(secret)[1..^1];
+            if (escaped != secret)
+            {
+                result = result.Replace(escaped, masked);
+            }
         }
 
         // 2. High-confidence regex.

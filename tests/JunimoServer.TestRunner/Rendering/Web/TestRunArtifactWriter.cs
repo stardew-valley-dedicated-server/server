@@ -48,7 +48,8 @@ public sealed class TestRunArtifactWriter
     /// the per-instance stats history that <see cref="RunArtifactView"/> does not
     /// (those types are private nested in TestRunState), serialized here under the
     /// state's own lock. <paramref name="knownSecrets"/> is masked out of every
-    /// diagnostics jsonl sink — the runs tree is uploaded as a public CI artifact.
+    /// artifact this writer produces (the json reports and the diagnostics jsonl
+    /// sinks) — the runs tree is uploaded as a public CI artifact.
     /// </summary>
     public void WriteIfNotWritten(
         RunArtifactView view,
@@ -79,7 +80,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteSummaryJson(view);
+                WriteSummaryJson(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -88,7 +89,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteCtrfReport(view);
+                WriteCtrfReport(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -97,7 +98,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteRunOutput(view);
+                WriteRunOutput(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -106,7 +107,7 @@ public sealed class TestRunArtifactWriter
 
             try
             {
-                WriteRunMetadataMerged(view);
+                WriteRunMetadataMerged(view, knownSecrets);
             }
             catch (Exception ex)
             {
@@ -179,7 +180,7 @@ public sealed class TestRunArtifactWriter
         }
     }
 
-    private void WriteSummaryJson(RunArtifactView v)
+    private void WriteSummaryJson(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var failures = new List<Dictionary<string, object?>>();
         long activeDurationTotalMs = 0;
@@ -259,7 +260,7 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(summary);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(summary), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.SummaryJson), json);
     }
 
@@ -310,7 +311,7 @@ public sealed class TestRunArtifactWriter
         };
     }
 
-    private void WriteCtrfReport(RunArtifactView v)
+    private void WriteCtrfReport(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var tests = new List<Dictionary<string, object?>>();
 
@@ -441,7 +442,7 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(report);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(report), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.CtrfReport), json);
     }
 
@@ -458,7 +459,7 @@ public sealed class TestRunArtifactWriter
     /// contract and its consumers are untouched.
     /// </para>
     /// </summary>
-    private void WriteRunOutput(RunArtifactView v)
+    private void WriteRunOutput(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         var status = v.Aborted ? "aborted" : ResultStatus(v);
         var degradation = BuildDegradation(v);
@@ -484,11 +485,11 @@ public sealed class TestRunArtifactWriter
         };
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(output);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(output), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.RunOutputJson), json);
 
         // One-line JSON to stdout so CI scrapers can parse the run summary directly.
-        Console.WriteLine(JsonSerializer.Serialize(output));
+        Console.WriteLine(ReportRedactor.Scrub(JsonSerializer.Serialize(output), knownSecrets));
     }
 
     /// <summary>
@@ -498,7 +499,7 @@ public sealed class TestRunArtifactWriter
     /// is null and this writer is a no-op (the local test-child already wrote
     /// its own run-metadata.json directly).
     /// </summary>
-    private void WriteRunMetadataMerged(RunArtifactView v)
+    private void WriteRunMetadataMerged(RunArtifactView v, IReadOnlyCollection<string> knownSecrets)
     {
         if (v.WorkerRunMetadata is null || v.WorkerRunMetadata.Count == 0)
         {
@@ -525,7 +526,7 @@ public sealed class TestRunArtifactWriter
         merged["workers"] = v.WorkerRunMetadata.Select(w => (object)w.Clone()).ToList();
 
         Directory.CreateDirectory(_runDir!);
-        var json = ArtifactPrettyJson.Serialize(merged);
+        var json = ReportRedactor.Scrub(ArtifactPrettyJson.Serialize(merged), knownSecrets);
         File.WriteAllText(Path.Combine(_runDir!, RunArtifactNames.RunMetadataJson), json);
     }
 
