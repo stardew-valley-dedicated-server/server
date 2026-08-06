@@ -202,6 +202,16 @@
             "allowedVersions": "<3.0.0"
         },
         {
+            "description": "CAP — typescript below 7.0 in test-ui and docs. TS 7 is the Go-native port: its npm package ships a platform binary plus a version stub (lib/ holds only tsc.js and version.cjs, and exports[\".\"] maps to lib/version.cjs), so the compiler JS API is gone until the API planned for 7.1. vue-tsc's engine @volar/typescript consumes that API, so `vue-tsc --noEmit` dies with ERR_PACKAGE_PATH_NOT_EXPORTED on './lib/tsc' — breaking `bun run build` in test-ui, which gates `make build-test-ui` and the Build test-UI SPA step in e2e-tests.yml. Verified against vue-tsc 3.3.9. vue-tsc's peer range (>=5.0.0) accepts 7.x, so nothing warns at install time. docs is capped in lockstep: its tsconfig includes .vitepress/**/*.vue, which tsgo cannot check, and vitepress build never invokes tsc — 7.x is all risk and no gain there. No versioning:semver here, unlike the nuget caps above: the bun manager uses npm versioning, which evaluates <7.0.0 correctly. Lift once Volar runs on the TS 7.1 API (vuejs/language-tools#5381).",
+            "matchManagers": ["bun"],
+            "matchFileNames": [
+                "tests/test-ui/package.json",
+                "docs/package.json"
+            ],
+            "matchPackageNames": ["typescript"],
+            "allowedVersions": "<7.0.0"
+        },
+        {
             "description": "MAJOR — every major update gets its own PR, no exceptions. Clears the per-module groupName for any major bump (last-match-wins), so each major lands standalone. Must stay last to override every group above.",
             "matchUpdateTypes": ["major"],
             "groupName": null
