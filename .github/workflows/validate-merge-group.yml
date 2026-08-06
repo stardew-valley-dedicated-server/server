@@ -33,14 +33,14 @@ jobs:
       # actually consumes (the Dockerfile COPY surface) — keep it in sync with docker/Dockerfile, not
       # with .dockerignore. Must match validate-pr.yml's filter exactly so PR-time and in-queue agree.
       - name: Checkout queue branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
           fetch-depth: 0
 
       - name: Filter paths
         id: filter
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           base: ${{ github.event.merge_group.base_sha }}
           ref: ${{ github.event.merge_group.head_sha }}
@@ -76,7 +76,7 @@ jobs:
       # The merge-queue branch lives in the base repo, so checking out head_sha with full history
       # provides both the commits to lint and the tooling (commitlint.config.js, package*.json).
       - name: Checkout queue branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
           fetch-depth: 0
@@ -99,7 +99,7 @@ jobs:
 
     steps:
       - name: Checkout queue branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
 
@@ -125,7 +125,7 @@ jobs:
     steps:
       - name: Checkout code
         if: needs.changes.outputs.docker == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
 
@@ -206,7 +206,7 @@ jobs:
 
     steps:
       - name: Checkout queue branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
 
@@ -243,7 +243,7 @@ jobs:
     steps:
       # persist-credentials off: the job only reads the checkout.
       - name: Checkout queue branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.merge_group.head_sha }}
           persist-credentials: false
