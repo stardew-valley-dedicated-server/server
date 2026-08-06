@@ -27,6 +27,15 @@ it, and the password config violates it today.
 `KeepConnected` session already connected to that instance. So a lobby client can sit inside another
 class's night.
 
+**The cross-class sharing itself is by design, not the defect.** `test-broker-invariants.md:45`:
+"same config produces the same server key, regardless of `SharedAssembly` vs `SharedClass`
+lifetime — the broker reuses an existing matching server." Isolation governs server *lifetime and
+reuse*, not exclusivity, and pooling by config is what keeps the run inside its per-host
+`serverSlots`. Do not "fix" this by adding the test class to the `SharedClass` key: 14 of 33 test
+classes are `SharedClass` (some explicitly, some by default), so that would split their pooling into
+per-class servers at ~41s boot apiece. The defect is narrower — an *unauthenticated* session held on
+a server where another class drives day transitions.
+
 ## Consequence
 
 This is the CI trigger for `day-transition-wedge-with-lobby-player.md` — two of four full-suite runs

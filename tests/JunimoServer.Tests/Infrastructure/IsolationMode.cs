@@ -5,7 +5,11 @@ namespace JunimoServer.Tests.Infrastructure;
 /// </summary>
 public enum IsolationMode
 {
-    /// <summary>Server shared across all tests in the same class. Default.</summary>
+    /// <summary>
+    /// Server shared across all tests in the same class. Default. Governs lifetime and reuse, NOT
+    /// exclusivity: the key is <c>config-{hash}</c> with no class identity, so other classes with a
+    /// matching config share the same instance (see <c>.claude/rules/test-broker-invariants.md</c>).
+    /// </summary>
     SharedClass,
 
     /// <summary>Server shared across all classes with matching SharedGroup name.</summary>
