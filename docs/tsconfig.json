@@ -18,6 +18,6 @@
 
 		"types": ["node"]
 	},
-	"include": ["docs/.vitepress/**/*.ts", "docs/.vitepress/**/*.vue"],
-	"exclude": ["node_modules", "docs/.vitepress/dist", "docs/.vitepress/cache"]
+	"include": [".vitepress/**/*.ts", ".vitepress/**/*.vue"],
+	"exclude": ["node_modules", ".vitepress/dist", ".vitepress/cache"]
 }
