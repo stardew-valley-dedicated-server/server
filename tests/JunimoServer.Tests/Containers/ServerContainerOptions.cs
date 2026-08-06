@@ -92,6 +92,11 @@ public class ServerContainerOptions
     /// </summary>
     public bool FixtureFarmMod { get; set; } = false;
 
+    /// <summary>
+    /// SERVER_TPS for this container. 0 (default) falls back to .env.test's SERVER_TPS (or 60).
+    /// </summary>
+    public int ServerTps { get; set; } = 0;
+
     #region Container Settings
 
     /// <summary>

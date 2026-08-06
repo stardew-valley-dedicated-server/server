@@ -796,15 +796,41 @@ public partial class ApiService : ModService
     private Timer? _wsCleanupTimer;
 
     /// <summary>
+    /// A queued game-thread action whose execution and timeout compete for an atomic claim: the game
+    /// thread claims pending→executing before running, the timeout callback claims pending→timed-out
+    /// before cancelling. Exactly one side wins, so a timed-out request can never mutate the world
+    /// after its caller was told nothing changed, and an in-flight action is never reported as timed
+    /// out (the caller awaits its real result instead). Must be a reference type — the claim state
+    /// has to be shared between the queue and the timeout callback, not copied per dequeue. Same
+    /// claim pattern as the test client's <c>ExecuteOnGameThread</c> (tests/test-client/ModEntry.cs);
+    /// keep the two in sync.
+    /// </summary>
+    private sealed class PendingGameAction
+    {
+        // 0 = pending, 1 = timed out (execution must skip), 2 = executing (timeout must not cancel).
+        private int _state;
+
+        public PendingGameAction(Action action, TaskCompletionSource<bool> completion)
+        {
+            Action = action;
+            Completion = completion;
+        }
+
+        public Action Action { get; }
+        public TaskCompletionSource<bool> Completion { get; }
+
+        public bool TryClaimExecution() => Interlocked.CompareExchange(ref _state, 2, 0) == 0;
+
+        public bool TryClaimTimeout() => Interlocked.CompareExchange(ref _state, 1, 0) == 0;
+    }
+
+    /// <summary>
     /// Queue of actions to execute on the main game thread.
     /// Used for game state modifications that would cause collection modification errors
     /// if executed from the async HTTP thread (e.g., removing buildings during draw).
     /// Each action includes a TaskCompletionSource to signal completion back to the caller.
     /// </summary>
-    private readonly ConcurrentQueue<(
-        Action Action,
-        TaskCompletionSource<bool> Completion
-    )> _pendingGameActions = new();
+    private readonly ConcurrentQueue<PendingGameAction> _pendingGameActions = new();
 
     /// <summary>
     /// Ticks timestamp of the last OnUpdateTicked call, used by /health to detect game thread stalls.
@@ -1174,6 +1200,12 @@ public partial class ApiService : ModService
         var actionsProcessed = false;
         while (_pendingGameActions.TryDequeue(out var item))
         {
+            if (!item.TryClaimExecution())
+            {
+                // The caller's RunOnGameThreadAsync timed out and returned an error; the atomic claim
+                // guarantees the timeout can no longer land once execution starts (and vice versa).
+                continue;
+            }
             actionsProcessed = true;
             try
             {
@@ -1821,10 +1853,20 @@ public partial class ApiService : ModService
             using var _correlationScope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
             action();
         };
-        _pendingGameActions.Enqueue((wrapped, tcs));
+        var item = new PendingGameAction(wrapped, tcs);
+        _pendingGameActions.Enqueue(item);
 
         using var cts = new CancellationTokenSource(timeoutMs);
-        using var registration = cts.Token.Register(() => tcs.TrySetCanceled());
+        using var registration = cts.Token.Register(() =>
+        {
+            // Claim pending→timed-out before cancelling. If the game thread already claimed
+            // execution, don't cancel — the caller awaits the action's real result instead of
+            // being told a mutation that is running right now didn't apply.
+            if (item.TryClaimTimeout())
+            {
+                tcs.TrySetCanceled();
+            }
+        });
 
         try
         {

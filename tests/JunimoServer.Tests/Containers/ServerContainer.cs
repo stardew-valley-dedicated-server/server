@@ -265,8 +265,22 @@ public class ServerContainer : IAsyncDisposable
             .WithEnvironment("SETTINGS_PATH", SettingsPath)
             .WithEnvironment("API_ENABLED", "true")
             .WithEnvironment("API_PORT", ContainerApiPort.ToString())
-            // Performance/test settings
-            .WithEnvironment("SERVER_TPS", TestEnvLoader.Get("SERVER_TPS") ?? "60")
+            // Performance/test settings. A per-class ServerTps override (TestServerAttribute) wins over
+            // the suite-wide .env.test value — it is part of the server pooling key, so a distinct TPS
+            // gets its own server instance.
+            .WithEnvironment(
+                "SERVER_TPS",
+                options.ServerTps > 0
+                    ? options.ServerTps.ToString()
+                    : TestEnvLoader.Get("SERVER_TPS") ?? "60"
+            )
+            // Kill-switch for the TPS-agnostic pacing patches (fades + movement sub-step). Default-on
+            // in the mod; pass .env.test's value through so a run can set it =false to A/B the patches
+            // (movement reverts to ~60/TPS× slow). Passing the default "true" is a no-op.
+            .WithEnvironment(
+                "SDVD_TPS_AGNOSTIC_PACING",
+                TestEnvLoader.Get("SDVD_TPS_AGNOSTIC_PACING") ?? "true"
+            )
             // SERVER_FPS drives both the in-container draw cap and the recorder's
             // sample rate (they're literally the same value; sampling X11 faster
             // than the framebuffer updates is wasted). 0 = rendering disabled.

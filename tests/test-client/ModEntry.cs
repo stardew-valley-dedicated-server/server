@@ -101,6 +101,12 @@ public class ModEntry : Mod
         TestOverlay.Apply(_harmony);
         ButtonTutorialSuppressor.Apply(_harmony);
 
+        // Make per-tick-constant gameplay (cutscene fades, NPC/event-actor walking) advance at real
+        // wall-clock speed regardless of CLIENT_TPS. Unlike the render-suppressed host, this client is
+        // a real (non-dedicated) instance, so the fade patch actually bites here — a wedding globalFade
+        // that crawled ~12× slow at CLIENT_TPS=5 now plays in real time.
+        TpsAgnosticPacing.Apply(_harmony, Monitor);
+
         // Diagnostics
         _healthWatchdog = new HealthWatchdog(helper, Monitor);
         _healthWatchdog.Start();
@@ -124,11 +130,13 @@ public class ModEntry : Mod
         // Extended spawn logging
         helper.Events.Multiplayer.PeerConnected += OnPeerConnected;
 
-        // Apply custom TPS if configured (reduces CPU usage for test clients)
+        // Apply custom TPS if configured (reduces CPU usage for test clients). Clamped to [1, 60] like
+        // the server's Env.ServerTps: above vanilla's fixed 60 per-tick gameplay outruns real time, and
+        // TpsAgnosticPacing can only add sub-steps, never skip vanilla's own.
         var clientTps = Environment.GetEnvironmentVariable("CLIENT_TPS");
         if (!string.IsNullOrEmpty(clientTps) && int.TryParse(clientTps, out var tps) && tps != 60)
         {
-            _targetTps = Math.Max(1, tps);
+            _targetTps = Math.Clamp(tps, 1, 60);
             helper.Events.GameLoop.UpdateTicked += OnFirstTickSetTps;
         }
 

@@ -27,6 +27,8 @@ services:
       ALLOW_INSECURE_SETUP: "${ALLOW_INSECURE_SETUP:-false}"
       SERVER_TPS: "${SERVER_TPS:-60}"
       SERVER_FPS: "${SERVER_FPS:-0}"
+      # TPS-agnostic pacing kill-switch: false restores vanilla per-tick pacing (~60/TPS× slower)
+      SDVD_TPS_AGNOSTIC_PACING: "${SDVD_TPS_AGNOSTIC_PACING:-true}"
       # Game settings file path (auto-created with defaults if missing)
       SETTINGS_PATH: "/data/settings/server-settings.json"
       # HTTP API for external tools and automation

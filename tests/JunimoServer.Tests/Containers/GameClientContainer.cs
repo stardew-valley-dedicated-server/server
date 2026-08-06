@@ -195,6 +195,13 @@ public class GameClientContainer : IAsyncDisposable
             .WithEnvironment("STEAM_AUTH_URL", options.SteamAuthUrl ?? "")
             .WithEnvironment("SDVD_TEST_STEAM_ACCOUNT_INDEX", options.SteamAccountIndex.ToString())
             .WithEnvironment("CLIENT_TPS", TestEnvLoader.Get("CLIENT_TPS") ?? "60")
+            // Kill-switch for the TPS-agnostic pacing patches, same as the server container: pass
+            // .env.test's value through (default-on) so a run can set it =false to A/B the client's
+            // movement pacing. The test client registers the same patches as the server mod.
+            .WithEnvironment(
+                "SDVD_TPS_AGNOSTIC_PACING",
+                TestEnvLoader.Get("SDVD_TPS_AGNOSTIC_PACING") ?? "true"
+            )
             // CLIENT_FPS drives both the in-container draw cap and the recorder's
             // sample rate (they're literally the same value; sampling X11 faster
             // than the framebuffer updates is wasted). 0 = rendering disabled.
