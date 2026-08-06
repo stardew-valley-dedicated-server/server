@@ -770,12 +770,40 @@ public class ServerContainer : IAsyncDisposable
         }
     }
 
+    private Action<string>? _onErrorDetected;
+
     /// <summary>
-    /// Gets a cancellation token that triggers when a server error is detected.
+    /// Raised once per detected server error (a flushed SMAPI ERROR/FATAL block) with the
+    /// full error text. Errors detected before a handler attaches are replayed to it at
+    /// subscription — a subscriber that wires up after boot cannot miss a boot-window
+    /// error — so delivery is at-least-once and handlers must be idempotent. Handlers
+    /// stay attached for the container's lifetime — <see cref="ClearErrors"/> resets the
+    /// accumulated error list, not this event.
     /// </summary>
-    public CancellationToken GetErrorCancellationToken()
+    public event Action<string> OnErrorDetected
     {
-        return _errorCancellation?.Token ?? CancellationToken.None;
+        add
+        {
+            string[] pending;
+            lock (_serverErrorsLock)
+            {
+                _onErrorDetected += value;
+                pending = _serverErrors.ToArray();
+            }
+            // Replay outside the lock: handlers do nontrivial work (poison → drain →
+            // dispose), and a throw here surfaces in the subscriber's own context.
+            foreach (var error in pending)
+            {
+                value(error);
+            }
+        }
+        remove
+        {
+            lock (_serverErrorsLock)
+            {
+                _onErrorDetected -= value;
+            }
+        }
     }
 
     /// <summary>
@@ -1031,6 +1059,13 @@ public class ServerContainer : IAsyncDisposable
         try
         {
             _errorCancellation?.Cancel();
+        }
+        catch { }
+        // Guarded like the Cancel above: a throwing handler must not kill the log pump
+        // (it also feeds recording and error accumulation).
+        try
+        {
+            _onErrorDetected?.Invoke(fullError);
         }
         catch { }
 

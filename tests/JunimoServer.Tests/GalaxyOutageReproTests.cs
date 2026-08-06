@@ -94,17 +94,23 @@ public class GalaxyOutageReproTests : TestBase
         var inviteCode = InviteCode;
         Log($"Steam client connected; invite code = {inviteCode}");
 
-        // ── 2. Suspend the health watchdog and capture the network id (the inspect
-        // can't find it once the container is detached), then cut the network.
+        // ── 2. Capture the network id (the inspect can't find it once the container is
+        // detached), suspend both poison paths (watchdog + log-error scan — the cut makes
+        // SMAPI log expected Steam/Galaxy ERRORs), then cut the network.
         var managed = Lease.Managed;
         var networkId = await NetworkOutageHelper.GetAttachedNetworkIdAsync(Lease, ct);
-        managed.SuspendHealthChecks();
-        Log($"Health checks suspended; cutting network {networkId[..12]}…");
+        Assert.False(
+            string.IsNullOrEmpty(networkId),
+            "Expected the server container to be attached to a network before the cut — a null id "
+                + "means the container was already gone, so the outage setup is invalid."
+        );
+        managed.SuspendHealthChecks(includeLogErrorScan: true);
+        Log($"Health checks suspended; cutting network {networkId![..12]}…");
         // Anchor every post-cut event wait to this instant so the server's own initial-boot
         // emissions (a first steam_session_connected, the pre-outage auth_steam_lobby_created)
         // can never satisfy an outage-recovery wait.
         var outageStart = DateTime.UtcNow;
-        await NetworkOutageHelper.DisconnectAsync(Lease, ct);
+        await NetworkOutageHelper.DisconnectAsync(Lease, networkId!, ct);
 
         try
         {
@@ -150,8 +156,16 @@ public class GalaxyOutageReproTests : TestBase
             // the API anyway — the verdict and the Steam-recovery check both read the
             // stdout-backed infrastructure.jsonl, which DOES flow once connectivity is back.
             using var restoreCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await NetworkOutageHelper.ReconnectAsync(Lease, networkId, restoreCts.Token);
-            Log("Network reconnected (health checks stay suspended; API unreachable on remote).");
+            var reconnected = await NetworkOutageHelper.ReconnectAsync(
+                Lease,
+                networkId!,
+                restoreCts.Token
+            );
+            Log(
+                reconnected
+                    ? "Network reconnected (health checks stay suspended; API unreachable on remote)."
+                    : "Network restore skipped — the container is already gone, nothing to reconnect."
+            );
         }
 
         // ── 6. Steam side must recover (the shipped #391 behavior). Harness invariant —

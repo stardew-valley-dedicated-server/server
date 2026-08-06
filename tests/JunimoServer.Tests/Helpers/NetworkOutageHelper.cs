@@ -22,40 +22,62 @@ namespace JunimoServer.Tests.Helpers;
 /// reconnect.
 ///
 /// This helper does NOT touch the health watchdog. The caller must bracket the
-/// outage with <see cref="ManagedServer.SuspendHealthChecks"/> /
-/// <see cref="ManagedServer.ResumeHealthChecks"/> — otherwise the watchdog poisons
-/// the server ~25s into the cut (5 failed /health probes). Keeping that bracket at
-/// the call site mirrors how ReloadAsync/CreateNewGameAsync wrap intentional
-/// transitions and keeps the suspend/resume visible.
+/// outage with <see cref="ManagedServer.SuspendHealthChecks"/> (pass
+/// includeLogErrorScan: true) / <see cref="ManagedServer.ResumeHealthChecks"/> —
+/// otherwise the server is poisoned during the cut, either by the watchdog (~25s in,
+/// 5 failed /health probes) or by the log-error scan (the cut makes SMAPI log
+/// Steam/Galaxy ERRORs). Keeping that bracket at the call site mirrors how
+/// ReloadAsync/CreateNewGameAsync wrap intentional transitions and keeps the
+/// suspend/resume visible.
 /// </summary>
 internal static class NetworkOutageHelper
 {
     /// <summary>
-    /// Disconnects the server container from its test network (force=true, so the
-    /// daemon drops the endpoint even though the container is running). Resolves the
-    /// network by inspecting the container — robust against the test-network name/id
-    /// not being derivable from the lease.
+    /// Disconnects the server container from the given test network (force=true, so the
+    /// daemon drops the endpoint even though the container is running). The network id
+    /// comes from <see cref="GetAttachedNetworkIdAsync"/>, captured by the caller before
+    /// the cut and shared with <see cref="ReconnectAsync"/>. A 404 means the container or
+    /// network vanished between capture and cut — that invalidates the outage setup, so
+    /// this throws immediately instead of leaving the caller to wait out a doomed
+    /// steam_session_lost gate and blame the cut for a container that was already gone.
     /// </summary>
-    public static async Task DisconnectAsync(ResourceLease lease, CancellationToken ct = default)
+    public static async Task DisconnectAsync(
+        ResourceLease lease,
+        string networkId,
+        CancellationToken ct = default
+    )
     {
         var client = lease.Host.ApiClient;
         var containerId = lease.Server.Container.Id;
-        var networkId = await ResolveAttachedNetworkIdAsync(client, containerId, ct);
-
-        await client.Networks.DisconnectNetworkAsync(
-            networkId,
-            new NetworkDisconnectParameters { Container = containerId, Force = true },
-            ct
-        );
+        try
+        {
+            await client.Networks.DisconnectNetworkAsync(
+                networkId,
+                new NetworkDisconnectParameters { Container = containerId, Force = true },
+                ct
+            );
+        }
+        catch (DockerApiException ex)
+            when (ex is DockerContainerNotFoundException || (int)ex.StatusCode == 404)
+        {
+            throw new InvalidOperationException(
+                $"Cannot cut network {networkId[..12]}: container {containerId[..12]} (or the "
+                    + "network) vanished before the disconnect, so the outage setup is invalid.",
+                ex
+            );
+        }
     }
 
     /// <summary>
     /// Reconnects the server container to the given test network. The network id is
     /// captured by <see cref="DisconnectAsync"/>'s caller via
     /// <see cref="GetAttachedNetworkIdAsync"/> before the cut, because once the
-    /// container is detached an inspect no longer reports the network.
+    /// container is detached an inspect no longer reports the network. Returns false —
+    /// without throwing, because this runs in the caller's cleanup path where a raw
+    /// NotFound would mask the test's real failure — when the container or network is
+    /// already gone and there was nothing to reconnect; the caller's log must say so.
     /// </summary>
-    public static async Task ReconnectAsync(
+    public static async Task<bool> ReconnectAsync(
         ResourceLease lease,
         string networkId,
         CancellationToken ct = default
@@ -64,31 +86,49 @@ internal static class NetworkOutageHelper
         var client = lease.Host.ApiClient;
         var containerId = lease.Server.Container.Id;
 
-        await client.Networks.ConnectNetworkAsync(
-            networkId,
-            new NetworkConnectParameters { Container = containerId },
-            ct
-        );
+        try
+        {
+            await client.Networks.ConnectNetworkAsync(
+                networkId,
+                new NetworkConnectParameters { Container = containerId },
+                ct
+            );
+            return true;
+        }
+        catch (DockerApiException ex)
+            when (ex is DockerContainerNotFoundException || (int)ex.StatusCode == 404)
+        {
+            return false;
+        }
     }
 
     /// <summary>
     /// Returns the id of the (single non-loopback) Docker network the server
-    /// container is currently attached to. Call this BEFORE disconnecting and keep
-    /// the result to pass to <see cref="ReconnectAsync"/> — after the cut the
+    /// container is currently attached to, or <c>null</c> if the container is already
+    /// gone. Call this BEFORE disconnecting and keep the result to pass to
+    /// <see cref="DisconnectAsync"/> / <see cref="ReconnectAsync"/> — after the cut the
     /// container has no network to inspect.
     /// </summary>
-    public static Task<string> GetAttachedNetworkIdAsync(
+    public static async Task<string?> GetAttachedNetworkIdAsync(
         ResourceLease lease,
         CancellationToken ct = default
-    ) => ResolveAttachedNetworkIdAsync(lease.Host.ApiClient, lease.Server.Container.Id, ct);
-
-    private static async Task<string> ResolveAttachedNetworkIdAsync(
-        DockerClient client,
-        string containerId,
-        CancellationToken ct
     )
     {
-        var inspect = await client.Containers.InspectContainerAsync(containerId, ct);
+        var client = lease.Host.ApiClient;
+        var containerId = lease.Server.Container.Id;
+        ContainerInspectResponse inspect;
+        try
+        {
+            inspect = await client.Containers.InspectContainerAsync(containerId, ct);
+        }
+        catch (DockerApiException ex)
+            when (ex is DockerContainerNotFoundException || (int)ex.StatusCode == 404)
+        {
+            // Container already gone at capture time. Null (not a raw NotFound throw) so
+            // the caller's pre-cut assert reports the invalid outage setup with context.
+            return null;
+        }
+
         var networks = inspect.NetworkSettings?.Networks;
         if (networks == null || networks.Count == 0)
         {

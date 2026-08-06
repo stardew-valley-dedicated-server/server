@@ -760,6 +760,7 @@ internal sealed class ManagedServer : IAsyncDisposable
     private CancellationTokenSource? _healthCts;
     private Task? _healthTask;
     private volatile bool _healthSuspended;
+    private volatile bool _logErrorScanSuspended;
 
     private Action<ManagedServer>? _onPoisoned;
 
@@ -988,31 +989,50 @@ internal sealed class ManagedServer : IAsyncDisposable
         _initialized = true;
         StartHealthWatchdog();
 
-        // Wire ServerContainer's error detection (SMAPI ERROR/FATAL, Docker API failures)
-        // to ManagedServer's poison mechanism so tests abort immediately.
-        Server
-            .GetErrorCancellationToken()
-            .Register(() =>
+        // Wire ServerContainer's error detection (SMAPI ERROR/FATAL) to the poison mechanism
+        // so tests abort immediately. The handler stays attached for the container's whole
+        // life (ClearErrors resets the error list, not this event), and errors flushed
+        // before this line replay at subscribe (at-least-once; the _poisoned guard makes
+        // repeats no-ops), so a boot-window ERROR on a server that still became ready
+        // poisons it here rather than being silently dropped. Only the network-outage
+        // bracket gates it — SuspendHealthChecks(includeLogErrorScan: true) — because a NIC
+        // cut makes SMAPI log expected Steam/Galaxy ERRORs (see NetworkOutageHelper's class
+        // doc). New-game/reload transitions keep the scan live: a mod ERROR there (e.g. a
+        // failed cabin build during OnSaveLoaded) is a genuine failure, not transition noise.
+        Server.OnErrorDetected += error =>
+        {
+            if (!_poisoned && !_logErrorScanSuspended && !ShutdownCoordinator.IsShuttingDown)
             {
-                if (!_poisoned && !ShutdownCoordinator.IsShuttingDown)
-                {
-                    var errors = Server.Errors;
-                    var reason =
-                        errors.Count > 0 ? errors[0] : "Server error detected via log stream";
-                    PoisonServer(reason, PoisonReasonCode.ServerLogError);
-                }
-            });
+                PoisonServer(error, PoisonReasonCode.ServerLogError);
+            }
+        };
     }
 
     /// <summary>
-    /// Suspends health checks during intentional server transitions (e.g., new game creation).
+    /// Suspends the health watchdog during intentional server transitions (e.g., new game
+    /// creation). <paramref name="includeLogErrorScan"/> additionally gates the log-error
+    /// poison hook; reserve it for windows where server ERRORs are expected (the network
+    /// outage cut). New-game/reload leave the scan live so a genuine mod error mid-transition
+    /// still poisons loudly.
     /// </summary>
-    public void SuspendHealthChecks() => _healthSuspended = true;
+    public void SuspendHealthChecks(bool includeLogErrorScan = false)
+    {
+        _healthSuspended = true;
+        if (includeLogErrorScan)
+        {
+            _logErrorScanSuspended = true;
+        }
+    }
 
     /// <summary>
-    /// Resumes health checks after a server transition completes.
+    /// Resumes health checks (and the log-error scan, if it was gated) after a server
+    /// transition completes.
     /// </summary>
-    public void ResumeHealthChecks() => _healthSuspended = false;
+    public void ResumeHealthChecks()
+    {
+        _healthSuspended = false;
+        _logErrorScanSuspended = false;
+    }
 
     private void StartHealthWatchdog()
     {

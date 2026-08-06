@@ -1,6 +1,13 @@
 # GalaxyOutageReproTests NotFound flake — NIC-cut server error poisons the server mid-test
 
-Status: INVESTIGATED, not fixed. Intermittent. The failing run's artifacts are NOT local
+Status: FIXED on branch `bugfix/galaxyoutage-notfound-mid-test-poison` (PR #498). Lever 1
+implemented as the outage-scoped variant — `SuspendHealthChecks(includeLogErrorScan: true)`, so
+new-game/reload keep the log-error scan live — with the scan→poison wiring moved to a
+lifetime `ServerContainer.OnErrorDetected` event (survives `ClearErrors`; replays
+pre-subscription errors at subscribe, at-least-once, so a boot-window ERROR on a
+ready server still poisons). Lever 2: 404-tolerant
+reconnect (returns false), while a pre-cut vanish now fails fast as an invalid outage setup.
+Intermittent. The failing run's artifacts are NOT local
 (this test is 15/15 pass locally across runs since it was added in #440, 2026-06-18), so the
 mechanism below is from reading the harness path end-to-end, not from a pass/fail artifact diff.
 It is coherent and `TotalConnectivityLoss` is the one test structurally exposed to it.
