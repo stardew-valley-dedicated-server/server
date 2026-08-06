@@ -3,6 +3,7 @@
  * to allow external access to the animation instance, used to randomly trigger play
  * in our feature overview.
  */
+// @ts-nocheck — vendored source, left unannotated so it stays diffable against upstream.
 class AnimatedIcons extends HTMLElement {
     constructor() {
         super();

@@ -12,7 +12,8 @@ import spec from "../../assets/openapi.json";
 export default {
     extends: DefaultTheme,
     Layout: AnnouncementBar,
-    async enhanceApp({ app }) {
+    async enhanceApp(ctx) {
+        const { app } = ctx;
         app.component("ServerStatusWidget", ServerStatusWidget);
         // TODO: Show for local builds, but hide for public deployments
         const hideTryItOutButton = true;
@@ -67,7 +68,8 @@ export default {
                 },
             },
         });
-        openapiTheme.enhanceApp({ app });
+        // Forward the full context: vitepress-openapi's enhanceApp needs router and siteData too.
+        openapiTheme.enhanceApp(ctx);
 
         if (!import.meta.env.SSR) {
             const AnimatedIcon = (await import("./web-components/animated-icon")).default;
