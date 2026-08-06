@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 JunimoServer is a Stardew Valley dedicated server mod enabling 24/7 multiplayer hosting via Docker. The mod runs inside the game via SMAPI, exposing an HTTP API, WebSocket, and chat commands for external control.
 
+**Players connect with unmodded vanilla clients.** All mod code — Harmony patches, asset edits — exists only in the server process; per-player client behavior can only ride net-synced server-authoritative state or vanilla network messages (control surface: `.claude/rules/vanilla-client-control-primitives.md`).
+
 **Stack**: C# mod (net6.0/SMAPI) + Docker containers + xUnit v3 E2E tests (net10.0) + Vue/TypeScript test UI + VNC for visual debugging. Test infrastructure includes client pooling, server pre-start, and WebSocket-based real-time updates.
 
 ## Core Principles

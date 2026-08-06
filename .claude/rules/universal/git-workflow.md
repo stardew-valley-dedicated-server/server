@@ -31,11 +31,15 @@ Bullet points of changes. No co-author attributions.
 
 ## Worktrees
 
-A fresh worktree is a clean checkout, so two gitignored things from the main checkout need setting up:
+A fresh worktree is a clean checkout, so the gitignored things from the main checkout need setting up:
 
 ```bash
 git worktree add -b <branch> "../server-worktrees/<name>" master
 cp .env .env.test "../server-worktrees/<name>/"   # build + tests; skip if created via `claude --worktree` (.worktreeinclude handles it)
+cp .sdvd_runner_key "../server-worktrees/<name>/"  # ONLY if the active SDVD_DOCKER_HOSTS uses a remote ssh:// host — see below
 cd "../server-worktrees/<name>" && npm ci          # commitlint hook needs node_modules; per-worktree, never symlink the main repo's
 git worktree remove --force "../server-worktrees/<name>"   # cleanup; keep the branch if a PR depends on it
 ```
+
+- **SSH runner key.** When the active `SDVD_DOCKER_HOSTS` in `.env.test` points at a remote host (`endpoint: "ssh://…"` with `sshKey: "./.sdvd_runner_key"`), the E2E runner crashes at `HostPool` startup — `sshKey './.sdvd_runner_key' is neither inline key material … nor an existing file` — because the key is gitignored and absent in the fresh worktree. Copy it alongside `.env`. Not needed for a local-daemon `SDVD_DOCKER_HOSTS`.
+- **`git worktree remove` can fail on Windows** with `Filename too long` (deep `node_modules`/build paths exceed the path limit). Fall back to `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"` then `git worktree prune` to drop the registration.
