@@ -2825,7 +2825,7 @@ public class ServerApiClient : IDisposable
                     return false;
                 }
             },
-            timeout ?? Helpers.TestTimings.FarmerRemovalBudget,
+            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
             cancellationToken: ct,
             onTimeoutAsync: async () =>
                 await Helpers.FailureContext.DumpAsync(
@@ -2882,7 +2882,7 @@ public class ServerApiClient : IDisposable
                     return false;
                 }
             },
-            timeout ?? Helpers.TestTimings.FarmerRemovalBudget,
+            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
             cancellationToken: ct,
             onTimeoutAsync: async () =>
                 await Helpers.FailureContext.DumpAsync(

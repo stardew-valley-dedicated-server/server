@@ -74,14 +74,23 @@ public static class TestTimings
     public static readonly TimeSpan RetryPauseDelay = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
-    /// Budget for polling the server-side /players endpoint after a client has
-    /// disconnected, waiting for the player record to disappear. The next test
-    /// reusing the same client container must not reconnect before the server
-    /// has finished processing the disconnect, or farmhand rejection loops
-    /// ensue. If the budget expires, the caller poisons the server lease
-    /// rather than continuing with an unknown server state.
+    /// Fast-fail bound for disappear-polls after a client disconnect. The next
+    /// test reusing the container must not reconnect before the server processes
+    /// the disconnect (farmhand rejection loops), so cleanup paths keep this
+    /// short and decide on expiry themselves: PersistentSession poisons the
+    /// lease, TestLifecycle warns and lets the delete-retry loop absorb the lag.
+    /// Test-body gates asserting server-side removal use PlayerRemovalTimeout.
     /// </summary>
     public static readonly TimeSpan FarmerRemovalBudget = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Default for WaitForPlayersRemovedBy*: test-body gates observing server-side
+    /// removal after a disconnect. Removal can lag multi-second under full-suite
+    /// load (~2.2s worst measured) and /players is a 1 Hz snapshot; 10s covers
+    /// that with headroom. Infra cleanup paths that prefer to fast-fail pass
+    /// FarmerRemovalBudget explicitly.
+    /// </summary>
+    public static readonly TimeSpan PlayerRemovalTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Budget for revalidating a persistent session on reuse. A KeepConnected
