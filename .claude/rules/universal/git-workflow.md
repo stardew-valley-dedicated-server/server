@@ -22,6 +22,8 @@ sleep 2 && gh pr merge <child-num> --squash --admin   # sleep: GitHub reports "n
 
 Conventional commits, enforced by commitlint (`config-conventional`): body capped at 100 chars/line. Wrap body lines (use `git commit -F <file>`).
 
+No `Co-Authored-By` trailer on commits — same as the PR rule below. This deliberately overrides the Claude Code default of appending one.
+
 ## PR Descriptions
 
 Bullet points of changes. No co-author attributions.
