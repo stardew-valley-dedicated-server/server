@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-mod",
+            "type": "process",
+            "command": "dotnet",
+            "args": ["build", "${workspaceFolder}/mod/JunimoServer/JunimoServer.csproj"],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "dotnet",
+            "args": ["run", "--project", "${workspaceFolder}/tests/JunimoServer.TestRunner", "--", "--filter", "${input:testFilter}"],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "testFilter",
+            "type": "promptString",
+            "description": "Test filter — substring of the class FullName or {Class}.{Method}; '|' separates alternatives",
+            "default": "FarmerCreationTests"
+        }
+    ]
+}
