@@ -2,6 +2,8 @@
 # Claude Code local machine state (absolute Windows paths, permission history, runtime lock)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Worktrees belong in ../worktrees/ (WorktreeCreate hook); ignore strays at the tool default
+.claude/worktrees/
 .DS_Store
 .fleet
 
@@ -21,7 +23,7 @@
 .idea
 
 # Resharper personal layer
-JunimoMods.sln.DotSettings
+*.DotSettings
 
 # Logs
 logs

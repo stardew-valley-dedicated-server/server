@@ -6,18 +6,72 @@
     },
     "[javascript]": {
         "editor.defaultFormatter": "biomejs.biome",
-        "editor.formatOnSave": true
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.biome": "explicit",
+            "source.organizeImports.biome": "explicit"
+        }
     },
     "[typescript]": {
         "editor.defaultFormatter": "biomejs.biome",
-        "editor.formatOnSave": true
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.biome": "explicit",
+            "source.organizeImports.biome": "explicit"
+        }
     },
     "[vue]": {
         "editor.defaultFormatter": "biomejs.biome",
-        "editor.formatOnSave": true
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.biome": "explicit",
+            "source.organizeImports.biome": "explicit"
+        }
     },
-    "editor.codeActionsOnSave": {
-        "source.fixAll.biome": "explicit",
-        "source.organizeImports.biome": "explicit"
+    "dotnet.defaultSolution": "./JunimoServer.slnx",
+    "files.associations": {
+        "**/smapi-config.json": "jsonc"
+    },
+    "yaml.schemas": {
+        "https://json.schemastore.org/github-issue-config.json": ".github/ISSUE_TEMPLATE/config.yml"
+    },
+    "json.schemas": [
+        {
+            "fileMatch": [
+                "/mod/JunimoServer/manifest.json",
+                "/tests/test-client/manifest.json",
+                "/tests/fixtures/TestFarmMod/manifest.json"
+            ],
+            "url": "https://smapi.io/schemas/manifest.json"
+        }
+    ],
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.expand": false,
+    "explorer.fileNesting.patterns": {
+        "*.cs": "${basename}.*.cs",
+        ".env.example": ".env, .env.test, .env.test.example",
+        "Dockerfile": "Dockerfile.*",
+        "package.json": "package-lock.json, biome.jsonc, commitlint.config.js, lefthook.yml",
+        "README.md": "CHANGELOG.md, CONTRIBUTING.md, LICENSE, CLAUDE.md"
+    },
+    // bin/{Debug,Release} not **/bin/** — docker/**/rootfs/**/bin holds tracked scripts.
+    "files.watcherExclude": {
+        "**/.history/**": true,
+        "**/.output/**": true,
+        "**/.vitepress/cache/**": true,
+        "**/bin/Debug/**": true,
+        "**/bin/Release/**": true,
+        "**/decompiled/**": true,
+        "**/dist/**": true,
+        "**/mock-artifacts/**": true,
+        "**/node_modules/**": true,
+        "**/obj/**": true,
+        "**/TestResults/**": true,
+        "**/tools/.playground/**": true
+    },
+    // Generated but tracked, so search.useIgnoreFiles can't filter them.
+    "search.exclude": {
+        "**/bun.lock": true,
+        "**/package-lock.json": true
     }
 }

@@ -1,3 +1,17 @@
 {
-    "recommendations": ["csharpier.csharpier-vscode", "ms-dotnettools.csharp", "biomejs.biome"]
+    "recommendations": [
+        "biomejs.biome",
+        "bradlc.vscode-tailwindcss",
+        "csharpier.csharpier-vscode",
+        "docker.docker",
+        "editorconfig.editorconfig",
+        "github.vscode-github-actions",
+        "mikestead.dotenv",
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "redhat.vscode-yaml",
+        "vue.volar",
+        "wayou.vscode-todo-highlight"
+    ],
+    "unwantedRecommendations": ["esbenp.prettier-vscode"]
 }

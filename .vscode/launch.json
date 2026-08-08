@@ -1,0 +1,46 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to Test Host",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        },
+        {
+            "name": "Attach to Stardew (Docker)",
+            "type": "coreclr",
+            "request": "attach",
+            "processName": "StardewValley",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "sdvd-server"],
+                "debuggerPath": "/root/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceFolder}",
+                "quoteArgs": false
+            },
+            "justMyCode": false,
+            "suppressJITOptimizations": true,
+            "requireExactSource": false,
+            "logging": {
+                "moduleLoad": false
+            }
+        },
+        {
+            "name": "Attach to Stardew (Docker - PID)",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickRemoteProcess}",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "sdvd-server"],
+                "debuggerPath": "/root/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceFolder}",
+                "quoteArgs": false
+            },
+            "justMyCode": false,
+            "suppressJITOptimizations": true,
+            "requireExactSource": false
+        }
+    ]
+}
