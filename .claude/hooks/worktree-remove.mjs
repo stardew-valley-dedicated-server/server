@@ -12,11 +12,18 @@ const git = (...args) =>
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const mainCheckout = path.dirname(git("rev-parse", "--path-format=absolute", "--git-common-dir"));
 const container = path.join(path.dirname(mainCheckout), "worktrees") + path.sep;
+const registered = new Set(
+  git("worktree", "list", "--porcelain")
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith("worktree "))
+    .map((l) => path.resolve(l.slice(9))),
+);
 
 // The input field carrying the path is undocumented; try likely names first,
 // then any string value — but never ambient fields (`cwd` may be a live
-// worktree that is not the removal target). Only paths inside the convention
-// container qualify; anything else exits 1, leaving the worktree in place.
+// worktree that is not the removal target). Only registered worktrees inside
+// the convention container qualify; anything else exits 1, leaving the
+// worktree in place.
 const ambient = new Set(["cwd", "session_id", "transcript_path", "hook_event_name"]);
 const candidates = [
   input.worktree_path,
@@ -26,19 +33,23 @@ const candidates = [
 ].filter((v) => typeof v === "string" && v.trim());
 const target = candidates
   .map((v) => path.resolve(v.trim()))
-  .find((p) => (p + path.sep).startsWith(container));
+  .find((p) => (p + path.sep).startsWith(container) && p + path.sep !== container && registered.has(p));
 if (!target) {
-  console.error(`worktree-remove hook: no path inside ${container} in hook input: ${JSON.stringify(input)}`);
+  console.error(`worktree-remove hook: no registered worktree inside ${container} in hook input: ${JSON.stringify(input)}`);
   process.exit(1);
 }
 
 try {
   execFileSync("git", ["worktree", "remove", "--force", target], {
     cwd: mainCheckout,
-    stdio: ["ignore", "ignore", "inherit"],
+    stdio: ["ignore", "ignore", "pipe"],
   });
-} catch {
-  // Windows "Filename too long" fallback (deep node_modules paths).
+} catch (e) {
+  const stderr = e.stderr?.toString() ?? "";
+  process.stderr.write(stderr);
+  // Deep node_modules paths can exceed Windows path limits; anything else is a
+  // real git failure and must not fall through to a blind recursive delete.
+  if (!/too long/i.test(stderr)) process.exit(1);
   fs.rmSync(target, { recursive: true, force: true, maxRetries: 3 });
   execFileSync("git", ["worktree", "prune"], { cwd: mainCheckout, stdio: "ignore" });
 }
