@@ -457,7 +457,6 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         );
         WireExceptionMonitorContext(_exceptions);
 
-        lease.Client.CancellationToken = serverLease.ErrorToken;
         return lease.Client;
     }
 
