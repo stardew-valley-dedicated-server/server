@@ -1,7 +1,46 @@
 {
     "autoMemoryEnabled": false,
+    "hooks": {
+        "WorktreeCreate": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node .claude/hooks/worktree-create.mjs",
+                        "timeout": 120,
+                        "statusMessage": "Creating worktree in ../worktrees/ (incl. npm ci)"
+                    }
+                ]
+            }
+        ],
+        "WorktreeRemove": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node .claude/hooks/worktree-remove.mjs",
+                        "timeout": 60
+                    }
+                ]
+            }
+        ]
+    },
     "permissions": {
-        "allow": [],
+        "allow": [
+            "Bash(docker compose config *)",
+            "Bash(dotnet csharpier check *)",
+            "Bash(tasklist *)",
+            "Bash(unzip -p *)",
+            "PowerShell(Get-ChildItem *)",
+            "Bash(make test-container-log *)",
+            "Bash(make test-diagnose *)",
+            "Bash(make test-events *)",
+            "Bash(make test-flaky *)",
+            "Bash(make test-infra-log *)",
+            "Bash(make test-metadata *)",
+            "Bash(make test-slowest *)",
+            "Bash(make test-summary *)"
+        ],
         "deny": [],
         "ask": []
     }
