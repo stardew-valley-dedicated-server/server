@@ -190,6 +190,12 @@ internal sealed class ManagedServer : IAsyncDisposable
     private CancellationTokenSource _errorCts = new();
     private volatile bool _poisoned;
 
+    // Several things can poison a server (log scan, health watchdog, a test retiring it,
+    // transport faults) and they can fire at the same time. Only the first may run the
+    // callback: a second one starts a second replacement for the same key, and those two
+    // servers then fight over the single Steam server account.
+    private int _poisonSignaled;
+
     // Signaled by Release() when _refCount drops to <=1, waking the exclusive drain waiter.
     private volatile TaskCompletionSource? _drainSignal;
 
@@ -1371,6 +1377,15 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// </summary>
     public void PoisonServer(string reason, string reasonCode = PoisonReasonCode.Other)
     {
+        if (Interlocked.Exchange(ref _poisonSignaled, 1) == 1)
+        {
+            // Log the second reason too, but the first one stays the official cause.
+            TestLog.Server(
+                $"{_displayLabel} additional poison [{reasonCode}] suppressed (already poisoned): {reason}"
+            );
+            return;
+        }
+
         _poisoned = true;
         _aborted = true;
         _abortReason = reason;

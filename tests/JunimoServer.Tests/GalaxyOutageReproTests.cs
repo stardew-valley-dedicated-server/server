@@ -250,9 +250,10 @@ public class GalaxyOutageReproTests : TestBase
         // is suspended and, on remote Docker hosts, the daemon never restores the published-port
         // forwarding the API tunnel needs — so a later test reusing this shared server would hit a
         // ServerReady timeout. Poisoning removes it from the pool; the broker boots a fresh one for the
-        // next demand (the freed Steam account allows it, sequentially). Done last, after all asserts:
-        // PoisonServer cancels the ErrorToken, but the client is already disconnected and no client op
-        // remains, so the passed verdict stands. Mirrors TestLifecycle.PoisonOnCleanupFailureIfNeeded.
+        // next demand (the freed Steam account allows it, sequentially). Done last, after all asserts,
+        // so the passed verdict stands. PoisonServer cancels the server's error token, but the
+        // client work left in cleanup runs on its own timeout, so the healthy Steam client goes
+        // back to the pool instead of being marked dead. Mirrors PoisonOnCleanupFailureIfNeeded.
         Lease!.Managed.PoisonServer(
             "Total connectivity loss left the server's API unreachable (suspended watchdog + unrestored port-forward)",
             ManagedServer.PoisonReasonCode.TestRetiredServer

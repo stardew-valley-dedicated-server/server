@@ -96,6 +96,11 @@ public sealed class ResourceLease : IAsyncDisposable
             ct,
             requireSteam: requireSteam ?? _requirements.WithSteam
         );
+
+        // Give the client the server's error token so its HTTP calls give up quickly if the
+        // server dies mid-test. Every client lease comes through here, so extra clients get
+        // this too. ClientLease.DisposeAsync clears it again when the client is returned.
+        lease.Client.CancellationToken = ErrorToken;
         lease.EmitLeased(_testName, _managed.InstanceId);
         if (_managed.InstanceId != null)
         {

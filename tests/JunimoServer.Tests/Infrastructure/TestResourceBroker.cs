@@ -1697,25 +1697,36 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 $"{displayLabel} on {host.Id} poisoned, scheduling replacement (refs={managed.RefCount}, pending={pending})"
             );
 
-            // Only reset the per-host queue if no other healthy instances remain on
-            // this host for this key. When the HOST itself is poisoned, replacement on
-            // it cannot succeed, so fault the orphaned waiters now (Reset's fresh TCS
-            // would otherwise strand every already-attached waiter until a re-signal
-            // that never comes — the host-poison-deadlocks-run hang). When only the
-            // server is poisoned on a healthy host, replacement can still succeed, so
-            // keep the benign Reset and let it re-signal the new TCS.
-            if (
-                _servers.TryGetBest(key, host.Id) == null
-                && _queues.TryGetValue(brokerKey, out var queue)
-            )
+            // Count the replacement as in-flight here, in the same lock as the queue reset
+            // and before it is scheduled. The replacement first drains the poisoned server,
+            // which can take up to PoisonDrainTimeout; if we only counted it after that,
+            // anyone asking for this server in the meantime would see nothing in flight and
+            // start a second one. ReplaceServerInBackgroundAsync's finally counts it back
+            // down, the same way the other creation sites do it.
+            lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
             {
-                if (host.IsPoisoned)
+                _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
+
+                // Only reset the per-host queue if no other healthy instances remain on
+                // this host for this key. When the HOST itself is poisoned, replacement on
+                // it cannot succeed, so fault the orphaned waiters now (Reset's fresh TCS
+                // would otherwise strand every already-attached waiter until a re-signal
+                // that never comes — the host-poison-deadlocks-run hang). When only the
+                // server is poisoned on a healthy host, replacement can still succeed, so
+                // keep the benign Reset and let it re-signal the new TCS.
+                if (
+                    _servers.TryGetBest(key, host.Id) == null
+                    && _queues.TryGetValue(brokerKey, out var queue)
+                )
                 {
-                    queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
-                }
-                else
-                {
-                    queue.Reset();
+                    if (host.IsPoisoned)
+                    {
+                        queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
+                    }
+                    else
+                    {
+                        queue.Reset();
+                    }
                 }
             }
 
@@ -1781,60 +1792,62 @@ public sealed class TestResourceBroker : IAsyncDisposable
     {
         var displayLabel = requirements.GetDisplayLabel();
         var brokerKey = BrokerKeyFor(key, host);
-
-        // Dispose the poisoned server to free its host server-slot.
-        // DisposeAfterDrainAsync releases the slot immediately (unblocking
-        // replacement creation below), then waits for active leases to drain
-        // so tests can finish artifact collection against the live container.
-        if (poisoned != null)
-        {
-            ReleaseSteamAccount(poisoned);
-            try
-            {
-                TestLog.Server(
-                    $"{displayLabel} disposing poisoned server on {host.Id} to free slot..."
-                );
-                InfrastructureEventLog.Emit(
-                    "server_disposed",
-                    new
-                    {
-                        server = poisoned.Key,
-                        instanceId = poisoned.InstanceId,
-                        reason = "poisoned_replacing",
-                        host_id = host.Id,
-                    }
-                );
-                await poisoned.DisposeAfterDrainAsync(PoisonDrainTimeout);
-                TestLog.Server($"{displayLabel} poisoned server disposed");
-            }
-            catch (Exception ex)
-            {
-                TestLog.Server($"{displayLabel} poisoned server disposal failed: {ex.Message}");
-            }
-        }
-
         var queue = _queues.GetOrAdd(brokerKey, _ => new ServerQueue());
-        // Ensure queue is in a fresh state for the replacement only if no other
-        // healthy instance exists on this host for this key. A poisoned host can't host
-        // the replacement, so fault any already-attached waiters instead of orphaning
-        // them on a fresh TCS that the failed replacement won't re-signal.
-        if (_servers.TryGetBest(key, host.Id) == null && (queue.IsReady || queue.IsFaulted))
-        {
-            if (host.IsPoisoned)
-            {
-                queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
-            }
-            else
-            {
-                queue.Reset();
-            }
-        }
 
-        _creationsInFlight.AddOrUpdate(brokerKey, 1, (_, v) => v + 1);
+        // OnServerPoisoned (the only caller) already counted this replacement as in-flight,
+        // and the finally below is what counts it back down. So the whole body, including
+        // the dispose-drain, has to stay inside the try.
         var replacementSucceeded = false;
         Exception? replacementError = null;
         try
         {
+            // Dispose the poisoned server to free its host server-slot.
+            // DisposeAfterDrainAsync releases the slot immediately (unblocking
+            // replacement creation below), then waits for active leases to drain
+            // so tests can finish artifact collection against the live container.
+            if (poisoned != null)
+            {
+                ReleaseSteamAccount(poisoned);
+                try
+                {
+                    TestLog.Server(
+                        $"{displayLabel} disposing poisoned server on {host.Id} to free slot..."
+                    );
+                    InfrastructureEventLog.Emit(
+                        "server_disposed",
+                        new
+                        {
+                            server = poisoned.Key,
+                            instanceId = poisoned.InstanceId,
+                            reason = "poisoned_replacing",
+                            host_id = host.Id,
+                        }
+                    );
+                    await poisoned.DisposeAfterDrainAsync(PoisonDrainTimeout);
+                    TestLog.Server($"{displayLabel} poisoned server disposed");
+                }
+                catch (Exception ex)
+                {
+                    TestLog.Server($"{displayLabel} poisoned server disposal failed: {ex.Message}");
+                }
+            }
+
+            // Ensure queue is in a fresh state for the replacement only if no other
+            // healthy instance exists on this host for this key. A poisoned host can't host
+            // the replacement, so fault any already-attached waiters instead of orphaning
+            // them on a fresh TCS that the failed replacement won't re-signal.
+            if (_servers.TryGetBest(key, host.Id) == null && (queue.IsReady || queue.IsFaulted))
+            {
+                if (host.IsPoisoned)
+                {
+                    queue.Reset(BuildAcquisitionFault(displayLabel, host, null));
+                }
+                else
+                {
+                    queue.Reset();
+                }
+            }
+
             TestLog.Server($"{displayLabel} replacing on {host.Id}...");
             var managed = await CreateServerAsync(key, requirements, host, _runCts.Token);
             managed.SetPoisonCallback(OnServerPoisoned);
@@ -1869,9 +1882,9 @@ public sealed class TestResourceBroker : IAsyncDisposable
         {
             // Mirror CreateAndResolveAsync's finally: decrement and fault decision
             // are atomic w.r.t. TryReuseFreedSlotAsync's check+bump on this brokerKey.
-            // Faulting unconditionally on failure (the previous behavior) would wake
-            // waiters with an exception even when a sibling creation is about to
-            // succeed — same race shape as the on-demand path.
+            // Faulting unconditionally on failure would wake waiters with an exception
+            // even when a sibling creation is about to succeed — same race shape as
+            // the on-demand path.
             lock (_creationLocks.GetOrAdd(brokerKey, _ => new object()))
             {
                 var inFlightRemaining = _creationsInFlight.AddOrUpdate(

@@ -584,6 +584,11 @@ internal sealed class TestLifecycle
             var phaseSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
+                // Switch the client over to the cleanup timeout. The steps below only talk to
+                // the client container, so they work even when the server is gone, but if the
+                // server was poisoned its error token is already canceled and would skip all
+                // of this. ClientLease.DisposeAsync clears the token again afterwards.
+                _testBase.GameClient.CancellationToken = ct;
                 await _testBase.GameClient.Navigate("title");
                 await _testBase.GameClient.Wait.ForDisconnected(TestTimings.DisconnectedTimeout);
                 SetupEventBus.EmitInstanceDisconnected(
@@ -615,7 +620,12 @@ internal sealed class TestLifecycle
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                throw;
+                // Don't rethrow. That would skip the farmer cleanup below and leave this
+                // test's farmers on a server other tests will reuse. Fall through instead:
+                // the delete loop sees the same expired token and poisons the lease itself.
+                LogWarning(
+                    "Cleanup disconnect phase hit the cleanup budget; continuing to farmer delete"
+                );
             }
             catch (Exception ex)
             {

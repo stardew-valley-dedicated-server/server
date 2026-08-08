@@ -71,6 +71,13 @@ public sealed class ClientLease : IAsyncDisposable
         // Disconnect client before returning to pool (skip if caller already disconnected)
         if (!AlreadyDisconnected)
         {
+            // Use a short cleanup timeout instead of the server's error token (set in
+            // ResourceLease.LeaseClientAsync). If the server was poisoned that token is
+            // already canceled, so the disconnect would fail instantly and we would mark a
+            // perfectly healthy client dead. With our own token, a failure here really does
+            // mean the client is broken.
+            using var cleanupCts = new CancellationTokenSource(TestTimings.CleanupTimeout);
+            Container.Client.CancellationToken = cleanupCts.Token;
             try
             {
                 await Container.DisconnectAsync();
@@ -88,6 +95,9 @@ public sealed class ClientLease : IAsyncDisposable
             }
         }
 
+        // Clear the token before the client goes back in the pool, so the next test that
+        // leases it does not inherit this one's.
+        Container.Client.CancellationToken = CancellationToken.None;
         _pool.ReturnClient(Container, _serverKey);
     }
 }
