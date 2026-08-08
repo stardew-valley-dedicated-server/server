@@ -1,4 +1,5 @@
 {
+    "autoMemoryEnabled": false,
     "permissions": {
         "allow": [],
         "deny": [],
