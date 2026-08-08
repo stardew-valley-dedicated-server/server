@@ -3,3 +3,4 @@
 # node_modules is NOT copied — run `npm ci` per worktree (see git-workflow.md).
 .env
 .env.test
+.sdvd_runner_key
