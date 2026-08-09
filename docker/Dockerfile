@@ -136,7 +136,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # ============================================================================
 # Stage 4: Final runtime image (no game files, downloads on first run)
 # ============================================================================
-FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-11-v4.11.3 AS server
+FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-13-v4.13 AS server
 
 ARG SMAPI_VERSION
 ARG TMUX_VERSION=3.7b
@@ -162,13 +162,16 @@ ENV APP_NAME="Stardew Dedicated Server" \
     SMAPI_VERSION=${SMAPI_VERSION} \
     SMAPI_MODS_PATH=/data/Mods
 
-# Install all apt packages in one layer to reduce image size and layers
-RUN apt-get update && apt-get install -y \
+# add-pkg (base image helper), not raw apt-get: it pre-creates /var/log's symlink target
+# (/config — a runtime volume, absent at build time, so tcpdump's postinst fails without it)
+# and installs --no-install-recommends, keeping out systemd, whose postinst dies on that
+# same symlink (mesa-utils recommends it). add-pkg cleans the apt cache itself.
+RUN add-pkg \
     # Base packages
     ca-certificates \
     curl \
     # .NET globalization (SMAPI FailFasts at startup without it)
-    libicu67 \
+    libicu76 \
     # SkiaSharp's native image decoder (Content Patcher EditImage) needs fontconfig to load
     libfontconfig1 \
     locales \
@@ -182,17 +185,13 @@ RUN apt-get update && apt-get install -y \
     # TigerVNC
     tigervnc-standalone-server \
     mesa-utils \
-    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
-    locale-gen \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen \
     # Configure TigerVNC
-    && cp /usr/bin/Xvnc /opt/base/bin/Xvnc \
-    # Clean up apt cache
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && cp /usr/bin/Xvnc /opt/base/bin/Xvnc
 
-# Install ffmpeg 8.1.2 (BtbN build of the stable 8.1 branch). Debian 11 ships 4.3.x with x11grab
-# timing bugs that break the test-recording pipeline. Pin month-end autobuilds only: BtbN prunes
+# Install ffmpeg 8.1.2 (BtbN build of the stable 8.1 branch) rather than the distro package, whose
+# x11grab timing bugs break the test-recording pipeline. Pin month-end autobuilds only: BtbN prunes
 # daily builds after 14 days (month-end builds live two years), and the "latest" tag drifts.
 RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz && \
     tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
@@ -222,7 +221,11 @@ RUN \
     # Prevent unnecessary logs
     rm -f /etc/cont-init.d/89-info.sh && \
     # Prevent overriding OpenGL drivers
-    rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH
+    rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH && \
+    # Pin the runtime HOME to match the ENV above — the base defaults it to /config, and
+    # Steam resolves steamclient.so via ~/.steam while startapp.sh links it into
+    # /root/.steam/sdk64; a mismatch fails SteamAPI_Init and with it GameServer.Init()
+    set-cont-env HOME /root
 
 # Copy pre-built tools from build stages
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher

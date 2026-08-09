@@ -2,7 +2,7 @@
 # Note: Debian is chosen over Alpine because Mesa/X11 libraries and glibc dependencies
 # are required by StardewXnbHack. Alpine would need extra compatibility layers and
 # end up larger and more complex.
-FROM debian:bullseye-slim
+FROM debian:trixie-slim
 
 # Install required packages and clean up apt cache in a single layer
 RUN apt-get update && \
@@ -10,7 +10,7 @@ RUN apt-get update && \
     ca-certificates \
     curl \
     unzip \
-    libicu67 \
+    libicu76 \
     xvfb \
     mesa-utils \
     x11-utils \
