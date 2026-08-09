@@ -255,7 +255,7 @@ public class WeddingCutscenePlayer
         // script's `pause` reads, so a linger still active when the next ceremony's first `pause` runs
         // swallows it (its expiry advances the event early). getAvailableWeddingEvent pops the running
         // ceremony's farmer before the event runs, so Count > 0 means another wedding is queued — same
-        // guard as AlwaysOn.WarpHostHomeAfterWeddings.
+        // guard as AlwaysOn.WarpHostToFarmAfterWeddings.
         if (Game1.weddingsToday is { Count: > 0 })
         {
             return;

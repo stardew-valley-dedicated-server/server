@@ -795,17 +795,15 @@ public class AlwaysOnServer : ModService
 
         // eventFinished() warped the host onto the open Farm map: the wedding's endBehaviors "wedding"
         // case sets the exit warp from getHomeOfFarmer(Game1.player).getPorchStandingSpot() (Event.cs
-        // "wedding"), and on the host Game1.player's home is the main FarmHouse, so the host lands at the
-        // farmhouse-porch tile on the Farm rather than in its FarmHouse — out of its normal hidden idle
-        // spot. Return it home, but ONLY once no wedding is still queued: on a multi-wedding day the next
-        // ceremony is started by StartNextQueuedWeddingIfIdle, which needs the host on a non-temporary
-        // location (FarmHouse won't trigger the queued Farm/Town wedding), so warping home between
-        // ceremonies would strand the next wedding unstarted. getAvailableWeddingEvent pops the running
+        // "wedding"), so the host lands at the farmhouse-porch tile rather than the canonical Farm park
+        // spot. Normalize that, but ONLY once no wedding is still queued: on a multi-wedding day the next
+        // ceremony is started by StartNextQueuedWeddingIfIdle, and re-warping the host between ceremonies
+        // could interleave with the next event start. getAvailableWeddingEvent pops the running
         // ceremony's farmer from weddingsToday before the event runs (Game1.cs:6096), so a remaining
         // Count > 0 reliably means "another wedding still queued".
         if (Game1.weddingsToday is not { Count: > 0 })
         {
-            WarpHostHomeAfterWeddings();
+            WarpHostToFarmAfterWeddings();
         }
 
         // Mark this ceremony handled and clear the timer so the next wedding's gate starts a fresh
@@ -821,58 +819,50 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Return the host to its FarmHouse idle spot after the day's last wedding. <c>eventFinished()</c>
-    /// leaves the host on the open Farm map (the wedding exit warp targets the host's farmhouse porch via
-    /// <c>getHomeOfFarmer(Game1.player)</c>), but the host is meant to stay hidden in its FarmHouse — the
-    /// same place <see cref="HandleAutoSleep"/> keeps it. Reuses that handler's home-warp idiom:
-    /// <c>getLocationRequest(home)</c> + <c>warpFarmer</c> into the FarmHouse, then snap to the bed spot
-    /// and <c>Halt()</c>. Master-only and FarmHouse-targeted (no-ops if home doesn't resolve to one).
+    /// Warp the host to its standard Farm park spot after the day's last wedding — the same target
+    /// <c>HideHostActivity</c> warps it to on every day start (<see cref="AlwaysOnUtil.WarpToFarmDefaultSpawn"/>),
+    /// so the host's idle position stays the single invariant the rest of the system assumes (pacing
+    /// probes, cabin placement). The wedding exit warp already lands on the Farm (at the farmhouse
+    /// porch); this merely normalizes that to the canonical park tile. Master-only.
     /// </summary>
-    private void WarpHostHomeAfterWeddings()
+    private void WarpHostToFarmAfterWeddings()
     {
         if (!Game1.IsMasterGame)
         {
             return;
         }
 
-        var home = Game1.player.homeLocation.Value;
-        if (string.IsNullOrEmpty(home))
-        {
-            return;
-        }
+        int x = 0,
+            y = 0;
+        Utility.getDefaultWarpLocation("Farm", ref x, ref y);
 
-        // Already home (a single-tile-warp engine edge case): just snap to the bed and stop.
-        if (
-            Game1.currentLocation is FarmHouse here
-            && string.Equals(here.NameOrUniqueName, home, StringComparison.OrdinalIgnoreCase)
-        )
+        // Already on the Farm (eventFinished()'s exit warp can resolve in place before this runs):
+        // just snap to the park tile and stop.
+        if (Game1.currentLocation is Farm)
         {
-            Game1.player.position.Set(Utility.PointToVector2(here.GetPlayerBedSpot()) * 64f);
+            Game1.player.position.Set(new Microsoft.Xna.Framework.Vector2(x, y) * 64f);
             Game1.player.Halt();
             return;
         }
 
-        var req = Game1.getLocationRequest(home);
+        var req = Game1.getLocationRequest("Farm");
         req.OnWarp += () =>
         {
-            if (Game1.currentLocation is FarmHouse fh)
-            {
-                Game1.player.position.Set(Utility.PointToVector2(fh.GetPlayerBedSpot()) * 64f);
-            }
             Game1.player.Halt();
             // warpFarmer arms a fade-to-black; on the render-suppressed host the fade-in handler is
             // draw-coupled and stalls (same reason the teardown above clears the fade by hand), so clear
-            // it on arrival or the host sits on a black screen in its FarmHouse.
+            // it on arrival or the host sits on a black screen.
             Game1.fadeClear();
             Game1.fadeToBlackAlpha = 0f;
         };
-        // Coords are any valid tile inside the target FarmHouse; the OnWarp callback snaps to the bed
-        // spot. Mirrors HandleAutoSleep's home-warp (and DedicatedServer.cs:415). Issued right after
-        // eventFinished()'s own Farm-exit warpFarmer — performWarpFarmer just overwrites the single
-        // Game1.locationRequest, so this supersedes the Farm exit and the host warps straight home
-        // without first landing on the open Farm.
-        Game1.warpFarmer(req, 5, 9, Game1.player.FacingDirection);
-        Monitor.Log($"Warped host home to {home} after the day's last wedding.", LogLevel.Info);
+        // Issued right after eventFinished()'s own exit warpFarmer — performWarpFarmer just overwrites
+        // the single Game1.locationRequest, so this supersedes the porch exit and the host warps
+        // straight to the park tile.
+        Game1.warpFarmer(req, x, y, Game1.player.FacingDirection);
+        Monitor.Log(
+            "Parked host at the Farm park spot after the day's last wedding.",
+            LogLevel.Info
+        );
     }
 
     /// <summary>

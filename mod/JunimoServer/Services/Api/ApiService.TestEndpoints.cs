@@ -1816,6 +1816,19 @@ public partial class ApiService
                 result.HostLocationIsTemporary = Game1.currentLocation?.IsTemporary == true;
                 result.HostCurrentLocation = Game1.currentLocation?.NameOrUniqueName;
 
+                // Location alone can't pin the post-wedding park normalization — the vanilla wedding
+                // exit warp also lands on the Farm (at the farmhouse porch), so report whether the
+                // host stands exactly on the Farm default warp tile (the park target
+                // WarpHostToFarmAfterWeddings / HideHostActivity resolve via getDefaultWarpLocation).
+                var hostTile = Game1.player.TilePoint;
+                result.HostTileX = hostTile.X;
+                result.HostTileY = hostTile.Y;
+                int parkX = 0,
+                    parkY = 0;
+                Utility.getDefaultWarpLocation("Farm", ref parkX, ref parkY);
+                result.HostAtFarmParkSpot =
+                    Game1.currentLocation is Farm && hostTile.X == parkX && hostTile.Y == parkY;
+
                 if (farmhandId != 0)
                 {
                     // The host's view of the farmhand's spouse — used by the test to confirm the
@@ -1965,6 +1978,9 @@ public partial class ApiService
     // location — which the server simulates (the host is a Farmer there, IsMasterGame always true) — so
     // the probe needs no connected client. The paired state endpoint reads the entity's measured quantity
     // so a test can compare wall-clock behavior with SDVD_TPS_AGNOSTIC_PACING on vs off at the same TPS.
+    // The spawn offsets assume the host stands at its standard Farm park spot (HideHostActivity warps it
+    // there on every day start), where every offset has open in-bounds runway; the spawn handler
+    // fail-fasts if the host's actual position puts any part of a probe's motion envelope outside the map.
 
     // The spawned probe entities, tracked so the state endpoint can read them back. Typed as object (not
     // the StardewValley types) and coords as floats so ApiService's field metadata carries NO game-type
@@ -2041,6 +2057,56 @@ public partial class ApiService
                 result.LocationName = location.NameOrUniqueName;
                 var origin = Game1.player.Position;
 
+                // One spawn point per kind, computed up front so the bounds guard below checks exactly
+                // what the spawn cases use.
+                var debrisDropOrigin = origin + new Vector2(640f, -128f);
+                var batSpawnPos = origin + new Vector2(640f, 0f);
+                var slimeSpawnPos = origin + new Vector2(320f, 0f);
+
+                // Fail fast unless the probe's full MOTION ENVELOPE — spawn point plus everywhere the
+                // entity travels during the measurement — fits inside the host location's map. From an
+                // unexpected host spot, an entity that spawns or drifts out of bounds is deleted by
+                // vanilla mid-measurement, which would otherwise surface only as an empty/short state
+                // read seconds later.
+                var (envelopeMin, envelopeMax) = kind switch
+                {
+                    // Chunks spawn at the drop origin − 32 px on each axis (Debris.InitializeChunks)
+                    // and settle within ~64 px of the drop point (updateChunks bounce/drift).
+                    PacingProbeKind.Debris => (
+                        debrisDropOrigin - new Vector2(96f, 96f),
+                        debrisDropOrigin + new Vector2(96f, 96f)
+                    ),
+                    // Homes west from its spawn onto the host and overshoots a few tiles past it.
+                    PacingProbeKind.Monster => (
+                        origin - new Vector2(192f, 64f),
+                        batSpawnPos + new Vector2(64f, 64f)
+                    ),
+                    // The 100 px/tick knockback impulse slides it ~400 px further east before friction
+                    // stops it — the very distance the test measures.
+                    PacingProbeKind.Knockback => (
+                        slimeSpawnPos - new Vector2(64f, 64f),
+                        slimeSpawnPos + new Vector2(512f, 64f)
+                    ),
+                    // Fires from the host and ricochets off walls/obstacles — no free path needed.
+                    _ => (origin, origin),
+                };
+                var map = location.map;
+                if (
+                    envelopeMin.X < 0
+                    || envelopeMin.Y < 0
+                    || envelopeMax.X >= map.DisplayWidth
+                    || envelopeMax.Y >= map.DisplayHeight
+                )
+                {
+                    result.Error =
+                        $"Probe motion envelope ({envelopeMin.X:F0},{envelopeMin.Y:F0})–"
+                        + $"({envelopeMax.X:F0},{envelopeMax.Y:F0}) exceeds the map bounds of "
+                        + $"'{location.NameOrUniqueName}' ({map.DisplayWidth}x{map.DisplayHeight} px); "
+                        + $"host is at ({origin.X:F0}, {origin.Y:F0}). The probes assume the host stands "
+                        + "at its Farm park spot (HideHostActivity) — something moved it.";
+                    return;
+                }
+
                 // Remove all prior probe entities (by identity, from their own spawn location) so a later
                 // state read for any kind can only ever see THIS spawn's entity, and no leaked entity can
                 // contaminate it (a leftover probe projectile ricochets forever and damages monsters, so
@@ -2082,11 +2148,10 @@ public partial class ApiService
                         // WITHOUT being magnetized-and-collected (object debris homes to a nearby player
                         // once done bouncing; 640 px keeps it outside the ~64 px pickup range for the
                         // measurement window).
-                        var dropOrigin = origin + new Vector2(640f, -128f);
                         var debris = new Debris(
                             "(O)388", // Wood — an ordinary object drop
-                            dropOrigin,
-                            dropOrigin
+                            debrisDropOrigin,
+                            debrisDropOrigin
                         );
                         location.debris.Add(debris);
                         _probeDebris = debris;
@@ -2096,12 +2161,11 @@ public partial class ApiService
                     case PacingProbeKind.Monster:
                     {
                         // Spawn a Bat a fixed distance from the host so it homes in; measure how far it closes.
-                        var spawnPos = origin + new Vector2(640f, 0f);
-                        var bat = new Bat(spawnPos) { focusedOnFarmers = true };
+                        var bat = new Bat(batSpawnPos) { focusedOnFarmers = true };
                         location.characters.Add(bat);
                         _probeMonster = bat;
-                        _probeMonsterSpawnX = spawnPos.X;
-                        _probeMonsterSpawnY = spawnPos.Y;
+                        _probeMonsterSpawnX = batSpawnPos.X;
+                        _probeMonsterSpawnY = batSpawnPos.Y;
                         result.Count = 1;
                         break;
                     }
@@ -2111,8 +2175,7 @@ public partial class ApiService
                         // and hit it with a fixed knockback impulse; measure how far the impulse carries it
                         // before friction stops it. Non-glider is essential: gliders are always
                         // velocity-driven, which would muddy a clean knockback measurement.
-                        var slimePos = origin + new Vector2(320f, 0f);
-                        var slime = new GreenSlime(slimePos);
+                        var slime = new GreenSlime(slimeSpawnPos);
                         location.characters.Add(slime);
                         // Large impulse along +x, away from the host, so it dominates any velocity the
                         // slime's own AI adds (its hop toward the player) and gives a clean knockback slide.
@@ -2120,8 +2183,8 @@ public partial class ApiService
                         // when the impulse exceeds current velocity.
                         slime.setTrajectory(100, 0);
                         _probeMonster = slime;
-                        _probeMonsterSpawnX = slimePos.X;
-                        _probeMonsterSpawnY = slimePos.Y;
+                        _probeMonsterSpawnX = slimeSpawnPos.X;
+                        _probeMonsterSpawnY = slimeSpawnPos.Y;
                         result.Count = 1;
                         break;
                     }

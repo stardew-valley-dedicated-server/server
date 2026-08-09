@@ -437,11 +437,21 @@ public class TestWeddingStateResponse
     /// Stuck-true after a wedding = the host never warped off the ceremony location.</summary>
     public bool HostLocationIsTemporary { get; set; }
 
-    /// <summary>The host's current location name. After the day's last wedding the host must be returned
-    /// to its FarmHouse idle spot — not left standing on the open Farm map where the wedding exit warp
-    /// drops it (the exit targets getHomeOfFarmer(Game1.player)'s porch). Lets a test assert the host
-    /// ended at home rather than just "not on a temporary map".</summary>
+    /// <summary>The host's current location name. After the day's last wedding the host must end parked
+    /// on the Farm — its standard park spot (HideHostActivity warps it there on every day start), which
+    /// the wedding automation re-establishes after the exit warp drops the host at the farmhouse-porch
+    /// tile. Lets a test assert the host ended parked rather than just "not on a temporary map".</summary>
     public string? HostCurrentLocation { get; set; }
+
+    /// <summary>The host's current tile — diagnostics for a failed park assertion.</summary>
+    public int HostTileX { get; set; }
+    public int HostTileY { get; set; }
+
+    /// <summary>True when the host stands exactly on the Farm default warp tile (the canonical park
+    /// spot). The vanilla wedding exit warp also lands on the Farm — at the farmhouse porch — so this,
+    /// not <see cref="HostCurrentLocation"/>, is the signal that the post-wedding park normalization
+    /// actually ran.</summary>
+    public bool HostAtFarmParkSpot { get; set; }
 }
 
 /// <summary>Body for POST /test/console (test-only): a console command name + args to invoke.</summary>
