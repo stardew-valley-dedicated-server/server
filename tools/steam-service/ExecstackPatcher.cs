@@ -37,7 +37,14 @@ public static class ExecstackPatcher
             }
             catch (Exception ex)
             {
-                Logger.Log($"{logPrefix} WARN: could not patch {lib}: {ex.Message}");
+                // Deliberately non-fatal: a throw here would keep the download marker from being
+                // written (or fail startup), bricking the whole server over a feature-scoped
+                // problem. Unpatched libs degrade to "Galaxy init fails, LAN still works", and
+                // the startup hook retries the patch on every boot.
+                Logger.Log(
+                    $"{logPrefix} WARN: could not clear executable-stack flag on {lib} "
+                        + $"({ex.Message}) — Galaxy/invite codes will fail on glibc >= 2.41 hosts"
+                );
             }
         }
     }
