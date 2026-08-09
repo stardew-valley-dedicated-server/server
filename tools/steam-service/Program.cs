@@ -723,6 +723,15 @@ async Task RunHttpServerAsync(
     Console.WriteLine("  GET  /steam/refresh-token - Get refresh token (?account=N)");
     Console.WriteLine("  POST /steam/lobby/create  - Create lobby (?account=N)");
 
+    // Volumes provisioned before the execstack patch existed still carry the flag on the
+    // Galaxy libs; fresh downloads are handled by the download-completion hook. Only runs
+    // when the marker guarantees no download is writing these files.
+    var gameDownloadMarker = Path.Combine(gameDir, $".download-manifest-{StardewValleyAppId}");
+    if (File.Exists(gameDownloadMarker))
+    {
+        ExecstackPatcher.ClearGalaxyLibs(gameDir, "[SteamService]");
+    }
+
     // Auto-login all configured accounts in parallel
     var loginTasks = accts.Select(async kv =>
     {
@@ -752,7 +761,6 @@ async Task RunHttpServerAsync(
     // resumes rather than being mistaken for done. Runs off the request path (HTTP server + /health
     // come up first). On shutdown the task isn't cancelled — Disconnect() aborts the in-flight
     // download, which is resumable on the next boot; a failed download is likewise retried next boot.
-    var gameDownloadMarker = Path.Combine(gameDir, $".download-manifest-{StardewValleyAppId}");
     if (!File.Exists(gameDownloadMarker))
     {
         var bootstrapAccount = accts.Values.FirstOrDefault(s => s.IsLoggedIn);
