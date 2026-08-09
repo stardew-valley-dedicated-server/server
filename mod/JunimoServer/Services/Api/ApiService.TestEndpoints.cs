@@ -2080,8 +2080,8 @@ public partial class ApiService
                 if (
                     spawnPoint.X < 0
                     || spawnPoint.Y < 0
-                    || spawnPoint.X > map.DisplayWidth
-                    || spawnPoint.Y > map.DisplayHeight
+                    || spawnPoint.X >= map.DisplayWidth
+                    || spawnPoint.Y >= map.DisplayHeight
                 )
                 {
                     result.Error =
