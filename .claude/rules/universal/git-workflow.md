@@ -30,13 +30,4 @@ Bullet points of changes. No co-author attributions.
 
 ## Worktrees
 
-Run these from the main checkout — the relative paths resolve wrong from inside another worktree (use absolute paths there). A fresh worktree is a clean checkout, so the gitignored things from the main checkout need setting up:
-
-```bash
-git worktree add -b <branch> "../worktrees/<name>" master
-cp .env .env.test .sdvd_runner_key "../worktrees/<name>/"   # skip if created via `claude --worktree` (.worktreeinclude)
-cd "../worktrees/<name>" && npm ci   # commitlint hook; never symlink the main repo's node_modules
-git worktree remove --force "../worktrees/<name>"   # cleanup — deletes uncommitted changes; keep the branch if a PR depends on it
-```
-
-`git worktree remove` can fail on Windows with `Filename too long` (deep `node_modules`/build paths). Fall back to `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"` then `git worktree prune`.
+Worktrees live at `../worktrees/<name>` — never inside the repo. Create them via EnterWorktree: the `WorktreeCreate` hook (`.claude/hooks/worktree-create.mjs`) places them there, branches `<name>` from `master` (so name it like a branch: `fix/...`, `feat/...`), copies the `.worktreeinclude` files, and runs `npm ci`. Don't hand-roll `git worktree add` — if the hook path is ever unavailable, replicate those steps yourself. `ExitWorktree` can leave but not remove a worktree mid-session; clean up with `git worktree remove --force "../worktrees/<name>"` (deletes uncommitted changes; keep the branch if a PR depends on it). On Windows `Filename too long`: `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"` then `git worktree prune`.
