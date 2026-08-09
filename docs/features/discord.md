@@ -15,6 +15,10 @@ The bot's Discord presence shows real-time server information:
 
 The status displays current player count, max players, and the invite code. You can copy the invite code directly from the bot's status.
 
+### Status Dashboard
+
+An auto-updating embed posted to a channel of your choice, showing farm name and layout, in-game date and time, player count, and the invite code. The bot edits the same message in place on a configurable interval (via `STATUS_DASHBOARD_CHANNEL_ID`).
+
 ### Chat Relay
 
 Two-way chat between Discord and the game:
