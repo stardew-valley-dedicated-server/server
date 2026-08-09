@@ -54,6 +54,7 @@ The keep-test for every line: **"Would removing this cause Claude to make mistak
 - **Title is a clause that states the rule** (e.g. `# AsyncLocal flows through awaits, not through external queue pumps`). Not a noun phrase like `# Cabin Notes`.
 - **Body skeleton.** Opening one-line statement; optional sub-sections; trailing `**Why:**` and `**How to apply:**`. Match this across rules — if a rule omits one of those blocks and the content would benefit, [FIX].
 - **Headings.** `#` for title, `##` for sub-sections. `####+` only when genuinely needed.
+- **Writing style.** Per `extract-session-rules/SKILL.md` § Writing style: action first, no quotes, one anchor per point, plain English. [FIX] prose that fails it.
 - **Backticks** around filenames, identifiers, env vars, paths.
 - **Cross-rule links.** Markdown links to other rule files, used consistently. Don't mix bare filenames and links.
 - **Doc links.** Relative paths into `docs/`, used the same way everywhere.
@@ -65,7 +66,7 @@ The keep-test for every line: **"Would removing this cause Claude to make mistak
 - **Cited paths exist.** Spot-check with Glob.
 - **Cited identifiers exist.** Grep one or two per rule.
 - **No refactor history.** "previously", "no longer", "has been removed", "this used to" — see `no-refactor-history-in-code.md`.
-- **No machine-local content.** Dev-machine paths, full session IDs, `.claude/tasks/...` references. (Dated incident anchors in `**Why:**` are fine.)
+- **No machine-local content.** Dev-machine paths, full session IDs, `.claude/tasks/...` references, dates.
 - **No contradictions across rules.** If `rule-A` says "always X" and `rule-B` says "never X under condition Y", at least one needs to acknowledge the other.
 - **Trigger still real.** If the `**Why:**` cites a condition (a feature flag, a config default, a framework quirk), confirm the condition still exists. A rule guarding against a removed surface is dead weight.
 - **Earned, not speculative.** A rule should trace to a real incident, not "we should be careful about X." Speculative rules age the worst — flag for [QUESTION] if the `**Why:**` doesn't ground it in something concrete.
