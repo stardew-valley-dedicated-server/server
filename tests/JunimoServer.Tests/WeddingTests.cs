@@ -335,35 +335,32 @@ public class WeddingTests : TestBase
             );
         }
 
-        // The host must be returned to its FarmHouse idle spot, not left standing on the open Farm map.
-        // The wedding's endBehaviors ("wedding" case) sets the exit warp from
-        // getHomeOfFarmer(Game1.player).getPorchStandingSpot(), which on the host resolves to the main
-        // farmhouse porch — so eventFinished() drops the host onto the Farm. The mod warps it home after
-        // the day's last ceremony; assert that here (separate from hostRecovered: "not stuck" is distinct
-        // from "back home", and the home-warp lands a tick or two after the temp map clears).
-        var hostHome = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Wedding_HostReturnedHomeAfterCeremonies,
+        // The host must end parked on the Farm — its steady-state idle spot (HideHostActivity parks it
+        // there on every day start, and the pacing probes assume that geometry). The wedding's
+        // endBehaviors ("wedding" case) sets the exit warp from
+        // getHomeOfFarmer(Game1.player).getPorchStandingSpot(), so eventFinished() drops the host at the
+        // farmhouse-porch tile; the mod normalizes that to the canonical Farm park spot after the day's
+        // last ceremony. Assert that here (separate from hostRecovered: "not stuck / off the temp map" is
+        // distinct from "parked", and the park warp lands a tick or two after the temp map clears).
+        var hostOnFarm = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_Wedding_HostOnFarmAfterCeremonies,
             async () =>
             {
                 var hs = await ServerApi.GetWeddingState(ct: ct);
-                return hs?.Success == true
-                    && hs.HostCurrentLocation?.StartsWith(
-                        "FarmHouse",
-                        System.StringComparison.Ordinal
-                    ) == true;
+                return hs?.Success == true && hs.HostCurrentLocation == "Farm";
             },
             timeout: TestTimings.NetworkSyncTimeout,
             cancellationToken: ct
         );
-        if (!hostHome)
+        if (!hostOnFarm)
         {
             var hs = await ServerApi.GetWeddingState(ct: ct);
             Assert.Fail(
-                "Host was not returned to its FarmHouse after the same-day weddings — it is left on the "
-                    + "open Farm map where the wedding exit warp drops it (the exit targets the host's "
-                    + "farmhouse porch via getHomeOfFarmer(Game1.player)). After the last ceremony the host "
-                    + "must warp back to its FarmHouse idle spot.\n"
-                    + $"  hostCurrentLocation={hs?.HostCurrentLocation ?? "null"} (expected to start with \"FarmHouse\")"
+                "Host did not end parked on the Farm after the same-day weddings. After the last ceremony "
+                    + "the host must be returned to its standard Farm park spot (the same idle spot "
+                    + "HideHostActivity parks it at on every day start) — leaving it anywhere else breaks "
+                    + "the park-spot invariant other tests rely on.\n"
+                    + $"  hostCurrentLocation={hs?.HostCurrentLocation ?? "null"} (expected \"Farm\")"
             );
         }
 

@@ -24,8 +24,17 @@ namespace JunimoServer.Tests;
 /// (<c>Game1.cs:4308</c>) — so on a player-less server NOTHING in the world ticks and every probe reads
 /// zero. One connected client unpauses the server (<c>numPlayers >= 1 → IsPaused = false</c>), which is
 /// also the realistic scenario: a player present in the world is exactly when these entities simulate.
-/// The probe entities are spawned in the HOST's own location (open Farm), which the server ticks because
-/// the host is a farmer there.
+/// The probe entities are spawned in the HOST's own location, which the server ticks because the host is
+/// a farmer there.
+/// </para>
+///
+/// <para>
+/// <b>Host-position contract.</b> The spawn offsets assume the host stands at its standard Farm park
+/// spot — where <c>HideHostActivity</c> warps it on every day start — with open in-bounds runway in every
+/// probe direction. Anything that leaves the host elsewhere (e.g. inside a small interior) puts a spawn
+/// point outside the map, and vanilla deletes out-of-bounds entities on their first update tick; the
+/// spawn endpoint fail-fasts with the host's location/position instead of letting that surface as an
+/// empty state read.
 /// </para>
 ///
 /// <para>
@@ -138,7 +147,13 @@ public class PacingProbeTests : TestBase
         var state = await ServerApi.GetPacingProbeState("debris", ct);
         Assert.NotNull(state);
         Assert.True(state.Success, $"Debris probe state read failed: {state.Error}");
-        Assert.True(state.DebrisChunkCount > 0, "Probe debris reported no chunks.");
+        Assert.True(
+            state.DebrisChunkCount > 0,
+            "Probe debris reported no chunks — the debris was deleted before the state read. Vanilla "
+                + "removes chunks that spawn outside the map on the first update tick, so the most likely "
+                + "cause is the host standing somewhere other than its Farm park spot (the spawn offsets "
+                + "assume that geometry); check the host's location/position in the server log."
+        );
         Assert.True(
             state.DebrisChunksAtRest == state.DebrisChunkCount,
             $"Only {state.DebrisChunksAtRest}/{state.DebrisChunkCount} debris chunks finished falling in "

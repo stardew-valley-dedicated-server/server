@@ -1965,6 +1965,9 @@ public partial class ApiService
     // location — which the server simulates (the host is a Farmer there, IsMasterGame always true) — so
     // the probe needs no connected client. The paired state endpoint reads the entity's measured quantity
     // so a test can compare wall-clock behavior with SDVD_TPS_AGNOSTIC_PACING on vs off at the same TPS.
+    // The spawn offsets assume the host stands at its standard Farm park spot (HideHostActivity warps it
+    // there on every day start), where every offset has open in-bounds runway; the spawn handler
+    // fail-fasts if the host's actual position puts a spawn point outside the map.
 
     // The spawned probe entities, tracked so the state endpoint can read them back. Typed as object (not
     // the StardewValley types) and coords as floats so ApiService's field metadata carries NO game-type
@@ -2041,6 +2044,41 @@ public partial class ApiService
                 result.LocationName = location.NameOrUniqueName;
                 var origin = Game1.player.Position;
 
+                // One spawn point per kind, computed up front so the bounds guard below checks exactly
+                // what the spawn cases use.
+                var debrisDropOrigin = origin + new Vector2(640f, -128f);
+                var batSpawnPos = origin + new Vector2(640f, 0f);
+                var slimeSpawnPos = origin + new Vector2(320f, 0f);
+
+                // Fail fast if the probe's spawn point falls outside the host location's map: from an
+                // unexpected host spot (e.g. a small interior) the entity spawns out of bounds and
+                // vanilla deletes it on the first update tick — which would otherwise surface only as
+                // an empty state read seconds later.
+                var spawnPoint = kind switch
+                {
+                    // Debris chunks spawn at the drop origin − 32 px on each axis (Debris.InitializeChunks).
+                    PacingProbeKind.Debris => debrisDropOrigin - new Vector2(32f, 32f),
+                    PacingProbeKind.Monster => batSpawnPos,
+                    PacingProbeKind.Knockback => slimeSpawnPos,
+                    // The projectile fires from the host itself.
+                    _ => origin,
+                };
+                var map = location.map;
+                if (
+                    spawnPoint.X < 0
+                    || spawnPoint.Y < 0
+                    || spawnPoint.X > map.DisplayWidth
+                    || spawnPoint.Y > map.DisplayHeight
+                )
+                {
+                    result.Error =
+                        $"Probe spawn point ({spawnPoint.X:F0}, {spawnPoint.Y:F0}) is outside the map "
+                        + $"bounds of '{location.NameOrUniqueName}' ({map.DisplayWidth}x{map.DisplayHeight} px); "
+                        + $"host is at ({origin.X:F0}, {origin.Y:F0}). The probes assume the host stands "
+                        + "at its Farm park spot (HideHostActivity) — something moved it.";
+                    return;
+                }
+
                 // Remove all prior probe entities (by identity, from their own spawn location) so a later
                 // state read for any kind can only ever see THIS spawn's entity, and no leaked entity can
                 // contaminate it (a leftover probe projectile ricochets forever and damages monsters, so
@@ -2082,11 +2120,10 @@ public partial class ApiService
                         // WITHOUT being magnetized-and-collected (object debris homes to a nearby player
                         // once done bouncing; 640 px keeps it outside the ~64 px pickup range for the
                         // measurement window).
-                        var dropOrigin = origin + new Vector2(640f, -128f);
                         var debris = new Debris(
                             "(O)388", // Wood — an ordinary object drop
-                            dropOrigin,
-                            dropOrigin
+                            debrisDropOrigin,
+                            debrisDropOrigin
                         );
                         location.debris.Add(debris);
                         _probeDebris = debris;
@@ -2096,12 +2133,11 @@ public partial class ApiService
                     case PacingProbeKind.Monster:
                     {
                         // Spawn a Bat a fixed distance from the host so it homes in; measure how far it closes.
-                        var spawnPos = origin + new Vector2(640f, 0f);
-                        var bat = new Bat(spawnPos) { focusedOnFarmers = true };
+                        var bat = new Bat(batSpawnPos) { focusedOnFarmers = true };
                         location.characters.Add(bat);
                         _probeMonster = bat;
-                        _probeMonsterSpawnX = spawnPos.X;
-                        _probeMonsterSpawnY = spawnPos.Y;
+                        _probeMonsterSpawnX = batSpawnPos.X;
+                        _probeMonsterSpawnY = batSpawnPos.Y;
                         result.Count = 1;
                         break;
                     }
@@ -2111,8 +2147,7 @@ public partial class ApiService
                         // and hit it with a fixed knockback impulse; measure how far the impulse carries it
                         // before friction stops it. Non-glider is essential: gliders are always
                         // velocity-driven, which would muddy a clean knockback measurement.
-                        var slimePos = origin + new Vector2(320f, 0f);
-                        var slime = new GreenSlime(slimePos);
+                        var slime = new GreenSlime(slimeSpawnPos);
                         location.characters.Add(slime);
                         // Large impulse along +x, away from the host, so it dominates any velocity the
                         // slime's own AI adds (its hop toward the player) and gives a clean knockback slide.
@@ -2120,8 +2155,8 @@ public partial class ApiService
                         // when the impulse exceeds current velocity.
                         slime.setTrajectory(100, 0);
                         _probeMonster = slime;
-                        _probeMonsterSpawnX = slimePos.X;
-                        _probeMonsterSpawnY = slimePos.Y;
+                        _probeMonsterSpawnX = slimeSpawnPos.X;
+                        _probeMonsterSpawnY = slimeSpawnPos.Y;
                         result.Count = 1;
                         break;
                     }
