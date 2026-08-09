@@ -42,6 +42,8 @@ These must be set for the server to function:
 | `DISCORD_BOT_TOKEN` | Discord bot token | - |
 | `DISCORD_BOT_NICKNAME` | Custom bot nickname | (farm name) |
 | `DISCORD_CHAT_CHANNEL_ID` | Channel ID for chat relay | - |
+| `STATUS_DASHBOARD_CHANNEL_ID` | Channel ID for the status dashboard | - |
+| `STATUS_DASHBOARD_REFRESH_RATE` | Dashboard update interval in seconds | `30` |
 
 See [Discord Integration](/admins/configuration/discord) for setup instructions.
 
@@ -69,6 +71,7 @@ VNC_PASSWORD=your_secure_password
 # ===== Discord (optional) =====
 # DISCORD_BOT_TOKEN=your_bot_token
 # DISCORD_CHAT_CHANNEL_ID=123456789012345678
+# STATUS_DASHBOARD_CHANNEL_ID=123456789012345678
 
 # ===== CI/Automation (optional) =====
 # STEAM_REFRESH_TOKEN=your_refresh_token

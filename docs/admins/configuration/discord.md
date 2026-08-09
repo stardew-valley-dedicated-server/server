@@ -1,177 +1,110 @@
 # Discord Setup
 
-Setup instructions for the Discord bot. See [Discord Integration](/features/discord) for feature overview.
+Setup instructions for the Discord bot. See [Discord Integration](/features/discord) for the feature overview.
 
-## 1. Create a Discord Application
+The bot runs alongside your server, so its identity is your farm's: its nickname shows your farm name, and its presence shows your player count and invite code. That requires a Discord app of your own — free, one-time, about 5 minutes.
 
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click **New Application** and give it a name
-3. Go to the **Bot** tab
-4. Click **Reset Token** and copy the token
+## 1. Create the Bot
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**
+2. On **General Information**, copy the **Application ID** (needed in step 2)
+3. On the **Bot** tab, click **Reset Token** and copy the token (needed in step 3)
 
 ::: warning Keep Token Secret
-Never share your bot token publicly. Treat it like a password.
+The token is your bot's password. Never share it publicly.
 :::
 
-## 2. Configure Bot Permissions
+## 2. Invite the Bot
 
-Your bot needs these permissions:
+Open this URL with your Application ID filled in, pick your Discord server, and authorize:
 
-| Permission | Required For |
-|------------|--------------|
-| Send Messages | Chat relay (game → Discord) |
-| Read Message History | Chat relay context |
-| Change Nickname | Displaying farm name as bot nickname |
-
-## 3. Invite the Bot to Your Server
-
-1. Go to **OAuth2** → **URL Generator**
-2. Select scopes: `bot`
-3. Select permissions: `Send Messages`, `Read Message History`, `Change Nickname`
-4. Copy the generated URL and open it in your browser
-5. Select your Discord server and authorize
-
-## 4. Set Environment Variables
-
-Add to your `.env` file:
-
-```sh
-DISCORD_BOT_TOKEN=your_bot_token_here
+```
+https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot&permissions=67193920
 ```
 
-If you have `API_KEY` set for API authentication, add it here too so the bot can access the server API:
+`permissions=67193920` grants exactly what the bot uses:
+
+| Permission | Used for |
+|------------|----------|
+| View Channels, Send Messages | Chat relay and status dashboard |
+| Embed Links | Status dashboard embed |
+| Read Message History | Chat relay, recovering the dashboard message after restarts |
+| Add Reactions | ❌ marker on Discord messages that failed to reach the game |
+| Change Nickname | Showing the farm name as the bot's nickname |
+
+## 3. Configure
+
+Add to your `.env`:
 
 ```sh
 DISCORD_BOT_TOKEN=your_bot_token_here
+# Only if the server API uses authentication:
 API_KEY=your_api_key_here
 ```
 
-This is enough for server status display (player count and invite code in bot presence).
+Restart with `docker compose up -d`. The bot comes online and its presence shows the player count and invite code — no further setup needed. The features below are optional.
 
-## Chat Relay Setup
+## Chat Relay
 
-To enable two-way chat between Discord and the game, additional setup is required.
+Two-way chat between a Discord channel and the game.
 
-### 1. Create a Text Channel
-
-Create a dedicated **text channel** in your Discord server for the chat relay:
-
-1. Right-click your server → **Create Channel**
-2. Select **Text** as the channel type
-3. Name it something like `#stardew-chat`
-4. (Optional) Set channel permissions so only certain roles can send messages
-
-::: tip Dedicated Channel Recommended
-Use a dedicated channel for chat relay. All messages in this channel will be sent to the game, and all game chat will appear here.
-:::
-
-### 2. Enable Message Content Intent
-
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Select your application → **Bot**
-3. Under **Privileged Gateway Intents**, enable **Message Content Intent**
-4. Save changes
-
-::: info Why This Is Needed
-Discord requires explicit permission to read message content. Without this, the bot can't relay messages from Discord to the game.
-:::
-
-### 3. Get Channel ID
-
-1. In Discord, go to **User Settings** → **Advanced**
-2. Enable **Developer Mode**
-3. Right-click the chat relay channel → **Copy ID**
-
-### 4. Configure Environment
-
-Add the channel ID to your `.env`:
+1. Create a dedicated text channel — every message in it is sent to the game, and all game chat appears there
+2. In the Developer Portal, open your app → **Bot** → enable **Message Content Intent**. Discord gates reading message content behind this switch; without it the bot cannot see Discord messages
+3. Get the channel ID: enable **User Settings** → **Advanced** → **Developer Mode**, then right-click the channel → **Copy ID**
+4. Add to `.env`:
 
 ```sh
-DISCORD_BOT_TOKEN=your_bot_token
 DISCORD_CHAT_CHANNEL_ID=123456789012345678
 ```
-
-If you have API authentication enabled:
-
-```sh
-DISCORD_BOT_TOKEN=your_bot_token
-DISCORD_CHAT_CHANNEL_ID=123456789012345678
-API_KEY=your_api_key
-```
-
-### How Chat Relay Works
-
-Once configured:
 
 | Direction | Format |
 |-----------|--------|
 | Game → Discord | `**PlayerName**: message` |
 | Discord → Game | `(Web) DiscordName: message` |
 
-## Bot Nickname
+::: tip Spam Protection
+The relay has no rate limit of its own. If spam is a concern, set Discord's slowmode on the channel (**Edit Channel** → **Slowmode**).
+:::
 
-The bot's nickname in Discord servers can be configured:
+## Status Dashboard
+
+A status embed (farm name, date, players, invite code) posted to a channel and kept up to date by editing the same message in place.
+
+```sh
+STATUS_DASHBOARD_CHANNEL_ID=123456789012345678
+# Seconds between updates (default 30)
+STATUS_DASHBOARD_REFRESH_RATE=60
+```
+
+The dashboard may share a channel with the chat relay.
+
+## Bot Nickname
 
 | Configuration | Behavior |
 |---------------|----------|
-| Not set | Uses farm name from game |
-| `DISCORD_BOT_NICKNAME=value` | Uses fixed custom name |
-
-Example:
-
-```sh
-DISCORD_BOT_NICKNAME=Stardew Valley Server
-```
-
-## Example Configuration
-
-Complete Discord setup in `.env`:
-
-```sh
-# Discord Bot
-DISCORD_BOT_TOKEN=MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXXXXX
-DISCORD_CHAT_CHANNEL_ID=123456789012345678
-DISCORD_BOT_NICKNAME=Junimo Farm
-
-# API authentication (required if API_KEY is set on server)
-API_KEY=your_api_key_here
-```
-
-## Security Considerations
-
-::: warning Rate Limiting
-The chat relay does not currently implement rate limiting. Discord users could potentially spam the game chat. Consider using Discord's built-in slowmode on the relay channel if this is a concern.
-:::
-
-### Slowmode Setup
-
-1. Right-click the relay channel in Discord
-2. Click **Edit Channel**
-3. Under **Slowmode**, set a delay (e.g., 5 seconds)
+| Not set | Uses the farm name from the game |
+| `DISCORD_BOT_NICKNAME=value` | Uses a fixed custom name |
 
 ## Troubleshooting
 
 ### Bot Not Coming Online
 
 1. Verify `DISCORD_BOT_TOKEN` is correct
-2. Check server logs: `docker compose logs -f`
-3. Ensure the bot was invited with correct permissions
+2. If `DISCORD_CHAT_CHANNEL_ID` is set, **Message Content Intent** must be enabled — login fails with `Used disallowed intents` otherwise
+3. Check logs: `docker compose logs -f discord-bot`
 
 ### Messages Not Relaying
 
 1. Verify Message Content Intent is enabled
 2. Check `DISCORD_CHAT_CHANNEL_ID` is correct
-3. Ensure bot has permission to read/send in that channel
-
-### Wrong Bot Nickname
-
-1. Check `DISCORD_BOT_NICKNAME` in `.env`
-2. Restart the server: `docker compose restart`
-3. Bot may need "Change Nickname" permission in Discord server
+3. Ensure the bot can read and send in that channel
 
 ### Bot Shows "Server Offline" But Server Is Running
 
-1. If `API_KEY` is set on the server, ensure the same key is set for the Discord bot
-2. Check the bot logs for authentication errors: `docker compose logs discord-bot`
-3. Verify the bot can reach the server API (network/firewall issues)
+1. If `API_KEY` is set on the server, the bot needs the same key
+2. Check for authentication errors: `docker compose logs discord-bot`
 
+### Wrong Bot Nickname
+
+1. Check `DISCORD_BOT_NICKNAME` in `.env` and restart
+2. The bot needs the Change Nickname permission in your Discord server

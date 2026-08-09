@@ -2,17 +2,17 @@
 
 ## Context
 
-The E2E test harness at `D:/Development/projects/stardew-dedicated-server/repos/server` runs Stardew Valley game processes inside Docker containers under parallel orchestration (`xunit.runner.json: maxParallelThreads: unlimited`, gated by per-host `serverSlots` — typically 3 locally). Today the three Testcontainers call sites — `ServerContainer.cs:272-279`, `GameClientContainer.cs:196-203`, `SharedSteamAuth.cs:127-135` — set only `CapAdd("SYS_TIME")` and ownership labels. **No memory cap, no PIDs cap, no CPU quota is applied.** A leaky test, a thread runaway, or a CPU-pathological test can push the host into reclaim/swap and produce real wall-clock jitter (seconds, not microseconds) that surfaces as flaky timeouts on *other* containers.
+The E2E test harness at `D:/Development/projects/stardew-dedicated-server/repos/server` runs Stardew Valley game processes inside Docker containers under parallel orchestration (`xunit.runner.json: maxParallelThreads: unlimited`, gated by per-host `serverSlots` — typically 3 locally). Today the three Testcontainers call sites — `ServerContainer.cs`, `GameClientContainer.cs`, `SharedSteamAuth.cs` — set only `CapAdd("SYS_TIME")` and ownership labels. **No memory cap, no PIDs cap, no CPU quota is applied.** A leaky test, a thread runaway, or a CPU-pathological test can push the host into reclaim/swap and produce real wall-clock jitter (seconds, not microseconds) that surfaces as flaky timeouts on *other* containers.
 
 Originating discussion considered `--cpuset-cpus` for "micro-jitter reduction." That was rejected as the wrong tool (the kernel scheduler is already good at keeping warm threads on warm cores; pinning constrains start-phase elasticity and is a no-op on WSL2 vCPUs anyway). Instead this plan targets the **real** jitter sources: cross-container interference under memory/CPU contention, plus undocumented operator levers.
 
 **Out of scope for this plan, deferred to a follow-up:**
-- `DOTNET_gcServer=1` rollout — server GC's larger pre-collect heap footprint *amplifies* day-end OOM risk at a tight memory cap (`ServerOptimizer.cs:336` runs `GC.Collect(gen2, blocking)` at `OnDayEnding`; the burst that triggers the collect grows the heap larger under server GC). Bundle with this plan and you stack three new failure surfaces; do it separately after baseline.
+- `DOTNET_gcServer=1` rollout — server GC's larger pre-collect heap footprint *amplifies* day-end OOM risk at a tight memory cap (`ServerOptimizer.cs` runs `GC.Collect(gen2, blocking)` at `OnDayEnding`; the burst that triggers the collect grows the heap larger under server GC). Bundle with this plan and you stack three new failure surfaces; do it separately after baseline.
 - Sizing dashboard / automated peak-tracking tooling.
 
 ## Outcome
 
-Operators get five new opt-in env vars to cap per-container resource usage. Defaults are sized from a one-time read of the most recent green `infrastructure.jsonl` (p95 × 1.5, rounded up to 256 MB). OOMKill diagnostics — which already exist end-to-end (`container_oom_killed` event emitted at server `:844`, client `:645`, steam-auth `:519`) — surface clear failure causes in the JSONL when a limit is hit. Note this diagnostic keys on container exit code 137 alone (not Docker `State.OOMKilled`), so it must be proven against a real WSL2/cgroup-v2 OOM before being relied on (see Risks). Documentation cross-references the existing variance levers (`serverSlots`, `SERVER_TPS`) rather than re-introducing knobs that already work.
+Operators get five new opt-in env vars to cap per-container resource usage. Defaults are sized from a one-time read of the most recent green `infrastructure.jsonl` (p95 × 1.5, rounded up to 256 MB). OOMKill diagnostics — which already exist end-to-end (`container_oom_killed` event emitted by each of the three containers) — surface clear failure causes in the JSONL when a limit is hit. Note this diagnostic keys on container exit code 137 alone (not Docker `State.OOMKilled`), so it must be proven against a real WSL2/cgroup-v2 OOM before being relied on (see Risks). Documentation cross-references the existing variance levers (`serverSlots`, `SERVER_TPS`) rather than re-introducing knobs that already work.
 
 ---
 
@@ -30,7 +30,7 @@ Operators get five new opt-in env vars to cap per-container resource usage. Defa
 
 **Why points 2, 4 are opt-in not default-on:** Combining a tight memory cap with a constrained swap total + a novel CPU quota in one rollout stacks three failure surfaces. Memory cap is the highest-value lever — ship it first under soft swap headroom, observe one green full-suite run, then operators can opt into tighter posture.
 
-**Why point 7 is deferred:** Server GC reserves one heap segment per logical CPU and commits more eagerly between collections than workstation GC. On a 16-core host the steady-state heap is meaningfully larger, which makes the day-end burst at `ServerOptimizer.cs:317-341` hit a memory cap *before* `GC.Collect` runs to release. Bundle this with point 1 and the cap is harder to size correctly. The existing `ApiService.cs:3128-3130` `GC.CollectionCount` reads already surface via `gcRate` on the stats stream — sufficient instrumentation for a future A/B but not load-bearing for this plan.
+**Why point 7 is deferred:** Server GC reserves one heap segment per logical CPU and commits more eagerly between collections than workstation GC. On a 16-core host the steady-state heap is meaningfully larger, which makes the day-end burst at `ServerOptimizer.cs` hit a memory cap *before* `GC.Collect` runs to release. Bundle this with point 1 and the cap is harder to size correctly. The existing `ApiService.cs` `GC.CollectionCount` reads already surface via `gcRate` on the stats stream — sufficient instrumentation for a future A/B but not load-bearing for this plan.
 
 ---
 
@@ -40,8 +40,8 @@ Run this jq one-liner against the most recent green `infrastructure.jsonl` (path
 
 **Before running the jq, confirm two things against a real `infrastructure.jsonl` line** (`grep '"event":"instance_stats"' artifacts/<run-id>/infrastructure.jsonl | head -1`), because both the field key and the container-name prefixes are easy to get wrong:
 
-1. **The serialized memory key.** The event payload comes from `InstanceStatsData` (`ContainerStatsCollector.cs:19`), whose `MemoryMb` member carries **no `[JsonPropertyName]`** — so the serialized key follows the event-bus `JsonSerializerOptions` naming policy (`SetupEventBus` / `Schema/Json`). It serializes camelCase (`memoryMb`) only if that policy is camelCase; under the default PascalCase policy the key is `MemoryMb` and the jq below returns nothing. Read the real line and use whichever key actually appears.
-2. **The container-name prefixes.** The `.name` field carries the real container name (`ContainerName.TrimStart('/')`, `ContainerStatsCollector.cs:123`), which is `sdvd-server-{runId}` (`ServerContainer.cs:214`), `sdvd-test-client-{clientIndex}-{guid}` (`GameClientContainer.cs:161`), and `sdvd-steam-auth-{hostId}-{runId}` (`SharedSteamAuth.cs:111`). `server-{runId}` is only the *network alias* (`ServerContainer.cs:244`), not the container name — filtering on `server-`/`client-` would match nothing and silently yield `n=0`, falling back to the conservative seeds undetected.
+1. **The serialized memory key.** The event payload comes from `InstanceStatsData` (`ContainerStatsCollector.cs`), whose `MemoryMb` member carries **no `[JsonPropertyName]`** — so the serialized key follows the event-bus `JsonSerializerOptions` naming policy (`SetupEventBus` / `Schema/Json`). It serializes camelCase (`memoryMb`) only if that policy is camelCase; under the default PascalCase policy the key is `MemoryMb` and the jq below returns nothing. Read the real line and use whichever key actually appears.
+2. **The container-name prefixes.** The `.name` field carries the real container name (`ContainerName.TrimStart('/')`, `ContainerStatsCollector.cs`), which is `sdvd-server-{runId}` (`ServerContainer.cs`), `sdvd-test-client-{clientIndex}-{guid}` (`GameClientContainer.cs`), and `sdvd-steam-auth-{hostId}-{runId}` (`SharedSteamAuth.cs`). `server-{runId}` is only the *network alias* (`ServerContainer.cs`), not the container name — filtering on `server-`/`client-` would match nothing and silently yield `n=0`, falling back to the conservative seeds undetected.
 
 ```bash
 # Server peaks (real container name prefix: sdvd-server-)
@@ -60,7 +60,7 @@ jq -r 'select(.event=="instance_stats" and (.name // ""|startswith("sdvd-steam-a
   | sort -n | awk 'BEGIN{c=0} {a[c++]=$1} END{print "n=",c,"p95=",a[int(c*0.95)],"max=",a[c-1]}'
 ```
 
-If any of the three reports `n= 0`, the field key or the name prefix is wrong for this run — fix the jq before trusting the result. Default formula: `ceil(p95 × 1.5 / 256) × 256` MB. Commit the three resulting numbers in `.env.test.example`. The `instance_stats` event shape is `InstanceStatsData` (`ContainerStatsCollector.cs:19`); the memory field is its `MemoryMb` member. (`InfrastructureEventLog.cs:151` documents `container_oom_killed`, not `instance_stats`.)
+If any of the three reports `n= 0`, the field key or the name prefix is wrong for this run — fix the jq before trusting the result. Default formula: `ceil(p95 × 1.5 / 256) × 256` MB. Commit the three resulting numbers in `.env.test.example`. The `instance_stats` event shape is `InstanceStatsData` (`ContainerStatsCollector.cs`); the memory field is its `MemoryMb` member. (`InfrastructureEventLog.cs` documents `container_oom_killed`, not `instance_stats`.)
 
 If no green run is available, conservative seed values: server `2048`, client `1024`, steam-auth `512`. Replace with measured values on first successful run.
 
@@ -74,7 +74,7 @@ Per `simplest-solution.md`: the existing block is 5 lines, the added lines are ~
 
 `SDVD_*_MEMORYSWAP_MB` is Docker's combined **memory + swap total** (`HostConfig.MemorySwap`), not a separate swap allowance. Docker rejects container create with *"Minimum memoryswap limit should be larger than memory limit"* if the swap total is below the memory cap, so the modifier must guard `swapMb > 0 && swapMb < memMb` with a clear error rather than passing a value Docker will reject at runtime. (The committed seed defaults leave swap unset, so they pass.)
 
-**`tests/JunimoServer.Tests/Containers/ServerContainer.cs:272-279`** — extend the existing modifier:
+**`tests/JunimoServer.Tests/Containers/ServerContainer.cs`** — extend the existing modifier:
 
 ```csharp
 .WithCreateParameterModifier(p =>
@@ -106,9 +106,9 @@ Per `simplest-solution.md`: the existing block is 5 lines, the added lines are ~
 })
 ```
 
-**`tests/JunimoServer.Tests/Containers/GameClientContainer.cs:196-203`** — same shape, reads `ResourceLimitEnv.Client*` fields (incl. the same swap-total `>= memMb` guard).
+**`tests/JunimoServer.Tests/Containers/GameClientContainer.cs`** — same shape, reads `ResourceLimitEnv.Client*` fields (incl. the same swap-total `>= memMb` guard).
 
-**`tests/JunimoServer.Tests/Containers/SharedSteamAuth.cs:127-135`** — same shape, reads `ResourceLimitEnv.SteamAuth*` fields (incl. the same swap-total `>= memMb` guard). Preserves the existing `sdvd.host-id` label.
+**`tests/JunimoServer.Tests/Containers/SharedSteamAuth.cs`** — same shape, reads `ResourceLimitEnv.SteamAuth*` fields (incl. the same swap-total `>= memMb` guard). Preserves the existing `sdvd.host-id` label.
 
 ### Step 2 — Add `ResourceLimitEnv.cs` env-var reader
 
@@ -148,7 +148,7 @@ public static class ResourceLimitEnv
 
 ### Step 3 — Document in `.env.test.example`
 
-Insert after line 83 (`# SDVD_MAX_CONCURRENT_EXTRACTIONS=3`) and before line 86 (`# SERVER_TPS=60`). Sized values to be replaced after running the jq script against a green run; the block below shows the seed defaults if no run data is available:
+Insert between `# SDVD_MAX_CONCURRENT_EXTRACTIONS=3` and `# SERVER_TPS=60`. Sized values to be replaced after running the jq script against a green run; the block below shows the seed defaults if no run data is available:
 
 ```
 # Per-container resource limits (Docker HostConfig). 0 / unset = no limit.
@@ -204,19 +204,19 @@ In the same `.env.test.example` resource-limits block, add a final paragraph cro
 
 ### Step 5 — No changes to `ContainerStatsCollector` or pipeline
 
-Per `runner-ui-pipeline-plumbing.md`: do NOT add `pidsLimit` / `cpuQuota` fields to `InstanceStatsData`. The existing `MemoryLimitMb` (already wired end-to-end, populated at `ContainerStatsCollector.cs:279-281`) is the headroom indicator and surfaces unchanged. `container_oom_killed` is already wired and emitted at server `:844`, client `:645`, steam-auth `:519`; UI plumbing through that event is pre-existing and assumed working.
+Per `runner-ui-pipeline-plumbing.md`: do NOT add `pidsLimit` / `cpuQuota` fields to `InstanceStatsData`. The existing `MemoryLimitMb` (already wired end-to-end, populated at `ContainerStatsCollector.cs`) is the headroom indicator and surfaces unchanged. `container_oom_killed` is already wired and emitted by each of the three containers; UI plumbing through that event is pre-existing and assumed working.
 
 ---
 
 ## Risks called out in the plan (operator-facing)
 
-1. **Day-end OOM-kill is the worst case.** `ServerOptimizer.cs:317-341` runs `GC.Collect(gen2, blocking)` at `OnDayEnding`; the memory burst that triggers it can exceed a tight cap *before* the collect releases. The sizing formula (p95 × 1.5) already accounts for this with margin, but if `container_oom_killed` events appear in a normal run, raise the relevant `SDVD_*_MEMORY_MB` by 25%.
+1. **Day-end OOM-kill is the worst case.** `ServerOptimizer.cs` runs `GC.Collect(gen2, blocking)` at `OnDayEnding`; the memory burst that triggers it can exceed a tight cap *before* the collect releases. The sizing formula (p95 × 1.5) already accounts for this with margin, but if `container_oom_killed` events appear in a normal run, raise the relevant `SDVD_*_MEMORY_MB` by 25%.
 2. **Aggregate CPU quota can exceed host vCPU count.** A 16-core host with `serverSlots=3` and 4 clients per server, all at `CPU_QUOTA=2.0`, sums to 24+ vCPU demand. The quota is a hard cap per container regardless of host idle capacity. Use only in isolation experiments.
 3. **`MEMORYSWAP_MB` = memory cap plus an under-sized memory cap fails fast and loud.** Intended posture for ferreting out leaks; not a default. Setting the swap total below the memory cap is a misconfig Docker rejects at create — the Step-1 guard turns that into a clear error.
 4. **`PidsLimit` clobbering legitimate concurrency.** Defaults assume modern Stardew + SMAPI + JunimoServer + ffmpeg + Xvnc + s6 thread counts (~150 steady-state — measured nowhere in-tree, so treat as an estimate). Mod changes that add threads (e.g. per-peer reader threads on a large lobby) may approach the cap; raise if `Resource temporarily unavailable` appears in container logs. PIDs headroom is not surfaced in the UI; to observe it, exec `cat /sys/fs/cgroup/pids.current` vs `pids.max` in a live container.
-5. **`container_oom_killed` keys on exit code 137 alone, not Docker `State.OOMKilled` — the "attributable cause" promise is unproven under cgroup-v2/WSL2.** The gate is `if (exitCode == 137)` (`ServerContainer.cs:842`, `GameClientContainer.cs:643`, `SharedSteamAuth.cs:517`; the event is emitted just below at `:844`/`:645`/`:519`). Two failure modes have not been proven and must be checked before relying on the diagnostic:
+5. **`container_oom_killed` keys on exit code 137 alone, not Docker `State.OOMKilled` — the "attributable cause" promise is unproven under cgroup-v2/WSL2.** The gate is `if (exitCode == 137)` (`ServerContainer.cs`, `GameClientContainer.cs`, `SharedSteamAuth.cs`; the event is emitted just below the gate in each). Two failure modes have not been proven and must be checked before relying on the diagnostic:
    - **(a) The game is not container PID 1 — s6 is.** A `memory.max` kill of the game process inside the container may be restarted or reaped by s6 without the *container* exiting 137, so a genuine cap breach may produce no 137 and no event. The "attributable cause, not generic timeout" promise fails in that case.
-   - **(b) Teardown SIGKILL also yields 137 — false positive.** `DisposeAsync` force-removes containers (`SharedSteamAuth.cs:501`, `GameClientContainer.cs:627` via `DockerOps.ForceRemoveContainerAsync`); a SIGKILL during normal teardown also surfaces as exit 137, which the gate would misreport as an OOM kill.
+   - **(b) Teardown SIGKILL also yields 137 — false positive.** `DisposeAsync` force-removes containers (`SharedSteamAuth.cs`, `GameClientContainer.cs` via `DockerOps.ForceRemoveContainerAsync`); a SIGKILL during normal teardown also surfaces as exit 137, which the gate would misreport as an OOM kill.
    Action: prove the 137 path against a real WSL2/cgroup-v2 OOM (G4) before trusting the event, and prefer cross-checking Docker `State.OOMKilled` from `docker inspect` if the 137-only signal proves unreliable.
 
 ---
@@ -225,11 +225,11 @@ Per `runner-ui-pipeline-plumbing.md`: do NOT add `pidsLimit` / `cpuQuota` fields
 
 | File | Change |
 |---|---|
-| `tests/JunimoServer.Tests/Containers/ServerContainer.cs` | Extend modifier block at `:272-279` (incl. swap-total `>= memMb` guard) |
-| `tests/JunimoServer.Tests/Containers/GameClientContainer.cs` | Extend modifier block at `:196-203` (incl. swap-total `>= memMb` guard) |
-| `tests/JunimoServer.Tests/Containers/SharedSteamAuth.cs` | Extend modifier block at `:127-135` (preserve `sdvd.host-id` label; incl. swap-total `>= memMb` guard) |
+| `tests/JunimoServer.Tests/Containers/ServerContainer.cs` | Extend modifier block (incl. swap-total `>= memMb` guard) |
+| `tests/JunimoServer.Tests/Containers/GameClientContainer.cs` | Extend modifier block (incl. swap-total `>= memMb` guard) |
+| `tests/JunimoServer.Tests/Containers/SharedSteamAuth.cs` | Extend modifier block (preserve `sdvd.host-id` label; incl. swap-total `>= memMb` guard) |
 | `tests/JunimoServer.Tests/Helpers/ResourceLimitEnv.cs` | **New** — env-var reader, mirrors inline pattern from `RecordingPolicy.cs` |
-| `.env.test.example` | Insert resource-limits block after `:83` (`SDVD_MAX_CONCURRENT_EXTRACTIONS`) and before `:86` (`SERVER_TPS`) |
+| `.env.test.example` | Insert resource-limits block between `SDVD_MAX_CONCURRENT_EXTRACTIONS` and `SERVER_TPS` |
 
 No edits to: `ContainerStatsCollector.cs`, `SetupEventBus`, `SetupPipeServer`, `TestRunState`, test-ui — per `runner-ui-pipeline-plumbing.md`.
 

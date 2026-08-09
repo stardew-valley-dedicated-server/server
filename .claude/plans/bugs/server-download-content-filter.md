@@ -35,15 +35,15 @@ disk, which makes the game's own guarded loads degrade gracefully instead of
 crashing. The mechanism:
 
 - `LocalizedContentManager.DoesAssetExist<T>()`
-  (`LocalizedContentManager.cs:329-360`) returns `_manifest.Contains(item)` — it
+  (`LocalizedContentManager.cs`) returns `_manifest.Contains(item)` — it
   checks the in-memory manifest loaded from `ContentHashes.json`
-  (`LocalizedContentManager.cs:143-170`), **not** the filesystem.
-- `LoadImpl<T>()` (`LocalizedContentManager.cs:367-374`) gates every load on
+  (`LocalizedContentManager.cs`), **not** the filesystem.
+- `LoadImpl<T>()` (`LocalizedContentManager.cs`) gates every load on
   `DoesAssetExist`: a name absent from the manifest throws a clean
   `ContentLoadException("Could not load …")` that the game's localized→English
   fallback can catch, rather than a raw XNB-parse failure on a missing file.
-- `PruneContentManifest()` (`tools/steam-service/SteamAuthService.cs:930-968`),
-  called immediately after download (`SteamAuthService.cs:1423`), rewrites
+- `PruneContentManifest()` (`tools/steam-service/SteamAuthService.cs`),
+  called immediately after download (`SteamAuthService.cs`), rewrites
   `ContentHashes.json` to drop entries for any file the filter skipped. Manifest
   and filesystem stay consistent, so `DoesAssetExist` never reports a stripped
   file as present.
@@ -61,8 +61,8 @@ narrower (Section 1).
 path. Some vanilla code loads a texture **directly** without an existence check, so
 a stripped asset throws `ContentLoadException` before the manifest guard can fire.
 
-`Game1.AddCharacterIfNecessary()` (`Game1.cs:7313-7354`) is the proven example. Its
-try/catch (`Game1.cs:7336-7344`) performs two `Texture2D` loads:
+`Game1.AddCharacterIfNecessary()` (`Game1.cs`) is the proven example. Its
+try/catch (`Game1.cs`) performs two `Texture2D` loads:
 
 ```csharp
 nPC = new NPC(
@@ -74,7 +74,7 @@ nPC = new NPC(
 ```
 
 1. **Sprite** (`Characters/Vincent`) — `AnimatedSprite.LoadTexture()`
-   (`AnimatedSprite.cs:203-217`) calls `DoesAssetExist<Texture2D>` first and skips
+   (`AnimatedSprite.cs`) calls `DoesAssetExist<Texture2D>` first and skips
    silently if absent. Guarded.
 2. **Portrait** (`Portraits/Vincent`) — a bare `content.Load<Texture2D>(...)`
    constructor argument with **no existence check**. This is the crash point: the
@@ -121,9 +121,9 @@ suffix), and `ContentHashes.json` itself.
 
 1. **Rendering defaults off.** `ServerOptimizer` installs a `NullDisplayDevice` and
    suppresses frame drawing when `SERVER_FPS == 0`, which is the default
-   (`Env.cs:47-48`; `0` or unset disables rendering, `N > 0` throttles draws at N
+   (`Env.cs`; `0` or unset disables rendering, `N > 0` throttles draws at N
    fps). `NullDisplayDevice.LoadTileSheet`
-   (`mod/JunimoServer.Shared/NullDisplayDevice.cs:11-13`) is a no-op, so tilesheet
+   (`mod/JunimoServer.Shared/NullDisplayDevice.cs`) is a no-op, so tilesheet
    textures are never loaded for rendering at the default.
 
 2. **Clients load their own textures.** In SDV multiplayer the host sends game
@@ -150,7 +150,7 @@ the download filter. This keeps the server bootable while the regex set is tuned
 
 New `ModService`: `mod/JunimoServer/Services/ServerOptim/ContentInterceptor.cs`.
 `ModService` subclasses are auto-discovered and DI-constructed by `ModEntry`
-(`ModEntry.cs:184-217`); no manual registration is needed. Take `IModHelper` in the
+(`ModEntry.cs`); no manual registration is needed. Take `IModHelper` in the
 constructor and subscribe in `Entry()`:
 
 - Subscribe to `Helper.Events.Content.AssetRequested`.
@@ -179,8 +179,8 @@ with a placeholder pixel.
 
 ### 2. Expand the steam download filter
 
-`BuildSkipPatterns` (`tools/steam-service/SteamAuthService.cs:1056-1077`) builds the
-`Regex[]` tested by `ShouldSkipFile` (`:1079-1087`) against depot file names. The
+`BuildSkipPatterns` (`tools/steam-service/SteamAuthService.cs`) builds the
+`Regex[]` tested by `ShouldSkipFile` against depot file names. The
 existing patterns are **`Content/`-prefixed** (e.g. `Content/Fonts/{family}.*`,
 `Content/XACT/Wave Bank*.xwb`), so new patterns must keep that prefix and match the
 depot path, not a content-root-relative path.
@@ -201,7 +201,7 @@ Content/Fonts/.*                                      ← all fonts (extends the
 Content/XACT/.*                                       ← all audio (extends the wavebank filter)
 ```
 
-`PruneContentManifest` (`SteamAuthService.cs:930`) already runs after download, so
+`PruneContentManifest` (`SteamAuthService.cs`) already runs after download, so
 the newly-stripped entries are removed from `ContentHashes.json` automatically. No
 manifest change is required here.
 
@@ -248,12 +248,12 @@ meaningless.
 
 ### `Characters/Farmer/` is consumed at runtime
 
-`FarmerRenderer.textureChanged()` (`FarmerRenderer.cs:347`) calls
+`FarmerRenderer.textureChanged()` (`FarmerRenderer.cs`) calls
 `farmerTextureManager.Load<Texture2D>(textureName.Value)` for a texture in
 `Characters/Farmer/`, then reads pixel data via `GetData(...)` into a new
 `baseTexture`. With a 1×1 dummy the copy succeeds but downstream consumers that
 index sprite rectangles get garbage. The server-side consumer is `MapService`
-(`mod/JunimoServer/Services/Map/MapService.cs:189-216`), which reflection-reads
+(`mod/JunimoServer/Services/Map/MapService.cs`), which reflection-reads
 FarmerRenderer's `baseTexture` and `hairStylesTexture` and crops a 16×16 rect for
 the player-avatar export to the test/admin UI.
 
@@ -283,16 +283,16 @@ the admin docs when the change ships.
 
 | File                                                                       | Role                                                       |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `tools/steam-service/SteamAuthService.cs:1056`                             | `BuildSkipPatterns` — the `Content/`-prefixed skip regexes |
-| `tools/steam-service/SteamAuthService.cs:1079`                             | `ShouldSkipFile` — applies the regexes to depot file names |
-| `tools/steam-service/SteamAuthService.cs:930`                              | `PruneContentManifest` — keeps `ContentHashes.json` in sync |
-| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs:329` | `DoesAssetExist<T>()` — manifest check                     |
-| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs:367` | `LoadImpl<T>()` — guards loads on `DoesAssetExist`         |
-| `decompiled/sdv-1.6.15-24356/StardewValley/Game1.cs:7313`                  | `AddCharacterIfNecessary()` — unguarded portrait load      |
-| `decompiled/sdv-1.6.15-24356/StardewValley/AnimatedSprite.cs:203`          | `LoadTexture()` — sprite load (`DoesAssetExist` guarded)   |
-| `decompiled/sdv-1.6.15-24356/StardewValley/FarmerRenderer.cs:347`          | `textureChanged` — pulls `Characters/Farmer/*`             |
-| `mod/JunimoServer/ModEntry.cs:184`                                         | `ModService` auto-discovery + DI construction              |
+| `tools/steam-service/SteamAuthService.cs`                             | `BuildSkipPatterns` — the `Content/`-prefixed skip regexes |
+| `tools/steam-service/SteamAuthService.cs`                             | `ShouldSkipFile` — applies the regexes to depot file names |
+| `tools/steam-service/SteamAuthService.cs`                              | `PruneContentManifest` — keeps `ContentHashes.json` in sync |
+| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `DoesAssetExist<T>()` — manifest check                     |
+| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `LoadImpl<T>()` — guards loads on `DoesAssetExist`         |
+| `decompiled/sdv-1.6.15-24356/StardewValley/Game1.cs`                  | `AddCharacterIfNecessary()` — unguarded portrait load      |
+| `decompiled/sdv-1.6.15-24356/StardewValley/AnimatedSprite.cs`          | `LoadTexture()` — sprite load (`DoesAssetExist` guarded)   |
+| `decompiled/sdv-1.6.15-24356/StardewValley/FarmerRenderer.cs`          | `textureChanged` — pulls `Characters/Farmer/*`             |
+| `mod/JunimoServer/ModEntry.cs`                                         | `ModService` auto-discovery + DI construction              |
 | `mod/JunimoServer/Services/ServerOptim/ServerOptimizer.cs`                 | Rendering disable + `NullDisplayDevice` install            |
-| `mod/JunimoServer.Shared/NullDisplayDevice.cs:11`                          | `LoadTileSheet` no-op                                      |
-| `mod/JunimoServer/Services/Map/MapService.cs:189-216`                      | Reflection-reads FarmerRenderer textures                   |
-| `mod/JunimoServer/Env.cs:47`                                               | `SERVER_FPS` — `0` (default) disables rendering            |
+| `mod/JunimoServer.Shared/NullDisplayDevice.cs`                          | `LoadTileSheet` no-op                                      |
+| `mod/JunimoServer/Services/Map/MapService.cs`                      | Reflection-reads FarmerRenderer textures                   |
+| `mod/JunimoServer/Env.cs`                                               | `SERVER_FPS` — `0` (default) disables rendering            |

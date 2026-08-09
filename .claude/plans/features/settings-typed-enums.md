@@ -1,21 +1,20 @@
 # Typed enums in ServerSettings, via one tolerant converter
 
-Give `ServerSettings` fields their real enum types instead of `string`, and delete the four hand-rolled `Parse*` helpers in `ServerSettingsLoader`. Secondary win: a typo in one of these fields currently falls back **silently** — the conversion makes it warn.
+Give `ServerSettings` fields their real enum types instead of `string`, and delete the three hand-rolled `Parse*` helpers in `ServerSettingsLoader`. Secondary win: a typo in one of these fields currently falls back **silently** — the conversion makes it warn.
 
 ## Today
 
-Four settings in `ServerSettings.cs` are enum-valued but declared `string`, each with a private `Parse*` fallback in `ServerSettingsLoader.cs`:
+Three settings in `ServerSettings.cs` are enum-valued but declared `string`, each with a private `Parse*` fallback in `ServerSettingsLoader.cs`:
 
 | Setting | Enum | Declared default | 0-member |
 |---|---|---|---|
 | `Server.CabinStrategy` | `CabinStrategy` | `"CabinStack"` | `CabinStack` |
 | `Server.ExistingCabinBehavior` | `ExistingCabinBehavior` | `"KeepExisting"` | `KeepExisting` |
 | `Server.LobbyMode` | `LobbyMode` | `"Shared"` | `Shared` |
-| `Server.FarmhandOwnership` | `FarmhandOwnership` | `"Automatic"` | **`Open`** |
 
 Every consumer already binds to the loader's typed accessor (`ServerSettingsLoader.CabinStrategy` etc.), never to the raw string — so the conversion is contained to the POCO, the loader, and the one API DTO below.
 
-Note the last row: three enums declare their fallback as member 0, `FarmhandOwnership` does not. A converter that returns `default(TEnum)` would silently change that field's invalid-value behavior from `Automatic` to `Open`.
+All three declare their fallback as member 0, so `default(TEnum)` is the right fallback for every field and the converter needs no per-property default.
 
 ## Why this is not just changing the field type
 
@@ -39,16 +38,14 @@ One generic `JsonConverter<TEnum>` beside the settings types.
 
 - **`ReadJson`** — `Enum.TryParse(ignoreCase: true)`. On an unparseable string, a number outside the defined members, or any other token type: return the configured default and warn, naming the field, the bad value and the value used instead. Never throw — hazard 2.
 - **`WriteJson`** — write `value.ToString()` (the member name), so files stay `"CabinStack"` rather than `0` — hazard 1.
-- **Per-property default** — Newtonsoft's `JsonConverterAttribute(Type, params object[])` passes constructor args, so the odd one out is expressible:
-  `[JsonConverter(typeof(TolerantEnumConverter<FarmhandOwnership>), FarmhandOwnership.Automatic)]`.
-  The other three can omit the argument and take member 0. Only the *present-but-invalid* path needs this: an **absent** key never invokes the converter, so the property initializer keeps covering missing keys exactly as `= "Automatic"` does today.
+- **Missing keys are not the converter's problem** — an **absent** key never invokes it, so the property initializer keeps covering missing keys exactly as `= "CabinStack"` does today. Only the *present-but-invalid* path reaches `ReadJson`.
 - **Warning channel** — the converter runs inside `JsonConvert.DeserializeObject` with no `IMonitor` in scope. Simplest workable shape: the converter collects rejects into a list the loader drains and logs right after `LoadOrCreate`, so the warning names the file. Decide this when implementing; do not reach for a static monitor.
 
 ## Files
 
 - `Services/Settings/TolerantEnumConverter.cs` — new.
-- `Services/Settings/ServerSettings.cs` — four fields retyped + `[JsonConverter]`; add `using JunimoServer.Services.CabinManager`. Watch the `FarmhandOwnership FarmhandOwnership` / `LobbyMode LobbyMode` same-name-as-type properties: legal C# (color-color), but the loader already qualifies these as `Settings.FarmhandOwnership` / `Settings.LobbyMode` and should keep doing so.
-- `Services/Settings/ServerSettingsLoader.cs` — delete `ParseCabinStrategy`, `ParseExistingCabinBehavior`, `ParseFarmhandOwnership`, `ParseLobbyMode`; their four accessors become pass-throughs. Drain and log the converter's rejects.
+- `Services/Settings/ServerSettings.cs` — three fields retyped + `[JsonConverter]`; add `using JunimoServer.Services.CabinManager`. Watch the `LobbyMode LobbyMode` same-name-as-type property: legal C# (color-color), but the loader already qualifies it as `Settings.LobbyMode` and should keep doing so.
+- `Services/Settings/ServerSettingsLoader.cs` — delete `ParseCabinStrategy`, `ParseExistingCabinBehavior`, `ParseLobbyMode`; their three accessors become pass-throughs. Drain and log the converter's rejects.
 - `Services/Api/ApiService.cs` — `HandleGetSettings` feeds `GameSettingsInfo.SpawnMonstersAtNight` and `ServerRuntimeSettingsInfo.CabinStrategy` / `.ExistingCabinBehavior`, all `string` on a published contract. Assign `.ToString()` to keep the wire format byte-identical.
 - `Services/Commands/SettingsCommand.cs` — resolve the dead `Enum.IsDefined` branches in its validate path.
 - `docs/admins/configuration/server-settings.md` — only if the accepted-value prose changes; it should not.
@@ -63,18 +60,17 @@ One generic `JsonConverter<TEnum>` beside the settings types.
 Per `runtime-post-conditions-are-gates` — none of these are closed by a green build.
 
 1. **A bogus value keeps every other setting.** Put `"CabinStrategy": "Nonsense"` in a committed-shape `server-settings.json`; the server starts, uses CabinStack, logs one `Warn` naming the field, and the file's other settings are intact and **not** overwritten with defaults. This is the hazard-2 regression test.
-2. **Round-trip stays human.** Delete the settings file, let the server recreate it, confirm the four fields read `"CabinStack"` / `"KeepExisting"` / `"Shared"` / `"Automatic"` — not integers.
-3. **The odd default holds.** `"FarmhandOwnership": "Nonsense"` resolves to `Automatic`, not `Open`.
-4. **Case-insensitivity survives.** `"cabinstack"` still parses (today's `ignoreCase: true` behavior).
-5. **`GET /settings` is unchanged.** Byte-compare the response against a pre-change capture.
-6. **The harness still boots.** `ServerContainer.BuildSettingsFileBytes` writes these as strings; a full E2E class must pass unchanged.
+2. **Round-trip stays human.** Delete the settings file, let the server recreate it, confirm the three fields read `"CabinStack"` / `"KeepExisting"` / `"Shared"` — not integers.
+3. **Case-insensitivity survives.** `"cabinstack"` still parses (today's `ignoreCase: true` behavior).
+4. **`GET /settings` is unchanged.** Byte-compare the response against a pre-change capture.
+5. **The harness still boots.** `ServerContainer.BuildSettingsFileBytes` writes these as strings; a full E2E class must pass unchanged.
 
 ## Ordering
 
 1. `TolerantEnumConverter<TEnum>` + the reject-collection seam.
-2. Retype the four fields; delete the four parsers; fix the API boundary.
+2. Retype the three fields; delete the three parsers; fix the API boundary.
 3. `SettingsCommand` dead-branch cleanup.
-4. Gates 1-5 locally, then gate 6.
+4. Gates 1-4 locally, then gate 5.
 
 ## Related
 

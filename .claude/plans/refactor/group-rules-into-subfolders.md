@@ -16,13 +16,15 @@ A file's bucket is decided by **its lesson**, which can differ from the code are
 
 ## Current state
 
-39 L2 rule files sit flat in `.claude/rules/`, alongside `README.md` (the index) and `universal/` (L1). The README's "L2 — `rules/`" section is one flat 39-row table.
+The L2 rule files sit flat in `.claude/rules/`, alongside `README.md` (the index) and `universal/` (L1). The README's "L2 — `rules/`" section is one flat table.
 
 The loader matches `paths:` frontmatter at any directory depth — `universal/` is already a loading subfolder. No repo code resolves rule paths: `grep -rn ".claude/rules"` hits only the README, plan docs, and the two rule-authoring skills, none of which enumerate L2 filenames. Moving files is load-safe; the only path-aware references are the README index, inter-rule citations, and the two skills (all addressed below).
 
-## Mapping (39 files → 4 buckets)
+## Mapping (4 buckets)
 
-### `vanilla/` — Stardew engine lessons (10)
+The per-file listing below is a snapshot. Re-derive it from `ls .claude/rules/*.md` at execution time and bucket anything added since.
+
+### `vanilla/` — Stardew engine lessons
 
 | File | Why vanilla |
 |---|---|
@@ -37,7 +39,7 @@ The loader matches `paths:` frontmatter at any directory depth — `universal/` 
 | `smapi-api-surface.md` | SMAPI `SemanticVersion`/`Constants`/`ModResolver` surface |
 | `abandoned-claim-is-steam-only.md` | Engine `getUserID()` LAN-vs-Steam/GOG behavior |
 
-### `mod/` — JunimoServer mod patterns (7)
+### `mod/` — JunimoServer mod patterns
 
 | File | Why mod |
 |---|---|
@@ -49,7 +51,7 @@ The loader matches `paths:` frontmatter at any directory depth — `universal/` 
 | `asynclocal-pitfalls.md` | `AsyncLocal` rebind across pump boundaries |
 | `debugging.md` | `LogLevel.Error` in mod code is test poison |
 
-### `tests/` — test infra, runner, UI (18)
+### `tests/` — test infra, runner, UI
 
 `docker-test-resources.md`, `test-broker-invariants.md`, `tests-assert-via-http-api.md`,
 `test-timing.md`, `colocate-event-emit.md`, `drain-before-consume-disposal.md`,
@@ -59,7 +61,7 @@ The loader matches `paths:` frontmatter at any directory depth — `universal/` 
 `event-catalog-no-inline-enums.md`, `test-ui-build.md`, `test-overlay-pixel-contract.md`,
 `ffmpeg-pixel-measurement.md`, `recorder-anchor-first-frame.md`
 
-### `misc/` — docker / CI / tooling (4)
+### `misc/` — docker / CI / tooling
 
 `modern-docker.md`, `docker-save-format-source-daemon.md`,
 `renovate-nuget-allowedversions-needs-semver.md`, `openapi-generator-reflection-invoke.md`
@@ -78,7 +80,7 @@ Subject-matter calls where the bucket differs from the `paths:` glob, recorded s
 ## Mechanism
 
 1. Create `vanilla/`, `mod/`, `tests/`, `misc/` under `.claude/rules/`.
-2. `git mv` each file into its bucket (preserves history). 39 moves.
+2. `git mv` each file into its bucket (preserves history).
 3. Rewrite the README L2 section into four sub-tables (one per bucket), keeping the `| File | Triggers on | One-liner |` columns. Preserve every one-liner verbatim. Adjust the intro line to note the buckets are organizational and load behavior is unchanged (any-depth glob match).
 4. Update both rule-authoring skills so new path-scoped rules land in a bucket, not flat at root (details below).
 5. Repair any inter-rule citation a move invalidated.
@@ -105,8 +107,8 @@ Both skills must track the new layout or the grouping re-fragments:
 ## Post-conditions (gates)
 
 - `ls .claude/rules/` shows only `README.md`, `universal/`, `vanilla/`, `mod/`, `tests/`, `misc/` — no loose `*.md` besides README.
-- Bucket file counts match the mapping (10 / 7 / 18 / 4).
-- `git status` shows 39 renames (R), not delete+add pairs.
-- README L2 section has four sub-tables; the one-liner column is set-equal to the pre-move table (39 rows).
+- Every L2 file landed in exactly one bucket; none left behind.
+- `git status` shows one rename (R) per moved file, not delete+add pairs.
+- README L2 section has four sub-tables; the one-liner column is set-equal to the pre-move table.
 - `grep -rn` for each moved filename across `.claude/` resolves or was repointed.
 - Both skills name the bucket subfolders in their rule-placement / discovery text.

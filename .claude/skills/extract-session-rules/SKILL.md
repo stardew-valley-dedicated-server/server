@@ -70,7 +70,14 @@ paths:              # optional — only for path-scoped rules
 **How to apply:** <When / where this kicks in, with concrete triggers.>
 ```
 
-Do NOT add session IDs, machine-local paths, timestamps, or other non-portable metadata. The rule must stand on its own for any reader on any machine.
+Do NOT add session IDs, machine-local paths, dates, or other non-portable metadata. The rule must stand on its own for any reader on any machine.
+
+### Writing style
+
+- Lead each bullet with the action to take, not the problem it prevents.
+- State what a correction established. Don't quote anyone.
+- Keep one concrete anchor per point — the detail that lets a reader judge edge cases. Cut the rest of the retelling.
+- Plain English. No acronyms or in-house shorthand a newcomer would have to decode.
 
 ## Canonical skill format
 

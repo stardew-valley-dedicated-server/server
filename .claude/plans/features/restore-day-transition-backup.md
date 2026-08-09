@@ -7,11 +7,11 @@
 - Neither class implements `IModService`, so the auto-registration in `ModEntry.LoadServices` (`mod/JunimoServer/ModEntry.cs:166`) skips them.
 - Neither class is `new`-ed up anywhere in the mod.
 - `HttpClient` is not registered with the DI container.
-- No `POST /backup` endpoint exists on the server side or in any sidecar — `.claude/plans/features/cli-v4.md:7` lists `POST /backup` as one of the missing endpoints blocking the CLI's remote-backup feature.
+- No `POST /backup` endpoint exists on the server side or in any sidecar — `.claude/plans/features/cli-rewrite-v4.md:7` lists `POST /backup` as one of the missing endpoints blocking the CLI's remote-backup feature.
 
 So the day-transition backup never runs today. This plan restores it as a working feature: registered properly, fully async, and with a concrete decision on what `POST /backup` is supposed to *do* — because SMAPI already auto-zips every save into `/data/Stardew/save-backups/` (`docs/features/backup.md:11-27`), so the in-mod hook needs a clear differentiator or it duplicates work.
 
-The audit-doc correction is owned by `C:\Users\Test\.claude\plans\backupservice-uses-sync-over-async-wait-composed-hollerith.md`. This plan is the actual feature work.
+This plan is the feature work; the audit-doc correction is tracked separately.
 
 ## Open product question — what does `/backup` *do*?
 
@@ -142,7 +142,7 @@ Option B (only if user picks it):
 2. Grep that the dead-code state is fixed: `Grep "class BackupScheduler"` should show `: ModService`. `Grep "BackupScheduler"` in the rest of `mod/` is allowed to remain zero hits — DI registration is implicit via `LoadServices`.
 3. Grep that `_httpClient` and `.Wait()` no longer appear in `Services/Backup/` (option A: `BackupService.cs` is gone; option B: `.Wait()` is gone but `HttpClient` is allowed).
 
-### Runtime / integration checks (this is the gate that matters — `.claude/rules/runtime-post-conditions-are-gates.md`)
+### Runtime / integration checks (this is the gate that matters — `.claude/rules/universal/runtime-post-conditions-are-gates.md`)
 
 These post-conditions are runtime observations and must be exercised against a real run, not declared green from static review:
 
@@ -157,7 +157,7 @@ If any of (1)–(5) fails, the feature is not done — investigate, do not decla
 
 ## Compatibility verification
 
-Per `.claude/rules/plan-discipline.md`'s adversarial section, the feature touches the save flow, which is sensitive territory:
+Per `.claude/rules/universal/plan-discipline.md`'s adversarial section, the feature touches the save flow, which is sensitive territory:
 
 - **LAN vs Steam transports.** The new event subscription (`GameLoop.Saved`/`SaveCreated`) is transport-agnostic — both transports fire these SMAPI events on the host. No transport-specific behavior added.
 - **`hasDedicatedHost = false` invariant** (`.claude/rules/host-automation.md`). The new code does not flip this and does not subscribe to anything that depends on `Game1.dedicatedServer.Tick()`. Safe.
@@ -174,4 +174,4 @@ Per `.claude/rules/plan-discipline.md`'s adversarial section, the feature touche
 
 ## Why this is a feature plan, not a bug fix
 
-The audit framed this as "fix a deadlock." Per `.claude/rules/retry-is-evidence-of-root-cause.md` (and `verify-claims.md`), the audit's premise didn't survive verification: there is no live deadlock, no live blocking, no live save-time freeze — because the code does not run. The right framing is "this feature was abandoned mid-implementation; do we want it?" The user's answer is yes, with proper wiring and a fully-async chain. That makes it a feature plan, with the audit-doc correction handled separately.
+The audit framed this as "fix a deadlock." Per `.claude/rules/universal/retry-is-evidence-of-root-cause.md` (and `verify-claims.md`), the audit's premise didn't survive verification: there is no live deadlock, no live blocking, no live save-time freeze — because the code does not run. The right framing is "this feature was abandoned mid-implementation; do we want it?" The user's answer is yes, with proper wiring and a fully-async chain. That makes it a feature plan, with the audit-doc correction handled separately.
