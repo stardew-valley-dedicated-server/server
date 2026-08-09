@@ -31,10 +31,10 @@ namespace JunimoServer.Tests;
 /// <para>
 /// <b>Host-position contract.</b> The spawn offsets assume the host stands at its standard Farm park
 /// spot — where <c>HideHostActivity</c> warps it on every day start — with open in-bounds runway in every
-/// probe direction. Anything that leaves the host elsewhere (e.g. inside a small interior) puts a spawn
-/// point outside the map, and vanilla deletes out-of-bounds entities on their first update tick; the
-/// spawn endpoint fail-fasts with the host's location/position instead of letting that surface as an
-/// empty state read.
+/// probe direction. Anything that leaves the host elsewhere (e.g. inside a small interior) puts part of
+/// a probe's motion envelope (spawn point plus the travel the test measures) outside the map, where
+/// vanilla deletes the entity mid-measurement; the spawn endpoint fail-fasts with the host's
+/// location/position instead of letting that surface as an empty or short state read.
 /// </para>
 ///
 /// <para>

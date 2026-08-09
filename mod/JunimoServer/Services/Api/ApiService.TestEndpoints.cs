@@ -1980,7 +1980,7 @@ public partial class ApiService
     // so a test can compare wall-clock behavior with SDVD_TPS_AGNOSTIC_PACING on vs off at the same TPS.
     // The spawn offsets assume the host stands at its standard Farm park spot (HideHostActivity warps it
     // there on every day start), where every offset has open in-bounds runway; the spawn handler
-    // fail-fasts if the host's actual position puts a spawn point outside the map.
+    // fail-fasts if the host's actual position puts any part of a probe's motion envelope outside the map.
 
     // The spawned probe entities, tracked so the state endpoint can read them back. Typed as object (not
     // the StardewValley types) and coords as floats so ApiService's field metadata carries NO game-type
@@ -2063,30 +2063,45 @@ public partial class ApiService
                 var batSpawnPos = origin + new Vector2(640f, 0f);
                 var slimeSpawnPos = origin + new Vector2(320f, 0f);
 
-                // Fail fast if the probe's spawn point falls outside the host location's map: from an
-                // unexpected host spot (e.g. a small interior) the entity spawns out of bounds and
-                // vanilla deletes it on the first update tick — which would otherwise surface only as
-                // an empty state read seconds later.
-                var spawnPoint = kind switch
+                // Fail fast unless the probe's full MOTION ENVELOPE — spawn point plus everywhere the
+                // entity travels during the measurement — fits inside the host location's map. From an
+                // unexpected host spot, an entity that spawns or drifts out of bounds is deleted by
+                // vanilla mid-measurement, which would otherwise surface only as an empty/short state
+                // read seconds later.
+                var (envelopeMin, envelopeMax) = kind switch
                 {
-                    // Debris chunks spawn at the drop origin − 32 px on each axis (Debris.InitializeChunks).
-                    PacingProbeKind.Debris => debrisDropOrigin - new Vector2(32f, 32f),
-                    PacingProbeKind.Monster => batSpawnPos,
-                    PacingProbeKind.Knockback => slimeSpawnPos,
-                    // The projectile fires from the host itself.
-                    _ => origin,
+                    // Chunks spawn at the drop origin − 32 px on each axis (Debris.InitializeChunks)
+                    // and settle within ~64 px of the drop point (updateChunks bounce/drift).
+                    PacingProbeKind.Debris => (
+                        debrisDropOrigin - new Vector2(96f, 96f),
+                        debrisDropOrigin + new Vector2(96f, 96f)
+                    ),
+                    // Homes west from its spawn onto the host and overshoots a few tiles past it.
+                    PacingProbeKind.Monster => (
+                        origin - new Vector2(192f, 64f),
+                        batSpawnPos + new Vector2(64f, 64f)
+                    ),
+                    // The 100 px/tick knockback impulse slides it ~400 px further east before friction
+                    // stops it — the very distance the test measures.
+                    PacingProbeKind.Knockback => (
+                        slimeSpawnPos - new Vector2(64f, 64f),
+                        slimeSpawnPos + new Vector2(512f, 64f)
+                    ),
+                    // Fires from the host and ricochets off walls/obstacles — no free path needed.
+                    _ => (origin, origin),
                 };
                 var map = location.map;
                 if (
-                    spawnPoint.X < 0
-                    || spawnPoint.Y < 0
-                    || spawnPoint.X >= map.DisplayWidth
-                    || spawnPoint.Y >= map.DisplayHeight
+                    envelopeMin.X < 0
+                    || envelopeMin.Y < 0
+                    || envelopeMax.X >= map.DisplayWidth
+                    || envelopeMax.Y >= map.DisplayHeight
                 )
                 {
                     result.Error =
-                        $"Probe spawn point ({spawnPoint.X:F0}, {spawnPoint.Y:F0}) is outside the map "
-                        + $"bounds of '{location.NameOrUniqueName}' ({map.DisplayWidth}x{map.DisplayHeight} px); "
+                        $"Probe motion envelope ({envelopeMin.X:F0},{envelopeMin.Y:F0})–"
+                        + $"({envelopeMax.X:F0},{envelopeMax.Y:F0}) exceeds the map bounds of "
+                        + $"'{location.NameOrUniqueName}' ({map.DisplayWidth}x{map.DisplayHeight} px); "
                         + $"host is at ({origin.X:F0}, {origin.Y:F0}). The probes assume the host stands "
                         + "at its Farm park spot (HideHostActivity) — something moved it.";
                     return;
