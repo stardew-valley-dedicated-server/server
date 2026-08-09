@@ -199,7 +199,7 @@ public enum WaitName
     Polling_Wedding_BothCeremoniesRan,
     Polling_Wedding_BothClientsRenderedBoth,
     Polling_Wedding_HostRecoveredAfterCeremonies,
-    Polling_Wedding_HostOnFarmAfterCeremonies,
+    Polling_Wedding_HostAtFarmParkSpotAfterCeremonies,
 
     // LobbyHomedSpouseTests.cs (4)
     Polling_LobbyHome_EngagementReplicated,

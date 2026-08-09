@@ -342,25 +342,27 @@ public class WeddingTests : TestBase
         // farmhouse-porch tile; the mod normalizes that to the canonical Farm park spot after the day's
         // last ceremony. Assert that here (separate from hostRecovered: "not stuck / off the temp map" is
         // distinct from "parked", and the park warp lands a tick or two after the temp map clears).
-        var hostOnFarm = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Wedding_HostOnFarmAfterCeremonies,
+        var hostAtParkSpot = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_Wedding_HostAtFarmParkSpotAfterCeremonies,
             async () =>
             {
                 var hs = await ServerApi.GetWeddingState(ct: ct);
-                return hs?.Success == true && hs.HostCurrentLocation == "Farm";
+                return hs?.Success == true && hs.HostAtFarmParkSpot;
             },
             timeout: TestTimings.NetworkSyncTimeout,
             cancellationToken: ct
         );
-        if (!hostOnFarm)
+        if (!hostAtParkSpot)
         {
             var hs = await ServerApi.GetWeddingState(ct: ct);
             Assert.Fail(
-                "Host did not end parked on the Farm after the same-day weddings. After the last ceremony "
-                    + "the host must be returned to its standard Farm park spot (the same idle spot "
-                    + "HideHostActivity parks it at on every day start) — leaving it anywhere else breaks "
-                    + "the park-spot invariant other tests rely on.\n"
-                    + $"  hostCurrentLocation={hs?.HostCurrentLocation ?? "null"} (expected \"Farm\")"
+                "Host did not end parked at the Farm park spot after the same-day weddings. After the "
+                    + "last ceremony the host must be returned to the Farm default warp tile (the same "
+                    + "idle spot HideHostActivity parks it at on every day start) — merely being on the "
+                    + "Farm is not enough, since the vanilla wedding exit warp already lands there (at "
+                    + "the farmhouse porch).\n"
+                    + $"  hostCurrentLocation={hs?.HostCurrentLocation ?? "null"} "
+                    + $"hostTile=({hs?.HostTileX},{hs?.HostTileY}) (expected the Farm default warp tile)"
             );
         }
 

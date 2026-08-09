@@ -639,10 +639,23 @@ public class TestWeddingStateResponse
     [JsonPropertyName("hostLocationIsTemporary")]
     public bool HostLocationIsTemporary { get; set; }
 
-    // The host's current location name. After the last wedding the host must be back in its FarmHouse,
-    // not left on the open Farm map where the wedding exit warp drops it.
+    // The host's current location name. After the last wedding the host must end parked on the Farm
+    // (its standard park spot), not left in the FarmHouse or on a temporary ceremony map.
     [JsonPropertyName("hostCurrentLocation")]
     public string? HostCurrentLocation { get; set; }
+
+    // The host's current tile — diagnostics for a failed park assertion.
+    [JsonPropertyName("hostTileX")]
+    public int HostTileX { get; set; }
+
+    [JsonPropertyName("hostTileY")]
+    public int HostTileY { get; set; }
+
+    // True when the host stands exactly on the Farm default warp tile (the canonical park spot). The
+    // vanilla wedding exit warp also lands on the Farm — at the farmhouse porch — so this, not
+    // HostCurrentLocation, proves the post-wedding park normalization ran.
+    [JsonPropertyName("hostAtFarmParkSpot")]
+    public bool HostAtFarmParkSpot { get; set; }
 }
 
 /// <summary>

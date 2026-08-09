@@ -1816,6 +1816,19 @@ public partial class ApiService
                 result.HostLocationIsTemporary = Game1.currentLocation?.IsTemporary == true;
                 result.HostCurrentLocation = Game1.currentLocation?.NameOrUniqueName;
 
+                // Location alone can't pin the post-wedding park normalization — the vanilla wedding
+                // exit warp also lands on the Farm (at the farmhouse porch), so report whether the
+                // host stands exactly on the Farm default warp tile (the park target
+                // WarpHostToFarmAfterWeddings / HideHostActivity resolve via getDefaultWarpLocation).
+                var hostTile = Game1.player.TilePoint;
+                result.HostTileX = hostTile.X;
+                result.HostTileY = hostTile.Y;
+                int parkX = 0,
+                    parkY = 0;
+                Utility.getDefaultWarpLocation("Farm", ref parkX, ref parkY);
+                result.HostAtFarmParkSpot =
+                    Game1.currentLocation is Farm && hostTile.X == parkX && hostTile.Y == parkY;
+
                 if (farmhandId != 0)
                 {
                     // The host's view of the farmhand's spouse — used by the test to confirm the
