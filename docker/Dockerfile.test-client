@@ -93,7 +93,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # ============================================================================
 # Stage 4: Final runtime image
 # ============================================================================
-FROM jlesage/baseimage-gui:debian-11-v4.11.3 AS client
+FROM jlesage/baseimage-gui:debian-13-v4.13 AS client
 
 ARG SMAPI_VERSION
 
@@ -120,11 +120,12 @@ ENV APP_NAME="Stardew Test Client" \
     # Test client API port (can be overridden per container)
     JUNIMO_TEST_PORT=5123
 
-# Install minimal packages needed for game client
-RUN apt-get update && apt-get install -y \
+# add-pkg (base image helper), not raw apt-get — see docker/Dockerfile for why: the base's
+# /var/log symlink breaks postinst scripts, and recommends drag in systemd. Cleans apt itself.
+RUN add-pkg \
     ca-certificates \
     curl \
-    libicu67 \
+    libicu76 \
     locales \
     procps \
     scrot \
@@ -134,13 +135,10 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     mesa-utils \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-    && locale-gen \
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && locale-gen
 
-# Install ffmpeg 8.1.2 (BtbN build of the stable 8.1 branch). Debian 11 ships 4.3.x with x11grab
-# timing bugs that break the test-recording pipeline. Pin month-end autobuilds only: BtbN prunes
+# Install ffmpeg 8.1.2 (BtbN build of the stable 8.1 branch) rather than the distro package, whose
+# x11grab timing bugs break the test-recording pipeline. Pin month-end autobuilds only: BtbN prunes
 # daily builds after 14 days (month-end builds live two years), and the "latest" tag drifts.
 # Must match the server image's ffmpeg pin so both ends of the recording pipeline behave identically.
 RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz && \
@@ -156,7 +154,10 @@ RUN \
     # Prevent unnecessary logs
     rm -f /etc/cont-init.d/89-info.sh && \
     # Prevent overriding OpenGL drivers
-    rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH
+    rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH && \
+    # Pin the runtime HOME to match the ENV above — see docker/Dockerfile: the base defaults
+    # it to /config, moving Steam's ~/.steam lookup off the /root/.steam/sdk64 startapp.sh uses
+    set-cont-env HOME /root
 
 # Copy SMAPI config (client-specific settings)
 COPY docker/rootfs-test-client/data/smapi-config.json /data/smapi-config.json

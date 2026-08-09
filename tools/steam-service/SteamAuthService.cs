@@ -1815,6 +1815,10 @@ public class SteamAuthService
             // work instead of crashing.
             PruneContentManifest(downloadDir);
 
+            // glibc >= 2.41 refuses to dlopen the Galaxy libs unless their vestigial
+            // executable-stack flag is cleared (see ExecstackPatcher).
+            ExecstackPatcher.ClearGalaxyLibs(downloadDir, _logPrefix);
+
             // Save download marker to skip re-download next time
             SaveDownloadMarker(
                 downloadDir,
