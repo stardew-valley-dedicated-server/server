@@ -249,8 +249,9 @@ enumeration already in place.
   standard idiom is: **the child re-publishes its own identity where the parent can read it
   cheaply** — e.g. the child writes its PID into a file under our own `RunDir`
   (`TestResults/runs/{runId}/child.pid`) on startup, and `KillTestChildren` reads that one
-  file and kills exactly that PID (+ `entireProcessTree: true` for the `ssh -N -L`
-  grandchildren the existing code already handles). No env-block reflection, no WMI. This is
+  file and kills exactly that PID (+ `entireProcessTree: true` for any grandchildren; the
+  ssh ControlMaster is detached and journal-reaped, not part of any process tree). No
+  env-block reflection, no WMI. This is
   simpler than parent-PID reflection and fully cross-platform (`simplest-solution.md`).
 - The child already writes into `RunDir` (it inherits `SDVD_RUN_DIR`), so the pid file lands in
   the right per-runner directory automatically — a sibling runner writes to *its* RunDir, so

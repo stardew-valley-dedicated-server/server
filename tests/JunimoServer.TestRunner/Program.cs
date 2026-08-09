@@ -34,16 +34,16 @@ var filter = ParseFilter(args);
 // when the process is terminated mid-run (Ctrl+C timeout, terminal close)
 JunimoServer.Tests.Helpers.EmergencyCleanup.EnsureRegistered();
 
-// Drain the parent's infrastructure event log before destructive Docker cleanup
+// Flush the parent's infrastructure event log before destructive Docker cleanup
 // runs. Without this, run_aborted / final phase events sitting in the async
 // writer's channel are lost when EmergencyCleanup.RunAll proceeds to bulk
-// container removal.
+// container removal. Must be FlushAsync (a write barrier), NOT a drain — drain
+// completes the channel, silently dropping everything the abort path emits
+// afterwards (the emergency master teardown and abort_phase_timings events).
+// RunAll bounds the wait per sink.
 JunimoServer.Tests.Helpers.EmergencyCleanup.RegisterDrainable(
     "infrastructure-event-log",
-    () =>
-        new ValueTask(
-            JunimoServer.Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2))
-        )
+    () => new ValueTask(JunimoServer.Tests.Helpers.InfrastructureEventLog.FlushAsync())
 );
 
 // Establish the run directory in the parent process so the parent and the xUnit
@@ -69,9 +69,10 @@ if (!string.IsNullOrEmpty(filter))
 // end of run.
 InfrastructureEventLog.Initialize(RunArtifactNames.ParentInfrastructureJsonl);
 
-// Acquire the process-wide TunnelManager. Each remote forward is a per-process
-// `ssh -N -L` background process; preflight opens the per-host daemon-socket
-// forward and tests open per-container forwards on demand.
+// Acquire the process-wide TunnelManager. Preflight spawns one detached
+// `ssh -M` ControlMaster per remote host and opens its daemon-socket forward;
+// tests open per-container forwards on demand as `ssh -O forward` mux calls
+// against that master (forwards spawn no processes of their own).
 await using var tunnelManager = TunnelManager.Default;
 var hostPool = HostPool.Instance;
 
@@ -147,6 +148,11 @@ void TryGenerateReport()
 // both produce identical observable behavior.
 void BeginAbort(string cause)
 {
+    // Absolute-deadline FailFast backstop: from here on, if any cleanup layer
+    // wedges (e.g. the emergency sweep hanging on a dead tunnel before it
+    // reaches Environment.Exit), the process still dies.
+    JunimoServer.Tests.Helpers.EmergencyCleanup.ArmExitBackstop(cause);
+
     var count = Interlocked.Increment(ref abortCount);
     if (count == 1)
     {
@@ -237,19 +243,25 @@ void BeginAbort(string cause)
         // safety-net bulk sweep.
         var forceKillThread = new Thread(() =>
         {
+            var phaseStart = Stopwatch.GetTimestamp();
             var drained = JunimoServer.Tests.Helpers.ShutdownCoordinator.WaitForGraceful(
-                TimeSpan.FromSeconds(15)
+                JunimoServer.Tests.Helpers.ShutdownBudgets.GracefulDrainWindow
             );
+            var gracefulWaitMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
             if (drained)
             {
                 JunimoServer.Tests.Helpers.EmergencyCleanup.SkipBulkSweepOnExit();
             }
-            // Kill the xUnit child (and its grandchildren: per-container
-            // `ssh -N -L` forwards) so it cannot outlive the parent. Idempotent
+            // Kill the xUnit child so it cannot outlive the parent. Idempotent
             // on already-exited processes — safe to call even on the drained
             // path where the child should already be gone.
+            phaseStart = Stopwatch.GetTimestamp();
             KillTestChildren();
+            var childKillMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
+            phaseStart = Stopwatch.GetTimestamp();
             JunimoServer.Tests.Helpers.EmergencyCleanup.RunAll();
+            var cleanupMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
+            EmitAbortPhaseTimings(cause, drained, gracefulWaitMs, childKillMs, cleanupMs);
             Environment.Exit(130);
         })
         {
@@ -260,15 +272,56 @@ void BeginAbort(string cause)
     }
     else
     {
-        // Second abort signal: kill the xUnit child (and grandchildren),
-        // then game client / containers, then force-exit immediately. Skips
-        // the graceful window — the operator asked twice. KillTestChildren
-        // must precede RunAll so the child can't recreate Docker resources
-        // mid-sweep.
+        // Second abort signal: kill the xUnit child, then game client /
+        // containers, then force-exit immediately. Skips the graceful window
+        // — the operator asked twice. KillTestChildren must precede RunAll so
+        // the child can't recreate Docker resources mid-sweep.
         JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit("run_force_aborted", new { cause });
+        var phaseStart = Stopwatch.GetTimestamp();
         KillTestChildren();
+        var childKillMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
+        phaseStart = Stopwatch.GetTimestamp();
         JunimoServer.Tests.Helpers.EmergencyCleanup.RunAll();
+        var cleanupMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
+        EmitAbortPhaseTimings(cause, drained: false, gracefulWaitMs: 0, childKillMs, cleanupMs);
         Environment.Exit(130);
+    }
+}
+
+// Per-phase elapsed times for the abort path, so the F5 backstop margin can be
+// tightened from run data. Also the abort paths' log finalizer: the outer
+// finally skips shutdown + scrub while an abort is in flight (it would close
+// the writer under the abort thread's teardown emits), so this closes and
+// scrubs instead. Both steps are idempotent — the force-kill thread and a
+// second-signal branch may each get here.
+void EmitAbortPhaseTimings(
+    string cause,
+    bool drained,
+    long gracefulWaitMs,
+    long childKillMs,
+    long cleanupMs
+)
+{
+    try
+    {
+        JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+            "abort_phase_timings",
+            new
+            {
+                cause,
+                drained,
+                gracefulWaitMs,
+                childKillMs,
+                cleanupMs,
+            }
+        );
+        JunimoServer
+            .Tests.Helpers.InfrastructureEventLog.ShutdownAsync()
+            .Wait(TimeSpan.FromSeconds(3));
+        ScrubRunFilesInPlace();
+    }
+    catch
+    { /* diagnostics only — never delay exit */
     }
 }
 
@@ -307,17 +360,18 @@ await renderer.InitializeAsync();
 //   1. Kill the xUnit child process(es) FIRST. Found via name match
 //      ("JunimoServer.Tests") + start-time filter (started after us, so
 //      definitely our descendant). Kill(entireProcessTree: true) on each
-//      child cascades to any grandchildren (ssh -N -L per-container
-//      forwards). Do NOT call Kill(true) on the current process — .NET
-//      explicitly forbids self-tree kill (InvalidOperationException: "The
-//      calling process is a member of the associated process's descendant
-//      tree.") That was the silent bug in the previous attempt.
+//      child cascades to any grandchildren. Do NOT call Kill(true) on the
+//      current process — .NET explicitly forbids self-tree kill
+//      (InvalidOperationException: "The calling process is a member of the
+//      associated process's descendant tree.").
 //   2. Now that there's no producer, bulk-remove Docker resources by
-//      sdvd.run-id label across all hosts.
+//      sdvd.run-id label across all hosts, then tear the ssh masters down.
 //   3. Drain parent's event log + write summary.json.
 //   4. Environment.Exit(130).
 void ForceExitNow(string cause)
 {
+    JunimoServer.Tests.Helpers.EmergencyCleanup.ArmExitBackstop(cause);
+
     // Re-entrancy: if Ctrl+C / a prior Stop already started teardown, skip
     // straight to the kill — don't double-write summary / events.
     if (Interlocked.Increment(ref abortCount) != 1)
@@ -332,7 +386,9 @@ void ForceExitNow(string cause)
         // Kill the xUnit child first. This stops new container creation,
         // closes the child's inherited stdout (no more terminal log spam),
         // and frees the Docker resources to be removed by step below.
+        var killStart = Stopwatch.GetTimestamp();
         KillTestChildren();
+        var childKillMs = (long)Stopwatch.GetElapsedTime(killStart).TotalMilliseconds;
 
         try
         {
@@ -360,6 +416,7 @@ void ForceExitNow(string cause)
 
         // Bulk-remove this run's Docker resources by sdvd.run-id label.
         // The child is dead; nothing recreates them. Bounded at 5 s overall.
+        var phaseStart = Stopwatch.GetTimestamp();
         var bulkTask = Task.Run(() =>
         {
             try
@@ -378,17 +435,22 @@ void ForceExitNow(string cause)
         { /* best effort */
         }
 
-        // Drain the parent-side event log to disk (1 s) so run_aborted /
-        // run_force_aborted survive the parent's exit.
+        // Transport teardown AFTER the bulk cleanup (which removes remote
+        // containers through the tunnel), mirroring RunAll's ordering. Direct
+        // call rather than relying on the ProcessExit re-entry alone — UI Stop
+        // is this plan's highest-exposure abort path.
         try
         {
-            JunimoServer
-                .Tests.Helpers.InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(1))
-                .Wait(TimeSpan.FromSeconds(1));
+            JunimoServer.Tests.Infrastructure.TunnelManager.EmergencyTeardownOwnMasters();
         }
         catch
         { /* best effort */
         }
+        var cleanupMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
+
+        // Phase timings for the backstop margin (drains the log itself, so the
+        // run_aborted / run_force_aborted events above reach disk too).
+        EmitAbortPhaseTimings(cause, drained: false, gracefulWaitMs: 0, childKillMs, cleanupMs);
 
         // summary.json — idempotent via the writer's _written latch.
         try
@@ -416,8 +478,9 @@ void ForceExitNow(string cause)
 
 // Kill every JunimoServer.Tests process started after this parent (and
 // therefore necessarily our descendant under xUnit's spawn pattern). Each
-// kill cascades via Kill(entireProcessTree: true) so any per-container
-// `ssh -N -L` grandchildren the child opened die with it.
+// kill cascades via Kill(entireProcessTree: true) so any grandchildren the
+// child spawned die with it. (The ssh ControlMaster is NOT among them — it
+// is detached and reaped via its journal, not the process tree.)
 //
 // Filter rationale: process name is unique to this codebase. Start-time
 // filter rules out the vanishingly rare case of an older sibling run on
@@ -675,7 +738,10 @@ async Task<int> AbortDistributionAsync(
 renderer.OnSetupPhaseStarted(new SetupPhaseStartedEvent(SetupCategory, "Preflight"));
 try
 {
-    using var preflightCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    // 60s: covers master spawn/check (≤20s per host) plus the orphan-master
+    // reap + stale-socket sweep, which pay bounded ssh timeouts per leftover
+    // when a prior run crashed — exactly the runs that must not fail preflight.
+    using var preflightCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
     foreach (var host in hostPool.Hosts)
     {
         // Detail is "remote"/"local" only — never host.SshDestination (the VPS
@@ -1122,15 +1188,17 @@ finally
     }
 
     // Close the parent-process log AFTER the renderer disposes (which may have
-    // emitted late events). The async variant awaits the writer's channel drain
-    // without blocking a thread-pool thread.
-    await InfrastructureEventLog.ShutdownAsync();
-
-    // The infra logs are appended live by their own writers (child + parent), so
-    // they can only be scrubbed here, after both have closed. run-metadata.json
-    // gets the same pass: in local mode the test child writes it directly,
-    // bypassing the artifact writer's scrubbed rewrite.
-    ScrubRunFilesInPlace();
+    // emitted late events), then scrub the live-appended run files (child +
+    // parent infra logs, child-written run-metadata.json — their producers
+    // append live, so scrub-at-write isn't possible). On abort paths the abort
+    // finalizer (EmitAbortPhaseTimings) owns both steps instead: the abort
+    // thread is still emitting teardown diagnostics while this finally runs,
+    // and closing the writer here would drop them.
+    if (abortCount == 0)
+    {
+        await InfrastructureEventLog.ShutdownAsync();
+        ScrubRunFilesInPlace();
+    }
 
     JunimoServer.Tests.Helpers.ShutdownCoordinator.SignalGracefulComplete();
 

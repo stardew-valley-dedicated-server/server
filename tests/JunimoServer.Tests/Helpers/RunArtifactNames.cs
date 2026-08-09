@@ -106,7 +106,8 @@ public static class RunArtifactNames
 
     /// <summary>
     /// Env var carrying a JSON map of <c>{hostId → coordinatorPort}</c> for
-    /// every remote host whose <c>ssh -N -L</c> daemon-socket forward is open.
+    /// every remote host whose daemon-socket forward is open (an
+    /// <c>ssh -O forward</c> against the host's ControlMaster).
     /// Written by <c>HostPool.PreflightAsync</c> in the parent process and
     /// inherited by xUnit's child test process so its lazy <c>DockerHost</c>
     /// getters can dial the parent's loopback listener directly. Set to

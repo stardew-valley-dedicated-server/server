@@ -224,7 +224,8 @@ public class SharedSteamAuth : IAsyncDisposable
         }
 
         // Resolve the coordinator-visible host port via TunnelManager. Local
-        // hosts: pass-through. Remote hosts: opens a per-forward `ssh -N -L`.
+        // hosts: pass-through. Remote hosts: `ssh -O forward` against the
+        // host's ControlMaster.
         var mapped = container.GetMappedPublicPort(ContainerPort);
         instance._apiForward = await instance._tunnels.OpenAsync(
             instance.HostId,

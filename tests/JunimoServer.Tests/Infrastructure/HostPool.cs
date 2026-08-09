@@ -488,16 +488,46 @@ public sealed class HostPool : IAsyncDisposable
         if (hasRemoteHost)
         {
             // Resolve a Cygwin-built ssh (banner-checked) and pin it for every
-            // subsequent ssh invocation. Then sweep the temp dir for stale
-            // ControlMaster sockets from prior crashed runs (sibling files
+            // subsequent ssh invocation. Then reap masters orphaned by dead
+            // coordinators (journal-driven, kill-confirmed) and sweep leftover
+            // bare ControlMaster sockets whose journal was lost (sibling files
             // owned by another user on shared /tmp are tolerated via
-            // permission/IO error swallowing inside CleanupStaleControlSockets).
+            // permission/IO error swallowing inside both).
             var sshPath = await SshBinaryResolver.ResolveAsync(ct);
             tunnels.SetSshPath(sshPath);
-            var staleDeleted = TunnelManager.CleanupStaleControlSockets(TimeSpan.FromHours(1));
+
+            // Sub-budget the reap so a pathological orphan backlog (each wedged
+            // master pays bounded ssh timeouts) can't starve the master spawns
+            // below out of the preflight budget — a stopped reap keeps its
+            // in-progress journal, which the next run simply retries.
+            int orphansReaped;
+            bool orphanReapTimedOut;
+            using (var reapCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                reapCts.CancelAfter(TimeSpan.FromSeconds(20));
+                (orphansReaped, orphanReapTimedOut) = await TunnelManager.ReapOrphanedMastersAsync(
+                    sshPath,
+                    reapCts.Token
+                );
+            }
+            // The reap treats cancellation as a graceful stop, so a real
+            // preflight abort must still surface as one.
+            ct.ThrowIfCancellationRequested();
+
+            var staleSwept = await TunnelManager.CleanupStaleControlSocketsAsync(
+                sshPath,
+                TimeSpan.FromHours(1),
+                ct
+            );
             InfrastructureEventLog.Emit(
                 "ssh_preflight",
-                new { sshPath, staleSocketsDeleted = staleDeleted }
+                new
+                {
+                    sshPath,
+                    orphanMastersReaped = orphansReaped,
+                    orphanReapTimedOut,
+                    staleSocketsSwept = staleSwept,
+                }
             );
 
             // Open one ControlMaster per remote host before any forward open.
@@ -596,7 +626,7 @@ public sealed class HostPool : IAsyncDisposable
 
         // Propagate per-host coordinator ports for the xUnit child process.
         // The child's lazy DockerHost getters read this env var to dial the
-        // parent's `ssh -N -L` loopback listener (kernel binding is reachable
+        // parent's forward loopback listener (kernel binding is reachable
         // from any process on the host).
         var tunnelMap = new Dictionary<string, int>();
         foreach (var h in Hosts)

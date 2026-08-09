@@ -448,9 +448,9 @@ Transfer size is governed by the **coordinator's** image store, not the remote's
 
 ### Tunneling
 
-For each remote host, the coordinator pre-creates an SSH `ControlMaster` (`ssh -M -N -f -o ControlMaster=auto -o ControlPath=… -o ControlPersist=10m`). For each container start, the coordinator opens a per-port `ssh -O forward -L localhost:{coordinatorPort}:127.0.0.1:{mappedPort} {sshDest}` against that master with `ExitOnForwardFailure=yes`. URL construction always goes through `TunnelManager.OpenAsync` so the same code path works on local and remote hosts — local hosts return the mapped port unchanged.
+For each remote host, the coordinator pre-creates an SSH `ControlMaster` (`ssh -M -N -f -o ControlMaster=auto -o ControlPath=…`). For each container start, the coordinator opens a per-port `ssh -O forward -L localhost:{coordinatorPort}:127.0.0.1:{mappedPort} {sshDest}` against that master with `ExitOnForwardFailure=yes`. URL construction always goes through `TunnelManager.OpenAsync` so the same code path works on local and remote hosts — local hosts return the mapped port unchanged.
 
-Tunnels close on container dispose via `ssh -O cancel`. Coordinator shutdown drains all forwards in parallel (bounded per-cancel timeout) before sending `ssh -O exit` to each master.
+Tunnels close on container dispose via `ssh -O cancel`. Coordinator shutdown drains all forwards in parallel (bounded per-cancel timeout) before terminally tearing down each master: `ssh -O exit`, then a pid kill if the process survives it, with the control socket unlinked only once the process is confirmed gone. Each master is also recorded in a temp-dir journal (`sdvd-ssh-journal-{pid}.json`); abort paths tear masters down from the journal, and the next run's preflight reaps any journal whose coordinator process is dead — so a master can't outlive its run even after a hard kill or crash.
 
 ### Remote-host cold-start floor
 

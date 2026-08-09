@@ -627,7 +627,8 @@ public class ServerContainer : IAsyncDisposable
         // Resolve coordinator-visible ports through TunnelManager so callers
         // never see a remote daemon's 127.0.0.1 directly. For local hosts the
         // forward is a no-op and the coordinator-side port equals the mapped
-        // port; for remote hosts it is opened over a per-forward `ssh -N -L`.
+        // port; for remote hosts it is opened via `ssh -O forward` against the
+        // host's ControlMaster.
         var apiMapped = _serverContainer.GetMappedPublicPort(ContainerApiPort);
         var vncMapped = _serverContainer.GetMappedPublicPort(ContainerVncPort);
         _apiForward = await _tunnels.OpenAsync(HostId, SshDestination, SshKeyPath, apiMapped, ct);

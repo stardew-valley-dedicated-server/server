@@ -429,7 +429,8 @@ public class LocalGameClientProvider : IGameClientProvider
 
     /// <summary>
     /// Synchronous version of KillGameProcesses for use in AppDomain.ProcessExit handler.
-    /// ProcessExit has a ~2s time budget, so we use synchronous waits with short timeouts.
+    /// ProcessExit has no runtime-imposed time budget on modern .NET, so nothing bounds
+    /// process exit while a handler runs — keep it to synchronous waits with short timeouts.
     /// </summary>
     private static void KillGameProcessesSync()
     {

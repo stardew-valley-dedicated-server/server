@@ -167,7 +167,12 @@ internal sealed class AsyncJsonlWriter : IAsyncDisposable
         }
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _channel.Writer.TryWrite(new FlushMarker(tcs));
+        if (!_channel.Writer.TryWrite(new FlushMarker(tcs)))
+        {
+            // Channel already completed (drain/shutdown in progress) — nothing
+            // left to barrier on.
+            return Task.CompletedTask;
+        }
         return tcs.Task;
     }
 

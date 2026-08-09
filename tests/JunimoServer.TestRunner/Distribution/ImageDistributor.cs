@@ -12,8 +12,8 @@ namespace JunimoServer.TestRunner.Distribution;
 
 /// <summary>
 /// Builds Docker images once on the coordinator and transfers them to remote
-/// hosts via Docker.DotNet over the per-host <c>ssh -N -L</c> daemon-socket
-/// tunnel that <see cref="TunnelManager"/> opens during preflight. Skips hosts
+/// hosts via Docker.DotNet over the per-host daemon-socket forward that
+/// <see cref="TunnelManager"/> opens during preflight. Skips hosts
 /// whose Docker daemon already holds every image with matching layer digests.
 /// Local hosts are no-ops — the image is already on the same daemon.
 ///

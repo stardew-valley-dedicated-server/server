@@ -70,9 +70,9 @@ internal static class TransportFaultClassifier
     /// connect to an <b>unbound</b> <c>127.0.0.1</c> port — the per-server
     /// <c>ssh -L</c> forward's listener is gone, NOT that the remote host died.
     /// One shared <c>ssh -M</c> master carries every forward, so a transient
-    /// master keepalive blip (<c>ServerAliveCountMax</c> exceeded) tears down all
-    /// in-flight <c>-L</c> channels at once while the master process survives
-    /// (<c>ControlPersist</c>) and the daemon-socket forward keeps working. The
+    /// master-side channel failure can tear down in-flight <c>-L</c> channels
+    /// while the master process and the daemon-socket forward keep working (a
+    /// full <c>ServerAliveCountMax</c> death kills the master outright). The
     /// caller must corroborate a forward-scoped fault with <c>ssh -O check</c>
     /// before poisoning the whole host — a live master means heal the forward,
     /// not poison the host. Host-scoped faults (RST, HostUnreachable, broken

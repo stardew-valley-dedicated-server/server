@@ -198,16 +198,26 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>helper_image_pull_failed</c> (<c>host_id, image, error</c>).</item>
 ///
 /// <item><b>SSH tunnel lifecycle</b> (<c>TunnelManager</c>; remote hosts only):
-/// <c>ssh_preflight</c> (<c>sshPath, staleSocketsDeleted</c>; emitted once at
-/// HostPool.PreflightAsync start when any host is remote) ·
+/// <c>ssh_preflight</c> (<c>sshPath, orphanMastersReaped, orphanReapTimedOut,
+/// staleSocketsSwept</c>; emitted once at HostPool.PreflightAsync start when
+/// any host is remote) ·
 /// <c>ssh_master_ready</c> (<c>host_id, controlPath, logPath, durationMs</c>;
 /// <c>logPath</c> = the master's <c>-E</c> error log) ·
 /// <c>ssh_master_spawn_failed</c> (<c>host_id, exitCode, stderr, durationMs</c>;
 /// <c>stderr</c> falls back to the <c>-E</c> log tail when the parent pipe is
 /// empty) · <c>ssh_master_check_failed</c> (<c>host_id, exitCode, stderr,
 /// spawnStderr, durationMs</c>) · <c>ssh_master_exited</c> (<c>host_id, exitCode,
-/// stderr?, durationMs</c>; per host during DrainAsync; <c>stderr</c> only when
-/// <c>exitCode != 0</c>) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
+/// gone, killOutcome?, stderr?, durationMs</c>; per host during DrainAsync;
+/// <c>stderr</c> only when <c>exitCode != 0</c>, <c>killOutcome</c> only when a
+/// pid-kill fallback ran) ·
+/// <c>ssh_master_teardown_failed</c> (<c>host_id, masterPid, controlPath,
+/// killOutcome</c>; the master survived even the kill — its socket and journal
+/// entry are kept as the reap handle) ·
+/// <c>ssh_master_emergency_teardown</c> (<c>host_id, gone, exitCode,
+/// killOutcome</c>; journal-driven teardown on abort paths) ·
+/// <c>ssh_orphan_master_reaped</c> (<c>host_id, coordinatorPid, controlPath,
+/// gone, killOutcome</c>; next run's preflight reap of a dead coordinator's
+/// master) · <c>ssh_master_log</c> (<c>host_id, logPath, byteLength,
 /// tail</c>; emitted at teardown only when the <c>-E</c> log is non-empty —
 /// carries the master's death line, e.g. "Timeout, server not responding.") ·
 /// <c>ssh_master_unhealthy_owner</c> (<c>host_id, cause</c>; see
@@ -217,10 +227,14 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>ssh_master_pid_unparsed</c> (<c>host_id, stderr</c>; the master registered
 /// without a parseable pid, so a later respawn's hard-reset kill degrades to a
 /// skip — loud here because at kill time it would be silent) ·
-/// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill</c>; see
-/// <see cref="Infrastructure.TunnelManager"/> for kill-outcome variants) ·
+/// <c>ssh_master_pid_unmapped</c> (<c>host_id, reportedPid</c>; the Cygwin-space
+/// pid could not be mapped to a Windows pid, so every kill degrades to
+/// <c>-O exit</c> + check-based confirmation) ·
+/// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill,
+/// oldMasterGone</c>; see <see cref="Infrastructure.TunnelManager"/> for
+/// kill-outcome variants) ·
 /// <c>ssh_master_respawned</c> (<c>host_id, alive</c>) ·
-/// <c>ssh_master_respawn_failed</c> (<c>host_id, error</c>) ·
+/// <c>ssh_master_respawn_failed</c> (<c>host_id, error, killOutcome?</c>) ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
 /// <c>tunnel_forward_reopened</c> / <c>tunnel_forward_reopen_failed</c>
@@ -245,7 +259,11 @@ namespace JunimoServer.Tests.Helpers;
 /// <item><b>Discovery &amp; setup</b>:
 /// <c>config_discovery_completed</c> (once-per-process:
 /// <c>configCount, configs[], durationMs</c>) · <c>run_aborted</c>
-/// (<c>cause, exceptionType?, message?</c>) · <c>setup_ipc_read_deadline</c> /
+/// (<c>cause, exceptionType?, message?</c>) · <c>run_force_aborted</c>
+/// (<c>cause</c>; second abort signal) · <c>abort_phase_timings</c>
+/// (<c>cause, drained, gracefulWaitMs, childKillMs, cleanupMs</c>; per-phase
+/// elapsed times of the abort path, for tuning the FailFast backstop margin) ·
+/// <c>setup_ipc_read_deadline</c> /
 /// <c>setup_ipc_oversized_line</c> (SetupPipeServer hardening) ·
 /// <c>coordinator_address_resolved</c> (distributed runner only:
 /// <c>ip, source:"loopback"|"auto-detected", probedHost?</c>).</item>
@@ -481,21 +499,6 @@ public static class InfrastructureEventLog
             writer = _asyncWriter;
         }
         return writer?.FlushAsync() ?? Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Drains the writer's channel and flushes the underlying file. Used by
-    /// the broker / runner shutdown paths where the next steps will tear down
-    /// containers and we want all in-flight events on disk first.
-    /// </summary>
-    public static Task DrainAsync(TimeSpan timeout)
-    {
-        AsyncJsonlWriter? writer;
-        lock (_lock)
-        {
-            writer = _asyncWriter;
-        }
-        return writer?.DrainAsync(timeout) ?? Task.CompletedTask;
     }
 
     /// <summary>
