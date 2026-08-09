@@ -15,14 +15,15 @@ The identity for those players is a **credential** (username + password), verifi
 
 The client-side mechanics are confirmed by a working proof of concept: the menu hold, the in-game code carried to a browser, the post-login reveal repopulating the slot list, and per-identity farmhand visibility all behave as specified against a stock client.
 
-This plan builds on the farmhand-ownership feature (`features/farmhand-ownership.md`), which is implemented and in testing on its own branch. Everything below assumes that has merged.
+Transport-keyed farmhand ownership is shipped; this plan extends it to a third identity source.
 
 ## What this builds on
 
-The ownership feature already provides, in `mod/JunimoServer/`:
+The shipped ownership machinery, in `mod/JunimoServer/`:
 
-- **`Util/ConnectionTransport`** — `TryResolveIdentity(connectionId, out TransportIdentity)` plus the `SN_`/`GN_`/`L_` prefix constants and `GetTransportName`. `TransportIdentity` is `(Platform, Id)`, with `steam` and `galaxy` as the platform values today.
-- **`Services/AuthService/FarmhandOwnershipService`** — the ownership store (`farmhandUid → FarmhandOwnerRecord{Platform, Id, Origin}`, per save folder), `TryGetOwner`/`RecordOwner`/`RemoveOwner`/`MarkReleased`/`IsReleased`, the `EvaluateClaim` decision matrix shared by the visibility filter and the gate, the `CheckFarmhandRequest_OwnershipGate_Prefix` enforcement gate, and `CanAssignTo_ProtectOwnedSlot_Postfix` protecting owned slots from save-load re-homing.
+- **`Util/ConnectionTransport`** — `TryResolveIdentity(connectionId, out TransportIdentity)` (`:84`) plus the `SteamPrefix`/`GalaxyPrefix`/`LanPrefix` constants (`:37-39`) and `GetTransportName` (`:122`). `TransportIdentity` is `(Platform, Id)`; the platform tags are `PlatformSteam` = `steam` and `PlatformGalaxy` = `galaxy`. LAN returns false — Lidgren carries no identity.
+- **`Services/AuthService/FarmhandOwnershipService`** — the ownership store (`farmhandUid → FarmhandOwnerRecord{Platform, Id, Origin}`, a per-save-folder `farmhand-ownership.json`, `:72,154-156`), `TryGetOwner`/`RecordOwner`/`RemoveOwner`/`MarkReleased`/`IsReleased`, the `EvaluateClaim` decision matrix (`:479`) shared by the visibility filter and the gate, the `CheckFarmhandRequest_OwnershipGate_Prefix` enforcement gate (`:545`), the `SaveLoaded` self-heal (`:398`), and `CanAssignTo_ProtectOwnedSlot_Postfix` protecting owned slots from save-load re-homing.
+- **`farmhand release|rebind`** console commands (`FarmhandCommand.cs:60,73`) writing through the same store with an operator origin.
 
 **The gate records ownership by wrapping the `approve` delegate**, at the exact approve moment. Do not detect approval any later: `Game1.otherFarmers` also contains the uid when vanilla rejects an "already in use" request, and postfixes still run after a prefix cancels, so a rejected request would overwrite the live owner's record with the requester's identity.
 
@@ -39,7 +40,7 @@ The ownership feature already provides, in `mod/JunimoServer/`:
 ## Configuration
 
 - **`Server.MaxFarmhandsPerPlayer`** (int, default `1`, `0` = unlimited, negatives clamp to `0` with a warning as `ClampBroadcastPeriod` does). Vanilla places no limit on how many farmhands carry one identity — `sendAvailableFarmhands` sends every available farmhand with no ownership filter (`GameServer.cs:636-642`), and the client-side lock only greys out farmhands belonging to *someone else* (`FarmhandMenu.cs:36-40`) — so `0` restores vanilla behavior. Counts farmhands owned by the identity in the current save.
-- **Requiring a login** is gated by a setting that converges with the shipping `Server.EnforceFarmhandOwnership` at implementation time, once the ownership branch has merged. The behavior to express: enforcement off entirely; enforcement on with IP players logging in and platform players recognized automatically; and enforcement on with everyone logging in unless their platform ID is linked to an account. Read once at startup — the login listener, the hold driver and the gate are wired from it, so a mid-run settings reload must not change it.
+- **Requiring a login** is gated by a setting that converges with the shipped `Server.EnforceFarmhandOwnership` (bool, default `true`, `ServerSettings.cs:63`), which today expresses only on/off. The behavior to express: enforcement off entirely; enforcement on with IP players logging in and platform players recognized automatically; and enforcement on with everyone logging in unless their platform ID is linked to an account. Read once at startup — the login listener, the hold driver and the gate are wired from it, so a mid-run settings reload must not change it.
 - **`Server.LoginPagePort`** and **`Server.LoginPageUrl`** — see (d).
 
 ## Flow, end to end
@@ -161,6 +162,4 @@ Per `runtime-post-conditions-are-gates`, none may be closed by build or grep.
 
 ## Related plans
 
-- [`features/farmhand-ownership.md`](features/farmhand-ownership.md) — the ownership store, identity parser, decision matrix and enforcement gate this plan extends to a third identity source.
-- [`bugs/issue-2-farmhand-visibility.md`](bugs/issue-2-farmhand-visibility.md) — the visibility symptom both plans resolve.
 - [`bugs/name-injection-item-grant-exploit.md`](bugs/name-injection-item-grant-exploit.md) — player-chosen names are sanitized at the `NetString` boundary, which covers names chosen in the vanilla character creator here.

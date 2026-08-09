@@ -1,9 +1,9 @@
 # Fix: build SMAPI from source to patch the one-second divisor (+ suppress the XACT log line)
 
-> Sibling plan: [`tick-scaled-pacing-fades-movement.md`](tick-scaled-pacing-fades-movement.md)
-> covers the same disease (per-tick constants assume 60 TPS) in *game* code — fades, movement,
-> and a staged audit of all tick-scaled gameplay logic — via mod-side Harmony, no SMAPI build
-> needed there. Together the two plans are the "gameplay correct at arbitrary TPS" effort.
+> The same disease (per-tick constants assume 60 TPS) in *game* code — fades, movement,
+> projectiles, debris — is already fixed mod-side by `TpsAgnosticPacing`
+> (`mod/JunimoServer.Shared/TpsAgnosticPacing.cs`, gated on `SDVD_TPS_AGNOSTIC_PACING`),
+> which needs no SMAPI build. This plan covers the part that does.
 
 ## Scope: two small SMAPI-source patches, one build change
 

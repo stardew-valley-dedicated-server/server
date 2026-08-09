@@ -268,7 +268,7 @@ string[] helpResponseKeywords = { "!help" };
 
 With the buffer fixed at 10, the `historySize` parameter is pointless — you always get at most 10 messages. No caller passes it explicitly. Remove it and hardcode 10 internally.
 
-**File**: `tests/JunimoServer.Tests/Helpers/GameTestClient.cs:567-593` — `SendAndWaitForResponseAsync` (default `historySize = 20` at `:572`). Remove the parameter, use `10` directly in `GetHistory()` calls inside the method.
+**File**: `tests/JunimoServer.Tests/Clients/GameTestClient.cs:567-593` — `SendAndWaitForResponseAsync` (default `historySize = 20` at `:572`). Remove the parameter, use `10` directly in `GetHistory()` calls inside the method.
 
 Also re-check the public `GetHistory`/`GetChatHistory` defaults already in `GameTestClient.cs:510` and `:790` (both default `count = 10` already) — no change needed.
 

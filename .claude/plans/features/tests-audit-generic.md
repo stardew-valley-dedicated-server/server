@@ -56,7 +56,7 @@ The `tests/` tree was reviewed for soundness, best-practice, maintainability, an
 
 ### 1.3 Subagent claims overruled after verification
 
-Recorded so the reasoning isn't re-litigated. Per `.claude/rules/adversarial-review-split-findings.md` (don't collapse valid sub-findings with weak framing) and `verify-claims.md`.
+Recorded so the reasoning isn't re-litigated. Per `.claude/rules/universal/adversarial-review-split-findings.md` (don't collapse valid sub-findings with weak framing) and `verify-claims.md`.
 
 | Claim (from review agents)                                                          | Ruling                        | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ----------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,7 +136,7 @@ Ordering = value/risk. Every item is **behavior-preserving** unless noted. Do th
 
 - Add a helper (in `GameControl/MenuNavigator.cs`) that, after setting `Game1.activeClickableMenu`, confirms the transition committed on the game thread (bounded retry) before returning success — instead of set-and-assume.
 - Extract the `FarmhandMenu` readiness check (`ModEntry.cs:552-626`) into a named helper with explicit states (loading / ready / failed) rather than 5 inline flags.
-- **Caution:** this is a retry/stability layer in screen-scraping code; per `.claude/rules/retry-is-evidence-of-root-cause.md`, confirm each added retry papers over genuine UI-commit latency (provably outside our control) and not a missing await. Document the justification inline.
+- **Caution:** this is a retry/stability layer in screen-scraping code; per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, confirm each added retry papers over genuine UI-commit latency (provably outside our control) and not a missing await. Document the justification inline.
 
 ### Priority 5 — Minor (opportunistic)
 
@@ -146,7 +146,7 @@ Ordering = value/risk. Every item is **behavior-preserving** unless noted. Do th
 
 ## Part 3 — Verification
 
-Each PR must pass these before merge. The harness has **no unit-test layer for the C# side** (`CLAUDE.md`: "E2E only") — correctness of infra refactors is verified by a real run + JSONL inspection, per `.claude/rules/runtime-post-conditions-are-gates.md`.
+Each PR must pass these before merge. The harness has **no unit-test layer for the C# side** (`CLAUDE.md`: "E2E only") — correctness of infra refactors is verified by a real run + JSONL inspection, per `.claude/rules/universal/runtime-post-conditions-are-gates.md`.
 
 **Build gates (every PR):**
 
@@ -156,12 +156,12 @@ Each PR must pass these before merge. The harness has **no unit-test layer for t
 **Behavior gates by area:**
 
 - **P2-a (broker refactor):** run the full suite `make test`; confirm pass/fail counts and `queueDurationTotalMs` match a pre-refactor baseline run (no new deadlock/starvation). Inspect `TestResults/runs/{latest}/diagnostics/infrastructure.jsonl` for unexpected `server_poisoned` / `host_disconnected` / capacity-starvation events. Spot-check a KeepConnected class and an `[TestServer(Exclusive=true)]` class still serialize correctly.
-- **P2-b / P3 (test-ui):** `make build-test-ui` + `make test-ui-unit`; load `make test-web` against a recorded run and confirm the live event stream still populates the test tree, instance stats history, and screenshots/recordings (no regression vs the WebSocket-first behavior in `.claude/rules/prefer-live-stream-over-disk-artifact.md`).
-- **P4 (test-client):** rebuild via `make build-test-client`, then **verify the edit landed in the produced image** (`docker create` + `docker cp`) per `.claude/rules/verify-edit-landed-in-artifact.md` — the test-client Dockerfile does NOT `COPY docker/rootfs/`. Run `make test FILTER=<a menu-navigation-heavy class>` and confirm the probe logs at `Warn` (not `Error`) and menus still navigate. Confirm no `LogLevel.Error` was introduced.
+- **P2-b / P3 (test-ui):** `make build-test-ui` + `make test-ui-unit`; load `make test-web` against a recorded run and confirm the live event stream still populates the test tree, instance stats history, and screenshots/recordings (no regression vs the WebSocket-first behavior in `.claude/rules/universal/prefer-live-stream-over-disk-artifact.md`).
+- **P4 (test-client):** rebuild via `make build-test-client`, then **verify the edit landed in the produced image** (`docker create` + `docker cp`) per `.claude/rules/universal/verify-edit-landed-in-artifact.md` — the test-client Dockerfile does NOT `COPY docker/rootfs/`. Run `make test FILTER=<a menu-navigation-heavy class>` and confirm the probe logs at `Warn` (not `Error`) and menus still navigate. Confirm no `LogLevel.Error` was introduced.
 
 **Documentation gates (P1):**
 
-- Confirm every invariant cited in `ARCHITECTURE.md` / comments still matches the code it describes (open the file:line, don't trust the prose) — per `.claude/rules/runtime-post-conditions-are-gates.md` applied to docs.
+- Confirm every invariant cited in `ARCHITECTURE.md` / comments still matches the code it describes (open the file:line, don't trust the prose) — per `.claude/rules/universal/runtime-post-conditions-are-gates.md` applied to docs.
 
 ---
 
