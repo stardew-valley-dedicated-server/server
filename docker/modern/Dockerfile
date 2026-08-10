@@ -169,6 +169,7 @@ COPY --from=game-downloader /game /game
 # (.editorconfig: code-style rules enforced at build via EnforceCodeStyleInBuild)
 COPY ./Directory.Build.props ./CodeStyle.props ./.editorconfig /src/
 COPY ./mod/JunimoServer/JunimoServer.csproj /src/mod/JunimoServer/
+COPY ./mod/JunimoServer.Shared/JunimoServer.Shared.csproj /src/mod/JunimoServer.Shared/
 
 # Restore dependencies
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -190,7 +191,6 @@ COPY ./mod /src/mod
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet build /src/mod/JunimoServer/JunimoServer.csproj \
     --configuration ${BUILD_CONFIGURATION} \
-    --no-restore \
     /p:GamePath=/game \
     -o /output/JunimoServer
 
