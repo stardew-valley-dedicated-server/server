@@ -1,6 +1,6 @@
 ---
 name: review-rules
-description: Audit and refine the project's `.claude/` rules and CLAUDE.md for conciseness, format consistency, correctness, and pull-its-weight tokens. Use when the user asks to review, refine, audit, lint, or clean up rules; when a rule directory has grown enough that adherence is degrading; and — before reporting done — whenever you have written, merged, split, or materially rewritten a rule file yourself, since the checklist below is what catches title form, backticks, cited identifiers, `paths:` accuracy, and index sync in one pass.
+description: Audits and refines the project's `.claude/` rules and CLAUDE.md for conciseness, format consistency, correctness, and pull-its-weight tokens. Use when the user asks to review, refine, audit, lint, or clean up rules; when a rule directory has grown enough that adherence is degrading; and — before reporting done — whenever you have written, merged, split, or materially rewritten a rule file yourself, since the checklist below is what catches title form, backticks, cited identifiers, `paths:` accuracy, and index sync in one pass.
 argument-hint: [optional path/glob or focus hint]
 tools: Read, Grep, Glob, Edit, Write
 ---

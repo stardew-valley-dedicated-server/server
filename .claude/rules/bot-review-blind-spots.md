@@ -6,7 +6,7 @@ paths:
 
 # Answer a bot's "this identifier doesn't exist" with the local citation — `decompiled/` is invisible to it
 
-The automated PR reviewers read this repo's `.claude/` content, but they only see **tracked** files. `decompiled/sdv-1.6.15-24356/` is gitignored, so a reviewer running `git ls-files` for `Client.cs` or `FarmhandMenu.cs` finds nothing and may conclude from a web search that the symbol isn't real game code. Treat that verdict as a structural false negative, verify the citation against the local tree, and reply with the `file:line` rather than weakening the rule.
+The automated PR reviewers read this repo's `.claude/` content, but they only see **tracked** files. `decompiled/sdv-*/` is gitignored, so a reviewer running `git ls-files` for `Client.cs` or `FarmhandMenu.cs` finds nothing and may conclude from a web search that the symbol isn't real game code. Treat that verdict as a structural false negative, verify the citation against the local tree, and reply with the `file:line` rather than weakening the rule.
 
 Two further consequences worth expecting:
 
