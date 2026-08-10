@@ -21,10 +21,13 @@ The whole interactive UI lives in `docker/modern/rootfs/opt/bin/attach-cli` (tmu
 
 ## What already exists to replace it
 
-The mod's HTTP API (`mod/JunimoServer/Services/Api/ApiService.cs`) already has the two hard pieces:
+The mod's HTTP API (`mod/JunimoServer/Services/Api/ApiService.cs`) already has the hard pieces for
+command *input*; command *output* streaming is the one piece that still needs building:
 
-- An authenticated **WebSocket at `/ws`** — a real-time channel (today it carries chat relay for
-  the Discord bot). This is the stream a CLI uses for live log/output.
+- An authenticated **WebSocket at `/ws`** — a real-time channel with auth already in place. Today it
+  only carries chat relay for the Discord bot (`BroadcastChatMessage` / `BroadcastToAllClients`); it
+  does **not** currently stream SMAPI console output or the server log. So the transport and auth
+  exist, but the output feed a CLI needs is new work (see "What to build" below).
 - A **`POST /test/console`** endpoint that injects a console command name + args through SMAPI's
   command manager (models in `mod/JunimoServer/Services/Api/ApiService.TestEndpoints.Models.cs`).
   The tricky part — invoking a registered SMAPI console command from outside the console, with the
@@ -36,16 +39,21 @@ The mod's HTTP API (`mod/JunimoServer/Services/Api/ApiService.cs`) already has t
 1. **Promote console injection to a production endpoint.** Add an authenticated `POST /console`
    (or promote `/test/console` out of the test-only gate) that runs an arbitrary SMAPI console
    command. Keep it behind `API_KEY` auth like the rest of the API.
-2. **Point the CLI at HTTP.** Rework the interactive CLI to submit commands via `POST /console` and
-   stream output over `/ws`. This client no longer needs to live inside the server container — it
-   can be a separate sidecar, or a local tool run from a laptop. This lines up with the existing
-   `.claude/plans/features/cli-rewrite-v4.md`.
-3. **Replace `toggle-rendering.sh`** with a call to the API (a rendering endpoint likely already
+2. **Broadcast console/log output over `/ws`.** Today `/ws` only relays chat, so removing the FIFO
+   would leave operators with no command output. Add a broadcast of SMAPI console output and/or the
+   server log to WebSocket clients, so the CLI has something to display. The channel and auth already
+   exist (`BroadcastToAllClients`); the output feed is the new part, and it must land before the FIFO
+   is removed or the CLI has no output stream.
+3. **Point the CLI at HTTP.** Rework the interactive CLI to submit commands via `POST /console` and
+   stream output over the `/ws` broadcast from the previous step. This client no longer needs to live
+   inside the server container — it can be a separate sidecar, or a local tool run from a laptop. This
+   lines up with the existing `.claude/plans/features/cli-rewrite-v4.md`.
+4. **Replace `toggle-rendering.sh`** with a call to the API (a rendering endpoint likely already
    exists in `ApiService.cs`; use it, or add one).
-4. **Drop the FIFO wrapper at launch.** Once nothing writes commands to stdin, SMAPI can be exec'd
+5. **Drop the FIFO wrapper at launch.** Once nothing writes commands to stdin, SMAPI can be exec'd
    directly instead of through `script` + `tail -f FIFO`. This also removes two always-on processes
    plus a PTY.
-5. **Retire the shell CLI files** — `attach-cli`, `server-command-loop`, `toggle-rendering.sh`,
+6. **Retire the shell CLI files** — `attach-cli`, `server-command-loop`, `toggle-rendering.sh`,
    `mem-cpu.sh` — from the image once the client replaces them.
 
 ## Benefits this unlocks (beyond removing shell)

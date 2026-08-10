@@ -29,8 +29,14 @@ stage) to a Debian 13 slim base. Translate the `apk add` package set to the Debi
 the X stack (Xvfb, openbox, the X client libraries), the Vulkan loader, the Mesa runtime
 libraries the custom Zink build needs, PipeWire, ffmpeg, ca-certificates, and the .NET runtime
 dependency `libicu` (SMAPI fails at startup without ICU — see
-`.claude/rules/image-runtime-deps-must-be-explicit.md`). Keep the SwiftShader and custom Mesa
-build stages as they are; they already build on Debian.
+`.claude/rules/image-runtime-deps-must-be-explicit.md`).
+
+The `swiftshader-builder` stage already uses a Debian (glibc) base, so its output runs on a glibc
+runtime unchanged. The `mesa-builder` stage, however, currently builds on `alpine:edge` (musl) — a
+musl-linked Mesa will not load in a glibc runtime, so this stage must also be rebased to a glibc base
+(or the Zink runtime libraries sourced from Debian packages). Keep this coordinated with task 1.3:
+whichever way Mesa is rebuilt, preserve `llvm=disabled` and make sure no distro Mesa package pulls
+LLVM back in.
 
 Carry over the build fix already needed on Alpine: copy `mod/JunimoServer.Shared`'s csproj into
 the mod-builder stage for layer caching and drop the `--no-restore` on the mod build.
