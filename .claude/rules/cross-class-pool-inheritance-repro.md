@@ -20,8 +20,11 @@ public override async ValueTask InitializeAsync()
 
 Size the delay against the producer's *full acquire latency*, not its dispatch time — acquisition
 includes client-slot waits, so a 2-client class can take well over a minute to even claim its
-exclusive turn. Then confirm the order actually happened from run artifacts (`queueDurationMs` per
-test, server-log timestamps), never by assumption.
+exclusive turn. Then confirm the order actually happened, never by assumption: the authoritative
+signal is the `server_acquired` event (`ManagedServer.cs`), which carries `server`, `instanceId`
+and `host_id` and is timestamped in `infrastructure.jsonl`. `queueDurationMs` is xUnit
+dispatch-wait ([`test-timing.md`](test-timing.md)), so it's supporting context only — never proof
+of lease order.
 
 **Why:** Reproducing a CI failure where PacingProbeTests leased the post-wedding server burned ~5
 runs. A combined `FILTER="A|B"` run put the probes first twice; a 60s delay still lost the race
