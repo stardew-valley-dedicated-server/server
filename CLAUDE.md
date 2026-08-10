@@ -33,7 +33,7 @@ A question answered by the transcript gets a direct answer — no pre-narration,
 - `tests/test-ui/`: Vue.js test monitoring UI
 - `docker/Dockerfile`: multi-stage server image build
 - `Directory.Build.props`: centralizes `GAME_PATH` for all .csproj files
-- `decompiled/sdv-1.6.15-24356/`: decompiled Stardew Valley sources (reference only)
+- `decompiled/sdv-1.6.15-24356/`: decompiled Stardew Valley sources (reference only) — gitignored, so it exists only in the main checkout; from a worktree, read it there
 
 ## Prohibitions
 

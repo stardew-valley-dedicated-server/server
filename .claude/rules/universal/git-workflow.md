@@ -30,4 +30,8 @@ Bullet points of changes. No co-author attributions.
 
 ## Worktrees
 
+A worktree has **no `decompiled/`** — it's gitignored (~1 GB) and `.worktreeinclude` copies files, not directories. Read decompiled sources from the main checkout (`git worktree list` lists it first); every `decompiled/...` citation in rules and plans resolves against that checkout, not your worktree.
+
+Don't "solve" this by linking it in: `git worktree remove --force` deletes *through* a junction, destroying the main checkout's copy (gitignored, so unrecoverable), and ripgrep doesn't follow one — `Grep` would return silent zero-match results while `Read` on the same path works.
+
 Worktrees live at `../worktrees/<name>` — never inside the repo. Create them via EnterWorktree: the `WorktreeCreate` hook (`.claude/hooks/worktree-create.mjs`) places them there, branches `<name>` from `master` (so name it like a branch: `fix/...`, `feat/...`), copies the `.worktreeinclude` files, and runs `npm ci`. Don't hand-roll `git worktree add` — if the hook path is ever unavailable, replicate those steps yourself. `ExitWorktree` can leave but not remove a worktree mid-session; clean up with `git worktree remove --force "../worktrees/<name>"` (deletes uncommitted changes; keep the branch if a PR depends on it). On Windows `Filename too long`: `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"` then `git worktree prune`.

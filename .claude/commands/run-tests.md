@@ -1,5 +1,19 @@
 # Running E2E Tests
 
+## Before launching: one run per machine
+
+Check for an already-active run before starting one — concurrent runner instances on the same
+machine are unsupported and kill each other (a mid-run collision dies with `make ... Error 127`
+and writes no `summary.json`, and it can take the other run down too):
+
+```bash
+docker ps --format '{{.Names}}' | grep -i sdvd   # active test containers
+```
+
+Also check for a live `JunimoServer.TestRunner` (`dotnet run`) process — the container check can
+race a run's build/prestart phase. If anything is active (e.g. another agent session's run),
+don't launch; coordinate with the user first.
+
 ## Quick Commands
 
 ```bash
