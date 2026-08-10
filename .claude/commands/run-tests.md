@@ -1,5 +1,29 @@
 # Running E2E Tests
 
+## Before launching: one run per machine
+
+Check for an already-active run before starting one — concurrent runner instances on the same
+machine are unsupported and kill each other (a mid-run collision dies with `make ... Error 127`
+and writes no `summary.json`, and it can take the other run down too):
+
+```bash
+docker ps --format '{{.Names}}' | grep -i sdvd   # active test containers
+```
+
+The container check can't see a run still building or pre-starting, so also check the runner
+process. `make test` shells out to `dotnet run --project ./tests/JunimoServer.TestRunner`, and the
+apphost only exists once the build finishes — so match on the command line, not just the process
+name (PowerShell):
+
+```powershell
+Get-Process JunimoServer.TestRunner -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" |
+  Where-Object CommandLine -match 'JunimoServer\.TestRunner'
+```
+
+No output from both means no run is active. If either returns anything (e.g. another agent
+session's run), don't launch; coordinate with the user first.
+
 ## Quick Commands
 
 ```bash
