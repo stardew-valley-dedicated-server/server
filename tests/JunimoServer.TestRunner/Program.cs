@@ -144,7 +144,7 @@ void TryGenerateReport()
 // Shared abort body. `cause` becomes the run_aborted event cause and the
 // summary.json abortReason. Re-entrant: the first call starts the graceful
 // teardown + 15s force-kill safety net; subsequent calls go straight to
-// emergency cleanup + Environment.Exit(130). Used by Ctrl+C and UI Stop so
+// emergency cleanup + Environment.Exit(ExitCodes.Interrupted). Used by Ctrl+C and UI Stop so
 // both produce identical observable behavior.
 void BeginAbort(string cause)
 {
@@ -262,7 +262,7 @@ void BeginAbort(string cause)
             JunimoServer.Tests.Helpers.EmergencyCleanup.RunAll();
             var cleanupMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
             EmitAbortPhaseTimings(cause, drained, gracefulWaitMs, childKillMs, cleanupMs);
-            Environment.Exit(130);
+            Environment.Exit(ExitCodes.Interrupted);
         })
         {
             IsBackground = false,
@@ -284,7 +284,7 @@ void BeginAbort(string cause)
         JunimoServer.Tests.Helpers.EmergencyCleanup.RunAll();
         var cleanupMs = (long)Stopwatch.GetElapsedTime(phaseStart).TotalMilliseconds;
         EmitAbortPhaseTimings(cause, drained: false, gracefulWaitMs: 0, childKillMs, cleanupMs);
-        Environment.Exit(130);
+        Environment.Exit(ExitCodes.Interrupted);
     }
 }
 
@@ -353,7 +353,7 @@ await renderer.InitializeAsync();
 //   2. Write summary.json (so post-mortem queries still work)
 //   3. Bulk-remove all containers/networks/volumes labeled with this run-id
 //      (one Docker API call per host, parallelized across hosts)
-//   4. Environment.Exit(130)
+//   4. Environment.Exit(ExitCodes.Interrupted)
 // In-flight test recordings/screenshots are lost — accepted trade-off for
 // snappy stop. The startup sweep on the next run picks up anything missed.
 //
@@ -378,7 +378,7 @@ await renderer.InitializeAsync();
 //   2. Now that there's no producer, bulk-remove Docker resources by
 //      sdvd.run-id label across all hosts, then tear the ssh masters down.
 //   3. Drain parent's event log + write summary.json.
-//   4. Environment.Exit(130).
+//   4. Environment.Exit(ExitCodes.Interrupted).
 void ForceExitNow(string cause)
 {
     JunimoServer.Tests.Helpers.EmergencyCleanup.ArmExitBackstop(cause);
@@ -388,7 +388,7 @@ void ForceExitNow(string cause)
     if (Interlocked.Increment(ref abortCount) != 1)
     {
         KillTestChildren();
-        Environment.Exit(130);
+        Environment.Exit(ExitCodes.Interrupted);
         return;
     }
 
@@ -483,7 +483,7 @@ void ForceExitNow(string cause)
     }
     finally
     {
-        Environment.Exit(130);
+        Environment.Exit(ExitCodes.Interrupted);
     }
 }
 
@@ -974,7 +974,7 @@ catch (Exception ex)
 // parent's renderer.
 Environment.SetEnvironmentVariable("SDVD_SETUP_PIPE", setupPipe.PipeName);
 
-int exitCode = 0;
+int exitCode = ExitCodes.Success;
 
 try
 {
@@ -1012,7 +1012,10 @@ try
         OnExecutionComplete = info =>
         {
             callbacks.OnExecutionComplete(info);
-            exitCode = info.TestsFailed > 0 ? 1 : (info.TotalErrors > 0 ? 2 : 0);
+            exitCode =
+                info.TestsFailed > 0 ? ExitCodes.TestsFailed
+                : info.TotalErrors > 0 ? ExitCodes.RunnerError
+                : ExitCodes.Success;
         },
         OnErrorMessage = callbacks.OnErrorMessage,
         // Progress signals for the stall-watchdog: a test STARTING (xUnit
@@ -1119,10 +1122,10 @@ catch (Exception ex)
     recorder.SetAbortReason("exception");
     // OnError carries the scrubbed message + stack to every mode (renderers
     // sanitize the stack; a raw exception dump must not reach the public CI
-    // log). Exit code 2 is the abort convention; the outer finally owns
+    // log). RunnerError is the abort convention; the outer finally owns
     // artifacts + report + dispose on this path.
     renderer.OnError(new ErrorEvent($"Run aborted — {runMsg}", ex.StackTrace));
-    exitCode = 2;
+    exitCode = ExitCodes.RunnerError;
 }
 finally
 {
@@ -1225,7 +1228,7 @@ finally
 
     if (abortCount > 0)
     {
-        exitCode = 130; // Standard exit code for Ctrl+C / UI Stop
+        exitCode = ExitCodes.Interrupted;
     }
 }
 

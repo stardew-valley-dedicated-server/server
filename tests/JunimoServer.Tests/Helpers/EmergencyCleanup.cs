@@ -128,7 +128,7 @@ public static class EmergencyCleanup
                     ctx.Cancel = true; // Prevent immediate termination
                     ArmExitBackstop("sighup");
                     RunAll();
-                    Environment.Exit(130);
+                    Environment.Exit(ExitCodes.Interrupted);
                 }
             );
         }
