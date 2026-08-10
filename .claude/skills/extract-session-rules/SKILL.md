@@ -1,6 +1,6 @@
 ---
 name: extract-session-rules
-description: Review the current session for durable, non-obvious learnings worth persisting to .claude/ (rules, skills, or CLAUDE.md edits). Use when the user asks to extract/save/capture session lessons, or at the end of a session that produced corrections or surprising findings.
+description: Reviews the current session for durable, non-obvious learnings worth persisting to `.claude/` (rules, skills, or `CLAUDE.md` edits). Use when the user asks to extract/save/capture session lessons, or at the end of a session that produced corrections or surprising findings.
 argument-hint: [optional instructions for the review]
 tools: Read, Grep, Glob, Write, Edit, Bash, AskUserQuestion
 ---
