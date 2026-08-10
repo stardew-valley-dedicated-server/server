@@ -1,6 +1,6 @@
 ---
 name: dump-managed-stacks
-description: Capture managed .NET thread stacks from a hung game process inside a Docker container, via a dotnet SDK sidecar joined to the container's PID namespace. Use when a containerized .NET process wedges (game log goes quiet, container still up) and logs don't say what it's blocked on.
+description: Captures managed .NET thread stacks from a hung game process inside a Docker container, via a dotnet SDK sidecar joined to the container's PID namespace. Use when a containerized .NET process wedges (game log goes quiet, container still up) and logs don't say what it's blocked on.
 argument-hint: [container name, optionally a remote docker host]
 tools: Bash
 ---
