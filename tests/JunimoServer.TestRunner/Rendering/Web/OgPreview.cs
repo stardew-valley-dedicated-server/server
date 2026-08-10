@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using JunimoServer.Tests.Helpers;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing.Processing;
@@ -83,7 +84,7 @@ public static class OgPreview
         Console.Error.WriteLine(
             $"og-preview: wrote {testCards.Count + 1} cards + index.html to {OutDir}/ — open {OutDir}/index.html"
         );
-        return Task.FromResult(0);
+        return Task.FromResult(ExitCodes.Success);
     }
 
     // Mirrors ReportGenerator.BuildMetaTags' theme-color map (ReportGenerator.cs)

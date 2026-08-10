@@ -52,7 +52,7 @@ public sealed class TunnelManager : IAsyncDisposable
     // Set at DrainAsync entry. Teardown owns master lifecycle from that point: the
     // owner-side health monitor must not respawn a master (or re-open forwards) that
     // drain is concurrently exiting — that leaves an orphan master squatting the
-    // ControlPath for ControlPersist minutes after the run.
+    // ControlPath after the run.
     private volatile bool _draining;
 
     // Caps concurrent `ssh -O` reuse invocations (forward / cancel / check) that hit one
@@ -196,8 +196,8 @@ public sealed class TunnelManager : IAsyncDisposable
             );
         }
 
-        var masterPid = ParseMasterPid(checkStderr);
-        if (masterPid is null)
+        var reportedPid = ParseMasterPid(checkStderr);
+        if (reportedPid is null)
         {
             // Without a pid the respawn path's hard reset silently degrades to
             // "skipped_unknown_pid" — surface the parse miss at registration (an `ssh -O
@@ -206,6 +206,20 @@ public sealed class TunnelManager : IAsyncDisposable
             EmitSafe("ssh_master_pid_unparsed", new { host_id = hostId, stderr = checkStderr });
         }
 
+        // -O check reports ssh's OWN pid space. Under Git for Windows' Cygwin
+        // ssh the -f-forked master's Cygwin pid is NOT the Windows pid, so map
+        // it via the sibling `ps` NOW, while the master is provably alive —
+        // teardown paths may run after it died, when no mapping exists.
+        var masterPid = reportedPid is int cygwinPid
+            ? await TryMapToWindowsPidAsync(_sshPath, cygwinPid)
+            : null;
+        if (reportedPid is not null && masterPid is null)
+        {
+            // Kill path degrades to -O exit + check-based confirmation only.
+            EmitSafe("ssh_master_pid_unmapped", new { host_id = hostId, reportedPid });
+        }
+
+        var spawnedAtUtc = DateTime.UtcNow;
         lock (_lock)
         {
             _masters[hostId] = new HostMaster
@@ -217,9 +231,26 @@ public sealed class TunnelManager : IAsyncDisposable
                 LogPath = logPath,
                 Owned = true,
                 MasterPid = masterPid,
-                SpawnedAtUtc = DateTime.UtcNow,
+                SpawnedAtUtc = spawnedAtUtc,
             };
         }
+
+        // Journal the owned master so teardown paths that never see this
+        // process's memory (emergency cleanup after Environment.Exit, the next
+        // run's preflight reaper) can still reach it. Upsert by host id — a
+        // respawn re-registers and updates the journal for free.
+        SshMasterJournal.RecordMaster(
+            new SshMasterJournal.MasterRecord
+            {
+                HostId = hostId,
+                SshDestination = sshDestination,
+                ControlPath = controlPath,
+                LogPath = logPath,
+                MasterPid = masterPid,
+                SpawnedAtUtc = spawnedAtUtc,
+                SshPath = _sshPath,
+            }
+        );
 
         EmitSafe(
             "ssh_master_ready",
@@ -256,8 +287,6 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("ControlMaster=auto");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add($"ControlPath={controlPath}");
-        psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add("ControlPersist=10m");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add("Compression=yes");
         psi.ArgumentList.Add("-o");
@@ -652,9 +681,14 @@ public sealed class TunnelManager : IAsyncDisposable
     /// </summary>
     public async Task<bool> TryRespawnMasterAsync(string hostId, CancellationToken ct = default)
     {
-        if (_draining)
+        if (_draining || Helpers.ShutdownCoordinator.IsShuttingDown)
         {
-            return false; // teardown owns master lifecycle now
+            // Teardown owns master lifecycle now. The shutdown check covers the
+            // abort paths (Ctrl+C, UI Stop), which never set _draining: without
+            // it the health monitor races the emergency teardown, respawning a
+            // fresh master for every one the teardown kills — the last respawn
+            // can outlive the process as an unreaped orphan.
+            return false;
         }
 
         HostMaster? master = TryGetMaster(hostId);
@@ -671,34 +705,30 @@ public sealed class TunnelManager : IAsyncDisposable
         var destination = master.SshDestination;
         var keyPath = master.SshKeyPath;
 
-        // Best-effort clean shutdown first. Bounded; a wedged master won't answer.
-        try
-        {
-            var exitPsi = NewSshPsi();
-            exitPsi.ArgumentList.Add("-O");
-            exitPsi.ArgumentList.Add("exit");
-            exitPsi.ArgumentList.Add("-o");
-            exitPsi.ArgumentList.Add($"ControlPath={master.ControlPath}");
-            exitPsi.ArgumentList.Add(destination);
-            await RunSshOpAsync(exitPsi, TimeSpan.FromSeconds(3), ct);
-        }
-        catch
-        { /* wedged master may not answer -O exit; the kill below is the hard reset */
-        }
+        // Terminal teardown of the old master: bounded -O exit, pid-kill
+        // fallback, then CONFIRM the process is gone. The old process must be
+        // GONE before the same-port forward re-open below, and every connection
+        // it still holds must die fast rather than hang. Established streams
+        // through it (container log/stats) are severed too — their readers
+        // reconnect through the restored forwards or surface a classifiable
+        // fault.
+        var teardown = await TerminateMasterCoreAsync(
+            _sshPath,
+            destination,
+            master.ControlPath,
+            master.MasterPid,
+            master.SpawnedAtUtc,
+            TimeSpan.FromSeconds(3)
+        );
 
-        // Hard reset: the old process must be GONE before the same-port forward re-open
-        // below, and every connection it still holds must die fast rather than hang.
-        // Established streams through it (container log/stats) are severed too — their
-        // readers reconnect through the restored forwards or surface a classifiable fault.
-        var oldMasterKill = TryKillMasterProcess(master);
-
-        // Evict the dead entry + its socket so RegisterHostMasterAsync's ContainsKey guard
-        // doesn't short-circuit and its `ssh -M` doesn't hit the "socket exists" trap.
+        // Evict the dead entry so RegisterHostMasterAsync's ContainsKey guard
+        // doesn't short-circuit. (The core already unlinked the socket iff the
+        // process is confirmed gone, so `ssh -M` can't hit the "socket exists"
+        // trap on the success path.)
         lock (_lock)
         {
             _masters.Remove(hostId);
         }
-        TryDeleteFile(master.ControlPath);
 
         EmitSafe(
             "ssh_master_respawn_attempt",
@@ -706,9 +736,32 @@ public sealed class TunnelManager : IAsyncDisposable
             {
                 host_id = hostId,
                 oldPid = master.MasterPid,
-                oldMasterKill,
+                oldMasterKill = teardown.KillOutcome,
+                oldMasterGone = teardown.Gone,
             }
         );
+
+        if (!teardown.Gone)
+        {
+            // The old process survived even the kill — the wedge state (alive,
+            // holding the forward listeners, refusing service).
+            // Respawning at the same ControlPath would trip the
+            // "ControlSocket already exists, disabling multiplexing" trap, and
+            // every same-port reopen would collide with the survivor's
+            // listeners. Keep the socket (it is the only remaining handle) and
+            // report unrecoverable so the caller poisons the host.
+            EmitSafe(
+                "ssh_master_respawn_failed",
+                new
+                {
+                    host_id = hostId,
+                    error = "old master process not confirmed gone",
+                    killOutcome = teardown.KillOutcome,
+                }
+            );
+            return false;
+        }
+
         try
         {
             await RegisterHostMasterAsync(hostId, destination, keyPath, ct);
@@ -733,39 +786,325 @@ public sealed class TunnelManager : IAsyncDisposable
         }
     }
 
+    /// <summary>Outcome of <see cref="TerminateMasterCoreAsync"/>. <c>Gone</c>
+    /// means the master <em>process</em> is confirmed dead (or its pid was
+    /// recycled to something else) — only then was the socket unlinked.</summary>
+    private readonly record struct MasterTeardownOutcome(
+        bool Gone,
+        int ExitCode,
+        string ExitStderr,
+        string KillOutcome
+    );
+
     /// <summary>
-    /// Kills the old master process by pid, triple-guarded against a stale or OS-reused pid:
-    /// the process must be named <c>ssh</c>, must run the resolved ssh binary (when both
-    /// paths are comparable), and must have started within two minutes of the master's
-    /// spawn. The guards make a mis-kill unlikely, not impossible — an ssh master another
-    /// coordinator on this box spawned inside that window matches all three, so a reused
-    /// pid can still cost that run its host. Returns a short outcome string for the
-    /// <c>ssh_master_respawn_attempt</c> event. Pid identity note: Cygwin/MSYS pids equal
-    /// Windows pids since msys2-runtime 3.4 (Git for Windows ≥ 2.39), and
-    /// <see cref="SshBinaryResolver"/> already mandates Git for Windows ssh.
+    /// Terminal ControlMaster teardown — the one primitive every teardown path
+    /// uses (drain, respawn, emergency cleanup, cross-run reaper):
+    /// <list type="number">
+    ///   <item>Bounded <c>ssh -O exit</c>. Exit 0 only <em>acknowledges</em> the
+    ///     request — the master's shutdown is asynchronous.</item>
+    ///   <item>Confirm the master process is gone (bounded wait); if it isn't
+    ///     (or <c>-O exit</c> failed/timed out), kill it by pid and re-confirm.</item>
+    ///   <item>Unlink the socket <b>only after</b> the process is confirmed
+    ///     gone. A survivor keeps its socket — it is the only remaining handle
+    ///     (the cross-run reaper needs it), and unlinking it would convert a
+    ///     reapable orphan into a PID-only one.</item>
+    /// </list>
+    /// Static and fully parameterized so foreign-process paths (emergency
+    /// teardown after <c>Environment.Exit</c>, the next run's preflight reaper)
+    /// can drive it from journal records. Cancellation propagates (leaving the
+    /// half-torn master's socket and journal entry intact for the next
+    /// attempt); every existing caller passing <see cref="CancellationToken.None"/>
+    /// is unaffected.
     /// </summary>
-    private string TryKillMasterProcess(HostMaster master)
+    private static async Task<MasterTeardownOutcome> TerminateMasterCoreAsync(
+        string sshPath,
+        string sshDestination,
+        string controlPath,
+        int? masterPid,
+        DateTime spawnedAtUtc,
+        TimeSpan exitTimeout,
+        CancellationToken ct = default
+    )
     {
-        if (master.MasterPid is not int pid)
+        int exit;
+        string stderr;
+        try
         {
-            return "skipped_unknown_pid";
+            var psi = NewSshPsiFor(sshPath);
+            psi.ArgumentList.Add("-O");
+            psi.ArgumentList.Add("exit");
+            psi.ArgumentList.Add("-o");
+            psi.ArgumentList.Add($"ControlPath={controlPath}");
+            psi.ArgumentList.Add(sshDestination);
+            (exit, stderr) = await RunSshToCompletionAsync(psi, exitTimeout, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            (exit, stderr) = (-1, ex.Message);
+        }
+
+        var gone = await WaitForMasterGoneAsync(
+            sshPath,
+            sshDestination,
+            controlPath,
+            masterPid,
+            spawnedAtUtc,
+            TimeSpan.FromSeconds(2),
+            ct
+        );
+
+        var killOutcome = "not_needed";
+        if (!gone)
+        {
+            killOutcome = TryKillMasterProcess(masterPid, spawnedAtUtc, sshPath);
+            // "killed" is itself an observed termination — the identity-matched
+            // process was alive, Kill() succeeded, and WaitForExit saw it end —
+            // so no further corroboration is needed (and the socket-side check
+            // can false-negative right after a hard kill: a dead Cygwin socket
+            // takes ~2s to refuse).
+            gone =
+                killOutcome == "killed"
+                || await WaitForMasterGoneAsync(
+                    sshPath,
+                    sshDestination,
+                    controlPath,
+                    masterPid,
+                    spawnedAtUtc,
+                    TimeSpan.FromSeconds(2),
+                    ct
+                );
+        }
+
+        if (gone)
+        {
+            TryDeleteFile(controlPath);
+        }
+
+        return new MasterTeardownOutcome(gone, exit, stderr, killOutcome);
+    }
+
+    /// <summary>
+    /// Bounded wait for the master process to disappear. With a known Windows
+    /// pid, first waits out a live identity-matched process; the verdict then
+    /// ALWAYS comes from <c>ssh -O check</c> against the socket — pid absence
+    /// alone proves nothing (an unmapped/recycled pid reads as absent while the
+    /// master lives, since <c>-O check</c> reports the Cygwin-space pid, not
+    /// the Windows pid). A check that times out is "cannot confirm", NOT gone:
+    /// a wedged master answers nothing while staying very much alive.
+    /// </summary>
+    private static async Task<bool> WaitForMasterGoneAsync(
+        string sshPath,
+        string sshDestination,
+        string controlPath,
+        int? masterPid,
+        DateTime spawnedAtUtc,
+        TimeSpan timeout,
+        CancellationToken ct = default
+    )
+    {
+        if (masterPid is int pid)
+        {
+            var seenAlive = false;
+            var startedAt = Stopwatch.GetTimestamp();
+            while (true)
+            {
+                var (process, _) = ProbeMasterProcess(pid, spawnedAtUtc, sshPath);
+                if (process is null)
+                {
+                    if (seenAlive)
+                    {
+                        return true; // watched the identity-matched process die
+                    }
+
+                    break; // ambient absence — only the socket can confirm
+                }
+
+                seenAlive = true;
+                process.Dispose();
+                if (Stopwatch.GetElapsedTime(startedAt) >= timeout)
+                {
+                    return false; // identity-matched process still alive
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+            }
         }
 
         try
         {
-            using var process = Process.GetProcessById(pid);
+            var psi = NewSshPsiFor(sshPath);
+            psi.ArgumentList.Add("-O");
+            psi.ArgumentList.Add("check");
+            psi.ArgumentList.Add("-o");
+            psi.ArgumentList.Add($"ControlPath={controlPath}");
+            psi.ArgumentList.Add(sshDestination);
+            // Floor the check budget above Cygwin's dead-socket refusal latency
+            // (measured ~2.1s), or a genuinely-gone master reads as 124/cannot-
+            // confirm when the caller's wait budget is tight.
+            var checkTimeout =
+                timeout > TimeSpan.FromSeconds(4) ? timeout : TimeSpan.FromSeconds(4);
+            var (exit, stderr) = await RunSshToCompletionAsync(psi, checkTimeout, ct);
+            if (exit == 0 && stderr.Contains("Master running", StringComparison.Ordinal))
+            {
+                return false; // alive
+            }
+
+            return exit != 124; // 124 = check timed out: cannot confirm gone
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false; // cannot confirm
+        }
+    }
+
+    /// <summary>
+    /// Maps the pid <c>ssh -O check</c> reported to a Windows pid. On POSIX
+    /// they are the same value. On Windows the Cygwin master's mapping lives in
+    /// the WINPID column of the <c>ps</c> shipped next to ssh.exe (same Cygwin
+    /// namespace as the master, since both run the same msys runtime). Null
+    /// when ps or the row is missing — the caller then has no kill path, only
+    /// <c>-O exit</c> plus check-based confirmation.
+    /// </summary>
+    private static async Task<int?> TryMapToWindowsPidAsync(string sshPath, int reportedPid)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return reportedPid;
+        }
+
+        try
+        {
+            var psPath = Path.Combine(Path.GetDirectoryName(sshPath) ?? "", "ps.exe");
+            if (!File.Exists(psPath))
+            {
+                return null;
+            }
+
+            var psi = new ProcessStartInfo(psPath)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            var stdout = await RunToolForStdoutAsync(psi, TimeSpan.FromSeconds(5));
+
+            // Header: "PID PPID PGID WINPID TTY UID STIME COMMAND". Rows can
+            // carry a leading one-char status flag (e.g. S for a stopped
+            // process) that shifts every column right by one.
+            int pidCol = -1,
+                winPidCol = -1;
+            foreach (var line in stdout.Split('\n'))
+            {
+                var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (pidCol < 0)
+                {
+                    pidCol = Array.IndexOf(tokens, "PID");
+                    winPidCol = Array.IndexOf(tokens, "WINPID");
+                    if (pidCol < 0 || winPidCol < 0)
+                    {
+                        pidCol = -1; // not the header line yet
+                    }
+                    continue;
+                }
+
+                if (tokens.Length == 0)
+                {
+                    continue;
+                }
+
+                var shift = int.TryParse(tokens[0], out _) ? 0 : 1;
+                if (
+                    tokens.Length > winPidCol + shift
+                    && int.TryParse(tokens[pidCol + shift], out var rowPid)
+                    && rowPid == reportedPid
+                    && int.TryParse(tokens[winPidCol + shift], out var winPid)
+                )
+                {
+                    return winPid;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Runs a short local diagnostic tool and returns its stdout —
+    /// "" on any failure or timeout, which callers read as "no answer".</summary>
+    private static async Task<string> RunToolForStdoutAsync(ProcessStartInfo psi, TimeSpan timeout)
+    {
+        using var process =
+            Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start {psi.FileName}");
+        try
+        {
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            _ = process.StandardError.ReadToEndAsync(); // drain, or a chatty tool deadlocks on a full pipe
+            using var cts = new CancellationTokenSource(timeout);
+            await process.WaitForExitAsync(cts.Token);
+            return await stdoutTask.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch
+        {
+            // Timed out or unreadable: kill the straggler, report "no answer".
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch
+            { /* lost the race: already gone */
+            }
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Resolves the live master process for a pid, triple-guarded against a
+    /// stale or OS-reused pid: the process must be named <c>ssh</c>, must have
+    /// started within two minutes of the master's spawn, and must run the
+    /// resolved ssh binary (when both paths are comparable). The guards make a
+    /// mis-match unlikely, not impossible — an ssh master another coordinator
+    /// on this box spawned inside that window matches all three. Returns
+    /// <c>(null, reason)</c> when gone or not ours; <c>(process, "live")</c>
+    /// otherwise. Pid identity note: the pid must be a WINDOWS pid. What
+    /// <c>ssh -O check</c> reports for a <c>-f</c>-forked master is its
+    /// Cygwin-space pid, which does NOT equal the Windows pid — registration
+    /// maps it via the sibling <c>ps</c> before it is stored anywhere.
+    /// </summary>
+    private static (Process? Process, string Reason) ProbeMasterProcess(
+        int pid,
+        DateTime spawnedAtUtc,
+        string sshPath
+    )
+    {
+        Process? process = null;
+        try
+        {
+            process = Process.GetProcessById(pid);
 
             if (!process.ProcessName.Equals("ssh", StringComparison.OrdinalIgnoreCase))
             {
-                return $"skipped_name_mismatch({process.ProcessName})";
+                var name = process.ProcessName;
+                process.Dispose();
+                return (null, $"name_mismatch({name})");
             }
 
-            if (
-                Math.Abs((process.StartTime.ToUniversalTime() - master.SpawnedAtUtc).TotalSeconds)
-                > 120
-            )
+            if (Math.Abs((process.StartTime.ToUniversalTime() - spawnedAtUtc).TotalSeconds) > 120)
             {
-                return "skipped_start_time_mismatch";
+                process.Dispose();
+                return (null, "start_time_mismatch");
             }
 
             // Best-effort binary check; MainModule can be unreadable (access, bitness).
@@ -774,29 +1113,73 @@ public sealed class TunnelManager : IAsyncDisposable
                 var modulePath = process.MainModule?.FileName;
                 if (
                     modulePath is not null
-                    && Path.IsPathRooted(_sshPath)
+                    && Path.IsPathRooted(sshPath)
                     && !string.Equals(
                         Path.GetFullPath(modulePath),
-                        Path.GetFullPath(_sshPath),
+                        Path.GetFullPath(sshPath),
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
                 {
-                    return $"skipped_binary_mismatch({modulePath})";
+                    process.Dispose();
+                    return (null, $"binary_mismatch({modulePath})");
                 }
             }
             catch
             { /* unreadable module: name + start-time guards carry the decision */
             }
 
-            process.Kill();
-            // A survivor still squats the forward ports — surface it so the same-port
-            // reopen's bind failure is self-explaining.
-            return process.WaitForExit(2000) ? "killed" : "killed_exit_timeout";
+            return (process, "live");
         }
         catch (ArgumentException)
         {
-            return "already_exited";
+            return (null, "gone");
+        }
+        catch (InvalidOperationException)
+        {
+            process?.Dispose();
+            return (null, "gone");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Name/start-time read denied — a pid recycled to another user's
+            // process. We spawned our master under this user, so ours would be
+            // readable; still, "cannot inspect" is not "confirmed gone".
+            process?.Dispose();
+            return (null, "unreadable");
+        }
+    }
+
+    /// <summary>
+    /// Kills the master process by pid behind the identity guards. Returns a
+    /// short outcome string for teardown events.
+    /// </summary>
+    private static string TryKillMasterProcess(
+        int? masterPid,
+        DateTime spawnedAtUtc,
+        string sshPath
+    )
+    {
+        if (masterPid is not int pid)
+        {
+            return "skipped_unknown_pid";
+        }
+
+        var (process, reason) = ProbeMasterProcess(pid, spawnedAtUtc, sshPath);
+        if (process is null)
+        {
+            return reason == "gone" ? "already_exited" : $"skipped_{reason}";
+        }
+
+        try
+        {
+            using (process)
+            {
+                process.Kill();
+                // A survivor still squats the forward ports — surface it so the
+                // same-port reopen's bind failure is self-explaining.
+                return process.WaitForExit(2000) ? "killed" : "killed_exit_timeout";
+            }
         }
         catch (InvalidOperationException)
         {
@@ -806,6 +1189,182 @@ public sealed class TunnelManager : IAsyncDisposable
         {
             return $"failed({ex.GetType().Name})";
         }
+    }
+
+    /// <summary>
+    /// Synchronous journal-driven teardown of every ControlMaster THIS process
+    /// registered, for abort paths where the parent's <c>finally</c> (and thus
+    /// <see cref="DrainAsync"/>) never ran — <c>Environment.Exit</c> does not
+    /// unwind the stack. Consumes the on-disk journal, not <c>_masters</c>:
+    /// <see cref="DrainAsync"/> snapshot-clears the dictionary <em>before</em>
+    /// running its exits, so on the one path where drain's own teardown failed
+    /// an in-memory read would silently no-op. No-op when no journal exists
+    /// (local-only fleet, xUnit child, or every master already confirmed gone);
+    /// idempotent per call; bounded per master.
+    /// </summary>
+    public static void EmergencyTeardownOwnMasters()
+    {
+        lock (EmergencyTeardownLock)
+        {
+            // Re-snapshot until no unseen (host, pid) remains: a health-monitor
+            // respawn that raced the shutdown gate can register a fresh master
+            // while the first pass runs. The attempted-set keeps each pair
+            // single-shot; the pass cap bounds a pathological register loop.
+            var attempted = new HashSet<(string HostId, int? Pid)>();
+            for (var pass = 0; pass < 4; pass++)
+            {
+                var pending = SshMasterJournal
+                    .SnapshotOwnMasters()
+                    .Where(m => attempted.Add((m.HostId, m.MasterPid)))
+                    .ToList();
+                if (pending.Count == 0)
+                {
+                    break;
+                }
+
+                foreach (var m in pending)
+                {
+                    try
+                    {
+                        var result = TerminateMasterCoreAsync(
+                                m.SshPath,
+                                m.SshDestination,
+                                m.ControlPath,
+                                m.MasterPid,
+                                m.SpawnedAtUtc,
+                                exitTimeout: TimeSpan.FromSeconds(3)
+                            )
+                            .GetAwaiter()
+                            .GetResult();
+
+                        if (result.Gone)
+                        {
+                            SshMasterJournal.RemoveMaster(m.HostId, m.MasterPid, m.SpawnedAtUtc);
+                        }
+
+                        EmitSafe(
+                            "ssh_master_emergency_teardown",
+                            new
+                            {
+                                host_id = m.HostId,
+                                gone = result.Gone,
+                                exitCode = result.ExitCode,
+                                killOutcome = result.KillOutcome,
+                            }
+                        );
+
+                        // The -E tail is the only record of a silent-timeout drop —
+                        // fold it into diagnostics like the drain path does.
+                        var tail = ReadMasterLogTail(m.LogPath, MaxLogTailBytes);
+                        if (tail.Length > 0)
+                        {
+                            EmitSafe(
+                                "ssh_master_log",
+                                new
+                                {
+                                    host_id = m.HostId,
+                                    logPath = m.LogPath,
+                                    tail,
+                                }
+                            );
+                        }
+                    }
+                    catch
+                    { /* teardown must never block process exit */
+                    }
+                }
+            }
+        }
+    }
+
+    private static readonly object EmergencyTeardownLock = new();
+
+    /// <summary>
+    /// Preflight-time cross-run reap: for every ssh-master journal in the temp
+    /// dir whose coordinator process is dead (PID + start-time liveness),
+    /// terminally tears down the listed masters and deletes the journal.
+    /// Mirrors the Docker-side <c>SweepStaleResourcesAsync</c> startup pattern
+    /// (label-scoped resources reaped by the next run). A journal whose
+    /// coordinator is alive — including a hung one — is never touched: sibling
+    /// safety outranks reap eagerness, and F5's exit guarantee is what makes
+    /// "coordinator dead" eventually true. Cancellation is a graceful stop,
+    /// not an error: the in-progress journal is kept for the next run and the
+    /// partial count comes back with <c>Stopped = true</c> — the caller
+    /// decides whether the stop was its own sub-budget or a real abort.
+    /// </summary>
+    public static async Task<(int Reaped, bool Stopped)> ReapOrphanedMastersAsync(
+        string fallbackSshPath,
+        CancellationToken ct = default
+    )
+    {
+        var reaped = 0;
+        foreach (var orphan in SshMasterJournal.SnapshotOrphanedJournals())
+        {
+            var allGone = true;
+            foreach (var m in orphan.Journal.Masters)
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    return (reaped, true);
+                }
+
+                // Prefer the binary the master was spawned with (its identity
+                // guard); fall back to the freshly resolved one when it no
+                // longer exists — otherwise the teardown can never run and the
+                // journal would be retried forever.
+                var sshPath =
+                    !string.IsNullOrEmpty(m.SshPath) && File.Exists(m.SshPath)
+                        ? m.SshPath
+                        : fallbackSshPath;
+                try
+                {
+                    var result = await TerminateMasterCoreAsync(
+                        sshPath,
+                        m.SshDestination,
+                        m.ControlPath,
+                        m.MasterPid,
+                        m.SpawnedAtUtc,
+                        exitTimeout: TimeSpan.FromSeconds(3),
+                        ct: ct
+                    );
+                    EmitSafe(
+                        "ssh_orphan_master_reaped",
+                        new
+                        {
+                            host_id = m.HostId,
+                            coordinatorPid = orphan.Journal.CoordinatorPid,
+                            controlPath = m.ControlPath,
+                            gone = result.Gone,
+                            killOutcome = result.KillOutcome,
+                        }
+                    );
+                    if (result.Gone)
+                    {
+                        reaped++;
+                    }
+                    else
+                    {
+                        allGone = false;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return (reaped, true); // journal kept; the next run retries
+                }
+                catch
+                {
+                    allGone = false;
+                }
+            }
+
+            // Keep the journal when any master survived — the next run retries.
+            if (allGone)
+            {
+                SshMasterJournal.DeleteJournalIfUnchanged(orphan);
+            }
+        }
+
+        return (reaped, false);
     }
 
     /// <summary>
@@ -1380,41 +1939,52 @@ public sealed class TunnelManager : IAsyncDisposable
     private async Task ExitMasterAsync(HostMaster master, TimeSpan perCancelTimeout)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        var psi = NewSshPsi();
-        psi.ArgumentList.Add("-O");
-        psi.ArgumentList.Add("exit");
-        psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add($"ControlPath={master.ControlPath}");
-        psi.ArgumentList.Add(master.SshDestination);
 
-        // Best-effort, but record why the exit failed instead of discarding it.
-        int exit;
-        string stderr;
-        try
-        {
-            (exit, stderr) = await RunSshOpAsync(psi, perCancelTimeout, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            (exit, stderr) = (-1, ex.Message);
-        }
+        // Terminal teardown: -O exit, pid-kill fallback, unlink only once the
+        // process is confirmed gone. A survivor keeps its socket (the only
+        // remaining handle) and its journal entry, so the emergency path and
+        // the next run's reaper can still reach it.
+        var result = await TerminateMasterCoreAsync(
+            _sshPath,
+            master.SshDestination,
+            master.ControlPath,
+            master.MasterPid,
+            master.SpawnedAtUtc,
+            perCancelTimeout
+        );
 
-        // ssh -O exit removes the socket file as part of clean shutdown.
-        // If anything remains (timeout, partial shutdown), drop the file so
-        // a future run on the same path doesn't hit the silent-disable trap.
-        TryDeleteFile(master.ControlPath);
+        if (result.Gone)
+        {
+            SshMasterJournal.RemoveMaster(master.HostId, master.MasterPid, master.SpawnedAtUtc);
+        }
 
         EmitSafe(
             "ssh_master_exited",
             new
             {
                 host_id = master.HostId,
-                exitCode = exit,
-                // Happy path stays lean: no stderr field on a clean exit.
-                stderr = exit != 0 ? stderr : null,
+                exitCode = result.ExitCode,
+                gone = result.Gone,
+                // Happy path stays lean: extra fields only when something failed.
+                killOutcome = result.KillOutcome == "not_needed" ? null : result.KillOutcome,
+                stderr = result.ExitCode != 0 ? result.ExitStderr : null,
                 durationMs = ElapsedMs(startedAt),
             }
         );
+
+        if (!result.Gone)
+        {
+            EmitSafe(
+                "ssh_master_teardown_failed",
+                new
+                {
+                    host_id = master.HostId,
+                    masterPid = master.MasterPid,
+                    controlPath = master.ControlPath,
+                    killOutcome = result.KillOutcome,
+                }
+            );
+        }
 
         // Fold the master's own -E death line into the log. Read AFTER -O exit
         // (final line flushed); emit only when non-empty (a stable master logs
@@ -1483,9 +2053,11 @@ public sealed class TunnelManager : IAsyncDisposable
         }
     }
 
-    private ProcessStartInfo NewSshPsi()
+    private ProcessStartInfo NewSshPsi() => NewSshPsiFor(_sshPath);
+
+    private static ProcessStartInfo NewSshPsiFor(string sshPath)
     {
-        var psi = new ProcessStartInfo(_sshPath)
+        var psi = new ProcessStartInfo(sshPath)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -1779,13 +2351,31 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sweeps temp dir for stale ControlMaster sockets from prior runs. Run at
-    /// preflight start, before any master spawn, so the specific delete in
+    /// Sweeps the temp dir for stale ControlMaster sockets from prior runs
+    /// whose journal was lost (journaled orphans are
+    /// <see cref="ReapOrphanedMastersAsync"/>'s job). Run at preflight start,
+    /// before any master spawn, so the specific delete in
     /// <see cref="RegisterHostMasterAsync"/> can't hit a sibling-occupied path.
+    ///
+    /// Reap-then-unlink, never unlink-first: a stale socket may still front a
+    /// live orphan master, and unlinking it would strip the orphan's only
+    /// remaining handle. <c>ssh -O exit</c> through the socket kills such a
+    /// master (which removes its own socket on clean shutdown) before the
+    /// leftover file is deleted. The destination argument is required by ssh's
+    /// CLI but unused for mux commands — the socket carries the target (a
+    /// missing socket fails with "Control socket connect" before any hostname
+    /// resolution). Returns the number of stale sockets swept — reaped by the
+    /// master's own clean shutdown and/or unlinked here. Cancellation is a
+    /// graceful stop, not an error: unswept sockets are left for the next run
+    /// and the partial count comes back with <c>Stopped = true</c>.
     /// </summary>
-    public static int CleanupStaleControlSockets(TimeSpan maxAge)
+    public static async Task<(int Swept, bool Stopped)> CleanupStaleControlSocketsAsync(
+        string sshPath,
+        TimeSpan maxAge,
+        CancellationToken ct = default
+    )
     {
-        var deleted = 0;
+        var swept = 0;
         var tempDir = Path.GetTempPath();
         IEnumerable<string> files;
         try
@@ -1794,14 +2384,32 @@ public sealed class TunnelManager : IAsyncDisposable
         }
         catch
         {
-            return 0;
+            return (0, false);
         }
 
         var cutoff = DateTime.UtcNow - maxAge;
+        var journaled = SshMasterJournal.SnapshotJournaledControlPaths();
         foreach (var file in files)
         {
+            if (ct.IsCancellationRequested)
+            {
+                return (swept, true);
+            }
+
             try
             {
+                // A journal-referenced socket has an owner (its coordinator, or
+                // the orphan reaper once that coordinator dies) — age-sweeping
+                // it would kill a live sibling's master or strip a kept
+                // survivor's only handle. This sweep is strictly the fallback
+                // for sockets whose journal was lost. Keyed by file name (a
+                // unique hash) so a sibling's differently-spelled temp dir
+                // (e.g. an 8.3 short path) can't defeat the exemption.
+                if (journaled.Contains(Path.GetFileName(file)))
+                {
+                    continue;
+                }
+
                 var info = new FileInfo(file);
                 if (!info.Exists)
                 {
@@ -1813,8 +2421,30 @@ public sealed class TunnelManager : IAsyncDisposable
                     continue;
                 }
 
-                info.Delete();
-                deleted++;
+                try
+                {
+                    var psi = NewSshPsiFor(sshPath);
+                    psi.ArgumentList.Add("-O");
+                    psi.ArgumentList.Add("exit");
+                    psi.ArgumentList.Add("-o");
+                    psi.ArgumentList.Add($"ControlPath={file}");
+                    psi.ArgumentList.Add("sdvd-orphan");
+                    await RunSshToCompletionAsync(psi, TimeSpan.FromSeconds(3), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return (swept, true); // this socket left for the next run
+                }
+                catch
+                { /* dead socket: nothing to reap */
+                }
+
+                info.Refresh();
+                if (info.Exists)
+                {
+                    info.Delete();
+                }
+                swept++;
             }
             catch (UnauthorizedAccessException)
             { /* shared /tmp on Linux: not ours */
@@ -1823,7 +2453,7 @@ public sealed class TunnelManager : IAsyncDisposable
             { /* in use by another live master, or transient */
             }
         }
-        return deleted;
+        return (swept, false);
     }
 
     private static void TryDeleteFile(string path)
@@ -1946,10 +2576,12 @@ public sealed class TunnelManager : IAsyncDisposable
         public required bool Owned { get; init; }
 
         /// <summary>
-        /// OS pid of the live master process, parsed from <c>ssh -O check</c>'s
-        /// "Master running (pid=N)" line. Owned masters only (null on adopted child
-        /// entries — the child never kills); null when the parse missed, which
-        /// downgrades the respawn-path kill to a no-op.
+        /// WINDOWS pid of the live master process: <c>ssh -O check</c>'s
+        /// "Master running (pid=N)" value mapped out of Cygwin pid space at
+        /// registration (they differ for the <c>-f</c>-forked master). Owned
+        /// masters only (null on adopted child entries — the child never
+        /// kills); null when the parse or mapping missed, which downgrades
+        /// every kill to a no-op and teardown to check-based confirmation.
         /// </summary>
         public int? MasterPid { get; init; }
 

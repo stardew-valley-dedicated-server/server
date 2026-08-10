@@ -393,14 +393,16 @@ public sealed class TestResourceBroker : IAsyncDisposable
             RunMetadata.WriteRunMetadata(demands, instancePlan);
             InfrastructureEventLog.Initialize();
 
-            // Ensure the child's infrastructure event log is drained on abnormal
+            // Ensure the child's infrastructure event log is flushed on abnormal
             // exit (ProcessExit / SIGHUP / second Ctrl+C). The parent registers
             // its own in TestRunner/Program.cs against its parent log; this is
             // the symmetric registration for the test child's canonical log.
+            // FlushAsync, not a drain — drain completes the channel and drops
+            // everything emitted after it. RunAll bounds the wait per sink.
             EmergencyCleanup.EnsureRegistered();
             EmergencyCleanup.RegisterDrainable(
                 "infrastructure-event-log",
-                () => new ValueTask(InfrastructureEventLog.DrainAsync(TimeSpan.FromSeconds(2)))
+                () => new ValueTask(InfrastructureEventLog.FlushAsync())
             );
 
             TestLog.Server($"Discovered {demands.Count} unique server config(s) for pre-start:");

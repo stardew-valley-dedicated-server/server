@@ -43,6 +43,55 @@ public static class EmergencyCleanup
     // because in-flight DisposeAsyncs were cancelled.
     private static volatile bool _skipBulkSweep;
 
+    private static int _backstopArmed;
+
+    /// <summary>
+    /// One-shot absolute-deadline watchdog for the abort path. Armed when an
+    /// abort begins (Ctrl+C, UI Stop, SIGHUP); if the process is still alive at
+    /// the deadline, <see cref="Environment.FailFast(string)"/> — not
+    /// <c>Environment.Exit</c>, which re-enters <see cref="RunAll"/> via
+    /// ProcessExit (which has no runtime time budget on modern .NET) and can
+    /// hang on the same sweep that stalled the first attempt. FailFast skips
+    /// ProcessExit handlers by design; by backstop time every cleanup layer has
+    /// had its chance, and a leaked ssh master becomes the next run's preflight
+    /// reaper's job — which only works once this coordinator is actually dead.
+    /// The deadline is composed from the abort path's own phase budgets
+    /// (<see cref="ShutdownBudgets.ComputeAbortBackstop"/>), never a hand-picked
+    /// number.
+    /// </summary>
+    public static void ArmExitBackstop(string cause)
+    {
+        if (Interlocked.Exchange(ref _backstopArmed, 1) != 0)
+        {
+            return;
+        }
+
+        int drainableCount;
+        lock (Lock)
+        {
+            drainableCount = Math.Max(1, Drainables.Count);
+        }
+        var hostCount = Math.Max(1, HostPoolAccessor.GetHostsForCleanup()?.Count ?? 1);
+        var masterCount = SshMasterJournal.OwnMasterCount();
+        var deadline = ShutdownBudgets.ComputeAbortBackstop(hostCount, drainableCount, masterCount);
+
+        // Background thread: never keeps a healthy exit alive, only outlives it
+        // when the process fails to die.
+        var watchdog = new Thread(() =>
+        {
+            Thread.Sleep(deadline);
+            Environment.FailFast(
+                $"Abort backstop: process still alive {deadline.TotalSeconds:F0}s after abort "
+                    + $"'{cause}' — terminating hard (ProcessExit handlers skipped)."
+            );
+        })
+        {
+            IsBackground = true,
+            Name = "AbortBackstop",
+        };
+        watchdog.Start();
+    }
+
     /// <summary>
     /// Skip the final <see cref="BulkCleanupLabeledResources"/> pass inside
     /// <see cref="RunAll"/>. Called from <c>Program.cs</c>'s outer finally on
@@ -77,8 +126,9 @@ public static class EmergencyCleanup
                 ctx =>
                 {
                     ctx.Cancel = true; // Prevent immediate termination
+                    ArmExitBackstop("sighup");
                     RunAll();
-                    Environment.Exit(130);
+                    Environment.Exit(ExitCodes.Interrupted);
                 }
             );
         }
@@ -123,9 +173,11 @@ public static class EmergencyCleanup
     }
 
     /// <summary>
-    /// Runs all registered cleanup actions and clears the registry.
-    /// Safe to call multiple times; second call is a no-op.
-    /// Call this directly before Environment.Exit for guaranteed cleanup.
+    /// Runs all registered cleanup actions. Safe to call multiple times, but
+    /// only the drainables and actions are latched (snapshot-and-clear runs
+    /// them once); the bulk sweep and the transport teardown re-run on every
+    /// call and are idempotent per call instead. Call this directly before
+    /// Environment.Exit for guaranteed cleanup.
     /// </summary>
     public static void RunAll()
     {
@@ -146,7 +198,7 @@ public static class EmergencyCleanup
         {
             try
             {
-                drain().AsTask().Wait(TimeSpan.FromSeconds(2));
+                drain().AsTask().Wait(ShutdownBudgets.DrainablePerSink);
             }
             catch
             {
@@ -177,6 +229,13 @@ public static class EmergencyCleanup
         {
             BulkCleanupLabeledResources();
         }
+
+        // Transport teardown LAST. The bulk sweep above removes remote
+        // containers THROUGH the ssh tunnel — tearing the master down any
+        // earlier strands every remote container (an ssh leak traded for a
+        // container leak). Journal-driven: no-op when no master exists
+        // (local-only fleets, xUnit child) and idempotent per call.
+        TunnelManager.EmergencyTeardownOwnMasters();
     }
 
     /// <summary>
@@ -190,9 +249,12 @@ public static class EmergencyCleanup
     /// case we accept the broader cleanup as the lesser evil over leaking
     /// orphan containers.
     ///
-    /// Per-call timeout is 3s for remote (ssh://) hosts -- a hung SSH master
-    /// must not block process exit. Local hosts run unbounded, matching the
-    /// pre-refactor `docker rm -f` behavior. <see cref="Infrastructure.HostPoolAccessor.GetHostsForCleanup"/>
+    /// Every call is bounded (<see cref="ShutdownBudgets"/>): tight per-call
+    /// caps for remote (ssh://) hosts -- a hung SSH master must not block
+    /// process exit -- and generous ones for local hosts, where a hung Docker
+    /// Desktop named pipe plus the client's infinite timeout reproduces the
+    /// same hang. Each host additionally gets a whole-sweep deadline.
+    /// <see cref="Infrastructure.HostPoolAccessor.GetHostsForCleanup"/>
     /// returns the configured hosts; if HostPool is not yet initialized
     /// (early process exit), we fall back to the local default daemon.
     /// </summary>
@@ -207,7 +269,9 @@ public static class EmergencyCleanup
         {
             try
             {
-                var perCallTimeout = isRemote ? TimeSpan.FromSeconds(3) : (TimeSpan?)null;
+                var perCallTimeout = isRemote
+                    ? ShutdownBudgets.RemoteSweepPerCall
+                    : ShutdownBudgets.LocalSweepPerCall;
                 BulkRemoveOnHost(client, labelKey, labelValue, perCallTimeout);
             }
             catch
@@ -265,12 +329,23 @@ public static class EmergencyCleanup
         TimeSpan? perCallTimeout
     )
     {
+        // Whole-host deadline on top of the per-call caps, so a pathological
+        // resource count can't stretch the sweep past its phase budget.
+        using var hostBudget = new CancellationTokenSource(ShutdownBudgets.BulkSweepPerHost);
+        var ct = hostBudget.Token;
+
         // Containers first (they hold references to networks/volumes), then
         // networks, then volumes. Each call swallows per-resource errors.
         try
         {
             DockerOps
-                .BulkForceRemoveContainersByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .BulkForceRemoveContainersByLabelAsync(
+                    client,
+                    labelKey,
+                    labelValue,
+                    perCallTimeout,
+                    ct
+                )
                 .GetAwaiter()
                 .GetResult();
         }
@@ -278,7 +353,7 @@ public static class EmergencyCleanup
         try
         {
             DockerOps
-                .BulkRemoveNetworksByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .BulkRemoveNetworksByLabelAsync(client, labelKey, labelValue, perCallTimeout, ct)
                 .GetAwaiter()
                 .GetResult();
         }
@@ -286,7 +361,7 @@ public static class EmergencyCleanup
         try
         {
             DockerOps
-                .BulkRemoveVolumesByLabelAsync(client, labelKey, labelValue, perCallTimeout)
+                .BulkRemoveVolumesByLabelAsync(client, labelKey, labelValue, perCallTimeout, ct)
                 .GetAwaiter()
                 .GetResult();
         }

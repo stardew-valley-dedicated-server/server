@@ -123,21 +123,23 @@ internal static class DockerOps
         CancellationToken ct = default
     )
     {
+        // The list call gets the per-call bound too: the Docker client's own
+        // timeout is deliberately infinite, and a wedged tunnel accepts the
+        // request and never answers — an unbounded list here hangs the caller
+        // (and, on the abort path, the emergency sweep with it).
+        using var listCts = LinkedTimeoutCts(ct, perCallTimeout);
         var containers = await client.Containers.ListContainersAsync(
             new ContainersListParameters
             {
                 All = true,
                 Filters = LabelFilter(labelKey, labelValue),
             },
-            ct
+            listCts?.Token ?? ct
         );
 
         foreach (var c in containers)
         {
-            using var cts = perCallTimeout is { } t
-                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
-                : null;
-            cts?.CancelAfter(perCallTimeout!.Value);
+            using var cts = LinkedTimeoutCts(ct, perCallTimeout);
             try
             {
                 await client.Containers.RemoveContainerAsync(
@@ -165,17 +167,15 @@ internal static class DockerOps
         CancellationToken ct = default
     )
     {
+        using var listCts = LinkedTimeoutCts(ct, perCallTimeout);
         var networks = await client.Networks.ListNetworksAsync(
             new NetworksListParameters { Filters = LabelFilter(labelKey, labelValue) },
-            ct
+            listCts?.Token ?? ct
         );
 
         foreach (var n in networks)
         {
-            using var cts = perCallTimeout is { } t
-                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
-                : null;
-            cts?.CancelAfter(perCallTimeout!.Value);
+            using var cts = LinkedTimeoutCts(ct, perCallTimeout);
             try
             {
                 await client.Networks.DeleteNetworkAsync(n.ID, cts?.Token ?? ct);
@@ -199,9 +199,10 @@ internal static class DockerOps
         CancellationToken ct = default
     )
     {
+        using var listCts = LinkedTimeoutCts(ct, perCallTimeout);
         var listed = await client.Volumes.ListAsync(
             new VolumesListParameters { Filters = LabelFilter(labelKey, labelValue) },
-            ct
+            listCts?.Token ?? ct
         );
 
         if (listed?.Volumes == null)
@@ -211,10 +212,7 @@ internal static class DockerOps
 
         foreach (var v in listed.Volumes)
         {
-            using var cts = perCallTimeout is { } t
-                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
-                : null;
-            cts?.CancelAfter(perCallTimeout!.Value);
+            using var cts = LinkedTimeoutCts(ct, perCallTimeout);
             try
             {
                 await client.Volumes.RemoveAsync(v.Name, force: true, cts?.Token ?? ct);
@@ -253,6 +251,21 @@ internal static class DockerOps
         catch
         { /* best effort */
         }
+    }
+
+    private static CancellationTokenSource? LinkedTimeoutCts(
+        CancellationToken ct,
+        TimeSpan? timeout
+    )
+    {
+        if (timeout is not { } t)
+        {
+            return null;
+        }
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(t);
+        return cts;
     }
 
     private static IDictionary<string, IDictionary<string, bool>> LabelFilter(
