@@ -514,11 +514,24 @@ public sealed class HostPool : IAsyncDisposable
             // preflight abort must still surface as one.
             ct.ThrowIfCancellationRequested();
 
-            var staleSwept = await TunnelManager.CleanupStaleControlSocketsAsync(
-                sshPath,
-                TimeSpan.FromHours(1),
-                ct
-            );
+            // Same sub-budget shape for the sweep: each unjournaled stale
+            // socket pays a bounded ssh call, and an unbounded backlog would
+            // starve the master spawns below. Unswept sockets wait for the
+            // next run.
+            int staleSwept;
+            bool staleSweepTimedOut;
+            using (var sweepCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                sweepCts.CancelAfter(TimeSpan.FromSeconds(10));
+                (staleSwept, staleSweepTimedOut) =
+                    await TunnelManager.CleanupStaleControlSocketsAsync(
+                        sshPath,
+                        TimeSpan.FromHours(1),
+                        sweepCts.Token
+                    );
+            }
+            ct.ThrowIfCancellationRequested();
+
             InfrastructureEventLog.Emit(
                 "ssh_preflight",
                 new
@@ -527,6 +540,7 @@ public sealed class HostPool : IAsyncDisposable
                     orphanMastersReaped = orphansReaped,
                     orphanReapTimedOut,
                     staleSocketsSwept = staleSwept,
+                    staleSweepTimedOut,
                 }
             );
 

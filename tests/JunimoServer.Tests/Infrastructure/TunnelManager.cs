@@ -2365,9 +2365,11 @@ public sealed class TunnelManager : IAsyncDisposable
     /// CLI but unused for mux commands — the socket carries the target (a
     /// missing socket fails with "Control socket connect" before any hostname
     /// resolution). Returns the number of stale sockets swept — reaped by the
-    /// master's own clean shutdown and/or unlinked here.
+    /// master's own clean shutdown and/or unlinked here. Cancellation is a
+    /// graceful stop, not an error: unswept sockets are left for the next run
+    /// and the partial count comes back with <c>Stopped = true</c>.
     /// </summary>
-    public static async Task<int> CleanupStaleControlSocketsAsync(
+    public static async Task<(int Swept, bool Stopped)> CleanupStaleControlSocketsAsync(
         string sshPath,
         TimeSpan maxAge,
         CancellationToken ct = default
@@ -2382,21 +2384,28 @@ public sealed class TunnelManager : IAsyncDisposable
         }
         catch
         {
-            return 0;
+            return (0, false);
         }
 
         var cutoff = DateTime.UtcNow - maxAge;
         var journaled = SshMasterJournal.SnapshotJournaledControlPaths();
         foreach (var file in files)
         {
+            if (ct.IsCancellationRequested)
+            {
+                return (swept, true);
+            }
+
             try
             {
                 // A journal-referenced socket has an owner (its coordinator, or
                 // the orphan reaper once that coordinator dies) — age-sweeping
                 // it would kill a live sibling's master or strip a kept
                 // survivor's only handle. This sweep is strictly the fallback
-                // for sockets whose journal was lost.
-                if (journaled.Contains(file))
+                // for sockets whose journal was lost. Keyed by file name (a
+                // unique hash) so a sibling's differently-spelled temp dir
+                // (e.g. an 8.3 short path) can't defeat the exemption.
+                if (journaled.Contains(Path.GetFileName(file)))
                 {
                     continue;
                 }
@@ -2424,7 +2433,7 @@ public sealed class TunnelManager : IAsyncDisposable
                 }
                 catch (OperationCanceledException)
                 {
-                    throw;
+                    return (swept, true); // this socket left for the next run
                 }
                 catch
                 { /* dead socket: nothing to reap */
@@ -2444,7 +2453,7 @@ public sealed class TunnelManager : IAsyncDisposable
             { /* in use by another live master, or transient */
             }
         }
-        return swept;
+        return (swept, false);
     }
 
     private static void TryDeleteFile(string path)

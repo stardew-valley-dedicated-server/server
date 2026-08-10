@@ -292,8 +292,9 @@ void BeginAbort(string cause)
 // tightened from run data. Also the abort paths' log finalizer: the outer
 // finally skips shutdown + scrub while an abort is in flight (it would close
 // the writer under the abort thread's teardown emits), so this closes and
-// scrubs instead. Both steps are idempotent — the force-kill thread and a
-// second-signal branch may each get here.
+// scrubs instead.
+var abortFinalized = 0;
+
 void EmitAbortPhaseTimings(
     string cause,
     bool drained,
@@ -302,6 +303,16 @@ void EmitAbortPhaseTimings(
     long cleanupMs
 )
 {
+    // Single-entry: the force-kill thread and the second-signal branch can
+    // arrive CONCURRENTLY (second Ctrl+C during the graceful window), and
+    // ScrubRunFilesInPlace does read-then-write on the artifact files — a
+    // racing second pass, or an Environment.Exit mid-write, can truncate a
+    // file whose scrub is what masks credentials.
+    if (Interlocked.Exchange(ref abortFinalized, 1) != 0)
+    {
+        return;
+    }
+
     try
     {
         JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(

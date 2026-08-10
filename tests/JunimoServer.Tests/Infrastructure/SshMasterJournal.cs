@@ -294,12 +294,14 @@ internal static class SshMasterJournal
     }
 
     /// <summary>
-    /// Control paths referenced by ANY journal in the temp dir — own, live
-    /// sibling, or dead coordinator. The age-based stale-socket sweep must skip
-    /// these: a journaled socket already has exactly one owner (its coordinator
-    /// while alive, the orphan reaper once it is dead), and age-sweeping it
-    /// would either kill a live sibling's master outright or strip a kept
-    /// survivor's only remaining handle.
+    /// Control-socket FILE NAMES referenced by ANY journal in the temp dir —
+    /// own, live sibling, or dead coordinator. The age-based stale-socket
+    /// sweep must skip these: a journaled socket already has exactly one owner
+    /// (its coordinator while alive, the orphan reaper once it is dead), and
+    /// age-sweeping it would either kill a live sibling's master outright or
+    /// strip a kept survivor's only remaining handle. Name-keyed (the socket
+    /// name is a unique hash) so the exemption holds even when a sibling
+    /// coordinator spelled the temp dir differently (e.g. an 8.3 short path).
     /// </summary>
     public static IReadOnlyCollection<string> SnapshotJournaledControlPaths()
     {
@@ -323,7 +325,7 @@ internal static class SshMasterJournal
                 {
                     if (!string.IsNullOrEmpty(m.ControlPath))
                     {
-                        paths.Add(m.ControlPath);
+                        paths.Add(Path.GetFileName(m.ControlPath));
                     }
                 }
             }

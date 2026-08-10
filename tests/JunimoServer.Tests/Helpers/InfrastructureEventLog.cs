@@ -199,8 +199,8 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// <item><b>SSH tunnel lifecycle</b> (<c>TunnelManager</c>; remote hosts only):
 /// <c>ssh_preflight</c> (<c>sshPath, orphanMastersReaped, orphanReapTimedOut,
-/// staleSocketsSwept</c>; emitted once at HostPool.PreflightAsync start when
-/// any host is remote) ·
+/// staleSocketsSwept, staleSweepTimedOut</c>; emitted once at
+/// HostPool.PreflightAsync start when any host is remote) ·
 /// <c>ssh_master_ready</c> (<c>host_id, controlPath, logPath, durationMs</c>;
 /// <c>logPath</c> = the master's <c>-E</c> error log) ·
 /// <c>ssh_master_spawn_failed</c> (<c>host_id, exitCode, stderr, durationMs</c>;
