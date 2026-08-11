@@ -1,3 +1,9 @@
+---
+paths:
+  - "tests/test-ui/**"
+  - "tests/JunimoServer.TestRunner/**"
+---
+
 # Prefer the live event stream over disk artifacts when both carry the same data
 
 When you need to surface runner data in the UI, check whether a live WebSocket / IPC event already carries it before reaching for the on-disk artifact. The runner often writes the same data to both — `infrastructure.jsonl` on disk *and* a typed `instance_*` event over the WebSocket. Picking the disk artifact when a live event exists creates a second source of truth: the UI now polls and parses what the store already has reactively.

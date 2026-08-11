@@ -156,7 +156,7 @@ Each PR must pass these before merge. The harness has **no unit-test layer for t
 **Behavior gates by area:**
 
 - **P2-a (broker refactor):** run the full suite `make test`; confirm pass/fail counts and `queueDurationTotalMs` match a pre-refactor baseline run (no new deadlock/starvation). Inspect `TestResults/runs/{latest}/diagnostics/infrastructure.jsonl` for unexpected `server_poisoned` / `host_disconnected` / capacity-starvation events. Spot-check a KeepConnected class and an `[TestServer(Exclusive=true)]` class still serialize correctly.
-- **P2-b / P3 (test-ui):** `make build-test-ui` + `make test-ui-unit`; load `make test-web` against a recorded run and confirm the live event stream still populates the test tree, instance stats history, and screenshots/recordings (no regression vs the WebSocket-first behavior in `.claude/rules/universal/prefer-live-stream-over-disk-artifact.md`).
+- **P2-b / P3 (test-ui):** `make build-test-ui` + `make test-ui-unit`; load `make test-web` against a recorded run and confirm the live event stream still populates the test tree, instance stats history, and screenshots/recordings (no regression vs the WebSocket-first behavior in `.claude/rules/prefer-live-stream-over-disk-artifact.md`).
 - **P4 (test-client):** rebuild via `make build-test-client`, then **verify the edit landed in the produced image** (`docker create` + `docker cp`) per `.claude/rules/universal/verify-edit-landed-in-artifact.md` — the test-client Dockerfile does NOT `COPY docker/rootfs/`. Run `make test FILTER=<a menu-navigation-heavy class>` and confirm the probe logs at `Warn` (not `Error`) and menus still navigate. Confirm no `LogLevel.Error` was introduced.
 
 **Documentation gates (P1):**
