@@ -48,7 +48,7 @@ Each frame's PTS must equal its actual capture wall-clock (container CLOCK_REALT
 
 **Failure mode under `ffprobe seg_NNNN.ts`:** MPEG-TS wraps PTS modulo 2^33 ticks at 1/90000 time_base (~26.5h). The wall-clock PTS the recorder writes (~1.78e9 in 2026) reads back from ffprobe as the wrapped value (~49254). Any Unix-epoch sanity check (`pts > 1e9`) then rejects the read, and any arithmetic between two wrapped values gives a meaningless result. The segment muxer's CSV sidecar records the unwrapped wall-clock the muxer was handed — format-agnostic across MKV/TS/etc.
 
-**Direct empirical incident:** the startup polling loop hung the entire test harness for 23 minutes (until Ctrl-C) on the day this fix was made, because the polling check kept rejecting the wrapped PTS value, never advanced past attempt 1.
+**Direct empirical incident:** the startup polling loop hung the entire test harness for ~23 minutes — the check kept rejecting the wrapped PTS value and never advanced past attempt 1.
 
 **Row 0 caveat:** `segments.csv` stores `seg_0000.ts`'s `start_time` as the degenerate stream-relative 0 (the muxer's first frame is at PTS=0 in stream time before `-copyts` kicks in). Row N≥1 has both columns as absolute Unix-epoch seconds. `SelectCoveringSegments` tolerates the 0 (since `0 < endEpoch + slack` is always true); `BuildExtractCommand` falls back to `StartContainerEpoch − segmentTime` when cover0 is row 0 — best-effort, the SelectCoveringSegments slack absorbs x11grab warmup overshoot.
 
@@ -79,20 +79,7 @@ The shell preamble in `StartAsync` sleeps until `CLOCK_REALTIME mod (1/fps) == 0
 
 Resist the urge to use strftime-templated filenames.
 
-**Failure mode under `-strftime 1` + `seg_%s.ts` (or any second-resolution template):** ffmpeg (8.1 branch) in this image doesn't support sub-second strftime specifiers (`%N`/`%6N` pass through literally). At `fps=1, segment_time=1`, x11grab's startup serializes the first ~6 PTS-seconds of frames into ~1s of wall-clock during encoder warmup. The strftime expands at segment-open time, so the first 6 segments all open at the same wall-clock second and the muxer **overwrites them** — 3 files on disk where 8 should exist, segments 0-4 lost. Concrete evidence (8-frame test recording, `segments.csv`):
-
-```
-seg_1778763755.ts,0.000000,1.000000
-seg_1778763755.ts,1.000000,2.000000    ← collision
-seg_1778763755.ts,2.000000,3.000000    ← collision
-seg_1778763755.ts,3.000000,4.000000    ← collision
-seg_1778763755.ts,4.000000,5.000000    ← collision
-seg_1778763755.ts,5.000000,6.000000    ← collision
-seg_1778763756.ts,6.000000,7.000000    ← wall-clock ticks
-seg_1778763757.ts,7.000000,8.000000
-```
-
-Sequence-number filenames are always unique and the anchor doesn't need filename-as-clock anyway (it reads segments.csv).
+**Failure mode under `-strftime 1` + `seg_%s.ts` (or any second-resolution template):** ffmpeg (8.1 branch) in this image doesn't support sub-second strftime specifiers (`%N`/`%6N` pass through literally). At `fps=1, segment_time=1`, x11grab's startup serializes the first ~6 PTS-seconds of frames into ~1s of wall-clock during encoder warmup. The strftime expands at segment-open time, so the first 6 segments all open at the same wall-clock second and the muxer **overwrites them** — verified on an 8-frame test recording: 3 files on disk where 8 should exist, segments 0-4 lost. Sequence-number filenames are always unique and the anchor doesn't need filename-as-clock anyway (it reads segments.csv).
 
 ## Invariant 8 — concat lists need a `duration {_segmentTime}` directive (single-frame-segment 2× compression)
 
@@ -100,7 +87,7 @@ Every `file '<seg>'` line fed to the `-f concat` **demuxer** must be followed by
 
 **Failure mode without it (fps=1 only):** at `fps=1, segment_time=1` each segment holds exactly **one** frame. A one-frame MPEG-TS file has no inter-frame delta to measure, so ffprobe/the muxer reports its `duration` as **0.5s** (the `1/(2·fps)` fallback). The `-f concat` *demuxer* trusts each file's self-reported duration to place the next, so N segments pack at 0.5s spacing → the merged stream and the extracted clip come out **2× time-compressed** (`r_frame_rate=2/1`, file ≈ half the real wall-clock, `-t DUR` grabs ~2×DUR of content, playback runs 2× fast). The frames themselves are fine and distinct — `mpdecimate` finds **zero** duplicates; only the *timestamps* are halved. **CI never hit this** because `SERVER_FPS`/`CLIENT_FPS` ≥ 5 there, so each 1s segment holds ≥5 frames and the duration is measurable; only the local `fps=1` config (`.env.test`) triggers it.
 
-**Symptom in the test-UI** (`SyncedVideos.vue` / `useFilmstripCache.ts`): the timeline axis is laid out by `wallClockDuration` (~117s) but the file is ~half that; the filmstrip spreads seek-times across `wallClock` then `Math.min(..., duration-0.01)` **clamps** every thumbnail past the file end to the last frame — so the back half of each track shows the final frame (e.g. the disconnect/title screen) repeated. The scrubber saturates there too. The bug looks like "the test idles for a minute after it's done" but it's the clip being stretched over a too-long axis.
+**Symptom in the test-UI:** the back half of each track shows the final frame repeated (thumbnail seeks past the file end clamp to the last frame) — it looks like "the test idles for a minute after it's done" but is the clip stretched over a too-long axis.
 
 **Fix detail:** `concat:` *protocol* + `-copyts` also yields `1/1` and preserves absolute epoch PTS, but it changes the concat mechanism and touches more of these invariants; the `duration` directive is the surgical one. It rebases the merged PTS to stream-relative, which is **safe** — the `actualFirstFramePts` math (Invariant 6) is a relative delta plus `cover0Epoch` from segments.csv, not the merged stream's absolute PTS. No-op at `fps ≥ 2`.
 

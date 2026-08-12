@@ -76,7 +76,7 @@ public class GalaxyOutageReproTests : TestBase
         // ── Configurable outage dwell. This is timing margin held AFTER steam_session_lost is
         // already gate-confirmed below — it lets the Galaxy lobby genuinely drop before restore,
         // so recovery exercises a dead-lobby re-login rather than a too-fast flap. Override without
-        // a rebuild via SDVD_OUTAGE_DWELL_MS (verify-documented-config-is-consumed.md).
+        // a rebuild via SDVD_OUTAGE_DWELL_MS.
         var dwell = TimeSpan.FromMilliseconds(
             int.TryParse(TestEnvLoader.Get("SDVD_OUTAGE_DWELL_MS"), out var ms) ? ms : 10_000
         );

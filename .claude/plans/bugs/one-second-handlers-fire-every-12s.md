@@ -219,7 +219,7 @@ unconditional on our build, which never ships audio banks.)
      `.xml`, `steam_appid.txt`, `unix-launcher.sh`, `StardewModdingAPI.runtimeconfig.json`, whole
      `smapi-internal/`) into `/game`; copy the two mods into `/game/Mods/{ConsoleCommands,SaveBackup}`;
      `cp "/game/Stardew Valley.deps.json" "/game/StardewModdingAPI.deps.json"`; swap the launcher; `chmod 755`.
-6. **Verify the artifact, don't trust the green build** (`verify-edit-landed-in-artifact.md`): confirm the
+6. **Verify the artifact, don't trust the green build** (`runtime-post-conditions-are-gates.md`): confirm the
    produced `StardewModdingAPI.dll` is OUR build, its `runtimeconfig.json` targets `net6.0`, and the
    patched `% oneSecondTicks` / XACT early-return are actually in the IL (inspect with `ilspycmd`).
 
@@ -236,7 +236,7 @@ the XACT log):
 The runtime-fallback sites (`startapp.sh` / `start-game.sh`) only run when `${SMAPI_EXECUTABLE}` is absent
 (build-time install skipped) — decide per site whether to (a) point them at a baked-in patched SMAPI
 tarball, or (b) drop the runtime-install path entirely and rely on the build-time install. Per
-`verify-edit-landed-in-artifact.md`, confirm which path each image actually exercises before assuming a
+`runtime-post-conditions-are-gates.md`, confirm which path each image actually exercises before assuming a
 site is dead. The musl (`docker/modern/`) sites additionally interact with the musl gotchas in
 `modern-docker.md` — the built SMAPI must still boot under musl.
 
@@ -284,14 +284,14 @@ you'd want to re-examine the patch anyway. Budget ~15 min manual re-derive on th
 ### Post-conditions (runtime gates — observe, don't infer)
 
 1. Image builds; the produced `StardewModdingAPI.dll` is OUR build (inspect the artifact per
-   `verify-edit-landed-in-artifact.md`), targeting net6.0, with both patches present in IL.
+   `runtime-post-conditions-are-gates.md`), targeting net6.0, with both patches present in IL.
 2. Boot at `SERVER_TPS=5`: `OneSecondUpdateTicked` fires ~every 1s, not ~12s. Confirm via a per-second
    handler's cadence in the JSONL (e.g. healthcheck log spacing, or instrument a temporary log in
    `OnOneSecond*`). With vanilla SMAPI it's 12s apart.
 3. `RunHealthCheck` (`GameManagerService.cs:316`) interval returns to its intended seconds (it counts
    fires; fires are now 1/sec) — the latent 12× bug noted above is fixed for free.
 4. Set `OneSecondTickInterval` to a wrong value (e.g. 60) and confirm cadence reverts to 12s — proves
-   the config knob is actually consumed (`verify-documented-config-is-consumed.md`).
+   the config knob is actually consumed (`verify-claims.md`).
 5. **XACT patch:** boot the server and grep the log — the `[ERROR game] ...caught exception initializing
    XACT.` line is **gone**, and the server still runs silent (audio was never functional headless). No
    new error appears in its place.

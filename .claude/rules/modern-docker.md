@@ -1,6 +1,7 @@
 ---
 paths:
   - "docker/modern/**"
+  - "mod/JunimoServer/Services/ServerOptim/**"
 ---
 
 # Modern Docker image — musl gotchas
@@ -21,4 +22,4 @@ The Alpine/musl-based server image needs specific compatibility shims that don't
 
 **Why:** Each rule is anchored to a real bug encountered while bringing up the modern image. The detection gotcha was a multi-hour wrong turn before the file-existence check; the `RunSynchronously` deadlock surfaces as a hung server with no useful log line, and the `BlockOnUIThread` patch attempt was a dead end.
 
-**How to apply:** When touching `docker/modern/`, treat each invariant as load-bearing. If something else looks broken on the modern image, check whether it's another musl-specific divergence before reaching for a glibc-style fix.
+**How to apply:** When touching the modern image or the shim code in `ServerOptim`, treat each invariant as load-bearing. If something else looks broken on the modern image, check whether it's another musl-specific divergence before reaching for a glibc-style fix.

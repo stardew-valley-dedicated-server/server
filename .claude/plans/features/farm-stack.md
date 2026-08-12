@@ -53,7 +53,7 @@ Farmhand slots exist **only** via `Cabin.CreateFarmhand()` (`Cabin.cs:46-65`, fi
 
 ### Load preflight (mandatory)
 
-On save load, compare saved `Farm_JS_*` locations against the data entries about to be provided; on mismatch **fail loudly before load** — vanilla silently discards a saved location with all contents (`SaveGame.cs:1413-1426`). Verify the preflight passes on existing single-farm saves (zero player farms is a valid state, per `preflight-check-vs-committed-config`).
+On save load, compare saved `Farm_JS_*` locations against the data entries about to be provided; on mismatch **fail loudly before load** — vanilla silently discards a saved location with all contents (`SaveGame.cs:1413-1426`). Verify the preflight passes on existing single-farm saves (zero player farms is a valid state, per `verify-claims`).
 
 ### Join flow (new and returning players)
 

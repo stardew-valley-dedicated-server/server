@@ -2,6 +2,8 @@
 
 Wire contract for structured events emitted across the process graph. This document is the authoritative definition — source code references it, not the other way around. When this spec changes, every emitter is updated in the same PR; the spec change **is** the API change.
 
+Authoring note: when a field's values are inline string literals at the emit site, don't enumerate the variants verbatim here (or in the `InfrastructureEventLog` catalog) — reference the enum or the emitting class instead ("see `ContainerRecorder` for the definitive list"). Verbatim value lists go silently stale when a variant is added at the emit site; a small, stable set (3-4 values) may be listed, and a large one is a signal the strings should become a typed enum.
+
 ## Core envelope
 
 Every structured event is a single JSON line (JSONL) with exactly these fields:

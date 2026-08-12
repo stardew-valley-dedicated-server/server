@@ -63,7 +63,7 @@ Decisions to settle at sign-off:
 1. **Cost bound.** Measure the chunk-hash pass (~500 MB game dir) on the production
    VPS. If it's seconds, run unconditionally; if tens of seconds+, consider an env
    gate (e.g. `VALIDATE_ON_BOOT`, default on in `docker-compose.yml`) — and per
-   `verify-documented-config-is-consumed`, only document the knob once wired.
+   `verify-claims`, only document the knob once wired.
 2. **Test/CI sidecars.** E2E infrastructure starts steam-auth containers per run
    (`tests/JunimoServer.Tests/Containers/SharedSteamAuth.cs`); decide whether they
    skip the pass (env gate off) or the per-boot cost is acceptable.

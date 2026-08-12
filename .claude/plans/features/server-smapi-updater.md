@@ -304,7 +304,7 @@ The skew this work *introduces* is dynamic: after this change the server's `init
 
 ## Part 6 — Operator documentation
 
-New operator-facing behavior must be documented or the feature is only half-shipped (per `verify-documented-config-is-consumed.md` — every documented knob needs a consumer, and here every consumer needs a doc).
+New operator-facing behavior must be documented or the feature is only half-shipped (per `verify-claims.md` — every documented knob needs a consumer, and here every consumer needs a doc).
 
 - **`docs/admins/operations/upgrading.md`** — the "Updating Game Files" section (lines 58-88) currently tells operators to delete the `game-data` volume to get "SMAPI updates." Rewrite to reflect the new model:
     - Default (AUTO): the server checks for and installs the latest SMAPI in the supported major **on every restart**, and (if enabled) notifies/auto-restarts while running — no volume deletion needed.

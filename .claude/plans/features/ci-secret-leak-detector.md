@@ -134,7 +134,7 @@ are in scope). Steps:
 ## The maintained secret list (single source of truth)
 
 A documented list in the workflow of which secrets carry real values worth scanning
-for, kept in sync when secrets are added. Per `verify-documented-config-is-consumed.md`,
+for, kept in sync when secrets are added. Per `verify-claims.md`,
 each name in the list must be a real secret in the `test-vps`/repo store. Start with:
 `SDVD_DOCKER_HOSTS` (+ derived inline key, endpoint IP), `STEAM_ACCOUNTS`,
 `R2_ACCESS_KEY_ID`, `R2_ACCOUNT_ID`, `R2_SECRET_ACCESS_KEY`, `STEAM_PASSWORD`,

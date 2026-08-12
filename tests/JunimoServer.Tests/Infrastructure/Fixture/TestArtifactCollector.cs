@@ -7,7 +7,7 @@ namespace JunimoServer.Tests.Infrastructure.Fixture;
 /// <summary>
 /// Owns per-test artifact collection: end-of-test screenshots (sole disk
 /// writer, with the <c>screenshot</c> renderer event co-located with the
-/// file write per <c>colocate-event-emit.md</c>) and recording-clip
+/// file write so an intervening teardown throw can't skip it) and recording-clip
 /// finalization (<see cref="RecordingOrchestrator.FinalizeAsync"/> dispatch,
 /// awaited synchronously on failure / deferred onto the broker's background
 /// queue for passing tests in mode=all).

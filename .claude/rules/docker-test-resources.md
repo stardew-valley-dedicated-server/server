@@ -10,7 +10,7 @@ paths:
 
 Patterns for creating Docker resources (containers, networks, volumes) in the E2E test harness via Testcontainers + Docker.DotNet.
 
-- **Networks**: Testcontainers `NetworkBuilder` supports `.WithLabel()` — use it directly. Don't create networks via CLI then wrap with `NetworkBuilder` (Testcontainers will conflict).
+- **Networks**: create via Testcontainers `NetworkBuilder` directly — it supports `.WithLabel()`.
 - **Volumes**: create via Docker.DotNet (`DockerOps.CreateVolumeAsync`), which sets the `sdvd.test`/`sdvd.run-id` labels at create time and is idempotent per docker semantics.
 - **Container labels**: `.WithCreateParameterModifier(p => { p.Labels[...] = ... })`.
 - **Resource tagging convention**: `sdvd.test=true` and `sdvd.run-id={id}` labels for cleanup correlation.

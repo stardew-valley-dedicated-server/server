@@ -96,7 +96,7 @@ The orchestrator turns this into a filter: `RunAll` → empty filter (full suite
 ### 4. `GeminiSelectionModel` — the default impl
 
 - Plain `HttpClient` POST to `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent?key=<key>`.
-- API key from `SDVD_SELECTION_API_KEY` (env). Model from `SDVD_SELECTION_MODEL` (default e.g. `gemini-2.0-flash`). Both documented + consumer-grepped per `verify-documented-config-is-consumed.md`.
+- API key from `SDVD_SELECTION_API_KEY` (env). Model from `SDVD_SELECTION_MODEL` (default e.g. `gemini-2.0-flash`). Both documented + consumer-grepped per `verify-claims.md`.
 - Use Gemini's `responseSchema` / `responseMimeType: application/json` for forced structured output (verified supported on Flash).
 - The **prompt** (system+user): the engineering core. Contains (a) the role ("select which E2E tests a code diff could break"), (b) the coupling guidance (save-load flow touches cabins/farmhands/import; auth touches lobby/password; "when the diff touches test harness / infrastructure / Dockerfile / build config, set runAll=true"), (c) the catalog, (d) the diff summary, (e) the output contract. Bias-to-include instruction explicit.
 - On ANY model failure (network, quota, malformed) → **fail open: return `RunAll=true`** and log why. A selection error must never skip tests silently.
@@ -130,15 +130,15 @@ The selector runs in the runner, so CI does NOT resolve a filter for this path �
 
 ## Implementation steps
 
-1. **Catalog plumbing.** Enable `<GenerateDocumentationFile>` in `JunimoServer.Tests.csproj`; add `TestCatalogEntry` + `TestCatalog` (reflection reuse, XML-doc `<summary>` read, endpoint grep, config flags, JSON cache keyed on assembly+xml mtime). Verify the produced `JunimoServer.Tests.xml` actually lands next to the DLL (`verify-edit-landed-in-artifact.md`).
+1. **Catalog plumbing.** Enable `<GenerateDocumentationFile>` in `JunimoServer.Tests.csproj`; add `TestCatalogEntry` + `TestCatalog` (reflection reuse, XML-doc `<summary>` read, endpoint grep, config flags, JSON cache keyed on assembly+xml mtime). Verify the produced `JunimoServer.Tests.xml` actually lands next to the DLL (`runtime-post-conditions-are-gates.md`).
 2. **Diff summary.** `DiffSummary` + git invocation; base resolution (local merge-base, `--diff-base` override). Handle "not a git repo" / detached HEAD gracefully → fail open to full suite.
 3. **Model interface + Gemini impl.** `ISelectionModel`, `SelectionResult`, `GeminiSelectionModel` with `responseSchema` JSON mode; env-var config; fail-open on every error path.
 4. **Prompt.** Author the prompt; dry-run against ~5 real diffs (using a Claude Haiku impl of the same interface as a baseline) to tune coupling guidance + threshold before trusting Gemini. (Prove quality per decision 4.)
-5. **Orchestrator + event.** `AffectedTestSelector`; `selection_completed` event (add to the event catalog per `event-catalog-no-inline-enums.md`).
+5. **Orchestrator + event.** `AffectedTestSelector`; `selection_completed` event (add to the event catalog — reference the emitting class rather than enumerating inline string variants).
 6. **Program.cs wiring.** `--select-affected` / `--diff-base` parsing before line 24; explicit-`--filter`-wins precedence.
 7. **Makefile.** `test-affected` target.
 8. **CI.** Second sticky checkbox + gate `select_affected` output + run-step branch + `SDVD_SELECTION_API_KEY` secret + base fetch.
-9. **Docs.** Document `SDVD_SELECTION_*` env vars and the new make target / checkbox; grep-confirm each documented knob has a consumer (`verify-documented-config-is-consumed.md`).
+9. **Docs.** Document `SDVD_SELECTION_*` env vars and the new make target / checkbox; grep-confirm each documented knob has a consumer (`verify-claims.md`).
 
 ## Risks / failure modes (split per `adversarial-review-split-findings.md`)
 

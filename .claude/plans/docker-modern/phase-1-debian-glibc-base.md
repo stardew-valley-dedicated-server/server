@@ -61,8 +61,8 @@ With a glibc base, remove the shims that only exist for musl. Each is dead weigh
   stay harmless, but its musl branch becomes dead; note it for cleanup.
 
 Update `.claude/rules/modern-docker.md` once these are gone — several of its invariants describe
-musl-only behavior that no longer applies. (Follow `.claude/rules/delete-the-plan-when-its-code-lands.md`
-for the plan itself when this work merges.)
+musl-only behavior that no longer applies. (Follow the delete-the-plan item in
+`.claude/rules/universal/plan-discipline.md` for the plan itself when this work merges.)
 
 ### 1.3 — Cut the stray 183 MB LLVM
 

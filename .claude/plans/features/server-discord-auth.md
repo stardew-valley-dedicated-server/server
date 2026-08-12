@@ -162,7 +162,7 @@ The internal listener is reachable from the `server` container via the docker-co
 
 ### New Environment Variables (Env.cs)
 
-`mod/JunimoServer/Env.cs` currently has only `ServerPassword`, `MaxLoginAttempts`, `AuthTimeoutSeconds` (verified). All env vars below are introduced by this plan and exempt from `verify-documented-config-is-consumed.md` provided the consumer (`DiscordAuthService`) lands in the same change.
+`mod/JunimoServer/Env.cs` currently has only `ServerPassword`, `MaxLoginAttempts`, `AuthTimeoutSeconds` (verified). All env vars below are introduced by this plan and exempt from `verify-claims.md`'s consumer grep provided the consumer (`DiscordAuthService`) lands in the same change.
 
 ```csharp
 /// <summary>

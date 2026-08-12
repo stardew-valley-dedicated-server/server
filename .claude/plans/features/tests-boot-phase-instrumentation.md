@@ -151,7 +151,7 @@ What this design intentionally avoids: shipping `System.Diagnostics.Metrics` / `
 Per `.claude/rules/universal/runtime-post-conditions-are-gates.md`, post-conditions are runtime checks, not just "it compiles." Each post-condition must be exercised on a real run before declaring done.
 
 1. **Build clean**: `dotnet build mod/JunimoServer/JunimoServer.csproj` succeeds.
-2. **Image rebuild lands the new startapp.sh**: `make build-server`, then `docker create sdvd/server:local && docker cp <id>:/startapp.sh -` and confirm the new `emit_phase` helper is in the artifact (per `verify-edit-landed-in-artifact.md` — startapp.sh is a `COPY docker/rootfs/` consumer, but a sanity check is cheap).
+2. **Image rebuild lands the new startapp.sh**: `make build-server`, then `docker create sdvd/server:local && docker cp <id>:/startapp.sh -` and confirm the new `emit_phase` helper is in the artifact (per `runtime-post-conditions-are-gates.md` — startapp.sh is a `COPY docker/rootfs/` consumer, but a sanity check is cheap).
 3. **Single-test smoke run**: run any one fast test (`make test FILTER=ServerApiTests.GetOpenApiSpec_ReturnsValidJson`) and confirm `infrastructure.jsonl` contains a `mod_phase` event for each new phase listed above. Use:
     ```bash
     # Sort by `ts`, not `bootMs`: the C# `_bootStopwatch` starts at `Entry()`

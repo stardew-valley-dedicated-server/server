@@ -291,7 +291,7 @@ or `-l 2`.**
   `docker/modern/rootfs/opt/bin/attach-cli` and `docker/rootfs/opt/base/bin/attach-cli`
   (`init_keybinds`): replace `bind-key -n Tab select-pane -t 0.1` with the `if-shell` form.
 - **Edit (Dockerfiles, if rootfs COPY is selective):** ensure both `server-completion.sh` land in
-  their images and are executable — per `verify-edit-landed-in-artifact.md`, inspect the built
+  their images and are executable — per `runtime-post-conditions-are-gates.md`, inspect the built
   image (`docker create` + `docker cp`), don't trust a green build.
 
 **No** `ApiService.cs` change, **no** new HTTP endpoint, **no** test API-client change.

@@ -471,7 +471,7 @@ public class TestSummaryFixture : IAsyncLifetime
                 // Mirror the broker's filter scoping so a `--filter`-narrowed
                 // run reports the right expectedCount. Without this the full
                 // suite's count wins and every non-matched test is recorded
-                // as canceled in summary.json (per not-dispatched-derivation).
+                // as canceled in summary.json.
                 var methodFilter = Environment.GetEnvironmentVariable("SDVD_TEST_FILTER");
                 _expectedTestCount = ServerConfigDiscovery
                     .DiscoverRequiredConfigs(methodFilter: methodFilter)
@@ -599,6 +599,10 @@ public class TestSummaryFixture : IAsyncLifetime
         FinalizeRun();
     }
 
+    // NOTE: the durable run artifacts (summary.json, ctrf-report.json, latest.txt) are written
+    // by TestRunArtifactWriter in the parent TestRunner process, from RunArtifactView /
+    // TestRunState.GetArtifactView. The helpers below feed the live test_enrichment IPC path;
+    // editing them does NOT change what lands in the artifacts.
     #region summary.json
 
     private static string ClassifyFailure(string? exceptionType)

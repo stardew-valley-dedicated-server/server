@@ -7,7 +7,7 @@ paths:
 
 Per-test timing in a parallel suite isn't wall-clock cost. Each host's `serverSlots` (in `SDVD_DOCKER_HOSTS`) caps concurrent server containers — typical local config is 3 — and xUnit dispatches all ~96 methods concurrently against those slots. Artifact phases overlap with other tests' bodies. Two specific traps follow:
 
-1. **Per-test overhead × N overstates savings.** Summing `N_tests × per_test_overhead` is wrong unless the overhead is on the critical path of the longest-running slot. Proven 2026-04-17: removing the 3s `Task.Delay` in `TestBase.DisposeAsync` dropped per-test artifacts wall-time from ~4.9s to ~1.6s, but total run duration was unchanged (552s vs baseline 538s–643s). The ~230s–276s "savings" on paper were ~0s in practice.
+1. **Per-test overhead × N overstates savings.** Summing `N_tests × per_test_overhead` is wrong unless the overhead is on the critical path of the longest-running slot. Proven: removing the 3s `Task.Delay` in `TestBase.DisposeAsync` dropped per-test artifacts wall-time from ~4.9s to ~1.6s, but total run duration was unchanged (552s vs baseline 538s–643s). The ~230s–276s "savings" on paper were ~0s in practice.
 
 2. **`queueDurationMs` is xUnit dispatch-wait, not a broker bottleneck.** Per-test `queueDurationMs` (and `queueDurationTotalMs` in `summary.json`) is the gap between xUnit dispatching the test method and the broker handing it a server slot. With ~96 tests and 3 slots, most sit waiting — the ~26× queue/active ratio is xUnit's design, not something to attack. Raising it would mean either bumping each host's `serverSlots` (hard system-load cap) or rewriting orchestration.
 

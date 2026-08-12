@@ -35,7 +35,7 @@ The `tests/` tree was reviewed for soundness, best-practice, maintainability, an
 | Polling attributes "when did condition change" to producer clock, not observer                                                   | `Helpers/PollingHelper.cs`, `Helpers/WaitTrace.cs`                                                                                                     |
 | `ExecutionContext.SuppressFlow()` applied consistently to long-lived background tasks                                            | `Infrastructure/TestResourceBroker.cs`, `Containers/ServerContainer.cs`, `Infrastructure/ManagedServer.cs`; per `.claude/rules/asynclocal-pitfalls.md` |
 | Three-strike renderer fault isolation (UI bug can't abort a run)                                                                 | `TestRunner/Rendering/RendererDispatchGuard.cs`                                                                                                        |
-| Single-writer-per-artifact discipline enforced                                                                                   | per `.claude/rules/one-writer-per-artifact.md`, `runner-side-artifact-writer.md`                                                                       |
+| Single-writer-per-artifact discipline enforced                                                                                   | per `.claude/rules/one-writer-per-artifact.md`                                                                       |
 | `ExecuteOnGameThread` cross-thread handshake (atomic 3-state, tick-based timeout, AsyncLocal rebind)                             | `test-client/ModEntry.cs:892-964`                                                                                                                      |
 | Assertion quality: specific messages, diagnostics logged before asserts so failures are self-contained                           | e.g. `CabinConcurrencyTests.cs:68-72`                                                                                                                  |
 
@@ -78,7 +78,7 @@ Ordering = value/risk. Every item is **behavior-preserving** unless noted. Do th
 
 - New file: `tests/JunimoServer.Tests/Infrastructure/ARCHITECTURE.md`.
 - Content: the broker/pool/capacity object graph; the three eviction invariants ("never evicts RefCount>0", "freed slot immediately reacquired for the new server", "racy WaitingCount read is intentional"); the exclusive-gate coordination (TCS + semaphore + class-waiter count); poison-recovery callback flow.
-- Source the invariants from `.claude/rules/test-broker-invariants.md` (do not duplicate verbatim — link to it; per `.claude/rules/event-catalog-no-inline-enums.md` philosophy of not drifting copies).
+- Source the invariants from `.claude/rules/test-broker-invariants.md` (do not duplicate verbatim — link to it; copied lists silently drift).
 - Add a one-line pointer comment at the top of `AcquireSharedCoreAsync` (`TestResourceBroker.cs:744`) and `AddRefAndAcquireExclusiveAsync` (`ManagedServer.cs:314`) → `see ARCHITECTURE.md`.
 
 **P1-b. Defensive concurrency comments (addresses F4 downgraded items).**
@@ -151,13 +151,13 @@ Each PR must pass these before merge. The harness has **no unit-test layer for t
 **Build gates (every PR):**
 
 - C# changes: `dotnet build mod/JunimoServer/JunimoServer.csproj` and build the test projects.
-- test-ui changes: `make build-test-ui` (runs `vue-tsc` — catches what plain vite build misses, per `.claude/rules/test-ui-build.md`).
+- test-ui changes: `make build-test-ui` (runs `vue-tsc` — catches what plain vite build misses).
 
 **Behavior gates by area:**
 
 - **P2-a (broker refactor):** run the full suite `make test`; confirm pass/fail counts and `queueDurationTotalMs` match a pre-refactor baseline run (no new deadlock/starvation). Inspect `TestResults/runs/{latest}/diagnostics/infrastructure.jsonl` for unexpected `server_poisoned` / `host_disconnected` / capacity-starvation events. Spot-check a KeepConnected class and an `[TestServer(Exclusive=true)]` class still serialize correctly.
 - **P2-b / P3 (test-ui):** `make build-test-ui` + `make test-ui-unit`; load `make test-web` against a recorded run and confirm the live event stream still populates the test tree, instance stats history, and screenshots/recordings (no regression vs the WebSocket-first behavior in `.claude/rules/prefer-live-stream-over-disk-artifact.md`).
-- **P4 (test-client):** rebuild via `make build-test-client`, then **verify the edit landed in the produced image** (`docker create` + `docker cp`) per `.claude/rules/universal/verify-edit-landed-in-artifact.md` — the test-client Dockerfile does NOT `COPY docker/rootfs/`. Run `make test FILTER=<a menu-navigation-heavy class>` and confirm the probe logs at `Warn` (not `Error`) and menus still navigate. Confirm no `LogLevel.Error` was introduced.
+- **P4 (test-client):** rebuild via `make build-test-client`, then **verify the edit landed in the produced image** (`docker create` + `docker cp`) per `.claude/rules/universal/runtime-post-conditions-are-gates.md` — the test-client Dockerfile does NOT `COPY docker/rootfs/`. Run `make test FILTER=<a menu-navigation-heavy class>` and confirm the probe logs at `Warn` (not `Error`) and menus still navigate. Confirm no `LogLevel.Error` was introduced.
 
 **Documentation gates (P1):**
 

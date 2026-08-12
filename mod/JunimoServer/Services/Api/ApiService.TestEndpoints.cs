@@ -1986,7 +1986,7 @@ public partial class ApiService
     // the StardewValley types) and coords as floats so ApiService's field metadata carries NO game-type
     // references — the OpenAPI generator reflects ApiService via Assembly.GetType across the net10-tool /
     // net6-mod boundary, and a StardewValley-typed field there makes that GetType return null ("ApiService
-    // type not found", per openapi-generator-reflection-invoke). Cast back inside the handlers, which run
+    // type not found"). Cast back inside the handlers, which run
     // on the game thread where the types are loaded. Referenced only from the game thread (both handlers
     // marshal via RunOnGameThreadAsync), so no synchronization needed.
     private object? _probeProjectile;
