@@ -601,8 +601,10 @@ public class TestSummaryFixture : IAsyncLifetime
 
     // NOTE: the durable run artifacts (summary.json, ctrf-report.json, latest.txt) are written
     // by TestRunArtifactWriter in the parent TestRunner process, from RunArtifactView /
-    // TestRunState.GetArtifactView. The helpers below feed the live test_enrichment IPC path;
-    // editing them does NOT change what lands in the artifacts.
+    // TestRunState.GetArtifactView. The helpers below still shape artifact CONTENT — their
+    // enrichment (failureCategory, reproCommand, ...) reaches the writer via the test_enrichment
+    // IPC path — but adding or reshaping an artifact FIELD means editing the writer/projection,
+    // not this region.
     #region summary.json
 
     private static string ClassifyFailure(string? exceptionType)

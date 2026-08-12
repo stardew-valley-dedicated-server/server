@@ -22,6 +22,9 @@ public static class OpenApiGenerator
     /// argument defaults, so adding a parameter here (optional or not) breaks the image build with
     /// <c>TargetParameterCountException</c> while <c>dotnet build</c> stays green — update the
     /// tool's invoke in the same change and verify via the container build, not the compiler.
+    /// Local repro: rebuild BOTH the tool (net10.0) and the mod (net6.0) in Release, then run
+    /// <c>dotnet &lt;tool&gt;.dll &lt;JunimoServer.dll&gt; out.json</c> and assert exit 0 — stale or
+    /// mixed Debug/Release artifacts give misleading type-resolution errors.
     /// </remarks>
     /// <param name="includeMethod">
     /// Optional predicate to filter which endpoint methods are emitted. When null, all
