@@ -211,16 +211,21 @@ jobs:
           ref: ${{ github.event.merge_group.head_sha }}
 
       - name: Setup .NET
+        id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.400"
 
+      # Key the cache by the resolved SDK version so a new SDK band always restores
+      # from scratch instead of inheriting another band's package extraction via a
+      # restore-keys prefix fallback. restore-keys is scoped to the same SDK for the
+      # same reason.
       - name: Cache NuGet packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-tools-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
-          restore-keys: ${{ runner.os }}-nuget-tools-
+          key: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-
 
       - name: Restore .NET tools
         run: dotnet tool restore

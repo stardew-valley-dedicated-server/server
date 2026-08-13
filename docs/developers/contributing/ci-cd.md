@@ -415,7 +415,7 @@ The pipeline uses the same `docker-compose.yml` from the repository, ensuring co
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/cleanup-caches.yml)
 
-GitHub Actions caches can accumulate over time. This pipeline removes caches that haven't been accessed in 14 days.
+GitHub Actions caches can accumulate over time. This pipeline removes every cache created more than 14 days ago. Age is measured by creation rather than last access on purpose: GitHub evicts by last access, and a `restore-keys` prefix fallback keeps re-reading a stale cache — bumping its last-accessed time indefinitely — so a stale entry could otherwise outlive its usefulness forever.
 
 ### When It Runs
 
