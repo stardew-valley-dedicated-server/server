@@ -184,6 +184,11 @@
         "description": "Game engine behavior notes relevant to server-side automation"
       },
       {
+        "scope": ["mod/JunimoServer/Services/AlwaysOnServer/**", "mod/JunimoServer/Services/HostAutomation/**", "mod/JunimoServer/Services/Lobby/**", "mod/JunimoServer/Services/CabinManager/**"],
+        "path": "docs/developers/architecture/festival-handling.md",
+        "description": "How the server automates festivals: phases, host participation, known caveats"
+      },
+      {
         "scope": ["mod/**"],
         "path": "docs/developers/architecture/networking.md",
         "description": "Networking architecture: transports, net sync, message types"

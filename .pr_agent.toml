@@ -8,6 +8,8 @@
 [config]
 # Release-please PRs carry no code to review (regex patterns, unlike CodeRabbit's literal keywords).
 ignore_pr_title = ['^chore\(main\): release', 'release-please']
+# Renovate PRs have no linked issue, so the ticket-compliance lane has nothing to check there.
+ignore_pr_authors = ["renovate"]
 
 [github_app]
 # Review on PR open/reopen/ready-for-review (drafts excluded by the product's trigger design).
