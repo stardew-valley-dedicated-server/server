@@ -54,18 +54,18 @@ The per-file listing below is a snapshot. Re-derive it from `ls .claude/rules/*.
 ### `tests/` — test infra, runner, UI
 
 `docker-test-resources.md`, `test-broker-invariants.md`, `tests-assert-via-http-api.md`,
-`test-timing.md`, `drain-before-consume-disposal.md`,
+`test-timing.md`, `colocate-event-emit.md`, `drain-before-consume-disposal.md`,
 `follow-true-created-state-eof.md`, `provision-up-front-when-startup-exceeds-serviceable-tail.md`,
 `minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md`, `one-writer-per-artifact.md`,
-`runner-ui-pipeline-plumbing.md`, `test-overlay-pixel-contract.md`,
-`ffmpeg-pixel-measurement.md`, `recorder-anchor-first-frame.md`
+`runner-ui-pipeline-plumbing.md`, `prefer-live-stream-over-disk-artifact.md`,
+`test-overlay-pixel-contract.md`, `ffmpeg-pixel-measurement.md`, `recorder-anchor-first-frame.md`
 
 ### `misc/` — docker / CI / tooling
 
 `modern-docker.md`, `docker-save-format-source-daemon.md`,
 `renovate-nuget-allowedversions-needs-semver.md`
 
-**Totals:** vanilla 10 · mod 7 · tests 13 · misc 3 = 33. `README.md` stays at root.
+**Totals:** vanilla 10 · mod 7 · tests 15 · misc 3 = 35. `README.md` stays at root.
 
 ## Borderline placements
 
