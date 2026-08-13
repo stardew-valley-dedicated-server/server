@@ -112,7 +112,9 @@ public class AttachCliTests : TestBase
         var attachLog = ExtractLog(result.Stdout);
 
         // Only this class produces stardew-server-* sessions, so a SharedAssembly server
-        // can't show us another test's session.
+        // can't show us another test's session. The scenario's prefix match and kill-server
+        // sweep both assume ONE concurrent attach-cli run — a second method in this class
+        // would race it (xUnit runs class methods concurrently) and needs serialization.
         var session = ExtractLine(result.Stdout, "SESSION:");
         Assert.True(
             session != null && session.StartsWith("stardew-server-"),
@@ -125,10 +127,9 @@ public class AttachCliTests : TestBase
             $"Session must still have both panes ('0 0' pane_dead flags) after settle; got '{panesDead}' — tmux destroys a pane whose process dies, so a missing pane means it spawned with a broken shell. attach-cli output (excerpt): {attachLog}"
         );
 
-        // Format: "default-shell /bin/sh"
         var defaultShell = ExtractLine(result.Stdout, "DEFAULT_SHELL:");
         Assert.True(
-            defaultShell != null && defaultShell.Contains("/bin/sh"),
+            defaultShell == "default-shell /bin/sh",
             $"tmux default-shell must be pinned to /bin/sh; got '{defaultShell}'"
         );
 
