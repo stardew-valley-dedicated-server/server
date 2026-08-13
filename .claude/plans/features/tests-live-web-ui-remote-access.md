@@ -180,7 +180,7 @@ sees the link." Add minimal auth, **default-off** so dev runs are untouched. Use
 This turns "anyone with the URL" into "URL **and** token." The token is generated per run
 in the workflow and only written to the run's step summary (visible to repo collaborators on
 an already maintainer-gated workflow). No test-ui source change is required — but still run
-`make build-test-ui` if any SPA file is touched (`test-ui-build.md`).
+`make build-test-ui` if any SPA file is touched.
 
 ### 4. Runner: open a reverse SSH forward to the VPS, print the public URL
 

@@ -156,7 +156,7 @@ No new dependencies needed.
 
 ## Build verification
 
-Run `make build-test-ui` after editing — `vue-tsc --noEmit` catches typed-store field typos (e.g. `state.total_tests` vs `state.totalTests`) that plain `vite build` silently passes. Per `.claude/rules/test-ui-build.md`.
+Run `make build-test-ui` after editing — `vue-tsc --noEmit` catches typed-store field typos (e.g. `state.total_tests` vs `state.totalTests`) that plain `vite build` silently passes.
 
 ## Verification
 

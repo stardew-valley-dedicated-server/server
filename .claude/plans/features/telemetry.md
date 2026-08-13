@@ -242,7 +242,7 @@ Add `#region Telemetry`:
 - `TelemetryIntervalSeconds` — `Math.Max(60, ParseInt("TELEMETRY_INTERVAL_SECONDS", 300))`
 - `TelemetryInstanceId` — `GetEnvironmentVariable("TELEMETRY_INSTANCE_ID") ?? ""`
 
-(All four env vars are introduced by this plan; the consumer is `mod/JunimoServer/Services/Telemetry/`. Exempt from `verify-documented-config-is-consumed.md` provided the consumer lands in the same change. Default for `TelemetryEnabled` stays `false` until the receiver endpoint is deployed.)
+(All four env vars are introduced by this plan; the consumer is `mod/JunimoServer/Services/Telemetry/`. Exempt from `verify-claims.md`'s consumer grep provided the consumer lands in the same change. Default for `TelemetryEnabled` stays `false` until the receiver endpoint is deployed.)
 
 ### `.env.example`
 Add documented telemetry section with commented-out defaults.

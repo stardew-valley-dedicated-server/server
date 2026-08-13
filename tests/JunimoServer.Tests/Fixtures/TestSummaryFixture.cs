@@ -471,7 +471,7 @@ public class TestSummaryFixture : IAsyncLifetime
                 // Mirror the broker's filter scoping so a `--filter`-narrowed
                 // run reports the right expectedCount. Without this the full
                 // suite's count wins and every non-matched test is recorded
-                // as canceled in summary.json (per not-dispatched-derivation).
+                // as canceled in summary.json.
                 var methodFilter = Environment.GetEnvironmentVariable("SDVD_TEST_FILTER");
                 _expectedTestCount = ServerConfigDiscovery
                     .DiscoverRequiredConfigs(methodFilter: methodFilter)
@@ -518,10 +518,13 @@ public class TestSummaryFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Writes all end-of-run artifacts (summary.json, ctrf-report.json,
-    /// latest.txt, flakiness.jsonl). Idempotent via <see cref="_finalized"/>;
-    /// shared by the graceful <see cref="DisposeAsync"/> path and the
-    /// <see cref="EmergencyFlush"/> path.
+    /// End-of-run finalization: sweeps still-running records, appends
+    /// flakiness.jsonl, and emits the flaky-tests IPC event. summary.json,
+    /// ctrf-report.json and latest.txt are runner-side (see the artifact
+    /// note above the summary.json region). Idempotent via
+    /// <see cref="_finalized"/>; shared by the graceful
+    /// <see cref="DisposeAsync"/> path and the <see cref="EmergencyFlush"/>
+    /// path.
     /// </summary>
     private void FinalizeRun()
     {
@@ -599,6 +602,14 @@ public class TestSummaryFixture : IAsyncLifetime
         FinalizeRun();
     }
 
+    // NOTE: summary.json, ctrf-report.json and latest.txt are written by TestRunArtifactWriter
+    // in the parent TestRunner process, from RunArtifactView / TestRunState.GetArtifactView.
+    // The helpers below shape their CONTENT on two paths: enrichment (failureCategory,
+    // reproCommand, ...) normally arrives via the test_enrichment IPC event, and GetArtifactView
+    // calls ClassifyFailureCategory/BuildReproCommand directly as a fallback for tests that never
+    // emitted one (broker-level failures). flakiness.jsonl is written by this fixture itself
+    // (FinalizeRun → FlakinessTracker). Only adding or reshaping a FIELD in the three
+    // parent-owned artifacts means editing the writer/projection instead of this region.
     #region summary.json
 
     private static string ClassifyFailure(string? exceptionType)

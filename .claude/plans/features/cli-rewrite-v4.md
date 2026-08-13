@@ -331,7 +331,7 @@ Works in both local and remote mode. Connects via HTTP API + WebSocket.
 ```
 
 **Features:**
-- Real-time log streaming. **Pick one source.** Per `.claude/rules/universal/prefer-live-stream-over-disk-artifact.md`, two pipelines (local `docker compose logs -f` vs remote WebSocket) hidden behind one UI fragment the implementation. Resolve when un-deferring Phase 3: either (a) wait for `GET /logs` SSE so both modes use the same WebSocket source, or (b) drop remote-mode log streaming until the endpoint exists. Do not ship the dual-source design.
+- Real-time log streaming. **Pick one source.** Per `.claude/rules/prefer-live-stream-over-disk-artifact.md`, two pipelines (local `docker compose logs -f` vs remote WebSocket) hidden behind one UI fragment the implementation. Resolve when un-deferring Phase 3: either (a) wait for `GET /logs` SSE so both modes use the same WebSocket source, or (b) drop remote-mode log streaming until the endpoint exists. Do not ship the dual-source design.
 - Log filtering: cycle through All / Errors / Warnings+ / Search pattern (Ctrl+F)
 - Command input → sent via WebSocket (preferred) or HTTP API fallback
 - Status bar with live player count, season/day, invite code

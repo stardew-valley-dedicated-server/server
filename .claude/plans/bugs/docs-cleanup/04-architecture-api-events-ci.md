@@ -94,9 +94,9 @@ Four related fixes (do as one rewrite pass; verify against `tools/steam-service/
   cause `OpenApiGenerator.cs:50-115` builds only Summary/Description/OperationId/Tags/Responses).
   Generated per-endpoint pages can't show `fps`/`value`/`multiplier`/`name`/`playerId` or the
   `POST /newgame` body. Doc-side mitigation: complete `introduction.md`'s hand-written params
-  section (M10). Code-side: extend the generator — mind
-  `.claude/rules/openapi-generator-reflection-invoke.md` (reflection-invoked, fixed positional
-  args; optional params break the Docker build while `dotnet build` stays green).
+  section (M10). Code-side: extend the generator — mind that `OpenApiGenerator.Generate` is
+  reflection-invoked with fixed positional args at Docker build time (see its `<remarks>`;
+  optional params break the Docker build while `dotnet build` stays green).
 - **M10. `introduction.md` "POST Endpoint Parameters" covers 4 of 8 write ops.** Missing:
   `POST /clock-speed` (`?multiplier=`, double > 0, :4006-4077), `POST /auth/timeout` (`?value=`,
   :3891), `POST /newgame` (JSON body `NewGameRequest` :606-631 — also contradicts the section's

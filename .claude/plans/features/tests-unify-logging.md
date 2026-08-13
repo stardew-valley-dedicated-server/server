@@ -247,7 +247,7 @@ After 1-7, update:
 
 - **xUnit child stdout prohibition** — still applies, untouched. The child writes nothing to stdout; all diagnostics flow over IPC.
 - **Container log streaming** (`SimpleContainerLogStreamer` → `container.log` files). The mod's `IMonitor` log is its own thing; the harness ingests `SDVD_EVENT` prefixes via `SimpleContainerLogStreamer.ForwardRaw` → `InfrastructureEventLog.ForwardRaw`. That path stays. **This plan's single choke point is for runner-host + child-test-process diagnostics only — it must NOT route or re-wrap the in-container `SDVD_EVENT` lines (the boot-phase plan's `mod_phase` events) through `renderer.OnDiagnostic`.** Those lines are already a live forwarded stream and already persisted by `ForwardRaw`; funneling them through the renderer's base fan-out would double-persist them to disk. Leave the `ForwardRaw` path untouched (`prefer-live-stream-over-disk-artifact.md`).
-- **`summary.json` / `ctrf-report.json` writing path.** These are *artifacts*, not logs. They stay with `TestRunArtifactWriter` per `runner-side-artifact-writer.md`.
+- **`summary.json` / `ctrf-report.json` writing path.** These are *artifacts*, not logs. They stay with `TestRunArtifactWriter` per `one-writer-per-artifact.md`.
 - **WebUI's display-side rendering of diagnostic events.** The infrastructure timeline already consumes `OnDiagnostic` events per `prefer-live-stream-over-disk-artifact.md`. After this work, more events reach it; the UI may want to add filters but that's a UI-side follow-up.
 - **Mod-side `IMonitor` logging convention** (`mod/JunimoServer/`). Untouched — the mod logs to SMAPI; the harness picks up game-side container logs separately.
 

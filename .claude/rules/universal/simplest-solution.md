@@ -4,9 +4,9 @@ If the fix is to remove a line, remove it. Don't add a redirect, wrapper, or abs
 
 **Why:** Four failure modes around scaffolding and abstraction:
 - **Over-engineering when a one-liner works.** Reaching for a "flexible" wrapper when the repo already has a working pattern, or when deleting the line is the actual fix.
-- **Building infrastructure with no consumer.** A planned discovery API plus display-name porter existed to seed per-test entries in `ctrf-report.json`; every reader — Makefile, LLMRenderer, UI, GitHub Actions, FlakinessTracker — touched only `results.summary`. Cutting it saved ~320 lines.
-- **Dissolving an established home for a convention.** Inlining the last method of `Helpers/AssertHelpers.cs` into its single caller would have removed the home for custom asserts in a codebase that keeps accumulating them. "Re-extract when the next one arrives" doesn't happen: the next assertion lands somewhere new and the pattern fragments.
-- **Reflex-rejecting a consolidation the user asked for.** Two sibling handlers shared the same accidental placement on a racy loop; folding both into one `PreSeedChoices()` home was refused twice as scope creep, on the strength of a stale adjacent comment. Reading the method plus `git log` settled it in minutes — the placement was accidental and the move was safe.
+- **Building infrastructure with no consumer.** A planned discovery API plus display-name porter seeded per-test entries in `ctrf-report.json`; every reader — Makefile, LLMRenderer, UI, GitHub Actions, FlakinessTracker — touched only `results.summary`. Cutting it saved ~320 lines.
+- **Dissolving an established home for a convention.** Inlining the last method of `Helpers/AssertHelpers.cs` into its single caller would have removed the home for custom asserts in a codebase that keeps accumulating them — "re-extract when the next one arrives" doesn't happen; the next assertion lands somewhere new and the pattern fragments.
+- **Reflex-rejecting a consolidation the user asked for.** Folding two sibling handlers off a shared racy loop into one `PreSeedChoices()` home was refused twice as scope creep, on the strength of a stale adjacent comment; reading the method plus `git log` settled in minutes that the placement was accidental and the move safe.
 
 **How to apply:**
 - **Default to the simplest fix.** Before proposing a wrapper, redirect, or new abstraction, check whether an existing function or pattern already does this. If the simplest fix feels too small, it's usually right.

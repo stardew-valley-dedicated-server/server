@@ -26,7 +26,7 @@ After the earlier tasks, the shell functions still present are:
 
 - **`validate_environment` → the mod.** This belongs in `mod/JunimoServer/Env.cs` (or a startup
   check in the mod) as a fail-fast, so the rule lives in one place with the other env parsing rather
-  than duplicated in a shell script. Note `.claude/rules/preflight-check-vs-committed-config.md`:
+  than duplicated in a shell script. Note `.claude/rules/universal/verify-claims.md`:
   test any new fail-fast against the committed compose config, not just the example.
 - **`init_time_sync` → drop or a tiny init.** Containers usually inherit the host clock; the
   `SYS_TIME` capability plus `hwclock` handles drift. If kept, it's a one-shot, not part of the

@@ -74,6 +74,6 @@ Per `runtime-post-conditions-are-gates` — none of these are closed by a green 
 
 ## Related
 
-- `rules/universal/preflight-check-vs-committed-config.md` — gate 1 must run against the repo's committed settings shape, not just the example.
+- `rules/universal/verify-claims.md` — gate 1 must run against the repo's committed settings shape, not just the example.
 - `rules/debugging.md` — the fallback logs `Warn`; an `Error` line cancels E2E runs.
 - `Services/GameCreator/FarmTypeSetting.cs` — the in-tree converter this generalizes.

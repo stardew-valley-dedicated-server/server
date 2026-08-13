@@ -71,7 +71,7 @@ while `CabinPlacementValidationTests`, `CabinStrategyFarmhouseStackTests`, `Cabi
 `FarmMapTypeTests` and `RenderingTests` are `Exclusive`. Those held sessions are **authenticated**,
 so they participate in barriers normally and the pairing is harmless there. A fail-fast would reject
 the committed config on its first run — see
-`.claude/rules/universal/preflight-check-vs-committed-config.md`.
+`.claude/rules/universal/verify-claims.md`.
 
 A `Warn`-level prestart diagnostic naming the sharing classes is acceptable and cheap. The
 hazardous combination to name is narrower than the rule's blanket wording: **an unauthenticated

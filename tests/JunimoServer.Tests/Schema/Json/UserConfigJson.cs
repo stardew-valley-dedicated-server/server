@@ -36,7 +36,7 @@ public static class UserConfigJson
     /// </summary>
     /// <param name="expectedShapeHint">
     /// Optional element-shape description appended to the error message — e.g.
-    /// <c>"{user, pass[, refreshToken]}"</c>. Helps operators correct malformed
+    /// <c>"{user, pass[, token]}"</c>. Helps operators correct malformed
     /// input without consulting docs.
     /// </param>
     public static IReadOnlyList<JsonNode> ParseArrayStrict(

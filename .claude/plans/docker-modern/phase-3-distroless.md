@@ -48,7 +48,7 @@ Plus an explicit sign-off that losing `docker exec sh` is acceptable (see below)
    stack well), then `COPY` the traced runtime library closure — the game, SMAPI, .NET, Xvfb, Mesa
    Zink, SwiftShader, the Vulkan loader, and their transitive `.so` dependencies — into the
    distroless runtime stage. Trace the closure with `ldd` over every binary; a missing transitive
-   dependency fails at runtime, not build (see `.claude/rules/verify-edit-landed-in-artifact.md`).
+   dependency fails at runtime, not build (see `.claude/rules/universal/runtime-post-conditions-are-gates.md`).
 4. **Supervision stays s6-overlay.** s6 and execline are shell-free binaries and run fine in
    distroless; phase 2 already converted the run-scripts to execline.
 

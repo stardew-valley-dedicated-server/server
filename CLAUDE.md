@@ -14,12 +14,6 @@ JunimoServer is a Stardew Valley dedicated server mod enabling 24/7 multiplayer 
 
 Always-on behavioral rules live in `.claude/rules/universal/` (loaded every session). Code-area rules live in `.claude/rules/*.md` (gated by `paths:` frontmatter). Read `.claude/rules/README.md` for the layer model and full index.
 
-A question answered by the transcript gets a direct answer — no pre-narration, no re-confirming tool call, no appended next-steps. World-facts (code, tools, values) still get verified even when you feel sure (see `rules/universal/answer-then-stop.md`).
-
-## Implementation Discipline
-
-- When implementing a multi-item plan, check off EVERY item before declaring completion. After finishing, re-read the plan and verify each item was addressed. Pay attention to file naming conventions already established in the project (e.g., .env.test not .test.env).
-
 ## Critical Paths
 
 - `mod/JunimoServer/`: main SMAPI mod (C#, net6.0)
@@ -40,7 +34,6 @@ A question answered by the transcript gets a direct answer — no pre-narration,
 - Do NOT write to stdout in test assemblies. It corrupts xUnit v3's IPC and breaks test discovery. Use `ITestOutputHelper` or `IMessageSink` instead.
 - Do NOT create Docker networks via CLI then wrap with `NetworkBuilder`. Testcontainers will conflict. Use `NetworkBuilder` directly.
 - Do NOT hardcode `GamePath` in .csproj files. It comes from `.env` via `Directory.Build.props`.
-- Do NOT use `git add .` or `git add -A`. Stage files explicitly by path (see `.claude/rules/universal/git-workflow.md`).
 
 ## Build & Run Commands
 
@@ -49,6 +42,7 @@ Run `make help` or read the `Makefile` for all available targets (build, test, d
 - `make test FILTER=ClassName` to run specific E2E tests
 - `make test-llm` for structured JSONL output optimized for AI debugging
 - `dotnet build mod/JunimoServer/JunimoServer.csproj` to build the mod only (requires `GAME_PATH` in `.env`)
+- `make build-test-ui` to verify the test UI builds — it runs `vue-tsc`, which catches type errors plain `vite build` misses
 
 ## Test Failure Debugging Workflow
 
@@ -57,5 +51,6 @@ When tests fail, follow the runbook at `docs/developers/testing/test-failure-run
 ## Conventions
 
 - **Commits**: Conventional commits enforced by commitlint (`feat:`, `fix:`, `perf:`, `docs:`, `test:`, `chore:`, `refactor:`, `ci:`, `build:`)
+- **File naming**: follow conventions already established in the project (e.g. `.env.test`, not `.test.env`)
 - **Decompiled sources**: Reference at `decompiled/sdv-1.6.15-24356/` for tracing game mechanics
 - **Helpers are integration-tested, not unit-tested**: `tests/JunimoServer.Tests/` is E2E-first — verification of new helper code (e.g., wait-tracing primitives) is done by inspecting the JSONL output of a real run, not by isolated unit tests. Sole exception: deterministic in-memory guards for timing races a live run cannot reliably reproduce (e.g., `ExclusiveGateOwnershipTests`, a ~1ms double-release window).

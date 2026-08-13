@@ -404,7 +404,7 @@ Add a concise section stating exactly what an operator must do to run N runners 
      runs on two different machines never merge into one flakiness view; each machine tracks its
      own. Merged cross-machine flakiness is out of scope (would need a shared store).
 
-Follow `verify-documented-config-is-consumed.md`: after wiring `SDVD_VOLUME_PREFIX` into the
+Follow `verify-claims.md`: after wiring `SDVD_VOLUME_PREFIX` into the
 main path, `grep -rn SDVD_VOLUME_PREFIX` must show consumers in `ServerContainerOptions`,
 `GameClientOptions`, and `DownloadValidationFixture` (not just the doc line).
 
@@ -538,7 +538,7 @@ per-process-doesn't-coordinate reason as slots.
   "simultaneous build" race (verified impossible); `DockerImageBuilder.cs` path
   (`Helpers/`, not `TestRunner/Distribution/`).
 - **Is `SDVD_VOLUME_PREFIX` a fail-fast risk against committed config?** No — it defaults to
-  `"server"`, reproducing today's exact volume names when unset (`preflight-check-vs-committed-config.md`);
+  `"server"`, reproducing today's exact volume names when unset (`verify-claims.md`);
   existing single-runner configs are unaffected.
 - **Build-time Steam login across two runners (verified safe).** `DockerImageBuilder` logs in
   `STEAM_ACCOUNTS[0]` at build time (`:82`), *before* any slicing, and builds steam-auth+server

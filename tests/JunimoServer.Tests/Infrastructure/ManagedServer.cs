@@ -1664,8 +1664,8 @@ internal sealed class ManagedServer : IAsyncDisposable
         // Notify UI that this server instance is gone
         SetupEventBus.EmitInstanceDisposed(InstanceId ?? $"server-{Key}-{Server.ServerIndex}");
 
-        // Recording emit lives inside ServerContainer.DisposeAsync (scoped to the
-        // point where FullRecordingPath is written). Wrap the dispose calls so a
+        // Recording emit lives inside ServerContainer.DisposeAsync, at the point
+        // the recording file is finalized. Wrap the dispose calls so a
         // failure in one doesn't skip the other; order matters — inner container
         // first, then host server-slot release.
         try

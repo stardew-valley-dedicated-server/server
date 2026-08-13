@@ -57,16 +57,15 @@ The per-file listing below is a snapshot. Re-derive it from `ls .claude/rules/*.
 `test-timing.md`, `colocate-event-emit.md`, `drain-before-consume-disposal.md`,
 `follow-true-created-state-eof.md`, `provision-up-front-when-startup-exceeds-serviceable-tail.md`,
 `minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md`, `one-writer-per-artifact.md`,
-`runner-side-artifact-writer.md`, `runner-ui-pipeline-plumbing.md`, `not-dispatched-derivation.md`,
-`event-catalog-no-inline-enums.md`, `test-ui-build.md`, `test-overlay-pixel-contract.md`,
-`ffmpeg-pixel-measurement.md`, `recorder-anchor-first-frame.md`
+`runner-ui-pipeline-plumbing.md`, `prefer-live-stream-over-disk-artifact.md`,
+`test-overlay-pixel-contract.md`, `ffmpeg-pixel-measurement.md`, `recorder-anchor-first-frame.md`
 
 ### `misc/` — docker / CI / tooling
 
 `modern-docker.md`, `docker-save-format-source-daemon.md`,
-`renovate-nuget-allowedversions-needs-semver.md`, `openapi-generator-reflection-invoke.md`
+`renovate-nuget-allowedversions-needs-semver.md`
 
-**Totals:** vanilla 10 · mod 7 · tests 18 · misc 4 = 39. `README.md` stays at root.
+**Totals:** vanilla 10 · mod 7 · tests 15 · misc 3 = 35. `README.md` stays at root.
 
 ## Borderline placements
 

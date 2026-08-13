@@ -148,9 +148,9 @@ public class ServerOptimizer : ModService
         // musl/.NET 6 fix: SMAPI's SModHooks.StartTask uses RunSynchronously() which
         // on musl queues to ThreadPool instead of running inline, causing a deadlock
         // when the task needs BlockOnUIThread() (texture loading during _newDayAfterFade).
-        // Instead of patching StartTask (which would break other mods' thread-safety),
-        // we patch BlockOnUIThread to run inline when called from a background thread.
-        // This preserves SMAPI's sync semantics while avoiding the deadlock.
+        // Fix: patch StartTask to task.Start() for the content-loading tasks that need it
+        // (ServerOptimizerOverrides.StartTask_Prefix). BlockOnUIThread itself cannot be
+        // patched — the GL context is thread-local, so running it inline off-thread can't work.
         if (File.Exists("/lib/ld-musl-x86_64.so.1"))
         {
             // Find SMAPI's SModHooks.StartTask. Can't use string-based lookup because
