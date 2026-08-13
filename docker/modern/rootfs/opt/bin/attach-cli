@@ -31,7 +31,9 @@ start_output_pane() {
     local session_name="$1"
     local log_file="$2"
 
-    tmux new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | sed 's/\x1b\[30m/\x1b[90m/g'"
+    # Pin default-shell so panes and #() jobs never inherit an account shell that can't run
+    # commands (the production baseimage writes /sbin/nologin for every account)
+    tmux start-server \; set-option -g default-shell /bin/sh \; new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | sed 's/\x1b\[30m/\x1b[90m/g'"
 }
 
 start_input_pane_split() {
