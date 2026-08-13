@@ -24,9 +24,10 @@ public class AttachCliTests : TestBase
     /// Whole scenario — launch, wait, inspect, cleanup — in ONE exec (docker exec degrades
     /// badly under parallel load; see .claude/rules/minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md).
     /// The fake TTY (util-linux `script`) makes the final `tmux attach-session` block instead of
-    /// fail, keeping the session alive for inspection; `tmux kill-session` later unblocks it,
-    /// attach-cli's EXIT trap self-cleans, and the tmux server exits with its last session, so
-    /// the reused server stays pristine. Verdicts ride sentinel-prefixed stdout lines and the
+    /// fail, keeping the session alive for inspection; `tmux kill-session` later unblocks it and
+    /// the tmux server exits with its last session, so the reused server stays pristine. That
+    /// kill (plus the final sweep) is the ONLY cleanup — bash drops attach-cli's EXIT trap at
+    /// its `exec`. Verdicts ride sentinel-prefixed stdout lines and the
     /// script always exits 0, so failures self-identify. `timeout 60` is the backstop reaper;
     /// TERM is set because docker exec provides none.
     /// </summary>
@@ -50,6 +51,7 @@ public class AttachCliTests : TestBase
         done
         if [ -z "$session" ]; then
             echo "VERDICT:NO_SESSION"
+            kill "$wrapper" 2>/dev/null
         else
             # Settle: broken-shell panes die within milliseconds (tmux destroys them,
             # collapsing the session) — the delay makes that observable instead of racing setup
@@ -60,6 +62,9 @@ public class AttachCliTests : TestBase
             tmux kill-session -t "$session" 2>/dev/null
         fi
         wait "$wrapper" 2>/dev/null
+        # Sweep any session created after the poll gave up — nothing else removes one (the EXIT
+        # trap does not survive attach-cli's exec) and this test is the only tmux producer
+        tmux kill-server 2>/dev/null
         # Grep the FULL log in-container; only a capped excerpt is printed so the C# Log()
         # annotation stays under SetupPipeServer's 4096-byte IPC line cap (oversized = dropped)
         symptoms=$(grep -c -e 'no server running' -e 'no sessions' "$LOG" 2>/dev/null)
@@ -74,6 +79,10 @@ public class AttachCliTests : TestBase
 
     public AttachCliTests() { }
 
+    /// <summary>
+    /// attach-cli must bring up a live two-pane tmux session (default-shell pinned to /bin/sh)
+    /// in a booted container whose passwd carries the /sbin/nologin shells.
+    /// </summary>
     [Fact]
     public async Task AttachCli_StartsSessionWithLivePanes()
     {
