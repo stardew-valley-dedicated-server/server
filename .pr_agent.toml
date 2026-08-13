@@ -2,8 +2,8 @@
 # (curated in the Qodo portal, auto-imported from CLAUDE.md), PR history, and compliance with
 # the linked GitHub issue. Cross-file bug hunting is Greptile's lane (greptile.json);
 # diff-local review and linters are CodeRabbit's (.coderabbit.yaml).
-# Keys here are from the current product's configuration reference; legacy Qodo Merge v1
-# sections ([pr_reviewer], [pr_code_suggestions]) don't apply to /agentic_review.
+# Keys here are limited to the current product's configuration reference, which does not
+# carry the legacy Qodo Merge v1 sections ([pr_reviewer], [pr_code_suggestions]).
 
 [config]
 # Release-please PRs carry no code to review (regex patterns, unlike CodeRabbit's literal keywords).

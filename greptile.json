@@ -3,7 +3,7 @@
   "strictness": 2,
   "triggerOnDrafts": false,
   "triggerOnUpdates": true,
-  "ignoreKeywords": "release-please\nchore(main): release",
+  "ignoreKeywords": "chore(main): release",
   "ignorePatterns": "docker/modern/**\nsub_modules/**\n**/*.lock\npackage-lock.json",
   "shouldUpdateDescription": false,
   "statusCommentsEnabled": true,
