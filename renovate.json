@@ -113,6 +113,13 @@
             "groupName": "github-actions"
         },
         {
+            "description": "dotnet-sdk — the .NET SDK version pinned via dotnet-version in .github/workflows/*.yml (the custom.regex manager below). Standalone, not folded into the docker or github-actions groups, so an SDK bump lands as one visible PR that runs full CI before automerge — the point of pinning the SDK instead of floating on 10.0.x. Must come after the docker group rule (last-match-wins) so it overrides that rule's custom.regex match, which would otherwise misroute the bump to deps/docker.",
+            "matchManagers": ["custom.regex"],
+            "matchPackageNames": ["dotnet-sdk"],
+            "semanticCommitScope": "deps/dotnet-sdk",
+            "groupName": "dotnet-sdk"
+        },
+        {
             "description": "PIN — test-client mod-builder .NET 6 must match the game's runtime. Scoped to tag 6.0 in this file only; the 10.0 stages here and in docker/Dockerfile stay updatable.",
             "matchManagers": ["dockerfile"],
             "matchFileNames": ["docker/Dockerfile.test-client"],
@@ -236,6 +243,15 @@
             "datasourceTemplate": "github-releases",
             "extractVersionTemplate": "^v(?<version>.+)$",
             "versioningTemplate": "deb"
+        },
+        {
+            "customType": "regex",
+            "description": "dotnet-sdk — the pinned dotnet-version in .github/workflows/*.yml. Matches both quote styles and captures only a concrete version (e.g. 10.0.400), never a floating 10.0.x. datasource dotnet-version resolves depName dotnet-sdk against Microsoft's SDK release index; it has no default versioning, so semver is set explicitly (SDK versions order correctly under it, and config:recommended's ignoreUnstable keeps previews out).",
+            "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+            "matchStrings": ["dotnet-version:\\s*[\"'](?<currentValue>\\d+\\.\\d+\\.\\d+)[\"']"],
+            "depNameTemplate": "dotnet-sdk",
+            "datasourceTemplate": "dotnet-version",
+            "versioningTemplate": "semver"
         }
     ]
 }

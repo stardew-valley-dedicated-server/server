@@ -489,12 +489,13 @@ jobs:
             });
 
       # The coordinator is a net10.0 app that runs HERE on the runner (the mod
-      # builds inside Docker; the runner does not). .NET 10 is GA, so the default
-      # quality channel resolves a stable SDK — no preview pin needed.
+      # builds inside Docker; the runner does not). The SDK is pinned exactly
+      # (Renovate-managed) so every run uses the same SDK rather than whatever
+      # Microsoft shipped that day.
       - name: Setup .NET 10.0
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.400'
 
       # Build the test-UI SPA so the runner can assemble the offline web report
       # (test-web) from it after the run. The runner's report path (ReportGenerator,
