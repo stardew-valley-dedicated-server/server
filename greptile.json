@@ -1,0 +1,203 @@
+{
+  "commentTypes": ["logic"],
+  "strictness": 2,
+  "triggerOnDrafts": false,
+  "triggerOnUpdates": true,
+  "ignoreKeywords": "release-please\nchore(main): release",
+  "ignorePatterns": "docker/modern/**\nsub_modules/**\n**/*.lock\npackage-lock.json",
+  "shouldUpdateDescription": false,
+  "statusCommentsEnabled": true,
+  "instructions": "Role: cross-file bug hunter. Only report findings whose evidence involves code OUTSIDE the diff: callers or consumers the diff breaks or fails to adapt, violations of the repo invariants in customContext.rules, divergence from the established in-tree pattern for the same operation, or introduction of a second producer/parser for an artifact or contract that already has one. Do not comment on style, syntax, naming, formatting, or conventions — other tools own those lanes; a comment whose evidence is entirely inside the diff is out of scope. Two repo facts: (1) StardewValley.*, StardewModdingAPI.*, Netcode.*, and xTile.* identifiers resolve against the game's assemblies and a gitignored decompiled/ reference tree that is not in this repo — never report them as unknown, nonexistent, or misspelled. (2) Players connect with unmodded vanilla clients; all mod code (Harmony patches, asset edits) runs only in the server process — per-player client behavior can only ride net-synced server-authoritative state or vanilla network messages, so never suggest client-side mod changes.",
+  "customContext": {
+    "rules": [
+      {
+        "rule": "The entries below are distilled from .claude/rules/ (the canonical rule corpus, tracked in this repo). Each names its source file; when a distilled line and its source file disagree, the source file wins."
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "rule": "This server runs multiplayerMode = 2, so Game1.MasterPlayer always resolves to Game1.player (the same Farmer object). Reject any change or bug theory that hinges on host-vs-master divergence. (masterplayer-is-player-on-server.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "rule": "A Harmony patch is active only if the service constructor that registers it runs to completion. Always-on or transport-level behavior must not be patched from a conditionally-constructed or early-exiting service (e.g. PasswordProtectionService no-ops without a password); patches never reach farmhand clients. (harmony-patch-reachability.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "rule": "Never revert a peer-replicated NetField write by calling Set(oldValue) from inside fieldChangeEvent — with interpolation enabled (the default) the Set is a silent no-op. Suppress at the source or disable interpolation on the field. (netfield-revert-pattern.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/CabinManager/**", "mod/JunimoServer/Services/GameLoader/**", "mod/JunimoServer/Services/GameCreator/**"],
+        "rule": "Cabin allocation, slot assignment, and new-game setup must preserve the invariants in .claude/rules/cabin-system.md (startingCabins timing, EnsureAtLeastXCabins, SlotSelectionGate, cabin coordinates, master-only building, live-vs-persisted Farmer split, claim sweep, protected-slot assignment). Check edits against that file."
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/AlwaysOnServer/**", "mod/JunimoServer/Services/HostAutomation/**", "mod/JunimoServer/Services/Lobby/**", "mod/JunimoServer/Services/CabinManager/**"],
+        "rule": "Host-automation code (sleep, warp, festival, save, event skip, pause) must follow the invariants in .claude/rules/host-automation.md — e.g. hasDedicatedHost stays false, the netReady formula, draw-coupled FarmEvent completion, host farmhouse is internal-only."
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/SaveImport/**", "mod/JunimoServer/Services/GameLoader/**", "mod/JunimoServer/Services/CabinManager/**"],
+        "rule": "Save import is two layers with opposite engine availability: Layer A runs pre-load on pure XML with no Game1 access; Layer B is the SaveLoaded finalizer with the live engine (map bind first, then cabin + AssignFarmhand). Flag live-engine calls leaking into Layer A. (save-import-layer-timing.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/SaveImport/**", "mod/JunimoServer/Services/GameLoader/**"],
+        "rule": "World geometry (Community Center, greenhouse, island) is gated on MasterPlayer.mailReceived/eventsSeen — per-Farmer state, NOT team-stored. Any master-player swap must copy mail/events or the world reverts. (master-mail-gates-world-state.md)"
+      },
+      {
+        "rule": "Every artifact (file, report, event stream) has exactly one producer. Flag a change that adds a second writer for an artifact something else already produces — the fix is merging state upstream, not a second writer. Search the repo for the existing producer. (one-writer-per-artifact.md)"
+      },
+      {
+        "rule": "Every shared contract (env-var JSON, event fields, file formats) has one canonical typed record + parser. Flag a second hand-written parser (JsonDocument walks, key-string lookups) for a contract that already has one. Search the repo for the existing parser. (universal/one-parser-per-contract.md)"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/Helpers/SetupEventBus.cs", "tests/JunimoServer.Tests/Helpers/ContainerStatsCollector.cs", "tests/JunimoServer.TestRunner/**", "tests/test-ui/src/types/events.ts", "tests/test-ui/src/types/state.ts", "tests/test-ui/src/composables/useTestStore.ts"],
+        "rule": "A new field on a runner-to-UI event must be plumbed through every hand-written hop: producer, SetupEventBus JSONL, SetupPipeServer parse, ITestRenderer, RendererBase, WebRenderer, TestRunState, WebSocket evt, BuildSnapshot, test-ui types, store. Flag a field added at the producer that does not reach the UI store. (runner-ui-pipeline-plumbing.md)"
+      },
+      {
+        "scope": ["mod/**/*.cs", "tests/**/*.cs", "tools/**/*.cs"],
+        "rule": "AsyncLocal<T> does not flow into work pumped by an external loop the enqueuer never awaits (game-loop thread, SteamKit callback threads, Queue<Action> pumps). Capture the value at enqueue time and rebind inside the queued work. (asynclocal-pitfalls.md)"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/Containers/**", "tests/JunimoServer.Tests/Infrastructure/**"],
+        "rule": "Emit state-transition events from inside the component where the state change becomes observable, not from an outer coordinator that runs after the component's dispose. (colocate-event-emit.md)"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/**/*.cs"],
+        "rule": "DisconnectAsync settles only the client. Any assertion or day-advance that assumes the player is offline server-side must first await the removal gate (WaitForPlayersRemovedByIdAsync). (disconnect-settles-client-not-server.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/**", "mod/JunimoServer.Shared/**"],
+        "rule": "Zoom/scale changes go through the Harmony-patched desired* getters, never direct pokes of Game1 scale/zoom fields — Game1.Update reconciles pokes away and save-load clobbers the persisted zoomLevel. (display-scaling.md)"
+      },
+      {
+        "scope": ["tests/JunimoServer.TestRunner/**", "tests/JunimoServer.Tests/Containers/**"],
+        "rule": "When a consumer's DisposeAsync reads state accumulated from producer events, explicitly drain the producer (await its EOF/completion signal) before the consumer disposes — await using declaration order is not enough. (drain-before-consume-disposal.md)"
+      },
+      {
+        "scope": ["tests/**/*.cs"],
+        "rule": "An E2E day/season transition needs a connected driver (SleepToSaveAsync, or a second connected farmer who sleeps) — an empty server never advances its own clock, so SetTime/SetClockSpeed alone intermittently freezes. (test-day-transition-needs-connected-driver.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer.Shared/TestOverlay.cs", "tests/JunimoServer.Tests/RenderingTests.cs", "tests/JunimoServer.Tests/Helpers/ContainerRecorder.cs"],
+        "rule": "TestOverlay.cs (net6.0) and RenderingTests.cs (net10.0) share a pixel-coordinate contract and cannot share constants across TFMs. A change to either side's geometry, font, padding, color, or sample points must be mirrored on the other side. (test-overlay-pixel-contract.md)"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/Api/**"],
+        "rule": "A /test/* state-setter endpoint must run the engine's reconciliation (peer replication, derived-field recompute, day-boundary resets), not just poke Game1 fields — mirror the vanilla code path that changes the same state. (test-state-setter-runs-engine-reconcile.md)"
+      }
+    ],
+    "files": [
+      {
+        "scope": ["mod/JunimoServer/Services/CabinManager/**", "mod/JunimoServer/Services/GameLoader/**", "mod/JunimoServer/Services/GameCreator/**"],
+        "path": ".claude/rules/cabin-system.md",
+        "description": "Full cabin-allocation invariant list behind the distilled cabin rule"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/AlwaysOnServer/**", "mod/JunimoServer/Services/HostAutomation/**", "mod/JunimoServer/Services/Lobby/**", "mod/JunimoServer/Services/CabinManager/**"],
+        "path": ".claude/rules/host-automation.md",
+        "description": "Full host-automation invariant list behind the distilled host-automation rule"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/SaveImport/**", "mod/JunimoServer/Services/GameLoader/**", "mod/JunimoServer/Services/CabinManager/**"],
+        "path": ".claude/rules/save-import-layer-timing.md",
+        "description": "Save-import layer split (pre-load XML vs live-engine finalizer) with host-swap invariants"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/SaveImport/**", "mod/JunimoServer/Services/GameLoader/**"],
+        "path": ".claude/rules/master-mail-gates-world-state.md",
+        "description": "Why master mail/events gate world geometry and what a master swap must copy"
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "path": ".claude/rules/masterplayer-is-player-on-server.md",
+        "description": "Why Game1.MasterPlayer is Game1.player on this server"
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "path": ".claude/rules/harmony-patch-reachability.md",
+        "description": "The three reachability bounds on a Harmony patch"
+      },
+      {
+        "scope": ["mod/JunimoServer/**"],
+        "path": ".claude/rules/netfield-revert-pattern.md",
+        "description": "Why Set(oldValue) inside fieldChangeEvent is a silent no-op"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/Helpers/SetupEventBus.cs", "tests/JunimoServer.Tests/Helpers/ContainerStatsCollector.cs", "tests/JunimoServer.TestRunner/**", "tests/test-ui/src/types/events.ts", "tests/test-ui/src/types/state.ts", "tests/test-ui/src/composables/useTestStore.ts"],
+        "path": ".claude/rules/runner-ui-pipeline-plumbing.md",
+        "description": "The full hop list of the hand-written runner-to-UI event pipeline"
+      },
+      {
+        "path": ".claude/rules/one-writer-per-artifact.md",
+        "description": "One producer per artifact — incident context for the distilled rule"
+      },
+      {
+        "path": ".claude/rules/universal/one-parser-per-contract.md",
+        "description": "One canonical parser per shared contract — incident context for the distilled rule"
+      },
+      {
+        "scope": ["mod/**/*.cs", "tests/**/*.cs", "tools/**/*.cs"],
+        "path": ".claude/rules/asynclocal-pitfalls.md",
+        "description": "AsyncLocal capture-and-rebind pattern for external pump boundaries"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/Containers/**", "tests/JunimoServer.Tests/Infrastructure/**"],
+        "path": ".claude/rules/colocate-event-emit.md",
+        "description": "Why state-transition events are emitted from the producer, not a coordinator"
+      },
+      {
+        "scope": ["tests/JunimoServer.Tests/**/*.cs"],
+        "path": ".claude/rules/disconnect-settles-client-not-server.md",
+        "description": "The removal gate required between DisconnectAsync and server-side assertions"
+      },
+      {
+        "scope": ["mod/JunimoServer/**", "mod/JunimoServer.Shared/**"],
+        "path": ".claude/rules/display-scaling.md",
+        "description": "Why zoom goes through patched desired* getters, not scale-field pokes"
+      },
+      {
+        "scope": ["tests/JunimoServer.TestRunner/**", "tests/JunimoServer.Tests/Containers/**"],
+        "path": ".claude/rules/drain-before-consume-disposal.md",
+        "description": "Why producer streams are drained explicitly before consumer disposal"
+      },
+      {
+        "scope": ["tests/**/*.cs"],
+        "path": ".claude/rules/test-day-transition-needs-connected-driver.md",
+        "description": "Why day transitions need a connected driver and how the driver pattern works"
+      },
+      {
+        "scope": ["mod/JunimoServer.Shared/TestOverlay.cs", "tests/JunimoServer.Tests/RenderingTests.cs", "tests/JunimoServer.Tests/Helpers/ContainerRecorder.cs"],
+        "path": ".claude/rules/test-overlay-pixel-contract.md",
+        "description": "The overlay/test pixel-coordinate contract and why constants can't be shared"
+      },
+      {
+        "scope": ["mod/JunimoServer/Services/Api/**"],
+        "path": ".claude/rules/test-state-setter-runs-engine-reconcile.md",
+        "description": "Reconciliation each /test state-setter must run, with the two incident cases"
+      },
+      {
+        "scope": ["mod/**"],
+        "path": "docs/developers/architecture/mod-architecture.md",
+        "description": "Server mod architecture: services, entry point, patch surfaces"
+      },
+      {
+        "scope": ["mod/**"],
+        "path": "docs/developers/architecture/game-engine-notes.md",
+        "description": "Game engine behavior notes relevant to server-side automation"
+      },
+      {
+        "scope": ["mod/**"],
+        "path": "docs/developers/architecture/networking.md",
+        "description": "Networking architecture: transports, net sync, message types"
+      },
+      {
+        "scope": ["tests/**"],
+        "path": "docs/developers/testing/test-harness.md",
+        "description": "E2E test harness reference: broker, pooling, containers"
+      },
+      {
+        "scope": ["tests/**"],
+        "path": "docs/developers/testing/e2e-testing.md",
+        "description": "How E2E tests are structured and run"
+      }
+    ]
+  }
+}

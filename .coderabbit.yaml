@@ -34,6 +34,11 @@ reviews:
         E2E tests use xUnit v3 with IPC. Never suggest Console.WriteLine or any stdout writes in test
         assemblies — it corrupts xUnit v3 discovery. Output goes through ITestOutputHelper or IMessageSink.
         Tests are E2E only (Testcontainers); there is no unit-test layer, so don't suggest adding one.
+    - path: "tests/test-client/**"
+      instructions: >-
+        This is a SMAPI mod (net6.0) driving the E2E test client. Game/SMAPI identifiers
+        (StardewValley.*, StardewModdingAPI.*, Netcode.*, xTile.*) resolve against the game's assemblies
+        and the gitignored decompiled/ reference tree — don't flag them as unknown or nonexistent.
     - path: "mod/**"
       instructions: >-
         The SMAPI mod targets net6.0 to match the game's bundled runtime. Don't suggest newer .NET / C#
@@ -41,6 +46,9 @@ reviews:
         MUTATIONS must use its public API (Remove/Add/indexer), not FieldDict.Remove/Add/Clear, or peer
         replication breaks; reads via FieldDict (ContainsKey, TryGetValue, iteration) are fine. GamePath
         comes from .env via Directory.Build.props — don't hardcode a game path in a .csproj.
+        Game/SMAPI identifiers (StardewValley.*, StardewModdingAPI.*, Netcode.*, xTile.*) resolve against
+        the game's assemblies and the gitignored decompiled/ reference tree — don't flag them as unknown
+        or nonexistent.
     - path: "renovate.json"
       instructions: >-
         Version pins and caps (allowedVersions =X.Y.Z / <X.0.0 with versioning:semver) are deliberate
@@ -67,6 +75,11 @@ reviews:
         For base-image / tool-version bumps (often from Renovate), flag breaking changes — the test-client
         mod-builder stage must stay on .NET 6 to match the game runtime. The Dockerfile is multi-stage;
         keep the stage boundaries and secret mounts (not ENV) for Steam credentials intact.
+    - path: ".claude/**"
+      instructions: >-
+        Rules and plans cite game symbols and decompiled/sdv-*/ file:line references. That reference tree
+        is gitignored, so citations into it cannot be verified from the repo — don't flag cited game
+        identifiers, methods, or decompiled/ paths as nonexistent or fabricated.
 
   tools:
     languagetool:

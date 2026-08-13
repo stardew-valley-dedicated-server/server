@@ -1,0 +1,26 @@
+# Qodo Code Review repo config. Qodo's lane: evidence outside the code — governance rules
+# (curated in the Qodo portal, auto-imported from CLAUDE.md), PR history, and compliance with
+# the linked GitHub issue. Cross-file bug hunting is Greptile's lane (greptile.json);
+# diff-local review and linters are CodeRabbit's (.coderabbit.yaml).
+# Keys here are from the current product's configuration reference; legacy Qodo Merge v1
+# sections ([pr_reviewer], [pr_code_suggestions]) don't apply to /agentic_review.
+
+[config]
+# Release-please PRs carry no code to review (regex patterns, unlike CodeRabbit's literal keywords).
+ignore_pr_title = ['^chore\(main\): release', 'release-please']
+
+[github_app]
+# Review on PR open/reopen/ready-for-review (drafts excluded by the product's trigger design).
+# /agentic_describe deliberately omitted: PR descriptions are hand-written in this repo.
+pr_commands = ["/agentic_review"]
+
+[review_agent]
+issues_user_guidelines = """
+Focus on violations of the governance rules and on compliance with the linked GitHub issue
+(the PR template mandates one). Skip style/syntax/diff-local findings and cross-file caller
+analysis — other review tools own those lanes in this repo.
+"""
+compliance_user_guidelines = """
+The linked GitHub issue is the requirements source. Flag requirements it states that the PR
+does not fulfill, and PR changes unrelated to it.
+"""
