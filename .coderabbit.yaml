@@ -9,6 +9,7 @@ reviews:
   high_level_summary: true
   poem: false
   review_status: true
+  assess_linked_issues: true     # the PR template mandates a linked issue; assess the PR against it
   auto_review:
     enabled: true
     drafts: false
@@ -34,6 +35,11 @@ reviews:
         E2E tests use xUnit v3 with IPC. Never suggest Console.WriteLine or any stdout writes in test
         assemblies — it corrupts xUnit v3 discovery. Output goes through ITestOutputHelper or IMessageSink.
         Tests are E2E only (Testcontainers); there is no unit-test layer, so don't suggest adding one.
+    - path: "tests/test-client/**"
+      instructions: >-
+        This is a SMAPI mod (net6.0) driving the E2E test client. Game/SMAPI identifiers
+        (StardewValley.*, StardewModdingAPI.*, Netcode.*, xTile.*) resolve against the game's assemblies
+        and the gitignored decompiled/ reference tree — don't flag them as unknown or nonexistent.
     - path: "mod/**"
       instructions: >-
         The SMAPI mod targets net6.0 to match the game's bundled runtime. Don't suggest newer .NET / C#
@@ -41,6 +47,9 @@ reviews:
         MUTATIONS must use its public API (Remove/Add/indexer), not FieldDict.Remove/Add/Clear, or peer
         replication breaks; reads via FieldDict (ContainsKey, TryGetValue, iteration) are fine. GamePath
         comes from .env via Directory.Build.props — don't hardcode a game path in a .csproj.
+        Game/SMAPI identifiers (StardewValley.*, StardewModdingAPI.*, Netcode.*, xTile.*) resolve against
+        the game's assemblies and the gitignored decompiled/ reference tree — don't flag them as unknown
+        or nonexistent.
     - path: "renovate.json"
       instructions: >-
         Version pins and caps (allowedVersions =X.Y.Z / <X.0.0 with versioning:semver) are deliberate
@@ -67,6 +76,58 @@ reviews:
         For base-image / tool-version bumps (often from Renovate), flag breaking changes — the test-client
         mod-builder stage must stay on .NET 6 to match the game runtime. The Dockerfile is multi-stage;
         keep the stage boundaries and secret mounts (not ENV) for Steam credentials intact.
+    - path: ".claude/**"
+      instructions: >-
+        Rules and plans cite game symbols and decompiled/sdv-*/ file:line references. That reference tree
+        is gitignored, so citations into it cannot be verified from the repo — don't flag cited game
+        identifiers, methods, or decompiled/ paths as nonexistent or fabricated.
+
+  # Governance rules as config-as-code (warning mode: visible, non-blocking). Distilled from
+  # CLAUDE.md Prohibitions and .claude/rules/ — the rule files carry the full incident context.
+  pre_merge_checks:
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: "No stdout or LogLevel.Error test poison"
+        mode: warning
+        instructions: >-
+          In test assemblies (tests/JunimoServer.Tests), flag any added Console.Write/WriteLine or
+          other stdout writes — they corrupt xUnit v3's IPC and break test discovery. In mod code
+          (mod/**, tests/test-client/**), flag logging at LogLevel.Error or new log lines matching
+          "ERROR"/"FATAL" — the server-side log scan cancels E2E test runs on those; Warn or Trace
+          are the alternatives.
+      - name: "NetDictionary mutations via public API"
+        mode: warning
+        instructions: >-
+          In mod/JunimoServer, flag mutations through NetDictionary.FieldDict (Remove/Add/Clear) —
+          they break peer replication. Mutations must use the public API (Remove/Add/indexer).
+          Reads via FieldDict (ContainsKey, TryGetValue, iteration) are fine.
+      - name: "Host handlers on the right tick event"
+        mode: warning
+        instructions: >-
+          In mod/JunimoServer, flag new latency-sensitive or sequential host-automation logic
+          subscribed to OneSecondUpdateTicked — it fires every 60 game ticks (~12 s at the test
+          SERVER_TPS=5). Such handlers belong in OnUpdateTicked with wall-clock gating; one-shot
+          host writes belong on the OnSaveLoaded pre-seed path.
+      - name: "E2E assertions via server HTTP API"
+        mode: warning
+        instructions: >-
+          In tests/JunimoServer.Tests, flag test assertions about server state built on mod events
+          or log parsing when a server HTTP API snapshot endpoint (/cabins, /players, /farmhands)
+          exposes the same state — the API snapshot is the asserting surface.
+      - name: "No refactor-history prose"
+        mode: warning
+        instructions: >-
+          In code comments, docstrings, and docs (not commit messages or PR descriptions), flag
+          prose describing how the code came to be rather than what it is: "previously",
+          "no longer", "has been removed", "refactored from", or defensive framing of claims
+          nobody questioned. The text must serve a cold reader.
+      - name: "Testcontainers builders set Docker endpoint"
+        mode: warning
+        instructions: >-
+          In tests/, flag any new Testcontainers builder chain (ContainerBuilder, NetworkBuilder,
+          VolumeBuilder) that does not call WithDockerEndpoint(host.EndpointConfig) — the default
+          named-pipe timeout fails under parallel startup load.
 
   tools:
     languagetool:
@@ -95,5 +156,10 @@ chat:
   allow_non_org_members: true    # external contributors can interact with @coderabbitai on their PRs
 
 knowledge_base:
+  code_guidelines:
+    enabled: false               # enforcement is curated in pre_merge_checks/path_instructions;
+                                 # raw CLAUDE.md ingestion would add Claude-workflow noise
   learnings:
     scope: local                 # keep review learnings to this repo only
+    approval_delay: 7            # veto window: learnings compound into future reviews, so each
+                                 # gets a week for admin rejection before it auto-applies
