@@ -26,8 +26,8 @@ jobs:
           # creation, NOT last access: a restore-keys prefix fallback keeps re-reading
           # a stale cache, bumping its last_accessed_at indefinitely, so a last-accessed
           # filter never evicts such a zombie (GitHub's own eviction is last-accessed
-          # too, which is how the loophole persists). created_at is immutable, so no
-          # cache outlives two weeks regardless of access pattern.
+          # too, which is how the loophole persists). created_at is immutable, so each
+          # weekly run evicts every cache past 14 days, regardless of access pattern.
           CUTOFF=$(date -d '14 days ago' -Iseconds)
 
           STALE_CACHES=$(gh api repos/$REPO/actions/caches --paginate \
