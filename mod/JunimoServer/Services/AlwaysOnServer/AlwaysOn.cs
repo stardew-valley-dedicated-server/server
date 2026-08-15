@@ -57,23 +57,14 @@ public class AlwaysOnServer : ModService
         Config = config;
 
         // Register console commands
-        var hostAuto = new CommandDescriptor
-        {
-            Name = "host-auto",
-            Description = "Toggles host auto mode on/off",
-        };
-        CommandDescriptorRegistry.Add(hostAuto);
-        helper.ConsoleCommands.Add(hostAuto.Name, hostAuto.Description, ToggleAutoModeCommand);
-
-        var hostVisibility = new CommandDescriptor
-        {
-            Name = "host-visibility",
-            Description = "Toggles host visibility on/off",
-        };
-        CommandDescriptorRegistry.Add(hostVisibility);
-        helper.ConsoleCommands.Add(
-            hostVisibility.Name,
-            hostVisibility.Description,
+        helper.ConsoleCommands.Register(
+            "host-auto",
+            "Toggles host auto mode on/off",
+            ToggleAutoModeCommand
+        );
+        helper.ConsoleCommands.Register(
+            "host-visibility",
+            "Toggles host visibility on/off",
             ToggleVisibilityCommand
         );
 

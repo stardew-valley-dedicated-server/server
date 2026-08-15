@@ -1,14 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using StardewModdingAPI;
 
 namespace JunimoServer.Services.Commands;
 
 /// <summary>
 /// Declarative grammar for one of our console commands: name, description, subcommands, and
-/// per-subcommand flags. Each command registers its descriptor in <c>Register(...)</c> right
-/// beside its <c>helper.ConsoleCommands.Add</c> call, so the attach-cli TAB completion
-/// (<see cref="Util.CommandCatalogFile"/>) and the command's help output share one source.
+/// per-subcommand flags. Commands register via
+/// <see cref="CommandDescriptorRegistry.Register(ICommandHelper, CommandDescriptor, Action{string, string[]})"/>,
+/// which records the descriptor and adds the SMAPI command in one call, so the attach-cli TAB
+/// completion (<see cref="Util.CommandCatalogFile"/>) and the command's help output share one source.
 /// Free-form arguments (a save name, an fps value) are deliberately not modeled — completion
 /// stays silent where it can't help.
 /// </summary>
@@ -52,8 +54,34 @@ public static class CommandDescriptorRegistry
 
     public static IReadOnlyList<CommandDescriptor> All => Descriptors;
 
-    public static void Add(CommandDescriptor descriptor)
+    /// <summary>
+    /// The one way to register one of our console commands: records the descriptor for the
+    /// completion catalog and adds the SMAPI command from the same data, so neither half can
+    /// be forgotten or drift from the other. Named Register (not Add) on purpose — an Add
+    /// extension with SMAPI's (name, description, callback) signature would lose overload
+    /// resolution to the instance method and silently skip the registry.
+    /// </summary>
+    public static void Register(
+        this ICommandHelper commands,
+        CommandDescriptor descriptor,
+        Action<string, string[]> callback
+    )
     {
         Descriptors.Add(descriptor);
+        commands.Add(descriptor.Name, descriptor.Description, callback);
+    }
+
+    /// <summary>Convenience for commands with no subcommands (name-only completion).</summary>
+    public static void Register(
+        this ICommandHelper commands,
+        string name,
+        string description,
+        Action<string, string[]> callback
+    )
+    {
+        commands.Register(
+            new CommandDescriptor { Name = name, Description = description },
+            callback
+        );
     }
 }

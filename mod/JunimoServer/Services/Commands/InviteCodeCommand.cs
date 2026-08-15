@@ -44,15 +44,9 @@ public class InviteCodeCommand
         );
 
         // Register console command
-        var descriptor = new CommandDescriptor
-        {
-            Name = "invitecode",
-            Description = "Displays the current server invite code.",
-        };
-        CommandDescriptorRegistry.Add(descriptor);
-        helper.ConsoleCommands.Add(
-            descriptor.Name,
-            descriptor.Description,
+        helper.ConsoleCommands.Register(
+            "invitecode",
+            "Displays the current server invite code.",
             InviteCodeConsoleCommand
         );
     }

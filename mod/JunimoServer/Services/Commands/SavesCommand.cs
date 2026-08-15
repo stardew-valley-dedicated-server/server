@@ -55,12 +55,7 @@ internal static class SavesCommand
         _monitor = monitor;
         _saveImport = saveImport;
 
-        CommandDescriptorRegistry.Add(Descriptor);
-        helper.ConsoleCommands.Add(
-            Descriptor.Name,
-            Descriptor.Description,
-            (cmd, args) => HandleCommand(args)
-        );
+        helper.ConsoleCommands.Register(Descriptor, (cmd, args) => HandleCommand(args));
     }
 
     private static void HandleCommand(string[] args)

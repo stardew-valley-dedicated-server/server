@@ -62,12 +62,7 @@ internal static class SettingsCommand
         _options = options;
         _settings = settings;
 
-        CommandDescriptorRegistry.Add(Descriptor);
-        helper.ConsoleCommands.Add(
-            Descriptor.Name,
-            Descriptor.Description,
-            (cmd, args) => HandleCommand(args)
-        );
+        helper.ConsoleCommands.Register(Descriptor, (cmd, args) => HandleCommand(args));
     }
 
     private static void HandleCommand(string[] args)
