@@ -11,7 +11,8 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, formatting, and line endings |
 | [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
-| [E2E Tests](#e2e-tests-pipeline) | Manual: `workflow_dispatch`, or a maintainer's `/run-tests-e2e` PR comment / re-run checkbox | Runs the Docker E2E suite on a remote VPS (never a required check) |
+| [E2E Tests](#e2e-tests-pipeline) | Manual (`workflow_dispatch`, a maintainer's `/run-tests-e2e` PR comment / re-run checkbox) or nightly schedule | Runs the Docker E2E suite on a remote VPS (never a required check) |
+| [Approve PR](#approve-pr-pipeline) | A maintainer's `!approve` PR comment | Records an approving review from `github-actions[bot]` so the required-approval rule is satisfiable on the maintainer's own PRs |
 | [Deploy Server](#deploy-server-pipeline) | After preview build / manual | Deploys server instances to VPS |
 | [Deploy Docs](#deploy-docs-pipeline) | After build / manual | Deploys documentation to GitHub Pages |
 | [Cleanup Preview Tags](#cleanup-preview-tags) | Weekly schedule / manual | Deletes old preview tags from DockerHub |
@@ -238,13 +239,14 @@ CodeQL triggers on `pull_request`, **not** `pull_request_target` (the opposite c
 
 Runs the heavy Docker E2E suite. The coordinator (`JunimoServer.TestRunner`) runs on the GitHub runner; the actual Stardew game containers run on a **remote VPS over SSH**. It is **manual and maintainer-gated** — never an automatic merge gate, and **never a required check** (an external VPS being down must not block the queue). For how to *use* it (triggers, results, the re-run checkbox), see [E2E Testing → CI Usage](../testing/e2e-testing.md#ci-usage); this section covers the pipeline's safety model and one-time setup.
 
-### Three entry points
+### Entry points
 
 | Trigger | How |
 |---------|-----|
 | `workflow_dispatch` | Actions tab → **Run workflow** (full suite from a trusted branch; optional `filter`). |
 | `/run-tests-e2e [filter]` | A PR comment (the `issue_comment: created` event). Runs against the PR's HEAD. |
 | **Re-run checkbox** | Ticking "🔁 Re-run E2E tests" in the bot's results comment (`issue_comment: edited`). |
+| **Nightly schedule** | Full-suite run on `master` (08:00 UTC) so the README E2E badge shows a recent real result. Never gates a merge. |
 
 ### Trigger & Fork Safety
 
@@ -270,6 +272,20 @@ To lint the workflow YAML itself, run [actionlint](https://github.com/rhysd/acti
 ```bash
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color .github/workflows/e2e-tests.yml
 ```
+
+## Approve PR Pipeline
+
+[Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/approve-pr.yml)
+
+GitHub forbids approving your own pull request, which with a single maintainer makes the `master` ruleset's required-approval rule unsatisfiable — and the admin-bypass merge that would take its place also skips the required checks, thread resolution, and the merge queue. Commenting `!approve` on a PR records the maintainer's decision as an approving review from `github-actions[bot]`, so a normal non-admin merge proceeds with every other rule enforced. The maintainer still reads the diff; the command only records that decision.
+
+| Behaviour | Detail |
+|-----------|--------|
+| Command | `!approve` alone on the comment's first line. A 👍 reaction confirms the review was submitted. |
+| Authorization | Same fail-closed chain as the E2E comment path: default-branch workflow copy, `isMaintainer` repo-permission check (write/admin required), 👎 + reply on deny. |
+| Same-repo PRs only | A fork author can push the moment the command comment appears, getting unseen code approved. Fork PRs take a normal UI review — only self-approval is forbidden. |
+| Stale on push | `dismiss_stale_reviews_on_push` drops the approval on every later push; re-issue `!approve` as the last action before merging. |
+| Fallback | If the bot review stops satisfying `required_approving_review_count`, swap `GITHUB_TOKEN` for a GitHub App installation token (`actions/create-github-app-token`); nothing else changes. |
 
 ## Deploy Docs Pipeline
 

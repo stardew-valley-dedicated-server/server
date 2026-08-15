@@ -1,0 +1,125 @@
+# `!approve` PR comment — record the commenting maintainer's approval as a bot review.
+#
+# GitHub forbids approving your own pull request; with a single maintainer that makes
+# the master ruleset's required-approval rule unsatisfiable, and the `--admin` merge
+# bypass that would take its place is total — it also skips the required status
+# checks, the up-to-date policy, thread resolution, and the merge queue. This command
+# records the maintainer's decision as an approving review from github-actions[bot],
+# an identity GitHub accepts, so a normal non-admin merge proceeds with every other
+# rule enforced. The maintainer still reads the diff; the command only records that
+# decision.
+#
+# Safety on a public repo:
+#   - issue_comment always runs this workflow file from the default branch (master),
+#     never the PR/fork version — a PR cannot alter the approver that gates it.
+#   - The commenter is authorized via the repo-permission API (write/admin required;
+#     NOT author_association, which is permission-blind). Fail closed: 404 denies,
+#     403/5xx reds the job.
+#   - Same-repo PRs only: a fork author can push the instant the (public) command
+#     comment appears — before this workflow reads the head — and an approval
+#     submitted after a push is not retroactively dismissed, so a fork head could get
+#     unseen code approved. Same-repo pushes need write access; fork PRs never need
+#     the command (only self-approval is forbidden — review them via the normal UI).
+#   - dismiss_stale_reviews_on_push drops the approval on every later push —
+#     re-issue `!approve` as the last action before merging.
+#
+# If the bot's review ever stops satisfying required_approving_review_count, swap
+# GITHUB_TOKEN for a GitHub App installation token (actions/create-github-app-token
+# + two secrets); the rest of the workflow is unchanged.
+name: Approve PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  approve:
+    name: Approve
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # submit the review + reactions / deny reply
+      contents: read         # helper sparse-checkout
+    # Coarse pre-filter (GitHub expressions can't anchor a regex); the authoritative
+    # checks (anchored command match, maintainer permission, same-repo head) run
+    # inside the github-script step. github.event.sender per the e2e-tests.yml idiom.
+    if: >
+      github.event.issue.pull_request != null
+      && github.event.sender.type != 'Bot'
+      && startsWith(github.event.comment.body, '!approve')
+    steps:
+      # Check out ONLY the shared helper from the (trusted) default branch so the
+      # github-script step can require() isMaintainer — same as e2e-tests.yml's gate.
+      - name: Checkout gate helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts/e2e-pr-sticky.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Authorize and approve
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const helper = require('./.github/scripts/e2e-pr-sticky.js');
+            const { owner, repo } = context.repo;
+            const comment = context.payload.comment;
+            const issueNumber = context.payload.issue.number;
+            const actor = context.payload.sender.login;
+
+            // Anchored to the whole first line so a quoted or mid-text `!approve`
+            // mention is ignored (parseCommand's idiom; strip \r for CRLF bodies).
+            // Trailing whitespace is tolerated; any argument makes it not-our-command.
+            const firstLine = (comment.body || '').split(/\r?\n/, 1)[0].replace(/\r$/, '');
+            if (!/^!approve\s*$/.test(firstLine)) {
+              core.info('No-op: comment is not an anchored !approve command');
+              return;
+            }
+
+            // Authorize BEFORE any reaction so a non-maintainer can't elicit one
+            // beyond the deny reply. isMaintainer rethrows non-404 errors → red job.
+            const allowed = await helper.isMaintainer({ github, owner, repo, username: actor });
+            if (!allowed) {
+              await github.rest.reactions.createForIssueComment({
+                owner, repo, comment_id: comment.id, content: '-1',
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `@${actor} — \`!approve\` is maintainer-only (repo write access required).`,
+              });
+              core.info(`No-op: ${actor} is not a maintainer`);
+              return;
+            }
+
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data;
+            if (pr.state === 'closed') {
+              core.setFailed(`PR #${issueNumber} is closed/merged — refusing to approve.`);
+              return;
+            }
+
+            // Same-repo heads only (see header). null head.repo (deleted fork) is a
+            // fork too. Visible reply, not silence — the commenter IS a maintainer.
+            const headRepo = pr.head.repo ? pr.head.repo.full_name : null;
+            if (headRepo !== `${owner}/${repo}`) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `@${actor} — \`!approve\` works on same-repo PRs only. A fork head can be pushed mid-approval by its author; review fork PRs through the normal GitHub review UI instead.`,
+              });
+              core.info('No-op: fork PR head');
+              return;
+            }
+
+            // commit_id records the head the maintainer saw when they commented;
+            // pushes after the approval are handled by dismiss_stale_reviews_on_push.
+            await github.rest.pulls.createReview({
+              owner, repo, pull_number: issueNumber,
+              commit_id: pr.head.sha,
+              event: 'APPROVE',
+              body: `Approved on behalf of @${actor} via \`!approve\`.`,
+            });
+
+            // 👍 the command comment so the approval visibly took.
+            await github.rest.reactions.createForIssueComment({
+              owner, repo, comment_id: comment.id, content: '+1',
+            });
