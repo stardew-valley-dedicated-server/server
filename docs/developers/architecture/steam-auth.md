@@ -109,7 +109,7 @@ players, so the default would block invite-code joins for everyone. The mod ther
 
 | Transport | Site |
 |-----------|------|
-| Steam lobby | `AuthService.SetSteamLobbyPrivacy` (hardcodes `"public"`) |
+| Steam lobby | `GalaxyAuthService.SetSteamLobbyPrivacy` (hardcodes `"public"`) |
 | Galaxy (GoG) lobby | `ServerOptimizerOverrides.CreateLobby_Prefix` (forces `ServerPrivacy.Public`) |
 
 This is why a JunimoServer lobby is always Public and can appear in the Steam/GOG lobby
