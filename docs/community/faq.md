@@ -63,6 +63,10 @@ Yes. JunimoServer runs on both Linux and Windows via Docker.
 
 No. Players connect using the normal Stardew Valley multiplayer menu with an invite code. Content mods (if any) must match between server and players.
 
+### Why is my server's lobby always public?
+
+By design. In normal Stardew, the host's lobby defaults to "Friends Only," which lets only the host's Steam/GOG friends join. A dedicated server runs on a separate account that your players aren't friends with, so "Friends Only" would block everyone — the invite code alone wouldn't be enough. To keep invite codes working for anyone you share them with, JunimoServer forces the lobby Public. Access control comes from keeping the invite code private (and optionally [password protection](/features/password-protection/)), not from lobby visibility.
+
 ## Mods
 
 ### Can I use mods?

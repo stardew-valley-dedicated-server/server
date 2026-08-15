@@ -99,6 +99,22 @@ Refresh tokens are saved to `/data/steam-session/session-{username}.json` and re
 4. Steam-auth uses SteamKit2 to get an encrypted app ticket from Steam
 5. Ticket is returned and used to generate an invite code with "G" prefix
 
+### Lobbies are forced Public
+
+An invite code is just the lobby's raw ID handed to `JoinLobby`. Stardew's default
+visibility is **FriendsOnly** (`Game1.options.serverPrivacy`), which restricts joins to
+friends of the host account — but a dedicated server's host account is not friended by its
+players, so the default would block invite-code joins for everyone. The mod therefore forces
+**both** lobbies Public regardless of the game-chosen value:
+
+| Transport | Site |
+|-----------|------|
+| Steam lobby | `AuthService.SetSteamLobbyPrivacy` (hardcodes `"public"`) |
+| Galaxy (GoG) lobby | `ServerOptimizerOverrides.CreateLobby_Prefix` (forces `ServerPrivacy.Public`) |
+
+This is why a JunimoServer lobby is always Public and can appear in the Steam/GOG lobby
+list. The two sites must stay in sync; changing one alone splits the transports' privacy.
+
 ## Auth vs Transport: What the Sidecar Replaces (and What It Can't)
 
 The sidecar fully replaces the Steam client for **authentication** — but Steam network

@@ -127,10 +127,13 @@ public class ServerOptimizerOverrides
 
     public static void CreateLobby_Prefix(ref ServerPrivacy privacy, ref uint memberLimit)
     {
-        // Used by GoG
+        // Force Public: game default FriendsOnly gates joins to the host account's friends,
+        // but a dedicated host isn't friended by its players, and an invite code is a raw
+        // lobby ID fed to JoinLobby — so joins need a joinable Public lobby. Mirror of the
+        // Steam forcing in AuthService.SetSteamLobbyPrivacy; keep both in sync.
         privacy = ServerPrivacy.Public;
-        memberLimit = 150;
-        _galaxyLobbyFailureCount = 0;
+        memberLimit = 150; // raise the vanilla member cap for many farmhands
+        _galaxyLobbyFailureCount = 0; // reset OnGalaxyLobbyCreated_Prefix retry counter
     }
 
     /// <summary>
