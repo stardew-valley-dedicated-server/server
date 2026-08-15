@@ -62,6 +62,17 @@ public class LobbyCommandsPermissionsTests : LobbyCommandsTestBase
 
         Assert.True(hasResponse, "Should see help with commands listed");
 
+        // Page navigation: --page 2 must serve the second slice (from ShowHelp's fixed line
+        // list "!lobby set" is on page 2, not page 1) with a "page 2/N" footer. The other page
+        // syntaxes (page:N, -p N) share the same parser, so one form covers the delivery path.
+        var hasPageTwo = await Chat.AssertResponseAsync(
+            "!lobby help --page 2",
+            "page 2/",
+            "!lobby set"
+        );
+
+        Assert.True(hasPageTwo, "!lobby help --page 2 should serve page 2 (footer + page-2 entry)");
+
         await Exceptions.AssertNoExceptionsAsync("after help command");
     }
 

@@ -204,49 +204,51 @@ public class ChatCommandsService : ModService, IChatCommandApi
     private static (string[] args, int page) ExtractPageNumber(string[] args)
     {
         var page = 1;
+        var found = false;
         var cleaned = new List<string>(args);
 
-        for (var i = 0; i < cleaned.Count; i++)
+        // Strip EVERY page token so none reaches the command as data (the reserved-token
+        // contract above); the first valid one wins if several are given.
+        var i = 0;
+        while (i < cleaned.Count)
         {
-            // --page N
+            // --page N  or  -p N  (flag + separate value)
             if (
-                cleaned[i] == "--page"
+                (cleaned[i] == "--page" || cleaned[i] == "-p")
                 && i + 1 < cleaned.Count
                 && int.TryParse(cleaned[i + 1], out var flagPage)
                 && flagPage >= 1
             )
             {
-                page = flagPage;
-                cleaned.RemoveAt(i); // remove "--page"
-                cleaned.RemoveAt(i); // remove N (now shifted into this index)
-                break;
+                if (!found)
+                {
+                    page = flagPage;
+                    found = true;
+                }
+
+                cleaned.RemoveAt(i); // remove the flag
+                cleaned.RemoveAt(i); // remove its value (now shifted into this index)
+                continue;
             }
 
-            // page:N
+            // page:N  (single token)
             if (
                 cleaned[i].StartsWith("page:", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(cleaned[i]["page:".Length..], out var colonPage)
                 && colonPage >= 1
             )
             {
-                page = colonPage;
+                if (!found)
+                {
+                    page = colonPage;
+                    found = true;
+                }
+
                 cleaned.RemoveAt(i);
-                break;
+                continue;
             }
 
-            // -p N
-            if (
-                cleaned[i] == "-p"
-                && i + 1 < cleaned.Count
-                && int.TryParse(cleaned[i + 1], out var shortPage)
-                && shortPage >= 1
-            )
-            {
-                page = shortPage;
-                cleaned.RemoveAt(i);
-                cleaned.RemoveAt(i);
-                break;
-            }
+            i++;
         }
 
         return (cleaned.ToArray(), page);
