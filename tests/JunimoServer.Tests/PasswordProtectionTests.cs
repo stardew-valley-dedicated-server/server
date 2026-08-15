@@ -57,7 +57,7 @@ public class PasswordProtectionTests : TestBase
         Assert.NotNull(state);
 
         // Verify welcome message was received
-        var chatHistory = await GameClient.Chat.GetHistory(20);
+        var chatHistory = await GameClient.Chat.GetHistory();
         Assert.NotNull(chatHistory);
         LogChatHistory(chatHistory);
 
@@ -88,9 +88,10 @@ public class PasswordProtectionTests : TestBase
             TestTimings.WelcomeMessageTimeout
         );
 
-        // Wait for "!login" specifically; it arrives after !help's own entry because
-        // commands are sent one by one.
-        string[] helpResponseKeywords = { "!login" };
+        // !help output is paginated (8 lines/page). Wait for "!help" itself: it is the
+        // first-registered command, so it is always line 1 of the output and lands on
+        // page 1. (!login is registered later and falls on page 2.)
+        string[] helpResponseKeywords = { "!help" };
 
         // Send help command and wait for response
         await GameClient.Chat.SendAndWaitForResponseAsync(
@@ -99,17 +100,17 @@ public class PasswordProtectionTests : TestBase
             ct: TestCt
         );
 
-        var chatHistory = await GameClient.Chat.GetHistory(20);
+        var chatHistory = await GameClient.Chat.GetHistory();
         Assert.NotNull(chatHistory);
         LogChatHistory(chatHistory);
 
         // Verify the help output includes command descriptions (server response format: "!name: description")
         var hasHelpResponse = chatHistory.Messages.Any(m =>
-            m.Message.Contains("!login", StringComparison.OrdinalIgnoreCase)
+            m.Message.Contains("!help", StringComparison.OrdinalIgnoreCase)
             && m.Message.Contains(":", StringComparison.OrdinalIgnoreCase)
         );
 
-        Assert.True(hasHelpResponse, "Should receive help response listing !login command");
+        Assert.True(hasHelpResponse, "Should receive help response listing !help command");
 
         await Exceptions.AssertNoExceptionsAsync("after help command");
     }
@@ -141,7 +142,7 @@ public class PasswordProtectionTests : TestBase
             ct: TestCt
         );
 
-        var chatHistory = await GameClient.Chat.GetHistory(20);
+        var chatHistory = await GameClient.Chat.GetHistory();
         Assert.NotNull(chatHistory);
         LogChatHistory(chatHistory);
 

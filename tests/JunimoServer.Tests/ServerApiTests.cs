@@ -331,7 +331,7 @@ public class ServerApiTests : TestBase
             WaitName.Polling_ServerApi_ChatMessageDelivered,
             async () =>
             {
-                chatHistory = await GameClient.GetChatHistory(20);
+                chatHistory = await GameClient.GetChatHistory();
                 return chatHistory?.Messages?.Any(m =>
                         m.Message.Contains(testMessage, StringComparison.OrdinalIgnoreCase)
                     ) == true;

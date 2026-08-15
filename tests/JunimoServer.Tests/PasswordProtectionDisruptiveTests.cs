@@ -168,7 +168,7 @@ public class PasswordProtectionDisruptiveTests : TestBase
                     + $"[{string.Join(", ", serverPlayers?.Players?.Select(p => p.Name) ?? Array.Empty<string>())}]"
             );
 
-            var chatHistory = await GameClient.Chat.GetHistory(20);
+            var chatHistory = await GameClient.Chat.GetHistory();
             if (chatHistory?.Messages != null)
             {
                 Log($"KICK FAILED: last {chatHistory.Messages.Count} chat messages:");

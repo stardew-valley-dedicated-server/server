@@ -871,18 +871,16 @@ public class ChatClient
     /// <param name="responseKeywords">Keywords to look for in the response</param>
     /// <param name="matchAll">If true, ALL keywords must match a single message. If false, ANY keyword suffices.</param>
     /// <param name="timeout">Maximum time to wait for the response</param>
-    /// <param name="historySize">Number of recent messages to check</param>
     /// <param name="ct">Cancellation token</param>
     public async Task<bool> SendAndWaitForResponseAsync(
         string message,
         string[] responseKeywords,
         bool matchAll = false,
         TimeSpan? timeout = null,
-        int historySize = 20,
         CancellationToken ct = default
     )
     {
-        var chatBefore = await GetHistory(historySize);
+        var chatBefore = await GetHistory();
         var seqBefore = chatBefore?.TotalReceived ?? 0;
 
         await Send(message);
@@ -891,7 +889,7 @@ public class ChatClient
             Helpers.WaitName.Polling_GameTestClient_SendAndExpectChatResponse,
             async () =>
             {
-                var chat = await GetHistory(historySize);
+                var chat = await GetHistory();
                 if (chat?.Messages == null)
                 {
                     return false;

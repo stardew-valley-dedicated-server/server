@@ -55,6 +55,17 @@ public static class ModHelperExtensions
         string msg
     )
     {
+        // A chat command buffers its reply here so the scope can paginate it. Only output
+        // emitted synchronously within the command's Action is captured — the scope is cleared
+        // when Action returns, so async/deferred command chat must use the log or
+        // SendPublicMessage, not a later SendPrivateMessage.
+        var scope = ChatResponseContext.Current;
+        if (scope != null)
+        {
+            scope.BufferLine(uniqueMultiplayerId, msg);
+            return;
+        }
+
         helper
             .GetMultiplayer()
             .sendChatMessage(ChatLanguageDetector.DetectLanguage(msg), msg, uniqueMultiplayerId);
