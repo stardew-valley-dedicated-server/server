@@ -924,7 +924,9 @@ public class GalaxyAuthService : ModService
                     return;
                 }
 
-                // Force Public for dedicated server - invite codes need joinable lobbies
+                // Force Public: game default FriendsOnly gates joins to the host account's
+                // friends, but players aren't friended by the server account and invite codes
+                // need a joinable lobby. Mirror of ServerOptimizerOverrides.CreateLobby_Prefix.
                 apiClient.SetLobbyPrivacy(lobbyId: _steamLobbyId, privacy: "public");
 
                 _monitor.Log(
