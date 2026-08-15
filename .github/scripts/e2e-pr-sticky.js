@@ -206,7 +206,7 @@ function renderBody(state) {
         `- [ ] ${checkboxLabel}`,
         "",
         "<sub>Maintainers: tick the box to re-run with the same filter, or comment " +
-            "`/run-tests-e2e [filter]`.</sub>",
+            "`!run-tests-e2e [filter]`.</sub>",
     ];
 
     if (history.length) {
@@ -260,7 +260,7 @@ function statusToConclusion(status) {
  * either a prior attempt that never reached `completed` (a Checks API failure mid-run, a
  * job that died before its cleanup step) or — the gate runs outside the e2e concurrency
  * singleton — a run that is still live. Reuse it rather than creating a new row, so
- * re-running (the sticky's checkbox / repeated `/run-tests-e2e`) doesn't accumulate
+ * re-running (the sticky's checkbox / repeated `!run-tests-e2e`) doesn't accumulate
  * stale check-run entries on the PR's "Show all checks" list.
  * Returns the check_run id to thread through job outputs for the later update call.
  * @returns {Promise<number>} The reused or newly created check run's id.
@@ -369,7 +369,7 @@ async function upsertSticky({ github, owner, repo, issue_number, body, existing 
 const FILTER_ALLOWED = /^[A-Za-z0-9_.+=() -]*$/;
 
 /**
- * Parse a `/run-tests-e2e [filter]` PR comment into a command decision. Anchored to the
+ * Parse a `!run-tests-e2e [filter]` PR comment into a command decision. Anchored to the
  * FIRST line so a quoted or mid-text mention (e.g. in a paragraph) is ignored. The filter
  * is normalized (collapsed whitespace) and validated against {@link FILTER_ALLOWED}.
  * @param {string} body - The raw comment body.
@@ -380,9 +380,9 @@ const FILTER_ALLOWED = /^[A-Za-z0-9_.+=() -]*$/;
 function parseCommand(body) {
     // Split on CRLF or LF and strip any trailing \r — GitHub comment bodies often arrive
     // with \r\n, and JS `.` does not match \r, so a bare `\n` split would leave the regex
-    // unable to match `/run-tests-e2e Foo\r` (silently ignoring the command).
+    // unable to match `!run-tests-e2e Foo\r` (silently ignoring the command).
     const firstLine = (body || "").split(/\r?\n/, 1)[0].replace(/\r$/, "");
-    const m = firstLine.match(/^\/run-tests-e2e(?:\s+(.*))?$/);
+    const m = firstLine.match(/^!run-tests-e2e(?:\s+(.*))?$/);
     if (!m) {
         return { isCommand: false, filter: "", valid: false };
     }

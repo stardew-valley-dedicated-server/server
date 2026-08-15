@@ -182,7 +182,7 @@ VPS being down must not block the queue):
   `pr` input instead resolves that PR's HEAD and tests it, posting the same sticky comment
   as the comment path; fork PRs pause at the `fork-pr` approval (same as the comment path),
   and an empty `pr` runs the selected branch / master exactly as before.
-- **`/run-tests-e2e [filter]` PR comment** — runs against the PR's
+- **`!run-tests-e2e [filter]` PR comment** — runs against the PR's
   HEAD commit and posts results back to the PR (see below). `filter` is an xUnit
   class/method substring; omit it for the full suite.
 - **The "🔁 Re-run E2E tests" checkbox** in the bot's results comment — ticking it

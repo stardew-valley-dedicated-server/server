@@ -170,7 +170,7 @@ RUNNER_PROJECT := ./tests/JunimoServer.TestRunner
 #   make test FILTER="Login_WithCorrectPassword"
 #   make test FILTER="CabinStrategyNoneTests|CabinPositionPersistenceTests"
 #   make test (runs all tests)
-# Note: '|' works only for direct `make test`. The /run-tests-e2e PR-comment trigger
+# Note: '|' works only for direct `make test`. The !run-tests-e2e PR-comment trigger
 # rejects '|' (it would break the sticky-comment markdown table); use one pattern there.
 FILTER ?=
 

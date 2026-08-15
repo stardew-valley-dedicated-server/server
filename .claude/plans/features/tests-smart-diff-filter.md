@@ -2,7 +2,7 @@
 
 ## Context
 
-The E2E suite has ~76 test methods across 29 classes; a full run is slow and serialized on one VPS. Today the only way to run a subset is a hand-typed `FILTER=` substring (`make test FILTER=...` locally; `/run-tests-e2e <filter>` comment or a dispatch input in CI). We want **automatic** selection: given a git diff, run only the tests the change could plausibly break.
+The E2E suite has ~76 test methods across 29 classes; a full run is slow and serialized on one VPS. Today the only way to run a subset is a hand-typed `FILTER=` substring (`make test FILTER=...` locally; `!run-tests-e2e <filter>` comment or a dispatch input in CI). We want **automatic** selection: given a git diff, run only the tests the change could plausibly break.
 
 **Why static mapping is out.** Tests are E2E black-box — every test asserts against the running server's HTTP API (`/cabins`, `/players`, `/farmhands`), so there is no compile-time call graph from a test to the mod service it exercises (per `tests-assert-via-http-api.md`). The mod is one-image-one-binary: any `mod/**` change rebuilds the whole image, so the import graph can't distinguish a CabinManager change from a CropSaver one. And Stardew mechanics are deeply coupled — a `GameLoader` save-flow change plausibly endangers cabins, farmhands, and save-import at once. No sound static map exists.
 
