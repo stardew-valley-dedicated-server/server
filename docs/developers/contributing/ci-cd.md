@@ -283,8 +283,8 @@ GitHub forbids approving your own pull request, which with a single maintainer m
 |-----------|--------|
 | Command | `!approve` alone on the comment's first line. A 👍 reaction confirms the review was submitted. |
 | Authorization | Same fail-closed chain as the E2E comment path: default-branch workflow copy, `isMaintainer` repo-permission check (write/admin required), 👎 + reply on deny. |
-| Same-repo PRs only | A fork author can push the moment the command comment appears, getting unseen code approved. Fork PRs take a normal UI review — only self-approval is forbidden. |
-| Stale on push | `dismiss_stale_reviews_on_push` drops the approval on every later push; re-issue `!approve` as the last action before merging. |
+| Same-repo PRs only | Fork heads are refused: a fork author could push the moment the command comment appears and have unseen code approved. Fork PRs take a normal UI review — only self-approval is forbidden. |
+| Stale on push | `dismiss_stale_reviews_on_push` drops the approval on every later push, and the workflow dismisses its own review if the head moved while the command was processing; re-issue `!approve` as the last action before merging. |
 | Fallback | If the bot review stops satisfying `required_approving_review_count`, swap `GITHUB_TOKEN` for a GitHub App installation token (`actions/create-github-app-token`); nothing else changes. |
 
 ## Deploy Docs Pipeline

@@ -20,8 +20,9 @@
 #     submitted after a push is not retroactively dismissed, so a fork head could get
 #     unseen code approved. Same-repo pushes need write access; fork PRs never need
 #     the command (only self-approval is forbidden — review them via the normal UI).
-#   - dismiss_stale_reviews_on_push drops the approval on every later push —
-#     re-issue `!approve` as the last action before merging.
+#   - dismiss_stale_reviews_on_push drops the approval on every later push, and the
+#     workflow dismisses its own review if the head moved while the command was
+#     processing — re-issue `!approve` as the last action before merging.
 #
 # If the bot's review ever stops satisfying required_approving_review_count, swap
 # GITHUB_TOKEN for a GitHub App installation token (actions/create-github-app-token
@@ -110,14 +111,36 @@ jobs:
               return;
             }
 
-            // commit_id records the head the maintainer saw when they commented;
-            // pushes after the approval are handled by dismiss_stale_reviews_on_push.
-            await github.rest.pulls.createReview({
+            // commit_id records the head read above. dismiss_stale_reviews_on_push
+            // only dismisses reviews that EXIST at push time — a review submitted
+            // after a push survives it — so re-read the head after submitting and
+            // dismiss our own review if it moved; any push after that re-read hits
+            // an existing review and is auto-dismissed. A push landing before the
+            // pulls.get above gets approved as the then-current head: closing that
+            // window needs the command to carry a SHA; accepted, since same-repo
+            // pushers hold write access.
+            const approvedSha = pr.head.sha;
+            const review = (await github.rest.pulls.createReview({
               owner, repo, pull_number: issueNumber,
-              commit_id: pr.head.sha,
+              commit_id: approvedSha,
               event: 'APPROVE',
               body: `Approved on behalf of @${actor} via \`!approve\`.`,
-            });
+            })).data;
+
+            const headNow = (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data.head.sha;
+            if (headNow !== approvedSha) {
+              try {
+                await github.rest.pulls.dismissReview({
+                  owner, repo, pull_number: issueNumber, review_id: review.id,
+                  message: 'PR head moved while `!approve` was processing — re-issue the command.',
+                });
+              } catch (err) {
+                // 422: the push already auto-dismissed it via dismiss_stale_reviews_on_push.
+                if (err.status !== 422) throw err;
+              }
+              core.setFailed(`Head moved ${approvedSha} -> ${headNow} while approving — review dismissed; re-issue !approve.`);
+              return;
+            }
 
             // 👍 the command comment so the approval visibly took.
             await github.rest.reactions.createForIssueComment({
