@@ -10,6 +10,9 @@ HISTFILE="/tmp/server-command-history"
 
 history -r "$HISTFILE" 2>/dev/null
 
+# TAB completion for the prompt (candidates from the mod's /tmp/server-commands catalog)
+source "$(dirname "${BASH_SOURCE[0]}")/server-completion.sh" 2>/dev/null || true
+
 send_to_server() {
     local command="$1"
     echo "$command" >> "$INPUT_FIFO"
@@ -25,6 +28,12 @@ read_password() {
     while IFS= read -rsn1 char; do
         if [[ -z "$char" ]]; then
             break
+        fi
+
+        # Ignore TAB: the pane-conditional tmux bind forwards it here, but password
+        # input is raw (no readline), so it would land as a literal character
+        if [[ "$char" == $'\t' ]]; then
+            continue
         fi
 
         if [[ "$char" == $'\x7f' ]] || [[ "$char" == $'\b' ]]; then

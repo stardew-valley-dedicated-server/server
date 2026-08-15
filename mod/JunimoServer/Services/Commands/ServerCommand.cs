@@ -76,7 +76,13 @@ public class ServerCommand
             }
         );
 
-        helper.ConsoleCommands.Add("info", "Displays server information.", ServerConsoleCommand);
+        var descriptor = new CommandDescriptor
+        {
+            Name = "info",
+            Description = "Displays server information.",
+        };
+        CommandDescriptorRegistry.Add(descriptor);
+        helper.ConsoleCommands.Add(descriptor.Name, descriptor.Description, ServerConsoleCommand);
     }
 
     private static string FormatUptime(TimeSpan uptime)

@@ -10,26 +10,41 @@ public class RenderingCommand
     private static IModHelper _helper;
     private static IMonitor _monitor;
 
+    private static readonly CommandDescriptor Descriptor = new()
+    {
+        Name = "rendering",
+        Description = "Set render rate: 'rendering <fps>' (0 to disable) or 'rendering status'",
+        Subcommands =
+        {
+            new SubcommandDescriptor
+            {
+                Name = "status",
+                Description = "Show the current render rate",
+            },
+        },
+    };
+
     public static void Register(IModHelper helper, IMonitor monitor)
     {
         _helper = helper;
         _monitor = monitor;
 
+        CommandDescriptorRegistry.Add(Descriptor);
         helper.ConsoleCommands.Add(
-            "rendering",
-            "Set render rate: 'rendering <fps>' (0 to disable) or 'rendering status'",
+            Descriptor.Name,
+            Descriptor.Description,
             (cmd, args) => HandleCommand(args)
         );
     }
+
+    private static string Usage =>
+        $"Usage: rendering <fps>|{Descriptor.SubcommandNames} (fps is a non-negative integer; 0 disables)";
 
     private static void HandleCommand(string[] args)
     {
         if (args.Length == 0)
         {
-            _monitor.Log(
-                "Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)",
-                LogLevel.Warn
-            );
+            _monitor.Log(Usage, LogLevel.Warn);
             return;
         }
 
@@ -45,10 +60,7 @@ public class RenderingCommand
 
         if (!int.TryParse(args[0], out var newFps) || newFps < 0)
         {
-            _monitor.Log(
-                $"Invalid argument '{args[0]}'. Usage: rendering <fps>|status (fps is a non-negative integer; 0 disables)",
-                LogLevel.Warn
-            );
+            _monitor.Log($"Invalid argument '{args[0]}'. {Usage}", LogLevel.Warn);
             return;
         }
 

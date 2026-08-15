@@ -18,17 +18,47 @@ internal static class SavesCommand
     private static IMonitor _monitor;
     private static SaveImportService _saveImport;
 
+    private static readonly CommandDescriptor Descriptor = new()
+    {
+        Name = "saves",
+        Description =
+            "Save management. Run 'saves' for list, 'saves info <name>', "
+            + "'saves import <name> [--swap-host-to <id>] [--reload | --force-reload]', "
+            + "'saves reload [--force]'.",
+        Subcommands =
+        {
+            new SubcommandDescriptor
+            {
+                Name = "info",
+                Description = "Show details for one save: saves info <name>",
+            },
+            new SubcommandDescriptor
+            {
+                Name = "import",
+                Description =
+                    "Import a save: saves import <name> "
+                    + "[--swap-host-to <id>] [--reload | --force-reload]",
+                Flags = { "--swap-host-to", "--reload", "--force-reload" },
+            },
+            new SubcommandDescriptor
+            {
+                Name = "reload",
+                Description = "Reload the active world in-process: saves reload [--force]",
+                Flags = { "--force" },
+            },
+        },
+    };
+
     public static void Register(IModHelper helper, IMonitor monitor, SaveImportService saveImport)
     {
         _helper = helper;
         _monitor = monitor;
         _saveImport = saveImport;
 
+        CommandDescriptorRegistry.Add(Descriptor);
         helper.ConsoleCommands.Add(
-            "saves",
-            "Save management. Run 'saves' for list, 'saves info <name>', "
-                + "'saves import <name> [--swap-host-to <id>] [--reload | --force-reload]', "
-                + "'saves reload [--force]'.",
+            Descriptor.Name,
+            Descriptor.Description,
             (cmd, args) => HandleCommand(args)
         );
     }
@@ -59,7 +89,7 @@ internal static class SavesCommand
                 break;
             default:
                 _monitor.Log(
-                    $"Unknown saves subcommand: {args[0]}. Use: saves [info|import|reload]",
+                    $"Unknown saves subcommand: {args[0]}. Use: saves [{Descriptor.SubcommandNames}]",
                     LogLevel.Warn
                 );
                 break;

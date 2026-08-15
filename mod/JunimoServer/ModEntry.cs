@@ -93,6 +93,10 @@ internal class ModEntry : Mod
 
         RegisterChatCommands();
         RegisterConsoleCommands();
+
+        // All command registration is synchronous and done, so the completion catalog for the
+        // attach-cli's TAB completion is complete at this point.
+        CommandCatalogFile.Write(Monitor);
         EmitModPhase("api_listener_ready");
     }
 
@@ -121,6 +125,10 @@ internal class ModEntry : Mod
 
     private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
     {
+        // Refresh the completion catalog now that every mod's Entry has run — commands
+        // registered by mods loading after ours are missing from the write in Entry.
+        CommandCatalogFile.Write(Monitor);
+
         Game1.options.pauseWhenOutOfFocus = false;
 
         // Resize the window to fill the X display so the server renders at the
@@ -132,6 +140,10 @@ internal class ModEntry : Mod
     private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
     {
         Game1.options.pauseWhenOutOfFocus = false;
+
+        // Final completion-catalog refresh: catches commands other mods register between
+        // GameLaunched and world load. Later dynamic registration has no event to hook.
+        CommandCatalogFile.Write(Monitor);
         EmitModPhase("save_loaded");
     }
 

@@ -76,7 +76,11 @@ init_keybinds() {
 
     # Key binds
     tmux bind-key -n C-c kill-session -t "$session_name" 2>/dev/null || true  # Close session
-    tmux bind-key -n Tab select-pane -t 0.1 2>/dev/null || true  # Switch to input pane
+
+    # TAB on the output pane (index 0) jumps to the input pane; TAB on the input pane passes
+    # through to the shell so readline completion (server-completion.sh) sees it
+    tmux bind-key -n Tab if-shell -F "#{==:#{pane_index},0}" \
+        "select-pane -t 0.1" "send-keys -t 0.1 Tab" 2>/dev/null || true
 }
 
 init_statusbar() {

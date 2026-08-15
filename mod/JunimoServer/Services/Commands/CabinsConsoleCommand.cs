@@ -14,6 +14,16 @@ internal static class CabinsConsoleCommand
     private static CabinManagerService _cabinManager;
     private static PersistentOptions _options;
 
+    private static readonly CommandDescriptor Descriptor = new()
+    {
+        Name = "cabins",
+        Description = "Cabin status and management. Run 'cabins' for list, 'cabins add' to create.",
+        Subcommands =
+        {
+            new SubcommandDescriptor { Name = "add", Description = "Create a new cabin" },
+        },
+    };
+
     public static void Register(
         IModHelper helper,
         IMonitor monitor,
@@ -25,9 +35,10 @@ internal static class CabinsConsoleCommand
         _cabinManager = cabinManager;
         _options = options;
 
+        CommandDescriptorRegistry.Add(Descriptor);
         helper.ConsoleCommands.Add(
-            "cabins",
-            "Cabin status and management. Run 'cabins' for list, 'cabins add' to create.",
+            Descriptor.Name,
+            Descriptor.Description,
             (cmd, args) => HandleCommand(args)
         );
     }

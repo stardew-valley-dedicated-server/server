@@ -24,6 +24,29 @@ internal static class FarmhandCommand
     private static IMonitor _monitor;
     private static FarmhandOwnershipService _ownership;
 
+    private static readonly CommandDescriptor Descriptor = new()
+    {
+        Name = "farmhand",
+        Description =
+            "Farmhand ownership management. Run 'farmhand release <name|uid>' to make "
+            + "a slot claimable by the next player to select it, 'farmhand rebind <name|uid> "
+            + "<platformId>' to re-point ownership (platform id = the Steam64 or GOG Galaxy "
+            + "id shown in the server's connect log).",
+        Subcommands =
+        {
+            new SubcommandDescriptor
+            {
+                Name = "release",
+                Description = "Make a slot claimable: farmhand release <name|uid>",
+            },
+            new SubcommandDescriptor
+            {
+                Name = "rebind",
+                Description = "Re-point ownership: farmhand rebind <name|uid> <platformId>",
+            },
+        },
+    };
+
     public static void Register(
         IModHelper helper,
         IMonitor monitor,
@@ -34,12 +57,10 @@ internal static class FarmhandCommand
         _monitor = monitor;
         _ownership = ownership;
 
+        CommandDescriptorRegistry.Add(Descriptor);
         helper.ConsoleCommands.Add(
-            "farmhand",
-            "Farmhand ownership management. Run 'farmhand release <name|uid>' to make a slot "
-                + "claimable by the next player to select it, 'farmhand rebind <name|uid> "
-                + "<platformId>' to re-point ownership (platform id = the Steam64 or GOG Galaxy "
-                + "id shown in the server's connect log).",
+            Descriptor.Name,
+            Descriptor.Description,
             (cmd, args) => HandleCommand(args)
         );
     }
@@ -48,10 +69,10 @@ internal static class FarmhandCommand
     {
         if (args.Length == 0)
         {
-            _monitor.Log(
-                "Usage: farmhand release <name|uid> | farmhand rebind <name|uid> <platformId>",
-                LogLevel.Warn
-            );
+            foreach (var line in Descriptor.HelpLines())
+            {
+                _monitor.Log(line, LogLevel.Info);
+            }
             return;
         }
 
@@ -85,7 +106,7 @@ internal static class FarmhandCommand
                 break;
             default:
                 _monitor.Log(
-                    $"Unknown farmhand subcommand: {args[0]}. Use: farmhand [release|rebind]",
+                    $"Unknown farmhand subcommand: {args[0]}. Use: farmhand [{Descriptor.SubcommandNames}]",
                     LogLevel.Warn
                 );
                 break;
