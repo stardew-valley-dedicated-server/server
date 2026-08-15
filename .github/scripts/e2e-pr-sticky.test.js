@@ -540,21 +540,21 @@ test("findSticky matches only comments carrying the marker", async () => {
 // --- command parsing (trigger interpretation) --------------------------------------
 
 test("parseCommand: anchored to the first line; a mid-text mention is ignored", () => {
-    assert.equal(helper.parseCommand("look at `/run-tests-e2e Foo`").isCommand, false);
-    assert.equal(helper.parseCommand("hey\n/run-tests-e2e Foo").isCommand, false); // not first line
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e Foo"), { isCommand: true, filter: "Foo", valid: true });
+    assert.equal(helper.parseCommand("look at `!run-tests-e2e Foo`").isCommand, false);
+    assert.equal(helper.parseCommand("hey\n!run-tests-e2e Foo").isCommand, false); // not first line
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e Foo"), { isCommand: true, filter: "Foo", valid: true });
 });
 
 test("parseCommand: CRLF line endings are handled (GitHub comments often arrive as \\r\\n)", () => {
     // JS `.` does not match \r, so a naive \n-split would leave a trailing \r and the command
     // would be silently ignored. Both no-arg and filtered forms must parse under CRLF.
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e\r\nsecond"), { isCommand: true, filter: "", valid: true });
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e MyClass\r\nsecond"), {
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e\r\nsecond"), { isCommand: true, filter: "", valid: true });
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e MyClass\r\nsecond"), {
         isCommand: true,
         filter: "MyClass",
         valid: true,
     });
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e MyClass\r"), {
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e MyClass\r"), {
         isCommand: true,
         filter: "MyClass",
         valid: true,
@@ -562,8 +562,8 @@ test("parseCommand: CRLF line endings are handled (GitHub comments often arrive 
 });
 
 test("parseCommand: no filter = full suite; extra whitespace collapses", () => {
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e"), { isCommand: true, filter: "", valid: true });
-    assert.deepEqual(helper.parseCommand("/run-tests-e2e   MyClass   Method  "), {
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e"), { isCommand: true, filter: "", valid: true });
+    assert.deepEqual(helper.parseCommand("!run-tests-e2e   MyClass   Method  "), {
         isCommand: true,
         filter: "MyClass Method",
         valid: true,
@@ -575,7 +575,7 @@ test("parseCommand: --abort-current is no longer special — it is just a litera
     // would run the FULL suite as if it had vanished). It is passed through verbatim as a
     // literal xUnit filter — valid characters, but it matches no test, so the run is an
     // explicit empty no-result rather than a surprise full-suite run.
-    const cmd = helper.parseCommand("/run-tests-e2e --abort-current");
+    const cmd = helper.parseCommand("!run-tests-e2e --abort-current");
     assert.equal(cmd.isCommand, true);
     assert.equal(cmd.filter, "--abort-current", "flag is preserved as the filter, not stripped");
     assert.equal(cmd.valid, true, "all-allowed-chars; harmless literal that matches nothing");

@@ -165,7 +165,7 @@ is the human discipline for CI-vs-local). Disjoint `STEAM_ACCOUNTS` between the 
    - `workflow_dispatch` from master (trusted) — confirm the Tailscale step connects, the
      keyscan resolves the tailnet host, the SSH master comes up, images stream to the Mac,
      and the suite runs with `host_id=mac`.
-   - A same-repo PR `/run-tests-e2e <filter>` comment.
+   - A same-repo PR `!run-tests-e2e <filter>` comment.
    - Only with eyes-on review: a fork PR through the `fork-pr` approval.
 
 ## Open questions / risks

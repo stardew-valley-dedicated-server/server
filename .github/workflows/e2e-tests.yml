@@ -8,7 +8,7 @@
 #   1. workflow_dispatch (Actions tab) — runs the full suite from a trusted branch; the
 #      optional `pr` input instead resolves that PR's HEAD (forks included, gated by
 #      `fork-pr`) and posts the same sticky as the comment path.
-#   2. `/run-tests-e2e [filter]` PR comment.
+#   2. `!run-tests-e2e [filter]` PR comment.
 #   3. the "Re-run E2E tests" checkbox in the bot's results comment (a click in the
 #      PR view; toggling it fires issue_comment: edited).
 #   4. schedule (nightly 08:00 UTC) — a full-suite run on master so the README E2E
@@ -75,7 +75,7 @@ on:
   # 06:00). Handled like workflow_dispatch in the gate (trusted, no PR context).
   schedule:
     - cron: '0 8 * * *'
-  # PR comments: `created` = the typed `/run-tests-e2e` command; `edited` = the re-run
+  # PR comments: `created` = the typed `!run-tests-e2e` command; `edited` = the re-run
   # checkbox in the bot's results comment being ticked. The `gate` job's `if:` narrows
   # this to PR comments that are actually our command or our sticky (see that job).
   issue_comment:
@@ -115,7 +115,7 @@ jobs:
        && github.event.sender.type != 'Bot'
        && (
             (github.event.action == 'created'
-               && startsWith(github.event.comment.body, '/run-tests-e2e'))
+               && startsWith(github.event.comment.body, '!run-tests-e2e'))
          || (github.event.action == 'edited'
                && contains(github.event.comment.body, '<!-- e2e-results -->'))
           ))
@@ -276,7 +276,7 @@ jobs:
             let filterValid = true;
             if (action === 'created') {
               const cmd = helper.parseCommand(body);
-              if (!cmd.isCommand) return noop('comment is not an anchored /run-tests-e2e command');
+              if (!cmd.isCommand) return noop('comment is not an anchored !run-tests-e2e command');
               filter = cmd.filter;
               filterValid = cmd.valid;
             } else {
