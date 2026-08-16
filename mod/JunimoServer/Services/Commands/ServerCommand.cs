@@ -76,7 +76,11 @@ public class ServerCommand
             }
         );
 
-        helper.ConsoleCommands.Add("info", "Displays server information.", ServerConsoleCommand);
+        helper.ConsoleCommands.Register(
+            "info",
+            "Displays server information.",
+            ServerConsoleCommand
+        );
     }
 
     private static string FormatUptime(TimeSpan uptime)

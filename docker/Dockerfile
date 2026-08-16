@@ -43,7 +43,7 @@ RUN --mount=type=secret,id=steam_username \
     dotnet SteamService.dll download --skip-sdk
 
 # Download and install SMAPI
-RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
+RUN curl -fL --retry 5 --retry-delay 2 "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
     unzip -q /tmp/smapi.zip -d /tmp/smapi && \
     printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
     --install \
@@ -182,6 +182,8 @@ RUN add-pkg \
     htop \
     nano \
     tcpdump \
+    # attach-cli input pane runs on zsh/ZLE (ghost text + TAB completion; server-command-loop)
+    zsh \
     # TigerVNC
     tigervnc-standalone-server \
     mesa-utils \
@@ -193,14 +195,16 @@ RUN add-pkg \
 # Install ffmpeg 8.1.2 (BtbN build of the stable 8.1 branch) rather than the distro package, whose
 # x11grab timing bugs break the test-recording pipeline. Pin month-end autobuilds only: BtbN prunes
 # daily builds after 14 days (month-end builds live two years), and the "latest" tag drifts.
-RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz && \
+RUN curl -fL --retry 5 --retry-delay 2 -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-30-13-34/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1.tar.xz && \
     tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
     install -m 0755 /tmp/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1/bin/ffmpeg /usr/local/bin/ffmpeg && \
     install -m 0755 /tmp/ffmpeg-n8.1.2-21-gce3c09c101-linux64-gpl-8.1/bin/ffprobe /usr/local/bin/ffprobe && \
     rm -rf /tmp/ffmpeg*
 
 # Install tmux (binary download, separate layer for cacheability)
-RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VERSION}/tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
+# -f + --retry: the GitHub release fetch occasionally fails the TLS handshake (curl exit 35) on CI
+# runners; retry the transient network error instead of failing the whole build
+RUN curl -fL --retry 5 --retry-delay 2 -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VERSION}/tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
     tar -xzf tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
     install -m 0755 ./tmux /usr/local/bin/tmux && \
     rm -r ./tmux tmux-${TMUX_VERSION}-linux-x86_64.tar.gz

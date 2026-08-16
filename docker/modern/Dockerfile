@@ -257,8 +257,9 @@ RUN apk add --no-cache \
     pipewire pipewire-pulse openal-soft-libs \
     # Game native dependencies
     icu-libs libstdc++ libgcc gcompat \
-    # Utilities
-    curl ca-certificates bash coreutils util-linux tmux unzip \
+    # Utilities (zsh drives the attach-cli input pane: ghost text + TAB completion; bash stays for
+    # mem-cpu.sh, filter-output.sh, startapp.sh and friends)
+    curl ca-certificates bash zsh coreutils util-linux tmux unzip \
     procps
 
 # ---------- Custom Mesa (Zink only, no LLVM) + SwiftShader ----------

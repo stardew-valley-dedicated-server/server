@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using HarmonyLib;
 using JunimoServer.Services.ChatCommands;
+using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameManager;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Shared;
@@ -55,13 +56,13 @@ public class AlwaysOnServer : ModService
     {
         Config = config;
 
-        // Register chat commands
-        helper.ConsoleCommands.Add(
+        // Register console commands
+        helper.ConsoleCommands.Register(
             "host-auto",
             "Toggles host auto mode on/off",
             ToggleAutoModeCommand
         );
-        helper.ConsoleCommands.Add(
+        helper.ConsoleCommands.Register(
             "host-visibility",
             "Toggles host visibility on/off",
             ToggleVisibilityCommand

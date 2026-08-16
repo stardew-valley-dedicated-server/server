@@ -44,7 +44,7 @@ public class InviteCodeCommand
         );
 
         // Register console command
-        helper.ConsoleCommands.Add(
+        helper.ConsoleCommands.Register(
             "invitecode",
             "Displays the current server invite code.",
             InviteCodeConsoleCommand

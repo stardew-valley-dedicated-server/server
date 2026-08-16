@@ -18,4 +18,16 @@ The concrete `SemanticVersion` class lives in namespace **`StardewModdingAPI.Too
 
 (Verified against the on-disk SMAPI 4.x DLLs/XML docs under `GAME_PATH/smapi-internal/`.)
 
+## SMAPI's built-in commands are NOT in `CommandManager` during mod `Entry`
+
+SMAPI registers its own console commands (`help`, `harmony_summary`, …) when its console input
+starts — after `LoadMods`, so after every mod's `Entry`. Enumerating `CommandManager.GetAll()`
+from `Entry` therefore returns zero built-ins and misses any mod that loads later, with no error —
+the registry is simply still empty of them, so the reflection "succeeds" and the gap is invisible
+until something reads the output (a catalog written at `Entry` shipped without `help`; only a
+failing E2E content assertion exposed it). `GameLaunched` (first update tick) is the earliest
+mod-visible event at which built-ins and all mods' `Entry`-time commands are present —
+`CommandCatalogFile` writes at `Entry` for early availability and re-writes on `GameLaunched` and
+`SaveLoaded` for exactly this reason.
+
 **How to apply:** When parsing SMAPI/release versions in mod code, import `StardewModdingAPI.Toolkit` and prefer `TryParse` for input you don't control — `new SemanticVersion("v1.2")` throws at runtime, and `TryParse` won't even resolve without the Toolkit using.

@@ -19,6 +19,36 @@ internal static class SettingsCommand
     private static PersistentOptions _options;
     private static ServerSettingsLoader _settings;
 
+    private static readonly CommandDescriptor Descriptor = new()
+    {
+        Name = "settings",
+        Description = "Server settings and game creation. Run 'settings' for subcommands.",
+        Subcommands =
+        {
+            new SubcommandDescriptor
+            {
+                Name = "show",
+                Description = "Show current configuration from server-settings.json",
+            },
+            new SubcommandDescriptor
+            {
+                Name = "newgame",
+                Description = "Create a new game",
+                Flags = { "--confirm" },
+            },
+            new SubcommandDescriptor
+            {
+                Name = "validate",
+                Description = "Run configuration and state validation",
+            },
+            new SubcommandDescriptor
+            {
+                Name = "verbose",
+                Description = "Show or set verbose logging [on|off]",
+            },
+        },
+    };
+
     public static void Register(
         IModHelper helper,
         IMonitor monitor,
@@ -32,11 +62,7 @@ internal static class SettingsCommand
         _options = options;
         _settings = settings;
 
-        helper.ConsoleCommands.Add(
-            "settings",
-            "Server settings and game creation. Run 'settings' for subcommands.",
-            (cmd, args) => HandleCommand(args)
-        );
+        helper.ConsoleCommands.Register(Descriptor, (cmd, args) => HandleCommand(args));
     }
 
     private static void HandleCommand(string[] args)
@@ -72,20 +98,10 @@ internal static class SettingsCommand
 
     private static void ShowHelp()
     {
-        _monitor.Log("Available subcommands:", LogLevel.Info);
-        _monitor.Log(
-            "  settings show       -- Show current configuration from server-settings.json",
-            LogLevel.Info
-        );
-        _monitor.Log("  settings newgame    -- Create a new game", LogLevel.Info);
-        _monitor.Log(
-            "  settings validate   -- Run configuration and state validation",
-            LogLevel.Info
-        );
-        _monitor.Log(
-            "  settings verbose    -- Show or set verbose logging [on|off]",
-            LogLevel.Info
-        );
+        foreach (var line in Descriptor.HelpLines())
+        {
+            _monitor.Log(line, LogLevel.Info);
+        }
     }
 
     #region Show Config
