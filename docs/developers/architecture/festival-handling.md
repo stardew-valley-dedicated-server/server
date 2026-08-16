@@ -29,7 +29,7 @@ Two shapes:
 - **Main event** — the host warps in, runs a countdown, and starts a host-triggered event (egg hunt, grange judging, soup tasting, etc.).
 - **Leave-only** — no host-triggered event; the host just waits for the `festivalEnd` ready-check (or the timeout). Spirit's Eve and the Feast of Winter Star are the only two.
 
-Only the **Stardew Valley Fair** auto-ends on its own once the countdown finishes — grange judging *is* the whole festival, so there is nothing left to do. Every other festival, main-event or leave-only, ends on the `festivalEnd` ready-check or the timeout backstop.
+No festival auto-ends on its own. Every festival, main-event or leave-only — the **Stardew Valley Fair** included — ends on the `festivalEnd` ready-check (a player votes to leave, or the last player leaves) or on the timeout backstop. This mirrors the game's own `DedicatedServer`, which ends festivals only via `CheckOthersReady("festivalEnd")` or the no-players path and never auto-ends the Fair.
 
 | Festival | Date | Shape | Countdown (default) | Timeout (default) |
 |----------|------|-------|--------------------|-------------------|
@@ -37,7 +37,7 @@ Only the **Stardew Valley Fair** auto-ends on its own once the countdown finishe
 | Flower Dance | Spring 24 | Main event | 5 min | ~33 min |
 | Luau | Summer 11 | Main event (adds iridium starfruit to the soup) | 5 min | ~33 min |
 | Dance of the Moonlight Jellies | Summer 28 | Main event | 5 min | ~33 min |
-| Stardew Valley Fair | Fall 16 | Main event, **auto-ends after countdown** | 5 min | ~33 min |
+| Stardew Valley Fair | Fall 16 | Main event | 5 min | ~33 min |
 | Spirit's Eve | Fall 27 | Leave-only | — | ~33 min |
 | Festival of Ice | Winter 8 | Main event | 5 min | ~33 min |
 | Feast of the Winter Star | Winter 25 | Leave-only | — | ~33 min |
