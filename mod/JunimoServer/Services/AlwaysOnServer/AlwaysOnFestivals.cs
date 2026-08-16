@@ -34,8 +34,6 @@ public class AlwaysOnServerFestivals
         public Func<int> CountdownSeconds;
         public string AnnounceText;
         public Action OnAnnounce; // e.g. add the iridium starfruit to the Luau soup
-        public bool AutoEndAfterCountdown; // host ends the festival once the countdown elapses (Fair)
-        public string EndLogText; // logged when AutoEndAfterCountdown fires
 
         // Wall-clock backstop: end the festival and warp everyone home once this elapses
         // (from entry or after the main event)
@@ -143,10 +141,8 @@ public class AlwaysOnServerFestivals
                 HasMainEvent = true,
                 CountdownSeconds = () => Config.GrangeDisplayCountdownSeconds,
                 AnnounceText = "The Grange Judging will begin in {0:0.#} minutes.",
-                AutoEndAfterCountdown = true,
                 TimeoutStart = TimeoutStart.OnEntry,
                 TimeoutSeconds = () => Config.FairTimeOutSeconds,
-                EndLogText = "Grange display finished, triggering festival end",
             },
             new FestivalSpec
             {
@@ -379,8 +375,8 @@ public class AlwaysOnServerFestivals
     }
 
     /// <summary>
-    /// Announce a countdown, start the host-triggered main event when it elapses,
-    /// then (for the Fair) auto-end. !event short-circuits the countdown.
+    /// Announce a countdown, then start the host-triggered main event when it elapses.
+    /// !event short-circuits the countdown.
     /// </summary>
     private void RunMainEventCountdown(FestivalSpec spec)
     {
@@ -419,8 +415,8 @@ public class AlwaysOnServerFestivals
 
         if (elapsed >= countdownSeconds)
         {
-            // Kick off the main event first, then start its timeout / auto-end — the ordering
-            // here is what guarantees the event is triggered before the backstop begins.
+            // Kick off the main event first, then start its timeout — the ordering here is what
+            // guarantees the event is triggered before the backstop begins.
             if (!_started)
             {
                 var festivalHost = GetFestivalHost();
@@ -434,11 +430,6 @@ public class AlwaysOnServerFestivals
             if (spec.TimeoutStart == TimeoutStart.AfterMainEvent)
             {
                 RunFestivalTimeout(spec);
-            }
-
-            if (spec.AutoEndAfterCountdown && !_startedFestivalEnd)
-            {
-                EndFestival(spec.EndLogText, force: false);
             }
         }
     }
@@ -501,12 +492,21 @@ public class AlwaysOnServerFestivals
             return;
         }
 
+        // Both graceful ends below go through TryStartEndFestivalDialogue, which no-ops while a host
+        // menu is open (its own activeClickableMenu == null guard) — yet EndFestival latches
+        // _startedFestivalEnd unconditionally, which would re-strand the festival with no exit. The
+        // one host menu that appears mid-festival is the grange results DialogueBox after judging;
+        // HandleDialogueBox clears it on its next once-per-second pass (~12s at SERVER_TPS=5), so gate
+        // both ends on no open menu and let the leave fire cleanly on a later tick. (The wall-clock
+        // timeout backstop is unaffected — it force-ends regardless of any menu.)
+        var noHostMenu = Game1.activeClickableMenu is null;
+
         // No online players left at the festival: end it so the host isn't stranded. Mirrors
         // DedicatedServer.Tick's onlineIds.Count == 0 branch (DedicatedServer.cs:294-308), which
         // ends via TryStartEndFestivalDialogue (force: false) — with no one else online the host's
         // own festivalEnd ready satisfies the check and the festival ends gracefully. Counts
         // online non-disconnecting players, NOT otherFarmers.Count (see OnlineFarmers).
-        if (OnlineFarmers.CountOthers() == 0)
+        if (OnlineFarmers.CountOthers() == 0 && noHostMenu)
         {
             EndFestival(
                 "No players remaining at festival, ending and sending host home",
@@ -526,7 +526,7 @@ public class AlwaysOnServerFestivals
             );
         }
 
-        if (CheckOthersReady("festivalEnd"))
+        if (CheckOthersReady("festivalEnd") && noHostMenu)
         {
             EndFestival(
                 "Other players ready to leave festival, triggering end dialogue",

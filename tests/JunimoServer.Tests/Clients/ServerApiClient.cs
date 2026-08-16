@@ -600,6 +600,11 @@ public class TestFestivalStateResponse
 
     [JsonPropertyName("timeOfDay")]
     public int TimeOfDay { get; set; }
+
+    /// <summary>Iridium-quality starfruit (item 268, quality 3) in the Luau soup. The mod adds one;
+    /// #372's double-add regression would make this 2. Only meaningful during the Luau.</summary>
+    [JsonPropertyName("luauIridiumStarfruitCount")]
+    public int LuauIridiumStarfruitCount { get; set; }
 }
 
 /// <summary>
@@ -1015,6 +1020,20 @@ public class TestSetIpConnectionsResponse
     /// <summary>The applied state of Game1.options.ipConnectionsEnabled.</summary>
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
+}
+
+/// <summary>Response from /test/host_menu (test-only). Mirrors the server-side DTO.</summary>
+public class TestHostMenuResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>Whether a host menu is open after the requested operation.</summary>
+    [JsonPropertyName("menuOpen")]
+    public bool MenuOpen { get; set; }
 }
 
 /// <summary>Body for /test/import_save (test-only). Mirrors the server-side DTO.</summary>
@@ -2327,6 +2346,22 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSetIpConnectionsResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: open or close an inert host menu (Game1.activeClickableMenu), reproducing the grange
+    /// results DialogueBox state so a test can hold HandleFestivalLeave's leave-end gate closed across
+    /// a client's leave vote. POST /test/host_menu?open=...
+    /// </summary>
+    public async Task<TestHostMenuResponse?> SetHostMenu(bool open, CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/host_menu?open={(open ? "true" : "false")}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHostMenuResponse>(ct);
     }
 
     /// <summary>
