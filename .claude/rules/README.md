@@ -8,8 +8,8 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 
 | File | One-liner |
 |---|---|
-| `adversarial-review-split-findings.md` | Split findings honestly (inherent vs OOS, reachable vs latent), keep a valid claim when only its framing was weak, hand deferrals back as open user decisions — and in workflow reviews, batch verifiers per producer and salvage REFUTED sub-findings |
-| `answer-then-stop.md` | A question answered *by the transcript* gets a one-line answer, then stop — world-facts still defer to `verify-claims` even when you feel sure |
+| `adversarial-review-split-findings.md` | Every finding is fixed, cut (inherent, guarantee named — and then not reported), or handed back as a user decision — latent+cheap still gets fixed; keep a valid claim when only its framing was weak; in workflow reviews, batch verifiers per producer and salvage REFUTED sub-findings |
+| `answer-then-stop.md` | A question answered *by the transcript* gets a one-line answer, then stop; a mid-task question halts all edits until answered — world-facts still defer to `verify-claims` even when you feel sure |
 | `diff-flaky-runs-before-theorizing-mechanism.md` | Localize before theorizing: tabulate one signal across pass vs fail runs, or bisect pipeline stages via intermediate probes |
 | `git-workflow.md` | Project-specific git rules (no `git add .`, no Co-Authored-By trailers, chained PRs, PR descriptions, worktrees at `../worktrees/` via the WorktreeCreate hook) |
 | `holistic-or-explicit-todo.md` | Don't hedge with empty scaffolding — build the holistic solution or write a concrete TODO; never a TODO about a hypothetical feature not in the tree |
@@ -72,7 +72,7 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 | `save-import-layer-timing.md` | `SaveImport/`, `GameLoader/`, `CabinManager/` | `saves import` = Layer A (pre-load, pure XML, no `Game1`) + Layer B (SaveLoaded finalizer, live engine: map bind first, then cabin + `AssignFarmhand`); don't let the `/test` path's live engine leak into Layer A — plus Steam64-bind, pet-resolution, and cellar-move invariants on host swap |
 | `sdv-xmlignore-field-vs-serialized-property.md` | `mod/**/*.cs` | `[XmlIgnore]` on a *field* doesn't mean unserialized — SDV serializes any public property lacking the attribute; unserialized only when property AND field are both ignored |
 | `server-tps-headless.md` | `Env.cs`, `.env*`, `tests/**/*.cs`, `e2e-tests.yml` | `SERVER_TPS=5` is the proven-stable headless value (CI runs the full suite at it); the `.env.example` "20-30" prose is conservative docs, not the floor |
-| `smapi-api-surface.md` | `mod/**/*.cs` | SMAPI gotchas: `SemanticVersion` lives in `StardewModdingAPI.Toolkit` (ctor throws, `TryParse` doesn't); `ICommandHelper` has only `Add` — invoke commands in tests by reflecting `SCore.Instance` |
+| `smapi-api-surface.md` | `mod/**/*.cs` | SMAPI gotchas: `SemanticVersion` lives in `StardewModdingAPI.Toolkit` (ctor throws, `TryParse` doesn't); `ICommandHelper` has only `Add` — invoke commands in tests by reflecting `SCore.Instance`; `CommandManager` has no built-ins until after mod `Entry` (enumerate at `GameLaunched`) |
 | `startup-cold-start-measurement.md` | `GameManager/**`, `ApiService.cs`, `RenderingController.cs`, `ServerContainer.cs` | Boot-band cost is dominated by host + recording config — check `host_id`/`SERVER_FPS` before quoting numbers; the listed startup dead-ends are verified non-wins |
 | `test-broker-invariants.md` | `tests/JunimoServer.Tests/Infrastructure`, `Helpers` | KeepConnected capacity, exclusive deadlocks, Steam singletons, session liveness, polling budgets, config-hash keys, snapshot purity, SSH-master capture — walk the DO-NOTs before touching broker code |
 | `test-day-transition-needs-connected-driver.md` | `tests/**/*.cs` | Day transitions need a connected driver (`SleepToSaveAsync` or a `SecondFarmer`) — an empty server won't advance its own clock, so driverless `SetTime` flakes |
@@ -80,6 +80,7 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 | `test-state-setter-runs-engine-reconcile.md` | `mod/JunimoServer/Services/Api/**` | A `/test/*` state-setter must run the engine's reconciliation, not just poke `Game1` fields — `/time` needs `UpdateFromGame1()` to replicate; `/test/set_date` needs the new-day reset (`timeOfDay=600`, `whereIsTodaysFest=null`, `updateWeatherIcon()`) or stale festival weather crashes the loop |
 | `tests-assert-via-http-api.md` | `tests/JunimoServer.Tests/**/*.cs` | E2E tests assert via the server HTTP API snapshot (`/cabins`, `/players`, `/farmhands`), never mod events; a stuck-but-uncustomized slot still counts "available" |
 | `test-timing.md` | `tests/**/*.cs` | Per-test overhead ≠ wall-clock cost; `queueDurationMs` is xUnit dispatch-wait, not a broker bottleneck |
+| `tmux-bindings-need-attached-client.md` | attach-cli bin trees, `AttachCliTests.cs`, `CommandCatalogTests.cs` | `tmux send-keys` bypasses key-table bindings — drive attach-cli keybinding checks through a nested attached client; the full TTY matrix is probeable in a stock container with the real scripts mounted |
 | `vanilla-client-control-primitives.md` | `mod/**/*.cs` | Vanilla clients obey only the verified primitives — join-time placement (message 3), the fee-gated passout warp, synced `location.warps` rewrites; map any "make the client do X" design onto these first |
 
 ## Public documentation

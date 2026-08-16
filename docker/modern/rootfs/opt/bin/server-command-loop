@@ -1,77 +1,108 @@
-#!/bin/bash
+#!/usr/bin/env zsh
 
-# Interactive command input handler for the tmux bottom pane
-# Takes session name as first argument
+# Interactive command input handler for the attach-cli bottom pane. Launched as
+# `zsh <path>/server-command-loop <session>`; drives the `server>` prompt through zsh/ZLE so the
+# vendored zsh-autosuggestions plugin can render grey ghost text (which bash/readline cannot).
+# Takes the session name as first argument.
 
 SESSION_NAME="$1"
 INPUT_FIFO="/tmp/smapi-input"
 PASSWORD_MODE_FILE="/tmp/smapi-password-mode"
 HISTFILE="/tmp/server-command-history"
+HISTSIZE=1000
+SAVEHIST=1000
 
-history -r "$HISTFILE" 2>/dev/null
+SCRIPT_DIR="${0:A:h}"
 
-# TAB completion for the prompt (candidates from the mod's /tmp/server-commands catalog)
-source "$(dirname "${BASH_SOURCE[0]}")/server-completion.sh" 2>/dev/null || true
+# Ghost text + TAB completion. Order matters: the completion file defines and registers the TAB
+# widget (`server-tab-complete`), and _zsh_autosuggest_start must run AFTER it so the plugin wraps
+# that widget and refreshes the ghost when TAB rewrites the buffer.
+[[ -r "$SCRIPT_DIR/zsh-autosuggestions.zsh" ]] && source "$SCRIPT_DIR/zsh-autosuggestions.zsh"
+[[ -r "$SCRIPT_DIR/server-completion.zsh" ]] && source "$SCRIPT_DIR/server-completion.zsh"
+ZSH_AUTOSUGGEST_STRATEGY=(catalog)
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
+# Force synchronous fetches. The plugin auto-enables async on zsh >= 5.0.8, but async delivers the
+# refreshed suggestion through a `zle -F` fd callback that does not fire reliably inside a vared
+# script loop — so the ghost would refresh on typing (a sync trim) but not on backspace (needs a
+# re-fetch). Unsetting this routes every fetch through the synchronous path.
+unset ZSH_AUTOSUGGEST_USE_ASYNC
+
+# Ctrl+C: clear the input when there's text, close the session only when the input is already empty.
+# Needs `stty intr undef` below so ^C arrives as a ZLE key rather than SIGINT — a widget can rewrite
+# BUFFER, a signal trap cannot (BUFFER is read-only inside TRAPINT). Registered before
+# _zsh_autosuggest_start so the plugin wraps it and clears the ghost after the buffer is emptied.
+server_ctrl_c() {
+    if [[ -n "$BUFFER" ]]; then
+        BUFFER=""
+        CURSOR=0
+        _clear_suggestions 2>/dev/null
+        zle -R
+    else
+        tmux kill-session -t "$SESSION_NAME" 2>/dev/null
+    fi
+}
+zle -N server-ctrl-c server_ctrl_c
+bindkey '^C' server-ctrl-c
+
+(( ${+functions[_zsh_autosuggest_start]} )) && _zsh_autosuggest_start
+
+# History from a previous session (plain-line format, shared with the old readline HISTFILE).
+fc -R "$HISTFILE" 2>/dev/null
 
 send_to_server() {
-    local command="$1"
-    echo "$command" >> "$INPUT_FIFO"
+    print -r -- "$1" >> "$INPUT_FIFO"
 }
 
+# Asterisk-masked password input. Raw single-key reads (no ZLE, so no ghost/completion); the
+# terminal echo is disabled so only our '*' shows. The pane-conditional tmux bind forwards a
+# literal Tab here, so ignore it — it would otherwise land as a character.
 read_password() {
-    local prompt="$1"
-    local password=""
-    local char
-
-    printf "%s" "$prompt"
-
-    while IFS= read -rsn1 char; do
-        if [[ -z "$char" ]]; then
+    local prompt="$1" password="" char
+    print -n -- "$prompt"
+    stty -echo 2>/dev/null
+    while IFS= read -k 1 char; do
+        if [[ "$char" == $'\n' || "$char" == $'\r' ]]; then
             break
         fi
-
-        # Ignore TAB: the pane-conditional tmux bind forwards it here, but password
-        # input is raw (no readline), so it would land as a literal character
-        if [[ "$char" == $'\t' ]]; then
+        # Ignore forwarded Tab and Ctrl+C (raw reads, not ZLE — they'd land as literal characters).
+        if [[ "$char" == $'\t' || "$char" == $'\x03' ]]; then
             continue
         fi
-
-        if [[ "$char" == $'\x7f' ]] || [[ "$char" == $'\b' ]]; then
-            if [ -n "$password" ]; then
-                password="${password%?}"
-                printf "\b \b"
+        if [[ "$char" == $'\x7f' || "$char" == $'\b' ]]; then
+            if [[ -n "$password" ]]; then
+                password="${password[1,-2]}"
+                print -n -- $'\b \b'
             fi
         else
             password+="$char"
-            printf "*"
+            print -n -- '*'
         fi
     done
-
-    echo
+    stty echo 2>/dev/null
+    print
     REPLY="$password"
 }
 
 clear
-stty -echoctl
-
-handle_sigint() {
-    printf "\r\033[Kserver> "
-}
-trap 'handle_sigint' INT
+stty -echoctl # hide ^C
+stty intr undef # deliver ^C to ZLE (server_ctrl_c) as a key instead of raising SIGINT
 
 while true; do
-    if [ -f "$PASSWORD_MODE_FILE" ]; then
+    if [[ -f "$PASSWORD_MODE_FILE" ]]; then
+        # Delete the signal file so we don't stay in password mode.
         rm -f "$PASSWORD_MODE_FILE"
         read_password "password> "
     else
-        if ! read -r -e -p "server> "; then
-            echo
+        REPLY=""
+        if ! vared -h -p "server> " REPLY; then
+            print
             tmux kill-session -t "$SESSION_NAME" 2>/dev/null || exit 0
             break
         fi
-        [[ -n "$REPLY" ]] && history -s "$REPLY" && history -w "$HISTFILE"
+        [[ -n "$REPLY" ]] && { print -s -- "$REPLY"; fc -W "$HISTFILE" 2>/dev/null; }
     fi
 
+    _clear_suggestions 2>/dev/null
     clear
 
     case "$REPLY" in

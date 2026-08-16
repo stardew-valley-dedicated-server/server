@@ -40,7 +40,7 @@ start_input_pane_split() {
     local session_name="$1"
 
     tmux split-window -t "$session_name":0 -v -l 2 \
-        "bash --rcfile /opt/bin/server-command-loop -i '$session_name'"
+        "zsh /opt/bin/server-command-loop '$session_name'"
 }
 
 init_mouse() {
@@ -58,10 +58,14 @@ init_keybinds() {
     local session_name="$1"
 
     tmux set-option -t "$session_name" prefix C-b 2>/dev/null || true
-    tmux bind-key -n C-c kill-session -t "$session_name" 2>/dev/null || true
+    # C-c on the output pane (index 0) closes the session; on the input pane it passes through to
+    # the shell (server-command-loop), which clears the input when there's text and closes only
+    # when the input is already empty
+    tmux bind-key -n C-c if-shell -F "#{==:#{pane_index},0}" \
+        "kill-session -t $session_name" "send-keys -t 0.1 C-c" 2>/dev/null || true
 
     # TAB on the output pane (index 0) jumps to the input pane; TAB on the input pane passes
-    # through to the shell so readline completion (server-completion.sh) sees it
+    # through to the shell so the ZLE completion widget (server-completion.zsh) sees it
     tmux bind-key -n Tab if-shell -F "#{==:#{pane_index},0}" \
         "select-pane -t 0.1" "send-keys -t 0.1 Tab" 2>/dev/null || true
 }

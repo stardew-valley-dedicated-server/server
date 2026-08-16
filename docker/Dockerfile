@@ -182,6 +182,8 @@ RUN add-pkg \
     htop \
     nano \
     tcpdump \
+    # attach-cli input pane runs on zsh/ZLE (ghost text + TAB completion; server-command-loop)
+    zsh \
     # TigerVNC
     tigervnc-standalone-server \
     mesa-utils \

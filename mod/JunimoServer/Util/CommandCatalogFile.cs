@@ -10,7 +10,7 @@ namespace JunimoServer.Util;
 
 /// <summary>
 /// Writes the console-command catalog to a file in the container-shared /tmp, where the
-/// attach-cli's TAB completion (server-completion.sh) reads it — same file-drop pattern as
+/// attach-cli's ZLE completion (server-completion.zsh) reads it — same file-drop pattern as
 /// <see cref="InviteCodeFile"/>. Line format (tab-separated, parsed with plain bash — the
 /// images have no jq):
 /// <code>

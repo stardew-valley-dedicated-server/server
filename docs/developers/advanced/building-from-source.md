@@ -87,6 +87,18 @@ The Makefile provides several useful commands:
 | `make cli` | Attach to interactive server console |
 | `make clean` | Remove ALL containers, volumes, and images |
 
+## Using git worktrees
+
+Each worktree is a separate folder, so Docker gives it its own empty volumes. `make setup` then makes you log into Steam and download the game again (and too many logins can get you rate-limited).
+
+To reuse the volumes from your main checkout, add this to the worktree's `.env`:
+
+```sh
+COMPOSE_PROJECT_NAME=server
+```
+
+Use `server` (your main checkout's folder name). New worktrees pick this up automatically, since `.env` is copied into them.
+
 ## Project Structure
 
 ```

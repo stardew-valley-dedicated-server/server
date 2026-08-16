@@ -47,7 +47,7 @@ start_input_pane_split() {
 
     # Add command input pane at bottom (exactly 2 lines - tmux minimum)
     tmux split-window -t "$session_name":0 -v -l 2 \
-        "bash --rcfile /opt/base/bin/server-command-loop -i '$session_name'"
+        "zsh /opt/base/bin/server-command-loop '$session_name'"
 }
 
 # Prevent mouse wheel from changing focus when scrolling top pane
@@ -75,10 +75,14 @@ init_keybinds() {
     # tmux unbind-key x 2>/dev/null || true
 
     # Key binds
-    tmux bind-key -n C-c kill-session -t "$session_name" 2>/dev/null || true  # Close session
+    # C-c on the output pane (index 0) closes the session; on the input pane it passes through to
+    # the shell (server-command-loop), which clears the input when there's text and closes only
+    # when the input is already empty
+    tmux bind-key -n C-c if-shell -F "#{==:#{pane_index},0}" \
+        "kill-session -t $session_name" "send-keys -t 0.1 C-c" 2>/dev/null || true
 
     # TAB on the output pane (index 0) jumps to the input pane; TAB on the input pane passes
-    # through to the shell so readline completion (server-completion.sh) sees it
+    # through to the shell so the ZLE completion widget (server-completion.zsh) sees it
     tmux bind-key -n Tab if-shell -F "#{==:#{pane_index},0}" \
         "select-pane -t 0.1" "send-keys -t 0.1 Tab" 2>/dev/null || true
 }

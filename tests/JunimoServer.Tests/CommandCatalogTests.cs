@@ -7,7 +7,7 @@ namespace JunimoServer.Tests;
 /// <summary>
 /// Verifies the console-command catalog the mod writes to /tmp/server-commands at startup
 /// (CommandCatalogFile.cs) — the data source for the attach-cli's TAB completion
-/// (server-completion.sh):
+/// (server-completion.zsh):
 /// <list type="bullet">
 /// <item>the descriptor merge: our commands appear as "ours" with their subcommand/flag lines,</item>
 /// <item>the SMAPI reflection enumeration: built-ins like `help` appear as "smapi",</item>
@@ -44,8 +44,8 @@ public class CommandCatalogTests : TestBase
         echo "CATALOG_BEGIN"
         cat /tmp/server-commands
         echo "CATALOG_END"
-        bash -c '
-            source /opt/base/bin/server-completion.sh
+        zsh -c '
+            source /opt/base/bin/server-completion.zsh
             echo "NAMES:$(_collect_candidates 0 "" | tr "\n" " ")"
             echo "SUBS:$(_collect_candidates 1 settings "" | tr "\n" " ")"
             echo "FLAGS:$(_collect_candidates 4 saves import x --reload "" | tr "\n" " ")"
