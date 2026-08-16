@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Runtime.Serialization;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameCreator;
+using JunimoServer.Util;
 using Newtonsoft.Json;
 using StardewModdingAPI;
 
@@ -55,12 +58,11 @@ public class ServerSettingsLoader
 
     public int MaxPlayers => _settings.Server.MaxPlayers;
 
-    public CabinStrategy CabinStrategy => ParseCabinStrategy(_settings.Server.CabinStrategy);
+    public CabinStrategy CabinStrategy => _settings.Server.CabinStrategy;
 
     public bool SeparateWallets => _settings.Server.SeparateWallets;
 
-    public ExistingCabinBehavior ExistingCabinBehavior =>
-        ParseExistingCabinBehavior(_settings.Server.ExistingCabinBehavior);
+    public ExistingCabinBehavior ExistingCabinBehavior => _settings.Server.ExistingCabinBehavior;
 
     public bool VerboseLogging => _settings.Server.VerboseLogging;
 
@@ -75,7 +77,7 @@ public class ServerSettingsLoader
     /// <summary>
     /// Lobby mode for password protection: Shared or Individual.
     /// </summary>
-    public LobbyMode LobbyMode => ParseLobbyMode(_settings.Server.LobbyMode);
+    public LobbyMode LobbyMode => _settings.Server.LobbyMode;
 
     /// <summary>
     /// Name of the active lobby layout for new players.
@@ -145,10 +147,20 @@ public class ServerSettingsLoader
             try
             {
                 var json = File.ReadAllText(_settingsPath);
-                var settings = JsonConvert.DeserializeObject<ServerSettings>(json);
+                var rejects = new List<SettingReject>();
+                var settings = JsonConvert.DeserializeObject<ServerSettings>(
+                    json,
+                    new JsonSerializerSettings
+                    {
+                        // Reject sink for the settings converters, which have no IMonitor — they
+                        // record unparseable values here for the loader to warn about.
+                        Context = new StreamingContext(StreamingContextStates.Other, rejects),
+                    }
+                );
                 if (settings != null)
                 {
                     _monitor.Log($"Loaded settings from {_settingsPath}", LogLevel.Info);
+                    LogSettingRejects(rejects);
                     return settings;
                 }
             }
@@ -198,15 +210,6 @@ public class ServerSettingsLoader
 
     #region Parsers
 
-    private static CabinStrategy ParseCabinStrategy(string value)
-    {
-        if (Enum.TryParse<CabinStrategy>(value, ignoreCase: true, out var result))
-        {
-            return result;
-        }
-        return CabinManager.CabinStrategy.CabinStack;
-    }
-
     private static bool? ParseNullableBool(string value)
     {
         if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase))
@@ -220,22 +223,19 @@ public class ServerSettingsLoader
         return null;
     }
 
-    private static ExistingCabinBehavior ParseExistingCabinBehavior(string value)
+    /// <summary>
+    /// Warns (naming the file) about each value a settings converter could not parse. Warn, not
+    /// Error — an Error line is E2E test poison (see rules/debugging.md).
+    /// </summary>
+    private void LogSettingRejects(IReadOnlyList<SettingReject> rejects)
     {
-        if (Enum.TryParse<ExistingCabinBehavior>(value, ignoreCase: true, out var result))
+        foreach (var reject in rejects)
         {
-            return result;
+            _monitor.Log(
+                $"Invalid {reject.Path} in {_settingsPath}: '{reject.RejectedValue}' is not recognized; using '{reject.FallbackUsed}'.",
+                LogLevel.Warn
+            );
         }
-        return CabinManager.ExistingCabinBehavior.KeepExisting;
-    }
-
-    private static LobbyMode ParseLobbyMode(string value)
-    {
-        if (Enum.TryParse<LobbyMode>(value, ignoreCase: true, out var result))
-        {
-            return result;
-        }
-        return Settings.LobbyMode.Shared;
     }
 
     private int ClampBroadcastPeriod(int value)

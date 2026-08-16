@@ -1,6 +1,4 @@
-using System;
 using System.Linq;
-using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameLoader;
 using JunimoServer.Services.PersistentOption;
@@ -248,41 +246,8 @@ internal static class SettingsCommand
             );
         }
 
-        // CabinStrategy valid
-        total++;
-        if (Enum.IsDefined(typeof(CabinStrategy), _settings.CabinStrategy))
-        {
-            _monitor.Log(
-                $"  [PASS] CabinStrategy={_settings.CabinStrategy} is valid",
-                LogLevel.Info
-            );
-            passed++;
-        }
-        else
-        {
-            _monitor.Log(
-                $"  [FAIL] CabinStrategy={_settings.CabinStrategy} is invalid",
-                LogLevel.Error
-            );
-        }
-
-        // ExistingCabinBehavior valid
-        total++;
-        if (Enum.IsDefined(typeof(ExistingCabinBehavior), _settings.ExistingCabinBehavior))
-        {
-            _monitor.Log(
-                $"  [PASS] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is valid",
-                LogLevel.Info
-            );
-            passed++;
-        }
-        else
-        {
-            _monitor.Log(
-                $"  [FAIL] ExistingCabinBehavior={_settings.ExistingCabinBehavior} is invalid",
-                LogLevel.Error
-            );
-        }
+        // CabinStrategy and ExistingCabinBehavior are typed enums, always defined here — an invalid
+        // file value is warned and defaulted at load (TolerantEnumConverter), nothing to validate here.
 
         // ProfitMargin range
         total++;

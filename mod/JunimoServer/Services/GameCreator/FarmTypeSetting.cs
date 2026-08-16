@@ -1,4 +1,5 @@
 using System;
+using JunimoServer.Util;
 using Newtonsoft.Json;
 
 namespace JunimoServer.Services.GameCreator;
@@ -131,13 +132,11 @@ public readonly struct FarmTypeSetting
 }
 
 /// <summary>
-/// Reads <see cref="FarmTypeSetting"/> from a JSON number or string and writes it back to
-/// the same scalar form. Parsing is total — an out-of-range index or unknown Id is NOT
-/// rejected here; that's a domain decision handled (with a graceful Standard fallback and a
-/// warning) by <see cref="GameCreatorService.ResolveFarmType"/>. Throwing here would abort
-/// the whole settings load and discard every other setting, which is the wrong failure mode
-/// for one bad field — every sibling setting in ServerSettingsLoader degrades gracefully too.
-/// A quoted integer (<c>"3"</c>) is treated as an index, not an Id.
+/// Reads <see cref="FarmTypeSetting"/> from a JSON number or string and writes it back to the same
+/// scalar form. A number or string is accepted as-is; an out-of-range index or unknown Id resolves to
+/// Standard (with a warning) later in <see cref="GameCreatorService.ResolveFarmType"/>, not here. A
+/// non-scalar token falls back to <see cref="FarmTypeSetting.Default"/> and (during a settings load)
+/// is recorded for a warning — parsing never throws. A quoted integer (<c>"3"</c>) is an index, not an Id.
 /// </summary>
 public class FarmTypeSettingConverter : JsonConverter<FarmTypeSetting>
 {
@@ -165,9 +164,8 @@ public class FarmTypeSettingConverter : JsonConverter<FarmTypeSetting>
                     : FarmTypeSetting.FromId(raw);
 
             default:
-                throw new JsonSerializationException(
-                    $"FarmType must be a JSON number or string, but got {reader.TokenType}."
-                );
+                SettingReject.RecordToken(reader, serializer, FarmTypeSetting.Default.ToString());
+                return FarmTypeSetting.Default;
         }
     }
 
