@@ -1,5 +1,7 @@
 using System;
+using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.GameCreator;
+using Newtonsoft.Json;
 
 namespace JunimoServer.Services.Settings;
 
@@ -45,9 +47,16 @@ public class GameSettings
 public class ServerRuntimeSettings
 {
     public int MaxPlayers { get; set; } = 10;
-    public string CabinStrategy { get; set; } = "CabinStack";
+
+    [JsonConverter(typeof(TolerantEnumConverter<CabinStrategy>))]
+    public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
+
     public bool SeparateWallets { get; set; } = false;
-    public string ExistingCabinBehavior { get; set; } = "KeepExisting";
+
+    [JsonConverter(typeof(TolerantEnumConverter<ExistingCabinBehavior>))]
+    public ExistingCabinBehavior ExistingCabinBehavior { get; set; } =
+        ExistingCabinBehavior.KeepExisting;
+
     public bool VerboseLogging { get; set; } = false;
     public bool AllowIpConnections { get; set; } = false;
 
@@ -62,13 +71,8 @@ public class ServerRuntimeSettings
     /// </summary>
     public bool EnforceFarmhandOwnership { get; set; } = true;
 
-    /// <summary>
-    /// Lobby mode for password protection: "Shared" or "Individual".
-    /// Shared: All unauthenticated players wait in the same lobby cabin.
-    /// Individual: Each player gets their own isolated lobby cabin.
-    /// Default: "Shared"
-    /// </summary>
-    public string LobbyMode { get; set; } = "Shared";
+    [JsonConverter(typeof(TolerantEnumConverter<LobbyMode>))]
+    public LobbyMode LobbyMode { get; set; } = LobbyMode.Shared;
 
     /// <summary>
     /// Name of the active lobby layout to use for new players.

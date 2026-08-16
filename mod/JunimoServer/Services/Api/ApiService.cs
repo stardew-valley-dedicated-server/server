@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -4148,9 +4149,9 @@ public partial class ApiService : ModService
             Server = new ServerRuntimeSettingsInfo
             {
                 MaxPlayers = raw.Server.MaxPlayers,
-                CabinStrategy = raw.Server.CabinStrategy,
+                CabinStrategy = raw.Server.CabinStrategy.ToString(),
                 SeparateWallets = raw.Server.SeparateWallets,
-                ExistingCabinBehavior = raw.Server.ExistingCabinBehavior,
+                ExistingCabinBehavior = raw.Server.ExistingCabinBehavior.ToString(),
             },
         };
     }
@@ -4795,8 +4796,10 @@ public partial class ApiService : ModService
         HttpListenerResponse response
     )
     {
-        // Parse the JSON request body
+        // Parse the request body. The reject sink lets a settings converter (e.g. FarmType) default a
+        // malformed field instead of aborting the parse, so the rest of the request still applies.
         NewGameRequest? body = null;
+        var rejects = new List<SettingReject>();
         try
         {
             using var reader = new System.IO.StreamReader(
@@ -4806,12 +4809,26 @@ public partial class ApiService : ModService
             var json = await reader.ReadToEndAsync();
             if (!string.IsNullOrWhiteSpace(json))
             {
-                body = JsonConvert.DeserializeObject<NewGameRequest>(json);
+                body = JsonConvert.DeserializeObject<NewGameRequest>(
+                    json,
+                    new JsonSerializerSettings
+                    {
+                        Context = new StreamingContext(StreamingContextStates.Other, rejects),
+                    }
+                );
             }
         }
         catch (Exception ex)
         {
             Monitor.Log($"Failed to parse /newgame request body: {ex.Message}", LogLevel.Debug);
+        }
+
+        foreach (var reject in rejects)
+        {
+            Monitor.Log(
+                $"/newgame request: {reject.Path} '{reject.RejectedValue}' is not recognized; using '{reject.FallbackUsed}'.",
+                LogLevel.Debug
+            );
         }
 
         body ??= new NewGameRequest();
