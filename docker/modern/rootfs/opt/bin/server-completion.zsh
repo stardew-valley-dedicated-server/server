@@ -45,7 +45,7 @@ _catalog_subcommands_of() {
     local cmd="${(L)1}" first rest
     [[ -r "$CATALOG" ]] || return 0
     while IFS=$'\t' read -r first rest; do
-        case "$first" in
+        case "${(L)first}" in
             "$cmd "*) print -r -- "${first#* }" ;;
         esac
     done < "$CATALOG"
@@ -59,7 +59,7 @@ _catalog_flags_of() {
     local -a flag_list
     [[ -r "$CATALOG" ]] || return 0
     while IFS=$'\t' read -r first flags; do
-        if [[ "$first" == "$cmd $sub" ]]; then
+        if [[ "${(L)first}" == "$cmd $sub" ]]; then
             flag_list=(${=flags}) # ${=var}: split on IFS without glob expansion
             for flag in "${flag_list[@]}"; do
                 skip=""
@@ -97,7 +97,9 @@ _collect_candidates() {
             ;;
         *)
             # (@) keeps the slice as separate words; a bare "${w[3,-1]}" would join them into one.
-            [[ "${(L)w[1]}" == cli ]] || _catalog_flags_of "$w[1]" "$w[2]" "${(@)w[3,-1]}"
+            # [3,-2] drops the word being completed (always the last element), so a fully typed flag
+            # isn't filtered out of its own candidate set.
+            [[ "${(L)w[1]}" == cli ]] || _catalog_flags_of "$w[1]" "$w[2]" "${(@)w[3,-2]}"
             ;;
     esac
 }

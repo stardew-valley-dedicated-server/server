@@ -58,28 +58,37 @@ send_to_server() {
 # literal Tab here, so ignore it — it would otherwise land as a character.
 read_password() {
     local prompt="$1" password="" char
-    print -n -- "$prompt"
-    stty -echo 2>/dev/null
-    while IFS= read -k 1 char; do
-        if [[ "$char" == $'\n' || "$char" == $'\r' ]]; then
-            break
-        fi
-        # Ignore forwarded Tab and Ctrl+C (raw reads, not ZLE — they'd land as literal characters).
-        if [[ "$char" == $'\t' || "$char" == $'\x03' ]]; then
-            continue
-        fi
-        if [[ "$char" == $'\x7f' || "$char" == $'\b' ]]; then
-            if [[ -n "$password" ]]; then
-                password="${password[1,-2]}"
-                print -n -- $'\b \b'
+    # Fail closed: if echo can't be disabled, the raw password would print to the pane. Abort
+    # before prompting rather than read it in the clear; the caller drops the entry on non-zero.
+    if ! stty -echo 2>/dev/null; then
+        print -u2 -- "password entry unavailable (cannot disable terminal echo)"
+        REPLY=""
+        return 1
+    fi
+    {
+        print -n -- "$prompt"
+        while IFS= read -k 1 char; do
+            if [[ "$char" == $'\n' || "$char" == $'\r' ]]; then
+                break
             fi
-        else
-            password+="$char"
-            print -n -- '*'
-        fi
-    done
-    stty echo 2>/dev/null
-    print
+            # Ignore forwarded Tab and Ctrl+C (raw reads, not ZLE — they'd land as literal characters).
+            if [[ "$char" == $'\t' || "$char" == $'\x03' ]]; then
+                continue
+            fi
+            if [[ "$char" == $'\x7f' || "$char" == $'\b' ]]; then
+                if [[ -n "$password" ]]; then
+                    password="${password[1,-2]}"
+                    print -n -- $'\b \b'
+                fi
+            else
+                password+="$char"
+                print -n -- '*'
+            fi
+        done
+        print
+    } always {
+        stty echo 2>/dev/null # restore echo even if a read above errors out
+    }
     REPLY="$password"
 }
 
@@ -91,7 +100,10 @@ while true; do
     if [[ -f "$PASSWORD_MODE_FILE" ]]; then
         # Delete the signal file so we don't stay in password mode.
         rm -f "$PASSWORD_MODE_FILE"
-        read_password "password> "
+        # Drop the entry if echo couldn't be disabled — never dispatch an unmasked password.
+        if ! read_password "password> "; then
+            continue
+        fi
     else
         REPLY=""
         if ! vared -h -p "server> " REPLY; then
