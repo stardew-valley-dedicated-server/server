@@ -8,7 +8,7 @@
 
 ## Your Cabin
 
-A cabin is automatically created when you first join. Use `!cabin` on the farm to relocate your cabin to your right.
+A cabin is automatically created when you first join, as long as the server's player limit isn't reached. If the server allows cabin relocation (on by default), use `!cabin` on the farm to relocate your cabin to your right, and `!cabin reset` to send it back.
 
 ## Saving
 

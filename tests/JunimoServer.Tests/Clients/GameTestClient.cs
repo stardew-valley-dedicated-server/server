@@ -231,6 +231,32 @@ public class LeaveFestivalResult
     public string? Error { get; set; }
 }
 
+/// <summary>
+/// Result of /actions/walk_onto_tile (mirrors the test-client's WalkOntoTileResult).
+/// </summary>
+public class WalkOntoTileResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>How the transition triggered: "warp" (touch warp) or "door" (action press).</summary>
+    [JsonPropertyName("via")]
+    public string? Via { get; set; }
+
+    [JsonPropertyName("targetLocation")]
+    public string? TargetLocation { get; set; }
+
+    /// <summary>Warp landing tile ("warp" only).</summary>
+    [JsonPropertyName("targetX")]
+    public int? TargetX { get; set; }
+
+    [JsonPropertyName("targetY")]
+    public int? TargetY { get; set; }
+}
+
 public class EngageToNpcResult
 {
     [JsonPropertyName("success")]
@@ -302,6 +328,47 @@ public class FarmBuildingsResult
 
     [JsonPropertyName("cabins")]
     public List<FarmBuildingInfo> Cabins { get; set; } = new();
+}
+
+public class LocationWarpInfo
+{
+    /// <summary>Trigger tile in the current location.</summary>
+    [JsonPropertyName("x")]
+    public int X { get; set; }
+
+    [JsonPropertyName("y")]
+    public int Y { get; set; }
+
+    [JsonPropertyName("targetName")]
+    public string TargetName { get; set; } = "";
+
+    /// <summary>Landing tile in the target location, as currently visible to the client.</summary>
+    [JsonPropertyName("targetX")]
+    public int TargetX { get; set; }
+
+    [JsonPropertyName("targetY")]
+    public int TargetY { get; set; }
+}
+
+/// <summary>
+/// Result of /actions/location_warps: the current location's warps as the client resolves
+/// them. Warp targets ride replication deltas whose values stay invisible until the netcode
+/// interpolation window elapses (15 client ticks), so tests poll this before walking onto a
+/// warp — the values here are exactly what a walk would use.
+/// </summary>
+public class LocationWarpsResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("locationName")]
+    public string? LocationName { get; set; }
+
+    [JsonPropertyName("warps")]
+    public List<LocationWarpInfo> Warps { get; set; } = new();
 }
 
 public class PlantCropResult
@@ -787,6 +854,37 @@ public class ActionsClient
     /// </summary>
     public Task<FarmBuildingsResult?> GetFarmBuildings(CancellationToken ct = default) =>
         _client.GetAsync<FarmBuildingsResult>("/actions/farm_buildings", ct);
+
+    /// <summary>
+    /// List the current location's warps as this client resolves them — the values a
+    /// <see cref="WalkOntoTile"/> would use. Poll this to wait out warp-target replication
+    /// (see <see cref="LocationWarpsResult"/>) before walking.
+    /// GET /actions/location_warps
+    /// </summary>
+    public Task<LocationWarpsResult?> GetLocationWarps(CancellationToken ct = default) =>
+        _client.GetAsync<LocationWarpsResult>("/actions/location_warps", ct);
+
+    /// <summary>
+    /// Walk onto a warp/door tile the way real movement does (touch warp, else the
+    /// action-press door path). Pass null tile coordinates to auto-target the current
+    /// location's first warp — a cabin interior's only warps are its exit mat. Async —
+    /// confirm arrival via <see cref="GameTestClient.WaitForLocationAsync"/>.
+    /// POST /actions/walk_onto_tile
+    /// </summary>
+    public Task<WalkOntoTileResult?> WalkOntoTile(
+        int? tileX = null,
+        int? tileY = null,
+        int direction = 2
+    ) =>
+        _client.PostAsync<WalkOntoTileResult>(
+            "/actions/walk_onto_tile",
+            new
+            {
+                tileX,
+                tileY,
+                direction,
+            }
+        );
 }
 
 public class ChatClient

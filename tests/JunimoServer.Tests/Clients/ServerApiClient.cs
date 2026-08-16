@@ -1190,6 +1190,9 @@ public class ServerRuntimeSettingsInfo
 
     [JsonPropertyName("existingCabinBehavior")]
     public string ExistingCabinBehavior { get; set; } = string.Empty;
+
+    [JsonPropertyName("allowCabinRelocation")]
+    public bool AllowCabinRelocation { get; set; }
 }
 
 /// <summary>
@@ -1253,6 +1256,58 @@ public class CabinsResponse
 
     [JsonPropertyName("savedPositionPlayerIds")]
     public List<long> SavedPositionPlayerIds { get; set; } = new();
+
+    /// <summary>
+    /// Active staged strategy migration ('cabins migrate'), or null when none is staged.
+    /// The old strategy stays live (in <see cref="Strategy"/>) until commit.
+    /// </summary>
+    [JsonPropertyName("migration")]
+    public CabinMigrationInfoResponse? Migration { get; set; }
+
+    /// <summary>
+    /// The CabinStack shared stack spot, or null when the active strategy is not CabinStack.
+    /// </summary>
+    [JsonPropertyName("stackSpot")]
+    public StackSpotInfoResponse? StackSpot { get; set; }
+}
+
+/// <summary>
+/// The CabinStack shared stack spot on <see cref="CabinsResponse"/>.
+/// </summary>
+public class StackSpotInfoResponse
+{
+    [JsonPropertyName("tileX")]
+    public int TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int TileY { get; set; }
+
+    /// <summary>True when an admin-set override is active (vs the map default).</summary>
+    [JsonPropertyName("isOverride")]
+    public bool IsOverride { get; set; }
+
+    /// <summary>True when the spot currently fails placement validation.</summary>
+    [JsonPropertyName("isObstructed")]
+    public bool IsObstructed { get; set; }
+}
+
+/// <summary>
+/// Staged strategy-migration status on <see cref="CabinsResponse"/>.
+/// </summary>
+public class CabinMigrationInfoResponse
+{
+    [JsonPropertyName("fromStrategy")]
+    public string FromStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("toStrategy")]
+    public string ToStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("placedCount")]
+    public int PlacedCount { get; set; }
+
+    /// <summary>Placements still required before commit, computed live server-side.</summary>
+    [JsonPropertyName("remainingCount")]
+    public int RemainingCount { get; set; }
 }
 
 /// <summary>
@@ -2637,6 +2692,7 @@ public class ServerApiClient : IDisposable
         string? cabinStrategy = null,
         int? maxPlayers = null,
         bool? allowIpConnections = null,
+        bool? allowCabinRelocation = null,
         CancellationToken ct = default
     )
     {
@@ -2669,6 +2725,11 @@ public class ServerApiClient : IDisposable
         if (allowIpConnections.HasValue)
         {
             body["allowIpConnections"] = allowIpConnections.Value;
+        }
+
+        if (allowCabinRelocation.HasValue)
+        {
+            body["allowCabinRelocation"] = allowCabinRelocation.Value;
         }
 
         var content = JsonContent.Create(body);
@@ -2914,6 +2975,48 @@ public class ServerApiClient : IDisposable
         TimeSpan? timeout = null,
         CancellationToken ct = default
     ) => WaitForPlayersRemovedByIdAsync(new[] { playerId }, timeout, ct);
+
+    /// <summary>
+    /// Polls GET /players until no player remains registered server-side. For cleanup paths
+    /// that don't track individual uids (class disposers): DisconnectAsync settles the
+    /// client only, and a reset /newgame 409s against any still-registered player.
+    /// </summary>
+    public async Task<bool> WaitForAllPlayersRemovedAsync(
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
+    {
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_ServerApi_WaitForAllPlayersRemoved,
+            async () =>
+            {
+                try
+                {
+                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
+                    var players = await GetPlayers(reqCts.Token);
+                    return players?.Players != null && players.Players.Count == 0;
+                }
+                catch (Exception ex)
+                    when (ex
+                            is HttpRequestException
+                                or TaskCanceledException
+                                or OperationCanceledException
+                        && !ct.IsCancellationRequested
+                    )
+                {
+                    return false;
+                }
+            },
+            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
+            cancellationToken: ct,
+            onTimeoutAsync: async () =>
+                await Helpers.FailureContext.DumpAsync(
+                    this,
+                    reason: "WaitForAllPlayersRemovedAsync_timeout"
+                )
+        );
+    }
 
     /// <summary>
     /// Polls GET /farmhands until a farmhand with the given name exists.

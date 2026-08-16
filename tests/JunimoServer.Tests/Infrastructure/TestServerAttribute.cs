@@ -25,6 +25,7 @@ public class TestServerAttribute : Attribute
     private bool? _artifacts;
     private bool? _fixtureFarmMod;
     private int? _serverTps;
+    private bool? _allowCabinRelocation;
 
     // "Was this property explicitly set?" tracking for Password
     // because null is a meaningful value (no password)
@@ -94,6 +95,17 @@ public class TestServerAttribute : Attribute
     {
         get => _existingCabinBehavior ?? "KeepExisting";
         set => _existingCabinBehavior = value;
+    }
+
+    /// <summary>
+    /// Boot-time AllowCabinRelocation for the server's settings file. Part of the server
+    /// config hash — a relocation-disabled server must not be pooled under the same key as
+    /// a default one.
+    /// </summary>
+    public bool AllowCabinRelocation
+    {
+        get => _allowCabinRelocation ?? true;
+        set => _allowCabinRelocation = value;
     }
     public IsolationMode Isolation
     {
@@ -191,6 +203,7 @@ public class TestServerAttribute : Attribute
         merged._exclusive = method._exclusive ?? _exclusive;
         merged._fixtureFarmMod = method._fixtureFarmMod ?? _fixtureFarmMod;
         merged._serverTps = method._serverTps ?? _serverTps;
+        merged._allowCabinRelocation = method._allowCabinRelocation ?? _allowCabinRelocation;
         merged.SharedGroup = method.SharedGroup ?? SharedGroup;
 
         // DeferAcquisition uses OR: if either says defer, we defer

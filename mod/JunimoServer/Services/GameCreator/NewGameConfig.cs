@@ -1,4 +1,3 @@
-using System;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Settings;
 
@@ -12,6 +11,8 @@ public class NewGameConfig
     public string FarmName { get; set; } = "Junimo";
     public int MaxPlayers { get; set; } = 10;
     public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
+    public bool AllowCabinRelocation { get; set; } = true;
+    public bool AllowIpConnections { get; set; } = false;
 
     // advanced creation options
     public bool BundlesRemix { get; set; } = false;
@@ -40,6 +41,8 @@ public class NewGameConfig
             WhichFarm = settings.FarmType,
             MaxPlayers = settings.MaxPlayers,
             CabinStrategy = settings.CabinStrategy,
+            AllowCabinRelocation = settings.AllowCabinRelocation,
+            AllowIpConnections = settings.AllowIpConnections,
             UseSeparateWallets = settings.SeparateWallets,
             SpawnMonstersAtNight = settings.SpawnMonstersAtNight,
             ProfitMargin = settings.ProfitMargin,
@@ -55,42 +58,12 @@ public class NewGameConfig
         };
     }
 
-    /// <summary>
-    /// Creates a NewGameConfig from API request parameters with sensible defaults.
-    /// </summary>
-    public static NewGameConfig FromRequest(
-        FarmTypeSetting farmType,
-        string farmName = "Junimo",
-        int startingCabins = 1,
-        string cabinStrategy = "CabinStack",
-        int maxPlayers = 10,
-        float profitMargin = 1.0f,
-        bool? spawnMonstersAtNight = null,
-        bool separateWallets = false
-    )
-    {
-        if (!Enum.TryParse<CabinStrategy>(cabinStrategy, ignoreCase: true, out var strategy))
-        {
-            strategy = CabinManager.CabinStrategy.CabinStack;
-        }
-
-        return new NewGameConfig
-        {
-            WhichFarm = farmType,
-            FarmName = farmName,
-            StartingCabins = startingCabins,
-            CabinStrategy = strategy,
-            MaxPlayers = maxPlayers,
-            ProfitMargin = profitMargin,
-            SpawnMonstersAtNight = spawnMonstersAtNight,
-            UseSeparateWallets = separateWallets,
-        };
-    }
-
     public override string ToString()
     {
         return $"{nameof(FarmName)}: {FarmName}, {nameof(WhichFarm)}: {WhichFarm}, "
             + $"{nameof(MaxPlayers)}: {MaxPlayers}, {nameof(CabinStrategy)}: {CabinStrategy}, "
+            + $"{nameof(AllowCabinRelocation)}: {AllowCabinRelocation}, "
+            + $"{nameof(AllowIpConnections)}: {AllowIpConnections}, "
             + $"{nameof(UseSeparateWallets)}: {UseSeparateWallets}, "
             + $"{nameof(SpawnMonstersAtNight)}: {SpawnMonstersAtNight?.ToString() ?? "auto"}, "
             + $"{nameof(ProfitMargin)}: {ProfitMargin}, {nameof(StartingCabins)}: {StartingCabins}, "

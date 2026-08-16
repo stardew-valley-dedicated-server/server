@@ -124,10 +124,22 @@ public sealed class ResourceLease : IAsyncDisposable
         string farmName = "Junimo",
         int startingCabins = 1,
         string cabinStrategy = "CabinStack",
+        int? maxPlayers = null,
+        bool? allowCabinRelocation = null,
+        bool? allowIpConnections = null,
         CancellationToken ct = default
     )
     {
-        await _managed.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, ct);
+        await _managed.CreateNewGameAsync(
+            farmType,
+            farmName,
+            startingCabins,
+            cabinStrategy,
+            maxPlayers,
+            allowCabinRelocation,
+            allowIpConnections,
+            ct
+        );
     }
 
     /// <summary>

@@ -157,6 +157,7 @@ internal static class SettingsCommand
             LogLevel.Info
         );
         _monitor.Log($"  SeparateWallets      = {_settings.SeparateWallets}", LogLevel.Info);
+        _monitor.Log($"  AllowCabinRelocation = {_settings.AllowCabinRelocation}", LogLevel.Info);
         _monitor.Log($"  ExistingCabinBehavior = {_settings.ExistingCabinBehavior}", LogLevel.Info);
         _monitor.Log($"  VerboseLogging       = {_settings.VerboseLogging}", LogLevel.Info);
     }
@@ -178,6 +179,7 @@ internal static class SettingsCommand
             _monitor.Log($"  Farm Type:        {FarmTypeLabel(config.WhichFarm)}", LogLevel.Info);
             _monitor.Log($"  Max Players:      {config.MaxPlayers}", LogLevel.Info);
             _monitor.Log($"  Cabin Strategy:   {config.CabinStrategy}", LogLevel.Info);
+            _monitor.Log($"  Cabin Relocation: {config.AllowCabinRelocation}", LogLevel.Info);
             _monitor.Log($"  Separate Wallets: {config.UseSeparateWallets}", LogLevel.Info);
             _monitor.Log($"  Profit Margin:    {config.ProfitMargin}", LogLevel.Info);
             _monitor.Log($"  Starting Cabins:  {config.StartingCabins}", LogLevel.Info);

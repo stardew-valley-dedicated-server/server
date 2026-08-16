@@ -1,4 +1,18 @@
+using JunimoServer.Util;
+
 namespace JunimoServer.Services.CabinManager;
+
+/// <summary>
+/// The one strict parser for operator-supplied strategy names (settings file, console,
+/// API): member names only, via <see cref="StrictEnumParser"/>. A numeric value accepted
+/// here would become a live undefined strategy (interceptors run in CabinStack mode while
+/// EnsureAtLeastXCabins builds hidden), so names-only is load-bearing, not cosmetic.
+/// </summary>
+public static class CabinStrategyParser
+{
+    public static bool TryParse(string value, out CabinStrategy strategy) =>
+        StrictEnumParser.TryParse(value, out strategy);
+}
 
 public enum CabinStrategy
 {

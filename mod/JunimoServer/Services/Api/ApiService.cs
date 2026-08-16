@@ -610,6 +610,9 @@ public class ServerRuntimeSettingsInfo
 
     /// <summary>How to handle existing visible cabins: KeepExisting or MoveToStack.</summary>
     public string ExistingCabinBehavior { get; set; } = "";
+
+    /// <summary>Whether players may relocate their cabin via the !cabin command.</summary>
+    public bool AllowCabinRelocation { get; set; }
 }
 
 /// <summary>
@@ -638,6 +641,57 @@ public class CabinsResponse
     /// MoveToStack / strategy-migration sweep. Cleared when the farmhand is deleted.
     /// </summary>
     public List<long> SavedPositionPlayerIds { get; set; } = new();
+
+    /// <summary>
+    /// Active staged strategy migration ('cabins migrate'), or null when none is staged.
+    /// </summary>
+    public CabinMigrationInfo? Migration { get; set; }
+
+    /// <summary>
+    /// The CabinStack shared stack spot (the tile each player's ghost cabin renders at),
+    /// or null when the active strategy is not CabinStack.
+    /// </summary>
+    public StackSpotInfo? StackSpot { get; set; }
+}
+
+/// <summary>
+/// The CabinStack shared stack spot on <see cref="CabinsResponse"/>.
+/// </summary>
+public class StackSpotInfo
+{
+    /// <summary>Tile X of the spot.</summary>
+    public int TileX { get; set; }
+
+    /// <summary>Tile Y of the spot.</summary>
+    public int TileY { get; set; }
+
+    /// <summary>True when an admin-set override is active (vs the map default).</summary>
+    public bool IsOverride { get; set; }
+
+    /// <summary>True when the spot currently fails placement validation.</summary>
+    public bool IsObstructed { get; set; }
+}
+
+/// <summary>
+/// Staged strategy-migration status. Present on <see cref="CabinsResponse"/> only while a
+/// 'cabins migrate' staging is active; the old strategy stays live until commit.
+/// </summary>
+public class CabinMigrationInfo
+{
+    /// <summary>The strategy the migration started from (still live during staging).</summary>
+    public string FromStrategy { get; set; } = "";
+
+    /// <summary>The strategy the migration commits to.</summary>
+    public string ToStrategy { get; set; } = "";
+
+    /// <summary>Number of staging placements done so far (auto + manual).</summary>
+    public int PlacedCount { get; set; }
+
+    /// <summary>
+    /// Placements still required before commit, computed live (hidden non-lobby cabins for
+    /// a migration to None; the unresolved shared-stack spot for FarmhouseStack→CabinStack).
+    /// </summary>
+    public int RemainingCount { get; set; }
 }
 
 /// <summary>
@@ -737,6 +791,9 @@ public class NewGameRequest
 
     /// <summary>Whether each player has a separate wallet.</summary>
     public bool? SeparateWallets { get; set; }
+
+    /// <summary>Whether players may relocate their cabin via the !cabin command.</summary>
+    public bool? AllowCabinRelocation { get; set; }
 }
 
 /// <summary>
@@ -970,6 +1027,8 @@ public partial class ApiService : ModService
         public int CabinAssignedCount;
         public int CabinAvailableCount;
         public List<CabinInfo> Cabins = new();
+        public CabinMigrationInfo? CabinMigration;
+        public StackSpotInfo? CabinStackSpot;
 
         // /auth
         public int AuthenticatedCount;
@@ -1814,6 +1873,36 @@ public partial class ApiService : ModService
             snap.CabinTotalCount = snap.Cabins.Count;
             snap.CabinAssignedCount = snap.Cabins.Count(c => c.IsAssigned);
             snap.CabinAvailableCount = snap.CabinTotalCount - snap.CabinAssignedCount;
+
+            // CabinStack shared stack spot (null under other strategies). E2E surface for
+            // the 'cabins stackspot' / '!stackspot' commands.
+            var stackSpot = _cabinManager.GetStackSpotStatus();
+            if (stackSpot != null)
+            {
+                var spot = stackSpot.Value;
+                snap.CabinStackSpot = new StackSpotInfo
+                {
+                    TileX = spot.Spot.X,
+                    TileY = spot.Spot.Y,
+                    IsOverride = spot.IsOverride,
+                    IsObstructed = spot.IsObstructed,
+                };
+            }
+
+            // Staged strategy migration (null when none is active). E2E gates staging
+            // state on this — mod events are diagnostics only.
+            var migration = _cabinManager.GetMigrationStatus();
+            if (migration != null)
+            {
+                var m = migration.Value;
+                snap.CabinMigration = new CabinMigrationInfo
+                {
+                    FromStrategy = m.FromStrategy.ToString(),
+                    ToStrategy = m.ToStrategy.ToString(),
+                    PlacedCount = m.PlacedCount,
+                    RemainingCount = m.RemainingCount,
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -4152,6 +4241,7 @@ public partial class ApiService : ModService
                 CabinStrategy = raw.Server.CabinStrategy.ToString(),
                 SeparateWallets = raw.Server.SeparateWallets,
                 ExistingCabinBehavior = raw.Server.ExistingCabinBehavior.ToString(),
+                AllowCabinRelocation = raw.Server.AllowCabinRelocation,
             },
         };
     }
@@ -4170,6 +4260,8 @@ public partial class ApiService : ModService
             AvailableCount = snap.CabinAvailableCount,
             Cabins = snap.Cabins,
             SavedPositionPlayerIds = _cabinManager.Data.PlayerCabinPositions.Keys.ToList(),
+            Migration = snap.CabinMigration,
+            StackSpot = snap.CabinStackSpot,
         };
     }
 
@@ -4862,16 +4954,63 @@ public partial class ApiService : ModService
             return;
         }
 
-        // Build the config from settings (defaults), overriding with any explicitly provided request values.
-        var config = NewGameConfig.FromRequest(
-            farmType: body.FarmType ?? _settings.FarmType,
-            farmName: body.FarmName ?? _settings.FarmName,
-            startingCabins: body.StartingCabins ?? _settings.StartingCabins,
-            cabinStrategy: body.CabinStrategy ?? _settings.CabinStrategy.ToString(),
-            maxPlayers: body.MaxPlayers ?? _settings.MaxPlayers,
-            profitMargin: body.ProfitMargin ?? _settings.ProfitMargin,
-            separateWallets: body.SeparateWallets ?? _settings.SeparateWallets
-        );
+        // Build the config from the settings file (defaults), overriding with any explicitly
+        // provided request values. Starting from FromSettings guarantees EVERY file setting
+        // flows into the created game unless the request overrides it — a hand-picked
+        // parameter list drops whatever it forgets (CabinLayoutNearby, for one, decides
+        // which designated-position layout every later load resolves).
+        var config = NewGameConfig.FromSettings(_settings);
+        if (body.FarmType.HasValue)
+        {
+            config.WhichFarm = body.FarmType.Value;
+        }
+        if (body.FarmName != null)
+        {
+            config.FarmName = body.FarmName;
+        }
+        if (body.StartingCabins.HasValue)
+        {
+            config.StartingCabins = body.StartingCabins.Value;
+        }
+        if (body.CabinStrategy != null)
+        {
+            if (!CabinStrategyParser.TryParse(body.CabinStrategy, out var strategy))
+            {
+                response.StatusCode = 400;
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error =
+                            $"Unknown cabinStrategy '{body.CabinStrategy}' (use CabinStack, "
+                            + "FarmhouseStack, or None).",
+                    }
+                );
+                return;
+            }
+            config.CabinStrategy = strategy;
+        }
+        if (body.MaxPlayers.HasValue)
+        {
+            config.MaxPlayers = body.MaxPlayers.Value;
+        }
+        if (body.ProfitMargin.HasValue)
+        {
+            config.ProfitMargin = body.ProfitMargin.Value;
+        }
+        if (body.SeparateWallets.HasValue)
+        {
+            config.UseSeparateWallets = body.SeparateWallets.Value;
+        }
+        if (body.AllowCabinRelocation.HasValue)
+        {
+            config.AllowCabinRelocation = body.AllowCabinRelocation.Value;
+        }
+        if (body.AllowIpConnections.HasValue)
+        {
+            config.AllowIpConnections = body.AllowIpConnections.Value;
+        }
 
         Monitor.Log($"[API] New game requested: {config}", LogLevel.Info);
 

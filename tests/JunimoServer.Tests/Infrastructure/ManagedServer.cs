@@ -1502,6 +1502,9 @@ internal sealed class ManagedServer : IAsyncDisposable
         string farmName = "Junimo",
         int startingCabins = 1,
         string cabinStrategy = "CabinStack",
+        int? maxPlayers = null,
+        bool? allowCabinRelocation = null,
+        bool? allowIpConnections = null,
         CancellationToken ct = default
     )
     {
@@ -1515,6 +1518,9 @@ internal sealed class ManagedServer : IAsyncDisposable
                 farmName,
                 startingCabins,
                 cabinStrategy,
+                maxPlayers: maxPlayers,
+                allowCabinRelocation: allowCabinRelocation,
+                allowIpConnections: allowIpConnections,
                 ct: ct
             );
             if (result?.Success != true)

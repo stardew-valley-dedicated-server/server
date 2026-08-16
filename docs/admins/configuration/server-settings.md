@@ -50,6 +50,7 @@ This file is auto-created with defaults on first server startup. If the file doe
     "ExistingCabinBehavior": "KeepExisting",
     "VerboseLogging": false,
     "AllowIpConnections": false,
+    "AllowCabinRelocation": true,
     "EnforceFarmhandOwnership": true,
     "LobbyMode": "Shared",
     "ActiveLobbyLayout": "default",
@@ -68,12 +69,12 @@ These settings only take effect when creating a **new** game. They are ignored w
 | `FarmName` | Farm name displayed in-game | `"Junimo"` |
 | `FarmType` | Farm map type: a number `0`-`7` or a name for a built-in farm, or a farm Id string for a mod-added farm (see table below) | `0` |
 | `ProfitMargin` | Sell price multiplier | `1.0` |
-| `StartingCabins` | Number of cabins created with new game | `1` |
+| `StartingCabins` | Number of cabins created with new game. Ignored when `CabinStrategy` is `"None"`, which always places `min(designated map spots, MaxPlayers)` cabins up front | `1` |
 | `SpawnMonstersAtNight` | Monster spawning: `"true"`, `"false"`, or `"auto"` | `"auto"` |
 | `RemixBundles` | Use remixed or default CC bundles | `"false"` |
 | `RemixMines` | Use remixed or default mines rewards | `"false"` |
 | `CommunityCenterYear1` | Guarantee the community center is completable in year 1 | `false` |
-| `CabinLayoutNearby` | Whether to use nearby cabin layout. Only has an effect when CabinStrategy is `"None"` | `false` |
+| `CabinLayoutNearby` | Which of the map's two designated cabin layouts to use (nearby vs separate). Selects where `None` cabins are placed, and the default shared-stack spot under `CabinStack`. Must stay at the value the game was created with — it is re-read on every load, so changing it on an existing save silently switches which layout every cabin placement resolves | `false` |
 | `UseLegacyRandom` | Use the legacy RNG algorithms | `false` |
 | `RandomSeed` | Seed to use for RNG. `"null"` for a random seed | `"null"` |
 | `PetBreed` | Breed of pet. [0-4] are cats, [5-9] are dogs. -1 for no pet | `1` |
@@ -143,6 +144,7 @@ These settings apply on every startup and can be changed between runs.
 | `ExistingCabinBehavior` | How to handle visible cabins | `"KeepExisting"` |
 | `VerboseLogging` | Enable detailed debug logging | `false` |
 | `AllowIpConnections` | Allow direct IP connections | `false` |
+| `AllowCabinRelocation` | Let players move their cabin with the `!cabin` chat command | `true` |
 | `EnforceFarmhandOwnership` | Lock each farmhand to the platform account that claimed it | `true` |
 | `LobbyMode` | Lobby mode for password protection | `"Shared"` |
 | `ActiveLobbyLayout` | Active lobby layout name | `"default"` |
@@ -163,6 +165,24 @@ name, it accepts both Steam and GOG ids.
 | `CabinStack` | Cabins hidden off-map. Each player sees only their own at a shared position. | Most servers |
 | `FarmhouseStack` | Cabins hidden off-map. All players exit at the main farmhouse's front door (shared entry point). | Co-op focused |
 | `None` | Vanilla behavior. Cabins placed at real farm positions. | Traditional multiplayer |
+
+Under `None`, the effective player ceiling is `min(designated map spots, MaxPlayers)` (7 spots on the Standard farm); all cabins are placed up front at game creation, and raising `MaxPlayers` afterwards does not add cabins. See [Cabin Strategies](/features/cabin-strategies) for details.
+
+Editing `CabinStrategy` on an existing save applies at the next reload only for pure-hide switches; a switch that would place a cabin on the live farm is rejected at load and must go through the staged `cabins migrate` console flow instead:
+
+| Direction | Path |
+|-----------|------|
+| anything → `FarmhouseStack` | Settings file + reload |
+| `None` → `CabinStack` | Settings file + reload |
+| `FarmhouseStack` → `CabinStack` | `cabins migrate` |
+| `CabinStack`/`FarmhouseStack` → `None` | `cabins migrate` |
+
+See [Switching Strategies](/features/cabin-strategies#switching-strategies) and the
+[`cabins migrate` command](/admins/operations/commands#cabins).
+
+### Cabin Relocation
+
+With `AllowCabinRelocation` enabled (the default), players can move their cabin to a real spot on the farm with the `!cabin` chat command and send it back with `!cabin reset`, under every strategy. Under a stacked strategy a moved-out cabin becomes a real, visible building with its own working door. Set it to `false` to reject the command entirely.
 
 ### Existing Cabin Behavior
 
