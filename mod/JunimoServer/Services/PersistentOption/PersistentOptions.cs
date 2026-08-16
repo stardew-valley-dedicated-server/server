@@ -32,7 +32,7 @@ public class PersistentOptions
     /// Captures the currently-persisted strategy as PreviousCabinStrategy, then
     /// overwrites Data from the current settings file. Called on construction and
     /// again on a runtime /reload so a CabinStrategy change is detected by
-    /// CabinManagerService.DetectAndMigrateStrategyChange without a process restart.
+    /// CabinManagerService.DetectAndApplyStrategySwitch without a process restart.
     /// </summary>
     public void RecaptureAndSync(ServerSettingsLoader settings)
     {
@@ -47,6 +47,16 @@ public class PersistentOptions
     {
         _helper.Data.WriteGlobalData(SaveKey, optionsSaveData);
         Data = optionsSaveData;
+
+        // Game creation (the only caller) writes the options a world is being created FOR,
+        // so there is nothing to migrate at its first SaveLoaded — align the strategy-change
+        // detector. Without this, a stale PreviousCabinStrategy from the prior save trips
+        // DetectAndApplyStrategySwitch on the fresh game: SaveLoaded fires only after
+        // CreateNewGame finished (EnsureAtLeastXCabins included), so a fresh stacked game
+        // already parks a hidden cabin, which reads as a materializing switch — e.g.
+        // FarmhouseStack → CabinStack gets rejected and the fresh game's strategy silently
+        // reverts.
+        PreviousCabinStrategy = optionsSaveData.CabinStrategy;
     }
 
     public void Save()
@@ -66,11 +76,15 @@ public class PersistentOptions
     [XmlIgnore]
     public bool UsesHiddenCabins => IsCabinStack || IsFarmHouseStack;
 
+    [XmlIgnore]
+    public bool AllowCabinRelocation => Data.AllowCabinRelocation;
+
     private void SyncFromSettings(ServerSettingsLoader settings)
     {
         Data.MaxPlayers = settings.MaxPlayers;
         Data.CabinStrategy = settings.CabinStrategy;
         Data.ExistingCabinBehavior = settings.ExistingCabinBehavior;
+        Data.AllowCabinRelocation = settings.AllowCabinRelocation;
         Save();
     }
 }

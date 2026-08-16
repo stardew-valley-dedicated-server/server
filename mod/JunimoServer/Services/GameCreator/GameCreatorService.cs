@@ -65,14 +65,48 @@ class GameCreatorService : ModService
     {
         GameIsCreating = true;
 
+        // Both durable stores (persisted options, settings file) are written before the
+        // engine builds the world, so a throw anywhere below must restore them: the boot
+        // target still points at the OLD save, and because SetPersistentOptions aligns
+        // PreviousCabinStrategy, the next boot would otherwise run the old world under the
+        // failed game's strategy with no switch even detected — for a stacked→None config
+        // that is the unrecoverable hidden-cabins-under-None state.
+        var priorOptions = _options.Data;
+        var priorApplied = _settings.CaptureAppliedNewGameConfig();
+        try
+        {
+            CreateNewGameCore(config);
+        }
+        catch
+        {
+            _options.SetPersistentOptions(priorOptions);
+            _settings.RestoreAppliedNewGameConfig(priorApplied);
+            throw;
+        }
+        finally
+        {
+            GameIsCreating = false;
+        }
+    }
+
+    private void CreateNewGameCore(NewGameConfig config)
+    {
         _options.SetPersistentOptions(
             new PersistentOptionsSaveData
             {
                 MaxPlayers = config.MaxPlayers,
                 CabinStrategy = config.CabinStrategy,
                 ExistingCabinBehavior = _settings.ExistingCabinBehavior,
+                AllowCabinRelocation = config.AllowCabinRelocation,
             }
         );
+
+        // Persist the config into server-settings.json before the world loads: the file is
+        // the durable source of truth (SyncFromSettings reapplies it on every boot/reload),
+        // so any /newgame override must land in it or it silently reverts at the next
+        // reload. Must precede setGameMode(3) — SaveLoaded consumers that read the file
+        // (IpConnectionService's AllowIpConnections door) apply the created game's values.
+        _settings.ApplyNewGameConfig(config);
 
         Game1.player.team.useSeparateWallets.Value = config.UseSeparateWallets;
 
@@ -103,10 +137,9 @@ class GameCreatorService : ModService
             }
         }
 
-        // For CabinStack/FarmhouseStack: BuildStartingCabins is patched out, so this value
-        // is unused; we create cabins ourselves at the hidden location.
-        // For None strategy: this controls how many vanilla cabins are placed at
-        // map-designated positions by the unpatched BuildStartingCabins.
+        // BuildStartingCabins is patched out for every strategy (CabinManagerService) and
+        // the mod places all cabins itself below, so the engine never consumes this value
+        // headless. Kept in sync with the config for menu/diagnostic reads only.
         Game1.startingCabins = config.StartingCabins;
 
         var isUltimateFarmModLoaded = _helper
@@ -197,14 +230,39 @@ class GameCreatorService : ModService
 
         // Place the starting cabins through the mod's own path. Vanilla BuildStartingCabins
         // (run during loadForNewGame) does not leave its cabins on the realized farm on the
-        // headless path, so for None we place config.StartingCabins visible cabins here via
-        // EnsureAtLeastXCabins → BuildNewCabinVisible (which runs after the farm is fully
-        // realized and verifies each interior). Stacked strategies don't use map positions,
-        // so they keep the default minimum of 1 hidden cabin.
-        var minCabins = _options.IsNone ? Math.Max(1, config.StartingCabins) : 1;
+        // headless path, so for None we place visible cabins here via EnsureAtLeastXCabins →
+        // BuildNewCabinVisible (which runs after the farm is fully realized and verifies each
+        // interior). Stacked strategies don't use map positions, so they keep the default
+        // minimum of 1 hidden cabin.
+        //
+        // Under None, StartingCabins is ignored: the real player ceiling is
+        // min(designated map positions, MaxPlayers), and the farm is empty at creation, so
+        // placing the full set now is the only moment it can never bulldoze player content.
+        // The count is frozen into NoneCabinCount — a later MaxPlayers raise must not
+        // trigger on-demand placement onto a developed farm.
+        var minCabins = 1;
+        if (_options.IsNone)
+        {
+            var designatedCount = FarmCabinPositions.GetDesignatedPositions(Game1.getFarm()).Count;
+            if (designatedCount == 0)
+            {
+                // Custom maps only — every vanilla farm map authors both marker sets. With
+                // zero positions the cap clamps every build request to 0 with only a Debug
+                // line, so without this Warn the operator sees a joinable-looking server
+                // that can never place a cabin.
+                _monitor.Log(
+                    "None strategy on a map with zero designated cabin positions: no cabin "
+                        + "can ever be placed, so no player can join. Author cabin markers "
+                        + "(Paths layer tiles 29/30 with an Order property) on the map, or "
+                        + "use a stacked cabin strategy.",
+                    LogLevel.Warn
+                );
+            }
+            minCabins = Math.Min(designatedCount, config.MaxPlayers);
+            _options.Data.NoneCabinCount = minCabins;
+            _options.Save();
+        }
         _cabinManagerService.EnsureAtLeastXCabins(minCabins);
-
-        GameIsCreating = false;
     }
 
     /// <summary>

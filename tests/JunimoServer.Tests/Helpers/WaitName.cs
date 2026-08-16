@@ -79,11 +79,12 @@ public enum WaitName
     Polling_GameTestClient_WaitForLocation,
     Polling_GameTestClient_WaitForAuthWarp,
 
-    // ServerApiClient.cs (8)
+    // ServerApiClient.cs (9)
     Polling_ServerApi_WaitForPlayerByName,
     Polling_ServerApi_WaitForPlayerById,
     Polling_ServerApi_WaitForPlayersRemovedByName,
     Polling_ServerApi_WaitForPlayersRemovedById,
+    Polling_ServerApi_WaitForAllPlayersRemoved,
     Polling_ServerApi_WaitForFarmhandByName,
     Polling_ServerApi_WaitForFarmhandDeletedByName,
     Polling_ServerApi_WaitForFarmerServerTile,
@@ -96,6 +97,10 @@ public enum WaitName
     Polling_CabinStrategy_OurCabinAssigned,
     Polling_CabinStrategy_FarmerSyncedCabinAndFarmhand,
     Polling_CabinStrategy_FarmerDeletionReflected,
+
+    // CabinStrategyFarmhouseStackTests.cs — client-local exit-warp convergence (2)
+    Polling_CabinExitWarp_FarmhouseDoorOnClient,
+    Polling_CabinExitWarp_OwnDoorOnClient,
 
     // CabinPositionPersistenceTests.cs — !cabin reset (1)
     Polling_CabinReset_CabinHidden,
@@ -217,4 +222,26 @@ public enum WaitName
     // NpcSpriteIntegrityTests.cs (1)
     /// <summary>Game clock crossed the daytime schedule-departure boundaries after the heal.</summary>
     Polling_NpcSprite_DaytimeBoundariesCrossed,
+
+    // CabinMigrationTests.cs (7)
+    /// <summary>/cabins Migration became non-null after 'cabins migrate start'.</summary>
+    Polling_CabinMigration_Staged,
+
+    /// <summary>Live RemainingCount grew after a join during staging.</summary>
+    Polling_CabinMigration_RemainingGrew,
+
+    /// <summary>'!migrate place' (admin chat) staged a cabin at the expected tile.</summary>
+    Polling_CabinMigration_ChatPlaced,
+
+    /// <summary>All remaining placements done (RemainingCount == 0).</summary>
+    Polling_CabinMigration_PlacedAll,
+
+    /// <summary>Commit landed: strategy flipped and Migration cleared.</summary>
+    Polling_CabinMigration_Committed,
+
+    /// <summary>Abort landed: Migration cleared and staged cabins re-hidden.</summary>
+    Polling_CabinMigration_Aborted,
+
+    /// <summary>'cabins stackspot x y' landed: /cabins StackSpot shows the override.</summary>
+    Polling_CabinStackSpot_Set,
 }

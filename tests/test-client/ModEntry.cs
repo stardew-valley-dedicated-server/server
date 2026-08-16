@@ -699,6 +699,27 @@ public class ModEntry : Mod
             _ => ExecuteOnGameThread(() => _actionsController!.GetFarmBuildings())
         );
 
+        // GET /actions/location_warps - List the current location's warps as this client
+        // resolves them (the values a walk would use)
+        _server.Get(
+            "actions/location_warps",
+            _ => ExecuteOnGameThread(() => _actionsController!.GetLocationWarps())
+        );
+
+        // POST /actions/walk_onto_tile - Walk onto a warp/door tile the way real movement
+        // does (async transition; caller polls /status to confirm arrival)
+        _server.Post(
+            "actions/walk_onto_tile",
+            req =>
+            {
+                var body =
+                    TestApiServer.ReadBody<WalkOntoTileParams>(req) ?? new WalkOntoTileParams();
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.WalkOntoTile(body.TileX, body.TileY, body.Direction)
+                );
+            }
+        );
+
         // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
         _server.Post(
             "actions/plant_crop",

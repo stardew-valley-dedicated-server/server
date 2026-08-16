@@ -289,6 +289,17 @@ public class ApiDefinitions
 
     [ApiEndpoint(
         "POST",
+        "/actions/walk_onto_tile",
+        Summary = "Walk onto a warp/door tile",
+        Description = "Step onto a warp (or press a building door) the way real movement does; omit the tile to auto-target the current location's first warp. Async transition — caller polls /status to confirm arrival.",
+        Tag = "Actions"
+    )]
+    [ApiRequestBody(typeof(WalkOntoTileParams))]
+    [ApiResponse(typeof(WalkOntoTileResult), 200)]
+    private void WalkOntoTile() { }
+
+    [ApiEndpoint(
+        "POST",
         "/actions/place_pot",
         Summary = "Place a Garden Pot",
         Description = "Place an IndoorPot at the given tile on the player's current location.",
