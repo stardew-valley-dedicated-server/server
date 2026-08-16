@@ -68,7 +68,7 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
         Assert.True(hasResponse, "Should see cancelled message");
 
         await Chat.AssertResponseAsync("!lobby list", "Lobby Layouts", "default");
-        var chatHistory = await GameClient.GetChatHistory(20);
+        var chatHistory = await GameClient.GetChatHistory();
 
         var layoutInList =
             chatHistory?.Messages.Any(m =>
@@ -261,7 +261,7 @@ public class LobbyCommandsEditingTests : LobbyCommandsTestBase
         var listResponse = await Chat.AssertResponseAsync("!lobby list", "Lobby Layouts", newName);
         Assert.True(listResponse, "New name should appear in list");
 
-        var chatHistory = await GameClient.GetChatHistory(20);
+        var chatHistory = await GameClient.GetChatHistory();
         var hasOldName =
             chatHistory?.Messages.Any(m =>
                 m.Message.Contains($"- {originalName}", StringComparison.OrdinalIgnoreCase)

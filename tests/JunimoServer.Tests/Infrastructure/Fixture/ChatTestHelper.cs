@@ -40,7 +40,7 @@ internal sealed class ChatTestHelper
             {
                 var cursor = prepareIteration is null ? seqBefore : await prepareIteration();
 
-                var chat = await _testBase.GameClient.GetChatHistory(20);
+                var chat = await _testBase.GameClient.GetChatHistory();
                 if (chat?.Messages == null)
                 {
                     return false;
@@ -62,7 +62,7 @@ internal sealed class ChatTestHelper
     /// </summary>
     public async Task SendAndWaitAsync(string command, params string[] expectedContains)
     {
-        var chatBefore = await _testBase.GameClient.GetChatHistory(20);
+        var chatBefore = await _testBase.GameClient.GetChatHistory();
         var seqBefore = chatBefore?.TotalReceived ?? 0;
         await _testBase.GameClient.SendChat(command);
         await PollForKeywordsAsync(seqBefore, expectedContains);
@@ -79,7 +79,7 @@ internal sealed class ChatTestHelper
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var chatBefore = await _testBase.GameClient.GetChatHistory(20);
+            var chatBefore = await _testBase.GameClient.GetChatHistory();
             var seqBefore = chatBefore?.TotalReceived ?? 0;
             await _testBase.GameClient.SendChat(command);
             var found = await PollForKeywordsAsync(
@@ -197,7 +197,7 @@ internal sealed class ChatTestHelper
     /// cursor — so a reply to this send reads as Seq &gt; cursor.</summary>
     private async Task<long> SendAndSnapshotCursorAsync(string command)
     {
-        var chatBefore = await _testBase.GameClient.GetChatHistory(20);
+        var chatBefore = await _testBase.GameClient.GetChatHistory();
         var cursor = chatBefore?.TotalReceived ?? 0;
         await _testBase.GameClient.SendChat(command);
         return cursor;

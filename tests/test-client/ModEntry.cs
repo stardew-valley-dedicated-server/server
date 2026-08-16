@@ -1490,15 +1490,6 @@ public class ModEntry : Mod
         // Clear the wedding render record for the new session (SaveLoaded, not DayStarted — see
         // ResetForNewSession for why the day-boundary reset would race the ceremonies).
         _weddingPlayer?.ResetForNewSession();
-
-        // Increase chat buffer size for testing (default is 10, which truncates long command outputs)
-        // !lobby help produces 15 messages; 20 gives headroom. Sequence-based deduplication
-        // makes buffer size less critical than before.
-        if (Game1.chatBox != null)
-        {
-            Game1.chatBox.maxMessages = 20;
-            Monitor.Log("Increased chat buffer to 20 messages for testing", LogLevel.Trace);
-        }
     }
 
     private void OnPlayerWarped(object? sender, StardewModdingAPI.Events.WarpedEventArgs e)

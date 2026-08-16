@@ -60,7 +60,7 @@ public class NoPasswordTests : TestBase
             WaitName.Polling_NoPassword_AuthMessageAppeared,
             async () =>
             {
-                var chat = await GameClient.GetChatHistory(20);
+                var chat = await GameClient.GetChatHistory();
                 return chat?.Messages?.Any(m =>
                         authKeywords.Any(k =>
                             m.Message.Contains(k, StringComparison.OrdinalIgnoreCase)
@@ -78,7 +78,7 @@ public class NoPasswordTests : TestBase
         );
 
         // Log what was received for diagnostics
-        var chatHistory = await GameClient.GetChatHistory(20);
+        var chatHistory = await GameClient.GetChatHistory();
         Assert.NotNull(chatHistory);
         Log($"Chat messages received: {chatHistory.Messages.Count}");
         foreach (var msg in chatHistory.Messages)
@@ -105,7 +105,7 @@ public class NoPasswordTests : TestBase
 
         // Player should be able to send regular chat messages.
         // Snapshot before sending so we only match the NEW message, not stale history.
-        var chatBefore = await GameClient.GetChatHistory(10);
+        var chatBefore = await GameClient.GetChatHistory();
         var countBefore =
             chatBefore?.Messages?.Count(m =>
                 m.Message.Contains("Hello world", StringComparison.OrdinalIgnoreCase)
@@ -120,7 +120,7 @@ public class NoPasswordTests : TestBase
             WaitName.Polling_NoPassword_HelloWorldAppeared,
             async () =>
             {
-                chatHistory = await GameClient.GetChatHistory(10);
+                chatHistory = await GameClient.GetChatHistory();
                 var countAfter =
                     chatHistory?.Messages?.Count(m =>
                         m.Message.Contains("Hello world", StringComparison.OrdinalIgnoreCase)
