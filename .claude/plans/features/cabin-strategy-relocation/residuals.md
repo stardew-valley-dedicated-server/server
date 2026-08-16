@@ -73,9 +73,15 @@ plan files at merge; carry over anything still open.
     (`ApiDefinitions.cs`). Matches the precedent of `farm_buildings`, which is also absent —
     the docs file is consistently incomplete rather than newly inconsistent.
 
-14. **The adversarial reviewer's "verified non-issues" list is unrecoverable in-session.** It
-    lives only in a pre-clear transcript message (user scrollback); it was never persisted to
-    a file.
+14. **RESOLVED — the adversarial reviewer's "verified non-issues" list, recovered from the
+    prior session's transcript.** Things the review explicitly checked and cleared:
+    - the crash-heal condition matrix is correct across reload/refusal permutations;
+    - `GetEffectiveStackSpot` mirrors `StackLocation.Create` faithfully;
+    - chat handlers run on the game thread;
+    - the `Vector2?`/enum SMAPI save-data round-trips follow the existing
+      `DefaultCabinLocation` pattern;
+    - relocation-on-by-default for upgrading FarmhouseStack servers is deliberate and
+      documented.
 
 15. **Everything is uncommitted.** The entire branch — feature work, 15 review fixes, and the
     warp-delta fix — is working-tree state pending review. One accidental `git checkout .`
