@@ -27,7 +27,7 @@ The catalog content:
   for names only (SMAPI exposes no arg grammar for them). Failure ⇒ our commands still complete
   fully.
 
-```
+```text
 Our commands: each Register() declares a CommandDescriptor (name, subcommands, flags) ONCE
         +
 SMAPI CommandManager.GetAll()  (reflection, best-effort: names of built-ins + other mods)
@@ -53,7 +53,7 @@ shell is `bash --rcfile <loop> -i` so completion specs in a sourced script apply
 
 No `jq` in the images, and we control both writer and reader, so use a trivial line format bash
 parses with `case`/`grep`:
-```
+```text
 # <command>\t<source>            (source: "ours" | "smapi" | mod display name)
 # <command> <sub>\t<flag> <flag> (one line per subcommand of our commands)
 settings	ours
