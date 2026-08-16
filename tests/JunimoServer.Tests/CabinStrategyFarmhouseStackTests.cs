@@ -202,13 +202,23 @@ public class CabinStrategyFarmhouseStackTests : TestBase
             "the new farmhand should spawn inside their cabin interior (FarmHouse{guid})"
         );
 
+        // The authoritative main-farmhouse door tile the stacked exit must repoint to
+        // (Game1.getFarm().GetMainFarmHouseEntry()), sourced from the server so the gate asserts
+        // the exact tile — layout-agnostic — rather than merely "any on-map target".
+        var cabinsBefore = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabinsBefore?.MainFarmHouseEntry);
+        var expectedFarmhouseDoor = (
+            X: cabinsBefore!.MainFarmHouseEntry!.X,
+            Y: cabinsBefore.MainFarmHouseEntry.Y
+        );
+
         // Step 1 — walk out through the (stacked) cabin's exit: the warp must target the
         // main farmhouse's front door on the Farm. The repoint reaches the client as a
         // replication delta (the client re-derives interior warps locally from the hidden
         // building position while deserializing the introduction, clobbering the
         // introduction's own targets), and a delta's value stays invisible for the netcode
-        // interpolation window (15 client ticks — 3s at CLIENT_TPS=5). Wait for the
-        // client's own copy to converge on an on-map target before walking; the
+        // interpolation window (15 client ticks — 3s at CLIENT_TPS=5). Wait for the client's
+        // own copy to converge on the EXACT farmhouse-door tile before walking; the
         // hidden-stack-derived target is negative.
         var farmhouseDoorOnClient = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinExitWarp_FarmhouseDoorOnClient,
@@ -216,16 +226,19 @@ public class CabinStrategyFarmhouseStackTests : TestBase
             {
                 var warps = await GameClient.Actions.GetLocationWarps(ct);
                 var exit = warps?.Warps.FirstOrDefault(w => w.TargetName == "Farm");
-                return exit is { TargetX: >= 0, TargetY: >= 0 };
+                return exit != null
+                    && exit.TargetX == expectedFarmhouseDoor.X
+                    && exit.TargetY == expectedFarmhouseDoor.Y;
             },
             TestTimings.NetworkSyncTimeout,
             cancellationToken: ct
         );
         Assert.True(
             farmhouseDoorOnClient,
-            "the stacked cabin's exit warp should converge to an on-map target (the "
-                + "farmhouse door) on the client — a negative target means the client is "
-                + "still on its locally re-derived hidden-stack warp"
+            "the stacked cabin's exit warp should converge to the main farmhouse door "
+                + $"({expectedFarmhouseDoor.X},{expectedFarmhouseDoor.Y}) on the client — a negative "
+                + "or mismatched target means the client is still on its locally re-derived "
+                + "hidden-stack warp, or the repoint targeted the wrong tile"
         );
 
         var stepOut = await GameClient.Actions.WalkOntoTile();
@@ -234,6 +247,7 @@ public class CabinStrategyFarmhouseStackTests : TestBase
         Assert.Equal("Farm", stepOut.TargetLocation);
         Assert.NotNull(await GameClient.WaitForLocationAsync("^Farm$", ct: ct));
         var farmhouseDoor = (X: stepOut.TargetX!.Value, Y: stepOut.TargetY!.Value);
+        Assert.Equal(expectedFarmhouseDoor, farmhouseDoor);
         Log($"Stacked exit lands at farmhouse door ({farmhouseDoor.X},{farmhouseDoor.Y})");
 
         // Step 2 — move the cabin out via !cabin at the standard cleared footprint.
@@ -313,6 +327,217 @@ public class CabinStrategyFarmhouseStackTests : TestBase
         var removed = await ServerApi.WaitForPlayerRemovedByIdAsync(ownerId, ct: ct);
         Assert.True(removed, "the player should be removed server-side before the class reset");
         await Exceptions.AssertNoExceptionsAsync("after FarmhouseStack exit-warp repoint walks");
+    }
+
+    /// <summary>
+    /// A corrupt one-way farmhand↔cabin link — the cabin's farmhandReference nulled while the
+    /// farmhand's homeLocation still names it, the exact shape vanilla's join gate approves without
+    /// repairing (NetWorldState.TryAssignFarmhandHome's homeLocation-resolves-to-Cabin early
+    /// return) — is healed on rejoin: the join-time repair re-binds the cabin to its rightful
+    /// owner, so the player rejoins with their cabin intact instead of hidden. Pre-fix the
+    /// FarmhouseStack branch only logged a warning and the player joined cabin-hidden.
+    /// </summary>
+    [Fact]
+    public async Task FarmhouseStack_OneWayCabinLink_RepairedOnRejoin()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "FarmhouseStack");
+
+        var clientA = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = clientA.JoinResult.UniqueMultiplayerId;
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        Assert.Equal(ownerId, (await GetOurCabinAsync(ownerId, ct)).OwnerId);
+
+        // Disconnect (stable persisted snapshot), then null the cabin→farmhand back-link on the
+        // now-offline slot so the one-way corruption survives to the next join.
+        await Farmers.DisconnectAndWaitForPersistenceAsync(clientA.FarmerName, ct);
+        var broke = await ServerApi.BreakCabinLink(ownerId, ct: ct);
+        Assert.True(broke?.Success, $"break_cabin_link should succeed: {broke?.Error}");
+
+        // The break landed: no cabin resolves to A (its interior owner is now null).
+        var broken = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Broken,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(ct);
+                return snapshot != null && snapshot.Cabins.All(c => c.OwnerId != ownerId);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(broken, "the cabin should resolve to no owner after its back-link is nulled");
+
+        // Rejoin: OnLocationIntroductionMessage's repair re-binds the cabin to A.
+        await Farmers.ReconnectAsync(clientA.FarmerName, ct: ct);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+
+        var healed = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Repaired,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(ct);
+                return snapshot?.Cabins.Any(c => c.OwnerId == ownerId) == true;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            healed,
+            $"the one-way cabin link should be repaired on rejoin — a cabin owned by {ownerId} must "
+                + "resolve again (pre-fix the back-link stayed null and the player joined cabin-hidden)"
+        );
+
+        await DisconnectAsync();
+        var removed = await ServerApi.WaitForPlayerRemovedByIdAsync(ownerId, ct: ct);
+        Assert.True(removed, "the player should be removed server-side before the class reset");
+        await Exceptions.AssertNoExceptionsAsync("after FarmhouseStack one-way cabin-link repair");
+    }
+
+    /// <summary>
+    /// The join-time repair must never STEAL a cabin owned by another farmhand. With a farmhand's
+    /// home (corruptly) pointed at another player's cabin and its own back-link nulled, the repair
+    /// declines — the other player's cabin ownership is left untouched — and the joiner simply
+    /// joins with its cabin hidden.
+    /// </summary>
+    [Fact]
+    public async Task FarmhouseStack_HomeOwnedByAnotherFarmhand_RepairDeclines()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "FarmhouseStack");
+
+        var clientA = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+
+        await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            farmerB.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+        var ownerIdB = farmerB.Uid;
+
+        // A offline (B stays connected), then corruptly point A's home at B's cabin and null A's
+        // own back-link — the unrecoverable "home owned by another farmhand" shape.
+        await Farmers.DisconnectAndWaitForPersistenceAsync(clientA.FarmerName, ct);
+        var broke = await ServerApi.BreakCabinLink(
+            ownerIdA,
+            redirectHomeToOwnerId: ownerIdB,
+            ct: ct
+        );
+        Assert.True(broke?.Success, $"break_cabin_link should succeed: {broke?.Error}");
+        Assert.True(broke!.Redirected, "the break should have repointed A's home at B's cabin");
+
+        // A rejoins: the repair sees A's home cabin owned by B and declines.
+        await Farmers.ReconnectAsync(clientA.FarmerName, ct: ct);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+
+        // B's cabin ownership is untouched — the repair did not steal it.
+        var cabins = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabins);
+        Assert.Contains(cabins!.Cabins, c => c.OwnerId == ownerIdB);
+
+        await farmerB.DisconnectAsync();
+        await DisconnectAsync();
+        var removed = await ServerApi.WaitForPlayersRemovedByIdAsync(
+            new[] { ownerIdA, ownerIdB },
+            ct: ct
+        );
+        Assert.True(removed, "both players should be removed server-side before the class reset");
+        await Exceptions.AssertNoExceptionsAsync("after FarmhouseStack repair-declines");
+    }
+
+    /// <summary>
+    /// Item-3 coverage: a FarmhouseStack player disconnects and reconnects, then walks out their
+    /// cabin door — the exit warp must still repoint to the farmhouse door even though the rejoin
+    /// re-sends the SAME warp target (an equal-value NetInt write emits no delta; the SetWarpsToFarm
+    /// force-bounce is what makes the client converge anyway).
+    /// </summary>
+    [Fact]
+    public async Task FarmhouseStack_ExitWarp_RepointsAfterRejoin()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "FarmhouseStack");
+
+        var clientA = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = clientA.JoinResult.UniqueMultiplayerId;
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+
+        var cabins = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabins?.MainFarmHouseEntry);
+        var entry = (X: cabins!.MainFarmHouseEntry!.X, Y: cabins.MainFarmHouseEntry.Y);
+
+        await Farmers.DisconnectAndWaitForPersistenceAsync(clientA.FarmerName, ct);
+        await Farmers.ReconnectAsync(clientA.FarmerName, ct: ct);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            clientA.FarmerName,
+            requireCustomized: true,
+            ct: ct
+        );
+
+        // Ensure the client is inside its own cabin: if the rejoin landed it on the Farm, press the
+        // main farmhouse door and let the monitor port it home.
+        var here = await GameClient.Actions.GetLocationWarps(ct);
+        if (
+            here?.LocationName == null
+            || !here.LocationName.StartsWith("FarmHouse", StringComparison.Ordinal)
+        )
+        {
+            var enter = await GameClient.Actions.WalkOntoTile(entry.X, entry.Y - 1, direction: 0);
+            Assert.True(enter?.Success == true, $"farmhouse-door entry failed: {enter?.Error}");
+        }
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^FarmHouse.+", ct: ct));
+
+        // The rejoin's exit-warp repoint rides the SetWarpsToFarm force-delta; wait for the client's
+        // own copy to converge on the exact farmhouse-door tile.
+        var converged = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinExitWarp_FarmhouseDoorOnClient,
+            async () =>
+            {
+                var warps = await GameClient.Actions.GetLocationWarps(ct);
+                var exit = warps?.Warps.FirstOrDefault(w => w.TargetName == "Farm");
+                return exit != null && exit.TargetX == entry.X && exit.TargetY == entry.Y;
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            converged,
+            $"after rejoin the cabin exit warp should converge to the farmhouse door ({entry.X},"
+                + $"{entry.Y}) — the force-delta must fire despite the equal-value rewrite"
+        );
+
+        var stepOut = await GameClient.Actions.WalkOntoTile();
+        Assert.True(stepOut?.Success == true, $"step-out after rejoin failed: {stepOut?.Error}");
+        Assert.Equal("warp", stepOut!.Via);
+        Assert.Equal("Farm", stepOut.TargetLocation);
+        Assert.Equal(entry, (X: stepOut.TargetX!.Value, Y: stepOut.TargetY!.Value));
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^Farm$", ct: ct));
+
+        await DisconnectAsync();
+        var removed = await ServerApi.WaitForPlayerRemovedByIdAsync(ownerId, ct: ct);
+        Assert.True(removed, "the player should be removed server-side before the class reset");
+        await Exceptions.AssertNoExceptionsAsync("after FarmhouseStack exit-warp rejoin");
     }
 
     #region Helpers

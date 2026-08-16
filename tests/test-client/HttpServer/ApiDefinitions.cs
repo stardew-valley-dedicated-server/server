@@ -156,6 +156,17 @@ public class ApiDefinitions
     private void JoinLan() { }
 
     [ApiEndpoint(
+        "POST",
+        "/connect/lan",
+        Summary = "Direct LAN connect",
+        Description = "Connect directly to a LAN/IP address without menu navigation",
+        Tag = "Co-op"
+    )]
+    [ApiRequestBody(typeof(JoinLanRequest))]
+    [ApiResponse(typeof(JoinResult), 200)]
+    private void ConnectLan() { }
+
+    [ApiEndpoint(
         "GET",
         "/farmhands",
         Summary = "Get farmhand slots",
@@ -200,6 +211,16 @@ public class ApiDefinitions
     )]
     [ApiResponse(typeof(JoinResult), 200)]
     private void ConfirmCharacter() { }
+
+    [ApiEndpoint(
+        "GET",
+        "/character",
+        Summary = "Get character info",
+        Description = "Returns the current character customization state (name, favorite thing, menu presence)",
+        Tag = "Character"
+    )]
+    [ApiResponse(typeof(CharacterInfo), 200)]
+    private void GetCharacter() { }
 
     // ============================================================
     // Chat Endpoints
@@ -331,6 +352,26 @@ public class ApiDefinitions
     [ApiResponse(typeof(PlantCropResult), 200)]
     private void PlantCrop() { }
 
+    [ApiEndpoint(
+        "GET",
+        "/actions/farm_buildings",
+        Summary = "List the client's farm cabins",
+        Description = "Returns this client's own view of the farm's cabins (name, tile, whether the door is live).",
+        Tag = "Actions"
+    )]
+    [ApiResponse(typeof(FarmBuildingsResult), 200)]
+    private void GetFarmBuildings() { }
+
+    [ApiEndpoint(
+        "GET",
+        "/actions/location_warps",
+        Summary = "List the current location's warps",
+        Description = "Returns the current location's warps as this client resolves them (the values a walk would use).",
+        Tag = "Actions"
+    )]
+    [ApiResponse(typeof(LocationWarpsResult), 200)]
+    private void GetLocationWarps() { }
+
     // ============================================================
     // Wait Endpoints
     // ============================================================
@@ -443,7 +484,7 @@ public class ApiDefinitions
 
     [ApiEndpoint(
         "GET",
-        "/wait/character-customization",
+        "/wait/character",
         Summary = "Wait for character customization",
         Description = "Block until the character customization screen appears",
         Tag = "Wait"

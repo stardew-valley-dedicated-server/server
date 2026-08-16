@@ -827,6 +827,29 @@ public class TestPrecustomizeFarmhandResponse
 }
 
 /// <summary>
+/// Response from /test/break_cabin_link POST endpoint (test-only). Mirrors the server-side
+/// TestBreakCabinLinkResponse DTO. Nulls a cabin's farmhandReference to manufacture the one-way
+/// farmhand↔cabin link the join-time repair heals (or declines, with a home redirect).
+/// </summary>
+public class TestBreakCabinLinkResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("brokenCabinName")]
+    public string BrokenCabinName { get; set; } = "";
+
+    [JsonPropertyName("homeLocation")]
+    public string HomeLocation { get; set; } = "";
+
+    [JsonPropertyName("redirected")]
+    public bool Redirected { get; set; }
+}
+
+/// <summary>
 /// Response from /test/stamp_lobby_home POST endpoint (test-only). Mirrors the server-side
 /// TestStampLobbyHomeResponse DTO. Reproduces the lobby-homed-spouse poisoned-save shape: a
 /// farmhand married (synthesized) to an NPC with both their home fields pointing at the shared
@@ -1319,6 +1342,23 @@ public class CabinsResponse
     /// </summary>
     [JsonPropertyName("stackSpot")]
     public StackSpotInfoResponse? StackSpot { get; set; }
+
+    /// <summary>
+    /// The main farmhouse's front-door entry tile; null when no game is loaded. Under
+    /// FarmhouseStack a stacked cabin's exit warp lands here.
+    /// </summary>
+    [JsonPropertyName("mainFarmHouseEntry")]
+    public TilePointResponse? MainFarmHouseEntry { get; set; }
+}
+
+/// <summary>A tile coordinate on <see cref="CabinsResponse"/>.</summary>
+public class TilePointResponse
+{
+    [JsonPropertyName("x")]
+    public int X { get; set; }
+
+    [JsonPropertyName("y")]
+    public int Y { get; set; }
 }
 
 /// <summary>
@@ -2258,6 +2298,34 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestPrecustomizeFarmhandResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: manufacture a one-way farmhand↔cabin link by nulling a cabin's farmhandReference
+    /// (the cabin→farmhand direction) while leaving the farmhand's homeLocation naming a Cabin. Used
+    /// to verify the join-time link repair on rejoin. With <paramref name="redirectHomeToOwnerId"/>
+    /// set, the farmhand's home is repointed at that other owner's cabin, producing the unrecoverable
+    /// shape (home owned by someone else) the repair must decline rather than steal.
+    /// POST /test/break_cabin_link
+    /// </summary>
+    public async Task<TestBreakCabinLinkResponse?> BreakCabinLink(
+        long ownerId,
+        long? redirectHomeToOwnerId = null,
+        CancellationToken ct = default
+    )
+    {
+        var query = $"?ownerId={ownerId}";
+        if (redirectHomeToOwnerId.HasValue)
+        {
+            query += $"&redirectHomeToOwner={redirectHomeToOwnerId.Value}";
+        }
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/break_cabin_link{query}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestBreakCabinLinkResponse>(ct);
     }
 
     /// <summary>
