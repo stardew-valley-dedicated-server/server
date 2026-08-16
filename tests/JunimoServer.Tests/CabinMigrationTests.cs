@@ -286,6 +286,163 @@ public class CabinMigrationTests : TestBase
     }
 
     /// <summary>
+    /// Item-6 live convergence: a CabinStack → None commit heals a CONNECTED peer's door-dead dummy
+    /// interior in place (via NetRef MarkReassigned), so the peer sees the migrated world without a
+    /// reconnect. The primary moves its cabin out and reconnects so its client renders a door-dead
+    /// dummy at the shared stack (HasInterior == false); after the → None commit — while it stays
+    /// connected — every cabin in its own farm view becomes enterable (HasInterior == true).
+    /// </summary>
+    [Fact]
+    public async Task StagedMigration_StackedToNone_HealsConnectedPeerDummyInteriorLive()
+    {
+        LogSection(
+            "Staged CabinStack → None migration: connected peer's dummy interior heals live"
+        );
+
+        var ct = TestCt;
+        _needsServerReset = true;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var primary = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = primary.JoinResult.UniqueMultiplayerId;
+
+        // Pre-clear the manual-placement footprints (validator-gated placement needs debris-free
+        // tiles; a new farm's debris is seed-random).
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, 40, 18, ct);
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, 40, 30, ct);
+
+        // Move the cabin out of the stack at the standard footprint, then reconnect so the client
+        // receives a fresh Farm introduction carrying the door-dead dummy at the shared stack.
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
+        CabinInfoResponse? movedCabin = null;
+        var moved = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinStrategy_OurCabinAssigned,
+            async () =>
+            {
+                await GameClient.SendChat("!cabin");
+                movedCabin = await GetCabinByOwnerAsync(ownerId, ct);
+                return !movedCabin.IsHidden;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(moved, "the primary's cabin should move out of the stack via !cabin");
+        var movedTile = (movedCabin!.TileX, movedCabin.TileY);
+
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, primary.FarmerName, ct);
+        await Farmers.ReconnectAsync(primary.FarmerName, ct: ct);
+
+        // Pre-condition: the client renders a door-dead dummy (HasInterior == false) alongside its
+        // own enterable moved cabin — the nulled interior the commit must heal.
+        var sawDummy = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_DummyCabin_VisibleInClientFarm,
+            async () =>
+            {
+                var view = await GameClient.Actions.GetFarmBuildings(ct);
+                if (view?.Success != true)
+                {
+                    return false;
+                }
+                var visible = view.Cabins.Where(c => c.TileX >= 0).ToList();
+                return visible.Any(c => !c.HasInterior)
+                    && visible.Any(c => (c.TileX, c.TileY) == movedTile && c.HasInterior);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            sawDummy,
+            "the client should render a door-dead dummy before the migration commit"
+        );
+
+        // Stage and complete the CabinStack → None migration (the peer stays connected throughout).
+        var start = await ServerApi.RunConsoleCommand(
+            "cabins",
+            new[] { "migrate", "start", "None" },
+            ct
+        );
+        Assert.True(start?.Success == true, $"cabins migrate start failed: {start?.Error}");
+        await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinMigration_Staged,
+            async () => (await ServerApi.GetCabins(ct))?.Migration != null,
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+
+        var allPlaced = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinMigration_PlacedAll,
+            async () =>
+            {
+                var cabins = await ServerApi.GetCabins(ct);
+                if (cabins?.Migration == null)
+                {
+                    return false;
+                }
+                if (cabins.Migration.RemainingCount == 0)
+                {
+                    return true;
+                }
+                await ServerApi.RunConsoleCommand(
+                    "cabins",
+                    new[] { "migrate", "place", "41", "18" },
+                    ct
+                );
+                await ServerApi.RunConsoleCommand(
+                    "cabins",
+                    new[] { "migrate", "place", "41", "30" },
+                    ct
+                );
+                return false;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(allPlaced, "all staged placements should complete (RemainingCount == 0)");
+
+        // Commit WITH the peer connected — the heal fires (OnlineFarmers.CountOthers() > 0).
+        var commit = await ServerApi.RunConsoleCommand("cabins", new[] { "migrate", "commit" }, ct);
+        Assert.True(commit?.Success == true, $"cabins migrate commit failed: {commit?.Error}");
+        await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinMigration_Committed,
+            async () =>
+            {
+                var cabins = await ServerApi.GetCabins(ct);
+                return cabins?.Strategy == "None" && cabins.Migration == null;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+
+        // The live heal: without any reconnect, every cabin in the peer's own farm view is now
+        // enterable — the door-dead dummy's interior was resent via indoors.MarkReassigned().
+        var healed = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinDummyInterior_HealedLive,
+            async () =>
+            {
+                var view = await GameClient.Actions.GetFarmBuildings(ct);
+                if (view?.Success != true)
+                {
+                    return false;
+                }
+                var visible = view.Cabins.Where(c => c.TileX >= 0).ToList();
+                return visible.Count > 1 && visible.All(c => c.HasInterior);
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            healed,
+            "after the → None commit the connected peer's door-dead dummy interior should heal live "
+                + "(all cabins in its farm view enterable) without a reconnect"
+        );
+
+        await DisconnectAsync();
+        var removed = await ServerApi.WaitForPlayerRemovedByIdAsync(ownerId, ct: ct);
+        Assert.True(removed, "the player should be removed server-side before the class reset");
+        await Exceptions.AssertNoExceptionsAsync("after CabinStack → None live interior heal");
+    }
+
+    /// <summary>
     /// Shared layout assertions for the committed stacked→None world: strategy None, no
     /// staging record, exactly 3 cabins (primary's + the joiner's + the rebuilt spare),
     /// all visible, with the obstructing cabin still on its designated spot.

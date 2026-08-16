@@ -499,6 +499,26 @@ public partial class CabinManagerService
                 building.SetWarpsToFarmCabinDoor();
             }
 
+            // Live-heal connected peers who were shown a door-dead dummy under the old CabinStack
+            // strategy (its indoors nulled locally in their intro-message copy). A plain MarkDirty
+            // yields only a child delta a null-target peer ignores; MarkReassigned() forces a full
+            // NetRef resend so the interior reappears without a reconnect (position already
+            // converged via the staging SetPosition deltas). Skip any cabin a farmer is currently
+            // inside — a full-object resend replaces the location root out from under a peer
+            // standing in it (readActiveLocation fixes currentLocation only when it IS the replaced
+            // root). Dummies are never occupied (their door is dead), so they always heal; real
+            // occupied cabins already hold the correct interior and are safely skipped.
+            if (OnlineFarmers.CountOthers() > 0)
+            {
+                foreach (var building in visibleCabins)
+                {
+                    if (building.GetIndoors<Cabin>()?.farmers.Any() == false)
+                    {
+                        building.indoors.MarkReassigned();
+                    }
+                }
+            }
+
             placedCount = migration.PlacedCabinIndoorNames.Count;
             message =
                 $"Migration committed: strategy is now None with {visibleCabins.Count} cabin(s) "
@@ -521,15 +541,16 @@ public partial class CabinManagerService
                 + $"({spot.X},{spot.Y}).";
         }
 
-        // Reconnect note: per-peer presentation (the CabinStack ghost's position, the
-        // door-dead dummy's nulled interior) lives only in each peer's intro-message copy,
-        // and Netcode cannot heal it live — a NetRef delta resends the full object only on
-        // a real reassignment (NetRefBase.WriteDelta, RefDeltaType.Reassigned; MarkDirty
-        // alone yields child deltas), and re-sending the farm's location introduction
-        // (message 3) replaces the root out from under a peer standing inside one of its
-        // structure interiors (readActiveLocation fixes up currentLocation only when it IS
-        // the replaced root). The rejoin's fresh intro is the supported convergence point.
-        if (OnlineFarmers.CountOthers() > 0)
+        // Reconnect note — CabinStack only. The →CabinStack ghost's position is a pure per-peer
+        // intro fiction: the master building stays hidden at (-20,-20) and no net field holds the
+        // stack-spot coordinate, so no field push can heal it — MarkDirty(tileX/tileY) would
+        // replicate (-20,-20), moving the cabin OFF the spot, and re-sending the whole location
+        // introduction (message 3) replaces the root out from under a peer standing inside a
+        // structure interior (readActiveLocation fixes currentLocation only when it IS the replaced
+        // root). The rejoin's fresh intro is the supported convergence point. (The →None commit
+        // heals its interior half live above and its positions converge via the staging deltas, so
+        // it needs no note.)
+        if (migration.ToStrategy == CabinStrategy.CabinStack && OnlineFarmers.CountOthers() > 0)
         {
             message +=
                 " Connected players keep seeing the pre-migration cabin layout until they "

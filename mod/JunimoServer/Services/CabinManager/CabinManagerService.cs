@@ -988,7 +988,7 @@ public partial class CabinManagerService : ModService
             // farmhouse building, we adjust its warps while leaving all cabins in
             // `HiddenCabinLocation`.
             farm = Game1.getFarm();
-            var fhCabin = farm.GetCabin(context.PeerId);
+            var fhCabin = ResolveCabinRepairingLink(farm, context.PeerId, "FarmhouseStack");
             if (fhCabin != null)
             {
                 // A cabin its owner moved out via !cabin exits at its own door; everyone
@@ -1004,13 +1004,8 @@ public partial class CabinManagerService : ModService
                     fhCabin.SetWarpsToFarmFarmhouseDoor();
                 }
             }
-            else
-            {
-                Monitor.Log(
-                    $"FarmhouseStack: cabin not found for peer {context.PeerId} during location introduction (cabin ownership may not be linked yet)",
-                    LogLevel.Warn
-                );
-            }
+            // A null return is an unrecoverable one-way link that ResolveCabinRepairingLink
+            // already logged; the player joins with the cabin hidden.
         }
         else
         {
@@ -1019,7 +1014,7 @@ public partial class CabinManagerService : ModService
             // Only relocate cabins that are in the hidden stack. Cabins at real
             // positions (e.g. from imported saves with KeepExisting) stay put.
             farm = netRootFarm;
-            var cabin = farm.GetCabin(context.PeerId);
+            var cabin = ResolveCabinRepairingLink(farm, context.PeerId, "CabinStack");
             if (cabin != null && cabin.IsInHiddenStack())
             {
                 cabin.Relocate(StackLocation.Create(_cabinManagerData).ToPoint());
@@ -1085,6 +1080,98 @@ public partial class CabinManagerService : ModService
         // No need to set interior warps — there is no interior to warp into anymore.
         dummy.indoors.Value = null;
         dummy.nonInstancedIndoorsName.Value = null;
+    }
+
+    /// <summary>
+    /// Resolves the joining peer's cabin building for the location-introduction warp rewrite,
+    /// healing a corrupt one-way farmhand↔cabin link when it can be done safely.
+    ///
+    /// The vanilla join gate (GameServer.checkFarmhandRequest → NetWorldState.TryAssignFarmhandHome)
+    /// approves a farmhand the moment its homeLocation resolves to SOME Cabin, WITHOUT verifying
+    /// that cabin's farmhandReference points back at it (decompiled NetWorldState.cs:783). So the
+    /// only reachable state in which GetCabin(peerId) returns null here is a one-way link:
+    /// farmhand→cabin (homeLocation) intact, cabin→farmhand (farmhandReference) stale or null. Re-
+    /// establish the back-link on the farmhand's OWN home cabin — guarded so we never take a cabin
+    /// another farmhand owns, and by a direct farmhandReference write, never Cabin.AssignFarmhand
+    /// (which DeleteFarmhand()s a displaced uncustomized farmhand; cabin-system invariant 10).
+    ///
+    /// The passed <paramref name="farm"/> differs by strategy: FarmhouseStack passes master
+    /// (Game1.getFarm()), so the master repair both heals durably and resolves this call; CabinStack
+    /// passes the per-peer netRootFarm copy (a fresh graph from NetRoot.Connect) that the master
+    /// repair cannot reach, so the copy is repaired too for a seamless current join. Returns the
+    /// resolved cabin building, or null when the link is genuinely unrecoverable (having logged).
+    /// </summary>
+    private Building ResolveCabinRepairingLink(GameLocation farm, long peerId, string strategyLabel)
+    {
+        var cabin = farm.GetCabin(peerId);
+        if (cabin != null)
+        {
+            return cabin; // Healthy back-link — the no-op fast path on every normal join.
+        }
+
+        var farmhand = Game1.GetPlayer(peerId);
+        var homeName = farmhand?.homeLocation.Value;
+        if (string.IsNullOrEmpty(homeName))
+        {
+            LogUnrecoverableCabinLink(strategyLabel, peerId);
+            return null;
+        }
+
+        // Durable heal on master: re-point the home cabin's farmhandReference at its rightful owner.
+        // This fixes every future join even when the current call resolves against a per-peer copy.
+        if (
+            Game1.getLocationFromName(homeName) is Cabin masterHome
+            && CanRepairOwner(masterHome, peerId)
+        )
+        {
+            masterHome.farmhandReference.Value = farmhand;
+        }
+
+        cabin = farm.GetCabin(peerId);
+        if (cabin != null)
+        {
+            return cabin; // FarmhouseStack (farm == master) now resolves.
+        }
+
+        // CabinStack: farm is the per-peer message copy the master repair didn't touch. Locate the
+        // copy's cabin by interior name (stable guid across master and copy) and heal it in place so
+        // this join is also seamless.
+        var copyCabin = farm.GetBuilding(b =>
+            b.isCabin && b.GetIndoors<Cabin>()?.NameOrUniqueName == homeName
+        );
+        if (copyCabin?.GetIndoors<Cabin>() is Cabin copyHome && CanRepairOwner(copyHome, peerId))
+        {
+            copyHome.farmhandReference.Value = farmhand;
+            cabin = farm.GetCabin(peerId);
+            if (cabin != null)
+            {
+                return cabin;
+            }
+        }
+
+        LogUnrecoverableCabinLink(strategyLabel, peerId);
+        return null;
+    }
+
+    /// <summary>
+    /// A cabin may be (re)bound to <paramref name="peerId"/> only if it is currently unowned or
+    /// already owned by that same farmhand — never steal a cabin another farmhand holds (that is a
+    /// genuine two-claimant corruption the join must surface, not paper over).
+    /// </summary>
+    private static bool CanRepairOwner(Cabin cabin, long peerId)
+    {
+        var owner = cabin.owner;
+        return owner == null || owner.UniqueMultiplayerID == peerId;
+    }
+
+    private void LogUnrecoverableCabinLink(string strategyLabel, long peerId)
+    {
+        Monitor.Log(
+            $"{strategyLabel}: farmhand {peerId} has a one-way cabin link that cannot be safely "
+                + "repaired (home cabin missing or owned by another farmhand) — joining with cabin "
+                + "hidden; save data may be inconsistent",
+            LogLevel.Warn
+        );
     }
 
     #endregion

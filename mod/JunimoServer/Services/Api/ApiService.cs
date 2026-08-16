@@ -652,6 +652,24 @@ public class CabinsResponse
     /// or null when the active strategy is not CabinStack.
     /// </summary>
     public StackSpotInfo? StackSpot { get; set; }
+
+    /// <summary>
+    /// The main farmhouse's front-door entry tile (<c>Game1.getFarm().GetMainFarmHouseEntry()</c>);
+    /// null when no game is loaded. Under FarmhouseStack a stacked cabin's exit warp lands here, so
+    /// tests can assert the exit-warp repoint against the authoritative tile, not just any on-map
+    /// target.
+    /// </summary>
+    public TilePoint? MainFarmHouseEntry { get; set; }
+}
+
+/// <summary>A tile coordinate on <see cref="CabinsResponse"/>.</summary>
+public class TilePoint
+{
+    /// <summary>Tile X.</summary>
+    public int X { get; set; }
+
+    /// <summary>Tile Y.</summary>
+    public int Y { get; set; }
 }
 
 /// <summary>
@@ -1029,6 +1047,7 @@ public partial class ApiService : ModService
         public List<CabinInfo> Cabins = new();
         public CabinMigrationInfo? CabinMigration;
         public StackSpotInfo? CabinStackSpot;
+        public TilePoint? CabinMainFarmHouseEntry;
 
         // /auth
         public int AuthenticatedCount;
@@ -1873,6 +1892,11 @@ public partial class ApiService : ModService
             snap.CabinTotalCount = snap.Cabins.Count;
             snap.CabinAssignedCount = snap.Cabins.Count(c => c.IsAssigned);
             snap.CabinAvailableCount = snap.CabinTotalCount - snap.CabinAssignedCount;
+
+            // Authoritative main-farmhouse door tile — the target a stacked FarmhouseStack cabin's
+            // exit warp is repointed to. E2E asserts the repoint against this exact tile.
+            var entry = farm.GetMainFarmHouseEntry();
+            snap.CabinMainFarmHouseEntry = new TilePoint { X = entry.X, Y = entry.Y };
 
             // CabinStack shared stack spot (null under other strategies). E2E surface for
             // the 'cabins stackspot' / '!stackspot' commands.
@@ -4262,6 +4286,7 @@ public partial class ApiService : ModService
             SavedPositionPlayerIds = _cabinManager.Data.PlayerCabinPositions.Keys.ToList(),
             Migration = snap.CabinMigration,
             StackSpot = snap.CabinStackSpot,
+            MainFarmHouseEntry = snap.CabinMainFarmHouseEntry,
         };
     }
 

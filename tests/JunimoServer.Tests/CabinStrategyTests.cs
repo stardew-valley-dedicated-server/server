@@ -337,5 +337,68 @@ public class CabinStrategyTests : TestBase
         );
     }
 
+    /// <summary>
+    /// Item-1 coverage: under CabinStack a corrupt one-way farmhand↔cabin link (the cabin's
+    /// farmhandReference nulled while homeLocation still names it) is healed on rejoin by the
+    /// join-time repair. Pre-fix the CabinStack branch of OnLocationIntroductionMessage silently
+    /// did nothing when GetCabin returned null, so the player rejoined with their cabin hidden.
+    /// </summary>
+    [Fact]
+    public async Task CabinStack_OneWayCabinLink_RepairedOnRejoin()
+    {
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await ServerApi.WaitForFarmhandByNameAsync(
+            client.FarmerName,
+            requireCustomized: true,
+            ct: TestCt
+        );
+
+        // Disconnect and free the slot, then null the cabin→farmhand back-link on the offline slot
+        // so the one-way corruption survives to the next join.
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, TestCt);
+        var broke = await ServerApi.BreakCabinLink(ownerId, ct: TestCt);
+        Assert.True(broke?.Success, $"break_cabin_link should succeed: {broke?.Error}");
+
+        var broken = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Broken,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(TestCt);
+                return snapshot != null && snapshot.Cabins.All(c => c.OwnerId != ownerId);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(broken, "the cabin should resolve to no owner after its back-link is nulled");
+
+        // Rejoin: the CabinStack branch now routes through the shared repair helper and re-binds
+        // the cabin instead of silently doing nothing.
+        await Farmers.ReconnectAsync(client.FarmerName, ct: TestCt);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            client.FarmerName,
+            requireCustomized: true,
+            ct: TestCt
+        );
+
+        var healed = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Repaired,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(TestCt);
+                return snapshot?.Cabins.Any(c => c.OwnerId == ownerId) == true;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            healed,
+            $"the one-way cabin link should be repaired on rejoin under CabinStack — a cabin owned "
+                + $"by {ownerId} must resolve again (pre-fix the branch silently did nothing)"
+        );
+
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, TestCt);
+    }
+
     #endregion
 }

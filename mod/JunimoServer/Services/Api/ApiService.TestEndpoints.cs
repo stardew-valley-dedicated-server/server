@@ -119,6 +119,12 @@ public partial class ApiService
                             await HandlePostTestStampClaimAsync(request)
                         );
                         return;
+                    case "/test/break_cabin_link":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestBreakCabinLinkAsync(request)
+                        );
+                        return;
                     case "/test/stamp_lobby_home":
                         await WriteJsonAsync(
                             response,
@@ -886,6 +892,96 @@ public partial class ApiService
 
                 result.Error =
                     "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/break_cabin_link",
+        Summary = "Null a cabin's farmhandReference to manufacture a one-way farmhand↔cabin link (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestBreakCabinLinkResponse), 200)]
+    private async Task<TestBreakCabinLinkResponse> HandlePostTestBreakCabinLinkAsync(
+        HttpListenerRequest request
+    )
+    {
+        var result = new TestBreakCabinLinkResponse();
+
+        if (!long.TryParse(request.QueryString["ownerId"], out var ownerId))
+        {
+            result.Error = "ownerId query parameter is required (a farmhand UniqueMultiplayerID)";
+            return result;
+        }
+
+        // Optional: repoint the farmhand's home at ANOTHER farmhand's cabin, producing the
+        // unrecoverable shape (home cabin owned by someone else) the join-time repair must decline.
+        long.TryParse(request.QueryString["redirectHomeToOwner"], out var redirectOwnerId);
+
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var farm = Game1.getFarm();
+                if (farm == null)
+                {
+                    result.Error = "No farm loaded";
+                    return;
+                }
+
+                var cabin = farm.GetCabin(ownerId)?.GetIndoors<Cabin>();
+                if (cabin == null)
+                {
+                    result.Error = $"No cabin owned by {ownerId} found to break";
+                    return;
+                }
+
+                var farmhand = Game1.GetPlayer(ownerId);
+                if (farmhand == null)
+                {
+                    result.Error = $"Farmhand {ownerId} not found";
+                    return;
+                }
+
+                result.BrokenCabinName = cabin.NameOrUniqueName;
+
+                if (redirectOwnerId != 0)
+                {
+                    var otherCabin = farm.GetCabin(redirectOwnerId)?.GetIndoors<Cabin>();
+                    if (otherCabin == null)
+                    {
+                        result.Error =
+                            $"No cabin owned by redirectHomeToOwner {redirectOwnerId} found";
+                        return;
+                    }
+
+                    // farmhand→another player's cabin: the repair must decline (owner mismatch),
+                    // never steal the other cabin.
+                    farmhand.homeLocation.Value = otherCabin.NameOrUniqueName;
+                    result.Redirected = true;
+                }
+                else
+                {
+                    // Keep farmhand→own cabin so the one-way link is recoverable.
+                    farmhand.homeLocation.Value = cabin.NameOrUniqueName;
+                }
+
+                // Break cabin→farmhand: GetCabin(ownerId) now returns null while homeLocation still
+                // resolves to a Cabin — the exact one-way link the join gate approves anyway
+                // (NetWorldState.TryAssignFarmhandHome's homeLocation-resolves-to-Cabin early return).
+                cabin.farmhandReference.Value = null;
+
+                result.HomeLocation = farmhand.homeLocation.Value ?? "";
+                result.Success = true;
             });
         }
         catch (Exception ex)
