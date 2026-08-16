@@ -202,7 +202,9 @@ RUN curl -fL -o /tmp/ffmpeg.tar.xz https://github.com/BtbN/FFmpeg-Builds/release
     rm -rf /tmp/ffmpeg*
 
 # Install tmux (binary download, separate layer for cacheability)
-RUN curl -L -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VERSION}/tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
+# -f + --retry: the GitHub release fetch occasionally fails the TLS handshake (curl exit 35) on CI
+# runners; retry the transient network error instead of failing the whole build
+RUN curl -fL --retry 5 --retry-delay 2 -O https://github.com/tmux/tmux-builds/releases/download/v${TMUX_VERSION}/tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
     tar -xzf tmux-${TMUX_VERSION}-linux-x86_64.tar.gz && \
     install -m 0755 ./tmux /usr/local/bin/tmux && \
     rm -r ./tmux tmux-${TMUX_VERSION}-linux-x86_64.tar.gz
