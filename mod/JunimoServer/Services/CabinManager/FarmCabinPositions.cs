@@ -23,6 +23,17 @@ public static class FarmCabinPositions
     private static List<Vector2> _cachedPositions;
 
     /// <summary>
+    /// Drops the cached scan and its strong <see cref="Farm"/> reference. Called on world
+    /// teardown so the previous world's Farm graph isn't held alive across the title screen —
+    /// reference inequality already forces a rescan, so this is retention-only, not correctness.
+    /// </summary>
+    public static void Invalidate()
+    {
+        _cachedFarm = null;
+        _cachedPositions = null;
+    }
+
+    /// <summary>
     /// Returns the map-designated cabin positions for the given farm, sorted by Order.
     /// Mirrors vanilla's layout resolution (source of truth:
     /// <c>GameLocation.BuildStartingCabins</c>, GameLocation.cs:17430): tile index 29

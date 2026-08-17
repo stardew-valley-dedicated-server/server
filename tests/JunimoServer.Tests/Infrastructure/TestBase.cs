@@ -725,7 +725,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         string cabinStrategy = "CabinStack",
         int? maxPlayers = null,
         bool? allowCabinRelocation = null,
-        bool? allowIpConnections = null
+        bool? allowIpConnections = null,
+        CancellationToken? ct = null
     )
     {
         if (Lease == null)
@@ -735,6 +736,10 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             );
         }
 
+        // Test-body callers pass nothing and ride TestCt; cleanup callers pass their own
+        // budget so the reset survives a body timeout (see ResetServerToPooledConfigAsync).
+        var token = ct ?? TestCt;
+
         await Lease.CreateNewGameAsync(
             farmType,
             farmName,
@@ -743,11 +748,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             maxPlayers,
             allowCabinRelocation,
             allowIpConnections,
-            TestCt
+            token
         );
 
         // Refresh the cached server status
-        ServerStatus = await ServerApi.GetStatus(TestCt);
+        ServerStatus = await ServerApi.GetStatus(token);
     }
 
     /// <summary>
@@ -772,13 +777,19 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         }
 
         var reqs = Lease.Managed.Requirements;
+        // Independent cleanup budget, NOT TestCt: this runs from DisposeAsync and must still
+        // complete after a per-test body timeout has already cancelled TestCt. Binding it to
+        // TestCt would throw here on every timed-out test and PoisonServer a healthy pooled
+        // instance (a full reboot) through the caller's cleanup catch.
+        using var resetCts = new CancellationTokenSource(TestTimings.ServerResetCleanupBudget);
         await CreateNewGameOnServerAsync(
             farmType: reqs.FarmType,
             startingCabins: reqs.StartingCabins,
             cabinStrategy: reqs.CabinStrategy,
             maxPlayers: reqs.MaxPlayers,
             allowCabinRelocation: reqs.AllowCabinRelocation,
-            allowIpConnections: reqs.AllowIpConnections
+            allowIpConnections: reqs.AllowIpConnections,
+            ct: resetCts.Token
         );
     }
 

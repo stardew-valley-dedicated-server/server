@@ -107,7 +107,22 @@ public class CabinRelocationTests : TestBase
             $"Expected a relocation-disabled rejection under {strategy}; {rejection.Describe()}"
         );
 
-        // No move, and no intent written on rejection.
+        // The gate fires before subcommand parsing, so 'reset' is rejected identically. Pins
+        // the ordering the class doc promises: were the gate moved below the parse, reset would
+        // silently run PlayerCabinPositions.TryRemove + Data.Write() on a disabled server.
+        var resetRejection = await Chat.ResendUntilResponseAsync(
+            "!cabin reset",
+            "relocation is disabled",
+            replyFamilyPrefix: "Cabin relocation",
+            timeout: TestTimings.CabinAssignmentTimeout
+        );
+        Assert.True(
+            resetRejection.Matched,
+            $"Expected '!cabin reset' to hit the same gate under {strategy}; "
+                + resetRejection.Describe()
+        );
+
+        // No move, and no intent written or cleared on either rejection.
         var after = await GetOurCabinAsync(ownerId, ct);
         Assert.Equal((baseline.TileX, baseline.TileY), (after.TileX, after.TileY));
         Assert.Equal(baseline.IsHidden, after.IsHidden);

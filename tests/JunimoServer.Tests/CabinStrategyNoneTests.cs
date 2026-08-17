@@ -95,8 +95,8 @@ public class CabinStrategyNoneTests : TestBase
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
-        // Exact count, not a bound: tolerant bounds previously hid a placement regression
-        // where vanilla placed 0 and the mod backfilled 1 (cabin-system invariant 9).
+        // Exact count, not a bound: a tolerant bound would mask a placement regression where
+        // vanilla places 0 and the mod backfills 1 (cabin-system invariant 9).
         Assert.Equal(7, cabinsResponse.TotalCount);
         Assert.True(
             cabinsResponse.Cabins.All(c => !c.IsHidden),

@@ -41,9 +41,14 @@ public static class StackSpotCommand
                     var status = cabinService.GetStackSpotStatus();
                     if (status == null)
                     {
+                        // GetStackSpotStatus returns null for no-loaded-game OR a non-CabinStack
+                        // strategy; split the reply so an admin who runs this before load isn't
+                        // told the wrong reason (matches the console TrySetStackSpot wording).
                         helper.SendPrivateMessage(
                             msg.SourceFarmer,
-                            "The stack spot applies only to the CabinStack strategy."
+                            !Game1.hasLoadedGame
+                                ? "No game loaded yet."
+                                : "The stack spot applies only to the CabinStack strategy."
                         );
                         return;
                     }
@@ -68,7 +73,7 @@ public static class StackSpotCommand
                 }
 
                 var farmer = Game1.GetPlayer(msg.SourceFarmer);
-                if (farmer.currentLocation.Name != "Farm")
+                if (farmer?.currentLocation?.Name != "Farm")
                 {
                     helper.SendPrivateMessage(
                         msg.SourceFarmer,

@@ -362,11 +362,15 @@ public class CabinMigrationTests : TestBase
             ct
         );
         Assert.True(start?.Success == true, $"cabins migrate start failed: {start?.Error}");
-        await PollingHelper.WaitUntilAsync(
+        var staged = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinMigration_Staged,
             async () => (await ServerApi.GetCabins(ct))?.Migration != null,
             TestTimings.CabinAssignmentTimeout,
             cancellationToken: ct
+        );
+        Assert.True(
+            staged,
+            "/cabins Migration should become non-null after 'cabins migrate start'"
         );
 
         var allPlaced = await PollingHelper.WaitUntilAsync(
@@ -402,7 +406,7 @@ public class CabinMigrationTests : TestBase
         // Commit WITH the peer connected — the heal fires (OnlineFarmers.CountOthers() > 0).
         var commit = await ServerApi.RunConsoleCommand("cabins", new[] { "migrate", "commit" }, ct);
         Assert.True(commit?.Success == true, $"cabins migrate commit failed: {commit?.Error}");
-        await PollingHelper.WaitUntilAsync(
+        var committed = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_CabinMigration_Committed,
             async () =>
             {
@@ -412,6 +416,7 @@ public class CabinMigrationTests : TestBase
             TestTimings.CabinAssignmentTimeout,
             cancellationToken: ct
         );
+        Assert.True(committed, "commit should flip the strategy to None and clear Migration");
 
         // The live heal: without any reconnect, every cabin in the peer's own farm view is now
         // enterable — the door-dead dummy's interior was resent via indoors.MarkReassigned().
