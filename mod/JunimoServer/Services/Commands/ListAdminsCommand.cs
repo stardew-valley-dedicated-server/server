@@ -15,15 +15,9 @@ public class ListAdminsCommand
     {
         chatCommandsService.RegisterCommand(
             "listadmins",
-            "list bans",
+            "Lists server admins.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
-
                 helper.SendPrivateMessage(msg.SourceFarmer, "Admins:");
 
                 foreach (var farmerId in roleService.GetAdmins())
@@ -32,7 +26,8 @@ public class ListAdminsCommand
                     var userName = helper.GetFarmerUserNameById(farmerId);
                     helper.SendPrivateMessage(msg.SourceFarmer, $"{farmerName} | {userName}");
                 }
-            }
+            },
+            requiresAdmin: true
         );
     }
 }

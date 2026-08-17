@@ -22,7 +22,7 @@ public class InviteCodeCommand
         // Register chat command
         chatCommandsService.RegisterCommand(
             "invitecode",
-            "Displays the current server invite code.",
+            "Shows the server invite code.",
             (args, msg) =>
             {
                 if (Game1.server == null)
@@ -46,7 +46,7 @@ public class InviteCodeCommand
         // Register console command
         helper.ConsoleCommands.Register(
             "invitecode",
-            "Displays the current server invite code.",
+            "Shows the server invite code.",
             InviteCodeConsoleCommand
         );
     }

@@ -84,8 +84,9 @@ public class AlwaysOnServerFestivals
 
         chatCommandService.RegisterCommand(
             "event",
-            "Tries to start the current festival's event.",
-            StartEventCommand
+            "Starts the current festival's event.",
+            StartEventCommand,
+            requiresAdmin: true
         );
     }
 

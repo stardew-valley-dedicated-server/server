@@ -1,7 +1,6 @@
 using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.PasswordProtection;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -18,25 +17,14 @@ public class AuthStatusCommand
         IModHelper helper,
         IMonitor monitor,
         ChatCommandsService chatCommandsService,
-        RoleService roleService,
         PasswordProtectionService passwordProtectionService
     )
     {
         chatCommandsService.RegisterCommand(
             "authstatus",
-            "(Admin) View authentication status of all players.",
+            "Shows player auth status.",
             (args, msg) =>
             {
-                // Check if player is admin
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(
-                        msg.SourceFarmer,
-                        "You must be an admin to use this command."
-                    );
-                    return;
-                }
-
                 // Check if password protection is enabled
                 if (!passwordProtectionService.IsEnabled)
                 {
@@ -71,7 +59,8 @@ public class AuthStatusCommand
                         $"{status} {farmer.Name} ({userName})"
                     );
                 }
-            }
+            },
+            requiresAdmin: true
         );
 
         monitor.Log("[AuthStatusCommand] Registered !authstatus command", LogLevel.Trace);

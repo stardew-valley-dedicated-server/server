@@ -338,26 +338,20 @@ internal class ModEntry : Mod
         CabinCommand.Register(Helper, chatCommandsService, cabinService, persistentOptions);
         RoleCommands.Register(Helper, chatCommandsService, roleService);
         BanCommand.Register(Helper, chatCommandsService, roleService);
-        KickCommand.Register(Helper, chatCommandsService, roleService);
+        KickCommand.Register(Helper, chatCommandsService);
         ListAdminsCommand.Register(Helper, chatCommandsService, roleService);
-        ListBansCommand.Register(Helper, chatCommandsService, roleService);
-        UnbanCommand.Register(Helper, chatCommandsService, roleService);
-        ChangeWalletCommand.Register(Helper, chatCommandsService, roleService);
-        JojaCommand.Register(Helper, chatCommandsService, roleService, alwaysOnConfig);
+        ListBansCommand.Register(Helper, chatCommandsService);
+        UnbanCommand.Register(Helper, chatCommandsService);
+        ChangeWalletCommand.Register(Helper, chatCommandsService);
+        JojaCommand.Register(Helper, chatCommandsService, alwaysOnConfig);
         ConsoleCommand.Register(Helper, chatCommandsService, roleService);
         InviteCodeCommand.Register(Helper, Monitor, chatCommandsService);
         ServerCommand.Register(Helper, Monitor, chatCommandsService);
 
         // Password protection commands
         LoginCommand.Register(Helper, Monitor, chatCommandsService, passwordProtectionService);
-        AuthStatusCommand.Register(
-            Helper,
-            Monitor,
-            chatCommandsService,
-            roleService,
-            passwordProtectionService
-        );
-        LobbyCommands.Register(Helper, Monitor, chatCommandsService, roleService, lobbyService);
+        AuthStatusCommand.Register(Helper, Monitor, chatCommandsService, passwordProtectionService);
+        LobbyCommands.Register(Helper, Monitor, chatCommandsService, lobbyService);
     }
 
     /// <summary>

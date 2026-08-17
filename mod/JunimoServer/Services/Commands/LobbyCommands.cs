@@ -1,7 +1,6 @@
 using System.Linq;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Lobby;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -18,25 +17,15 @@ public static class LobbyCommands
         IModHelper helper,
         IMonitor monitor,
         ChatCommandsService chatCommandsService,
-        RoleService roleService,
         LobbyService lobbyService
     )
     {
         // !lobby - Show help
         chatCommandsService.RegisterCommand(
             "lobby",
-            "(Admin) Manage lobby layouts. Use !lobby help for details.",
+            "Manage lobby layouts (see !lobby help).",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(
-                        msg.SourceFarmer,
-                        "You must be an admin to use lobby commands."
-                    );
-                    return;
-                }
-
                 if (args.Length == 0 || args[0].ToLower() == "help")
                 {
                     ShowHelp(helper, msg.SourceFarmer);
@@ -97,7 +86,8 @@ public static class LobbyCommands
                         );
                         break;
                 }
-            }
+            },
+            requiresAdmin: true
         );
 
         monitor.Log("[LobbyCommands] Registered !lobby command", LogLevel.Trace);

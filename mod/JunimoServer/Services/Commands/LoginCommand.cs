@@ -20,7 +20,7 @@ public class LoginCommand
     {
         chatCommandsService.RegisterCommand(
             "login",
-            "<password> - Authenticate with the server password.",
+            "Log in with the server password.",
             (args, msg) =>
             {
                 // Check if password protection is enabled

@@ -172,7 +172,7 @@ host-visibility
 
 ## Chat Commands
 
-Players and admins use chat commands in-game. Type in the chat box (press `T` or `/`).
+Players and admins use chat commands in-game. Type in the chat box (press `T` or `/`). Admin-only commands are hidden from non-admins in the `!help` list.
 
 ### General Commands (All Players)
 
@@ -218,9 +218,9 @@ For password-protected servers:
 
 See [Password Protection](/features/password-protection/) for full lobby customization.
 
-### Owner Commands
+### Irreversible Commands
 
-These require server owner (first player/host):
+These require admin role:
 
 | Command | Description |
 |---------|-------------|

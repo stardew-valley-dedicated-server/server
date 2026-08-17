@@ -1,5 +1,4 @@
 using JunimoServer.Services.ChatCommands;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -8,22 +7,13 @@ namespace JunimoServer.Services.Commands;
 
 public class UnbanCommand
 {
-    public static void Register(
-        IModHelper helper,
-        ChatCommandsService chatCommandsService,
-        RoleService roleService
-    )
+    public static void Register(IModHelper helper, ChatCommandsService chatCommandsService)
     {
         chatCommandsService.RegisterCommand(
             "unban",
-            "\"id|userName\" to unban the player. Use !listban to find ID.",
+            "Unban <player> (see !listbans).",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
                     helper.SendPrivateMessage(
@@ -54,7 +44,8 @@ public class UnbanCommand
                 }
                 Game1.bannedUsers.Remove(unbanKey);
                 helper.SendPrivateMessage(msg.SourceFarmer, $"Unbanned: {unbanKey} | {unbanVal}");
-            }
+            },
+            requiresAdmin: true
         );
     }
 }

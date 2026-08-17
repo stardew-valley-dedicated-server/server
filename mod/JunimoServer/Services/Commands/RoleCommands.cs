@@ -15,14 +15,9 @@ public static class RoleCommands
     {
         chatCommandsService.RegisterCommand(
             "admin",
-            "\"farmerName|userName\" to assign admin status to the player.",
+            "Grant <player> admin status.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
                     helper.SendPrivateMessage(
@@ -49,20 +44,15 @@ public static class RoleCommands
                     msg.SourceFarmer,
                     "Assigned Admin to: " + farmerToAdmin.Name
                 );
-            }
+            },
+            requiresAdmin: true
         );
 
         chatCommandsService.RegisterCommand(
             "unadmin",
-            "\"farmerName|userName\" to take away admin status from the player.",
+            "Remove <player>'s admin status.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
-
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
                     helper.SendPrivateMessage(
@@ -98,7 +88,8 @@ public static class RoleCommands
                     msg.SourceFarmer,
                     "Took away admin from: " + farmerToUnadmin.Name
                 );
-            }
+            },
+            requiresAdmin: true
         );
     }
 }
