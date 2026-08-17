@@ -1,0 +1,40 @@
+name: Retry a shell command
+description: Runs a shell command, retrying with linear backoff on failure.
+
+inputs:
+  run:
+    description: Shell command to execute. Runs under `bash -e -o pipefail`, so any line failing fails the attempt.
+    required: true
+  max-attempts:
+    description: Maximum number of attempts before giving up.
+    required: false
+    default: "3"
+  retry-delay-seconds:
+    description: Base delay between attempts; the wait grows linearly (delay, 2×delay, …) per attempt.
+    required: false
+    default: "10"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        RETRY_RUN: ${{ inputs.run }}
+        RETRY_MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        RETRY_DELAY_SECONDS: ${{ inputs.retry-delay-seconds }}
+      run: |
+        set -uo pipefail
+        attempt=1
+        # `run` is passed via env, never interpolated into the script, so a command
+        # containing quotes or `${{ }}`-like text can't break out of the loop.
+        until bash -e -o pipefail -c "$RETRY_RUN"; do
+          status=$?
+          if (( attempt >= RETRY_MAX_ATTEMPTS )); then
+            echo "::error::Command failed after ${attempt} attempts (exit ${status})"
+            exit "${status}"
+          fi
+          wait=$(( RETRY_DELAY_SECONDS * attempt ))
+          echo "::warning::Attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed (exit ${status}); retrying in ${wait}s"
+          sleep "${wait}"
+          attempt=$(( attempt + 1 ))
+        done
