@@ -95,6 +95,40 @@ internal sealed class FarmerTestHelper
     }
 
     /// <summary>
+    /// Fast setup-join: pre-customizes a farmhand slot server-side, then joins it by name so the
+    /// client takes the already-customized fast path — no character menu, no creation sync. Use
+    /// when the test needs "a connected in-world farmer" as mere setup; tests whose scenario IS
+    /// the join, customization, auth/lobby, or a customization-state transition stay on
+    /// <see cref="ConnectNewAsync"/>. The farmer is tracked for cleanup like any other.
+    /// </summary>
+    public async Task<ClientConnection> ConnectFastAsync(
+        string namePrefix = "Farmer",
+        CancellationToken ct = default
+    )
+    {
+        await _testBase.Connect.EnsureDisconnectedAsync();
+
+        var name = GenerateName(namePrefix);
+
+        var precustomize = await _testBase.ServerApi.PrecustomizeFarmhands(new[] { name }, ct);
+        Assert.True(
+            precustomize?.Success == true,
+            $"Precustomize of farmhand '{name}' failed: {precustomize?.Error ?? "no response"}"
+        );
+
+        var result = await _testBase.Connect.JoinWithRetryAsync(
+            name,
+            preferExistingFarmer: true,
+            ct: ct
+        );
+        _testBase.Connect.AssertJoinSuccess(result);
+
+        TrackFarmer(name, result.UniqueMultiplayerId);
+
+        return new ClientConnection(name, result);
+    }
+
+    /// <summary>
     /// Connects a second concurrent farmer over its own client lease and joins it via LAN.
     /// The primary farmer keeps using the shared connection helpers; this is the one missing
     /// primitive for multi-player E2E tests. LAN-only is sufficient — none of the planned

@@ -63,6 +63,18 @@ namespace JunimoServer.Tests.Helpers;
 /// without an associated field-change time, or test-client-mod endpoints) ·
 /// <c>failure_context</c> (<c>reason, extras?, serverState?, diagnosticsError?</c>).</item>
 ///
+/// <item><b>Client connect/join flow</b> (<see cref="ConnectionHelper"/>;
+/// test-harness native): the connect + join-world retry loop emits a family of
+/// join-progress events (slot pick, slot select, character-menu race, bounce
+/// re-selects, per-attempt failures) — grep <see cref="ConnectionHelper"/> for
+/// the definitive names and field sets. Two carry a phase-budget contract:
+/// <c>connect_phase_completed</c> (<c>attempt, transport:"lan"|"invite",
+/// slotCount, elapsedMs</c>; measured from connect entry to farmhand-list ready)
+/// and <c>world_ready_completed</c> (<c>slotIndex, wasCustomizedFastPath,
+/// elapsedMs</c>; measured from connect entry to the world-ready gate — subtract
+/// the matching <c>connect_phase_completed.elapsedMs</c> to isolate the
+/// post-connect select/customize tail).</item>
+///
 /// <item><b>Mod game-state snapshots</b>:
 /// <c>peer_connected</c> (LobbyService) · <c>peer_disconnected</c> (LobbyService) ·
 /// <c>peer_disconnected_engine</c> (mod, Harmony on Multiplayer.playerDisconnected) ·
