@@ -228,18 +228,29 @@ jobs:
           restore-keys: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-
 
       - name: Restore .NET tools
-        run: dotnet tool restore
+        uses: ./.github/actions/retry
+        with:
+          run: dotnet tool restore
 
       - name: Check C# formatting
         run: dotnet csharpier check .
+
+      # Restore explicitly with retry, then `dotnet format --no-restore`: format's own
+      # implicit restore isn't retried and hides NuGet errors as "Restore operation failed."
+      - name: Restore test projects
+        uses: ./.github/actions/retry
+        with:
+          run: |
+            dotnet restore tests/JunimoServer.Tests/JunimoServer.Tests.csproj
+            dotnet restore tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj
 
       # Analyzer style rules ride compilation, so they only gate where CI compiles
       # C#. The mod projects gate via the Docker image build (Validate Build); the
       # test projects compile game-free, so verify them here. Mirrors validate-pr.yml.
       - name: Check C# analyzer style rules (test projects)
         run: |
-          dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes
-          dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes
+          dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes --no-restore
+          dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes --no-restore
 
   validate-js:
     name: Validate JS/TS
