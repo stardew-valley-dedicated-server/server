@@ -61,7 +61,7 @@ To prevent griefing, the server locks player storage:
 
 - Host automatically joins festivals
 - Players participate normally
-- If stuck, use the `!event` command to force-start
+- If stuck, an admin can use the `!event` command to force-start
 
 For the full handling model and a per-festival reference, see [Festival Handling](/developers/architecture/festival-handling) in the developer docs.
 

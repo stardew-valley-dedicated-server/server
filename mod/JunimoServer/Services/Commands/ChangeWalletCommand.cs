@@ -1,6 +1,5 @@
 using System;
 using JunimoServer.Services.ChatCommands;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -9,23 +8,13 @@ namespace JunimoServer.Services.Commands;
 
 public class ChangeWalletCommand
 {
-    public static void Register(
-        IModHelper helper,
-        ChatCommandsService chatCommandsService,
-        RoleService roleService
-    )
+    public static void Register(IModHelper helper, ChatCommandsService chatCommandsService)
     {
         chatCommandsService.RegisterCommand(
             "changewallet",
-            "Type \"!changewallet shared\" or \"!changewallet separate\" to switch wallet mode at the end of the day.",
+            "Set shared or separate wallets.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
-
                 bool wantSeparate;
                 if (
                     args.Length == 1
@@ -113,7 +102,8 @@ public class ChangeWalletCommand
                         wantSeparate ? "SeparateWallets" : "MergeWallets",
                         actorName
                     );
-            }
+            },
+            requiresAdmin: true
         );
     }
 }

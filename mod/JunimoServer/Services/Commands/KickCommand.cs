@@ -1,5 +1,4 @@
 using JunimoServer.Services.ChatCommands;
-using JunimoServer.Services.Roles;
 using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewValley;
@@ -8,22 +7,13 @@ namespace JunimoServer.Services.Commands;
 
 public class KickCommand
 {
-    public static void Register(
-        IModHelper helper,
-        ChatCommandsService chatCommandsService,
-        RoleService roleService
-    )
+    public static void Register(IModHelper helper, ChatCommandsService chatCommandsService)
     {
         chatCommandsService.RegisterCommand(
             "kick",
-            "\"farmerName|userName\" to kick the player.",
+            "Kick <player> from the server.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
                     helper.SendPrivateMessage(
@@ -53,7 +43,8 @@ public class KickCommand
 
                 Game1.server.kick(targetFarmer.UniqueMultiplayerID);
                 helper.SendPrivateMessage(msg.SourceFarmer, "Kicked: " + targetFarmer.Name);
-            }
+            },
+            requiresAdmin: true
         );
     }
 }

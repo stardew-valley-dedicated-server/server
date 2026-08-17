@@ -20,7 +20,7 @@ public static class CabinCommand
     {
         chatCommandsService.RegisterCommand(
             "cabin",
-            "Moves your cabin to the right of your player.\nThis will clear basic debris to make space.\nUse '!cabin reset' to send your cabin back to the shared stack.",
+            "Moves or resets your cabin (!cabin reset).",
             (args, msg) =>
             {
                 if (cabinService.options.IsFarmHouseStack)

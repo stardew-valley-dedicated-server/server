@@ -21,6 +21,7 @@ public class ChatCommandsService : ModService, IChatCommandApi
     private readonly IMonitor _monitor;
     private readonly IModHelper _helper;
     private readonly ApiService _apiService;
+    private readonly RoleService _roleService;
 
     private readonly List<ChatCommand> _registeredCommands = new List<ChatCommand>();
 
@@ -37,6 +38,7 @@ public class ChatCommandsService : ModService, IChatCommandApi
         _monitor = monitor;
         _helper = helper;
         _apiService = apiService;
+        _roleService = roleService;
 
         // Enable cheat/debug commands work (https://stardewvalleywiki.com/Modding:Console_commands#Debug_commands)
         Program.enableCheats = true;
@@ -118,26 +120,30 @@ public class ChatCommandsService : ModService, IChatCommandApi
 
     private void HelpCommand(string[] args, ReceivedMessage msg)
     {
+        // Hide admin-only commands from non-admins so their help stays uncluttered.
+        var visible = _registeredCommands.Where(command => CanPlayerUse(command, msg.SourceFarmer));
+
         if (args.Length > 0)
         {
             // Show help for specific commands passed as args
-            foreach (
-                var command in _registeredCommands.Where(command =>
-                    args.Contains(command.Name, StringComparer.OrdinalIgnoreCase)
-                )
-            )
-            {
-                _helper.SendPrivateMessage(msg.SourceFarmer, command.CommandUsage);
-            }
+            visible = visible.Where(command =>
+                args.Contains(command.Name, StringComparer.OrdinalIgnoreCase)
+            );
         }
-        else
+
+        foreach (var command in visible)
         {
-            // Show help for all commands
-            foreach (var command in _registeredCommands)
-            {
-                _helper.SendPrivateMessage(msg.SourceFarmer, command.CommandUsage);
-            }
+            _helper.SendPrivateMessage(msg.SourceFarmer, command.CommandUsage);
         }
+    }
+
+    /// <summary>
+    /// Whether a player may run — and see in <c>!help</c> — the given command. Admin-only
+    /// commands require the player to be an admin; all others are open.
+    /// </summary>
+    private bool CanPlayerUse(ChatCommand command, long playerId)
+    {
+        return !command.RequiresAdmin || _roleService.IsPlayerAdmin(playerId);
     }
 
     private void OnChatMessage(ReceivedMessage receivedMessage)
@@ -177,6 +183,16 @@ public class ChatCommandsService : ModService, IChatCommandApi
             )
             {
                 _monitor.Log($"[ChatCommands] Found command: {command.Name}", LogLevel.Trace);
+
+                if (!CanPlayerUse(command, receivedMessage.SourceFarmer))
+                {
+                    _helper.SendPrivateMessage(
+                        receivedMessage.SourceFarmer,
+                        "You are not an admin."
+                    );
+                    continue;
+                }
+
                 command.Action(args, receivedMessage);
             }
         }
@@ -257,10 +273,11 @@ public class ChatCommandsService : ModService, IChatCommandApi
     public void RegisterCommand(
         string name,
         string description,
-        Action<string[], ReceivedMessage> action
+        Action<string[], ReceivedMessage> action,
+        bool requiresAdmin = false
     )
     {
-        _registeredCommands.Add(new ChatCommand(name, description, action));
+        _registeredCommands.Add(new ChatCommand(name, description, action, requiresAdmin));
     }
 
     public void RegisterCommand(ChatCommand command)

@@ -16,14 +16,9 @@ public class BanCommand
     {
         chatCommandsService.RegisterCommand(
             "ban",
-            "\"farmerName|userName\" to ban the player.",
+            "Ban <player> from the server.",
             (args, msg) =>
             {
-                if (!roleService.IsPlayerAdmin(msg.SourceFarmer))
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "You are not an admin.");
-                    return;
-                }
                 if (args.Length != 1 || (args.Length == 1 && args[0] == ""))
                 {
                     helper.SendPrivateMessage(
@@ -53,7 +48,8 @@ public class BanCommand
 
                 Game1.server.ban(targetFarmer.UniqueMultiplayerID);
                 helper.SendPrivateMessage(msg.SourceFarmer, "Banned: " + targetFarmer.Name);
-            }
+            },
+            requiresAdmin: true
         );
     }
 }
