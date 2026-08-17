@@ -863,6 +863,38 @@ public class CabinManagerService : ModService
     }
 
     /// <summary>
+    /// First non-lobby cabin whose slot is available (<see cref="IsCabinAvailable"/>) AND has an
+    /// owner entry to mutate — the canonical scan for test endpoints that stamp or precustomize a
+    /// spare slot. Null when no such slot exists. Game-thread only.
+    /// </summary>
+    public Cabin FindAvailableCabinWithOwner()
+    {
+        var farm = Game1.getFarm();
+        if (farm == null)
+        {
+            return null;
+        }
+
+        foreach (var building in farm.buildings)
+        {
+            if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+            {
+                continue;
+            }
+
+            var cabin = building.GetIndoors<Cabin>();
+            if (cabin?.owner == null || !IsCabinAvailable(building))
+            {
+                continue;
+            }
+
+            return cabin;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Releases an abandoned slot claim on a single farmhand entry. A claim is "abandoned" when
     /// the slot carries any ownership marker — a userID stamp (a player clicked the slot, which
     /// stamps their platform ID via vanilla Client.sendPlayerIntroduction) and/or an ownership-map

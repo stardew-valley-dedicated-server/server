@@ -119,6 +119,12 @@ public partial class ApiService
                             await HandlePostTestStampClaimAsync(request)
                         );
                         return;
+                    case "/test/precustomize_farmhand":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestPrecustomizeFarmhandAsync(request)
+                        );
+                        return;
                     case "/test/stamp_lobby_home":
                         await WriteJsonAsync(
                             response,
@@ -833,59 +839,39 @@ public partial class ApiService
                     return;
                 }
 
-                // Find an unclaimed slot with an existing farmhand entry whose home resolves to its
-                // cabin: owner present, not customized, no userID yet (exactly IsCabinAvailable's
-                // "available" shape). Stamping its userID reproduces the homed abandoned-claim state
-                // — the case vanilla's load-time ResetFarmhandState does NOT clear (NetWorldState.cs
-                // :783 returns true for a homed farmhand, skipping the userID-clearing else-branch),
-                // so only the sweep heals it on reload.
-                foreach (var building in farm.buildings)
+                // An available slot (owner present, not customized, no userID) is exactly the shape
+                // to stamp: setting its userID reproduces the homed abandoned-claim state — the case
+                // vanilla's load-time ResetFarmhandState does NOT clear (NetWorldState.cs:783 returns
+                // true for a homed farmhand, skipping the userID-clearing else-branch), so only the
+                // sweep heals it on reload.
+                var cabin = _cabinManager.FindAvailableCabinWithOwner();
+                if (cabin == null)
                 {
-                    if (!building.isCabin || LobbyService.IsLobbyCabin(building))
-                    {
-                        continue;
-                    }
-
-                    var cabin = building.GetIndoors<Cabin>();
-                    var owner = cabin?.owner;
-                    if (owner == null)
-                    {
-                        continue;
-                    }
-
-                    if (owner.isCustomized.Value)
-                    {
-                        continue;
-                    }
-
-                    if (!string.IsNullOrEmpty(owner.userID.Value))
-                    {
-                        continue;
-                    }
-
-                    // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
-                    // (the slot's home should already be its cabin; set it to be deterministic).
-                    owner.homeLocation.Value = cabin.NameOrUniqueName;
-                    owner.userID.Value = syntheticUserId;
-                    if (withOwner)
-                    {
-                        _farmhandOwnership.RecordOwner(
-                            owner.UniqueMultiplayerID,
-                            ConnectionTransport.PlatformSteam,
-                            syntheticOwnerId
-                        );
-                        result.StampedOwner = true;
-                    }
-
-                    result.StampedUid = owner.UniqueMultiplayerID;
-                    result.StampedUserId = syntheticUserId;
-                    result.HomeLocation = owner.homeLocation.Value ?? "";
-                    result.Success = true;
+                    result.Error =
+                        "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
                     return;
                 }
 
-                result.Error =
-                    "No uncustomized, unclaimed cabin slot with an owner entry found to stamp";
+                var owner = cabin.owner;
+
+                // Pin homeLocation to this cabin so TryAssignFarmhandHome resolves on reload
+                // (the slot's home should already be its cabin; set it to be deterministic).
+                owner.homeLocation.Value = cabin.NameOrUniqueName;
+                owner.userID.Value = syntheticUserId;
+                if (withOwner)
+                {
+                    _farmhandOwnership.RecordOwner(
+                        owner.UniqueMultiplayerID,
+                        ConnectionTransport.PlatformSteam,
+                        syntheticOwnerId
+                    );
+                    result.StampedOwner = true;
+                }
+
+                result.StampedUid = owner.UniqueMultiplayerID;
+                result.StampedUserId = syntheticUserId;
+                result.HomeLocation = owner.homeLocation.Value ?? "";
+                result.Success = true;
             });
         }
         catch (Exception ex)
@@ -893,6 +879,132 @@ public partial class ApiService
             // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
             result.Success = false;
             result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/precustomize_farmhand",
+        Summary = "Pre-customize spare farmhand slots so joining clients take the no-menu fast path (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestPrecustomizeFarmhandResponse), 200)]
+    private async Task<TestPrecustomizeFarmhandResponse> HandlePostTestPrecustomizeFarmhandAsync(
+        HttpListenerRequest request
+    )
+    {
+        TestPrecustomizeFarmhandRequest? body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            body = string.IsNullOrWhiteSpace(json)
+                ? null
+                : JsonConvert.DeserializeObject<TestPrecustomizeFarmhandRequest>(json);
+        }
+        catch (Exception ex)
+        {
+            return new TestPrecustomizeFarmhandResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        if (
+            body?.Names == null
+            || body.Names.Count == 0
+            || body.Names.Any(string.IsNullOrWhiteSpace)
+        )
+        {
+            return new TestPrecustomizeFarmhandResponse
+            {
+                Success = false,
+                Error = "Body must contain a non-empty 'names' list of non-blank farmhand names",
+            };
+        }
+
+        // Fail closed before mutating (matches /test/set_date): without a loaded world there are
+        // no farmhand slots to customize.
+        if (Game1.gameMode != 3 || !Game1.IsServer)
+        {
+            return new TestPrecustomizeFarmhandResponse
+            {
+                Success = false,
+                Error = "Server not ready",
+            };
+        }
+
+        var result = new TestPrecustomizeFarmhandResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var farm = Game1.getFarm();
+                if (farm == null)
+                {
+                    result.Error = "No farm loaded";
+                    return;
+                }
+
+                // Guarantee a slot per requested name up front; the loop below then can't starve
+                // unless cabin builds failed.
+                _cabinManager.EnsureAtLeastXCabins(body.Names.Count);
+
+                foreach (var name in body.Names)
+                {
+                    var cabin = _cabinManager.FindAvailableCabinWithOwner();
+                    if (cabin == null)
+                    {
+                        result.Error =
+                            $"No available cabin slot left for '{name}' "
+                            + $"({result.Farmhands.Count}/{body.Names.Count} slots customized before exhaustion)";
+                        return;
+                    }
+
+                    var owner = cabin.owner;
+
+                    // isCustomized=true with an EMPTY userID makes the slot a returning farmer any
+                    // client may select (IsFarmhandSelectableByUserId), so the test client's
+                    // already-customized fast path skips the character menu entirely. A userID
+                    // stamp here would route the join through vanilla authCheck string-equality
+                    // and reject LAN clients, whose getUserID() is "".
+                    owner.isCustomized.Value = true;
+                    owner.Name = name;
+                    owner.displayName = name; // plain Character field, not a NetField
+                    owner.homeLocation.Value = cabin.NameOrUniqueName;
+
+                    result.Farmhands.Add(
+                        new TestPrecustomizedFarmhand
+                        {
+                            Uid = owner.UniqueMultiplayerID,
+                            Name = name,
+                            HomeLocation = owner.homeLocation.Value,
+                        }
+                    );
+                }
+
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        if (result.Success)
+        {
+            Monitor.Log(
+                $"Precustomized {result.Farmhands.Count} farmhand slot(s) via test API",
+                LogLevel.Info
+            );
         }
 
         return result;
@@ -1236,27 +1348,12 @@ public partial class ApiService
                 // cross-farmhand collision the import guard must catch.
                 if (!string.IsNullOrEmpty(body.InjectFarmhandUserId))
                 {
-                    var stamped = false;
-                    foreach (var building in Game1.getFarm().buildings)
+                    var spareSlot = _cabinManager.FindAvailableCabinWithOwner()?.owner;
+                    if (spareSlot != null)
                     {
-                        if (!building.isCabin || LobbyService.IsLobbyCabin(building))
-                        {
-                            continue;
-                        }
-                        var slot = building.GetIndoors<Cabin>()?.owner;
-                        if (
-                            slot == null
-                            || slot.isCustomized.Value
-                            || !string.IsNullOrEmpty(slot.userID.Value)
-                        )
-                        {
-                            continue;
-                        }
-                        slot.userID.Value = body.InjectFarmhandUserId;
-                        stamped = true;
-                        break;
+                        spareSlot.userID.Value = body.InjectFarmhandUserId;
                     }
-                    result.FarmhandUserIdInjected = stamped;
+                    result.FarmhandUserIdInjected = spareSlot != null;
                 }
 
                 result.OwnerUid = master.UniqueMultiplayerID;
