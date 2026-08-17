@@ -26,7 +26,7 @@ runs:
         set -uo pipefail
         attempt=1
         # `run` is passed via env, never interpolated into the script, so a command
-        # containing quotes or `${{ }}`-like text can't break out of the loop.
+        # containing quotes or expression-like text can't break out of the loop.
         until bash -e -o pipefail -c "$RETRY_RUN"; do
           status=$?
           if (( attempt >= RETRY_MAX_ATTEMPTS )); then
