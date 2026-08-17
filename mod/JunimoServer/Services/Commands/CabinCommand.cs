@@ -42,7 +42,10 @@ public static class CabinCommand
 
                 var farmer = Game1.GetPlayer(msg.SourceFarmer);
 
-                if (farmer.currentLocation.Name != "Farm")
+                // Null-conditional: Game1.GetPlayer returns null for a farmer who dropped
+                // between sending the command and this handler running — treat that as
+                // off-Farm rather than throwing an NRE inside the handler.
+                if (farmer?.currentLocation?.Name != "Farm")
                 {
                     helper.SendPrivateMessage(
                         msg.SourceFarmer,

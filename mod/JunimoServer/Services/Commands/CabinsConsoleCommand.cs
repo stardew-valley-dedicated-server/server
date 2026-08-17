@@ -334,7 +334,11 @@ internal static class CabinsConsoleCommand
                 // build path place onto (or fail against) a developed farm.
                 if (_options.IsNone)
                 {
-                    var totalCount = farm.buildings.Count(b => b.isCabin && !b.IsLobbyOrEditing());
+                    // Same set TryCommitMigration freezes NoneCabinCount from, so the refusal
+                    // count and the frozen cap read identically.
+                    var totalCount = farm.buildings.Count(b =>
+                        b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing()
+                    );
                     var cap = _cabinManager.GetNoneCabinCap(farm);
                     if (totalCount >= cap)
                     {

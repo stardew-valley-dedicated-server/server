@@ -43,8 +43,11 @@ handler-owning type. Port that shape to the test-client:
 - Convert the `ModEntry.cs` route lambdas into named handler methods (attributes cannot attach to
   anonymous lambdas), decorate each, and point `OpenApiGenerator.Generate` at the handler-owning
   type instead of `ApiDefinitions`. Delete `ApiDefinitions.cs` and its duplicate DTOs.
-- Response DTO becomes the method's real return type; request DTO becomes the `ReadBody<T>` type —
-  both by construction, removing the forward-drift class.
+- Response DTO becomes the method's real return type, reflectable from the signature. The request
+  DTO is the `ReadBody<T>` type argument, which lives inside the method body and is NOT reflectable
+  from the signature — so Option A must declare it explicitly (e.g. an `[ApiRequest(typeof(X))]`
+  attribute the generator reads) rather than deriving it "by construction". With that attribute the
+  duplicate `ApiDefinitions` request DTOs still go away.
 - Scope: ~50 lambdas → named methods across `ModEntry.cs` and the `GameControl/*Controller` classes.
   Large but mechanical. Note the server is still a manual `switch(path)` dispatcher — Option A fixes
   *co-location*, not dispatch, so a small dispatch table would remain.
@@ -61,8 +64,11 @@ above) but is more invasive to `TestApiServer`.
 ## Recommendation
 
 Option B is the cleaner end state (one registration feeds both, no stub class, DTOs owned once).
-Option A is the smaller conceptual leap and matches an existing in-repo precedent. Either eliminates
-the manual-sync drift the immediate fix keeps papering over.
+Option A is the smaller conceptual leap and matches an existing in-repo precedent. Both remove the
+DTO-duplication drift, but only Option B closes route/spec drift: under Option A route registration
+stays a separate declaration, so a handler can still be omitted or served under a path that differs
+from its attribute. Pick B to eliminate the drift outright; pick A as an incremental step that still
+leaves the dispatch-table drift for later.
 
 ## Key files
 

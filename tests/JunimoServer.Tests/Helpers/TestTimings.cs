@@ -399,6 +399,15 @@ public static class TestTimings
     public static readonly TimeSpan ServerReadyBetweenTests = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Independent budget for a cleanup /newgame reset (ResetServerToPooledConfigAsync).
+    /// Runs from DisposeAsync and MUST NOT be bound to TestCt — cleanup needs to complete
+    /// after a per-test body timeout has already cancelled TestCt, or a timed-out test would
+    /// PoisonServer a healthy pooled instance. Sized generously above the reset's internal
+    /// 120s WaitForServerOnline plus game-creation, so it never cuts off a slow-but-live reset.
+    /// </summary>
+    public static readonly TimeSpan ServerResetCleanupBudget = TimeSpan.FromSeconds(240);
+
+    /// <summary>
     /// Timeout for waiting for IsReady after a day change is detected.
     /// Covers newDaySync barriers + save (5-10+ seconds on large farms).
     /// </summary>

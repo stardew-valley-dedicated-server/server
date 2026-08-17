@@ -223,7 +223,7 @@ public enum WaitName
     /// <summary>Game clock crossed the daytime schedule-departure boundaries after the heal.</summary>
     Polling_NpcSprite_DaytimeBoundariesCrossed,
 
-    // CabinMigrationTests.cs (7)
+    // CabinMigrationTests.cs (8)
     /// <summary>/cabins Migration became non-null after 'cabins migrate start'.</summary>
     Polling_CabinMigration_Staged,
 
@@ -245,13 +245,14 @@ public enum WaitName
     /// <summary>'cabins stackspot x y' landed: /cabins StackSpot shows the override.</summary>
     Polling_CabinStackSpot_Set,
 
+    /// <summary>A connected peer's door-dead dummy interior became enterable after a →None commit
+    /// healed it live (no reconnect).</summary>
+    Polling_CabinDummyInterior_HealedLive,
+
+    // CabinStrategyFarmhouseStackTests.cs + CabinStrategyTests.cs — cabin-link repair (2)
     /// <summary>Cabin gone from /cabins after /test/break_cabin_link nulled its back-link.</summary>
     Polling_CabinLink_Broken,
 
     /// <summary>Cabin owned by the rejoining farmhand reappeared after the join-time link repair.</summary>
     Polling_CabinLink_Repaired,
-
-    /// <summary>A connected peer's door-dead dummy interior became enterable after a →None commit
-    /// healed it live (no reconnect).</summary>
-    Polling_CabinDummyInterior_HealedLive,
 }

@@ -48,7 +48,7 @@ public static class MigrateCommand
                 }
 
                 var farmer = Game1.GetPlayer(msg.SourceFarmer);
-                if (farmer.currentLocation.Name != "Farm")
+                if (farmer?.currentLocation?.Name != "Farm")
                 {
                     helper.SendPrivateMessage(
                         msg.SourceFarmer,

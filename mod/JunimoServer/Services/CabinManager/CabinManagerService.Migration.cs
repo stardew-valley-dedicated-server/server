@@ -494,6 +494,9 @@ public partial class CabinManagerService
                 .buildings.Where(b => b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing())
                 .ToList();
             options.Data.NoneCabinCount = visibleCabins.Count;
+            // Persisted by the options.Save() inside ApplyStrategyDurably below; that call must
+            // stay after this assignment, or the frozen cap is lost and the next load's
+            // OnSaveLoaded refreezes it from min(designated, MaxPlayers) — a different ceiling.
             foreach (var building in visibleCabins)
             {
                 building.SetWarpsToFarmCabinDoor();

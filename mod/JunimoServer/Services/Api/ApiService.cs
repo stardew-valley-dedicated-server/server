@@ -5018,10 +5018,42 @@ public partial class ApiService : ModService
         }
         if (body.MaxPlayers.HasValue)
         {
+            // Bounds-check before it reaches the durable settings file: ApplyNewGameConfig
+            // persists MaxPlayers and SyncFromSettings reapplies it on every later load, so a
+            // 0/negative value sticks — and under None it freezes the cap at min(designated,
+            // MaxPlayers), leaving a game no player can ever join. settings validate uses the
+            // same [1..100] range but only as a diagnostic, so the API must gate it here.
+            if (body.MaxPlayers.Value < 1 || body.MaxPlayers.Value > 100)
+            {
+                response.StatusCode = 400;
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error = $"maxPlayers {body.MaxPlayers.Value} is out of range [1..100].",
+                    }
+                );
+                return;
+            }
             config.MaxPlayers = body.MaxPlayers.Value;
         }
         if (body.ProfitMargin.HasValue)
         {
+            if (body.ProfitMargin.Value < 0.25f || body.ProfitMargin.Value > 1.0f)
+            {
+                response.StatusCode = 400;
+                await WriteJsonAsync(
+                    response,
+                    new NewGameResponse
+                    {
+                        Success = false,
+                        Error =
+                            $"profitMargin {body.ProfitMargin.Value} is out of range [0.25..1.0].",
+                    }
+                );
+                return;
+            }
             config.ProfitMargin = body.ProfitMargin.Value;
         }
         if (body.SeparateWallets.HasValue)

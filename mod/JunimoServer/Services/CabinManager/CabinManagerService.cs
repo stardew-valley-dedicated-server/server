@@ -204,6 +204,7 @@ public partial class CabinManagerService : ModService
         // World teardown: freed-cabin tiles belong to the world that freed them (see the
         // field comment).
         _freedVisibleCabinTiles.Clear();
+        FarmCabinPositions.Invalidate();
     }
 
     private void OnSaveLoaded(object sender, SaveLoadedEventArgs e)
