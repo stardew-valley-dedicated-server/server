@@ -334,11 +334,13 @@ internal static class CabinsConsoleCommand
                 // build path place onto (or fail against) a developed farm.
                 if (_options.IsNone)
                 {
-                    // Same set TryCommitMigration freezes NoneCabinCount from, so the refusal
-                    // count and the frozen cap read identically.
-                    var totalCount = farm.buildings.Count(b =>
-                        b.isCabin && !b.IsInHiddenStack() && !b.IsLobbyOrEditing()
-                    );
+                    // Mirror EnsureAtLeastXCabins' None-growth guard (the runtime enforcer this
+                    // manual add proxies) exactly — every non-lobby cabin, hidden included. Do
+                    // NOT exclude hidden to match TryCommitMigration's freeze snapshot: the two
+                    // are equal at commit (no hidden cabins then), but excluding hidden here would
+                    // let 'cabins add' over-permit past the frozen cap if a hidden cabin
+                    // transiently coexists with None.
+                    var totalCount = farm.buildings.Count(b => b.isCabin && !b.IsLobbyOrEditing());
                     var cap = _cabinManager.GetNoneCabinCap(farm);
                     if (totalCount >= cap)
                     {

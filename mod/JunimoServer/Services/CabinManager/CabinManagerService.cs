@@ -1620,11 +1620,13 @@ public partial class CabinManagerService : ModService
 
         if (location.buildStructure(cabin, position.Value, Game1.player, true))
         {
-            cabin.ClearTerrainBelow();
-
             var indoors = cabin.GetIndoors<Cabin>();
             if (indoors == null)
             {
+                // buildStructure added the cabin to the location, but with no interior it can't
+                // host a farmhand — remove the orphan (raw Remove, matching DestroyCabin) rather
+                // than leave a dead building, and leave the footprint uncleared (ClearTerrainBelow
+                // runs only on the success path below).
                 Monitor.Log(
                     $"Visible cabin at ({position.Value.X}, {position.Value.Y}) was built but has no interior; farmhand not created",
                     LogLevel.Warn
@@ -1639,8 +1641,11 @@ public partial class CabinManagerService : ModService
                         reason = "no_interior_after_buildStructure",
                     }
                 );
+                location.buildings.Remove(cabin);
                 return null;
             }
+
+            cabin.ClearTerrainBelow();
 
             Monitor.Log(
                 $"Built visible cabin at ({position.Value.X}, {position.Value.Y})",
