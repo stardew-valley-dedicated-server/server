@@ -58,7 +58,12 @@ public static class StackSpotCommand
                         msg.SourceFarmer,
                         $"Stack spot: ({s.Spot.X},{s.Spot.Y}) "
                             + (s.IsOverride ? "(override)" : "(map default)")
-                            + (s.IsObstructed ? $" — obstructed: {s.ObstructionReason}" : "")
+                            + (
+                                !s.ObstructionChecked
+                                    ? " — obstruction not checked (stack is empty)"
+                                : s.IsObstructed ? $" — obstructed: {s.ObstructionReason}"
+                                : ""
+                            )
                     );
                     return;
                 }

@@ -688,6 +688,12 @@ public class StackSpotInfo
 
     /// <summary>True when the spot currently fails placement validation.</summary>
     public bool IsObstructed { get; set; }
+
+    /// <summary>
+    /// True when obstruction was actually evaluated (a hidden cabin existed to test against).
+    /// False means the stack is empty, so <see cref="IsObstructed"/> is not meaningful.
+    /// </summary>
+    public bool ObstructionChecked { get; set; }
 }
 
 /// <summary>
@@ -1910,6 +1916,7 @@ public partial class ApiService : ModService
                     TileY = spot.Spot.Y,
                     IsOverride = spot.IsOverride,
                     IsObstructed = spot.IsObstructed,
+                    ObstructionChecked = spot.ObstructionChecked,
                 };
             }
 
