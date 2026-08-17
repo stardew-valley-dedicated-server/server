@@ -206,7 +206,7 @@ public class CropSaverTests : TestBase
         // interior — an indoor (season-immune) location, exercising the same fix
         // branch as the greenhouse (the Greenhouse itself is CC-pantry-gated
         // rubble on a fresh test save and isn't warpable/plantable).
-        var farmhand = await Farmers.ConnectNewAsync(namePrefix: "CropImmune", ct: ct);
+        var farmhand = await Farmers.ConnectFastAsync(namePrefix: "CropImmune", ct: ct);
 
         // The farmhand auto-warps into its cabin on join; the client reports the
         // interior as "FarmHouse" + GUID (NameOrUniqueName), so confirm arrival on that.
@@ -341,7 +341,7 @@ public class CropSaverTests : TestBase
         Assert.NotNull(springDate);
         Assert.True(springDate.Success, $"SetDate(spring 1) failed: {springDate.Error}");
 
-        var farmhand = await Farmers.ConnectNewAsync(namePrefix: "CropTest", ct: ct);
+        var farmhand = await Farmers.ConnectFastAsync(namePrefix: "CropTest", ct: ct);
 
         var warp = await GameClient.Actions.Warp("Farm", tileX, tileY);
         Assert.True(warp?.Success, $"Warp failed: {warp?.Error}");
