@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Schema.Events;
 
@@ -306,6 +307,7 @@ public class ConnectionHelper
         CancellationToken cancellationToken
     )
     {
+        var connectTimer = Stopwatch.StartNew();
         Log($"[Connect] Attempt {attempt}/{maxAttempts}: connecting via invite code");
 
         try
@@ -400,6 +402,16 @@ public class ConnectionHelper
             Log(
                 $"[Connect] Connected ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
             );
+            EmitDiagnostic(
+                "connect_phase_completed",
+                new
+                {
+                    attempt,
+                    transport = "invite",
+                    slotCount = farmhands.Farmhands.Count,
+                    elapsedMs = connectTimer.ElapsedMilliseconds,
+                }
+            );
             await CaptureCheckpointIfEnabled("after_connect");
             return ConnectionResult.Succeeded(attempt, farmhands);
         }
@@ -477,6 +489,7 @@ public class ConnectionHelper
         CancellationToken cancellationToken
     )
     {
+        var connectTimer = Stopwatch.StartNew();
         var fullAddress = port == 24642 ? address : $"{address}:{port}";
         Log($"[Connect] Attempt {attempt}/{maxAttempts}: connecting via LAN to {fullAddress}");
 
@@ -520,6 +533,16 @@ public class ConnectionHelper
 
             Log(
                 $"[Connect] Connected via LAN ({farmhands.Farmhands.Count} slots, attempt {attempt}/{maxAttempts})"
+            );
+            EmitDiagnostic(
+                "connect_phase_completed",
+                new
+                {
+                    attempt,
+                    transport = "lan",
+                    slotCount = farmhands.Farmhands.Count,
+                    elapsedMs = connectTimer.ElapsedMilliseconds,
+                }
             );
             await CaptureCheckpointIfEnabled("after_connect");
             return ConnectionResult.Succeeded(attempt, farmhands);
@@ -680,6 +703,9 @@ public class ConnectionHelper
             {
                 await gate.AcquireAsync(cancellationToken);
 
+                // Full-join timer (connect entry → world-ready) for world_ready_completed; per attempt.
+                var joinTimer = Stopwatch.StartNew();
+
                 // Connect to server (single attempt; this method owns the retry loop)
                 var connectResult = await connectOnceAsync(
                     attempt,
@@ -731,6 +757,7 @@ public class ConnectionHelper
                         preferExistingFarmer,
                         skipAutoLogin,
                         attempt,
+                        joinTimer,
                         gate.Release,
                         cancellationToken
                     );
@@ -837,6 +864,7 @@ public class ConnectionHelper
         bool preferExistingFarmer,
         bool skipAutoLogin,
         int attempt,
+        Stopwatch joinTimer,
         Action releaseGate,
         CancellationToken cancellationToken
     )
@@ -898,6 +926,16 @@ public class ConnectionHelper
         // Customized slots have no character-menu signal — release at world-ready instead. Idempotent
         // no-op for the uncustomized path (already released at the menu).
         releaseGate();
+
+        EmitDiagnostic(
+            "world_ready_completed",
+            new
+            {
+                slotIndex = selectedSlotIndex,
+                wasCustomizedFastPath = targetSlot.IsCustomized,
+                elapsedMs = joinTimer.ElapsedMilliseconds,
+            }
+        );
 
         await CaptureCheckpointIfEnabled("after_join");
 
