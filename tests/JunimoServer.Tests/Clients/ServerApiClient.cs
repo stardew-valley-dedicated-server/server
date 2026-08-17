@@ -1379,6 +1379,13 @@ public class StackSpotInfoResponse
     /// <summary>True when the spot currently fails placement validation.</summary>
     [JsonPropertyName("isObstructed")]
     public bool IsObstructed { get; set; }
+
+    /// <summary>
+    /// True when obstruction was actually evaluated (a hidden cabin existed to test against);
+    /// false means the stack is empty and <see cref="IsObstructed"/> is not meaningful.
+    /// </summary>
+    [JsonPropertyName("obstructionChecked")]
+    public bool ObstructionChecked { get; set; }
 }
 
 /// <summary>

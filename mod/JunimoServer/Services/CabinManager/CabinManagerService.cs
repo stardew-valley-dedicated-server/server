@@ -662,6 +662,18 @@ public partial class CabinManagerService : ModService
                     Data.DefaultCabinLocation = null;
                     Data.Write();
                 }
+                else if (probe == null)
+                {
+                    // Empty hidden stack: no footprint to test against, so the override is kept
+                    // unvalidated rather than silently trusted. GetStackSpotStatus reports it
+                    // unchecked and it is verified once the stack holds a cabin.
+                    Monitor.Log(
+                        $"Stack-position override {Data.DefaultCabinLocation.Value} kept but not "
+                            + "validated: the hidden stack is empty, so there is no cabin footprint "
+                            + "to test against yet.",
+                        LogLevel.Debug
+                    );
+                }
             }
         }
         // Remaining directions (CabinStack → FarmhouseStack, or a materializing direction
@@ -750,12 +762,15 @@ public partial class CabinManagerService : ModService
 
     /// <summary>
     /// Read model for the CabinStack shared stack spot: the tile each player's ghost cabin
-    /// renders at, whether it comes from the persisted override or the map default, and
-    /// whether the spot currently fails placement validation (obstructed).
+    /// renders at, whether it comes from the persisted override or the map default, whether
+    /// obstruction could be evaluated at all (<see cref="ObstructionChecked"/> — false when the
+    /// hidden stack is empty, so there is no cabin footprint to test against), and whether the
+    /// spot currently fails placement validation (obstructed; meaningful only when checked).
     /// </summary>
     public readonly record struct StackSpotStatus(
         Point Spot,
         bool IsOverride,
+        bool ObstructionChecked,
         bool IsObstructed,
         string ObstructionReason
     );
@@ -779,13 +794,19 @@ public partial class CabinManagerService : ModService
         }
 
         var spot = StackLocation.Create(Data).ToPoint();
+        // Obstruction is only testable against a real cabin footprint; with an empty hidden
+        // stack (no probe) it is unknowable, so report it unchecked rather than implying a clear
+        // spot. The check runs for real once the stack holds a cabin.
         var probe = farm.buildings.FirstOrDefault(b => b.isCabin && b.IsInHiddenStack());
+        var obstructionChecked = probe != null;
         string reason = null;
         var obstructed =
-            probe != null && !CabinPlacementValidator.TryValidate(farm, probe, spot, out reason);
+            obstructionChecked
+            && !CabinPlacementValidator.TryValidate(farm, probe, spot, out reason);
         return new StackSpotStatus(
             spot,
             Data.DefaultCabinLocation.HasValue,
+            obstructionChecked,
             obstructed,
             reason ?? ""
         );
@@ -837,9 +858,16 @@ public partial class CabinManagerService : ModService
 
         Data.DefaultCabinLocation = topLeft.ToVector2();
         Data.Write();
+        // A null probe (empty hidden stack) means the spot couldn't be validated against a real
+        // footprint — accept it (nothing to obstruct yet) but say so, matching the unchecked
+        // status GetStackSpotStatus reports until the stack is populated.
+        const string reconnectNote = "Connected players see it after they reconnect.";
         message =
-            $"Stack spot set to ({topLeft.X},{topLeft.Y}). Connected players see it after "
-            + "they reconnect.";
+            probe != null
+                ? $"Stack spot set to ({topLeft.X},{topLeft.Y}). {reconnectNote}"
+                : $"Stack spot set to ({topLeft.X},{topLeft.Y}), but not yet validated — no cabin "
+                    + $"in the stack to check against; it is verified once the stack is populated. "
+                    + reconnectNote;
         Monitor.Log(message, LogLevel.Info);
         return true;
     }
