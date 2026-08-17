@@ -83,7 +83,7 @@ jobs:
       - name: Download latest docs (from release workflow)
         id: release-latest
         if: steps.current-latest.outcome != 'success'
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        uses: dawidd6/action-download-artifact@57aa996fc1713cc1579039614f4645a7f4841fd4 # v23
         with:
           workflow: build-release.yml
           name: docs-latest
@@ -95,7 +95,7 @@ jobs:
       # Fallback: check deploy-docs.yml for manually rebuilt latest docs
       - name: Download latest docs (from manual rebuild)
         if: steps.current-latest.outcome != 'success' && steps.release-latest.outcome != 'success'
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        uses: dawidd6/action-download-artifact@57aa996fc1713cc1579039614f4645a7f4841fd4 # v23
         with:
           workflow: deploy-docs.yml
           name: docs-latest
@@ -107,7 +107,7 @@ jobs:
       - name: Download preview docs (from build-preview workflow)
         id: build-preview-artifact
         if: steps.current-preview.outcome != 'success'
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        uses: dawidd6/action-download-artifact@57aa996fc1713cc1579039614f4645a7f4841fd4 # v23
         with:
           workflow: build-preview.yml
           name: docs-preview
@@ -119,7 +119,7 @@ jobs:
       # Fallback: check deploy-docs.yml for manually rebuilt preview docs
       - name: Download preview docs (from manual rebuild)
         if: steps.current-preview.outcome != 'success' && steps.build-preview-artifact.outcome != 'success'
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        uses: dawidd6/action-download-artifact@57aa996fc1713cc1579039614f4645a7f4841fd4 # v23
         with:
           workflow: deploy-docs.yml
           name: docs-preview
@@ -131,7 +131,7 @@ jobs:
       # the currently-live site (the last github-pages artifact deploy-docs uploaded). The next
       # step extracts the inner artifact.tar; ignore = tolerate it being absent/expired.
       - name: Download live site snapshot
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
+        uses: dawidd6/action-download-artifact@57aa996fc1713cc1579039614f4645a7f4841fd4 # v23
         with:
           workflow: deploy-docs.yml
           # Only runs on the default branch actually deploy to live Pages — a dispatch
