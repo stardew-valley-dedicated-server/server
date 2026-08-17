@@ -65,7 +65,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
@@ -132,7 +132,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
@@ -165,7 +165,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         await MoveCabinViaCommandAsync(ownerId, ct);
@@ -218,7 +218,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
@@ -276,7 +276,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 2);
 
-        var clientA = await Farmers.ConnectNewAsync(ct: ct);
+        var clientA = await Farmers.ConnectFastAsync(ct: ct);
         var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
 
         await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
@@ -356,7 +356,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var clientA = await Farmers.ConnectNewAsync(ct: ct);
+        var clientA = await Farmers.ConnectFastAsync(ct: ct);
         var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
 
         await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
@@ -424,7 +424,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
@@ -458,7 +458,7 @@ public class CabinPositionPersistenceTests : TestBase
         var ct = TestCt;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
 
-        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var client = await Farmers.ConnectFastAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
 
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);

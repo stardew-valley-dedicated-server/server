@@ -65,7 +65,7 @@ public class NpcSpriteIntegrityTests : TestBase
         // A connected player keeps the clock running (HandleAutoPause pauses 600–2500 when
         // the server is alone) and receives the world-state time broadcasts the frozen-clock
         // bug starves.
-        var farmer = await Farmers.ConnectNewAsync(namePrefix: "SpriteHeal", ct: ct);
+        var farmer = await Farmers.ConnectFastAsync(namePrefix: "SpriteHeal", ct: ct);
         var uid = farmer.JoinResult.UniqueMultiplayerId;
         Assert.True(
             await ServerApi.WaitForPlayerByIdAsync(uid, ct: ct),

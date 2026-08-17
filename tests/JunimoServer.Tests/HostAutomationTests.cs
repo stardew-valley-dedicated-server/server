@@ -148,7 +148,7 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task TimeAdvances_WhenPlayerConnected()
     {
-        await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.ConnectFastAsync(ct: TestCt);
 
         var ct = TestCt;
 
@@ -253,7 +253,7 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task HostAutoSleeps_WhenPlayerSleeps()
     {
-        await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Record the current day
         var statusBefore = await ServerApi.GetStatus(TestCt);
@@ -332,7 +332,7 @@ public class HostAutomationTests : TestBase
     [TestServer(Exclusive = true)]
     public async Task HostPassesOut_WhenTimeReaches2AM()
     {
-        await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Record the current day
         var statusBefore = await ServerApi.GetStatus(TestCt);
@@ -400,7 +400,7 @@ public class HostAutomationTests : TestBase
     public async Task HostCompletesQiPlaneEvent_AcrossFpsMatrix(int fps)
     {
         var ct = TestCt;
-        await Farmers.ConnectNewAsync(ct: ct);
+        await Farmers.ConnectFastAsync(ct: ct);
 
         var initialRendering = await ServerApi.GetRendering(ct);
         Assert.NotNull(initialRendering);
