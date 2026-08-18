@@ -1120,9 +1120,12 @@ public partial class CabinManagerService : ModService
     /// that cabin's farmhandReference points back at it (decompiled NetWorldState.cs:783). So the
     /// only reachable state in which GetCabin(peerId) returns null here is a one-way link:
     /// farmhand→cabin (homeLocation) intact, cabin→farmhand (farmhandReference) stale or null. Re-
-    /// establish the back-link on the farmhand's OWN home cabin — guarded so we never take a cabin
-    /// another farmhand owns, and by a direct farmhandReference write, never Cabin.AssignFarmhand
-    /// (which DeleteFarmhand()s a displaced uncustomized farmhand; cabin-system invariant 10).
+    /// establish the back-link on the farmhand's OWN home cabin, guarded so we never take a cabin a
+    /// real farmhand owns (a genuine two-claimant corruption the join must surface). A null/self
+    /// reference is rewritten directly; a stale reference to a spurious unclaimed placeholder is
+    /// re-homed via Cabin.AssignFarmhand, which DELETES that placeholder cleanly (a bare reference
+    /// write would orphan it) — see <see cref="TryRepairHomeCabinDurable"/> /
+    /// <see cref="IsSpuriousPlaceholder"/>.
     ///
     /// The passed <paramref name="farm"/> differs by strategy: FarmhouseStack passes master
     /// (Game1.getFarm()), so the master repair both heals durably and resolves this call; CabinStack
@@ -1146,14 +1149,11 @@ public partial class CabinManagerService : ModService
             return null;
         }
 
-        // Durable heal on master: re-point the home cabin's farmhandReference at its rightful owner.
+        // Durable heal on master: re-establish the home cabin's back-link to its rightful owner.
         // This fixes every future join even when the current call resolves against a per-peer copy.
-        if (
-            Game1.getLocationFromName(homeName) is Cabin masterHome
-            && CanRepairOwner(masterHome, peerId)
-        )
+        if (Game1.getLocationFromName(homeName) is Cabin masterHome)
         {
-            masterHome.farmhandReference.Value = farmhand;
+            TryRepairHomeCabinDurable(masterHome, farmhand);
         }
 
         cabin = farm.GetCabin(peerId);
@@ -1168,8 +1168,10 @@ public partial class CabinManagerService : ModService
         var copyCabin = farm.GetBuilding(b =>
             b.isCabin && b.GetIndoors<Cabin>()?.NameOrUniqueName == homeName
         );
-        if (copyCabin?.GetIndoors<Cabin>() is Cabin copyHome && CanRepairOwner(copyHome, peerId))
+        if (copyCabin?.GetIndoors<Cabin>() is Cabin copyHome && CanTakeHomeCabin(copyHome, peerId))
         {
+            // Ephemeral per-peer intro copy — a direct reference write suffices; the master heal
+            // above already deleted any spurious placeholder durably, so nothing to delete here.
             copyHome.farmhandReference.Value = farmhand;
             cabin = farm.GetCabin(peerId);
             if (cabin != null)
@@ -1183,15 +1185,57 @@ public partial class CabinManagerService : ModService
     }
 
     /// <summary>
-    /// A cabin may be (re)bound to <paramref name="peerId"/> only if it is currently unowned or
-    /// already owned by that same farmhand — never steal a cabin another farmhand holds (that is a
-    /// genuine two-claimant corruption the join must surface, not paper over).
+    /// Durably re-establishes the back-link from <paramref name="cabin"/> to
+    /// <paramref name="farmhand"/> on the master graph, dispatching on what the cabin's
+    /// farmhandReference currently points at:
+    ///  • null or this same farmhand — a direct reference write; there is no farmhand to displace,
+    ///    so AssignFarmhand's DeleteFarmhand path (cabin-system invariant 10) is neither needed nor
+    ///    wanted.
+    ///  • a spurious unclaimed placeholder (<see cref="IsSpuriousPlaceholder"/>) — the cabin is
+    ///    genuinely this farmhand's; AssignFarmhand takes it, DELETING the placeholder cleanly.
+    ///    A bare reference write would instead orphan the placeholder (still homed here, no cabin),
+    ///    re-tripping this heal on its own next join.
+    ///  • a real, stamped, or recorded claimant — a genuine two-claimant corruption; leave it so
+    ///    the join surfaces it (the caller joins with the cabin hidden) rather than stealing a home.
     /// </summary>
-    private static bool CanRepairOwner(Cabin cabin, long peerId)
+    private void TryRepairHomeCabinDurable(Cabin cabin, Farmer farmhand)
     {
         var owner = cabin.owner;
-        return owner == null || owner.UniqueMultiplayerID == peerId;
+        if (owner == null || owner.UniqueMultiplayerID == farmhand.UniqueMultiplayerID)
+        {
+            cabin.farmhandReference.Value = farmhand;
+        }
+        else if (IsSpuriousPlaceholder(owner))
+        {
+            // Guarded above against a real owner, so AssignFarmhand's mismatch throw is unreachable.
+            cabin.AssignFarmhand(farmhand);
+        }
+        // else: real/stamped/recorded claimant — decline; the caller logs it and hides the cabin.
     }
+
+    /// <summary>
+    /// Whether <paramref name="cabin"/> may be pointed at <paramref name="peerId"/> in a throwaway
+    /// per-peer intro copy: currently unowned, already this peer's, or a spurious placeholder. A
+    /// real, stamped, or recorded claimant returns false (never show a joiner another player's
+    /// home). The copy is ephemeral, so this gates only a direct reference write — deleting a
+    /// spurious placeholder durably is the master heal's job (<see cref="TryRepairHomeCabinDurable"/>).
+    /// </summary>
+    private bool CanTakeHomeCabin(Cabin cabin, long peerId)
+    {
+        var owner = cabin.owner;
+        return owner == null || owner.UniqueMultiplayerID == peerId || IsSpuriousPlaceholder(owner);
+    }
+
+    /// <summary>
+    /// A cabin owner that is a genuine unclaimed placeholder — safe to displace/delete: an
+    /// uncustomized farmhand with no userID stamp AND no ownership-map record. isCustomized alone
+    /// is unreliable (cabin-system invariant 10: a stuck abandoned claim also reads uncustomized),
+    /// so either a stamp or an ownership record marks a real claimant that must not be displaced.
+    /// </summary>
+    private bool IsSpuriousPlaceholder(Farmer owner) =>
+        owner.isUnclaimedFarmhand
+        && string.IsNullOrEmpty(owner.userID.Value)
+        && !farmhandOwnership.TryGetOwner(owner.UniqueMultiplayerID, out _);
 
     private void LogUnrecoverableCabinLink(string strategyLabel, long peerId)
     {

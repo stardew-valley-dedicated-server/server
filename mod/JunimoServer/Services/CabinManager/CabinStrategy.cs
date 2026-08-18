@@ -3,10 +3,12 @@ using JunimoServer.Util;
 namespace JunimoServer.Services.CabinManager;
 
 /// <summary>
-/// The one strict parser for operator-supplied strategy names (settings file, console,
-/// API): member names only, via <see cref="StrictEnumParser"/>. A numeric value accepted
-/// here would become a live undefined strategy (interceptors run in CabinStack mode while
-/// EnsureAtLeastXCabins builds hidden), so names-only is load-bearing, not cosmetic.
+/// The strict parser for operator-supplied strategy names on the console and API surfaces:
+/// member names only, via <see cref="StrictEnumParser"/>. A numeric value accepted here would
+/// become a live undefined strategy (interceptors run in CabinStack mode while
+/// EnsureAtLeastXCabins builds hidden), so names-only is load-bearing, not cosmetic. (The
+/// settings file binds CabinStrategy through its own tolerant JSON converter, which accepts an
+/// in-range numeric token but still rejects an undefined value via Enum.IsDefined.)
 /// </summary>
 public static class CabinStrategyParser
 {

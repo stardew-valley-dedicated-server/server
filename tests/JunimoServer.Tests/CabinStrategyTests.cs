@@ -400,5 +400,89 @@ public class CabinStrategyTests : TestBase
         await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, TestCt);
     }
 
+    /// <summary>
+    /// The placeholder-owner half of the one-way-link repair: a corrupt/imported save can home a
+    /// farmhand to a cabin whose farmhandReference points at a spurious UNCLAIMED PLACEHOLDER (not
+    /// the farmhand). GetCabin returns null while homeLocation still resolves — the join-time repair
+    /// must HEAL this (take the cabin for the owner, DELETING the placeholder cleanly via
+    /// AssignFarmhand) rather than decline (leaving the player cabin-less) or orphan the placeholder
+    /// (a bare farmhandReference write). Distinct from
+    /// FarmhouseStack_HomeOwnedByAnotherFarmhand_RepairDeclines, whose home cabin is owned by a REAL
+    /// customized farmhand and is correctly declined.
+    /// </summary>
+    [Fact]
+    public async Task CabinStack_HomeOwnedByPlaceholder_HealedOnRejoin()
+    {
+        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await ServerApi.WaitForFarmhandByNameAsync(
+            client.FarmerName,
+            requireCustomized: true,
+            ct: TestCt
+        );
+
+        // Disconnect + free the slot, then install a spurious unclaimed placeholder as the offline
+        // farmhand's own home cabin owner (home still resolves to that cabin) so the corruption
+        // survives to the next join.
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, TestCt);
+        var broke = await ServerApi.BreakCabinLink(
+            ownerId,
+            makeHomeOwnerPlaceholder: true,
+            ct: TestCt
+        );
+        Assert.True(broke?.Success, $"break_cabin_link should succeed: {broke?.Error}");
+        Assert.True(broke!.Redirected, "the break should have installed a placeholder owner");
+        var placeholderId = broke.PlaceholderOwnerId;
+        Assert.True(placeholderId != 0, "a placeholder owner id should have been returned");
+
+        // The cabin now resolves to the placeholder, not the owner.
+        var broken = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Broken,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(TestCt);
+                return snapshot != null && snapshot.Cabins.All(c => c.OwnerId != ownerId);
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            broken,
+            "the cabin should resolve to no owner (owned by the placeholder) after the break"
+        );
+
+        // Rejoin: the repair takes the cabin for the owner and deletes the placeholder.
+        await Farmers.ReconnectAsync(client.FarmerName, ct: TestCt);
+        await ServerApi.WaitForFarmhandByNameAsync(
+            client.FarmerName,
+            requireCustomized: true,
+            ct: TestCt
+        );
+
+        var healed = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinLink_Repaired,
+            async () =>
+            {
+                var snapshot = await ServerApi.GetCabins(TestCt);
+                return snapshot?.Cabins.Any(c => c.OwnerId == ownerId) == true;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            healed,
+            $"the placeholder-owned home cabin should be healed on rejoin — a cabin owned by "
+                + $"{ownerId} must resolve again (pre-fix the branch declined and hid the cabin)"
+        );
+
+        // The placeholder was DELETED, not orphaned — the property that distinguishes the correct
+        // AssignFarmhand heal from a bare farmhandReference write. It must be gone from farmhandData.
+        var state = await ServerApi.GetDiagnosticsState(TestCt);
+        Assert.NotNull(state);
+        Assert.DoesNotContain(state!.FarmhandData, f => f.UniqueMultiplayerId == placeholderId);
+
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, TestCt);
+    }
+
     #endregion
 }

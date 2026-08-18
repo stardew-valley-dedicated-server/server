@@ -244,6 +244,13 @@ public class TestBreakCabinLinkResponse
 
     /// <summary>True when the farmhand's home was repointed at another player's cabin (decline case).</summary>
     public bool Redirected { get; set; }
+
+    /// <summary>
+    /// UniqueMultiplayerID of the spurious unclaimed placeholder installed as the home cabin's
+    /// owner (makeHomeOwnerPlaceholder mode), or 0. The join-time repair must DELETE this
+    /// placeholder while re-homing the owner — a caller asserts it is gone from farmhandData.
+    /// </summary>
+    public long PlaceholderOwnerId { get; set; }
 }
 
 /// <summary>
