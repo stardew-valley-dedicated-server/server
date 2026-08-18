@@ -97,10 +97,23 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>cabin_claims_swept_on_load</c> (save-load sweep summary, emitted only when it
 /// released at least one claim: <c>cleared</c>) · <c>cabin_strategy_migration</c>
 /// (success path: <c>fromStrategy, toStrategy, migrated</c>) ·
-/// <c>cabin_strategy_migration_aborted</c> (Stacked→None migration pre-validation
-/// found fewer designated positions than hidden cabins; no cabin moved and strategy
-/// reverted: <c>fromStrategy, toStrategy, hiddenCabinCount, availablePositionCount,
-/// deficit, reason:"insufficient_designated_positions"</c>) ·
+/// <c>cabin_strategy_migration_aborted</c> (a materializing settings-file switch
+/// (stacked→None or FarmhouseStack→CabinStack) rejected on an existing save — the
+/// staged 'cabins migrate' flow is the supported path; no cabin moved and strategy
+/// reverted: <c>fromStrategy, toStrategy, hiddenCabinCount,
+/// reason:"requires_staged_migration"</c>) ·
+/// <c>cabin_migration_started</c> (staged 'cabins migrate start': <c>fromStrategy,
+/// toStrategy, autoPlaced, remaining</c>) · <c>cabin_migration_placed</c> (one staging
+/// cabin placement — a cabin moved to a validated spot: <c>tileX, tileY, manual</c>) ·
+/// <c>cabin_migration_stackspot_set</c> (the FarmhouseStack→CabinStack staging's
+/// shared-stack-spot choice — no cabin moves: <c>tileX, tileY, manual</c>) ·
+/// <c>cabin_migration_committed</c> (<c>fromStrategy, toStrategy, placedCount</c>) ·
+/// <c>cabin_migration_aborted</c> (staging undone, staged cabins returned to the
+/// hidden stack: <c>fromStrategy, toStrategy, cabinsReturned</c>) ·
+/// <c>cabin_none_reconciled</c> (load-time terminal-state guard: a None world loaded
+/// with cabins still in the hidden stack — crashed migration commit or stacked save
+/// imported onto a None server — and placed them at designated spots: <c>placed,
+/// leftHidden</c>) ·
 /// <c>farmhand_references_cleaned</c> (save-load stale-ref cleanup:
 /// <c>orphansRemoved, homeCleared, lastSleepCleared, validCabins</c>).</item>
 ///

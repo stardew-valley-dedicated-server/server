@@ -420,6 +420,159 @@ public class ActionsController
 
         return new FarmBuildingsResult { Success = true, Cabins = cabins };
     }
+
+    /// <summary>
+    /// Lists the current location's warps as this client resolves them. Warp targets ride
+    /// replication deltas whose values stay invisible until the netcode interpolation
+    /// window elapses (15 client ticks), so tests poll this before walking onto a warp —
+    /// the values here are exactly what a walk would use.
+    /// </summary>
+    public LocationWarpsResult GetLocationWarps()
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new LocationWarpsResult { Success = false, Error = "Not in a game world" };
+        }
+
+        var location = Game1.currentLocation;
+        if (location == null)
+        {
+            return new LocationWarpsResult { Success = false, Error = "No current location" };
+        }
+
+        return new LocationWarpsResult
+        {
+            Success = true,
+            LocationName = location.NameOrUniqueName,
+            Warps = location
+                .warps.Select(w => new LocationWarpInfo
+                {
+                    X = w.X,
+                    Y = w.Y,
+                    TargetName = w.TargetName,
+                    TargetX = w.TargetX,
+                    TargetY = w.TargetY,
+                })
+                .ToList(),
+        };
+    }
+
+    /// <summary>
+    /// Walks the player onto a warp/door tile and triggers the resulting transition the way
+    /// real play does. With no tile given, targets the current location's first warp (a
+    /// cabin interior's only warps are its exit mat). The player is stood on the adjacent
+    /// tile opposite <paramref name="direction"/> and then stepped forward with the exact
+    /// per-step pair vanilla movement runs (Farmer.MovePositionImpl: nextPosition →
+    /// GameLocation.isCollidingWithWarp → Farmer.warpFarmer); when no warp triggers along
+    /// the walk, the action-press door path is tried at the target tile
+    /// (GameLocation.checkAction — building humanDoors warp via Building.doAction).
+    /// Source of truth: decompiled Farmer.MovePositionImpl / GameLocation.checkAction —
+    /// keep this in sync if their resolution changes. The transition itself is
+    /// asynchronous; callers confirm arrival via /status (WaitForLocationAsync).
+    /// </summary>
+    public WalkOntoTileResult WalkOntoTile(int? tileX, int? tileY, int direction = 2)
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new WalkOntoTileResult { Success = false, Error = "Not in a game world" };
+        }
+
+        if (Game1.eventUp)
+        {
+            return new WalkOntoTileResult
+            {
+                Success = false,
+                Error = "An event is up; warps are suppressed (Farmer.warpFarmer no-ops)",
+            };
+        }
+
+        var location = Game1.currentLocation;
+        if (location == null)
+        {
+            return new WalkOntoTileResult { Success = false, Error = "No current location" };
+        }
+
+        if (tileX == null || tileY == null)
+        {
+            var firstWarp = location.warps.FirstOrDefault();
+            if (firstWarp == null)
+            {
+                return new WalkOntoTileResult
+                {
+                    Success = false,
+                    Error = $"No warps in {location.NameOrUniqueName} to auto-target",
+                };
+            }
+
+            tileX = firstWarp.X;
+            tileY = firstWarp.Y;
+        }
+
+        var player = Game1.player;
+        var (standX, standY) = direction switch
+        {
+            0 => (tileX.Value, tileY.Value + 1), // stepping up
+            1 => (tileX.Value - 1, tileY.Value), // stepping right
+            3 => (tileX.Value + 1, tileY.Value), // stepping left
+            _ => (tileX.Value, tileY.Value - 1), // stepping down (default)
+        };
+        player.Position = new Vector2(standX * 64f, standY * 64f);
+        player.faceDirection(direction);
+
+        // Walk up to two tiles, mirroring MovePositionImpl's per-step warp check + advance.
+        var speed = Math.Max(1f, player.getMovementSpeed());
+        var (dx, dy) = direction switch
+        {
+            0 => (0f, -1f),
+            1 => (1f, 0f),
+            3 => (-1f, 0f),
+            _ => (0f, 1f),
+        };
+        var maxSteps = (int)Math.Ceiling(128f / speed);
+        for (var i = 0; i < maxSteps; i++)
+        {
+            var next = player.nextPosition(direction);
+            var warp = location.isCollidingWithWarp(next, player);
+            if (warp != null)
+            {
+                player.warpFarmer(warp, direction);
+                return new WalkOntoTileResult
+                {
+                    Success = true,
+                    Via = "warp",
+                    TargetLocation = warp.TargetName,
+                    TargetX = warp.TargetX,
+                    TargetY = warp.TargetY,
+                };
+            }
+
+            player.Position += new Vector2(dx * speed, dy * speed);
+        }
+
+        // No warp along the walk — try the action-press door path at the target tile.
+        if (
+            location.checkAction(
+                new xTile.Dimensions.Location(tileX.Value, tileY.Value),
+                Game1.viewport,
+                player
+            )
+        )
+        {
+            return new WalkOntoTileResult
+            {
+                Success = true,
+                Via = "door",
+                TargetLocation = Game1.locationRequest?.Name,
+            };
+        }
+
+        return new WalkOntoTileResult
+        {
+            Success = false,
+            Error =
+                $"No warp or door triggered at ({tileX},{tileY}) in {location.NameOrUniqueName}",
+        };
+    }
 }
 
 public class FarmBuildingInfo
@@ -437,6 +590,57 @@ public class FarmBuildingsResult
     public bool Success { get; set; }
     public string? Error { get; set; }
     public List<FarmBuildingInfo> Cabins { get; set; } = new();
+}
+
+public class LocationWarpInfo
+{
+    /// <summary>Trigger tile in the current location.</summary>
+    public int X { get; set; }
+
+    public int Y { get; set; }
+
+    public string TargetName { get; set; } = "";
+
+    /// <summary>Landing tile in the target location, as currently visible to this client.</summary>
+    public int TargetX { get; set; }
+
+    public int TargetY { get; set; }
+}
+
+public class LocationWarpsResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string? LocationName { get; set; }
+    public List<LocationWarpInfo> Warps { get; set; } = new();
+}
+
+public class WalkOntoTileParams
+{
+    /// <summary>Target tile. Omit both to auto-target the current location's first warp.</summary>
+    public int? TileX { get; set; }
+
+    public int? TileY { get; set; }
+
+    /// <summary>Step direction (0 up, 1 right, 2 down, 3 left). Default: 2 (down).</summary>
+    public int Direction { get; set; } = 2;
+}
+
+public class WalkOntoTileResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>How the transition triggered: "warp" (touch warp) or "door" (action press).</summary>
+    public string? Via { get; set; }
+
+    /// <summary>The transition's target location name (for "door", the queued request's name).</summary>
+    public string? TargetLocation { get; set; }
+
+    /// <summary>Warp landing tile ("warp" only).</summary>
+    public int? TargetX { get; set; }
+
+    public int? TargetY { get; set; }
 }
 
 public class SleepResult

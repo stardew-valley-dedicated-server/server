@@ -336,6 +336,8 @@ internal class ModEntry : Mod
         var lobbyService = _services.GetRequiredService<LobbyService>();
 
         CabinCommand.Register(Helper, chatCommandsService, cabinService, persistentOptions);
+        MigrateCommand.Register(Helper, chatCommandsService, roleService, cabinService);
+        StackSpotCommand.Register(Helper, chatCommandsService, roleService, cabinService);
         RoleCommands.Register(Helper, chatCommandsService, roleService);
         BanCommand.Register(Helper, chatCommandsService, roleService);
         KickCommand.Register(Helper, chatCommandsService);

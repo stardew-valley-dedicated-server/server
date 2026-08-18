@@ -61,6 +61,13 @@ public class ServerRuntimeSettings
     public bool AllowIpConnections { get; set; } = false;
 
     /// <summary>
+    /// Whether players may move their cabin out to a real farm position via the
+    /// !cabin chat command (and send it back with '!cabin reset'), regardless of
+    /// cabin strategy. Default: true
+    /// </summary>
+    public bool AllowCabinRelocation { get; set; } = true;
+
+    /// <summary>
     /// Server-authoritative farmhand ownership: farmhands are visible/claimable only by the
     /// transport identity (Steam64 / GOG Galaxy id) that first claimed them, and IP-created
     /// farmhands stay in the LAN pool. Disable for setups where one player uses the same

@@ -69,6 +69,12 @@ public class ServerSettingsLoader
     public bool AllowIpConnections => _settings.Server.AllowIpConnections;
 
     /// <summary>
+    /// Whether players may relocate their cabin via the !cabin command
+    /// (see <see cref="ServerRuntimeSettings.AllowCabinRelocation"/>).
+    /// </summary>
+    public bool AllowCabinRelocation => _settings.Server.AllowCabinRelocation;
+
+    /// <summary>
     /// Whether the farmhand ownership gate and transport-scoped visibility narrowing are
     /// enforced (see <see cref="ServerRuntimeSettings.EnforceFarmhandOwnership"/>).
     /// </summary>
@@ -113,6 +119,79 @@ public class ServerSettingsLoader
     public void SetVerboseLogging(bool value)
     {
         _settings.Server.VerboseLogging = value;
+        Save();
+    }
+
+    /// <summary>
+    /// Persists a new cabin strategy into the settings file. Used by the staged-migration
+    /// commit: the settings file is the durable source of truth (SyncFromSettings reapplies
+    /// it on every boot/reload), so a committed strategy flip must be written here or the
+    /// next reload would revert it.
+    /// </summary>
+    public void SetCabinStrategy(CabinStrategy value)
+    {
+        _settings.Server.CabinStrategy = value;
+        Save();
+    }
+
+    /// <summary>
+    /// Persists into server-settings.json the parts of a new game's configuration that a
+    /// later load RE-APPLIES from the file: the runtime settings SyncFromSettings pushes on
+    /// every boot/reload (maxPlayers, cabinStrategy, allowCabinRelocation), the
+    /// AllowIpConnections door (reapplied by IpConnectionService at every SaveLoaded), and
+    /// CabinLayoutNearby (re-read at every load to resolve the designated cabin layout).
+    /// Without these writes a /newgame override silently reverts at the next reload — an
+    /// API-created None game would even sync the file's CabinStack back and sweep every
+    /// visible cabin into the hidden stack. Creation-only settings (farm name/type, seed,
+    /// starting cabins, …) are deliberately NOT written: nothing re-applies them to the
+    /// created game, so in the file they keep describing the configured defaults for the
+    /// NEXT new game.
+    /// </summary>
+    public void ApplyNewGameConfig(NewGameConfig config)
+    {
+        _settings.Game.CabinLayoutNearby = config.CabinLayoutNearby;
+        _settings.Server.MaxPlayers = config.MaxPlayers;
+        _settings.Server.CabinStrategy = config.CabinStrategy;
+        _settings.Server.AllowCabinRelocation = config.AllowCabinRelocation;
+        _settings.Server.AllowIpConnections = config.AllowIpConnections;
+        Save();
+    }
+
+    /// <summary>
+    /// The settings-file values <see cref="ApplyNewGameConfig"/> writes, captured so a
+    /// failed game creation can restore them (see <see cref="RestoreAppliedNewGameConfig"/>).
+    /// </summary>
+    public readonly record struct AppliedNewGameConfig(
+        bool CabinLayoutNearby,
+        int MaxPlayers,
+        CabinStrategy CabinStrategy,
+        bool AllowCabinRelocation,
+        bool AllowIpConnections
+    );
+
+    public AppliedNewGameConfig CaptureAppliedNewGameConfig() =>
+        new(
+            _settings.Game.CabinLayoutNearby,
+            _settings.Server.MaxPlayers,
+            _settings.Server.CabinStrategy,
+            _settings.Server.AllowCabinRelocation,
+            _settings.Server.AllowIpConnections
+        );
+
+    /// <summary>
+    /// Restores the values <see cref="ApplyNewGameConfig"/> wrote. Game creation persists
+    /// its config into the file BEFORE the engine builds the world (SaveLoaded consumers
+    /// read it), so a throw mid-creation would otherwise leave the durable file describing
+    /// a game that never came to exist — and the next boot would process a strategy switch
+    /// the operator never asked for on the old, still-targeted save.
+    /// </summary>
+    public void RestoreAppliedNewGameConfig(AppliedNewGameConfig prior)
+    {
+        _settings.Game.CabinLayoutNearby = prior.CabinLayoutNearby;
+        _settings.Server.MaxPlayers = prior.MaxPlayers;
+        _settings.Server.CabinStrategy = prior.CabinStrategy;
+        _settings.Server.AllowCabinRelocation = prior.AllowCabinRelocation;
+        _settings.Server.AllowIpConnections = prior.AllowIpConnections;
         Save();
     }
 

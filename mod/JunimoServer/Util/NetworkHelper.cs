@@ -107,26 +107,6 @@ public class NetworkHelper
         return incMsg;
     }
 
-    public static bool IsLocationDeltaMessageForLocation<T>(MessageContext context, out T location)
-        where T : GameLocation
-    {
-        var isStructure = context.Reader.ReadByte() > 0;
-        var locationName = context.Reader.ReadString();
-
-        if (locationName.StartsWith(typeof(T).Name))
-        {
-            // Uses global location, so changes affect server + all clients
-            if (Game1.getLocationFromName(locationName, isStructure) is T locationGeneric)
-            {
-                location = locationGeneric;
-                return true;
-            }
-        }
-
-        location = null;
-        return false;
-    }
-
     public static OutgoingMessage CreateMessagePlayerIntroduction(
         NetRoot<Farmer> farmerRoot,
         Farmer otherFarmer,

@@ -1,5 +1,4 @@
 using JunimoServer.Tests.Clients;
-using JunimoServer.Tests.Containers;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
 using Xunit;
@@ -9,7 +8,7 @@ namespace JunimoServer.Tests;
 /// <summary>
 /// Regression tests for issue #64 — a cabin moved via /cabin must keep its position
 /// across a save+reload. The bug lived in the save-load bulk movers
-/// (CabinManagerService.SyncExistingCabins / MigrateCabins), which swept every
+/// (CabinManagerService.SyncExistingCabins / ApplyStrategySwitch), which swept every
 /// visible cabin back into the hidden stack on OnSaveLoaded with no exemption for an
 /// intentionally-placed cabin.
 ///
@@ -28,30 +27,66 @@ namespace JunimoServer.Tests;
 )]
 public class CabinPositionPersistenceTests : TestBase
 {
+    private bool _needsServerReset;
+
     public CabinPositionPersistenceTests() { }
 
     public override async ValueTask DisposeAsync()
     {
         // Disconnect the primary so the next test body's own /newgame doesn't 409.
         // Most tests in this class disconnect mid-body, but a few (two-player and the
-        // dummy reconnect tests) leave the primary connected. No reset /newgame is
-        // needed: this class's config hash (ExistingCabinBehavior=MoveToStack) is
-        // unique to it, so no sibling reuses its server, and every body opens with
-        // its own CreateNewGameOnServerAsync that rebuilds the world from scratch.
+        // dummy reconnect tests) leave the primary connected.
+        //
+        // Tests that pass /newgame overrides (the None+maxPlayers:4 cases) set
+        // _needsServerReset: the mod persists every created game's config into the
+        // in-container settings file, so without a reset a later body that omits
+        // maxPlayers would inherit 4 from the mutated file instead of the pooled value —
+        // and the server would drift from the config hash it is pooled under (MaxPlayers
+        // is a hash input; the unique ExistingCabinBehavior=MoveToStack hash only prevents
+        // CROSS-class reuse). Bodies that create with pooled-matching values need no reset.
         if (Lease != null)
         {
-            // Tolerant: a no-op throw when already at title must not block cleanup.
             try
             {
-                await DisconnectAsync();
+                // Tolerant: a no-op throw when already at title must not block cleanup.
+                try
+                {
+                    await DisconnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    LogWarning(
+                        $"Primary disconnect during cleanup failed (may already be at title): {ex.Message}"
+                    );
+                }
+
+                if (_needsServerReset)
+                {
+                    // DisconnectAsync settles the client only
+                    // (disconnect-settles-client-not-server): gate on server-side removal
+                    // so the reset /newgame can't 409 against a still-registered player.
+                    if (!await ServerApi.WaitForAllPlayersRemovedAsync())
+                    {
+                        LogWarning(
+                            "Players still registered server-side after disconnect; the reset may 409."
+                        );
+                    }
+                    await ResetServerToPooledConfigAsync();
+                }
             }
             catch (Exception ex)
             {
-                LogWarning(
-                    $"Primary disconnect during cleanup failed (may already be at title): {ex.Message}"
+                // A failed reset leaves a server whose settings file no longer matches the
+                // config hash it is pooled under. Retire it so the pool boots a fresh
+                // instance instead of handing it to the next reuser.
+                LogWarning($"Server reset failed during cleanup ({ex.Message}); retiring server.");
+                Lease.Managed.PoisonServer(
+                    $"Cleanup reset to pooled config failed: {ex.Message}",
+                    ManagedServer.PoisonReasonCode.TestRetiredServer
                 );
             }
         }
+        _needsServerReset = false;
         await base.DisposeAsync();
     }
 
@@ -94,10 +129,12 @@ public class CabinPositionPersistenceTests : TestBase
     public async Task MoveToStack_UnclaimedCabinSweptOnReload()
     {
         var ct = TestCt;
-        // None strategy starts cabins at real, visible map positions. After switching
-        // to CabinStack + MoveToStack and reloading, those unclaimed cabins (no /cabin
-        // intent) must be pulled into the hidden stack.
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 2);
+        // None strategy starts cabins at real, visible map positions (min(designated
+        // positions, MaxPlayers), placed up front). After switching to CabinStack +
+        // MoveToStack and reloading, those unclaimed cabins (no /cabin intent) must be
+        // pulled into the hidden stack.
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", maxPlayers: 4);
+        _needsServerReset = true;
 
         var before = await ServerApi.GetCabins(ct);
         Assert.NotNull(before);
@@ -123,14 +160,17 @@ public class CabinPositionPersistenceTests : TestBase
     }
 
     /// <summary>
-    /// Second bug path: the strategy-switch migration (MigrateCabins, None→CabinStack)
-    /// must also respect a /cabin-placed cabin.
+    /// Second bug path: the settings-file strategy switch (ApplyStrategySwitch,
+    /// None→CabinStack) must also respect a /cabin-placed cabin.
     /// </summary>
     [Fact]
     public async Task StrategySwitch_NoneToCabinStack_PlacedCabinSurvives()
     {
         var ct = TestCt;
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None");
+        // maxPlayers:4 caps the up-front None placement at the 4 lowest-Order designated
+        // spots, keeping the !cabin target footprint (CabinPlacementHelper) clear of cabins.
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", maxPlayers: 4);
+        _needsServerReset = true;
 
         var client = await Farmers.ConnectNewAsync(ct: ct);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
@@ -274,7 +314,10 @@ public class CabinPositionPersistenceTests : TestBase
     public async Task SameSweep_KeepsPlacedCabin_SweepsUntouchedCabin()
     {
         var ct = TestCt;
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 2);
+        // maxPlayers:4 caps the up-front None placement at the 4 lowest-Order designated
+        // spots, keeping both !cabin target footprints (CabinPlacementHelper) clear of cabins.
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", maxPlayers: 4);
+        _needsServerReset = true;
 
         var clientA = await Farmers.ConnectNewAsync(ct: ct);
         var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
@@ -552,21 +595,12 @@ public class CabinPositionPersistenceTests : TestBase
     }
 
     /// <summary>
-    /// Rewrites the in-container server-settings.json cabinStrategy value in place.
-    /// The change is applied by the next ReloadServerAsync (which re-reads the file).
-    /// Mirrors the real operator flow: edit settings, reload — no test-only API added.
-    /// Uses sed (jq is not in the server image); the settings writer emits one
-    /// "cabinStrategy": "..." line, so a keyed substitution is unambiguous.
+    /// Rewrites the in-container cabinStrategy via the shared settings-file helper; the
+    /// change is applied by the next ReloadServerAsync (which re-reads the file).
     /// </summary>
     private async Task SwitchCabinStrategyAsync(string strategy, CancellationToken ct)
     {
-        var script =
-            $"sed -i 's/\"cabinStrategy\": \"[^\"]*\"/\"cabinStrategy\": \"{strategy}\"/' {ServerContainer.SettingsPath}";
-        var result = await Server.Container.ExecAsync(new[] { "sh", "-c", script }, ct);
-        Assert.True(
-            result.ExitCode == DockerExitCodes.Success,
-            $"Failed to rewrite settings cabinStrategy: {result.Stderr}"
-        );
+        await ServerSettingsFileHelper.SwitchCabinStrategyAsync(Server, strategy, ct);
         Log($"Switched in-container cabinStrategy to {strategy}");
     }
 
