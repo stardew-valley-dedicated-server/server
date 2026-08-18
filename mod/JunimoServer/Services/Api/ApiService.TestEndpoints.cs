@@ -161,6 +161,9 @@ public partial class ApiService
                             await HandlePostTestSetIpConnectionsAsync(request)
                         );
                         return;
+                    case "/test/host_menu":
+                        await WriteJsonAsync(response, await HandlePostTestHostMenuAsync(request));
+                        return;
                     case "/test/break_npc_sprite":
                         await WriteJsonAsync(
                             response,
@@ -292,6 +295,9 @@ public partial class ApiService
                 result.FestivalEndReady = Game1.netReady.GetNumberReady("festivalEnd");
                 result.FestivalEndRequired = Game1.netReady.GetNumberRequired("festivalEnd");
                 result.TimeOfDay = Game1.timeOfDay;
+                result.LuauIridiumStarfruitCount = Game1.player.team.luauIngredients.Count(i =>
+                    i is { ParentSheetIndex: 268, Quality: 3 }
+                );
                 result.Success = true;
             });
         }
@@ -796,6 +802,48 @@ public partial class ApiService
 
         return result;
     }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/host_menu",
+        Summary = "Open or close an inert host menu to exercise the festival leave-end gate (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestHostMenuResponse), 200)]
+    private async Task<TestHostMenuResponse> HandlePostTestHostMenuAsync(
+        HttpListenerRequest request
+    )
+    {
+        // ?open=true|false. Sets an inert menu that no host handler auto-clears, holding
+        // HandleFestivalLeave's leave-end gate (activeClickableMenu is null) closed until closed here.
+        var open = string.Equals(
+            request.QueryString["open"],
+            "true",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        var result = new TestHostMenuResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                Game1.activeClickableMenu = open ? new TestHoldMenu() : null;
+                result.MenuOpen = Game1.activeClickableMenu != null;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    /// <summary>Inert menu holding Game1.activeClickableMenu non-null with no side effects, for /test/host_menu.</summary>
+    private sealed class TestHoldMenu : StardewValley.Menus.IClickableMenu { }
 
     [ApiEndpoint(
         "POST",
