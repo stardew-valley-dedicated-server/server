@@ -197,19 +197,10 @@ public class TestFestivalStateResponse
     /// <summary>Current in-game time (HHMM). Jumps to the festival's reset cutoff once it ends.</summary>
     public int TimeOfDay { get; set; }
 
-    /// <summary>
-    /// Count of iridium-quality starfruit (item 268, quality 3) in the Luau soup
-    /// (<c>Game1.player.team.luauIngredients</c>). The mod's OnAnnounce adds exactly one; the #372
-    /// double-add regression would make this 2. Only meaningful during the Luau (0 otherwise).
-    /// </summary>
     public int LuauIridiumStarfruitCount { get; set; }
 }
 
-/// <summary>
-/// Response from POST /test/host_menu (test-only). Opens or closes an inert host menu
-/// (<c>Game1.activeClickableMenu</c>) to exercise the festival leave-end gate, and reports the
-/// resulting menu-open state.
-/// </summary>
+/// <summary>Response from POST /test/host_menu (test-only). Reports whether a host menu is open.</summary>
 public class TestHostMenuResponse
 {
     public bool Success { get; set; }

@@ -73,14 +73,13 @@ public class FestivalTests : TestBase
     private const int EggDay = 13;
     private const int EggBeforeDay = 12;
 
-    // Stardew Valley Fair: Fall 16, main-event, in Town. Test A (the #537 gate). Window Town/900 1500.
+    // Stardew Valley Fair: Fall 16, main-event, in Town.
     private const string FairSeason = "fall";
     private const int FairDay = 16;
     private const int FairBeforeDay = 15;
     private static readonly (int Open, int Close) FairWindow = (900, 1500);
 
-    // Luau: Summer 11, main-event (adds an iridium starfruit to the soup), at the Beach. Test B
-    // (folds in #372). Window Beach/900 1400 — the Luau is on the Beach, not in Town.
+    // Luau: Summer 11, main-event (adds an iridium starfruit to the soup), at the Beach.
     private const string LuauSeason = "summer";
     private const int LuauDay = 11;
     private const int LuauBeforeDay = 10;
@@ -98,11 +97,9 @@ public class FestivalTests : TestBase
     // larger than the old window, far below the SpiritsEveTimeOutSeconds wall-clock backstop.
     private static readonly TimeSpan FestivalSettleWindow = TimeSpan.FromSeconds(6);
 
-    // The Fair's leave can be briefly deferred: HandleFestivalLeave holds off ending while the grange
-    // results DialogueBox is open on the host, and HandleDialogueBox clears that box only on its
-    // once-per-second pass (~12s at SERVER_TPS=5). Allow comfortably more than that cadence for the
-    // end to land — NetworkSyncTimeout (10s) would flake if the box happens to be open when the leave
-    // vote arrives. Only a ceiling: the common (box-already-clear) case ends within ~1s.
+    // The Fair's leave can be briefly deferred while the grange results box is open (HandleDialogueBox
+    // clears it within ~12s), so allow more than NetworkSyncTimeout (10s). A ceiling only — the common
+    // (box-already-clear) case ends within ~1s.
     private static readonly TimeSpan FairLeaveEndTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
@@ -369,19 +366,11 @@ public class FestivalTests : TestBase
     }
 
     /// <summary>
-    /// Test A (the #537 gate): the Stardew Valley Fair does not strand the festival after grange
-    /// judging, and a connected player can still leave it.
-    ///
-    /// <para>
-    /// Pre-fix, the Fair carried <c>AutoEndAfterCountdown</c>: when the grange countdown elapsed the
-    /// host both started judging AND called <c>EndFestival(force: false)</c>. With a player present
-    /// that marked only the host <c>festivalEnd</c>-ready and force-opened a ready-check no one could
-    /// satisfy, while latching <c>_startedFestivalEnd</c> so no other exit could ever fire — the
-    /// festival hung forever ("Grange display finished, triggering festival end", then silence).
-    /// Step 1 removes the auto-end so the Fair ends like every other main-event festival; Step 2's
-    /// menu-gated leave keeps the leave working even if the grange results dialogue is briefly open
-    /// on the host when the player votes.
-    /// </para>
+    /// The Stardew Valley Fair does not strand the festival after grange judging, and a connected
+    /// player can still leave it. Pre-fix the Fair auto-ended after the countdown — latching
+    /// <c>_startedFestivalEnd</c> against a host-only <c>festivalEnd</c> ready-check no one could
+    /// satisfy — and hung forever. The auto-end is gone; the leave also survives a briefly-open
+    /// grange results menu on the host.
     /// </summary>
     [Fact]
     public async Task Fair_DoesNotStrandFestival_AndLeavesCleanly()
@@ -399,10 +388,8 @@ public class FestivalTests : TestBase
             ct
         );
 
-        // The host announces the grange countdown within ~1s of the festival becoming active.
-        // Waiting for it confirms we entered the real main-event festival before skipping the
-        // countdown (and, per the runtime gate, the container log is checked for this announce with
-        // NO "Grange display finished, triggering festival end" line following it).
+        // Wait for the grange countdown announce to confirm we entered the main-event festival before
+        // skipping the countdown.
         var announce = await GameClient.Chat.WaitForMessageContainingAsync(
             new[] { "Grange Judging", "!event" },
             timeout: TestTimings.ChatCommandTimeout
@@ -414,9 +401,7 @@ public class FestivalTests : TestBase
         Assert.True(sent?.Success == true, $"Sending !event failed: {sent?.Error}");
 
         // Primary regression assertion: after judging fires, the festival must stay active with the
-        // host's festivalEnd ready NEVER set. Pre-fix the auto-end set FestivalEndReady >= 1 and
-        // force-opened the host ready-check — the exact deadlock. Poll the settle window and fail the
-        // moment the festival ends early or a host festivalEnd ready appears.
+        // host's festivalEnd ready never set. Fail the moment it ends early or a host ready appears.
         var stranded = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Festival_FairNoAutoEnd,
             async () =>
@@ -430,9 +415,7 @@ public class FestivalTests : TestBase
         Assert.False(
             stranded,
             "The Fair auto-ended after the grange countdown (festival inactive or FestivalEndReady "
-                + ">= 1 within the settle window). Pre-fix, AutoEndAfterCountdown did exactly this — "
-                + "marking only the host festivalEnd-ready and latching _startedFestivalEnd — which "
-                + "deadlocked the festival. Step 1 removed the auto-end."
+                + ">= 1 within the settle window) — it must stay active with no host festivalEnd ready."
         );
 
         var midState = await ServerApi.GetFestivalState(ct);
@@ -443,13 +426,11 @@ public class FestivalTests : TestBase
         );
         Assert.True(
             midState.FestivalEndReady == 0,
-            $"No festivalEnd ready should be set after judging; got {midState.FestivalEndReady} "
-                + "(pre-fix the auto-end set the host's own festivalEnd ready and opened the ready-check)."
+            $"No festivalEnd ready should be set after judging; got {midState.FestivalEndReady}."
         );
 
         // End-to-end gate: a connected player can leave normally, proving _startedFestivalEnd was
-        // never prematurely latched. Step 2 makes this deterministic even if the grange results
-        // dialogue is transiently open on the host when the leave vote lands.
+        // never prematurely latched (the menu gate keeps this working even if the grange box is open).
         var leave = await GameClient.Actions.LeaveFestival();
         Assert.NotNull(leave);
         Assert.True(leave.Success, $"leave_festival action failed: {leave.Error}");
@@ -467,33 +448,19 @@ public class FestivalTests : TestBase
         Assert.True(
             ended,
             "The Fair should end after the connected player votes to leave — a latched "
-                + "_startedFestivalEnd (the pre-fix auto-end, or an unguarded force:false end while the "
-                + "grange results dialogue was open) would make HandleFestivalLeave early-return and "
-                + "ignore the leave vote."
+                + "_startedFestivalEnd would make HandleFestivalLeave early-return and ignore the vote."
         );
         LogSuccess("Fair stayed active after judging (no auto-end) and ended cleanly on leave");
     }
 
     /// <summary>
-    /// Test C (the Step 2 gate): a leave vote that lands while a host menu is open must be deferred —
-    /// not latch <c>_startedFestivalEnd</c> — and must fire once the menu clears.
-    ///
-    /// <para>
-    /// Removing the auto-end (Step 1) newly exposes the grange results <c>DialogueBox</c> on the host
-    /// after judging. <c>TryStartEndFestivalDialogue</c> no-ops while any menu is open, but
-    /// <c>EndFestival</c> latches <c>_startedFestivalEnd</c> unconditionally — so an unguarded
-    /// <c>force:false</c> end during that window would re-strand the festival with no exit (the #537
-    /// deadlock, now reachable via the results box). Step 2 gates both graceful ends on no open host
-    /// menu.
-    /// </para>
-    ///
-    /// <para>
-    /// The gate keys on <c>Game1.activeClickableMenu is null</c>, not the menu's type, so this holds an
-    /// inert host menu open across the leave vote — a deterministic stand-in for the grange box, whose
-    /// real open/close timing on a render-suppressed host is nondeterministic. Test A covers the
-    /// judging/no-auto-end path; this isolates the menu-open deferral. The last assertion is the
-    /// discriminator: pre-fix, the vote latches on the open menu and the festival never ends.
-    /// </para>
+    /// A leave vote that lands while a host menu is open must be deferred — not latch
+    /// <c>_startedFestivalEnd</c> — and must fire once the menu clears. <c>TryStartEndFestivalDialogue</c>
+    /// no-ops while a menu is open but <c>EndFestival</c> latches unconditionally, so an unguarded end
+    /// during that window would strand the festival. Holds an inert host menu open across the vote — a
+    /// deterministic stand-in for the transient grange results box, since the gate keys on
+    /// <c>Game1.activeClickableMenu is null</c>, not the menu type. The final assertion is the
+    /// discriminator: without the gate the vote latches on the open menu and the festival never ends.
     /// </summary>
     [Fact]
     public async Task Fair_DefersLeaveWhileHostMenuOpen_ThenEndsWhenCleared()
@@ -511,11 +478,9 @@ public class FestivalTests : TestBase
             ct
         );
 
-        // Open a host menu on the active (idle-countdown) Fair, reproducing the state the grange
-        // results DialogueBox creates — a non-null Game1.activeClickableMenu. No host handler clears an
-        // inert menu, so it stays open until we close it below, holding the leave-end gate closed
-        // deterministically across the vote. (No !event: on the idle countdown no grange event runs to
-        // open a dialogue over it, and the leave path runs every tick regardless of the countdown.)
+        // Open an inert host menu on the active (idle-countdown) Fair. Nothing clears it, so it holds
+        // the leave-end gate closed until we close it below. (No !event needed: the leave path runs
+        // every tick regardless of the countdown.)
         var opened = await ServerApi.SetHostMenu(open: true, ct);
         Assert.True(
             opened?.Success == true && opened.MenuOpen,
@@ -542,8 +507,7 @@ public class FestivalTests : TestBase
         Assert.True(voteSynced, "The client's festivalEnd vote should replicate to the host.");
 
         // Deferral: with the vote present but a host menu open, the Fair must NOT end across the settle
-        // window — HandleFestivalLeave holds off, never latching _startedFestivalEnd. (The menu stays
-        // open the whole window: nothing clears an inert menu, and we only close it below.)
+        // window — HandleFestivalLeave holds off, never latching _startedFestivalEnd.
         var endedWhileMenuOpen = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_Festival_FairDeferredHold,
             async () =>
@@ -560,9 +524,7 @@ public class FestivalTests : TestBase
                 + "force-ended or latched."
         );
 
-        // Release: close the host menu. The deferred leave must now fire and end the Fair. Pre-fix, the
-        // force:false end latched _startedFestivalEnd while the menu was open, so HandleFestivalLeave
-        // early-returns forever and the festival never ends here — the #537 strand via the results box.
+        // Release: close the host menu. The deferred leave must now fire and end the Fair.
         var closed = await ServerApi.SetHostMenu(open: false, ct);
         Assert.True(
             closed?.Success == true && !closed.MenuOpen,
@@ -582,8 +544,7 @@ public class FestivalTests : TestBase
         Assert.True(
             ended,
             "After the host menu cleared, the deferred leave should end the Fair. A latched "
-                + "_startedFestivalEnd (the pre-fix unconditional latch on the force:false end while a "
-                + "host menu was open) would make HandleFestivalLeave early-return and strand it."
+                + "_startedFestivalEnd would make HandleFestivalLeave early-return and strand it."
         );
         LogSuccess(
             "Fair deferred the leave while a host menu was open, then ended cleanly once it cleared"
@@ -591,16 +552,11 @@ public class FestivalTests : TestBase
     }
 
     /// <summary>
-    /// Test B (folds in the #372 verification): the Luau adds the iridium starfruit to the soup
-    /// exactly once, even when <c>!event</c> fast-forwards the countdown after the on-entry announce.
-    ///
-    /// <para>
-    /// #372: the iridium starfruit was added twice when <c>!event</c> was used mid-countdown. It is
-    /// already fixed in the tree — the <c>!event</c> fast-forward guards its <c>OnAnnounce</c> with
-    /// <c>if (!_announced)</c> — but nothing locked it in. This test is that lock: enter the Luau (the
-    /// on-entry announce adds the starfruit once), then <c>!event</c> (the announce-then-!event
-    /// ordering #372 reproduces under), and assert the soup still holds exactly one iridium starfruit.
-    /// </para>
+    /// The Luau adds the iridium starfruit to the soup exactly once, even when <c>!event</c>
+    /// fast-forwards the countdown after the on-entry announce. The <c>!event</c> fast-forward guards
+    /// its <c>OnAnnounce</c> with <c>if (!_announced)</c>; this test locks that in — enter the Luau (the
+    /// on-entry announce adds the starfruit once), then <c>!event</c>, and assert the soup still holds
+    /// exactly one.
     /// </summary>
     [Fact]
     public async Task Luau_AddsIridiumStarfruitExactlyOnce()
@@ -618,10 +574,8 @@ public class FestivalTests : TestBase
             ct
         );
 
-        // The on-entry announce adds the starfruit once (OnAnnounce = AddIridiumStarfruitToSoup) and
-        // is broadcast as the "Soup Tasting" countdown message. Waiting for it guarantees the single
-        // on-entry add has run before we send !event — the exact announce-then-!event ordering #372
-        // reproduces under.
+        // The on-entry announce (OnAnnounce = AddIridiumStarfruitToSoup) adds the starfruit once and is
+        // broadcast as the "Soup Tasting" message. Waiting for it guarantees the add ran before !event.
         var announce = await GameClient.Chat.WaitForMessageContainingAsync(
             new[] { "Soup Tasting", "!event" },
             timeout: TestTimings.ChatCommandTimeout
@@ -644,8 +598,8 @@ public class FestivalTests : TestBase
             "The Luau on-entry announce should add exactly one iridium starfruit to the soup."
         );
 
-        // Fast-forward the countdown. Pre-#363 this re-ran OnAnnounce and added a SECOND starfruit;
-        // the if (!_announced) guard now skips it. The main event fires in the same pass.
+        // Fast-forward the countdown. Without the if (!_announced) guard this re-runs OnAnnounce and
+        // adds a second starfruit. The main event fires in the same pass.
         var sent = await GameClient.Chat.Send("!event");
         Assert.True(sent?.Success == true, $"Sending !event failed: {sent?.Error}");
 
@@ -663,9 +617,8 @@ public class FestivalTests : TestBase
         );
         Assert.False(
             doubleAdded,
-            "The Luau soup held more than one iridium starfruit after !event — the #372 double-add. "
-                + "The !event fast-forward must guard OnAnnounce with if (!_announced) so the starfruit "
-                + "is added exactly once per festival."
+            "The Luau soup held more than one iridium starfruit after !event — the !event fast-forward "
+                + "must guard OnAnnounce with if (!_announced) so the starfruit is added exactly once."
         );
 
         var finalState = await ServerApi.GetFestivalState(ct);

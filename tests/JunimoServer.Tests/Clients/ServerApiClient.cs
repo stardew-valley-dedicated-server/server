@@ -601,8 +601,6 @@ public class TestFestivalStateResponse
     [JsonPropertyName("timeOfDay")]
     public int TimeOfDay { get; set; }
 
-    /// <summary>Iridium-quality starfruit (item 268, quality 3) in the Luau soup. The mod adds one;
-    /// #372's double-add regression would make this 2. Only meaningful during the Luau.</summary>
     [JsonPropertyName("luauIridiumStarfruitCount")]
     public int LuauIridiumStarfruitCount { get; set; }
 }
@@ -2349,9 +2347,8 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Test-only: open or close an inert host menu (Game1.activeClickableMenu), reproducing the grange
-    /// results DialogueBox state so a test can hold HandleFestivalLeave's leave-end gate closed across
-    /// a client's leave vote. POST /test/host_menu?open=...
+    /// Test-only: open or close an inert host menu (Game1.activeClickableMenu) to exercise the
+    /// festival leave-end gate. POST /test/host_menu?open=...
     /// </summary>
     public async Task<TestHostMenuResponse?> SetHostMenu(bool open, CancellationToken ct = default)
     {
