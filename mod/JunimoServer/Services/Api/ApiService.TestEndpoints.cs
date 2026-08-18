@@ -1087,6 +1087,14 @@ public partial class ApiService
         // unrecoverable shape (home cabin owned by someone else) the join-time repair must decline.
         long.TryParse(request.QueryString["redirectHomeToOwner"], out var redirectOwnerId);
 
+        // Optional: install a fresh unclaimed placeholder as the farmhand's OWN home cabin's owner,
+        // producing the recoverable "home cabin owned by a spurious placeholder" shape the join-time
+        // repair must HEAL (delete the placeholder, re-home the owner) rather than decline or orphan.
+        bool.TryParse(
+            request.QueryString["makeHomeOwnerPlaceholder"],
+            out var makeHomeOwnerPlaceholder
+        );
+
         try
         {
             await RunOnGameThreadAsync(() =>
@@ -1113,6 +1121,43 @@ public partial class ApiService
                 }
 
                 result.BrokenCabinName = cabin.NameOrUniqueName;
+
+                if (makeHomeOwnerPlaceholder)
+                {
+                    // Manufacture the corruption ON the farmhand's OWN cabin: a fresh uncustomized
+                    // placeholder becomes the cabin's owner while the farmhand still homes here.
+                    // GetCabin(ownerId) then returns null (owner is the placeholder) while
+                    // homeLocation still resolves to this cabin — the shape the join-time repair must
+                    // heal by DELETING the placeholder and re-homing the owner. Mirrors
+                    // Cabin.CreateFarmhand's placeholder shape (farmhandData entry + home set).
+                    long placeholderId;
+                    do
+                    {
+                        placeholderId = Utility.RandomLong();
+                    } while (Game1.GetPlayer(placeholderId) != null);
+
+                    var placeholder = new Farmer(
+                        new FarmerSprite(null),
+                        Vector2.Zero,
+                        1,
+                        "",
+                        Farmer.initialTools(),
+                        isMale: true
+                    )
+                    {
+                        UniqueMultiplayerID = placeholderId,
+                    };
+                    placeholder.homeLocation.Value = cabin.NameOrUniqueName;
+                    Game1.netWorldState.Value.farmhandData[placeholderId] = placeholder;
+                    cabin.farmhandReference.Value = placeholder;
+                    farmhand.homeLocation.Value = cabin.NameOrUniqueName;
+
+                    result.PlaceholderOwnerId = placeholderId;
+                    result.Redirected = true;
+                    result.HomeLocation = farmhand.homeLocation.Value ?? "";
+                    result.Success = true;
+                    return;
+                }
 
                 if (redirectOwnerId != 0)
                 {

@@ -847,6 +847,13 @@ public class TestBreakCabinLinkResponse
 
     [JsonPropertyName("redirected")]
     public bool Redirected { get; set; }
+
+    /// <summary>
+    /// UniqueMultiplayerID of the spurious placeholder installed as the home cabin's owner
+    /// (makeHomeOwnerPlaceholder mode), or 0. The repair must delete it — assert it is gone.
+    /// </summary>
+    [JsonPropertyName("placeholderOwnerId")]
+    public long PlaceholderOwnerId { get; set; }
 }
 
 /// <summary>
@@ -2312,12 +2319,16 @@ public class ServerApiClient : IDisposable
     /// (the cabin→farmhand direction) while leaving the farmhand's homeLocation naming a Cabin. Used
     /// to verify the join-time link repair on rejoin. With <paramref name="redirectHomeToOwnerId"/>
     /// set, the farmhand's home is repointed at that other owner's cabin, producing the unrecoverable
-    /// shape (home owned by someone else) the repair must decline rather than steal.
+    /// shape (home owned by someone else) the repair must decline rather than steal. With
+    /// <paramref name="makeHomeOwnerPlaceholder"/> set, a fresh unclaimed placeholder is installed as
+    /// the farmhand's own home cabin's owner — the recoverable shape the repair must heal by DELETING
+    /// the placeholder (its id is returned as <c>PlaceholderOwnerId</c>) and re-homing the owner.
     /// POST /test/break_cabin_link
     /// </summary>
     public async Task<TestBreakCabinLinkResponse?> BreakCabinLink(
         long ownerId,
         long? redirectHomeToOwnerId = null,
+        bool makeHomeOwnerPlaceholder = false,
         CancellationToken ct = default
     )
     {
@@ -2325,6 +2336,10 @@ public class ServerApiClient : IDisposable
         if (redirectHomeToOwnerId.HasValue)
         {
             query += $"&redirectHomeToOwner={redirectHomeToOwnerId.Value}";
+        }
+        if (makeHomeOwnerPlaceholder)
+        {
+            query += "&makeHomeOwnerPlaceholder=true";
         }
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
