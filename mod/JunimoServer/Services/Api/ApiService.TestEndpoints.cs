@@ -301,8 +301,6 @@ public partial class ApiService
                 result.FestivalEndReady = Game1.netReady.GetNumberReady("festivalEnd");
                 result.FestivalEndRequired = Game1.netReady.GetNumberRequired("festivalEnd");
                 result.TimeOfDay = Game1.timeOfDay;
-                // Iridium-quality starfruit (item 268, quality 3) in the Luau soup. The mod's
-                // OnAnnounce adds exactly one; the #372 double-add regression would make this 2.
                 result.LuauIridiumStarfruitCount = Game1.player.team.luauIngredients.Count(i =>
                     i is { ParentSheetIndex: 268, Quality: 3 }
                 );
@@ -822,14 +820,8 @@ public partial class ApiService
         HttpListenerRequest request
     )
     {
-        // ?open=true|false. Reproduces the state the grange results DialogueBox creates on the host —
-        // a non-null Game1.activeClickableMenu — so a test can hold HandleFestivalLeave's leave-end
-        // gate (activeClickableMenu is null) closed deterministically across a client's leave vote.
-        // A bare IClickableMenu is used because its parameterless constructor is a no-op and no host
-        // handler clears it (HandleDialogueBox only clears DialogueBox; the naming/minigame/level-up/
-        // shipping handlers key on their own types), so it persists until this endpoint closes it —
-        // unlike the real grange DialogueBox, which HandleDialogueBox dismisses on its ~12s pass. The
-        // gate keys on activeClickableMenu being null, not its type, so any menu exercises it the same.
+        // ?open=true|false. Sets an inert menu that no host handler auto-clears, holding
+        // HandleFestivalLeave's leave-end gate (activeClickableMenu is null) closed until closed here.
         var open = string.Equals(
             request.QueryString["open"],
             "true",
@@ -856,12 +848,7 @@ public partial class ApiService
         return result;
     }
 
-    /// <summary>
-    /// A concrete, inert <see cref="StardewValley.Menus.IClickableMenu"/> for the leave-end gate test:
-    /// the base type is abstract, and both its parameterless constructor and its <c>update</c> are
-    /// no-ops, so this holds <c>Game1.activeClickableMenu</c> non-null with zero side effects and never
-    /// self-closes. Set/cleared only by <c>/test/host_menu</c>.
-    /// </summary>
+    /// <summary>Inert menu holding Game1.activeClickableMenu non-null with no side effects, for /test/host_menu.</summary>
     private sealed class TestHoldMenu : StardewValley.Menus.IClickableMenu { }
 
     [ApiEndpoint(

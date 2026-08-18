@@ -492,13 +492,10 @@ public class AlwaysOnServerFestivals
             return;
         }
 
-        // Both graceful ends below go through TryStartEndFestivalDialogue, which no-ops while a host
-        // menu is open (its own activeClickableMenu == null guard) — yet EndFestival latches
-        // _startedFestivalEnd unconditionally, which would re-strand the festival with no exit. The
-        // one host menu that appears mid-festival is the grange results DialogueBox after judging;
-        // HandleDialogueBox clears it on its next once-per-second pass (~12s at SERVER_TPS=5), so gate
-        // both ends on no open menu and let the leave fire cleanly on a later tick. (The wall-clock
-        // timeout backstop is unaffected — it force-ends regardless of any menu.)
+        // TryStartEndFestivalDialogue (both graceful ends) no-ops while a host menu is open, but
+        // EndFestival latches _startedFestivalEnd unconditionally — so ending here while the grange
+        // results box is open would strand the festival. Gate on no menu; HandleDialogueBox clears
+        // that box within ~12s. The wall-clock backstop force-ends regardless of any menu.
         var noHostMenu = Game1.activeClickableMenu is null;
 
         // No online players left at the festival: end it so the host isn't stranded. Mirrors
