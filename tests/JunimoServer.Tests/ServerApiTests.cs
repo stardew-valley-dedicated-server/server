@@ -50,7 +50,7 @@ public class ServerApiTests : TestBase
     [TestServer(Artifacts = true)]
     public async Task GetPlayers_WhenPlayerConnected_ShowsPlayer()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        var client = await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Poll until player appears in the /players API
         PlayersResponse? response = null;
@@ -307,7 +307,7 @@ public class ServerApiTests : TestBase
     public async Task WebSocket_ChatSend_MessageAppearsInGame()
     {
         // Connect a player to receive the chat message
-        await Farmers.ConnectNewAsync(ct: TestCt);
+        await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Send message via WebSocket API
         var ct = TestCt;

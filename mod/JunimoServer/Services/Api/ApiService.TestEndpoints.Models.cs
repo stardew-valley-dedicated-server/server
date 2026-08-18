@@ -630,3 +630,28 @@ public class PacingProbeStateResponse
     /// <summary>Monster: current speed magnitude (sqrt(xVel²+yVel²)) — the velocity-ramp signal.</summary>
     public float MonsterSpeed { get; set; }
 }
+
+/// <summary>Request body for POST /test/precustomize_farmhand.</summary>
+public class TestPrecustomizeFarmhandRequest
+{
+    /// <summary>Farmhand names to pre-customize; each consumes one available cabin slot.</summary>
+    public List<string>? Names { get; set; }
+}
+
+/// <summary>One slot pre-customized by POST /test/precustomize_farmhand.</summary>
+public class TestPrecustomizedFarmhand
+{
+    public long Uid { get; set; }
+    public string Name { get; set; } = "";
+    public string HomeLocation { get; set; } = "";
+}
+
+/// <summary>Response for POST /test/precustomize_farmhand.</summary>
+public class TestPrecustomizeFarmhandResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Slots customized, in request order; on failure, the ones completed before the error.</summary>
+    public List<TestPrecustomizedFarmhand> Farmhands { get; set; } = new();
+}
