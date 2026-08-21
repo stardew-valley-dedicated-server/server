@@ -516,7 +516,7 @@ jobs:
       # steam-service) in-process.
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # The Dockerfile uses a BuildKit `--mount=type=cache` for /root/.nuget/packages
       # that BuildKit does not persist across runs. The cache-dance bridges that:
@@ -742,7 +742,7 @@ jobs:
       - name: Publish CTRF results to job summary
         if: always()
         continue-on-error: true
-        uses: ctrf-io/github-test-reporter@e500b992f936420eb633c91644cf10d4d71df700 # v1.1.0
+        uses: ctrf-io/github-test-reporter@7974087018bf4857cf5a9d78723e152038c3fa31 # v1.3.0
         with:
           report-path: 'TestResults/runs/**/ctrf-report.json'
           summary-report: true
