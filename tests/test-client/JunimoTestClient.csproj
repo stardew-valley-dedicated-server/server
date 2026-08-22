@@ -31,7 +31,7 @@
 
   <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="1.6.29" />
+    <PackageReference Include="Microsoft.OpenApi" Version="1.6.31" />
     <PackageReference Include="Steamworks.NET" Version="20.2.0" />
   </ItemGroup>
 
