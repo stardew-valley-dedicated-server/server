@@ -196,6 +196,18 @@ public class TestFestivalStateResponse
 
     /// <summary>Current in-game time (HHMM). Jumps to the festival's reset cutoff once it ends.</summary>
     public int TimeOfDay { get; set; }
+
+    public int LuauIridiumStarfruitCount { get; set; }
+}
+
+/// <summary>Response from POST /test/host_menu (test-only). Reports whether a host menu is open.</summary>
+public class TestHostMenuResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Whether a host menu is open after the requested operation.</summary>
+    public bool MenuOpen { get; set; }
 }
 
 /// <summary>

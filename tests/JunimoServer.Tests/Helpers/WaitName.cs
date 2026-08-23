@@ -184,7 +184,7 @@ public enum WaitName
     Polling_CabinPlacement_Moved,
     Polling_CabinPlacement_Rejected,
 
-    // FestivalTests.cs (8)
+    // FestivalTests.cs (15)
     Polling_Festival_DayConfirmed,
     Polling_Festival_ClientWindowSynced,
     Polling_Festival_BecameActive,
@@ -193,6 +193,13 @@ public enum WaitName
     Polling_Festival_EndedNoPlayers,
     Polling_Festival_NextFestivalEndedOnLeave,
     Polling_Festival_MainEventStillActive,
+    Polling_Festival_FairNoAutoEnd,
+    Polling_Festival_FairEndedOnLeave,
+    Polling_Festival_LuauStarfruitAdded,
+    Polling_Festival_LuauStarfruitStaysOne,
+    Polling_Festival_FairLeaveVoteSynced,
+    Polling_Festival_FairDeferredHold,
+    Polling_Festival_FairEndedAfterMenuCleared,
 
     // WeddingTests.cs (5)
     Polling_Wedding_EngagementReplicated,

@@ -600,6 +600,9 @@ public class TestFestivalStateResponse
 
     [JsonPropertyName("timeOfDay")]
     public int TimeOfDay { get; set; }
+
+    [JsonPropertyName("luauIridiumStarfruitCount")]
+    public int LuauIridiumStarfruitCount { get; set; }
 }
 
 /// <summary>
@@ -1048,6 +1051,20 @@ public class TestSetIpConnectionsResponse
     /// <summary>The applied state of Game1.options.ipConnectionsEnabled.</summary>
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
+}
+
+/// <summary>Response from /test/host_menu (test-only). Mirrors the server-side DTO.</summary>
+public class TestHostMenuResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>Whether a host menu is open after the requested operation.</summary>
+    [JsonPropertyName("menuOpen")]
+    public bool MenuOpen { get; set; }
 }
 
 /// <summary>Body for /test/import_save (test-only). Mirrors the server-side DTO.</summary>
@@ -2380,6 +2397,21 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSetIpConnectionsResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: open or close an inert host menu (Game1.activeClickableMenu) to exercise the
+    /// festival leave-end gate. POST /test/host_menu?open=...
+    /// </summary>
+    public async Task<TestHostMenuResponse?> SetHostMenu(bool open, CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/host_menu?open={(open ? "true" : "false")}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHostMenuResponse>(ct);
     }
 
     /// <summary>
