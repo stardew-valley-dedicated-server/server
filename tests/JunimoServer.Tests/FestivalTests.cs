@@ -487,68 +487,80 @@ public class FestivalTests : TestBase
             $"Failed to open the host menu for the deferral scenario: {opened?.Error}"
         );
 
-        // The connected player votes to leave WHILE the host menu is open.
-        var leave = await GameClient.Actions.LeaveFestival();
-        Assert.NotNull(leave);
-        Assert.True(leave.Success, $"leave_festival action failed: {leave.Error}");
+        // Wrap the rest in try/finally: the open menu is shared host state on this shared-class
+        // server, so it must be cleared even if an assertion fails or the test is cancelled — a
+        // leaked menu would hold the next festival test's leave-end gate closed.
+        try
+        {
+            // The connected player votes to leave WHILE the host menu is open.
+            var leave = await GameClient.Actions.LeaveFestival();
+            Assert.NotNull(leave);
+            Assert.True(leave.Success, $"leave_festival action failed: {leave.Error}");
 
-        // Confirm the vote replicated to the host, so the deferral asserted next is genuinely "vote
-        // present but held", not "vote not yet arrived".
-        var voteSynced = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Festival_FairLeaveVoteSynced,
-            async () =>
-            {
-                var state = await ServerApi.GetFestivalState(ct);
-                return state?.FestivalEndReady >= 1;
-            },
-            timeout: TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
-        );
-        Assert.True(voteSynced, "The client's festivalEnd vote should replicate to the host.");
+            // Confirm the vote replicated to the host, so the deferral asserted next is genuinely "vote
+            // present but held", not "vote not yet arrived".
+            var voteSynced = await PollingHelper.WaitUntilAsync(
+                WaitName.Polling_Festival_FairLeaveVoteSynced,
+                async () =>
+                {
+                    var state = await ServerApi.GetFestivalState(ct);
+                    return state?.FestivalEndReady >= 1;
+                },
+                timeout: TestTimings.NetworkSyncTimeout,
+                cancellationToken: ct
+            );
+            Assert.True(voteSynced, "The client's festivalEnd vote should replicate to the host.");
 
-        // Deferral: with the vote present but a host menu open, the Fair must NOT end across the settle
-        // window — HandleFestivalLeave holds off, never latching _startedFestivalEnd.
-        var endedWhileMenuOpen = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Festival_FairDeferredHold,
-            async () =>
-            {
-                var state = await ServerApi.GetFestivalState(ct);
-                return state?.IsFestivalActive != true;
-            },
-            timeout: FestivalSettleWindow,
-            cancellationToken: ct
-        );
-        Assert.False(
-            endedWhileMenuOpen,
-            "While a host menu was open, the Fair must not end — the leave vote must be deferred, not "
-                + "force-ended or latched."
-        );
+            // Deferral: with the vote present but a host menu open, the Fair must NOT end across the
+            // settle window — HandleFestivalLeave holds off, never latching _startedFestivalEnd.
+            var endedWhileMenuOpen = await PollingHelper.WaitUntilAsync(
+                WaitName.Polling_Festival_FairDeferredHold,
+                async () =>
+                {
+                    var state = await ServerApi.GetFestivalState(ct);
+                    return state?.IsFestivalActive != true;
+                },
+                timeout: FestivalSettleWindow,
+                cancellationToken: ct
+            );
+            Assert.False(
+                endedWhileMenuOpen,
+                "While a host menu was open, the Fair must not end — the leave vote must be deferred, "
+                    + "not force-ended or latched."
+            );
 
-        // Release: close the host menu. The deferred leave must now fire and end the Fair.
-        var closed = await ServerApi.SetHostMenu(open: false, ct);
-        Assert.True(
-            closed?.Success == true && !closed.MenuOpen,
-            $"Failed to close the host menu: {closed?.Error}"
-        );
+            // Release: close the host menu. The deferred leave must now fire and end the Fair.
+            var closed = await ServerApi.SetHostMenu(open: false, ct);
+            Assert.True(
+                closed?.Success == true && !closed.MenuOpen,
+                $"Failed to close the host menu: {closed?.Error}"
+            );
 
-        var ended = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Festival_FairEndedAfterMenuCleared,
-            async () =>
-            {
-                var state = await ServerApi.GetFestivalState(ct);
-                return state?.IsFestivalActive == false;
-            },
-            timeout: TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
-        );
-        Assert.True(
-            ended,
-            "After the host menu cleared, the deferred leave should end the Fair. A latched "
-                + "_startedFestivalEnd would make HandleFestivalLeave early-return and strand it."
-        );
-        LogSuccess(
-            "Fair deferred the leave while a host menu was open, then ended cleanly once it cleared"
-        );
+            var ended = await PollingHelper.WaitUntilAsync(
+                WaitName.Polling_Festival_FairEndedAfterMenuCleared,
+                async () =>
+                {
+                    var state = await ServerApi.GetFestivalState(ct);
+                    return state?.IsFestivalActive == false;
+                },
+                timeout: TestTimings.NetworkSyncTimeout,
+                cancellationToken: ct
+            );
+            Assert.True(
+                ended,
+                "After the host menu cleared, the deferred leave should end the Fair. A latched "
+                    + "_startedFestivalEnd would make HandleFestivalLeave early-return and strand it."
+            );
+            LogSuccess(
+                "Fair deferred the leave while a host menu was open, then ended cleanly once it cleared"
+            );
+        }
+        finally
+        {
+            // Non-cancellable so cleanup still runs if ct was cancelled. Idempotent on the happy path
+            // (the menu is already closed above).
+            await ServerApi.SetHostMenu(open: false, CancellationToken.None);
+        }
     }
 
     /// <summary>
