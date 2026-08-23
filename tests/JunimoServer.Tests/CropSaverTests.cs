@@ -273,8 +273,8 @@ public class CropSaverTests : TestBase
         // Math (CropSaver.cs:39-104, against today's Spring 28 Y1):
         //   nightOfDeath = datePlanted + (extraDays + 28*numSeasons - datePlanted.Day)
         //                = Spring 28 + extraDays
-        //   earliestFullyGrownDate (fresh Cauliflower, unwatered)
-        //                = Spring 28 + (1 + 10 + 1) = Summer 13
+        //   earliestFullyGrownDate (fresh Cauliflower, DaysInPhase=[1,2,4,4,1], unwatered)
+        //                = Spring 28 + (1 + (2+4+4+1) + 1) = Summer 13
         //   branch-1: !fullyGrown && now.Day==28 && nightOfDeath < earliest →
         //     bypassed when extraDays >= 13 (nightOfDeath = Summer 13 ≥ Summer 13)
         //   branch-2: now >= nightOfDeath → bypassed (Spring 28 < Summer 13)

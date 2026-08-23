@@ -70,6 +70,11 @@ public class CropSaverOverrides
         return false;
     }
 
+    /// <summary>
+    /// Canonical managed-crop lookup: (NameOrUniqueName, pot-canonical tile).
+    /// The DayUpdate guard and the /test/crops snapshot resolve through it;
+    /// KillCrop_Prefix uses the same addressing but needs the entry itself.
+    /// </summary>
     public static bool IsManaged(string locationName, Vector2 tile)
     {
         return _cropSaverDataLoader?.GetSaverCrop(locationName, tile) != null;
