@@ -132,7 +132,7 @@ jobs:
       - name: Set up Docker Buildx
         id: buildx
         if: needs.changes.outputs.docker == 'true'
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # type=gha does not persist BuildKit `--mount=type=cache` directories (the Dockerfile uses one
       # for /root/.nuget/packages on every restore), so NuGet re-downloads on each run. actions/cache
