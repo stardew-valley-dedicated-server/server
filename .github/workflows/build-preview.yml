@@ -268,10 +268,10 @@ jobs:
       - name: Stamp issues with preview version
         uses: ./.github/actions/stamp-issue-versions
         with:
-          # Org issue-field id for "IMAGE_VERSION Preview". Deleting and recreating a field
+          # Org issue-field id for "Preview version". Deleting and recreating a field
           # changes its id — this input must then be updated.
           field-id: "45970008"
-          field-name: IMAGE_VERSION Preview
+          field-name: Preview version
           value: ${{ needs.calculate-version.outputs.preview_version }}
           channel: preview
           head-ref: ${{ github.sha }}

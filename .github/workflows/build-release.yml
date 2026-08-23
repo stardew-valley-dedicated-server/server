@@ -148,13 +148,13 @@ jobs:
       - name: Stamp issues with release version
         uses: ./.github/actions/stamp-issue-versions
         with:
-          # Org issue-field id for "IMAGE_VERSION Release". Deleting and recreating a field
+          # Org issue-field id for "Release version". Deleting and recreating a field
           # changes its id — this input must then be updated.
           # TODO: the field does not exist yet (creating it needs an org admin) — create the
-          # Text field "IMAGE_VERSION Release" and replace 0 with its numeric id; until then
+          # Text field "Release version" and replace 0 with its numeric id; until then
           # this job fails fast without touching any issue.
           field-id: "0"
-          field-name: IMAGE_VERSION Release
+          field-name: Release version
           value: ${{ needs.release-please.outputs.version }}
           channel: release
           head-ref: ${{ needs.release-please.outputs.tag_name }}

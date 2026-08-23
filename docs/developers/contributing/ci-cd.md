@@ -111,7 +111,7 @@ The Release PR automatically updates as you merge more commits; the preview coun
 
 Both build pipelines end with a **Stamp Issue Versions** job ([composite action](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/actions/stamp-issue-versions), [script](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/scripts/stamp-issue-versions.ts)). It resolves every issue closed by the PRs in the build's commit range (from GitHub's own PR↔issue linkage, not commit-subject parsing), then records on each issue which built image first shipped its fix:
 
-- **Two org Issue Fields** — `IMAGE_VERSION Preview` and `IMAGE_VERSION Release`. Each field independently records the **first** version of its channel that contained the fix; later builds never overwrite an existing value. A release without a prior preview simply leaves the preview field empty.
+- **Two org Issue Fields** — `Preview version` and `Release version`. Each field independently records the **first** version of its channel that contained the fix; later builds never overwrite an existing value. A release without a prior preview simply leaves the preview field empty.
 - **One comment per channel** — a human-readable note telling the reporter the exact `IMAGE_VERSION` to set (and the rolling `preview` / `latest` alternative), linking the upgrade docs. Deduped by a hidden marker, so re-runs never post twice.
 
 The commit range is `previous build's tag → this build's head`: a release covers everything since the previous release; a preview covers only what's new since the last build of either channel. The job is idempotent — re-running a failed build changes nothing already stamped — and a stamping failure never affects the pushed image or deploy.
