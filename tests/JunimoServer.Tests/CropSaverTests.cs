@@ -489,8 +489,8 @@ public class CropSaverTests : TestBase
     }
 
     /// <summary>
-    /// Waits up to 5s for the host's CropWatcher (5-tick scan ≈ 333ms at
-    /// SERVER_TPS=15) to register the pot crop in CropSaverData. Polled via
+    /// Waits up to 5s for the host's CropWatcher (5-tick scan ≈ 1s at
+    /// SERVER_TPS=5) to register the pot crop in CropSaverData. Polled via
     /// the host-side /test/crops endpoint, which sets <c>IsManaged=true</c>
     /// when <c>CropSaverData</c> has a matching entry.
     /// </summary>
