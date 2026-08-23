@@ -58,6 +58,7 @@ runs:
         TAG_MATCH: ${{ inputs.tag-match }}
         EXCLUDE_TAG: ${{ inputs.exclude-tag }}
       run: |
+        set -f # tag globs must reach git verbatim, not expand against the working tree
         HEAD_OID=$(git rev-parse "$HEAD_REF^{commit}")
         MATCH_ARGS=()
         for glob in $TAG_MATCH; do MATCH_ARGS+=(--match "$glob"); done

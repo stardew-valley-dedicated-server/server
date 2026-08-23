@@ -68,16 +68,16 @@ async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
             return await fn();
         } catch (error) {
             const status = (error as { status?: number }).status ?? 0;
+            const headers = (error as { response?: { headers?: Record<string, string> } }).response?.headers ?? {};
+            const retryAfterSec = Number.parseInt(headers["retry-after"] ?? "", 10);
+            // 403 is retryable only as rate limiting — primary (remaining=0) or secondary (retry-after).
             const rateLimited =
                 status === 429 ||
-                (status === 403 &&
-                    (error as { response?: { headers?: Record<string, string> } }).response?.headers?.[
-                        "x-ratelimit-remaining"
-                    ] === "0");
+                (status === 403 && (headers["x-ratelimit-remaining"] === "0" || !Number.isNaN(retryAfterSec)));
             if (attempt === maxAttempts || !(status >= 500 || rateLimited)) {
                 throw error;
             }
-            const delayMs = 2 ** attempt * 1000;
+            const delayMs = Number.isNaN(retryAfterSec) ? 2 ** attempt * 1000 : retryAfterSec * 1000;
             console.warn(`${label}: HTTP ${status}, retry ${attempt}/${maxAttempts - 1} in ${delayMs}ms`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
@@ -194,6 +194,9 @@ interface FieldValue {
     value: string;
 }
 
+/** A misconfigured FIELD_ID poisons every write — abort the whole run instead of per-issue skipping. */
+class FieldConfigError extends Error {}
+
 /** First-value-wins: returns false (skipped) when FIELD_ID already carries a value. */
 async function stampField(issueNumber: number): Promise<boolean> {
     const current = await withRetry(`get field values #${issueNumber}`, () =>
@@ -225,9 +228,10 @@ async function stampField(issueNumber: number): Promise<boolean> {
         .flat()
         .find((entry) => entry.issue_field_id === FIELD_ID);
     if (!echoed || echoed.issue_field_name !== EXPECTED_FIELD_NAME || echoed.data_type !== "text") {
-        throw new Error(
+        throw new FieldConfigError(
             `Field ${FIELD_ID} echoed back as "${echoed?.issue_field_name}" (${echoed?.data_type}), ` +
-                `expected text field "${EXPECTED_FIELD_NAME}" — check the field id`,
+                `expected text field "${EXPECTED_FIELD_NAME}" — stale field id, or the endpoint's response ` +
+                `shape changed (raw: ${JSON.stringify(response.data)})`,
         );
     }
     console.log(`#${issueNumber}: field set to "${VALUE}"`);
@@ -282,10 +286,24 @@ if (issues.length > MAX_ISSUES) {
 const stamped: number[] = [];
 const skipped: number[] = [];
 const commented: number[] = [];
+const failed: number[] = [];
 for (const issueNumber of issues) {
-    (await stampField(issueNumber)) ? stamped.push(issueNumber) : skipped.push(issueNumber);
-    if (await postComment(issueNumber)) {
-        commented.push(issueNumber);
+    try {
+        (await stampField(issueNumber)) ? stamped.push(issueNumber) : skipped.push(issueNumber);
+        if (await postComment(issueNumber)) {
+            commented.push(issueNumber);
+        }
+    } catch (error) {
+        if (error instanceof FieldConfigError) {
+            throw error;
+        }
+        // One broken issue (deleted, access-restricted, …) must not abandon the rest of the set.
+        failed.push(issueNumber);
+        console.error(`#${issueNumber}: ${error}`);
+    }
+    if (!DRY_RUN) {
+        // Pace the writes — GitHub's secondary rate limit targets rapid content creation.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 }
 
@@ -298,4 +316,8 @@ writeStepSummary([
     `- Stamped: ${describe(stamped)}`,
     `- Already stamped (kept existing value): ${describe(skipped)}`,
     `- Commented: ${describe(commented)}`,
+    `- Failed: ${describe(failed)}`,
 ]);
+if (failed.length > 0) {
+    process.exit(1);
+}

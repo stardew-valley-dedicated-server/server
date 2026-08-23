@@ -251,6 +251,10 @@ jobs:
   stamp-issue-versions:
     name: Stamp Issue Versions
     needs: [calculate-version, build-server-preview]
+    # Deploy Server auto-deploys via workflow_run only when this workflow's conclusion is
+    # success, so a stamping failure must not fail the run — it still shows as a red job
+    # with an annotation, and the next preview build retries (stamping is idempotent).
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
