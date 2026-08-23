@@ -374,7 +374,7 @@ public class FestivalTests : TestBase
         Assert.NotNull(setDate);
         Assert.True(setDate.Success, $"SetDate({season} {dayBefore}) failed: {setDate.Error}");
 
-        var farmhand = await Farmers.ConnectNewAsync(namePrefix: namePrefix, ct: ct);
+        var farmhand = await Farmers.ConnectFastAsync(namePrefix: namePrefix, ct: ct);
 
         // Sleep-through to the festival day. The client sleeps, the host auto-sleeps, and the
         // day transitions — the only path that populates Game1.whereIsTodaysFest (a /test/set_date

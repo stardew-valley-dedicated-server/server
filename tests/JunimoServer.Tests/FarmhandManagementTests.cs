@@ -74,7 +74,7 @@ public class FarmhandManagementTests : TestBase
     [Fact]
     public async Task DeleteFarmhand_WhenOffline_Succeeds()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        var client = await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Disconnect and wait for persistence
         await Farmers.DisconnectAndWaitForPersistenceAsync(client.FarmerName, TestCt);
@@ -126,7 +126,7 @@ public class FarmhandManagementTests : TestBase
     public async Task DeleteFarmhand_SlotBecomesReusable()
     {
         // Create first farmer, disconnect, and wait for persistence
-        var client1 = await Farmers.ConnectNewAsync(ct: TestCt);
+        var client1 = await Farmers.ConnectFastAsync(ct: TestCt);
         await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
         Log($"After first join: farmer '{client1.FarmerName}' exists");
 
@@ -173,7 +173,7 @@ public class FarmhandManagementTests : TestBase
     [Fact]
     public async Task DeleteFarmhand_WhenOnline_Fails()
     {
-        var client = await Farmers.ConnectNewAsync(ct: TestCt);
+        var client = await Farmers.ConnectFastAsync(ct: TestCt);
 
         // Try to delete while still connected - should fail. Use the UID overload
         // because fresh joiners may not have name-synced yet.

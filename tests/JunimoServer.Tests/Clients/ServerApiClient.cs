@@ -791,6 +791,39 @@ public class TestStampClaimResponse
 }
 
 /// <summary>
+/// One slot pre-customized by /test/precustomize_farmhand. Mirrors the server-side
+/// TestPrecustomizedFarmhand DTO.
+/// </summary>
+public class TestPrecustomizedFarmhand
+{
+    [JsonPropertyName("uid")]
+    public long Uid { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("homeLocation")]
+    public string HomeLocation { get; set; } = "";
+}
+
+/// <summary>
+/// Response from /test/precustomize_farmhand POST endpoint (test-only). Mirrors the server-side
+/// TestPrecustomizeFarmhandResponse DTO.
+/// </summary>
+public class TestPrecustomizeFarmhandResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>Slots customized, in request order; on failure, the ones completed before the error.</summary>
+    [JsonPropertyName("farmhands")]
+    public List<TestPrecustomizedFarmhand> Farmhands { get; set; } = new();
+}
+
+/// <summary>
 /// Response from /test/stamp_lobby_home POST endpoint (test-only). Mirrors the server-side
 /// TestStampLobbyHomeResponse DTO. Reproduces the lobby-homed-spouse poisoned-save shape: a
 /// farmhand married (synthesized) to an NPC with both their home fields pointing at the shared
@@ -2133,6 +2166,26 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(HttpMethod.Post, $"/test/stamp_claim{query}", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestStampClaimResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: pre-customize spare farmhand slots server-side (isCustomized + name, no userID)
+    /// so a subsequent join by that name takes the already-customized fast path — no character
+    /// menu. POST /test/precustomize_farmhand
+    /// </summary>
+    public async Task<TestPrecustomizeFarmhandResponse?> PrecustomizeFarmhands(
+        IReadOnlyList<string> names,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/precustomize_farmhand",
+            ct,
+            () => JsonContent.Create(new { names })
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestPrecustomizeFarmhandResponse>(ct);
     }
 
     /// <summary>
