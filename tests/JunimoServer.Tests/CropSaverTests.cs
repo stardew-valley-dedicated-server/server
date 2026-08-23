@@ -80,7 +80,7 @@ public class CropSaverTests : TestBase
     private const int TileB_X = 64;
     private const int TileB_Y = 22;
     private const int TileC_X = 64;
-    private const int TileC_Y = 23;
+    private const int TileC_Y = 24;
 
     /// <summary>
     /// Tile inside the farmhand's cabin interior for the immune-location test.
