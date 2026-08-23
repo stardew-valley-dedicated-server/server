@@ -1484,7 +1484,7 @@ public partial class CabinManagerService : ModService
 
         foreach (var building in farm.buildings)
         {
-            if (!building.isCabin || LobbyService.IsLobbyCabin(building))
+            if (!building.isCabin || building.IsLobbyOrEditing())
             {
                 continue;
             }

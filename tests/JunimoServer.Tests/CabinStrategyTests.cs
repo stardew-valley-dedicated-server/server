@@ -348,10 +348,13 @@ public class CabinStrategyTests : TestBase
     {
         var client = await Farmers.ConnectNewAsync(ct: TestCt);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
-        await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName,
-            requireCustomized: true,
-            ct: TestCt
+        Assert.True(
+            await ServerApi.WaitForFarmhandByNameAsync(
+                client.FarmerName,
+                requireCustomized: true,
+                ct: TestCt
+            ),
+            $"Farmer '{client.FarmerName}' never customized before the link break"
         );
 
         // Disconnect and free the slot, then null the cabin→farmhand back-link on the offline slot
@@ -415,10 +418,13 @@ public class CabinStrategyTests : TestBase
     {
         var client = await Farmers.ConnectNewAsync(ct: TestCt);
         var ownerId = client.JoinResult.UniqueMultiplayerId;
-        await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName,
-            requireCustomized: true,
-            ct: TestCt
+        Assert.True(
+            await ServerApi.WaitForFarmhandByNameAsync(
+                client.FarmerName,
+                requireCustomized: true,
+                ct: TestCt
+            ),
+            $"Farmer '{client.FarmerName}' never customized before the link break"
         );
 
         // Disconnect + free the slot, then install a spurious unclaimed placeholder as the offline
@@ -431,8 +437,7 @@ public class CabinStrategyTests : TestBase
             ct: TestCt
         );
         Assert.True(broke?.Success, $"break_cabin_link should succeed: {broke?.Error}");
-        Assert.True(broke!.Redirected, "the break should have installed a placeholder owner");
-        var placeholderId = broke.PlaceholderOwnerId;
+        var placeholderId = broke!.PlaceholderOwnerId;
         Assert.True(placeholderId != 0, "a placeholder owner id should have been returned");
 
         // The cabin now resolves to the placeholder, not the owner.

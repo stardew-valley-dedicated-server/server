@@ -1153,7 +1153,6 @@ public partial class ApiService
                     farmhand.homeLocation.Value = cabin.NameOrUniqueName;
 
                     result.PlaceholderOwnerId = placeholderId;
-                    result.Redirected = true;
                     result.HomeLocation = farmhand.homeLocation.Value ?? "";
                     result.Success = true;
                     return;
