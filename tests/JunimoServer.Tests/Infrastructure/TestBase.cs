@@ -722,7 +722,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         FarmTypeSetting farmType,
         string farmName = "Junimo",
         int startingCabins = 1,
-        string cabinStrategy = "CabinStack"
+        string cabinStrategy = "CabinStack",
+        int? maxPlayers = null,
+        bool? allowCabinRelocation = null,
+        bool? allowIpConnections = null,
+        CancellationToken? ct = null
     )
     {
         if (Lease == null)
@@ -732,10 +736,61 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             );
         }
 
-        await Lease.CreateNewGameAsync(farmType, farmName, startingCabins, cabinStrategy, TestCt);
+        // Test-body callers pass nothing and ride TestCt; cleanup callers pass their own
+        // budget so the reset survives a body timeout (see ResetServerToPooledConfigAsync).
+        var token = ct ?? TestCt;
+
+        await Lease.CreateNewGameAsync(
+            farmType,
+            farmName,
+            startingCabins,
+            cabinStrategy,
+            maxPlayers,
+            allowCabinRelocation,
+            allowIpConnections,
+            token
+        );
 
         // Refresh the cached server status
-        ServerStatus = await ServerApi.GetStatus(TestCt);
+        ServerStatus = await ServerApi.GetStatus(token);
+    }
+
+    /// <summary>
+    /// Resets the server to a fresh game matching its POOLED configuration, passing every
+    /// value the mod persists into the settings file at game creation explicitly
+    /// (maxPlayers, cabinStrategy, allowCabinRelocation, allowIpConnections — the
+    /// load-reapplied set; creation-only settings like farm type/seed aren't file-persisted
+    /// and can't leak). Cleanup paths must use this (not a bare
+    /// <c>CreateNewGameOnServerAsync(farmType: 0)</c>) whenever the class's tests passed
+    /// /newgame overrides: a cleanup /newgame that omits such a field inherits the test's
+    /// override from the mutated file and leaks it to the next pooled reuser — drifting
+    /// the server from the config hash it was pooled under (max players, strategy, and
+    /// allow-IP are hash inputs).
+    /// </summary>
+    protected async Task ResetServerToPooledConfigAsync()
+    {
+        if (Lease == null)
+        {
+            throw new InvalidOperationException(
+                "No server lease. Call AcquireServerAsync() first."
+            );
+        }
+
+        var reqs = Lease.Managed.Requirements;
+        // Independent cleanup budget, NOT TestCt: this runs from DisposeAsync and must still
+        // complete after a per-test body timeout has already cancelled TestCt. Binding it to
+        // TestCt would throw here on every timed-out test and PoisonServer a healthy pooled
+        // instance (a full reboot) through the caller's cleanup catch.
+        using var resetCts = new CancellationTokenSource(TestTimings.ServerResetCleanupBudget);
+        await CreateNewGameOnServerAsync(
+            farmType: reqs.FarmType,
+            startingCabins: reqs.StartingCabins,
+            cabinStrategy: reqs.CabinStrategy,
+            maxPlayers: reqs.MaxPlayers,
+            allowCabinRelocation: reqs.AllowCabinRelocation,
+            allowIpConnections: reqs.AllowIpConnections,
+            ct: resetCts.Token
+        );
     }
 
     /// <summary>

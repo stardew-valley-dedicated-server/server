@@ -99,7 +99,18 @@ Manage player cabins:
 | Command | Description |
 |---------|-------------|
 | `cabins` | List all cabins with position, owner, strategy info |
-| `cabins add` | Create a new cabin (hidden or visible per strategy) |
+| `cabins add` | Create a new cabin (hidden or visible per strategy; refused at the `None` cabin cap) |
+| `cabins stackspot [<x> <y>]` | Show — or set — the `CabinStack` shared stack spot (coordinates validated, refused during a staged migration); in-game equivalent: `!stackspot` |
+| `cabins migrate start <strategy>` | Begin a staged strategy migration: auto-places what fits on designated spots, reports the rest |
+| `cabins migrate status` | Show staged/remaining placements for the active migration |
+| `cabins migrate place <x> <y>` | Stage the next cabin at a tile (coordinates validated, never destructive); in-game equivalent: `!migrate place` |
+| `cabins migrate commit` | Finish the migration: flips the strategy and updates `server-settings.json` (refused while placements remain) |
+| `cabins migrate abort` | Undo the staging: staged cabins return to the hidden stack |
+
+The staged migration is required for strategy switches that place a cabin on the live farm
+(`CabinStack`/`FarmhouseStack` → `None`, and `FarmhouseStack` → `CabinStack`); pure-hide switches
+stay on the settings-file + reload path. See
+[Cabin Strategies](/features/cabin-strategies#switching-strategies) for the full walkthrough.
 
 ### saves
 
@@ -197,6 +208,8 @@ These require admin role:
 |---------|-------------|
 | `!admin <player>` | Grant admin role to a player |
 | `!unadmin <player>` | Revoke admin role |
+| `!migrate place` | During a staged strategy migration, stage the next cabin to the right of your player (see `cabins migrate`) |
+| `!stackspot [place]` | Show the `CabinStack` shared stack spot, or with `place` move it to the right of your player (see `cabins stackspot`) |
 | `!kick <player>` | Kick a player |
 | `!ban <player>` | Ban a player |
 | `!unban <player>` | Remove a ban |

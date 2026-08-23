@@ -78,6 +78,11 @@ public class ServerContainerOptions
     /// </summary>
     public bool AllowIpConnections { get; set; } = false;
 
+    /// <summary>
+    /// Whether players may relocate their cabin via the !cabin command.
+    /// </summary>
+    public bool AllowCabinRelocation { get; set; } = true;
+
     #endregion
 
     /// <summary>

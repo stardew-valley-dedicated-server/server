@@ -125,6 +125,12 @@ public partial class ApiService
                             await HandlePostTestPrecustomizeFarmhandAsync(request)
                         );
                         return;
+                    case "/test/break_cabin_link":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestBreakCabinLinkAsync(request)
+                        );
+                        return;
                     case "/test/stamp_lobby_home":
                         await WriteJsonAsync(
                             response,
@@ -1053,6 +1059,140 @@ public partial class ApiService
                 $"Precustomized {result.Farmhands.Count} farmhand slot(s) via test API",
                 LogLevel.Info
             );
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/break_cabin_link",
+        Summary = "Null a cabin's farmhandReference to manufacture a one-way farmhand↔cabin link (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestBreakCabinLinkResponse), 200)]
+    private async Task<TestBreakCabinLinkResponse> HandlePostTestBreakCabinLinkAsync(
+        HttpListenerRequest request
+    )
+    {
+        var result = new TestBreakCabinLinkResponse();
+
+        if (!long.TryParse(request.QueryString["ownerId"], out var ownerId))
+        {
+            result.Error = "ownerId query parameter is required (a farmhand UniqueMultiplayerID)";
+            return result;
+        }
+
+        // Optional: repoint the farmhand's home at ANOTHER farmhand's cabin, producing the
+        // unrecoverable shape (home cabin owned by someone else) the join-time repair must decline.
+        long.TryParse(request.QueryString["redirectHomeToOwner"], out var redirectOwnerId);
+
+        // Optional: install a fresh unclaimed placeholder as the farmhand's OWN home cabin's owner,
+        // producing the recoverable "home cabin owned by a spurious placeholder" shape the join-time
+        // repair must HEAL (delete the placeholder, re-home the owner) rather than decline or orphan.
+        bool.TryParse(
+            request.QueryString["makeHomeOwnerPlaceholder"],
+            out var makeHomeOwnerPlaceholder
+        );
+
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var farm = Game1.getFarm();
+                if (farm == null)
+                {
+                    result.Error = "No farm loaded";
+                    return;
+                }
+
+                var cabin = farm.GetCabin(ownerId)?.GetIndoors<Cabin>();
+                if (cabin == null)
+                {
+                    result.Error = $"No cabin owned by {ownerId} found to break";
+                    return;
+                }
+
+                var farmhand = Game1.GetPlayer(ownerId);
+                if (farmhand == null)
+                {
+                    result.Error = $"Farmhand {ownerId} not found";
+                    return;
+                }
+
+                result.BrokenCabinName = cabin.NameOrUniqueName;
+
+                if (makeHomeOwnerPlaceholder)
+                {
+                    // Manufacture the corruption ON the farmhand's OWN cabin: a fresh uncustomized
+                    // placeholder becomes the cabin's owner while the farmhand still homes here.
+                    // GetCabin(ownerId) then returns null (owner is the placeholder) while
+                    // homeLocation still resolves to this cabin — the shape the join-time repair must
+                    // heal by DELETING the placeholder and re-homing the owner. Mirrors
+                    // Cabin.CreateFarmhand's placeholder shape (farmhandData entry + home set).
+                    long placeholderId;
+                    do
+                    {
+                        placeholderId = Utility.RandomLong();
+                    } while (Game1.GetPlayer(placeholderId) != null);
+
+                    var placeholder = new Farmer(
+                        new FarmerSprite(null),
+                        Vector2.Zero,
+                        1,
+                        "",
+                        Farmer.initialTools(),
+                        isMale: true
+                    )
+                    {
+                        UniqueMultiplayerID = placeholderId,
+                    };
+                    placeholder.homeLocation.Value = cabin.NameOrUniqueName;
+                    Game1.netWorldState.Value.farmhandData[placeholderId] = placeholder;
+                    cabin.farmhandReference.Value = placeholder;
+                    farmhand.homeLocation.Value = cabin.NameOrUniqueName;
+
+                    result.PlaceholderOwnerId = placeholderId;
+                    result.HomeLocation = farmhand.homeLocation.Value ?? "";
+                    result.Success = true;
+                    return;
+                }
+
+                if (redirectOwnerId != 0)
+                {
+                    var otherCabin = farm.GetCabin(redirectOwnerId)?.GetIndoors<Cabin>();
+                    if (otherCabin == null)
+                    {
+                        result.Error =
+                            $"No cabin owned by redirectHomeToOwner {redirectOwnerId} found";
+                        return;
+                    }
+
+                    // farmhand→another player's cabin: the repair must decline (owner mismatch),
+                    // never steal the other cabin.
+                    farmhand.homeLocation.Value = otherCabin.NameOrUniqueName;
+                    result.Redirected = true;
+                }
+                else
+                {
+                    // Keep farmhand→own cabin so the one-way link is recoverable.
+                    farmhand.homeLocation.Value = cabin.NameOrUniqueName;
+                }
+
+                // Break cabin→farmhand: GetCabin(ownerId) now returns null while homeLocation still
+                // resolves to a Cabin — the exact one-way link the join gate approves anyway
+                // (NetWorldState.TryAssignFarmhandHome's homeLocation-resolves-to-Cabin early return).
+                cabin.farmhandReference.Value = null;
+
+                result.HomeLocation = farmhand.homeLocation.Value ?? "";
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) — surface via response.
+            result.Success = false;
+            result.Error = ex.Message;
         }
 
         return result;

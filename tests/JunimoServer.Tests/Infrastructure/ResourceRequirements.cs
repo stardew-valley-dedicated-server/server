@@ -24,7 +24,8 @@ public sealed record ResourceRequirements(
     bool Exclusive = false,
     string ExistingCabinBehavior = "KeepExisting",
     bool FixtureFarmMod = false,
-    int ServerTps = 0
+    int ServerTps = 0,
+    bool AllowCabinRelocation = true
 )
 {
     private static int _perTestCounter;
@@ -68,7 +69,7 @@ public sealed record ResourceRequirements(
         var configString =
             $"{Password}|{FarmType}|{WithSteam}|{StartingCabins}"
             + $"|{MaxPlayers}|{CabinStrategy}|{AllowIpConnections}|{ExistingCabinBehavior}"
-            + $"|{FixtureFarmMod}|{ServerTps}";
+            + $"|{FixtureFarmMod}|{ServerTps}|{AllowCabinRelocation}";
         var bytes = Encoding.UTF8.GetBytes(configString);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..12].ToLowerInvariant();
@@ -108,7 +109,8 @@ public sealed record ResourceRequirements(
             Exclusive: attr.Exclusive,
             ExistingCabinBehavior: attr.ExistingCabinBehavior,
             FixtureFarmMod: attr.FixtureFarmMod,
-            ServerTps: attr.ServerTps
+            ServerTps: attr.ServerTps,
+            AllowCabinRelocation: attr.AllowCabinRelocation
         );
 
     /// <summary>
@@ -124,6 +126,7 @@ public sealed record ResourceRequirements(
             CabinStrategy = CabinStrategy,
             ExistingCabinBehavior = ExistingCabinBehavior,
             AllowIpConnections = AllowIpConnections,
+            AllowCabinRelocation = AllowCabinRelocation,
             WithSteam = WithSteam,
             FixtureFarmMod = FixtureFarmMod,
             ServerTps = ServerTps,

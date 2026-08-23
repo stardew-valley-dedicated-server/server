@@ -13,14 +13,37 @@ namespace JunimoServer.Services.CabinManager;
 /// </summary>
 public static class FarmCabinPositions
 {
-    // Cache the static Paths-layer scan, keyed on Farm identity. A reload/newgame realizes a
-    // fresh Farm, so reference inequality rescans and prior-session positions can't leak.
+    // Cache the static Paths-layer scan, keyed on Farm identity + layout choice. A
+    // reload/newgame realizes a fresh Farm, so reference inequality rescans and
+    // prior-session positions can't leak. Game-thread-only: every console subcommand that
+    // reads through here marshals onto the game loop (GameThreadOneShot), chat handlers
+    // and the API snapshot already run there.
     private static Farm _cachedFarm;
+    private static bool _cachedSeparate;
     private static List<Vector2> _cachedPositions;
 
     /// <summary>
-    /// Returns all map-designated cabin positions for the given farm, sorted by Order.
-    /// Reads both tile index 29 (grouped) and 30 (separate) since we just need valid locations.
+    /// Drops the cached scan and its strong <see cref="Farm"/> reference. Called on world
+    /// teardown so the previous world's Farm graph isn't held alive across the title screen —
+    /// reference inequality already forces a rescan, so this is retention-only, not correctness.
+    /// </summary>
+    public static void Invalidate()
+    {
+        _cachedFarm = null;
+        _cachedPositions = null;
+    }
+
+    /// <summary>
+    /// Returns the map-designated cabin positions for the given farm, sorted by Order.
+    /// Mirrors vanilla's layout resolution (source of truth:
+    /// <c>GameLocation.BuildStartingCabins</c>, GameLocation.cs:17430): tile index 29
+    /// markers are the "nearby" layout, tile index 30 the "separate" layout, selected by
+    /// <c>Game1.cabinsSeparate</c>. Every vanilla farm map authors BOTH sets, so reading
+    /// both would double the designated-spot count (and with it the None player ceiling).
+    /// <c>Game1.cabinsSeparate</c> is not save-persisted — the engine resets it to false —
+    /// so CabinManagerService.OnSaveLoaded restores it from the settings file's
+    /// CabinLayoutNearby before any consumer runs. A map that authors only the other set
+    /// falls back to it, matching the intent of "wherever this map designates cabins".
     /// </summary>
     /// <remarks>
     /// Returns the cached list directly (no defensive copy) on a hit, so the type is
@@ -28,12 +51,14 @@ public static class FarmCabinPositions
     /// </remarks>
     public static IReadOnlyList<Vector2> GetDesignatedPositions(Farm farm)
     {
-        if (ReferenceEquals(farm, _cachedFarm))
+        bool separate = Game1.cabinsSeparate;
+        if (ReferenceEquals(farm, _cachedFarm) && separate == _cachedSeparate)
         {
             return _cachedPositions;
         }
 
-        var positions = new List<(int order, Vector2 position)>();
+        var nearby = new List<(int order, Vector2 position)>();
+        var separated = new List<(int order, Vector2 position)>();
         var layer = farm.map?.GetLayer("Paths");
 
         if (layer == null)
@@ -62,13 +87,20 @@ public static class FarmCabinPositions
                     && int.TryParse(orderValue?.ToString(), out int order)
                 )
                 {
-                    positions.Add((order, new Vector2(x, y)));
+                    (tile.TileIndex == 29 ? nearby : separated).Add((order, new Vector2(x, y)));
                 }
             }
         }
 
-        var result = positions.OrderBy(p => p.order).Select(p => p.position).ToList();
+        var selected = separate ? separated : nearby;
+        if (selected.Count == 0)
+        {
+            selected = separate ? nearby : separated;
+        }
+
+        var result = selected.OrderBy(p => p.order).Select(p => p.position).ToList();
         _cachedFarm = farm;
+        _cachedSeparate = separate;
         _cachedPositions = result;
         return result;
     }

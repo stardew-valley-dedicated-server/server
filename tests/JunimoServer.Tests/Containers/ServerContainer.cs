@@ -403,24 +403,30 @@ public class ServerContainer : IAsyncDisposable
         Action<string>? logCallback
     )
     {
+        // PascalCase keys, matching the shape the mod itself writes (ServerSettingsLoader's
+        // Newtonsoft serialization of ServerSettings) — the mod rewrites this file at game
+        // creation and migration commit, so seeding it in the same shape keeps one key
+        // casing across both writers (the mod reads either casing, but file-level tooling
+        // like ServerSettingsFileHelper's sed should not have to).
         var settings = new
         {
-            game = new
+            Game = new
             {
-                farmName = options.FarmName,
-                farmType = options.FarmType.ToJsonValue(),
-                profitMargin = options.ProfitMargin,
-                startingCabins = options.StartingCabins,
-                spawnMonstersAtNight = options.SpawnMonstersAtNight,
+                FarmName = options.FarmName,
+                FarmType = options.FarmType.ToJsonValue(),
+                ProfitMargin = options.ProfitMargin,
+                StartingCabins = options.StartingCabins,
+                SpawnMonstersAtNight = options.SpawnMonstersAtNight,
             },
-            server = new
+            Server = new
             {
-                maxPlayers = options.MaxPlayers,
-                cabinStrategy = options.CabinStrategy,
-                separateWallets = options.SeparateWallets,
-                existingCabinBehavior = options.ExistingCabinBehavior,
-                verboseLogging = false,
-                allowIpConnections = options.AllowIpConnections,
+                MaxPlayers = options.MaxPlayers,
+                CabinStrategy = options.CabinStrategy,
+                SeparateWallets = options.SeparateWallets,
+                ExistingCabinBehavior = options.ExistingCabinBehavior,
+                VerboseLogging = false,
+                AllowIpConnections = options.AllowIpConnections,
+                AllowCabinRelocation = options.AllowCabinRelocation,
             },
         };
 

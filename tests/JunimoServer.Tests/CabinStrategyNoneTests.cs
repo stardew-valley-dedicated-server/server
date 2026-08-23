@@ -43,21 +43,48 @@ public class CabinStrategyNoneTests : TestBase
                     );
                 }
 
-                await CreateNewGameOnServerAsync(farmType: 0);
+                // DisconnectAsync settles the client only
+                // (disconnect-settles-client-not-server): gate on server-side removal so
+                // the reset /newgame can't 409 against a still-registered player and
+                // needlessly retire a healthy server through the catch below.
+                if (!await ServerApi.WaitForAllPlayersRemovedAsync())
+                {
+                    LogWarning(
+                        "Players still registered server-side after disconnect; the reset may 409."
+                    );
+                }
+
+                // Explicit-everything reset: every /newgame persists its config into the
+                // in-container settings file, so the override values (None strategy,
+                // maxPlayers) must be reset explicitly or they'd leak to the next reuser.
+                await ResetServerToPooledConfigAsync();
             }
             catch (Exception ex)
             {
-                LogWarning($"Server reset failed during cleanup: {ex.Message}");
+                // A failed reset leaves a None-strategy server (whose settings file also
+                // says None) pooled under a CabinStack config hash. Retire it so the pool
+                // boots a fresh instance instead of handing it to the next reuser.
+                LogWarning($"Server reset failed during cleanup ({ex.Message}); retiring server.");
+                Lease.Managed.PoisonServer(
+                    $"Cleanup reset to pooled config failed: {ex.Message}",
+                    ManagedServer.PoisonReasonCode.TestRetiredServer
+                );
             }
         }
         _needsServerReset = false;
         await base.DisposeAsync();
     }
 
+    /// <summary>
+    /// Under None the cabin count is min(designated map positions, MaxPlayers), placed in full
+    /// at creation; StartingCabins is ignored. startingCabins:1 is passed deliberately to
+    /// prove it does NOT limit the count. The Standard farm's Paths layer has 7 designated
+    /// positions and the test config's MaxPlayers exceeds 7, so exactly 7 cabins exist.
+    /// </summary>
     [Fact]
-    public async Task NewGame_NoneStrategy_DefaultStartingCabins()
+    public async Task NewGame_NoneStrategy_IgnoresStartingCabins_PlacesAllDesignatedPositions()
     {
-        LogSection("Testing None (vanilla) strategy with default starting cabins");
+        LogSection("Testing None (vanilla) strategy places the full designated-position set");
 
         _needsServerReset = true;
         await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 1);
@@ -68,20 +95,29 @@ public class CabinStrategyNoneTests : TestBase
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
-        // Exact count, not a lower bound: a lower bound passed even when vanilla placed 0 and
-        // the mod backfilled 1 (the bug this guards). startingCabins:1 must yield exactly 1.
-        Assert.Equal(1, cabinsResponse.TotalCount);
+        // Exact count, not a bound: a tolerant bound would mask a placement regression where
+        // vanilla places 0 and the mod backfills 1 (cabin-system invariant 9).
+        Assert.Equal(7, cabinsResponse.TotalCount);
+        Assert.True(
+            cabinsResponse.Cabins.All(c => !c.IsHidden),
+            "All None-strategy cabins must be at visible map positions"
+        );
 
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
     }
 
+    /// <summary>
+    /// MaxPlayers caps the None cabin count below the designated-position count: the honest
+    /// player ceiling is min(positions, MaxPlayers), so maxPlayers:3 yields exactly 3 cabins
+    /// even though the Standard farm has 7 designated positions.
+    /// </summary>
     [Fact]
-    public async Task NewGame_NoneStrategy_SixStartingCabins()
+    public async Task NewGame_NoneStrategy_MaxPlayersCapsCabinCount()
     {
-        LogSection("Testing None (vanilla) strategy with 6 starting cabins");
+        LogSection("Testing None (vanilla) strategy MaxPlayers cap");
 
         _needsServerReset = true;
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 6);
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", maxPlayers: 3);
 
         Log($"Server ready: {Server.BaseUrl}");
 
@@ -89,11 +125,7 @@ public class CabinStrategyNoneTests : TestBase
 
         Assert.NotNull(cabinsResponse);
         Assert.Equal("None", cabinsResponse.Strategy);
-
-        // Exact count: startingCabins:6 must place 6 visible cabins (the Standard farm's Paths
-        // layer has 7 designated positions, so 6 fit). A <= 6 upper bound previously passed even
-        // when only 1 cabin existed — the silent regression this test now catches.
-        Assert.Equal(6, cabinsResponse.TotalCount);
+        Assert.Equal(3, cabinsResponse.TotalCount);
 
         Log($"Cabins created: {cabinsResponse.TotalCount} (strategy: {cabinsResponse.Strategy})");
 
@@ -111,7 +143,9 @@ public class CabinStrategyNoneTests : TestBase
         LogSection("Testing !cabin under None (vanilla) strategy");
 
         _needsServerReset = true;
-        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", startingCabins: 1);
+        // maxPlayers:4 caps the up-front placement at the 4 lowest-Order designated spots,
+        // keeping the !cabin target footprint (CabinPlacementHelper) clear of cabins.
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "None", maxPlayers: 4);
 
         var ct = TestCt;
         var client = await Farmers.ConnectNewAsync(ct: ct);
@@ -146,6 +180,55 @@ public class CabinStrategyNoneTests : TestBase
         await Exceptions.AssertNoExceptionsAsync("after !cabin under None");
 
         Log($"None-strategy cabin moved to ({moved.TileX},{moved.TileY})");
+    }
+
+    /// <summary>
+    /// Switching a stacked strategy to None via the settings file is rejected on an
+    /// existing save: file-driven placement would bulldoze whatever players built on the
+    /// designated spots, so the rejection Warn points operators at the staged
+    /// 'cabins migrate' flow (covered by CabinMigrationTests) or a fresh game. The
+    /// persisted strategy reverts and the stacked cabins stay hidden. The false-trip guard
+    /// (a legitimately fresh None game must NOT be reverted — it has zero hidden cabins)
+    /// is exercised by every other test in this class, which all create fresh None games.
+    /// </summary>
+    [Fact]
+    public async Task StrategySwitch_StackedToNone_RejectedOnExistingSave()
+    {
+        LogSection("Testing stacked → None strategy switch rejection");
+
+        var ct = TestCt;
+        _needsServerReset = true;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var before = await ServerApi.GetCabins(ct);
+        Assert.NotNull(before);
+        Assert.Equal("CabinStack", before.Strategy);
+
+        try
+        {
+            await ServerSettingsFileHelper.SwitchCabinStrategyAsync(Server, "None", ct);
+            await ReloadServerAsync();
+
+            // The reload's OnSaveLoaded migration rejects the switch and reverts the
+            // persisted strategy; the first post-reload read observes the final state
+            // (the completion contract republishes the snapshot).
+            var after = await ServerApi.GetCabins(ct);
+            Assert.NotNull(after);
+            Assert.Equal("CabinStack", after.Strategy);
+            var playerCabins = after.Cabins.Where(c => c.Type == "CabinStack").ToList();
+            Assert.NotEmpty(playerCabins);
+            Assert.True(
+                playerCabins.All(c => c.IsHidden),
+                "Stacked cabins must remain hidden after the rejected switch to None"
+            );
+            Log($"Switch rejected; strategy stayed {after.Strategy}");
+        }
+        finally
+        {
+            // Restore the settings file so later reloads by a server reuser don't
+            // re-trigger the rejection warning.
+            await ServerSettingsFileHelper.SwitchCabinStrategyAsync(Server, "CabinStack", ct);
+        }
     }
 
     #region Helpers

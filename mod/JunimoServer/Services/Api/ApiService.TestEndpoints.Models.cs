@@ -238,6 +238,34 @@ public class TestStampClaimResponse
 }
 
 /// <summary>
+/// Response from POST /test/break_cabin_link (test-only). Nulls a cabin's farmhandReference to
+/// manufacture the one-way farmhand↔cabin link the join-time repair heals — or, with
+/// <c>?redirectHomeToOwner</c>, points the farmhand's home at another player's cabin to produce the
+/// unrecoverable shape the repair must decline.
+/// </summary>
+public class TestBreakCabinLinkResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Interior name of the cabin whose farmhandReference back-link was nulled.</summary>
+    public string BrokenCabinName { get; set; } = "";
+
+    /// <summary>The farmhand's homeLocation after the break (still resolves to a Cabin).</summary>
+    public string HomeLocation { get; set; } = "";
+
+    /// <summary>True when the farmhand's home was repointed at another player's cabin (decline case).</summary>
+    public bool Redirected { get; set; }
+
+    /// <summary>
+    /// UniqueMultiplayerID of the spurious unclaimed placeholder installed as the home cabin's
+    /// owner (makeHomeOwnerPlaceholder mode), or 0. The join-time repair must DELETE this
+    /// placeholder while re-homing the owner — a caller asserts it is gone from farmhandData.
+    /// </summary>
+    public long PlaceholderOwnerId { get; set; }
+}
+
+/// <summary>
 /// Response from POST /test/stamp_lobby_home (test-only). Reproduces the lobby-homed-spouse
 /// poisoned-save shape on a live server: ensures a shared lobby cabin exists (position-classified,
 /// so it works on a passwordless server too), synthesizes a marriage between a cabin-homed farmhand

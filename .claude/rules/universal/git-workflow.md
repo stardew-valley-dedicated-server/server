@@ -18,6 +18,11 @@ git checkout <child-branch> && git rebase master && git push --force-with-lease
 sleep 2 && gh pr merge <child-num> --squash --admin   # sleep: GitHub reports "not mergeable" right after a force-push
 ```
 
+## Rebasing
+
+- After resolving a commit's conflicts, **build before `git rebase --continue`**. Clearing the visible `<<<<<<<` markers is not "done" — a clean auto-merge can leave non-compiling code no marker flags, when the base branch refactored a type your commit uses in an *un-conflicted* region (e.g. a master commit turned a string setting into a typed enum; three conflicts resolved cleanly, then four `CS0029`/`CS1503` errors surfaced only on build, all in auto-merged hunks). An uncaught break gets baked into the rebased commit and propagates to every commit replayed on top.
+- Build once more at the end: later commits replay on the changed base, so one that applied cleanly against the old base can still be broken by the new one.
+
 ## Commit messages
 
 Conventional commits, enforced by commitlint (`config-conventional`): body capped at 100 chars/line. Wrap body lines (use `git commit -F <file>`).

@@ -67,6 +67,7 @@ public class ServerSettingsTests : TestBase
             new object[] { "Server.CabinStrategy", "CabinStack" },
             new object[] { "Server.SeparateWallets", false },
             new object[] { "Server.ExistingCabinBehavior", "KeepExisting" },
+            new object[] { "Server.AllowCabinRelocation", true },
         };
 
     /// <summary>
@@ -98,6 +99,7 @@ public class ServerSettingsTests : TestBase
             "Server.CabinStrategy" => settings.Server.CabinStrategy,
             "Server.SeparateWallets" => settings.Server.SeparateWallets,
             "Server.ExistingCabinBehavior" => settings.Server.ExistingCabinBehavior,
+            "Server.AllowCabinRelocation" => settings.Server.AllowCabinRelocation,
             _ => throw new ArgumentException($"Unknown setting path: {path}"),
         };
     }

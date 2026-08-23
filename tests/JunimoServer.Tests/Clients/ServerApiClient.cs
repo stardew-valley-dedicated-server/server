@@ -827,6 +827,36 @@ public class TestPrecustomizeFarmhandResponse
 }
 
 /// <summary>
+/// Response from /test/break_cabin_link POST endpoint (test-only). Mirrors the server-side
+/// TestBreakCabinLinkResponse DTO. Nulls a cabin's farmhandReference to manufacture the one-way
+/// farmhand↔cabin link the join-time repair heals (or declines, with a home redirect).
+/// </summary>
+public class TestBreakCabinLinkResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("brokenCabinName")]
+    public string BrokenCabinName { get; set; } = "";
+
+    [JsonPropertyName("homeLocation")]
+    public string HomeLocation { get; set; } = "";
+
+    [JsonPropertyName("redirected")]
+    public bool Redirected { get; set; }
+
+    /// <summary>
+    /// UniqueMultiplayerID of the spurious placeholder installed as the home cabin's owner
+    /// (makeHomeOwnerPlaceholder mode), or 0. The repair must delete it — assert it is gone.
+    /// </summary>
+    [JsonPropertyName("placeholderOwnerId")]
+    public long PlaceholderOwnerId { get; set; }
+}
+
+/// <summary>
 /// Response from /test/stamp_lobby_home POST endpoint (test-only). Mirrors the server-side
 /// TestStampLobbyHomeResponse DTO. Reproduces the lobby-homed-spouse poisoned-save shape: a
 /// farmhand married (synthesized) to an NPC with both their home fields pointing at the shared
@@ -1240,6 +1270,9 @@ public class ServerRuntimeSettingsInfo
 
     [JsonPropertyName("existingCabinBehavior")]
     public string ExistingCabinBehavior { get; set; } = string.Empty;
+
+    [JsonPropertyName("allowCabinRelocation")]
+    public bool AllowCabinRelocation { get; set; }
 }
 
 /// <summary>
@@ -1303,6 +1336,82 @@ public class CabinsResponse
 
     [JsonPropertyName("savedPositionPlayerIds")]
     public List<long> SavedPositionPlayerIds { get; set; } = new();
+
+    /// <summary>
+    /// Active staged strategy migration ('cabins migrate'), or null when none is staged.
+    /// The old strategy stays live (in <see cref="Strategy"/>) until commit.
+    /// </summary>
+    [JsonPropertyName("migration")]
+    public CabinMigrationInfoResponse? Migration { get; set; }
+
+    /// <summary>
+    /// The CabinStack shared stack spot, or null when the active strategy is not CabinStack.
+    /// </summary>
+    [JsonPropertyName("stackSpot")]
+    public StackSpotInfoResponse? StackSpot { get; set; }
+
+    /// <summary>
+    /// The main farmhouse's front-door entry tile; null when no game is loaded. Under
+    /// FarmhouseStack a stacked cabin's exit warp lands here.
+    /// </summary>
+    [JsonPropertyName("mainFarmHouseEntry")]
+    public TilePointResponse? MainFarmHouseEntry { get; set; }
+}
+
+/// <summary>A tile coordinate on <see cref="CabinsResponse"/>.</summary>
+public class TilePointResponse
+{
+    [JsonPropertyName("x")]
+    public int X { get; set; }
+
+    [JsonPropertyName("y")]
+    public int Y { get; set; }
+}
+
+/// <summary>
+/// The CabinStack shared stack spot on <see cref="CabinsResponse"/>.
+/// </summary>
+public class StackSpotInfoResponse
+{
+    [JsonPropertyName("tileX")]
+    public int TileX { get; set; }
+
+    [JsonPropertyName("tileY")]
+    public int TileY { get; set; }
+
+    /// <summary>True when an admin-set override is active (vs the map default).</summary>
+    [JsonPropertyName("isOverride")]
+    public bool IsOverride { get; set; }
+
+    /// <summary>True when the spot currently fails placement validation.</summary>
+    [JsonPropertyName("isObstructed")]
+    public bool IsObstructed { get; set; }
+
+    /// <summary>
+    /// True when obstruction was actually evaluated (a hidden cabin existed to test against);
+    /// false means the stack is empty and <see cref="IsObstructed"/> is not meaningful.
+    /// </summary>
+    [JsonPropertyName("obstructionChecked")]
+    public bool ObstructionChecked { get; set; }
+}
+
+/// <summary>
+/// Staged strategy-migration status on <see cref="CabinsResponse"/>.
+/// </summary>
+public class CabinMigrationInfoResponse
+{
+    [JsonPropertyName("fromStrategy")]
+    public string FromStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("toStrategy")]
+    public string ToStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("placedCount")]
+    public int PlacedCount { get; set; }
+
+    /// <summary>Placements still required before commit, computed live server-side.</summary>
+    [JsonPropertyName("remainingCount")]
+    public int RemainingCount { get; set; }
 }
 
 /// <summary>
@@ -2206,6 +2315,42 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
+    /// Test-only: manufacture a one-way farmhand↔cabin link by nulling a cabin's farmhandReference
+    /// (the cabin→farmhand direction) while leaving the farmhand's homeLocation naming a Cabin. Used
+    /// to verify the join-time link repair on rejoin. With <paramref name="redirectHomeToOwnerId"/>
+    /// set, the farmhand's home is repointed at that other owner's cabin, producing the unrecoverable
+    /// shape (home owned by someone else) the repair must decline rather than steal. With
+    /// <paramref name="makeHomeOwnerPlaceholder"/> set, a fresh unclaimed placeholder is installed as
+    /// the farmhand's own home cabin's owner — the recoverable shape the repair must heal by DELETING
+    /// the placeholder (its id is returned as <c>PlaceholderOwnerId</c>) and re-homing the owner.
+    /// POST /test/break_cabin_link
+    /// </summary>
+    public async Task<TestBreakCabinLinkResponse?> BreakCabinLink(
+        long ownerId,
+        long? redirectHomeToOwnerId = null,
+        bool makeHomeOwnerPlaceholder = false,
+        CancellationToken ct = default
+    )
+    {
+        var query = $"?ownerId={ownerId}";
+        if (redirectHomeToOwnerId.HasValue)
+        {
+            query += $"&redirectHomeToOwner={redirectHomeToOwnerId.Value}";
+        }
+        if (makeHomeOwnerPlaceholder)
+        {
+            query += "&makeHomeOwnerPlaceholder=true";
+        }
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/break_cabin_link{query}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestBreakCabinLinkResponse>(ct);
+    }
+
+    /// <summary>
     /// Test-only: reproduce the lobby-homed-spouse poisoned-save shape — a farmhand married
     /// (synthesized) to <paramref name="npc"/> with the farmhand's homeLocation/lastSleepLocation
     /// and the NPC's DefaultMap/position pointing at the shared lobby cabin interior. Used to
@@ -2722,6 +2867,7 @@ public class ServerApiClient : IDisposable
         string? cabinStrategy = null,
         int? maxPlayers = null,
         bool? allowIpConnections = null,
+        bool? allowCabinRelocation = null,
         CancellationToken ct = default
     )
     {
@@ -2754,6 +2900,11 @@ public class ServerApiClient : IDisposable
         if (allowIpConnections.HasValue)
         {
             body["allowIpConnections"] = allowIpConnections.Value;
+        }
+
+        if (allowCabinRelocation.HasValue)
+        {
+            body["allowCabinRelocation"] = allowCabinRelocation.Value;
         }
 
         var content = JsonContent.Create(body);
@@ -2999,6 +3150,48 @@ public class ServerApiClient : IDisposable
         TimeSpan? timeout = null,
         CancellationToken ct = default
     ) => WaitForPlayersRemovedByIdAsync(new[] { playerId }, timeout, ct);
+
+    /// <summary>
+    /// Polls GET /players until no player remains registered server-side. For cleanup paths
+    /// that don't track individual uids (class disposers): DisconnectAsync settles the
+    /// client only, and a reset /newgame 409s against any still-registered player.
+    /// </summary>
+    public async Task<bool> WaitForAllPlayersRemovedAsync(
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    )
+    {
+        return await Helpers.PollingHelper.WaitUntilAsync(
+            Helpers.WaitName.Polling_ServerApi_WaitForAllPlayersRemoved,
+            async () =>
+            {
+                try
+                {
+                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
+                    var players = await GetPlayers(reqCts.Token);
+                    return players?.Players != null && players.Players.Count == 0;
+                }
+                catch (Exception ex)
+                    when (ex
+                            is HttpRequestException
+                                or TaskCanceledException
+                                or OperationCanceledException
+                        && !ct.IsCancellationRequested
+                    )
+                {
+                    return false;
+                }
+            },
+            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
+            cancellationToken: ct,
+            onTimeoutAsync: async () =>
+                await Helpers.FailureContext.DumpAsync(
+                    this,
+                    reason: "WaitForAllPlayersRemovedAsync_timeout"
+                )
+        );
+    }
 
     /// <summary>
     /// Polls GET /farmhands until a farmhand with the given name exists.

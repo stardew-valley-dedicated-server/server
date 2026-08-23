@@ -20,7 +20,8 @@ namespace JunimoServer.Services.SaveImport;
 /// <see cref="TryReadIntent"/>/<see cref="ClearIntent"/>. DI is one-way: <c>CabinManagerService</c>
 /// injects this service, never the reverse — a mutual injection would be a constructor cycle that
 /// the eager DI container fails the process on. Layer A is engine-free, so this service depends only
-/// on <see cref="GameLoaderService"/> (for <c>SetSaveNameToLoad</c>).
+/// on <see cref="GameLoaderService"/> (for <c>SetSaveNameToLoad</c>) and
+/// <see cref="PersistentOption.PersistentOptions"/> (global mod data, no engine access).
 /// </summary>
 public class SaveImportService : ModService
 {
@@ -29,13 +30,38 @@ public class SaveImportService : ModService
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
     private readonly GameLoaderService _gameLoader;
+    private readonly PersistentOption.PersistentOptions _options;
 
-    public SaveImportService(IModHelper helper, IMonitor monitor, GameLoaderService gameLoader)
+    public SaveImportService(
+        IModHelper helper,
+        IMonitor monitor,
+        GameLoaderService gameLoader,
+        PersistentOption.PersistentOptions options
+    )
         : base(helper, monitor)
     {
         _helper = helper;
         _monitor = monitor;
         _gameLoader = gameLoader;
+        _options = options;
+    }
+
+    /// <summary>
+    /// Marks the imported save so its FIRST load resets the frozen None cabin cap: the cap
+    /// is global (not save-scoped), so the imported farm must compute a fresh
+    /// min(designated positions, MaxPlayers) at load (CabinManagerService's OnSaveLoaded
+    /// freeze) instead of inheriting the previous game's frozen number — too low refuses
+    /// joins below the imported farm's real capacity; too high raises the on-demand growth
+    /// ceiling. Deferred to the load rather than cleared here: the previous world keeps
+    /// running until restart and must keep its own frozen cap (clearing eagerly would
+    /// un-freeze its bulldoze guard mid-session), and a canceled/retargeted import must not
+    /// cost the current save its cap — CabinManagerService drops a marker that doesn't
+    /// match the loaded save.
+    /// </summary>
+    private void MarkNoneCapClearOnFirstLoad(string saveName)
+    {
+        _options.Data.PendingNoneCapClearSaveName = saveName;
+        _options.Save();
     }
 
     /// <summary>
@@ -169,6 +195,7 @@ public class SaveImportService : ModService
         );
 
         _gameLoader.SetSaveNameToLoad(saveName);
+        MarkNoneCapClearOnFirstLoad(saveName);
         // As-is never writes a finalize intent. Any surviving intent here is for a DIFFERENT save (a
         // pending intent for THIS save was refused above); clear it so a stale other-save swap intent
         // doesn't leak onto this plain as-is boot (Layer B's wrong-save guard would also catch it,
@@ -367,6 +394,7 @@ public class SaveImportService : ModService
         try
         {
             _gameLoader.SetSaveNameToLoad(saveName);
+            MarkNoneCapClearOnFirstLoad(saveName);
         }
         catch (Exception ex)
         {
@@ -438,6 +466,7 @@ public class SaveImportService : ModService
             pending.UserId = userId;
             WriteIntent(pending);
             _gameLoader.SetSaveNameToLoad(saveName);
+            MarkNoneCapClearOnFirstLoad(saveName);
             _monitor.Log($"Updated pending bind for '{saveName}' to the new id.", LogLevel.Warn);
             result.Success = true;
             result.Swapped = true;
