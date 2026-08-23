@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.TerrainFeatures;
 
 namespace JunimoServer.Services.CropSaver;
 
@@ -69,8 +70,65 @@ public class CropSaverOverrides
         return false;
     }
 
+    /// <summary>
+    /// Canonical managed-crop lookup: (NameOrUniqueName, pot-canonical tile).
+    /// The DayUpdate guard and the /test/crops snapshot resolve through it;
+    /// KillCrop_Prefix uses the same addressing but needs the entry itself.
+    /// </summary>
     public static bool IsManaged(string locationName, Vector2 tile)
     {
         return _cropSaverDataLoader?.GetSaverCrop(locationName, tile) != null;
+    }
+
+    /// <summary>
+    /// Captures the crop about to be destroyed by HoeDirt.dayUpdate's winter branch.
+    /// That branch calls destroyCrop (nulling dirt.crop) without ever calling Crop.Kill,
+    /// so <see cref="KillCrop_Prefix"/> cannot protect managed crops from it. The guard
+    /// below mirrors the branch's own condition in full (source of truth:
+    /// StardewValley.TerrainFeatures.HoeDirt.dayUpdate) — re-sync if vanilla changes it.
+    /// </summary>
+    public static void DayUpdate_Prefix(HoeDirt __instance, out Crop __state)
+    {
+        __state = null;
+        var location = __instance.Location;
+        var crop = __instance.crop;
+        if (location == null || crop == null)
+        {
+            return;
+        }
+
+        if (
+            !location.IsOutdoors
+            || location.GetSeason() != Season.Winter
+            || crop.isWildSeedCrop()
+            || crop.IsInSeason(location)
+        )
+        {
+            return;
+        }
+
+        // Same entry addressing as KillCrop_Prefix: NameOrUniqueName key,
+        // pot-canonical tile.
+        if (!IsManaged(location.NameOrUniqueName, __instance.Pot?.TileLocation ?? __instance.Tile))
+        {
+            return;
+        }
+
+        __state = crop;
+    }
+
+    /// <summary>
+    /// Restores a managed crop the winter-destroy branch removed. Safe: an out-of-season
+    /// crop takes Crop.newDay's first branch (Kill — suppressed for managed crops — then
+    /// return), so within dayUpdate the winter branch is the only path that nulls
+    /// dirt.crop. destroyCrop's other side effect (nearWaterForPaddy reset) is a
+    /// recomputed cache and needs no restore.
+    /// </summary>
+    public static void DayUpdate_Postfix(HoeDirt __instance, Crop __state)
+    {
+        if (__state != null && __instance.crop == null)
+        {
+            __instance.crop = __state;
+        }
     }
 }

@@ -45,6 +45,14 @@ namespace JunimoServer.Tests;
 /// through, tracking entry dropped) needs a server booted with the env var set
 /// to false, which the test harness cannot express per-class — not E2E-covered.
 /// </description></item>
+/// <item><description>
+/// <see cref="GardenPotCrop_SurvivesWinterDestroy_WhileOwnerOffline"/> drives a
+/// Fall 28 → Winter 1 transition, where <c>HoeDirt.dayUpdate</c>'s winter branch
+/// calls <c>destroyCrop</c> without ever calling <c>Crop.Kill</c> — asserting
+/// <c>DayUpdate_Prefix</c>/<c>DayUpdate_Postfix</c> restore the managed crop the
+/// branch removed. Without that patch pair the crop row vanishes entirely
+/// (destroyed, not merely killed).
+/// </description></item>
 /// </list>
 /// </summary>
 // Exclusive serializes the methods (SharedClass alone runs them concurrently): they
@@ -62,7 +70,9 @@ public class CropSaverTests : TestBase
     /// <summary>
     /// Pumpkin seed id (unqualified). Fall-only, so planted Fall 1 its CropSaver date
     /// of death is Fall 28 — the immune-location test drives one SetDate to that
-    /// season-end rollover, where a seasonal crop would be killed.
+    /// season-end rollover, where a seasonal crop would be killed, and the
+    /// winter-destroy test crosses it into Winter, where vanilla destroys the crop
+    /// outright.
     /// </summary>
     private const string PumpkinSeedId = "490";
 
@@ -71,7 +81,7 @@ public class CropSaverTests : TestBase
     /// (at (64, 15) per vanilla <c>Farm.GetMainFarmHouseEntry()</c>).
     ///
     /// <para>
-    /// <c>PlacePotAndPlantCauliflowerAsync</c> clears each pot's 3×3 tile
+    /// <c>PlacePotAndPlantAsync</c> clears each pot's 3×3 tile
     /// neighborhood before placing to make it immune to the overnight weed spawn
     /// (see that method for why 3×3 suffices). The tile stays on the outdoor,
     /// non-season-immune Farm, so the seasonal Kill-suppression path under test
@@ -92,6 +102,8 @@ public class CropSaverTests : TestBase
     private const int TileC_Y = 24;
     private const int TileD_X = 64;
     private const int TileD_Y = 23;
+    private const int TileE_X = 64;
+    private const int TileE_Y = 25;
 
     /// <summary>
     /// Tile inside the farmhand's cabin interior for the immune-location test.
@@ -106,7 +118,7 @@ public class CropSaverTests : TestBase
     public async Task GardenPotCrop_IsRegisteredWithCropSaverWatcher()
     {
         var ct = TestCt;
-        await PlacePotAndPlantCauliflowerAsync(TileA_X, TileA_Y, ct);
+        await PlacePotAndPlantAsync(CauliflowerSeedId, "spring", TileA_X, TileA_Y, ct);
         await AssertWatcherRegistersPotAsync("Farm", TileA_X, TileA_Y, ct);
     }
 
@@ -115,7 +127,7 @@ public class CropSaverTests : TestBase
     {
         var ct = TestCt;
 
-        // Force Spring so Cauliflower is plantable (see PlacePotAndPlantCauliflowerAsync).
+        // Force Spring so Cauliflower is plantable (see PlacePotAndPlantAsync).
         var springDate = await ServerApi.SetDate("spring", 1, year: 1, ct);
         Assert.NotNull(springDate);
         Assert.True(springDate.Success, $"SetDate(spring 1) failed: {springDate.Error}");
@@ -203,7 +215,7 @@ public class CropSaverTests : TestBase
     {
         var ct = TestCt;
 
-        await PlacePotAndPlantCauliflowerAsync(TileD_X, TileD_Y, ct);
+        await PlacePotAndPlantAsync(CauliflowerSeedId, "spring", TileD_X, TileD_Y, ct);
         await AssertWatcherRegistersPotAsync("Farm", TileD_X, TileD_Y, ct);
 
         // Deterministic strike: /test/lightning_strike runs vanilla's crop-strike
@@ -245,7 +257,13 @@ public class CropSaverTests : TestBase
     {
         var ct = TestCt;
 
-        var farmhand = await PlacePotAndPlantCauliflowerAsync(TileB_X, TileB_Y, ct);
+        var farmhand = await PlacePotAndPlantAsync(
+            CauliflowerSeedId,
+            "spring",
+            TileB_X,
+            TileB_Y,
+            ct
+        );
         await AssertWatcherRegistersPotAsync("Farm", TileB_X, TileB_Y, ct);
 
         // Pre-arm extraDays past CropSaver.OnDayEnd's branch-1 / branch-2
@@ -255,8 +273,8 @@ public class CropSaverTests : TestBase
         // Math (CropSaver.cs:39-104, against today's Spring 28 Y1):
         //   nightOfDeath = datePlanted + (extraDays + 28*numSeasons - datePlanted.Day)
         //                = Spring 28 + extraDays
-        //   earliestFullyGrownDate (fresh Cauliflower, unwatered)
-        //                = Spring 28 + (1 + 10 + 1) = Summer 13
+        //   earliestFullyGrownDate (fresh Cauliflower, DaysInPhase=[1,2,4,4,1], unwatered)
+        //                = Spring 28 + (1 + (2+4+4+1) + 1) = Summer 13
         //   branch-1: !fullyGrown && now.Day==28 && nightOfDeath < earliest →
         //     bypassed when extraDays >= 13 (nightOfDeath = Summer 13 ≥ Summer 13)
         //   branch-2: now >= nightOfDeath → bypassed (Spring 28 < Summer 13)
@@ -344,6 +362,110 @@ public class CropSaverTests : TestBase
             "Cauliflower in a Garden Pot must survive Spring 28 → Summer 1 with offline owner. "
                 + "Pre-fix: CropWatcher never registered the pot, so Crop.newDay's "
                 + "out-of-season Kill ran unsuppressed."
+        );
+    }
+
+    [Fact]
+    public async Task GardenPotCrop_SurvivesWinterDestroy_WhileOwnerOffline()
+    {
+        var ct = TestCt;
+
+        // Pumpkin is Fall-only, so the Fall 28 → Winter 1 transition below drives
+        // HoeDirt.dayUpdate's winter-destroy branch: outdoors + Winter + out-of-season
+        // + not wild-seed → destroyCrop(showAnimation: false), which nulls dirt.crop
+        // WITHOUT calling Crop.Kill — KillCrop_Prefix never runs for it.
+        var farmhand = await PlacePotAndPlantAsync(PumpkinSeedId, "fall", TileE_X, TileE_Y, ct);
+        await AssertWatcherRegistersPotAsync("Farm", TileE_X, TileE_Y, ct);
+
+        // Pre-arm extraDays past CropSaver.OnDayEnd's branch-1 / branch-2 floors so
+        // the prolong logic doesn't kill the crop *inside* OnDayEnd before the day
+        // actually transitions — only the winter-destroy branch may touch it.
+        //
+        // Math (CropSaver.OnDayEnd, against today's Fall 28 Y1; datePlanted = Fall 1):
+        //   nightOfDeath = datePlanted + (extraDays + 28*numSeasons - datePlanted.Day)
+        //                = Fall 1 + (extraDays + 28 - 1) = Fall 28 + extraDays
+        //   earliestFullyGrownDate (fresh Pumpkin, DaysInPhase=[1,2,3,4,3], unwatered)
+        //                = Fall 28 + (1 + (2+3+4+3) + 1) = Winter 14
+        //   branch-1: !fullyGrown && now.Day==28 && nightOfDeath < earliest →
+        //     bypassed when extraDays >= 14 (nightOfDeath = Winter 14 ≥ Winter 14)
+        //   branch-2: now >= nightOfDeath → bypassed (Fall 28 < Winter 14)
+        //
+        // After OnDayEnd runs without killing, the day advances to Winter 1 and the
+        // winter-destroy branch fires — DayUpdate_Prefix/Postfix are the only thing
+        // that can save the crop (Kill suppression alone can't; the branch never
+        // calls Kill).
+        const int ExtraDaysToBypassOnDayEndKill = 14;
+        await ServerApi.SetDate("fall", 28, year: 1, ct);
+        var armed = await ServerApi.SetSaverCrop(
+            "Farm",
+            TileE_X,
+            TileE_Y,
+            extraDays: ExtraDaysToBypassOnDayEndKill,
+            ct: ct
+        );
+        Assert.NotNull(armed);
+        Assert.True(armed.Success, $"SetSaverCrop failed: {armed.Error}");
+        Assert.True(armed.Found, "SaverCrop entry must exist before pre-arming extraDays");
+
+        // Connect a second, unrelated farmer to drive the day transition. The crop's
+        // ownerId is already stamped to the primary (watcher-registered above), so this
+        // farmer never becomes the owner.
+        await using var driver = await Farmers.ConnectSecondFarmerAsync(ct: ct);
+
+        // Disconnect the crop owner — with an online owner OnDayEnd's prolong logic
+        // stops accruing extraDays, and the offline-owner scenario is exactly the one
+        // the winter-destroy bypass silently broke.
+        await Farmers.DisconnectAndWaitForSlotAsync(
+            farmhand.JoinResult.UniqueMultiplayerId,
+            farmhand.FarmerName,
+            ct
+        );
+
+        // Advance the day via a connected player's sleep (the server won't advance an
+        // empty server's clock — see the sibling test for the lone-host freeze). The
+        // driver sleeps, the host auto-sleeps, and the group transitions.
+        var statusBefore = await ServerApi.GetStatus(ct);
+        Assert.NotNull(statusBefore);
+        var driverSlept = await driver.Client.Actions.Sleep();
+        Assert.True(driverSlept?.Success == true, $"Driver sleep failed: {driverSlept?.Error}");
+        await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
+        await ServerApi.SetClockSpeed(20, ct);
+        try
+        {
+            var dayChanged = await DayChange.WaitAsync(
+                statusBefore.Day,
+                statusBefore.Season,
+                statusBefore.Year,
+                ct
+            );
+            Assert.True(dayChanged, "Day did not advance from Fall 28 → Winter 1");
+        }
+        finally
+        {
+            await ServerApi.SetClockSpeed(1, ct);
+        }
+
+        // HoeDirt.dayUpdate ran on the host during the transition. Without the
+        // DayUpdate_Prefix/Postfix pair the winter branch destroyCrop'd the pot's crop
+        // — the row below would be MISSING from /test/crops (destroyed, not killed).
+        // With the pair, the crop object is restored and Kill suppression keeps it
+        // alive.
+        var cropsAfter = await ServerApi.GetAllCrops(ct);
+        Assert.NotNull(cropsAfter);
+        var stillThere = cropsAfter.Crops.SingleOrDefault(c =>
+            c.IsInPot && c.LocationName == "Farm" && c.TileX == TileE_X && c.TileY == TileE_Y
+        );
+        Assert.True(
+            stillThere != null,
+            $"Garden Pot crop missing at Farm ({TileE_X},{TileE_Y}) after Fall 28 → Winter 1 — "
+                + "HoeDirt.dayUpdate's winter-destroy branch removed it without calling Crop.Kill "
+                + "(DayUpdate_Prefix/Postfix restore did not fire), or the pot itself was destroyed "
+                + "(check the server log for 'Garden Pot was destroyed')."
+        );
+        Assert.True(
+            stillThere.IsAlive,
+            "Pumpkin in a Garden Pot must survive Fall 28 → Winter 1 with offline owner. "
+                + "The crop object was restored but is dead — Kill suppression regressed."
         );
     }
 
@@ -481,24 +603,25 @@ public class CropSaverTests : TestBase
 
     /// <summary>
     /// Connects a farmhand, warps to the Farm pot tile, places an IndoorPot,
-    /// and plants Cauliflower. Returns the connected farmhand. Note: the
+    /// and plants the given seed. Returns the connected farmhand. Note: the
     /// host-side test screenshot will show the FarmHouse interior (the host
     /// bot stays inside) — the pot is only visible on
     /// <c>client_result.png</c>, captured from the farmhand's view.
     /// </summary>
-    private async Task<Infrastructure.Fixture.FarmerTestHelper.ClientConnection> PlacePotAndPlantCauliflowerAsync(
+    private async Task<Infrastructure.Fixture.FarmerTestHelper.ClientConnection> PlacePotAndPlantAsync(
+        string seedId,
+        string season,
         int tileX,
         int tileY,
         CancellationToken ct
     )
     {
-        // Force Spring before planting. Cauliflower is Spring-only (HoeDirt.cs:592
-        // checks data.Seasons.Contains(location.GetSeason())), and the sibling
-        // KillSuppressedOnSeasonTransition test advances the shared-class server
-        // to Summer 1.
-        var springDate = await ServerApi.SetDate("spring", 1, year: 1, ct);
-        Assert.NotNull(springDate);
-        Assert.True(springDate.Success, $"SetDate(spring 1) failed: {springDate.Error}");
+        // Force the seed's own season, day 1, before planting (HoeDirt.cs:592 checks
+        // data.Seasons.Contains(location.GetSeason())). Tests in this shared-class
+        // server each move the global calendar, so never assume the current date.
+        var seasonDate = await ServerApi.SetDate(season, 1, year: 1, ct);
+        Assert.NotNull(seasonDate);
+        Assert.True(seasonDate.Success, $"SetDate({season} 1) failed: {seasonDate.Error}");
 
         var farmhand = await Farmers.ConnectFastAsync(namePrefix: "CropTest", ct: ct);
 
@@ -535,7 +658,7 @@ public class CropSaverTests : TestBase
 
         // Crop.TryGetData looks up by unqualified id — passing "(O)474" fails
         // the lookup and HoeDirt.plant returns false silently.
-        var plant = await GameClient.Actions.PlantCrop(CauliflowerSeedId, "Farm", tileX, tileY);
+        var plant = await GameClient.Actions.PlantCrop(seedId, "Farm", tileX, tileY);
         Assert.True(plant?.Success, $"PlantCrop failed: {plant?.Error}");
 
         return farmhand;
