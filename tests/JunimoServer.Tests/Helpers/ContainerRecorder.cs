@@ -748,7 +748,7 @@ internal sealed class ContainerRecorder : IAsyncDisposable
         // flushes segments.csv (its documented post-condition — "all segments finalized on disk, ready for
         // clip extraction"), so a clip whose window touched the former active segment still finds it as a
         // finalized covering segment. Accepting Stopped matters because the deferred per-test clip extract
-        // (EnqueueBackgroundTask, runs immediately) can RACE the backgrounded server disposal's StopAsync;
+        // (EnqueueBackgroundRecordingTask, runs immediately) can RACE the backgrounded server disposal's StopAsync;
         // if the stop wins, the clip must still extract off the finalized segments. NotStarted/Failed have
         // no usable segments.
         if (_state != RecorderState.Recording && _state != RecorderState.Stopped)

@@ -76,29 +76,37 @@ public sealed class TestResourceBroker : IAsyncDisposable
             );
     }
 
-    // Server.DisposeAsync tasks kicked off in the background by
-    // TryEvictIdleServerForAsync so the waiting test can proceed without
-    // blocking on Docker stop-grace + recording extraction. Also receives
-    // deferred per-test recording extraction (TestBase.DisposeAsync, "all"
+    // Deferred per-test recording extractions (TestBase.DisposeAsync, "all"
     // mode passing tests) so ffmpeg work doesn't sit on the test critical
-    // path. Drained in DisposeAsync via Task.WhenAll so the broker doesn't
-    // exit with orphan containers or pending extractions.
-    private readonly ConcurrentQueue<Task> _backgroundDisposeTasks = new();
+    // path. Drained in DisposeAsync bounded by RecordingDrainBudget —
+    // extraction is best-effort and must never wedge run finalization.
+    private readonly ConcurrentQueue<Task> _backgroundRecordingTasks = new();
+
+    // Server.DisposeAsync tasks kicked off in the background by
+    // TryEvictIdleServerForAsync, the sibling sweep in ReleaseAsync, and
+    // BackgroundDisposeServer so the waiting test can proceed without
+    // blocking on Docker stop-grace + recording extraction. Drained
+    // unbounded in DisposeAsync — each disposal is internally bounded by
+    // Docker stop-grace and must complete so the broker doesn't exit with
+    // orphan containers.
+    private readonly ConcurrentQueue<Task> _backgroundServerDisposalTasks = new();
 
     /// <summary>
-    /// Enqueues a background task whose completion is awaited during broker
-    /// disposal. Used by <see cref="TestBase"/> to defer non-critical work
-    /// (per-test recording clip extraction in "all" mode passing tests) off
-    /// the test's <c>DisposeAsync</c> critical path. Wrapped in
-    /// <see cref="ExecutionContext.SuppressFlow"/> so the deferred work
+    /// Enqueues a deferred recording extraction, drained in <see cref="DisposeAsync"/>
+    /// bounded by <see cref="TestTimings.RecordingDrainBudget"/> and failed fast on
+    /// abort via the extract-limiter cancel — best-effort only; work that must
+    /// complete does not belong on this queue. Used by
+    /// <see cref="Fixture.TestArtifactCollector"/> to defer per-test clip extraction
+    /// ("all" mode passing tests) off the test's <c>DisposeAsync</c> critical path.
+    /// Wrapped in <see cref="ExecutionContext.SuppressFlow"/> so the deferred work
     /// doesn't carry the deferring test's <c>TestContext.Current</c> across
     /// later events emitted from inside the work itself.
     /// </summary>
-    public void EnqueueBackgroundTask(Func<Task> work)
+    public void EnqueueBackgroundRecordingTask(Func<Task> work)
     {
         using (ExecutionContext.SuppressFlow())
         {
-            _backgroundDisposeTasks.Enqueue(
+            _backgroundRecordingTasks.Enqueue(
                 Task.Run(async () =>
                 {
                     try
@@ -110,6 +118,44 @@ public sealed class TestResourceBroker : IAsyncDisposable
                         InfrastructureEventLog.Emit(
                             "background_task_failed",
                             new { source = "broker_background", error = ex.Message }
+                        );
+                    }
+                })
+            );
+        }
+    }
+
+    /// <summary>
+    /// Enqueues <paramref name="server"/>'s disposal (Docker stop-grace +
+    /// recording extraction) on a background task, drained unbounded in
+    /// <see cref="DisposeAsync"/> so containers always stop cleanly. Callers
+    /// must have already handled pool removal and slot release. Wrapped in
+    /// <see cref="ExecutionContext.SuppressFlow"/> so the disposal doesn't
+    /// inherit the initiating test's <c>TestContext.Current</c> and
+    /// misattribute recording_extracted / server_dispose_* events
+    /// (see .claude/rules/asynclocal-pitfalls.md).
+    /// </summary>
+    private void EnqueueBackgroundServerDisposal(string serverKey, ManagedServer server)
+    {
+        using (ExecutionContext.SuppressFlow())
+        {
+            _backgroundServerDisposalTasks.Enqueue(
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await server.DisposeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        InfrastructureEventLog.Emit(
+                            "server_dispose_background_failed",
+                            new
+                            {
+                                server = serverKey,
+                                instanceId = server.InstanceId,
+                                error = ex.Message,
+                            }
                         );
                     }
                 })
@@ -2009,36 +2055,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
             // runs in the background. Eviction guards above guarantee
             // RefCount == 0 and no pending/remaining demand, so nothing
             // else can reach this instance.
-            var capturedKey = key;
-            var capturedServer = server;
-            // SuppressFlow: this dispose runs in the background after the evicting
-            // test has finished. Inheriting that test's TestContext.Current
-            // misattributes recording_extracted / server_dispose_* events.
-            // See .claude/rules/asynclocal-pitfalls.md.
-            using (ExecutionContext.SuppressFlow())
-            {
-                _backgroundDisposeTasks.Enqueue(
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await capturedServer.DisposeAsync();
-                        }
-                        catch (Exception ex)
-                        {
-                            InfrastructureEventLog.Emit(
-                                "server_dispose_background_failed",
-                                new
-                                {
-                                    server = capturedKey,
-                                    instanceId = capturedServer.InstanceId,
-                                    error = ex.Message,
-                                }
-                            );
-                        }
-                    })
-                );
-            }
+            EnqueueBackgroundServerDisposal(key, server);
             return; // Only need to free one slot on this host
         }
     }
@@ -2273,7 +2290,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                 // work — pool removal, Steam-account release, slot release, and the
                 // server_disposed event emit — happens here so observers see the
                 // sibling leave the pool immediately. Drained in DisposeAsync via
-                // Task.WhenAll(_backgroundDisposeTasks). Mirrors the eviction path
+                // the server-disposal queue. Mirrors the eviction path
                 // (TryEvictIdleServerForAsync).
                 foreach (var sibling in _servers.GetAll(managed.Key))
                 {
@@ -2301,36 +2318,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                             TestLog.Server($"sibling early slot release failed: {ex.Message}");
                         }
 
-                        var capturedKey = managed.Key;
-                        var capturedSibling = sibling;
-                        // SuppressFlow: this dispose runs in the background after the
-                        // last test has finished. Inheriting that test's
-                        // TestContext.Current misattributes recording_extracted and
-                        // server_dispose_* events. See .claude/rules/asynclocal-pitfalls.md.
-                        using (ExecutionContext.SuppressFlow())
-                        {
-                            _backgroundDisposeTasks.Enqueue(
-                                Task.Run(async () =>
-                                {
-                                    try
-                                    {
-                                        await capturedSibling.DisposeAsync();
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        InfrastructureEventLog.Emit(
-                                            "server_dispose_background_failed",
-                                            new
-                                            {
-                                                server = capturedKey,
-                                                instanceId = capturedSibling.InstanceId,
-                                                error = ex.Message,
-                                            }
-                                        );
-                                    }
-                                })
-                            );
-                        }
+                        EnqueueBackgroundServerDisposal(managed.Key, sibling);
                     }
                 }
 
@@ -2358,8 +2346,8 @@ public sealed class TestResourceBroker : IAsyncDisposable
     /// slot immediately; <see cref="ManagedServer.ReleaseSlotEarly"/> is idempotent so the backgrounded
     /// <see cref="ManagedServer.DisposeAsync"/>'s own slot release is a no-op. Same shape as the sibling
     /// sweep in <see cref="ReleaseAsync"/>. The caller must have already removed <paramref name="managed"/>
-    /// from <c>_servers</c> and emitted <c>server_disposed</c>. Drained at run end via
-    /// <c>Task.WhenAll(_backgroundDisposeTasks)</c> in <see cref="DisposeAsync"/>.
+    /// from <c>_servers</c> and emitted <c>server_disposed</c>. Drained at run end via the
+    /// server-disposal queue in <see cref="DisposeAsync"/>.
     /// </summary>
     private void BackgroundDisposeServer(ManagedServer managed)
     {
@@ -2372,7 +2360,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
             TestLog.Server($"early slot release failed: {ex.Message}");
         }
 
-        EnqueueBackgroundTask(() => managed.DisposeAsync().AsTask());
+        EnqueueBackgroundServerDisposal(managed.Key, managed);
     }
 
     /// <summary>
@@ -2454,17 +2442,20 @@ public sealed class TestResourceBroker : IAsyncDisposable
             _remainingDemand[key] = 0;
         }
 
-        // Kick off eviction of idle servers in the background to free
-        // environment slots and unblock any tests stuck at WaitForServerAvailableAsync
-        // (they'll see the cancelled token and bail out).
-        _ = EvictAllIdleServersAsync();
+        // Evict idle servers to free environment slots and unblock any tests
+        // stuck at WaitForServerAvailableAsync (they'll see the cancelled token
+        // and bail out). Pool removal is synchronous; container teardown runs
+        // on the tracked server-disposal queue.
+        EvictAllIdleServers();
     }
 
     /// <summary>
     /// Evicts all servers that have refs=0 and pendingDemand=0.
     /// Used by NotifyStopOnFail to free environment slots for deferred configs.
+    /// Disposals go through <see cref="EnqueueBackgroundServerDisposal"/> so
+    /// <see cref="DisposeAsync"/> awaits them before network teardown.
     /// </summary>
-    private async Task EvictAllIdleServersAsync()
+    private void EvictAllIdleServers()
     {
         // During shutdown, don't evict; let DisposeAsync handle ordering (clients first)
         if (ShutdownCoordinator.IsShuttingDown)
@@ -2500,14 +2491,7 @@ public sealed class TestResourceBroker : IAsyncDisposable
                     queue.Reset();
                 }
 
-                try
-                {
-                    await server.DisposeAsync();
-                }
-                catch (Exception ex)
-                {
-                    TestLog.Server($"{displayLabel} shutdown failed: {ex.Message}");
-                }
+                EnqueueBackgroundServerDisposal(key, server);
             }
         }
     }
@@ -2566,19 +2550,49 @@ public sealed class TestResourceBroker : IAsyncDisposable
         await Task.WhenAll(poolDisposeTasks);
         _clientPools.Clear();
 
-        // Await any background server disposals enqueued by
-        // TryEvictIdleServerForAsync. Placed after client-pool dispose
+        // On abort (stopOnFail or Ctrl+C/Docker-down), cancel each host's
+        // extract limiter so queued recording extractions fail fast instead of
+        // serialize-wedging finalization behind a saturated limiter. The
+        // failing test's own clip was already extracted synchronously in its
+        // TestLifecycle.FinalizeAsync, before broker disposal; what's cancelled
+        // here is the deferred passing-test backlog and full-recording pulls.
+        // Never called on a clean run, so passing tests extract fully.
+        if (_stopOnFailNotified || ShutdownCoordinator.IsShuttingDown)
+        {
+            foreach (var host in HostPool.Instance.Hosts)
+            {
+                host.ExtractLimiter.CancelPending();
+            }
+        }
+
+        // Await background server disposals (eviction, sibling sweep,
+        // BackgroundDisposeServer). Placed after client-pool dispose
         // (preserves the clients-before-servers ordering invariant
         // documented above) and before the _servers loop so the shutdown
         // log and cleanup finish in one pass. _runCts is already cancelled
         // above, so any in-flight eviction now takes the synchronous path.
+        // Unbounded: disposals release Docker slots and must complete to
+        // avoid container leaks; Docker stop-grace bounds each internally.
+        await Task.WhenAll(_backgroundServerDisposalTasks);
+
+        // Drain deferred recording extractions, bounded by RecordingDrainBudget.
+        // On abort the limiter cancel above makes waiters fail fast (each task
+        // swallows its own failure and emits skip events), so this completes
+        // near-instantly; expiry means an extraction ignored both its linked
+        // shutdown token and the limiter cancel.
         try
         {
-            await Task.WhenAll(_backgroundDisposeTasks);
+            await Task.WhenAll(_backgroundRecordingTasks)
+                .WaitAsync(TestTimings.RecordingDrainBudget);
         }
-        catch (Exception ex)
+        catch (TimeoutException)
         {
-            TestLog.Server($"Background server dispose(s) faulted during shutdown: {ex.Message}");
+            var pending = _backgroundRecordingTasks.Count(t => !t.IsCompleted);
+            TestLog.Server(
+                $"Recording drain timeout: {pending} extraction(s) still pending after "
+                    + $"{TestTimings.RecordingDrainBudget.TotalSeconds}s; proceeding to finalization "
+                    + "(stragglers are bounded by RecordingFinalizeBackstop or die with the process)"
+            );
         }
 
         // Parallelize server teardown. Heavy extraction work inside
