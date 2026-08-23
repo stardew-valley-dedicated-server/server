@@ -565,10 +565,9 @@ public class FestivalTests : TestBase
 
     /// <summary>
     /// The Luau adds the iridium starfruit to the soup exactly once, even when <c>!event</c>
-    /// fast-forwards the countdown after the on-entry announce. The <c>!event</c> fast-forward guards
-    /// its <c>OnAnnounce</c> with <c>if (!_announced)</c>; this test locks that in — enter the Luau (the
-    /// on-entry announce adds the starfruit once), then <c>!event</c>, and assert the soup still holds
-    /// exactly one.
+    /// fast-forwards the countdown after the on-entry announce. This test locks that in — enter the
+    /// Luau (the on-entry announce adds the starfruit once), then <c>!event</c>, and assert the soup
+    /// still holds exactly one.
     /// </summary>
     [Fact]
     public async Task Luau_AddsIridiumStarfruitExactlyOnce()
@@ -610,8 +609,8 @@ public class FestivalTests : TestBase
             "The Luau on-entry announce should add exactly one iridium starfruit to the soup."
         );
 
-        // Fast-forward the countdown. Without the if (!_announced) guard this re-runs OnAnnounce and
-        // adds a second starfruit. The main event fires in the same pass.
+        // Fast-forward the countdown — this must not re-add the starfruit. The main event fires in the
+        // same pass.
         var sent = await GameClient.Chat.Send("!event");
         Assert.True(sent?.Success == true, $"Sending !event failed: {sent?.Error}");
 
@@ -629,8 +628,8 @@ public class FestivalTests : TestBase
         );
         Assert.False(
             doubleAdded,
-            "The Luau soup held more than one iridium starfruit after !event — the !event fast-forward "
-                + "must guard OnAnnounce with if (!_announced) so the starfruit is added exactly once."
+            "The Luau soup held more than one iridium starfruit after !event — it must be added exactly "
+                + "once per festival, even when !event fast-forwards the countdown."
         );
 
         var finalState = await ServerApi.GetFestivalState(ct);
