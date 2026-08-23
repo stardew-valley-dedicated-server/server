@@ -8,7 +8,6 @@ import { appendFileSync } from "node:fs";
 import { Octokit } from "@octokit/rest";
 
 interface ChannelConfig {
-    floatingTag: string;
     commentBody: (value: string, docsUrl: string) => string;
 }
 
@@ -16,14 +15,12 @@ const DOCS_URL = "https://stardew-valley-dedicated-server.github.io/server/admin
 
 const CHANNELS: Record<string, ChannelConfig> = {
     preview: {
-        floatingTag: "preview",
         commentBody: (value, docsUrl) =>
             `🧪 A fix for this issue is available in a **preview build**. Set \`IMAGE_VERSION=${value}\` ` +
             `(or \`IMAGE_VERSION=preview\` to always track the latest preview) and update — ` +
             `see [how to run preview builds](${docsUrl}#using-preview-builds).`,
     },
     release: {
-        floatingTag: "latest",
         commentBody: (value, docsUrl) =>
             `🎉 This fix has been **released** in \`${value}\`. Set \`IMAGE_VERSION=${value}\` ` +
             `(or \`IMAGE_VERSION=latest\` to track the latest stable) and update — see [how to update](${docsUrl}).`,
