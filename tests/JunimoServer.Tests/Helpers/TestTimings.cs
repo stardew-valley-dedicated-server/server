@@ -285,6 +285,32 @@ public static class TestTimings
 
     #endregion
 
+    #region Recording Extraction
+
+    /// <summary>
+    /// Per-finalization timeout for recording-clip extraction (one
+    /// RecordingOrchestrator.FinalizeAsync call: the failing test's synchronous
+    /// path or one deferred passing-test extraction). A typical per-test clip
+    /// extracts in ~10-30s (per-clip budget inside ContainerRecorder is
+    /// max(30, 5×durationSec)); under full-suite load with the extract limiter
+    /// contended, ~90-120s has been observed. 150s covers that tail without
+    /// truncating legitimate extractions.
+    /// </summary>
+    public static readonly TimeSpan RecordingFinalizeBackstop = TimeSpan.FromSeconds(150);
+
+    /// <summary>
+    /// Aggregate bound on draining deferred (passing-test) recording extractions
+    /// during broker disposal. On a clean run the drain completes well inside
+    /// this (extractions run concurrently up to the extract limiter); on abort
+    /// (stopOnFail / shutdown) the limiter is cancelled first so waiters fail
+    /// fast and the drain is near-instant. Expiry means an extraction ignored
+    /// both signals — the run proceeds to finalization and the stragglers hit
+    /// their own RecordingFinalizeBackstop or die with the process.
+    /// </summary>
+    public static readonly TimeSpan RecordingDrainBudget = TimeSpan.FromSeconds(90);
+
+    #endregion
+
     #region HTTP Client Timeouts
 
     /// <summary>

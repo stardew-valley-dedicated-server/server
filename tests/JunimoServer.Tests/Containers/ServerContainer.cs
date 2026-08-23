@@ -1199,10 +1199,14 @@ public class ServerContainer : IAsyncDisposable
                     }
                 }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                // Cancelled by ShutdownCoordinator.Token (Ctrl+C / Docker-down) or by the host
+                // ExtractLimiter's poison token (host disconnect, or the broker's stopOnFail
+                // limiter-cancel). No inner call in this block applies its own timeout, so an OCE
+                // here is always a teardown cancellation — not a retrieval failure to warn about.
                 _logCallback?.Invoke(
-                    $"[Recording] server-{_serverIndex} recording extraction cancelled (shutdown)"
+                    $"[Recording] server-{_serverIndex} recording extraction cancelled (teardown)"
                 );
             }
             catch (Exception ex)

@@ -276,15 +276,15 @@ internal sealed class TestArtifactCollector
 
         if (canDefer)
         {
-            TestResourceBroker.Instance.EnqueueBackgroundTask(async () =>
+            TestResourceBroker.Instance.EnqueueBackgroundRecordingTask(async () =>
             {
-                // 300s safety net. Per-clip extraction has its own budget
-                // (max(30, 5*durationSec) inside ContainerRecorder) and the orchestrator
-                // runs clip extractions in parallel, so total wall time ≈ measurement +
-                // max(per-clip-budget). The cap exists because Docker.DotNet's defaultTimeout
-                // is Infinite and the broker's _backgroundDisposeTasks drain has no timeout
-                // either — without it, a stuck exec would block broker shutdown indefinitely.
-                using var recCts = new CancellationTokenSource(TimeSpan.FromSeconds(300));
+                // Ctrl+C / Docker-down cancels the extraction immediately via
+                // ShutdownCoordinator.Token; RecordingFinalizeBackstop bounds it on
+                // normal and stopOnFail runs, where that token stays live.
+                using var recCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    ShutdownCoordinator.Token
+                );
+                recCts.CancelAfter(TestTimings.RecordingFinalizeBackstop);
                 try
                 {
                     await orchestrator.FinalizeAsync(
@@ -336,10 +336,14 @@ internal sealed class TestArtifactCollector
             return;
         }
 
-        // Same 300s safety net as the deferred path above. The failing test is waiting
-        // on this finalize before test_failed is emitted, so we want it to complete
-        // rather than abort half-way; per-clip budgets bound runaway extractions.
-        using var syncCts = new CancellationTokenSource(TimeSpan.FromSeconds(300));
+        // Same token structure as the deferred path above. The failing test is
+        // waiting on this finalize before test_failed is emitted, so it runs to
+        // completion within the backstop; only a Ctrl+C / Docker-down shutdown
+        // aborts it early.
+        using var syncCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ShutdownCoordinator.Token
+        );
+        syncCts.CancelAfter(TestTimings.RecordingFinalizeBackstop);
         try
         {
             await orchestrator.FinalizeAsync(
