@@ -29,6 +29,17 @@ internal class Env
     public static readonly bool ForceNewDebugGame = ParseBool("FORCE_NEW_DEBUG_GAME", false);
 
     /// <summary>
+    /// When true (default), crops tracked by CropSaver survive lightning strikes:
+    /// CropSaverOverrides.KillCrop_Prefix suppresses the strike's Crop.Kill. Set false
+    /// to restore vanilla lightning kills for managed crops (the killed crop's tracking
+    /// entry is dropped so the corpse doesn't stay managed).
+    /// </summary>
+    public static readonly bool CropSaverLightningImmunity = ParseBool(
+        "CROP_SAVER_LIGHTNING_IMMUNITY",
+        true
+    );
+
+    /// <summary>
     /// Target game ticks per second. Lower values reduce CPU usage.
     /// Default: 60 (game default). Clamped to [1, 60]: above vanilla's fixed 60 every per-tick-constant
     /// gameplay path (movement, physics) runs faster than real time, and <c>TpsAgnosticPacing</c> can

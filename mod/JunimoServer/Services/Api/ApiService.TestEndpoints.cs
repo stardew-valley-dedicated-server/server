@@ -107,6 +107,12 @@ public partial class ApiService
                     case "/test/saver_crop":
                         await WriteJsonAsync(response, await HandlePostTestSaverCropAsync(request));
                         return;
+                    case "/test/lightning_strike":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestLightningStrikeAsync(request)
+                        );
+                        return;
                     case "/test/house_upgrade":
                         await WriteJsonAsync(
                             response,
@@ -732,6 +738,111 @@ public partial class ApiService
                 OwnerId = saverCrop.ownerId,
             };
         });
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/lightning_strike",
+        Summary = "Run a deterministic lightning strike against the crop at a tile (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestLightningStrikeResponse), 200)]
+    private async Task<TestLightningStrikeResponse> HandlePostTestLightningStrikeAsync(
+        HttpListenerRequest request
+    )
+    {
+        TestLightningStrikeRequest? body = null;
+        try
+        {
+            using var reader = new System.IO.StreamReader(
+                request.InputStream,
+                request.ContentEncoding
+            );
+            var json = await reader.ReadToEndAsync();
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                body = JsonConvert.DeserializeObject<TestLightningStrikeRequest>(json);
+            }
+        }
+        catch (Exception ex)
+        {
+            return new TestLightningStrikeResponse
+            {
+                Success = false,
+                Error = $"Failed to parse body: {ex.Message}",
+            };
+        }
+
+        if (body == null || string.IsNullOrEmpty(body.LocationName))
+        {
+            return new TestLightningStrikeResponse
+            {
+                Success = false,
+                Error = "Missing 'locationName' in request body",
+            };
+        }
+
+        var tile = new Vector2(body.TileX, body.TileY);
+        var result = new TestLightningStrikeResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var location = Game1.getLocationFromName(body.LocationName);
+                if (location == null)
+                {
+                    result.Error = $"Unknown location '{body.LocationName}'";
+                    return;
+                }
+
+                // Resolve through CropSaver's own lookup (terrain HoeDirt, else a
+                // Garden Pot's inner dirt) so the probe can't drift from the tracker.
+                // Vanilla lightning only ever targets farm.terrainFeatures
+                // (Utility.performLightningUpdate), but the pot path exercises the
+                // identical Crop.Kill enforcement seam, and pots are the only crop
+                // container the E2E client harness can place.
+                var dirt = SaverCrop.TryGetDirtAt(location, tile);
+                if (dirt?.crop == null)
+                {
+                    result.Error = $"No crop at {body.LocationName} ({body.TileX},{body.TileY})";
+                    return;
+                }
+
+                result.Found = true;
+
+                // Reproduce the crop branch of vanilla Utility.performLightningUpdate —
+                // HoeDirt.performToolAction(null, 50, tile) → crop.Kill() — inside the
+                // same lightning context the Harmony patch establishes, so
+                // KillCrop_Prefix sees a real strike. Deliberately skipped vanilla
+                // side effects: the RNG target roll (this endpoint exists to bypass it)
+                // and the cosmetic lightningStrikeEvent flash; the destroyed-feature
+                // removal never applies here because HoeDirt.performToolAction returns
+                // false on the damage path. crop.dead is a NetBool, so the kill
+                // replicates to clients on its own.
+                CropSaverOverrides.LightningUpdate_Prefix();
+                try
+                {
+                    dirt.performToolAction(null, 50, tile);
+                }
+                finally
+                {
+                    CropSaverOverrides.LightningUpdate_Finalizer();
+                }
+
+                result.CropAliveAfter = !dirt.crop.dead.Value;
+                result.IsManagedAfter = CropSaverOverrides.IsManaged(body.LocationName, tile);
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Never LogLevel.Error here (test poison per .claude/rules/debugging.md) —
+            // surface via the response.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
 
         return result;
     }

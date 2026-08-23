@@ -38,6 +38,22 @@ public class CropSaver : ModService
             )
         );
 
+        // Lightning-context flag around Utility.performLightningUpdate, so
+        // KillCrop_Prefix can distinguish a lightning kill (opt-out via
+        // CROP_SAVER_LIGHTNING_IMMUNITY=false) from other kill paths. The finalizer
+        // clears the flag even when the strike throws.
+        harmony.Patch(
+            original: AccessTools.Method(typeof(Utility), nameof(Utility.performLightningUpdate)),
+            prefix: new HarmonyMethod(
+                typeof(CropSaverOverrides),
+                nameof(CropSaverOverrides.LightningUpdate_Prefix)
+            ),
+            finalizer: new HarmonyMethod(
+                typeof(CropSaverOverrides),
+                nameof(CropSaverOverrides.LightningUpdate_Finalizer)
+            )
+        );
+
         helper.Events.GameLoop.Saving += OnSaving;
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.GameLoop.DayEnding += OnDayEnd;

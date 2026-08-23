@@ -1207,6 +1207,30 @@ public class TestSaverCropResponse
 }
 
 /// <summary>
+/// Response from /test/lightning_strike POST endpoint (test-only).
+/// </summary>
+public class TestLightningStrikeResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    /// <summary>True iff a crop was found at the requested (location, tile).</summary>
+    [JsonPropertyName("found")]
+    public bool Found { get; set; }
+
+    /// <summary>True iff the crop is still alive after the strike.</summary>
+    [JsonPropertyName("cropAliveAfter")]
+    public bool CropAliveAfter { get; set; }
+
+    /// <summary>True iff CropSaver still tracks the tile after the strike.</summary>
+    [JsonPropertyName("isManagedAfter")]
+    public bool IsManagedAfter { get; set; }
+}
+
+/// <summary>
 /// Response from /roles/admin POST endpoint.
 /// </summary>
 public class RoleGrantResponse
@@ -2636,6 +2660,38 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSaverCropResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: run a deterministic lightning strike against the crop at a tile —
+    /// vanilla's crop-strike (<c>HoeDirt.performToolAction</c> with lightning damage)
+    /// inside the CropSaver lightning context, bypassing the RNG target roll of
+    /// <c>Utility.performLightningUpdate</c>.
+    /// POST /test/lightning_strike
+    /// </summary>
+    public async Task<TestLightningStrikeResponse?> LightningStrike(
+        string locationName,
+        int tileX,
+        int tileY,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            "/test/lightning_strike",
+            ct,
+            () =>
+                JsonContent.Create(
+                    new
+                    {
+                        locationName,
+                        tileX,
+                        tileY,
+                    }
+                )
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestLightningStrikeResponse>(ct);
     }
 
     /// <summary>
