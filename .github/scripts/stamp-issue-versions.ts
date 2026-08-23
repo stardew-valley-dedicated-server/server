@@ -38,8 +38,7 @@ function requireEnv(name: string): string {
 const OWNER = requireEnv("OWNER");
 const REPO = requireEnv("REPO");
 const HEAD_OID = requireEnv("HEAD_OID");
-// Empty BASE_OID = no previous tag exists (true first release): walk history to the root.
-const BASE_OID = process.env.BASE_OID ?? "";
+const BASE_OID = requireEnv("BASE_OID");
 const FIELD_ID = Number.parseInt(requireEnv("FIELD_ID"), 10);
 const EXPECTED_FIELD_NAME = requireEnv("EXPECTED_FIELD_NAME");
 const VALUE = requireEnv("VALUE");
@@ -153,7 +152,7 @@ async function resolveIssues(): Promise<{ issues: number[]; commitCount: number 
         }
 
         for (const commit of history.nodes) {
-            if (BASE_OID !== "" && commit.oid === BASE_OID) {
+            if (commit.oid === BASE_OID) {
                 baseReached = true;
                 break;
             }
@@ -175,10 +174,7 @@ async function resolveIssues(): Promise<{ issues: number[]; commitCount: number 
 
         if (!baseReached) {
             if (!history.pageInfo.hasNextPage) {
-                if (BASE_OID !== "") {
-                    throw new Error(`BASE_OID ${BASE_OID} not found in the history of ${HEAD_OID}`);
-                }
-                break;
+                throw new Error(`BASE_OID ${BASE_OID} not found in the history of ${HEAD_OID}`);
             }
             cursor = history.pageInfo.endCursor;
         }
@@ -273,7 +269,7 @@ function writeStepSummary(lines: string[]): void {
 
 const { issues, commitCount } = await resolveIssues();
 console.log(
-    `Range ${BASE_OID === "" ? "<root>" : BASE_OID}..${HEAD_OID}: ` +
+    `Range ${BASE_OID}..${HEAD_OID}: ` +
         `${commitCount} commits, ${issues.length} closed issues${issues.length > 0 ? ` (#${issues.join(", #")})` : ""}`,
 );
 if (issues.length > MAX_ISSUES) {

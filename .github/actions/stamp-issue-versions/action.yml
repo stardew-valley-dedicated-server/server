@@ -61,21 +61,16 @@ runs:
         # build's own tag or a previous build of the same commit — taking it as base would empty
         # the range and permanently skip a failed run's issues. Re-walking an already-stamped
         # range is a no-op (first value wins, comments are marker-deduped).
-        AT_HEAD=$(git tag -l --points-at "$HEAD_OID" $TAG_MATCH)
         EXCLUDE_ARGS=()
-        for tag in $AT_HEAD; do EXCLUDE_ARGS+=(--exclude "$tag"); done
-        BASE=$(git describe --tags --abbrev=0 "${MATCH_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$HEAD_OID" 2>/dev/null || true)
-        if [ -n "$BASE" ]; then
-          BASE_OID=$(git rev-parse "$BASE^{commit}")
-        elif [ "$(git tag -l $TAG_MATCH)" = "$AT_HEAD" ]; then
-          # Every candidate tag (possibly none) points at HEAD: the true first build, or a
-          # rebuild of it — walk history to the root, the faithful retry of that first range.
-          BASE_OID=""
-        else
-          echo "::error::expected a base tag matching '$TAG_MATCH' below $HEAD_REF but none resolved"
+        for tag in $(git tag -l --points-at "$HEAD_OID" $TAG_MATCH); do
+          EXCLUDE_ARGS+=(--exclude "$tag")
+        done
+        BASE=$(git describe --tags --abbrev=0 "${MATCH_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$HEAD_OID" 2>/dev/null) || {
+          echo "::error::no base tag matching '$TAG_MATCH' strictly below $HEAD_REF"
           exit 1
-        fi
-        echo "HEAD=$HEAD_OID BASE=${BASE:-<root>} ($BASE_OID)"
+        }
+        BASE_OID=$(git rev-parse "$BASE^{commit}")
+        echo "HEAD=$HEAD_OID BASE=$BASE ($BASE_OID)"
         echo "head-oid=$HEAD_OID" >> "$GITHUB_OUTPUT"
         echo "base-oid=$BASE_OID" >> "$GITHUB_OUTPUT"
 
