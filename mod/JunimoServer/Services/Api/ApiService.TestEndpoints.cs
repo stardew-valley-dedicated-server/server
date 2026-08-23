@@ -214,7 +214,11 @@ public partial class ApiService
             {
                 Utility.ForEachLocation(location =>
                 {
-                    var locName = location.Name;
+                    // LocationName carries the display Name for test row
+                    // addressing; UniqueLocationName and the IsManaged lookup
+                    // use NameOrUniqueName, the CropSaver entry key.
+                    var displayName = location.Name;
+                    var lookupName = location.NameOrUniqueName;
 
                     foreach (var feature in location.terrainFeatures.Values)
                     {
@@ -232,13 +236,14 @@ public partial class ApiService
                         crops.Add(
                             new TestCrop
                             {
-                                LocationName = locName,
+                                LocationName = displayName,
+                                UniqueLocationName = lookupName,
                                 TileX = (int)dirt.Tile.X,
                                 TileY = (int)dirt.Tile.Y,
                                 IsAlive = !crop.dead.Value,
                                 IsInPot = false,
                                 SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile),
+                                IsManaged = CropSaverOverrides.IsManaged(lookupName, dirt.Tile),
                                 IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
@@ -261,13 +266,17 @@ public partial class ApiService
                         crops.Add(
                             new TestCrop
                             {
-                                LocationName = locName,
+                                LocationName = displayName,
+                                UniqueLocationName = lookupName,
                                 TileX = (int)pot.TileLocation.X,
                                 TileY = (int)pot.TileLocation.Y,
                                 IsAlive = !crop.dead.Value,
                                 IsInPot = true,
                                 SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, pot.TileLocation),
+                                IsManaged = CropSaverOverrides.IsManaged(
+                                    lookupName,
+                                    pot.TileLocation
+                                ),
                                 IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
@@ -693,7 +702,9 @@ public partial class ApiService
                     Success = false,
                     Found = false,
                     Error =
-                        $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY})",
+                        $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY}). "
+                        + "Entries are keyed on the unique location name — pass "
+                        + "uniqueLocationName from the /test/crops row.",
                 };
                 return;
             }

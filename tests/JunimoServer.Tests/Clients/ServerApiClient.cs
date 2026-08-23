@@ -483,8 +483,14 @@ public class ClockSpeedResponse
 /// </summary>
 public class TestCrop
 {
+    /// <summary>Display location name (e.g. "Farm"; every cabin interior reads "Cabin").</summary>
     [JsonPropertyName("locationName")]
     public string LocationName { get; set; } = "";
+
+    /// <summary>Unique location name (NameOrUniqueName) — the CropSaver entry key; pass it
+    /// as locationName to <see cref="ServerApiClient.SetSaverCrop"/>.</summary>
+    [JsonPropertyName("uniqueLocationName")]
+    public string UniqueLocationName { get; set; } = "";
 
     [JsonPropertyName("tileX")]
     public int TileX { get; set; }
@@ -2581,9 +2587,12 @@ public class ServerApiClient : IDisposable
     /// <summary>
     /// Test-only: mutate an existing CropSaver tracking entry. Used by E2E
     /// tests to pre-arm <c>extraDays</c> past <c>OnDayEnd</c>'s
-    /// branch-1 floor without simulating many real day-transitions. All
-    /// optional parameters are skipped (left at their existing values) when
-    /// null. Returns <c>Found=false</c> if no SaverCrop exists at the tile.
+    /// branch-1 floor without simulating many real day-transitions.
+    /// <paramref name="locationName"/> must be the entry key — the unique
+    /// location name (<see cref="TestCrop.UniqueLocationName"/> from
+    /// /test/crops). All optional parameters are skipped (left at their
+    /// existing values) when null. Returns <c>Found=false</c> if no SaverCrop
+    /// exists at the (unique name, tile).
     /// POST /test/saver_crop
     /// </summary>
     public async Task<TestSaverCropResponse?> SetSaverCrop(

@@ -52,7 +52,9 @@ public class CropWatcher
 
         Utility.ForEachLocation(location =>
         {
-            var locName = location.Name;
+            // NameOrUniqueName, not Name: building interiors share a Name
+            // ("Cabin") and only resolve back via their unique name.
+            var locName = location.NameOrUniqueName;
 
             foreach (var feature in location.terrainFeatures.Values)
             {
