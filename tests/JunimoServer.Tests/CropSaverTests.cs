@@ -47,8 +47,8 @@ namespace JunimoServer.Tests;
 /// </description></item>
 /// </list>
 /// </summary>
-// Exclusive serializes the methods (SharedClass alone runs them concurrently): all
-// three mutate the global calendar and would clobber each other mid-transition.
+// Exclusive serializes the methods (SharedClass alone runs them concurrently): they
+// all mutate the global calendar and would clobber each other mid-transition.
 [TestServer(Isolation = IsolationMode.SharedClass, Exclusive = true)]
 public class CropSaverTests : TestBase
 {
