@@ -20,7 +20,10 @@ public static class FarmerUtil
                 continue;
             }
 
-            if (!farmer.currentLocation.Equals(location))
+            // currentLocation can be null for a just-approved farmhand: the server adds it to
+            // otherFarmers (GameServer.checkFarmhandRequest -> Multiplayer.addPlayer) before the
+            // client's first farmer delta binds a location.
+            if (farmer.currentLocation?.Equals(location) != true)
             {
                 continue;
             }

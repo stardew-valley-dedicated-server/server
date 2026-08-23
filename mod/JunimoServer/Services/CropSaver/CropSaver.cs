@@ -181,8 +181,15 @@ public class CropSaver : ModService
             return SDate.Now();
         }
 
+        // Mirrors Crop.newDay / HoeDirt.dayUpdate: an unwatered crop only loses a growth day
+        // when its data has NeedsWatering, and a paddy crop near water is force-watered
+        // (paddyWaterCheck) before newDay runs.
         var extraDayForUnwatered = 1;
-        if (dirt.state.Value == HoeDirt.watered)
+        if (
+            dirt.state.Value == HoeDirt.watered
+            || crop.GetData()?.NeedsWatering == false
+            || dirt.paddyWaterCheck(forceUpdate: true)
+        )
         {
             extraDayForUnwatered = 0;
         }
