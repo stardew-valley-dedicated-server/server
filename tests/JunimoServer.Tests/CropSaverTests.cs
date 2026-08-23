@@ -19,7 +19,7 @@ namespace JunimoServer.Tests;
 /// <see cref="GardenPotCrop_KillSuppressedOnSeasonTransition_WhileOwnerOffline"/>
 /// drives a real day-transition across a season boundary and asserts that
 /// <c>KillCrop_Prefix</c>'s switch from a hardcoded <c>"Farm"</c> lookup to
-/// <c>dirt.Location.Name</c> suppresses vanilla <c>Crop.Kill()</c>'s
+/// <c>dirt.Location.NameOrUniqueName</c> suppresses vanilla <c>Crop.Kill()</c>'s
 /// out-of-season kill. Also exercises <c>SaverCrop.TryGetCoorespondingDirt</c>'s
 /// <c>StardewValley.Objects.IndoorPot</c> branch.
 /// </description></item>
@@ -169,7 +169,7 @@ public class CropSaverTests : TestBase
         }
 
         // Crop.newDay ran on the host as part of the season-transition. With
-        // the prefix fix in place dirt.Location.Name resolves to "Farm" for
+        // the prefix fix in place dirt.Location.NameOrUniqueName resolves to "Farm" for
         // the pot's dirt and the SaverCrop lookup suppresses Kill(). Without
         // the fix, the pre-fix code's hardcoded "Farm" lookup would *also*
         // match here (because the pot IS on the Farm), but TryGetCoorespondingDirt
@@ -317,6 +317,14 @@ public class CropSaverTests : TestBase
             "Pumpkin in a Garden Pot inside a season-immune cabin interior must survive "
                 + "Fall 28 → Winter 1 past its computed date of death. Pre-fix: CropSaver.OnDayEnd "
                 + "had no immunity awareness and date-of-death-killed it — the greenhouse bug class."
+        );
+        Assert.True(
+            stillThere.IsManaged,
+            "CropSaver entry for the cabin pot must survive the Fall 28 → Winter 1 transition. "
+                + "IsManaged=false means the OnDayEnd orphan sweep evicted it: entries keyed on "
+                + "the shared display Name (\"Cabin\") never resolve via Game1.getLocationFromName, "
+                + "so the sweep saw dirt==null and deleted the entry — the immune-guard `continue` "
+                + "under test never ran."
         );
     }
 

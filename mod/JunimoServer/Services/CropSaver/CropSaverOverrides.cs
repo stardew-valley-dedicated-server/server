@@ -23,7 +23,7 @@ public class CropSaverOverrides
             return true;
         }
 
-        var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.Name, dirt.Tile);
+        var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.NameOrUniqueName, dirt.Tile);
         return managed == null;
     }
 

@@ -214,7 +214,11 @@ public partial class ApiService
             {
                 Utility.ForEachLocation(location =>
                 {
-                    var locName = location.Name;
+                    // CropSaver entries are keyed on NameOrUniqueName; the
+                    // response's LocationName stays the display Name so test
+                    // row addressing ("Cabin") keeps working.
+                    var displayName = location.Name;
+                    var lookupName = location.NameOrUniqueName;
 
                     foreach (var feature in location.terrainFeatures.Values)
                     {
@@ -232,13 +236,13 @@ public partial class ApiService
                         crops.Add(
                             new TestCrop
                             {
-                                LocationName = locName,
+                                LocationName = displayName,
                                 TileX = (int)dirt.Tile.X,
                                 TileY = (int)dirt.Tile.Y,
                                 IsAlive = !crop.dead.Value,
                                 IsInPot = false,
                                 SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, dirt.Tile),
+                                IsManaged = CropSaverOverrides.IsManaged(lookupName, dirt.Tile),
                                 IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
@@ -261,13 +265,16 @@ public partial class ApiService
                         crops.Add(
                             new TestCrop
                             {
-                                LocationName = locName,
+                                LocationName = displayName,
                                 TileX = (int)pot.TileLocation.X,
                                 TileY = (int)pot.TileLocation.Y,
                                 IsAlive = !crop.dead.Value,
                                 IsInPot = true,
                                 SeedItemId = crop.netSeedIndex.Value,
-                                IsManaged = CropSaverOverrides.IsManaged(locName, pot.TileLocation),
+                                IsManaged = CropSaverOverrides.IsManaged(
+                                    lookupName,
+                                    pot.TileLocation
+                                ),
                                 IsSeasonImmune = location.IsCropSeasonImmune(),
                             }
                         );
@@ -685,7 +692,56 @@ public partial class ApiService
         TestSaverCropResponse result = new();
         await RunOnGameThreadAsync(() =>
         {
+            // Entries are keyed on NameOrUniqueName. A direct hit covers root
+            // locations and callers passing the unique name; the fallback lets
+            // callers address a building interior by its display Name ("Cabin"),
+            // matching how /test/crops rows are addressed.
             var saverCrop = loader.GetSaverCrop(body.LocationName, tile);
+            if (saverCrop == null)
+            {
+                var ambiguous = false;
+                foreach (var candidate in loader.GetSaverCrops())
+                {
+                    if (candidate.cropLocationTile != tile)
+                    {
+                        continue;
+                    }
+
+                    var candidateLocation = Game1.getLocationFromName(candidate.cropLocationName);
+                    if (
+                        candidateLocation == null
+                        || !candidateLocation.Name.Equals(
+                            body.LocationName,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (saverCrop != null)
+                    {
+                        ambiguous = true;
+                        break;
+                    }
+
+                    saverCrop = candidate;
+                }
+
+                if (ambiguous)
+                {
+                    result = new TestSaverCropResponse
+                    {
+                        Success = false,
+                        Found = false,
+                        Error =
+                            $"Multiple SaverCrop entries match {body.LocationName} "
+                            + $"({body.TileX},{body.TileY}); address by unique location name",
+                    };
+                    return;
+                }
+            }
+
             if (saverCrop == null)
             {
                 result = new TestSaverCropResponse
