@@ -50,22 +50,25 @@ public class SaverCrop
     public HoeDirt TryGetCoorespondingDirt()
     {
         var location = Game1.getLocationFromName(cropLocationName);
-        if (location == null)
-        {
-            return null;
-        }
+        return location == null ? null : TryGetDirtAt(location, cropLocationTile);
+    }
 
-        // Pot wins the tile: a pot on an empty tilled tile shares the key with
-        // the crop-less terrain dirt beneath it, so resolve the pot's dirt
-        // first (see CropWatcher's terrain-loop skip for the invariant).
-        if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
+    /// <summary>
+    /// CropSaver's canonical dirt resolution for a tile: a Garden Pot's inner dirt,
+    /// else a terrain HoeDirt. Pot wins the tile: a pot on an empty tilled tile
+    /// shares the key with the crop-less terrain dirt beneath it (see CropWatcher's
+    /// terrain-loop skip for the invariant). Test probes of the Crop.Kill seam
+    /// (e.g. /test/lightning_strike) resolve through this too, so they can't drift
+    /// from the tracker's own lookup.
+    /// </summary>
+    public static HoeDirt TryGetDirtAt(GameLocation location, Vector2 tile)
+    {
+        if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
         {
             return pot.hoeDirt.Value;
         }
 
-        if (
-            location.terrainFeatures.TryGetValue(cropLocationTile, out var tf) && tf is HoeDirt dirt
-        )
+        if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt dirt)
         {
             return dirt;
         }

@@ -797,24 +797,13 @@ public partial class ApiService
                     return;
                 }
 
-                // Same dirt resolution as /test/crops: a terrain HoeDirt, or the inner
-                // dirt of a Garden Pot at the tile. Vanilla lightning only ever targets
-                // farm.terrainFeatures (Utility.performLightningUpdate), but the pot path
-                // exercises the identical Crop.Kill enforcement seam, and pots are the
-                // only crop container the E2E client harness can place.
-                HoeDirt? dirt = null;
-                if (
-                    location.terrainFeatures.TryGetValue(tile, out var feature)
-                    && feature is HoeDirt terrainDirt
-                )
-                {
-                    dirt = terrainDirt;
-                }
-                else if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
-                {
-                    dirt = pot.hoeDirt.Value;
-                }
-
+                // Resolve through CropSaver's own lookup (terrain HoeDirt, else a
+                // Garden Pot's inner dirt) so the probe can't drift from the tracker.
+                // Vanilla lightning only ever targets farm.terrainFeatures
+                // (Utility.performLightningUpdate), but the pot path exercises the
+                // identical Crop.Kill enforcement seam, and pots are the only crop
+                // container the E2E client harness can place.
+                var dirt = SaverCrop.TryGetDirtAt(location, tile);
                 if (dirt?.crop == null)
                 {
                     result.Error = $"No crop at {body.LocationName} ({body.TileX},{body.TileY})";
