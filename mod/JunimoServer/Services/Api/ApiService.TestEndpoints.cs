@@ -214,9 +214,9 @@ public partial class ApiService
             {
                 Utility.ForEachLocation(location =>
                 {
-                    // CropSaver entries are keyed on NameOrUniqueName; the
-                    // response's LocationName stays the display Name so test
-                    // row addressing ("Cabin") keeps working.
+                    // LocationName carries the display Name for test row
+                    // addressing; UniqueLocationName and the IsManaged lookup
+                    // use NameOrUniqueName, the CropSaver entry key.
                     var displayName = location.Name;
                     var lookupName = location.NameOrUniqueName;
 
@@ -237,6 +237,7 @@ public partial class ApiService
                             new TestCrop
                             {
                                 LocationName = displayName,
+                                UniqueLocationName = lookupName,
                                 TileX = (int)dirt.Tile.X,
                                 TileY = (int)dirt.Tile.Y,
                                 IsAlive = !crop.dead.Value,
@@ -266,6 +267,7 @@ public partial class ApiService
                             new TestCrop
                             {
                                 LocationName = displayName,
+                                UniqueLocationName = lookupName,
                                 TileX = (int)pot.TileLocation.X,
                                 TileY = (int)pot.TileLocation.Y,
                                 IsAlive = !crop.dead.Value,
@@ -692,56 +694,7 @@ public partial class ApiService
         TestSaverCropResponse result = new();
         await RunOnGameThreadAsync(() =>
         {
-            // Entries are keyed on NameOrUniqueName. A direct hit covers root
-            // locations and callers passing the unique name; the fallback lets
-            // callers address a building interior by its display Name ("Cabin"),
-            // matching how /test/crops rows are addressed.
             var saverCrop = loader.GetSaverCrop(body.LocationName, tile);
-            if (saverCrop == null)
-            {
-                var ambiguous = false;
-                foreach (var candidate in loader.GetSaverCrops())
-                {
-                    if (candidate.cropLocationTile != tile)
-                    {
-                        continue;
-                    }
-
-                    var candidateLocation = Game1.getLocationFromName(candidate.cropLocationName);
-                    if (
-                        candidateLocation == null
-                        || !candidateLocation.Name.Equals(
-                            body.LocationName,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
-                    {
-                        continue;
-                    }
-
-                    if (saverCrop != null)
-                    {
-                        ambiguous = true;
-                        break;
-                    }
-
-                    saverCrop = candidate;
-                }
-
-                if (ambiguous)
-                {
-                    result = new TestSaverCropResponse
-                    {
-                        Success = false,
-                        Found = false,
-                        Error =
-                            $"Multiple SaverCrop entries match {body.LocationName} "
-                            + $"({body.TileX},{body.TileY}); address by unique location name",
-                    };
-                    return;
-                }
-            }
-
             if (saverCrop == null)
             {
                 result = new TestSaverCropResponse
@@ -749,7 +702,9 @@ public partial class ApiService
                     Success = false,
                     Found = false,
                     Error =
-                        $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY})",
+                        $"No SaverCrop entry at {body.LocationName} ({body.TileX},{body.TileY}). "
+                        + "Entries are keyed on the unique location name — pass "
+                        + "uniqueLocationName from the /test/crops row.",
                 };
                 return;
             }

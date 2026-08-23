@@ -13,8 +13,14 @@ namespace JunimoServer.Services.Api;
 /// </summary>
 public class TestCrop
 {
-    /// <summary>Internal location name where the crop lives (e.g. "Farm", "Greenhouse", "IslandWest").</summary>
+    /// <summary>Display location name (e.g. "Farm", "Greenhouse"). Shared by building
+    /// interiors — every cabin interior reads "Cabin".</summary>
     public string LocationName { get; set; } = "";
+
+    /// <summary>Unique location name (NameOrUniqueName, e.g. "Cabin{GUID}" for a cabin
+    /// interior; equals <see cref="LocationName"/> for root locations). This is the
+    /// CropSaver entry key — pass it as locationName to /test/saver_crop.</summary>
+    public string UniqueLocationName { get; set; } = "";
 
     /// <summary>Tile X coordinate (terrain HoeDirt tile, or pot's TileLocation).</summary>
     public int TileX { get; set; }
@@ -116,9 +122,11 @@ public class TestFarmEventResponse
 
 /// <summary>
 /// Body for POST /test/saver_crop. Mutates an existing CropSaver entry in
-/// place. Optional fields are skipped when null. Used by E2E tests to
-/// pre-arm extraDays past CropSaver.OnDayEnd's branch-1 floor without
-/// having to simulate many real day-transitions.
+/// place. LocationName must be the entry key — the unique location name
+/// (TestCrop.UniqueLocationName from /test/crops). Optional fields are
+/// skipped when null. Used by E2E tests to pre-arm extraDays past
+/// CropSaver.OnDayEnd's branch-1 floor without having to simulate many
+/// real day-transitions.
 /// </summary>
 public class TestSaverCropRequest
 {

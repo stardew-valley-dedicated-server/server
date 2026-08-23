@@ -253,9 +253,10 @@ public class CropSaverTests : TestBase
 
         // Stamp datePlanted = Fall 1 (death Fall 28) with extraDays left at 0, so the
         // upcoming Fall 28 → Winter 1 rollover would kill a seasonal crop. Only the
-        // immunity guard spares this one.
+        // immunity guard spares this one. SetSaverCrop addresses the entry by its key,
+        // the unique location name ("Cabin{GUID}") — not the display name "Cabin".
         var planted = await ServerApi.SetSaverCrop(
-            "Cabin",
+            potRow.UniqueLocationName,
             CabinTileX,
             CabinTileY,
             datePlanted: ("fall", 1, 1),
