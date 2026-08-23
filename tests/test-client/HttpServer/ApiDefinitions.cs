@@ -343,6 +343,17 @@ public class ApiDefinitions
 
     [ApiEndpoint(
         "POST",
+        "/actions/till_tile",
+        Summary = "Till a tile",
+        Description = "Till a tile into a terrain HoeDirt via the vanilla hoe path (GameLocation.makeHoeDirt).",
+        Tag = "Actions"
+    )]
+    [ApiRequestBody(typeof(TillTileParams))]
+    [ApiResponse(typeof(TillTileResult), 200)]
+    private void TillTile() { }
+
+    [ApiEndpoint(
+        "POST",
         "/actions/plant_crop",
         Summary = "Plant a crop seed",
         Description = "Plant a seed in a HoeDirt or IndoorPot at the given tile.",

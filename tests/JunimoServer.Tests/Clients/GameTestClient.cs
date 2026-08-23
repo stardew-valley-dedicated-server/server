@@ -371,6 +371,15 @@ public class LocationWarpsResult
     public List<LocationWarpInfo> Warps { get; set; } = new();
 }
 
+public class TillTileResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
 public class PlantCropResult
 {
     [JsonPropertyName("success")]
@@ -822,6 +831,21 @@ public class ActionsClient
                 tileY,
                 width,
                 height,
+            }
+        );
+
+    /// <summary>
+    /// Till a tile into a terrain HoeDirt via the vanilla hoe path
+    /// (GameLocation.makeHoeDirt). POST /actions/till_tile
+    /// </summary>
+    public Task<TillTileResult?> TillTile(string locationName, int tileX, int tileY) =>
+        _client.PostAsync<TillTileResult>(
+            "/actions/till_tile",
+            new
+            {
+                locationName,
+                tileX,
+                tileY,
             }
         );
 

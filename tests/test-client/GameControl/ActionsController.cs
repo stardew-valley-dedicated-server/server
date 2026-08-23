@@ -314,6 +314,51 @@ public class ActionsController
     }
 
     /// <summary>
+    /// Till a tile into a terrain HoeDirt via the vanilla hoe path
+    /// (<c>GameLocation.makeHoeDirt</c>), which checks the Diggable tile
+    /// property and collisions the way a real hoe swing does.
+    /// </summary>
+    public TillTileResult TillTile(string locationName, int tileX, int tileY)
+    {
+        if (!Context.IsWorldReady)
+        {
+            return new TillTileResult { Success = false, Error = "Not in a game world" };
+        }
+
+        if (Game1.player.currentLocation?.Name != locationName)
+        {
+            return new TillTileResult
+            {
+                Success = false,
+                Error =
+                    $"Player is on '{Game1.player.currentLocation?.Name}', not '{locationName}'",
+            };
+        }
+
+        var location = Game1.player.currentLocation;
+        var tile = new Vector2(tileX, tileY);
+
+        if (!location.makeHoeDirt(tile))
+        {
+            return new TillTileResult
+            {
+                Success = false,
+                Error =
+                    $"makeHoeDirt refused ({tileX},{tileY}) — tile not Diggable, blocked, "
+                    + "or already tilled",
+            };
+        }
+
+        return new TillTileResult
+        {
+            Success = true,
+            LocationName = locationName,
+            TileX = tileX,
+            TileY = tileY,
+        };
+    }
+
+    /// <summary>
     /// Plant a seed via <c>HoeDirt.plant</c>. The dirt may be a terrain HoeDirt or
     /// the inner HoeDirt of a Garden Pot at the same tile. <c>plant</c> requires
     /// <c>player.currentLocation == dirt.Location</c>.
@@ -338,14 +383,18 @@ public class ActionsController
         var location = Game1.player.currentLocation;
         var tile = new Vector2(tileX, tileY);
 
+        // Pot first: a Garden Pot on a tilled tile coexists with an empty
+        // terrain HoeDirt at the same key, and real interaction always reaches
+        // the pot (it occupies the tile) — mirrors CropSaver's
+        // pot-wins-the-tile rule so tests plant where a player would.
         HoeDirt? dirt = null;
-        if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt td)
-        {
-            dirt = td;
-        }
-        else if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
+        if (location.Objects.TryGetValue(tile, out var obj) && obj is IndoorPot pot)
         {
             dirt = pot.hoeDirt.Value;
+        }
+        else if (location.terrainFeatures.TryGetValue(tile, out var tf) && tf is HoeDirt td)
+        {
+            dirt = td;
         }
 
         if (dirt == null)
@@ -725,6 +774,22 @@ public class ClearAreaParams
     public int TileY { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
+}
+
+public class TillTileResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string? LocationName { get; set; }
+    public int? TileX { get; set; }
+    public int? TileY { get; set; }
+}
+
+public class TillTileParams
+{
+    public string LocationName { get; set; } = "";
+    public int TileX { get; set; }
+    public int TileY { get; set; }
 }
 
 public class PlantCropResult
