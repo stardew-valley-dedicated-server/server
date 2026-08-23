@@ -189,6 +189,17 @@
             "allowedVersions": "<18.0.0"
         },
         {
+            "description": "CAP — xunit.v3 stack below 4.0 (coordinated MTP-v2 major, deferred alongside the Test.Sdk 18 cap above). xunit.v3 (Tests) + xunit.v3.runner.utility (TestRunner) must move together — split majors fail restore (NU1107, mismatched xunit.v3.runner.common) — and 4.x drops AssemblyRunnerOptions.ParallelizeTestCollections, set in TestRunner/Program.cs. xunit.runner.visualstudio has no xunit.v3 dependency; capped only as a precaution (3.1.5 is the terminal 3.x, so nothing is forfeited). Lift all three together. versioning:semver — nuget silently no-ops allowedVersions on interleaved prereleases.",
+            "matchManagers": ["nuget"],
+            "matchFileNames": [
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj",
+                "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj"
+            ],
+            "matchPackageNames": ["xunit.v3", "xunit.v3.runner.utility", "xunit.runner.visualstudio"],
+            "versioning": "semver",
+            "allowedVersions": "<4.0.0"
+        },
+        {
             "description": "CAP — SixLabors.ImageSharp below 4.0 in the E2E test project, pending a Six Labors license key in CI. 4.0 is the first release to enforce a build-time license key for direct package dependencies, so merging it breaks the build until the (free-to-apply for OSS) key is provisioned. Lift once the key is wired into the build. versioning:semver — the default nuget scheme can silently no-op allowedVersions for packages with interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": [
