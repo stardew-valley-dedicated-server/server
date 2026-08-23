@@ -63,6 +63,23 @@ public class CropWatcher
                     continue;
                 }
 
+                // Pot wins the tile: a Garden Pot can be placed on an *empty*
+                // tilled tile (CanItemBePlacedHere rejects only dirt WITH a
+                // crop), so two HoeDirts can share one (location, tile) key.
+                // At most one of them can bear a crop — the pot blocks
+                // planting the dirt beneath it — so the pot loop below owns
+                // such tiles; visiting the empty terrain dirt too would
+                // overwrite the pot's hasCrop and evict its entry every scan.
+                // Same rule in SaverCrop.TryGetCoorespondingDirt and
+                // CropSaverOverrides.KillCrop_Prefix — keep the three in sync.
+                if (
+                    location.Objects.TryGetValue(dirt.Tile, out var objAtTile)
+                    && objAtTile is IndoorPot
+                )
+                {
+                    continue;
+                }
+
                 CheckTile(new CropLocation(location, dirt, locName, dirt.Tile));
             }
 

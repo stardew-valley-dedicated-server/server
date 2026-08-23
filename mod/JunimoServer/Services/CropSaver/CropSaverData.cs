@@ -55,16 +55,19 @@ public class SaverCrop
             return null;
         }
 
+        // Pot wins the tile: a pot on an empty tilled tile shares the key with
+        // the crop-less terrain dirt beneath it, so resolve the pot's dirt
+        // first (see CropWatcher's terrain-loop skip for the invariant).
+        if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
+        {
+            return pot.hoeDirt.Value;
+        }
+
         if (
             location.terrainFeatures.TryGetValue(cropLocationTile, out var tf) && tf is HoeDirt dirt
         )
         {
             return dirt;
-        }
-
-        if (location.Objects.TryGetValue(cropLocationTile, out var obj) && obj is IndoorPot pot)
-        {
-            return pot.hoeDirt.Value;
         }
 
         return null;

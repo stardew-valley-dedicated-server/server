@@ -720,6 +720,23 @@ public class ModEntry : Mod
             }
         );
 
+        // POST /actions/till_tile - Till a tile into a terrain HoeDirt via the vanilla hoe path
+        _server.Post(
+            "actions/till_tile",
+            req =>
+            {
+                var body = TestApiServer.ReadBody<TillTileParams>(req);
+                if (body == null)
+                {
+                    return new TillTileResult { Success = false, Error = "Missing body" };
+                }
+
+                return ExecuteOnGameThread(() =>
+                    _actionsController!.TillTile(body.LocationName, body.TileX, body.TileY)
+                );
+            }
+        );
+
         // POST /actions/plant_crop - Plant a seed in a HoeDirt or IndoorPot at the given tile
         _server.Post(
             "actions/plant_crop",

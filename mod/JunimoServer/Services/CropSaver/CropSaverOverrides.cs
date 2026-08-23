@@ -23,7 +23,12 @@ public class CropSaverOverrides
             return true;
         }
 
-        var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.NameOrUniqueName, dirt.Tile);
+        // Pot crops are keyed under pot.TileLocation (the watcher can't rely on
+        // dirt.Tile at pot creation), so canonicalize via HoeDirt.Pot — the
+        // vanilla back-reference to the containing pot (see CropWatcher's
+        // terrain-loop skip for the shared pot-wins-the-tile rule).
+        var tile = dirt.Pot?.TileLocation ?? dirt.Tile;
+        var managed = _cropSaverDataLoader.GetSaverCrop(dirt.Location.NameOrUniqueName, tile);
         return managed == null;
     }
 

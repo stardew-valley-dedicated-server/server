@@ -7,7 +7,7 @@ namespace JunimoServer.Tests;
 /// <summary>
 /// E2E coverage for CropSaver across Garden Pots.
 ///
-/// Three complementary tests, all load-bearing:
+/// Complementary tests, all load-bearing:
 /// <list type="bullet">
 /// <item><description>
 /// <see cref="GardenPotCrop_IsRegisteredWithCropSaverWatcher"/> exercises the
@@ -22,6 +22,13 @@ namespace JunimoServer.Tests;
 /// <c>dirt.Location.NameOrUniqueName</c> suppresses vanilla <c>Crop.Kill()</c>'s
 /// out-of-season kill. Also exercises <c>SaverCrop.TryGetCoorespondingDirt</c>'s
 /// <c>StardewValley.Objects.IndoorPot</c> branch.
+/// </description></item>
+/// <item><description>
+/// <see cref="GardenPotOnTilledTile_StaysManagedAcrossWatcherScans"/> exercises
+/// the pot-wins-the-tile rule: a pot placed on an empty tilled tile makes two
+/// HoeDirts share one (location, tile) key, and without the <c>CropWatcher</c>
+/// terrain-loop skip the empty terrain dirt evicts the pot crop's entry one
+/// scan after registration.
 /// </description></item>
 /// <item><description>
 /// <see cref="PotCropInImmuneLocation_SurvivesPastDateOfDeath_WhileOwnerOffline"/>
@@ -72,6 +79,8 @@ public class CropSaverTests : TestBase
     private const int TileA_Y = 21;
     private const int TileB_X = 64;
     private const int TileB_Y = 22;
+    private const int TileC_X = 64;
+    private const int TileC_Y = 23;
 
     /// <summary>
     /// Tile inside the farmhand's cabin interior for the immune-location test.
@@ -88,6 +97,94 @@ public class CropSaverTests : TestBase
         var ct = TestCt;
         await PlacePotAndPlantCauliflowerAsync(TileA_X, TileA_Y, ct);
         await AssertWatcherRegistersPotAsync("Farm", TileA_X, TileA_Y, ct);
+    }
+
+    [Fact]
+    public async Task GardenPotOnTilledTile_StaysManagedAcrossWatcherScans()
+    {
+        var ct = TestCt;
+
+        // Force Spring so Cauliflower is plantable (see PlacePotAndPlantCauliflowerAsync).
+        var springDate = await ServerApi.SetDate("spring", 1, year: 1, ct);
+        Assert.NotNull(springDate);
+        Assert.True(springDate.Success, $"SetDate(spring 1) failed: {springDate.Error}");
+
+        await Farmers.ConnectFastAsync(namePrefix: "PotTilled", ct: ct);
+
+        var warp = await GameClient.Actions.Warp("Farm", TileC_X, TileC_Y);
+        Assert.True(warp?.Success, $"Warp failed: {warp?.Error}");
+        var arrived = await GameClient.WaitForLocationAsync("^Farm$", TimeSpan.FromSeconds(10), ct);
+        Assert.NotNull(arrived);
+
+        // Clear the 3×3 neighborhood (weed-spawn immunity, see the sibling helper),
+        // then till the pot tile so it hosts a terrain HoeDirt, and place the pot
+        // WITHOUT clearObstacles — the tilled dirt must survive placement. Vanilla
+        // allows this: CanItemBePlacedHere rejects only dirt WITH a crop, so a pot
+        // on an empty tilled tile is a legal player-reachable state, and the tile
+        // then holds two HoeDirts sharing one (location, tile) key.
+        var cleared = await GameClient.Actions.ClearArea(
+            "Farm",
+            TileC_X - 1,
+            TileC_Y - 1,
+            width: 3,
+            height: 3
+        );
+        Assert.True(cleared?.Success == true, $"ClearArea failed: {cleared?.Error}");
+
+        var tilled = await GameClient.Actions.TillTile("Farm", TileC_X, TileC_Y);
+        Assert.True(tilled?.Success == true, $"TillTile failed: {tilled?.Error}");
+
+        var place = await GameClient.Actions.PlacePot(
+            "Farm",
+            TileC_X,
+            TileC_Y,
+            clearObstacles: false
+        );
+        Assert.True(place?.Success, $"PlacePot failed: {place?.Error}");
+
+        var plant = await GameClient.Actions.PlantCrop(CauliflowerSeedId, "Farm", TileC_X, TileC_Y);
+        Assert.True(plant?.Success, $"PlantCrop failed: {plant?.Error}");
+
+        await AssertWatcherRegistersPotAsync("Farm", TileC_X, TileC_Y, ct);
+
+        // The pre-fix failure mode is time-shaped: the watcher's terrain visit saw
+        // the empty terrain dirt's hasCrop=false AFTER the pot's true and evicted
+        // the entry one scan window later — IsManaged flipped false ~1 scan after
+        // registration and stayed false. Sample the snapshot across several scan
+        // windows (5-tick scan ≈ 1s at SERVER_TPS=5; 3s ≈ 3 scans) and require
+        // IsManaged to hold on every sample. Also pin the row count: the crop-less
+        // terrain dirt must not double-report the tile.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await ServerApi.GetAllCrops(ct);
+            Assert.NotNull(snapshot);
+            var rows = snapshot
+                .Crops.Where(c =>
+                    c.LocationName == "Farm" && c.TileX == TileC_X && c.TileY == TileC_Y
+                )
+                .ToList();
+            Assert.True(
+                rows.Count == 1,
+                $"Expected exactly one crop row at Farm ({TileC_X},{TileC_Y}), got {rows.Count} — "
+                    + "0 means the pot crop vanished; 2 means the tile double-reported "
+                    + "(a crop grew in the terrain dirt under the pot)."
+            );
+            var potRow = rows[0];
+            Assert.True(
+                potRow.IsInPot,
+                "The only crop row at the shared tile must be the pot's — a terrain row "
+                    + "here means a crop landed in the dirt under the pot."
+            );
+            Assert.True(
+                potRow.IsManaged,
+                "Pot crop on a tilled tile must STAY managed across watcher scans. "
+                    + "Pre-fix: the empty terrain HoeDirt sharing the tile key evicted the "
+                    + "SaverCrop entry one scan after registration (watcher churn)."
+            );
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+        }
     }
 
     [Fact]
