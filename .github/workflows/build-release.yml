@@ -150,10 +150,7 @@ jobs:
         with:
           # Org issue-field id for "Release version". Deleting and recreating a field
           # changes its id — this input must then be updated.
-          # TODO: the field does not exist yet (creating it needs an org admin) — create the
-          # Text field "Release version" and replace 0 with its numeric id; until then
-          # this job fails fast without touching any issue.
-          field-id: "0"
+          field-id: "45984818"
           field-name: Release version
           value: ${{ needs.release-please.outputs.version }}
           channel: release
