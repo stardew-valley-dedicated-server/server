@@ -23,10 +23,6 @@ inputs:
   tag-match:
     description: Space-separated `git describe --match` globs that select base-tag candidates
     required: true
-  exclude-tag:
-    description: Tag to exclude from base resolution (this build's own tag)
-    required: false
-    default: ""
   max-issues:
     description: Abort if the range resolves more issues than this (guards a bad base tag)
     required: false
@@ -56,19 +52,24 @@ runs:
       env:
         HEAD_REF: ${{ inputs.head-ref }}
         TAG_MATCH: ${{ inputs.tag-match }}
-        EXCLUDE_TAG: ${{ inputs.exclude-tag }}
       run: |
         set -f # tag globs must reach git verbatim, not expand against the working tree
         HEAD_OID=$(git rev-parse "$HEAD_REF^{commit}")
         MATCH_ARGS=()
         for glob in $TAG_MATCH; do MATCH_ARGS+=(--match "$glob"); done
+        # The base must sit strictly below HEAD. A candidate tag pointing at HEAD itself is this
+        # build's own tag or a previous build of the same commit — taking it as base would empty
+        # the range and permanently skip a failed run's issues. Re-walking an already-stamped
+        # range is a no-op (first value wins, comments are marker-deduped).
+        AT_HEAD=$(git tag -l --points-at "$HEAD_OID" $TAG_MATCH)
         EXCLUDE_ARGS=()
-        if [ -n "$EXCLUDE_TAG" ]; then EXCLUDE_ARGS+=(--exclude "$EXCLUDE_TAG"); fi
+        for tag in $AT_HEAD; do EXCLUDE_ARGS+=(--exclude "$tag"); done
         BASE=$(git describe --tags --abbrev=0 "${MATCH_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$HEAD_OID" 2>/dev/null || true)
         if [ -n "$BASE" ]; then
           BASE_OID=$(git rev-parse "$BASE^{commit}")
-        elif [ -z "$(git tag -l $TAG_MATCH)" ]; then
-          # True first release: no candidate tag exists anywhere, walk history to the root.
+        elif [ "$(git tag -l $TAG_MATCH)" = "$AT_HEAD" ]; then
+          # Every candidate tag (possibly none) points at HEAD: the true first build, or a
+          # rebuild of it — walk history to the root, the faithful retry of that first range.
           BASE_OID=""
         else
           echo "::error::expected a base tag matching '$TAG_MATCH' below $HEAD_REF but none resolved"

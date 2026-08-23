@@ -156,7 +156,6 @@ jobs:
           channel: release
           head-ref: ${{ needs.release-please.outputs.tag_name }}
           tag-match: sdvd-server-v*
-          exclude-tag: ${{ needs.release-please.outputs.tag_name }}
 
   build-and-publish-steam-service:
     name: Build Steam Service

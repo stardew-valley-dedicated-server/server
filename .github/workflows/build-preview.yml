@@ -275,10 +275,9 @@ jobs:
           value: ${{ needs.calculate-version.outputs.preview_version }}
           channel: preview
           head-ref: ${{ github.sha }}
-          # Base = the nearest earlier build of either channel, excluding the tracking tag
-          # build-server-preview just pushed for this run (it points at this very commit).
+          # Base = the nearest earlier build of either channel on a previous commit (the action
+          # ignores tags on this commit itself, including this run's own tracking tag).
           tag-match: sdvd-server-v* preview-[0-9]*
-          exclude-tag: preview-${{ needs.calculate-version.outputs.next_version }}.${{ needs.calculate-version.outputs.preview_number }}
 
   build-steam-service-preview:
     name: Build Steam Service Preview
