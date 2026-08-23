@@ -153,6 +153,38 @@ public class TestSaverCropResponse
 }
 
 /// <summary>
+/// Body for POST /test/lightning_strike. Names the crop tile to strike (terrain
+/// HoeDirt, or a Garden Pot's inner dirt).
+/// </summary>
+public class TestLightningStrikeRequest
+{
+    public string? LocationName { get; set; }
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+}
+
+/// <summary>
+/// Response from POST /test/lightning_strike (test-only). Runs vanilla's lightning
+/// crop-strike (HoeDirt.performToolAction with lightning damage) on a chosen tile,
+/// inside the CropSaver lightning context — a deterministic stand-in for the
+/// RNG-gated Utility.performLightningUpdate.
+/// </summary>
+public class TestLightningStrikeResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>True if a crop was found at the requested (location, tile).</summary>
+    public bool Found { get; set; }
+
+    /// <summary>True if the crop is still alive after the strike (immunity suppressed the kill).</summary>
+    public bool CropAliveAfter { get; set; }
+
+    /// <summary>True if CropSaver still tracks the tile after the strike.</summary>
+    public bool IsManagedAfter { get; set; }
+}
+
+/// <summary>
 /// Response from POST /test/house_upgrade (test-only). Runs a vanilla debug house-upgrade
 /// command through parseDebugInput (exercising the HostFarmhouseUpgradeGuard Harmony prefix) and
 /// reports the host's resulting HouseUpgradeLevel, so a test can pin "the host farmhouse can't be

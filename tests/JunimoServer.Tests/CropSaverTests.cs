@@ -36,6 +36,15 @@ namespace JunimoServer.Tests;
 /// past its computed date of death through a real <c>OnDayEnd</c>, asserting the
 /// <c>IsCropSeasonImmune()</c> guard spares it — the greenhouse bug class.
 /// </description></item>
+/// <item><description>
+/// <see cref="ManagedCrop_SurvivesLightningStrike_ByDefault"/> exercises the
+/// lightning-immunity default: a deterministic <c>/test/lightning_strike</c>
+/// (vanilla's crop-strike inside the CropSaver lightning context) must be
+/// suppressed by <c>KillCrop_Prefix</c> for a managed crop when
+/// <c>CROP_SAVER_LIGHTNING_IMMUNITY</c> is unset. The disabled path (kill let
+/// through, tracking entry dropped) needs a server booted with the env var set
+/// to false, which the test harness cannot express per-class — not E2E-covered.
+/// </description></item>
 /// </list>
 /// </summary>
 // Exclusive serializes the methods (SharedClass alone runs them concurrently): all
@@ -81,6 +90,8 @@ public class CropSaverTests : TestBase
     private const int TileB_Y = 22;
     private const int TileC_X = 64;
     private const int TileC_Y = 24;
+    private const int TileD_X = 64;
+    private const int TileD_Y = 23;
 
     /// <summary>
     /// Tile inside the farmhand's cabin interior for the immune-location test.
@@ -185,6 +196,48 @@ public class CropSaverTests : TestBase
 
             await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
         }
+    }
+
+    [Fact]
+    public async Task ManagedCrop_SurvivesLightningStrike_ByDefault()
+    {
+        var ct = TestCt;
+
+        await PlacePotAndPlantCauliflowerAsync(TileD_X, TileD_Y, ct);
+        await AssertWatcherRegistersPotAsync("Farm", TileD_X, TileD_Y, ct);
+
+        // Deterministic strike: /test/lightning_strike runs vanilla's crop-strike
+        // (HoeDirt.performToolAction with lightning damage → Crop.Kill) inside the
+        // CropSaver lightning context, bypassing performLightningUpdate's RNG target
+        // roll. With CROP_SAVER_LIGHTNING_IMMUNITY at its default (true),
+        // KillCrop_Prefix must suppress the kill for a managed crop.
+        var strike = await ServerApi.LightningStrike("Farm", TileD_X, TileD_Y, ct);
+        Assert.NotNull(strike);
+        Assert.True(strike.Success, $"Lightning strike failed: {strike.Error}");
+        Assert.True(strike.Found, "Strike must find the pot crop at the target tile");
+        Assert.True(
+            strike.CropAliveAfter,
+            "Managed crop must survive a lightning strike with immunity at its default (true). "
+                + "Dead means KillCrop_Prefix failed to suppress the lightning-context kill."
+        );
+        Assert.True(
+            strike.IsManagedAfter,
+            "Surviving crop must stay tracked by CropSaver — the entry is only dropped "
+                + "when a lightning kill is let through (immunity disabled)."
+        );
+
+        // Re-assert on the /test/crops snapshot so the survival check goes through the
+        // same read path the other tests gate on.
+        var crops = await ServerApi.GetAllCrops(ct);
+        Assert.NotNull(crops);
+        var row = crops.Crops.SingleOrDefault(c =>
+            c.IsInPot && c.LocationName == "Farm" && c.TileX == TileD_X && c.TileY == TileD_Y
+        );
+        Assert.NotNull(row);
+        Assert.True(
+            row.IsAlive,
+            "Snapshot must agree the managed crop is alive after the lightning strike"
+        );
     }
 
     [Fact]
