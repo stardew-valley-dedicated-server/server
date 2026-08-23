@@ -1,0 +1,8 @@
+{
+    "name": "sdvd-github-scripts",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@octokit/rest": "22.0.1"
+    }
+}

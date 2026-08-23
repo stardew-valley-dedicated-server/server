@@ -107,6 +107,19 @@ Day 4: Merge Release PR → v1.2.0 released
 
 The Release PR automatically updates as you merge more commits; the preview counter `N` increments on each preview build for the same target version, whether that build was dispatched manually or auto-triggered on push.
 
+## Issue Version Stamping
+
+Both build pipelines end with a **Stamp Issue Versions** job ([composite action](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/actions/stamp-issue-versions), [script](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/scripts/stamp-issue-versions.ts)). It resolves every issue closed by the PRs in the build's commit range (from GitHub's own PR↔issue linkage, not commit-subject parsing), then records on each issue which built image first shipped its fix:
+
+- **Two org Issue Fields** — `IMAGE_VERSION Preview` and `IMAGE_VERSION Release`. Each field independently records the **first** version of its channel that contained the fix; later builds never overwrite an existing value. A release without a prior preview simply leaves the preview field empty.
+- **One comment per channel** — a human-readable note telling the reporter the exact `IMAGE_VERSION` to set (and the rolling `preview` / `latest` alternative), linking the upgrade docs. Deduped by a hidden marker, so re-runs never post twice.
+
+The commit range is `previous build's tag → this build's head`: a release covers everything since the previous release; a preview covers only what's new since the last build of either channel. The job is idempotent — re-running a failed build changes nothing already stamped — and a stamping failure never affects the pushed image or deploy.
+
+::: warning Field ids are hardcoded
+The workflows reference the org issue fields by **numeric id**. Deleting and recreating a field gives it a new id — the `field-id` inputs in `build-release.yml` / `build-preview.yml` must then be updated. The script asserts the field's name and type on its first write, so a stale id fails loudly instead of stamping the wrong field.
+:::
+
 ## Cleanup Preview Tags
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/cleanup-preview-tags.yml)

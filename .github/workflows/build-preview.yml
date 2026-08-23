@@ -248,6 +248,34 @@ jobs:
               }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
 
+  stamp-issue-versions:
+    name: Stamp Issue Versions
+    needs: [calculate-version, build-server-preview]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Stamp issues with preview version
+        uses: ./.github/actions/stamp-issue-versions
+        with:
+          # Org issue-field id for "IMAGE_VERSION Preview". Deleting and recreating a field
+          # changes its id — this input must then be updated.
+          field-id: "45970008"
+          field-name: IMAGE_VERSION Preview
+          value: ${{ needs.calculate-version.outputs.preview_version }}
+          channel: preview
+          head-ref: ${{ github.sha }}
+          # Base = the nearest earlier build of either channel, excluding the tracking tag
+          # build-server-preview just pushed for this run (it points at this very commit).
+          tag-match: sdvd-server-v* preview-[0-9]*
+          exclude-tag: preview-${{ needs.calculate-version.outputs.next_version }}.${{ needs.calculate-version.outputs.preview_number }}
+
   build-steam-service-preview:
     name: Build Steam Service Preview
     needs: calculate-version
