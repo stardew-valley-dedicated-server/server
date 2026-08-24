@@ -2,45 +2,44 @@
 
 ## Gap
 
-`ManagedServer.AcquireExclusiveGateOnlyAsync` (the path an Exclusive test takes when it reuses a
-KeepConnected session) claims the gate FIRST — sets `_exclusiveDone`, `_exclusiveOwnerClass`, and
-`_exclusiveOwnerToken` under `_exclusiveLock` — and only then awaits the other-refs-drain poll
-loop, which honors the per-test ct (`Task.Delay(100, ct)` + `ThrowIfCancellationRequested`). A
-cancellation landing inside that wait throws out of the method with the gate still claimed, and
-nothing can release it:
+`ManagedServer.AcquireExclusiveGateOnlyAsync` (the path an Exclusive test takes when it reuses a KeepConnected session) claims the gate **before any cancellable await**: it sets `_exclusiveDone`, `_exclusiveOwnerClass`, and `_exclusiveOwnerToken` under `_exclusiveLock`, then awaits the other-refs-drain poll loop. That loop honors the per-test ct (`Task.Delay(100, ct)` + `ThrowIfCancellationRequested`).
 
-- `PersistentSessionCoordinator.InitializeKeepConnectedAsync` assigns `HoldsExclusive = true`
-  only after the await returns, so `ReleaseExclusiveGate()` no-ops.
-- The lease's `ExclusiveToken` is never written, so even an unconditional release would present
-  a stale token.
+If cancellation lands during that wait, the method throws with the gate still claimed, but the normal lease cleanup cannot release it:
 
-Every later test on that server then blocks at the exclusive TCS (`AddRefExclusiveAwareAsync` /
-`AddRefAndAcquireExclusiveAsync`) until `DrainExclusiveGateOnPoison` fires — which needs a server
-poison — or the run ends. A cancelled test init becomes a hung remainder-of-run, not a failed
-test.
+* `PersistentSessionCoordinator.InitializeKeepConnectedAsync` assigns `HoldsExclusive = true` only after the await returns, so `ReleaseExclusiveGate()` no-ops.
+* The lease's `ExclusiveToken` is never written, so even an unconditional release from the lease would present a stale token.
 
-The sibling broker path (`AddRefAndAcquireExclusiveAsync`) already handles this: both its awaits
-sit in catch blocks that undo the gate claim (null the TCS/owner/token, `TrySetResult`) when the
-acquisition dies. The gate-only variant never got the equivalent.
+Every later test on that server can then block at the exclusive TCS (`AddRefExclusiveAwareAsync` / `AddRefAndAcquireExclusiveAsync`) until `DrainExclusiveGateOnPoison` fires — which requires the server to be poisoned — or the run ends. A cancelled test initialization therefore becomes a hung remainder-of-run rather than a failed test.
 
-## Trigger conditions (why it hasn't bitten yet)
+The sibling broker path (`AddRefAndAcquireExclusiveAsync`) already handles this failure mode: both of its awaits are covered by catch blocks that undo the gate claim when acquisition fails. The gate-only variant has no equivalent rollback.
 
-Needs all three: an Exclusive class reusing a KeepConnected persistent session, other refs still
-draining at acquire time, and the per-test ct cancelling exactly inside that window. Cancellation
-there is rare (the drain usually resolves in well under a poll interval), and stopOnFail aborts
-tend to end the run anyway — but a per-test timeout mid-drain on a healthy run produces the
-silent-wedge shape.
+## Trigger conditions
+
+All three conditions are required:
+
+1. An Exclusive class is reusing a KeepConnected persistent session.
+2. Other refs are still draining when exclusive acquisition starts.
+3. The per-test ct cancels during that drain window.
+
+This is rare because the drain normally completes well within a poll interval, and stopOnFail aborts tend to end the run anyway. A per-test timeout during the drain on an otherwise healthy run, however, produces the wedge.
 
 ## Fix sketch
 
-Wrap the post-claim waits in try/catch; on throw, call `ReleaseExclusive(token, testName)` and
-rethrow. Token-specific by construction — no owner-class fallback (a class-granular fallback
-could clear a successor claim, the same weakness the token exists to close; review feedback).
-Reusing `ReleaseExclusive` also inherits the correct waiter semantics for free: same-class
-*gate-only* callers return 0 and never queue, but same-class callers arriving via
-`AddRefAndAcquireExclusiveAsync` DO register as `_exclusiveClassWaiters` behind a held gate, and
-a valid release passes them the turn instead of nulling the TCS out from under them. Cost: ~6
-lines. Deterministic guard tests (`ExclusiveGateOwnershipTests` harness): (1) acquire with a
-pre-cancelled ct while a reflected `_refCount > 1` keeps the drain loop alive → the throw leaves
-`HasExclusiveGate == false`; (2) a successor acquisition from another class then completes —
-`HasExclusiveGate == false` alone does not prove the TCS was released.
+Once the gate has been claimed, wrap the subsequent acquisition awaits in `try/catch`; on any throw, call `ReleaseExclusive(token, testName)` and rethrow.
+
+The release must be **token-specific**: do not add an owner-class fallback. A class-granular fallback could clear a successor's valid claim, which is precisely the race the token is intended to prevent.
+
+Reusing `ReleaseExclusive` also preserves the existing waiter semantics:
+
+* same-class *gate-only* callers return 0 and never queue;
+* same-class callers arriving through `AddRefAndAcquireExclusiveAsync` do register as `_exclusiveClassWaiters` behind a held gate;
+* a valid release hands the gate to those waiters rather than nulling the TCS out from under them.
+
+The fix is ~6 lines and uses the existing ownership/release mechanism rather than introducing a second rollback path.
+
+## Tests
+
+Add deterministic guards in the `ExclusiveGateOwnershipTests` harness:
+
+1. **Cancellation releases the gate.** Start acquisition with a pre-cancelled ct while a reflected `_refCount > 1` keeps the drain loop alive. The acquisition throws and `HasExclusiveGate == false`.
+2. **Cancellation preserves waiter handoff.** After the failed acquisition, a successor acquisition from another class completes successfully. This verifies that the release actually wakes the appropriate waiter; `HasExclusiveGate == false` alone does not prove that the TCS was released correctly.

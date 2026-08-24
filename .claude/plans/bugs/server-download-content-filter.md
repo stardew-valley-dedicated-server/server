@@ -1,171 +1,172 @@
 # Content Filtering & Asset Stripping for Dedicated Server
 
-## Context
+## Goal
 
-User error report:
+Aggressively reduce the dedicated-server `Content/` footprint by removing visual, audio, and font assets that server gameplay does not require, while ensuring intentionally stripped assets cannot cause the server to crash.
 
+The implementation must:
+
+1. Establish the missing-texture fallback first.
+2. Expand the existing Steam content filter.
+3. Verify the filter against the **real** `ContentHashes.json` for the supported Stardew Valley version.
+4. Verify that `PruneContentManifest()` remains synchronized with the actual filesystem after a real filtered download.
+5. Test both headless and rendering-enabled server modes.
+6. Explicitly test known unguarded texture-loading paths.
+7. Verify server-side consumers of retained texture data.
+8. Run the real E2E test suite.
+9. Measure the actual Docker and `Content/` reduction.
+10. Handle required assets through the smallest possible exceptions rather than weakening the optimization.
+
+### Architectural constraint
+
+The existing `PruneContentManifest()` mechanism is the **only manifest-filtering mechanism**.
+
+**Do not introduce a second manifest-filtering mechanism.**
+
+The responsibilities are intentionally separated:
+
+```text
+Steam download
+      ↓
+BuildSkipPatterns / ShouldSkipFile
+      ↓
+unwanted files are not downloaded
+      ↓
+PruneContentManifest()
+      ↓
+ContentHashes.json reflects files that remain
+      ↓
+guarded game loads use the existing manifest protection
 ```
-sdvd-server | [app ] [01:39:58 ERROR game] Failed to spawn NPC 'Vincent'.
-sdvd-server | [app ] Microsoft.Xna.Framework.Content.ContentLoadException: Asset does not appear to be a valid XNB file. Did you process your content for Windows?
-```
 
-Reproduced locally with a different asset:
-
-```
-[15:52:59 ERROR game] Couldn't create the 'MermaidHouse' location. Is its data in Data/Locations invalid?
-sdvd-server      | [app           ] System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.
-sdvd-server      | [app           ]  ---> Microsoft.Xna.Framework.Content.ContentLoadException: Asset does not appear to be a valid XNB file. Did you process your content for Windows?
-sdvd-server      | [app           ]    at Microsoft.Xna.Framework.Content.ContentManager.GetContentReaderFromXnb(...)
-sdvd-server      | [app           ]    at xTile.Display.XnaDisplayDevice.LoadTileSheet(TileSheet tileSheet)
-sdvd-server      | [app           ]    at StardewValley.GameLocation.loadMap(String mapPath, Boolean force_reload)
-sdvd-server      | [app           ]    at StardewValley.GameLocation..ctor(String mapPath, String name)
-sdvd-server      | [app           ]    at StardewValley.Game1.CreateGameLocation(String id, CreateLocationData createData)
-sdvd-server      | [app           ]    at StardewValley.Game1.AddLocations()
-```
-
-Goal: aggressively strip game textures/audio/fonts from the server download to reduce
-image size, while keeping the server bootable regardless of what the filter elides.
+The new `Texture2D` interceptor exists only to cover texture loads that bypass that guarded path.
 
 ---
 
-## Existing safety net: the manifest is already pruned
+# 1. Establish the missing-texture fallback first
 
-The download path already keeps `ContentHashes.json` in agreement with what is on
-disk, which makes the game's own guarded loads degrade gracefully instead of
-crashing. The mechanism:
+## Problem
 
-- `LocalizedContentManager.DoesAssetExist<T>()`
-  (`LocalizedContentManager.cs`) returns `_manifest.Contains(item)` — it
-  checks the in-memory manifest loaded from `ContentHashes.json`
-  (`LocalizedContentManager.cs`), **not** the filesystem.
-- `LoadImpl<T>()` (`LocalizedContentManager.cs`) gates every load on
-  `DoesAssetExist`: a name absent from the manifest throws a clean
-  `ContentLoadException("Could not load …")` that the game's localized→English
-  fallback can catch, rather than a raw XNB-parse failure on a missing file.
-- `PruneContentManifest()` (`tools/steam-service/SteamAuthService.cs`),
-  called immediately after download (`SteamAuthService.cs`), rewrites
-  `ContentHashes.json` to drop entries for any file the filter skipped. Manifest
-  and filesystem stay consistent, so `DoesAssetExist` never reports a stripped
-  file as present.
+The existing manifest protection handles asset loads that pass through the game's guarded `LocalizedContentManager` path.
 
-**Consequence for this work:** the manifest/filesystem disagreement is handled.
-Expanding the filter (Section 2) does not need a separate manifest fix — the prune
-step already covers any newly-stripped directory. The remaining crash class is
-narrower (Section 1).
+`LocalizedContentManager.DoesAssetExist<T>()` checks the in-memory manifest loaded from `ContentHashes.json`.
 
----
+`LoadImpl<T>()` uses that check before attempting the underlying load.
 
-## The remaining crash class: unguarded direct loads
+Because `PruneContentManifest()` removes entries for files intentionally skipped during the Steam download, guarded loads do not attempt to parse an XNB that was deliberately removed.
 
-`DoesAssetExist`/`LoadImpl` only protects call sites that go through the guarded
-path. Some vanilla code loads a texture **directly** without an existence check, so
-a stripped asset throws `ContentLoadException` before the manifest guard can fire.
+However, some vanilla code performs direct `Texture2D` loads without first calling `DoesAssetExist<T>()`.
 
-`Game1.AddCharacterIfNecessary()` (`Game1.cs`) is the proven example. Its
-try/catch (`Game1.cs`) performs two `Texture2D` loads:
+These direct loads can still fail with:
+
+```text
+ContentLoadException: Asset does not appear to be a valid XNB file
+```
+
+and cause otherwise valid server operations to fail.
+
+## Confirmed failure: Vincent
+
+`Game1.AddCharacterIfNecessary()` contains:
 
 ```csharp
 nPC = new NPC(
-    new AnimatedSprite("Characters\\" + textureNameForCharacter, 0, size.X, size.Y),  // (1) sprite
+    new AnimatedSprite("Characters\\" + textureNameForCharacter, 0, size.X, size.Y),
     new Vector2(tile.X * 64, tile.Y * 64),
-    locationName, direction, characterId, canBeRomanced,
-    content.Load<Texture2D>("Portraits\\" + textureNameForCharacter)                  // (2) portrait
+    locationName,
+    direction,
+    characterId,
+    canBeRomanced,
+    content.Load<Texture2D>("Portraits\\" + textureNameForCharacter)
 );
 ```
 
-1. **Sprite** (`Characters/Vincent`) — `AnimatedSprite.LoadTexture()`
-   (`AnimatedSprite.cs`) calls `DoesAssetExist<Texture2D>` first and skips
-   silently if absent. Guarded.
-2. **Portrait** (`Portraits/Vincent`) — a bare `content.Load<Texture2D>(...)`
-   constructor argument with **no existence check**. This is the crash point: the
-   catch logs `Failed to spawn NPC 'Vincent'` and the NPC is never added.
+The two texture loads have different behavior.
 
-The `MermaidHouse` reproduction is the same shape one layer down: with rendering
-enabled, the real display device's `XnaDisplayDevice.LoadTileSheet` loads a
-tilesheet texture directly during `GameLocation.loadMap`, bypassing the manifest
-guard.
+### Character sprite
 
-The interceptor in Section 1 closes this class generally — any direct
-`Texture2D` load of a stripped asset gets a placeholder instead of an exception.
+```text
+Characters/Vincent
+        ↓
+AnimatedSprite.LoadTexture()
+        ↓
+DoesAssetExist<Texture2D>()
+        ↓
+guarded
+```
 
----
+If the sprite has been stripped, the guarded path can recognize that it is absent.
 
-## Content Inventory
+### Portrait
 
-Approximate scale-of-the-problem context derived from a scan of the
-`ContentHashes.json` shipped with SDV 1.6.15. The filter regexes target directory
-prefixes; correctness does not depend on exact counts.
+```text
+Portraits/Vincent
+        ↓
+content.Load<Texture2D>()
+        ↓
+no explicit DoesAssetExist check
+        ↓
+direct XNB load
+        ↓
+ContentLoadException
+```
 
-| Category     | Approx total | Server needs?           |
-| ------------ | ------------ | ----------------------- |
-| Textures     | ~700         | No (rendering disabled) |
-| Data/Strings | ~2200        | Base English only       |
-| Maps         | ~560         | Base only (pathfinding) |
-| Audio        | ~4 wavebanks | No                      |
-| Fonts        | ~55          | No                      |
+This is the proven cause of the `Failed to spawn NPC 'Vincent'` failure.
 
-Texture directory prefixes in the manifest: `Characters/` (NPC sprites,
-`Characters/Monsters/`, `Characters/Farmer/`), `Portraits/`, `LooseSprites/`,
-`Animals/`, `Buildings/`, `TileSheets/`, `TerrainFeatures/`, `Minigames/`,
-`Effects/`.
+## Confirmed failure: MermaidHouse
 
-Data prefixes that must be retained (English): `Data/`, `Strings/`,
-`Characters/Dialogue/`, `Characters/schedules/`, all of `Maps/` (base, no locale
-suffix), and `ContentHashes.json` itself.
+With rendering enabled, `MermaidHouse` can load its tilesheet through xTile's `XnaDisplayDevice.LoadTileSheet()`.
 
----
+That path performs a direct texture load rather than relying on the normal guarded asset-existence check.
 
-## Feasibility
-
-**Verdict: feasible.** Reasons:
-
-1. **Rendering defaults off.** `ServerOptimizer` installs a `NullDisplayDevice` and
-   suppresses frame drawing when `SERVER_FPS == 0`, which is the default
-   (`Env.cs`; `0` or unset disables rendering, `N > 0` throttles draws at N
-   fps). `NullDisplayDevice.LoadTileSheet`
-   (`mod/JunimoServer.Shared/NullDisplayDevice.cs`) is a no-op, so tilesheet
-   textures are never loaded for rendering at the default.
-
-2. **Clients load their own textures.** In SDV multiplayer the host sends game
-   state (positions, items, events) over the network, not textures. Each client
-   loads content from its own local install.
-
-3. **Game logic only needs data files.** NPC spawning, pathfinding, events,
-   dialogue, and schedules read from `Data/`, `Strings/`, `Characters/Dialogue/`,
-   and `Characters/schedules/`. Map layouts come from `Maps/`. Texture files are
-   purely visual.
-
-4. **SMAPI can intercept content loads.** The `AssetRequested` event fires before
-   disk access. A handler can substitute a 1×1 dummy `Texture2D` for any texture
-   whose `.xnb` is missing, closing the unguarded-direct-load crash class.
+Therefore, stripping a tilesheet can produce the same raw missing-XNB failure.
 
 ---
 
-## Proposed Implementation
+# 2. Implement the `Texture2D` fallback
 
-Order: ship the mod-side interceptor first (closes the crash class), then expand
-the download filter. This keeps the server bootable while the regex set is tuned.
+Add:
 
-### 1. Content interceptor service (mod-side)
+```text
+mod/JunimoServer/Services/ServerOptim/ContentInterceptor.cs
+```
 
-New `ModService`: `mod/JunimoServer/Services/ServerOptim/ContentInterceptor.cs`.
-`ModService` subclasses are auto-discovered and DI-constructed by `ModEntry`
-(`ModEntry.cs`); no manual registration is needed. Take `IModHelper` in the
-constructor and subscribe in `Entry()`:
+Create a `ModService` that subscribes to:
 
-- Subscribe to `Helper.Events.Content.AssetRequested`.
-- For a `Texture2D` request whose `.xnb` is missing on disk, provide a 1×1
-  `Texture2D` via `e.LoadFrom(..., AssetLoadPriority.Low)`.
-- `AssetLoadPriority.Low` lets other mods supplying real assets take precedence.
-- If the `.xnb` exists on disk, do nothing — SMAPI resolves normally.
+```csharp
+Helper.Events.Content.AssetRequested
+```
+
+The service should:
+
+1. Ignore requests whose data type is not `Texture2D`.
+2. Determine whether the corresponding base-game `.xnb` exists under:
+
+```text
+<GamePath>/Content/
+```
+
+3. If the file exists, do nothing and allow normal content resolution.
+4. If the file does not exist, provide a 1×1 placeholder texture.
+5. Use `AssetLoadPriority.Low`.
+6. Do not modify `ContentHashes.json`.
+7. Do not treat the fallback as proof that arbitrary texture consumers are semantically safe.
+
+Conceptually:
 
 ```csharp
 private void OnAssetRequested(object sender, AssetRequestedEventArgs e)
 {
-    if (e.DataType != typeof(Texture2D)) return;
+    if (e.DataType != typeof(Texture2D))
+        return;
 
-    string xnbPath = Path.Combine(Constants.GamePath, "Content", e.Name.Name + ".xnb");
-    if (File.Exists(xnbPath)) return;
+    string xnbPath = Path.Combine(
+        Constants.GamePath,
+        "Content",
+        e.Name.Name + ".xnb");
+
+    if (File.Exists(xnbPath))
+        return;
 
     e.LoadFrom(
         () => new Texture2D(Game1.graphics.GraphicsDevice, 1, 1),
@@ -173,126 +174,811 @@ private void OnAssetRequested(object sender, AssetRequestedEventArgs e)
 }
 ```
 
-This catches every direct `Texture2D` load of a stripped asset — the NPC portrait,
-a rendering-enabled tilesheet load, or anything else — so the server keeps running
-with a placeholder pixel.
+The production implementation may adjust path normalization or texture creation as required by the actual SMAPI/XNA lifecycle.
 
-### 2. Expand the steam download filter
+## Important limitation
 
-`BuildSkipPatterns` (`tools/steam-service/SteamAuthService.cs`) builds the
-`Regex[]` tested by `ShouldSkipFile` against depot file names. The
-existing patterns are **`Content/`-prefixed** (e.g. `Content/Fonts/{family}.*`,
-`Content/XACT/Wave Bank*.xwb`), so new patterns must keep that prefix and match the
-depot path, not a content-root-relative path.
+The interceptor is a **crash-prevention fallback**, not a general replacement for arbitrary textures.
 
-Add patterns to drop the texture, font, and audio directories:
+A 1×1 texture is sufficient only when the consumer merely requires a valid `Texture2D` object.
 
+It is **not** proof that code expecting:
+
+* specific texture dimensions;
+* particular sprite rectangles;
+* particular pixel data;
+* color information;
+* sprite-sheet regions;
+
+will behave correctly.
+
+If server functionality genuinely requires the original texture data, that asset must remain in the filtered download.
+
+Do not hide such a dependency behind the placeholder.
+
+---
+
+# 3. Initialization safety is a hard requirement
+
+The placeholder creation uses:
+
+```csharp
+Game1.graphics.GraphicsDevice
 ```
-Content/Characters/(?!Dialogue|schedules|Farmer).*   ← NPC sprites, monsters (keep Farmer/ — see risk)
-Content/Portraits/.*                                  ← all portrait textures
-Content/LooseSprites/.*                               ← UI sprites
-Content/Animals/.*                                    ← animal sprites
-Content/Buildings/.*                                  ← building textures
-Content/TileSheets/.*                                 ← tile sheet textures
-Content/TerrainFeatures/.*                            ← terrain textures
-Content/Minigames/.*                                  ← minigame art
-Content/Effects/.*                                    ← visual effects
-Content/Fonts/.*                                      ← all fonts (extends the CJK-only filter)
-Content/XACT/.*                                       ← all audio (extends the wavebank filter)
+
+The implementation must verify that the graphics device is initialized at the points where the stripped assets are actually requested.
+
+Do not assume that the `AssetRequested` callback necessarily occurs after graphics initialization in every relevant startup path.
+
+If the graphics device is unavailable when the callback needs to create the placeholder, change the implementation so the fallback is safe for the actual lifecycle.
+
+The interceptor is not considered complete until this has been demonstrated in runtime tests.
+
+---
+
+# 4. Required interceptor tests before expanding the filter
+
+Before broadening the Steam filter, prove the fallback independently.
+
+Use intentionally missing assets and reproduce both known failures.
+
+### Test A — Vincent portrait
+
+Strip:
+
+```text
+Content/Portraits/Vincent.xnb
 ```
 
-`PruneContentManifest` (`SteamAuthService.cs`) already runs after download, so
-the newly-stripped entries are removed from `ContentHashes.json` automatically. No
-manifest change is required here.
+Then exercise the NPC creation path that previously produced:
+
+```text
+Failed to spawn NPC 'Vincent'
+```
+
+Expected:
+
+* no raw missing-XNB crash;
+* `AddCharacterIfNecessary()` completes successfully;
+* Vincent can be spawned;
+* no `Failed to spawn NPC 'Vincent'` error caused by the missing portrait.
+
+The portrait does not need to render correctly.
+
+### Test B — MermaidHouse tilesheet
+
+Strip the relevant `MermaidHouse` tilesheet.
+
+Run with:
+
+```text
+SERVER_FPS>0
+```
+
+Expected:
+
+* `MermaidHouse` can be created;
+* the direct tilesheet request does not produce the original XNB failure;
+* rendering-enabled server execution remains stable.
+
+The resulting visual output does not need to be meaningful.
+
+---
+
+# 5. Expand the Steam content filter
+
+Update:
+
+```text
+tools/steam-service/SteamAuthService.cs
+```
+
+Specifically update:
+
+```text
+BuildSkipPatterns()
+```
+
+The existing filter operates on depot paths beginning with `Content/`.
+
+Therefore **all new patterns must retain the `Content/` prefix**.
+
+Add:
+
+```text
+Content/Characters/(?!Dialogue|schedules|Farmer).*
+Content/Portraits/.*
+Content/LooseSprites/.*
+Content/Animals/.*
+Content/Buildings/.*
+Content/TileSheets/.*
+Content/TerrainFeatures/.*
+Content/Minigames/.*
+Content/Effects/.*
+Content/Fonts/.*
+Content/XACT/.*
+```
+
+These remove:
+
+* NPC and monster sprites;
+* portraits;
+* loose/UI sprites;
+* animal graphics;
+* building graphics;
+* tilesheets;
+* terrain graphics;
+* minigame graphics;
+* visual effects;
+* fonts;
+* audio/XACT content.
+
+## Characters exception
+
+The `Characters` rule deliberately retains:
+
+```text
+Content/Characters/Dialogue/
+Content/Characters/schedules/
+Content/Characters/Farmer/
+```
+
+and removes the other character-asset directories.
+
+The negative lookahead must therefore remain logically equivalent to:
+
+```text
+Content/Characters/(?!Dialogue|schedules|Farmer).*
+```
+
+Do not replace this with a broader `Content/Characters/.*` rule.
+
+---
+
+# 6. Content that must remain
 
 Retain:
 
-- `Content/Data/` (base English; localized variants already filtered)
-- `Content/Strings/` (base English)
-- `Content/Characters/Dialogue/` (base English)
-- `Content/Characters/schedules/` (base English)
-- `Content/Characters/Farmer/` (see risk below)
-- `Content/Maps/` (base; needed for pathfinding/collision)
-- `Content/VolcanoLayouts/`
-- `Content/ContentHashes.json` (manifest)
+```text
+Content/Data/
+Content/Strings/
+Content/Characters/Dialogue/
+Content/Characters/schedules/
+Content/Characters/Farmer/
+Content/Maps/
+Content/VolcanoLayouts/
+Content/ContentHashes.json
+```
 
-Before merge, parse the live `ContentHashes.json`, run each entry through
-`ShouldSkipFile` with the new patterns, and confirm every retained prefix above
-survives and the intended texture/font/audio prefixes drop. Any retained file the
-regex would drop is a regression.
+Localized variants must continue to follow the repository's existing localization filtering behavior.
 
-### 3. Validate runtime behavior (gates)
-
-- [ ] Server boots at the default `SERVER_FPS=0` against a stripped `Content/`
-      directory; no `Failed to spawn NPC` errors in the log.
-- [ ] Server boots with `SERVER_FPS>0` (rendering enabled) against the same
-      stripped directory; tilesheet/texture loads hit the dummy texture without
-      crashing.
-- [ ] A real client connects, joins, and the day advances at least once.
-- [ ] Image size reduction measured (compare `docker images` before/after).
-- [ ] Run the existing E2E suite (`make test`) — the runner uses real clients, so
-      any regression in client-side asset assumptions surfaces here.
+Do not accidentally remove base-English data while expanding the visual-content filter.
 
 ---
 
-## Edge Cases & Risks
+# 7. Why `Characters/Farmer/` remains
 
-### Tilesheet loading with rendering enabled
+`Characters/Farmer/` is intentionally retained even though most visual content is unnecessary to a headless server.
 
-At the default `SERVER_FPS=0`, `NullDisplayDevice.LoadTileSheet` is a no-op, so
-tilesheets are never loaded. With `SERVER_FPS>0` the real display device runs and
-loads tilesheets via `Game1.content.Load<Texture2D>()`. The interceptor returns the
-dummy: drawing produces garbage pixels but does not crash. An operator running with
-rendering enabled and stripped content accepts that the rendered output is
-meaningless.
+`FarmerRenderer` consumes these textures and reads their pixel data.
 
-### `Characters/Farmer/` is consumed at runtime
+The server's `MapService` also consumes data derived from `FarmerRenderer`, including texture information used for player-avatar/map functionality.
 
-`FarmerRenderer.textureChanged()` (`FarmerRenderer.cs`) calls
-`farmerTextureManager.Load<Texture2D>(textureName.Value)` for a texture in
-`Characters/Farmer/`, then reads pixel data via `GetData(...)` into a new
-`baseTexture`. With a 1×1 dummy the copy succeeds but downstream consumers that
-index sprite rectangles get garbage. The server-side consumer is `MapService`
-(`mod/JunimoServer/Services/Map/MapService.cs`), which reflection-reads
-FarmerRenderer's `baseTexture` and `hairStylesTexture` and crops a 16×16 rect for
-the player-avatar export to the test/admin UI.
+This creates a real server-side dependency that is different from ordinary rendering-only textures.
 
-**Decision:** keep `Characters/Farmer/` (17 files). The savings are negligible
-against the rest of the texture set, and stripping it silently degrades the
-map/avatar export. The regex `Content/Characters/(?!Dialogue|schedules|Farmer).*`
-reflects this.
+The directory is small compared with the total visual-content footprint.
 
-### Texture pixel reads for game logic
+Therefore:
 
-Some vanilla code reads pixel data from textures (e.g. `FarmerRenderer`
-recoloring). On a headless host with rendering disabled this is dead work; with
-rendering enabled it produces visual garbage. Neither crashes given the
-interceptor. If a specific feature regresses, exclude its directory from the filter
-rather than reverting the whole change.
+```text
+Keep Characters/Farmer/
+```
 
-### Other mods on the server
+Do not remove it merely because the server normally runs without rendering.
 
-Third-party SMAPI mods may expect real textures. `AssetLoadPriority.Low` means mods
-that supply real assets via `e.LoadFrom(..., Low|Medium|High)` win. Mods that only
-`e.Edit` an asset edit the 1×1 dummy. Acceptable for a headless host; document in
-the admin docs when the change ships.
+If a future investigation proves that particular Farmer assets can be removed individually without affecting server functionality, they can be considered for narrower filtering later.
+
+That is not required for this optimization.
 
 ---
 
-## Related Files
+# 8. Preserve the existing manifest/filesystem relationship
 
-| File                                                                       | Role                                                       |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `tools/steam-service/SteamAuthService.cs`                             | `BuildSkipPatterns` — the `Content/`-prefixed skip regexes |
-| `tools/steam-service/SteamAuthService.cs`                             | `ShouldSkipFile` — applies the regexes to depot file names |
-| `tools/steam-service/SteamAuthService.cs`                              | `PruneContentManifest` — keeps `ContentHashes.json` in sync |
-| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `DoesAssetExist<T>()` — manifest check                     |
-| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `LoadImpl<T>()` — guards loads on `DoesAssetExist`         |
-| `decompiled/sdv-1.6.15-24356/StardewValley/Game1.cs`                  | `AddCharacterIfNecessary()` — unguarded portrait load      |
-| `decompiled/sdv-1.6.15-24356/StardewValley/AnimatedSprite.cs`          | `LoadTexture()` — sprite load (`DoesAssetExist` guarded)   |
-| `decompiled/sdv-1.6.15-24356/StardewValley/FarmerRenderer.cs`          | `textureChanged` — pulls `Characters/Farmer/*`             |
-| `mod/JunimoServer/ModEntry.cs`                                         | `ModService` auto-discovery + DI construction              |
-| `mod/JunimoServer/Services/ServerOptim/ServerOptimizer.cs`                 | Rendering disable + `NullDisplayDevice` install            |
-| `mod/JunimoServer.Shared/NullDisplayDevice.cs`                          | `LoadTileSheet` no-op                                      |
-| `mod/JunimoServer/Services/Map/MapService.cs`                      | Reflection-reads FarmerRenderer textures                   |
-| `mod/JunimoServer/Env.cs`                                               | `SERVER_FPS` — `0` (default) disables rendering            |
+Do not add another manifest-generation or manifest-filtering mechanism.
+
+The intended flow remains:
+
+```text
+Steam download
+      ↓
+ShouldSkipFile()
+      ↓
+unwanted content is skipped
+      ↓
+PruneContentManifest()
+      ↓
+ContentHashes.json removes entries for files not present
+```
+
+The interceptor must **not** edit:
+
+```text
+ContentHashes.json
+```
+
+The interceptor exists solely for the different class of failure:
+
+```text
+guarded game load
+    ↓
+existing ContentHashes protection
+
+unguarded Texture2D load
+    ↓
+SMAPI AssetRequested
+    ↓
+placeholder if the base-game XNB is absent
+```
+
+This separation must remain explicit in the implementation.
+
+---
+
+# 9. Verify the filter against the real manifest
+
+Before merging the expanded filter, use the actual:
+
+```text
+Content/ContentHashes.json
+```
+
+from the supported Stardew Valley version.
+
+For the currently targeted version, use the real SDV 1.6.15 content manifest rather than relying on an inferred inventory.
+
+Run every manifest entry through the same filtering logic used by:
+
+```text
+ShouldSkipFile()
+```
+
+Generate a validation report containing:
+
+* manifest entry count before filtering;
+* manifest entry count after filtering;
+* number of entries removed;
+* number of entries retained;
+* removed entries grouped by category/prefix;
+* retained entries grouped by category/prefix;
+* total files removed;
+* approximate bytes removed, where size information is available.
+
+Explicitly verify that these remain:
+
+```text
+Data/
+Strings/
+Characters/Dialogue/
+Characters/schedules/
+Characters/Farmer/
+Maps/
+VolcanoLayouts/
+ContentHashes.json
+```
+
+Explicitly verify that these are removed as intended:
+
+```text
+Portraits/
+LooseSprites/
+Animals/
+Buildings/
+TileSheets/
+TerrainFeatures/
+Minigames/
+Effects/
+Fonts/
+XACT/
+```
+
+Also verify:
+
+* `Characters/` visual assets outside the retained exceptions are removed;
+* no `Data/` path is accidentally matched by a broad regex;
+* no `Strings/` path is accidentally matched;
+* no `Maps/` path is accidentally matched;
+* localized variants continue to follow existing rules;
+* `ContentHashes.json` itself is never filtered out.
+
+This validation must use the **actual manifest contents**.
+
+Regex inspection alone is insufficient.
+
+---
+
+# 10. Verify an actual filtered Steam download
+
+Static manifest analysis is not sufficient.
+
+Perform an actual filtered download using the modified Steam service.
+
+After the download and `PruneContentManifest()` have completed, verify both directions of the relationship.
+
+## Retained-entry invariant
+
+For every retained `ContentHashes.json` entry:
+
+```text
+manifest entry
+      ↓
+corresponding Content/<entry> file exists
+```
+
+No retained manifest entry may point to a deliberately skipped file.
+
+## Skipped-file invariant
+
+For every intentionally skipped Content file:
+
+```text
+filtered depot file
+      ↓
+file absent from filesystem
+      ↓
+corresponding ContentHashes entry absent
+```
+
+This proves that:
+
+* `BuildSkipPatterns()`;
+* `ShouldSkipFile()`;
+* the actual Steam download;
+* and `PruneContentManifest()`
+
+remain synchronized in practice.
+
+No second pruning mechanism should be introduced to make this pass.
+
+---
+
+# 11. Runtime validation — headless mode
+
+The primary target configuration is:
+
+```text
+SERVER_FPS=0
+```
+
+or unset/default behavior equivalent to disabled rendering.
+
+Run the server against the actually stripped `Content/` directory.
+
+Verify:
+
+* server boots successfully;
+* no missing-XNB crash occurs during startup;
+* no `Failed to spawn NPC` errors occur because of stripped visual assets;
+* NPCs spawn normally;
+* Vincent can spawn;
+* locations can be created;
+* a real client can connect;
+* a real client can join normally;
+* multiplayer state operates normally;
+* a day can advance;
+* relevant gameplay functionality remains operational;
+* `FarmerRenderer`/`MapService` functionality remains intact;
+* the existing E2E suite passes.
+
+Headless operation is the primary optimization target.
+
+---
+
+# 12. Runtime validation — rendering-enabled mode
+
+Use:
+
+```text
+SERVER_FPS>0
+```
+
+against the **same stripped Content directory**.
+
+Verify:
+
+* server boots;
+* rendering-enabled initialization succeeds;
+* `MermaidHouse` can load;
+* locations containing stripped tilesheets can load;
+* direct texture requests reach the interceptor where applicable;
+* missing textures do not reproduce the original raw XNB failure;
+* rendering-enabled gameplay remains stable;
+* server execution does not crash merely because visual assets were intentionally stripped.
+
+Visually correct rendering is **not** a requirement.
+
+The requirement is runtime stability.
+
+A placeholder texture may result in meaningless or incorrect visuals. That is an accepted consequence of running a rendering-enabled server with aggressively stripped visual content.
+
+However, a visual defect must not be used to excuse a crash in actual server functionality.
+
+---
+
+# 13. Explicitly test texture consumers
+
+Do not treat successful placeholder creation as proof that every texture-dependent system is safe.
+
+Explicitly exercise retained server functionality involving texture dimensions or pixel data.
+
+At minimum test:
+
+```text
+FarmerRenderer
+MapService
+player-avatar/map export functionality
+```
+
+Verify that:
+
+* `Characters/Farmer/` assets remain available;
+* `FarmerRenderer` can initialize the relevant textures;
+* texture pixel reads succeed;
+* expected sprite dimensions are available;
+* `MapService` can perform its existing avatar/map operations;
+* no 1×1 placeholder is accidentally substituted for a texture that should have been retained.
+
+If another texture consumer is discovered during testing:
+
+1. determine whether it is actually required by server functionality;
+2. identify the exact asset/category;
+3. retain only that required asset/category;
+4. add a regression test where practical.
+
+Do not restore unrelated visual content.
+
+---
+
+# 14. Run the real E2E test suite
+
+Run:
+
+```text
+make test
+```
+
+The E2E tests must use real clients as they normally do.
+
+The test environment for the relevant server-side run must use the stripped content set.
+
+This is important because startup alone does not exercise:
+
+* actual multiplayer state;
+* location transitions;
+* NPC creation;
+* gameplay progression;
+* player rendering-related server functionality;
+* avatar/map functionality;
+* other code paths that may indirectly request assets.
+
+`make test` must pass with the optimized content set.
+
+If a test fails because a real server-required asset was stripped, identify and retain the smallest required asset/category.
+
+Do not disable the test merely because the asset optimization caused it to fail.
+
+---
+
+# 15. Measure the actual reduction
+
+Measure the deployed artifact before and after the optimization.
+
+Record at minimum:
+
+```text
+Docker image size before
+Docker image size after
+
+Content/ size before
+Content/ size after
+
+Content file count before
+Content file count after
+```
+
+Also report, where practical:
+
+```text
+visual/texture bytes removed
+audio bytes removed
+font bytes removed
+total Content bytes removed
+percentage reduction
+```
+
+The objective is a meaningful reduction in the deployed server footprint.
+
+The optimization should not be judged solely by the number of files removed.
+
+If the actual byte reduction is insignificant, reassess whether the additional filtering/interceptor complexity is justified.
+
+---
+
+# 16. Third-party SMAPI mod compatibility
+
+The interceptor is a fallback for stripped base-game assets.
+
+It is **not** a guarantee that arbitrary third-party server mods remain compatible with an aggressively stripped content installation.
+
+Using:
+
+```csharp
+AssetLoadPriority.Low
+```
+
+allows a mod that supplies a real asset through the normal asset-request pipeline at a higher priority to take precedence.
+
+However, mods that:
+
+* assume an original texture physically exists;
+* directly access the original file;
+* require specific dimensions/pixels;
+* edit an asset that has been replaced with a 1×1 placeholder;
+* otherwise depend on visual assets being present;
+
+may still be incompatible.
+
+This is acceptable for the dedicated-server optimization.
+
+Document the limitation.
+
+If a supported server-side mod requires a particular visual asset:
+
+1. identify the exact dependency;
+2. retain the smallest possible asset/category;
+3. add a regression test where appropriate.
+
+Do not weaken the entire filter.
+
+---
+
+# 17. Regression handling
+
+If any stripped asset causes a real regression:
+
+### Step 1 — Identify the dependency
+
+Determine the exact asset or category being consumed.
+
+### Step 2 — Determine whether it is genuinely required
+
+Distinguish between:
+
+```text
+server functionality requires asset
+```
+
+and:
+
+```text
+asset is merely being loaded unnecessarily
+```
+
+Do not retain assets merely because a load occurs if the resulting texture is not actually needed for server behavior.
+
+### Step 3 — Add the smallest exception
+
+Prefer:
+
+```text
+one required asset
+```
+
+over:
+
+```text
+entire directory
+```
+
+and prefer:
+
+```text
+one required directory
+```
+
+over:
+
+```text
+all visual content
+```
+
+### Step 4 — Add regression coverage
+
+Where practical, add a test that exercises the dependency.
+
+### Step 5 — Keep unrelated stripping
+
+Never respond to one required asset by restoring the entire visual/audio/font content set.
+
+The target is:
+
+```text
+maximum safe stripping
++
+minimum required exceptions
+```
+
+not:
+
+```text
+one regression
+→ restore all content
+```
+
+---
+
+# 18. Required implementation order
+
+The work must proceed in this order:
+
+## Phase 1 — Interceptor
+
+Implement:
+
+```text
+ContentInterceptor.cs
+```
+
+without yet relying on the expanded Steam filter.
+
+Verify:
+
+* graphics-device initialization safety;
+* `Portraits/Vincent`;
+* `MermaidHouse` with rendering enabled.
+
+## Phase 2 — Filter
+
+Update:
+
+```text
+BuildSkipPatterns()
+```
+
+with the approved `Content/`-prefixed patterns.
+
+## Phase 3 — Static manifest validation
+
+Run the new filtering logic against the actual supported `ContentHashes.json`.
+
+Produce the category/count report.
+
+## Phase 4 — Real filtered download
+
+Run the real Steam download.
+
+Verify:
+
+```text
+filesystem ↔ ContentHashes.json
+```
+
+in both directions.
+
+## Phase 5 — Runtime tests
+
+Run:
+
+```text
+SERVER_FPS=0
+SERVER_FPS>0
+```
+
+against the stripped content set.
+
+## Phase 6 — Functional/E2E validation
+
+Run:
+
+```text
+make test
+```
+
+using the stripped server environment.
+
+## Phase 7 — Measurement
+
+Record the actual Docker and Content reductions.
+
+## Phase 8 — Narrow regressions
+
+Only after observing real failures, add narrowly scoped exceptions.
+
+---
+
+# 19. Success criteria
+
+The implementation is complete only when **all** of the following are true:
+
+* [ ] Dedicated server boots with the reduced `Content/` set.
+* [ ] `ContentHashes.json` accurately reflects files actually present.
+* [ ] Every retained manifest entry has a corresponding file on disk.
+* [ ] Every intentionally skipped content file has no corresponding manifest entry.
+* [ ] `Portraits/Vincent` can be absent without causing NPC spawning to fail.
+* [ ] Vincent can spawn normally.
+* [ ] `MermaidHouse` can be created with its intentionally stripped tilesheet absent.
+* [ ] `SERVER_FPS=0` operates normally.
+* [ ] `SERVER_FPS>0` remains stable with the same stripped content set.
+* [ ] Stripped texture requests do not reproduce the original raw XNB failure.
+* [ ] NPCs spawn normally.
+* [ ] A real client connects successfully.
+* [ ] A real client can join normally.
+* [ ] A day can advance.
+* [ ] `FarmerRenderer` functionality remains intact.
+* [ ] `MapService` functionality remains intact.
+* [ ] Player-avatar/map export functionality remains intact.
+* [ ] `make test` passes.
+* [ ] The real supported `ContentHashes.json` has been validated against the filter.
+* [ ] An actual filtered Steam download has been validated against the pruned manifest.
+* [ ] Docker image size has been measured before and after.
+* [ ] `Content/` size has been measured before and after.
+* [ ] File-count reduction has been measured.
+* [ ] Texture/audio/font byte reduction has been measured where available.
+* [ ] Any required exceptions are narrow, justified, and regression-tested where practical.
+* [ ] No second manifest-filtering mechanism has been introduced.
+
+---
+
+# Related files
+
+| File                                                                   | Role                                                                   |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `tools/steam-service/SteamAuthService.cs`                              | `BuildSkipPatterns()` — content filtering                              |
+| `tools/steam-service/SteamAuthService.cs`                              | `ShouldSkipFile()` — applies filtering to depot paths                  |
+| `tools/steam-service/SteamAuthService.cs`                              | `PruneContentManifest()` — synchronizes manifest with downloaded files |
+| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `DoesAssetExist<T>()` — manifest existence check                       |
+| `decompiled/sdv-1.6.15-24356/StardewValley/LocalizedContentManager.cs` | `LoadImpl<T>()` — guarded content loading                              |
+| `decompiled/sdv-1.6.15-24356/StardewValley/Game1.cs`                   | `AddCharacterIfNecessary()` — unguarded portrait load                  |
+| `decompiled/sdv-1.6.15-24356/StardewValley/AnimatedSprite.cs`          | `LoadTexture()` — guarded character sprite load                        |
+| `decompiled/sdv-1.6.15-24356/StardewValley/FarmerRenderer.cs`          | Farmer texture/pixel-data consumer                                     |
+| `mod/JunimoServer/ModEntry.cs`                                         | `ModService` discovery/DI                                              |
+| `mod/JunimoServer/Services/ServerOptim/ServerOptimizer.cs`             | Rendering configuration                                                |
+| `mod/JunimoServer.Shared/NullDisplayDevice.cs`                         | Headless tilesheet behavior                                            |
+| `mod/JunimoServer/Services/Map/MapService.cs`                          | Farmer texture consumer                                                |
+| `mod/JunimoServer/Env.cs`                                              | `SERVER_FPS` behavior                                                  |
+| `mod/JunimoServer/Services/ServerOptim/ContentInterceptor.cs`          | Missing-texture fallback                                               |
+
+---
+
+# Final engineering principle
+
+Strip the dedicated-server content as aggressively as practical, but prove every retained dependency.
+
+Use the existing manifest pruning for guarded loads.
+
+Use the `Texture2D` interceptor only as a targeted safety net for unguarded texture requests.
+
+Do not use a placeholder to conceal a genuine server dependency on texture dimensions or pixel data.
+
+When a dependency is discovered, retain the smallest possible asset or category.
+
+The final state should therefore be:
+
+```text
+maximum safe content stripping
+        +
+existing manifest/filesystem synchronization
+        +
+targeted Texture2D fallback
+        +
+minimum required exceptions
+        +
+real runtime/E2E verification
+```
+
+and **not**:
+
+```text
+strip everything
+→ encounter crash
+→ restore everything
+```
