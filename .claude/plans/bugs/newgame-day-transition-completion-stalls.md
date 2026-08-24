@@ -19,7 +19,7 @@ This means the request is genuinely waiting for the new-day transition to finish
 
 The `/newgame` request waits for `ComputeDayTransitionComplete()`.
 
-That returns false while:
+That predicate has three false branches: mid-load (`gameMode == loadingMode`), intro/day-zero (`currentMinigame is Intro || Date.DayOfMonth == 0`), and the day-transition sync barrier. The observed evidence — playing game mode reached, transition already past the fade phase, day ≥ 1 — rules out the first two, leaving the barrier:
 
 ```text
 Game1.newDaySync != null

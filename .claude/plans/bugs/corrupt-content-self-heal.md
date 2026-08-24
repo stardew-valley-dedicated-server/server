@@ -123,6 +123,8 @@ Instead:
 
 This preserves availability while making the automatic repair best-effort when Steam itself is unavailable.
 
+Non-login failures (malformed manifest, disk I/O error, cancellation, unhandled task exception) need the same treatment: the background task must always reach a terminal state that releases the gate, so `init_stardew` cannot wait indefinitely. Decide per failure class whether it releases the gate (boot best-effort) or fails the server, and cover a non-login exception in the tests.
+
 ### 4. Validation scope
 
 `download` also fetches the Steamworks SDK depot (`Program.cs:395`, `DownloadAllAsync`).

@@ -63,6 +63,7 @@ Add a diagnostics probe, either to `/diagnostics/state` or as a log entry on eac
 Record:
 
 * `Game1.newDay`
+* `Game1.gameMode`, `Game1.currentMinigame`, `Game1.Date.DayOfMonth` (to confirm the other two `ComputeDayTransitionComplete()` false branches are not the cause)
 * `fadeToBlackAlpha`
 * `newDaySync.hasInstance()`
 * `newDaySync.hasFinished()`

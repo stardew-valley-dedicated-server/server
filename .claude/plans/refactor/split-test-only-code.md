@@ -45,7 +45,7 @@ Code used by both production and tests remains in the production service files:
 
 * Re-check the move list at execution time.
 * Grep `ApiService.TestEndpoints.cs` and the affected `/test/*` dispatchers to confirm that every moved method is still reachable through its expected test endpoint.
-* Confirm the moved methods/properties have **no production callers** outside the test endpoint path.
+* Confirm the moved *methods* have **no production callers** outside the test endpoint path. The diagnostic counter properties are excluded from this check — the production sweep still writes them (verified separately below); only `/test/npc_sprite_integrity` reads them.
 * Confirm no test-only implementation was inadvertently left in the affected production files.
 * Confirm the production `NpcSpriteIntegrityService` sweep still writes its diagnostic counters unchanged.
 * `dotnet build mod/JunimoServer/JunimoServer.csproj` clean.

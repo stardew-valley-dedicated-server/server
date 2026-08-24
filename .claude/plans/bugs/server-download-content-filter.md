@@ -422,6 +422,8 @@ placeholder if the base-game XNB is absent
 
 This separation must remain explicit in the implementation.
 
+Upgrade caveat: `PruneContentManifest()` only drops manifest entries for files that are *absent*; it does not delete files already on disk. On a persistent volume, a base-game file downloaded before the skip pattern existed will remain on disk and in `ContentHashes.json`, so the footprint reduction and skipped-file invariant only hold on a clean download. Decide at sign-off whether to require a clean volume or add a one-time cleanup pass for base-game files that now match `ShouldSkipFile()`.
+
 ---
 
 # 9. Verify the filter against the real manifest
