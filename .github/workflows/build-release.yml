@@ -131,6 +131,32 @@ jobs:
               }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
           fi
 
+  stamp-issue-versions:
+    name: Stamp Issue Versions
+    needs: [release-please, build-and-publish]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Stamp issues with release version
+        uses: ./.github/actions/stamp-issue-versions
+        with:
+          # Org issue-field id for "Release version". Deleting and recreating a field
+          # changes its id — this input must then be updated.
+          field-id: "45984818"
+          field-name: Release version
+          value: ${{ needs.release-please.outputs.version }}
+          channel: release
+          head-ref: ${{ needs.release-please.outputs.tag_name }}
+          tag-match: sdvd-server-v*
+
   build-and-publish-steam-service:
     name: Build Steam Service
     needs: release-please
