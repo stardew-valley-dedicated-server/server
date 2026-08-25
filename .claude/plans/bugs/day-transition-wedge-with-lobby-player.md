@@ -176,5 +176,5 @@ Check the recording before adding broader instrumentation.
 ## Related
 
 * `tests-password-config-shared-with-exclusive-class.md` — the test-side collision that creates the precondition in CI. Fixing it reduces exposure but does not fix the underlying server bug.
-* `newgame-day-transition-never-completes.md` — same symptom family (transition never completes), but a different mechanism: the game thread remains healthy and there are zero players.
+* `newgame-day-transition-completion-stalls.md` — same symptom family (transition never completes), but a different mechanism: the game thread remains healthy and there are zero players.
 * `tests-flake-cropsaver-day-advance.md` Mode 1 — also “day doesn't happen,” but the clock freezes before any transition starts. Distinct mechanism.
