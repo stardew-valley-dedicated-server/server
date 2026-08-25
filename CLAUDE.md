@@ -1,56 +1,40 @@
-# CLAUDE.md
+# JunimoServer
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+JunimoServer is a Stardew Valley dedicated-server mod providing 24/7 Docker hosting, an HTTP API, WebSocket control, and chat commands.
 
-## Project Overview
+## Architecture
 
-JunimoServer is a Stardew Valley dedicated server mod enabling 24/7 multiplayer hosting via Docker. The mod runs inside the game via SMAPI, exposing an HTTP API, WebSocket, and chat commands for external control.
+- The server runs as a SMAPI mod inside Stardew Valley.
+- **Clients are unmodded vanilla clients.** Server-side Harmony patches and asset edits affect only the server process. Client-visible behavior must use server-authoritative state or vanilla network messages.
+- `mod/JunimoServer.Shared/` is shared by the server mod and E2E test-client mod.
+- E2E infrastructure uses xUnit v3, Testcontainers, pooled game clients/servers, and a Vue/TypeScript monitoring UI.
 
-**Players connect with unmodded vanilla clients.** All mod code — Harmony patches, asset edits — exists only in the server process; per-player client behavior can only ride net-synced server-authoritative state or vanilla network messages.
+## Rules
 
-**Stack**: C# mod (net6.0/SMAPI) + Docker containers + xUnit v3 E2E tests (net10.0) + Vue/TypeScript test UI + VNC for visual debugging. Test infrastructure includes client pooling, server pre-start, and WebSocket-based real-time updates.
+Detailed always-on and path-specific rules live in `.claude/rules/`. Read `.claude/rules/README.md` for the rule hierarchy and index.
 
-## Core Principles
+- Never write to stdout from test assemblies; it corrupts xUnit v3 IPC. Use `ITestOutputHelper` or `IMessageSink`.
+- Create Testcontainers networks with `NetworkBuilder`; never create them via Docker CLI first.
+- Never hardcode `GamePath` in `.csproj`; it comes from `.env` via `Directory.Build.props`.
 
-Always-on behavioral rules live in `.claude/rules/universal/` (loaded every session). Code-area rules live in `.claude/rules/*.md` (gated by `paths:` frontmatter). Read `.claude/rules/README.md` for the layer model and full index.
+## Important Paths
 
-## Critical Paths
+- `mod/JunimoServer/` — main SMAPI mod
+- `mod/JunimoServer.Shared/` — shared server/test-client code
+- `tests/JunimoServer.Tests/` — E2E tests and infrastructure
+- `tests/JunimoServer.TestRunner/` — test-runner host process
+- `tests/test-client/` — SMAPI E2E client mod
+- `tests/test-ui/` — test monitoring UI
+- `decompiled/sdv-1.6.15-24356/` — gitignored Stardew Valley sources for reference; unavailable from worktrees unless present there
 
-- `mod/JunimoServer/`: main SMAPI mod (C#, net6.0)
-- `mod/JunimoServer/ModEntry.cs`: entry point, service registration
-- `mod/JunimoServer/Services/`: all mod services
-- `mod/JunimoServer.Shared/`: code shared between the server mod and the test-client mod
-- `tests/JunimoServer.Tests/`: E2E tests (xUnit v3, net10.0)
-- `tests/JunimoServer.Tests/Infrastructure/`: test resource broker, server/client pooling
-- `tests/JunimoServer.TestRunner/`: custom test-runner host process (Exe; not the test assembly the stdout prohibition applies to)
-- `tests/test-client/`: SMAPI mod for E2E client automation
-- `tests/test-ui/`: Vue.js test monitoring UI
-- `docker/Dockerfile`: multi-stage server image build
-- `Directory.Build.props`: centralizes `GAME_PATH` for all .csproj files
-- `decompiled/sdv-1.6.15-24356/`: decompiled Stardew Valley sources (reference only) — gitignored, so it exists only in the main checkout; from a worktree, read it there
+## Commands
 
-## Prohibitions
+- `make help` — available Make targets
+- `make test FILTER=ClassName` — run specific E2E tests
+- `make test-llm` — structured JSONL test output for AI debugging
+- `make build-test-ui` — type-check/build the test UI
+- `dotnet build mod/JunimoServer/JunimoServer.csproj` — build the mod (`GAME_PATH` required)
 
-- Do NOT write to stdout in test assemblies. It corrupts xUnit v3's IPC and breaks test discovery. Use `ITestOutputHelper` or `IMessageSink` instead.
-- Do NOT create Docker networks via CLI then wrap with `NetworkBuilder`. Testcontainers will conflict. Use `NetworkBuilder` directly.
-- Do NOT hardcode `GamePath` in .csproj files. It comes from `.env` via `Directory.Build.props`.
+## Debugging Tests
 
-## Build & Run Commands
-
-Run `make help` or read the `Makefile` for all available targets (build, test, deploy, docs, etc.). Key patterns:
-
-- `make test FILTER=ClassName` to run specific E2E tests
-- `make test-llm` for structured JSONL output optimized for AI debugging
-- `dotnet build mod/JunimoServer/JunimoServer.csproj` to build the mod only (requires `GAME_PATH` in `.env`)
-- `make build-test-ui` to verify the test UI builds — it runs `vue-tsc`, which catches type errors plain `vite build` misses
-
-## Test Failure Debugging Workflow
-
-When tests fail, follow the runbook at `docs/developers/testing/test-failure-runbook.md` (6 steps; do not skip or guess).
-
-## Conventions
-
-- **Commits**: Conventional commits enforced by commitlint (`feat:`, `fix:`, `perf:`, `docs:`, `test:`, `chore:`, `refactor:`, `ci:`, `build:`)
-- **File naming**: follow conventions already established in the project (e.g. `.env.test`, not `.test.env`)
-- **Decompiled sources**: Reference at `decompiled/sdv-1.6.15-24356/` for tracing game mechanics
-- **Helpers are integration-tested, not unit-tested**: `tests/JunimoServer.Tests/` is E2E-first — verification of new helper code (e.g., wait-tracing primitives) is done by inspecting the JSONL output of a real run, not by isolated unit tests. Sole exception: deterministic in-memory guards for timing races a live run cannot reliably reproduce (e.g., `ExclusiveGateOwnershipTests`, a ~1ms double-release window).
+When an E2E test fails, follow `docs/developers/testing/test-failure-runbook.md` exactly; do not skip steps or guess.

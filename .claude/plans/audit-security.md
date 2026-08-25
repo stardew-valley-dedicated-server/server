@@ -13,24 +13,6 @@ Focused analysis on exploitation, cheating, and abuse vectors. Assumes a malicio
 - **Risk level:** Critical for modified clients; moderate for vanilla clients.
 - **Fix:** Remove `Program.enableCheats = true`, or add a Harmony prefix on `DebugCommands.TryHandle` that rejects debug commands unless from server console.
 
-### S2. `farmerDelta` (type 0) allowed for unauthenticated players -- full farmer state manipulation
-- **File:** `Services/PasswordProtection/PasswordProtectionService.cs:200-204`
-- **What:** The password protection whitelist allows `farmerDelta` messages from unauthenticated players. The comment says "this contains farmer creation data (name, appearance)" but `farmerDelta` carries **all** Farmer NetField deltas. A modified client can craft deltas to modify:
-  - **Money** (`_money` field)
-  - **Inventory** (`Items` -- inject any item including Prismatic Shards, Galaxy Swords)
-  - **Skills** (`experiencePoints` -- set all to level 10)
-  - **Health/Stamina** (`health`, `maxHealth`, `stamina`, `maxStamina`)
-  - **Position** (`position` -- escape the lobby)
-  - **`isCustomized`** -- set to `false` repeatedly to prevent auth timeout from starting (PasswordProtectionService.cs:363 checks this)
-- **Critical detail:** `farmerDelta` is a **broadcast type** (`Multiplayer.isClientBroadcastType` returns true for type 0). The server rebroadcasts the crafted delta to ALL connected players, propagating corrupted state.
-- **Exploitation steps:**
-  1. Connect to password-protected server
-  2. Before authenticating, craft a `farmerDelta` message setting `_money = 999999999`
-  3. Server allows it through whitelist and applies via `readObjectDelta`
-  4. Server rebroadcasts to all players
-  5. Authenticate normally. Money is set.
-- **Fix:** Block `farmerDelta` entirely for unauthenticated players except during the `IsNewPlayer` character creation phase. Or implement a sub-field filter that only allows appearance fields.
-
 ### S3. API has no authentication by default -- all endpoints publicly accessible
 - **File:** `Env.cs:54` -- `ApiKey` defaults to `""`
 - **File:** `Services/Api/ApiService.cs:408` -- `_authEnabled = !string.IsNullOrEmpty(Env.ApiKey)` = `false`
@@ -153,11 +135,6 @@ Focused analysis on exploitation, cheating, and abuse vectors. Assumes a malicio
   - `Game1.bannedUsers` is a runtime dictionary -- bans may not persist across restarts
 - **Fix:** Consider IP-based bans as a supplement. Ensure bans are persisted to save data.
 
-### S20. `playerIntroduction` (type 2) replayable
-- **File:** `Services/PasswordProtection/PasswordProtectionService.cs:217-219`
-- **What:** No check prevents multiple `playerIntroduction` messages from the same connection. This is a broadcast type -- replayed introductions go to all players. Could inject duplicate farmer state or crash clients.
-- **Fix:** Track whether a player has already sent their introduction and reject duplicates.
-
 ### S21. Chat spam via `!login`/`!help` prefix
 - **File:** `Services/PasswordProtection/PasswordProtectionService.cs:305`
 - **What:** `IsAllowedChatCommand` uses `StartsWith("!login")` and `StartsWith("!help")`. Messages like `!login SPAM_TEXT_HERE` or `!help BUY CHEAP GOLD AT...` pass the filter and are rebroadcast to all players.
@@ -174,25 +151,29 @@ Focused analysis on exploitation, cheating, and abuse vectors. Assumes a malicio
 ## 4. Recommended Security Hardening (Priority Order)
 
 ### Immediate (before next release)
-1. **Block `farmerDelta` for unauthenticated players** (S2) -- this is the most exploitable vulnerability
-2. **Require API_KEY when API is enabled** (S3) or disable API by default
-3. **Remove CORS wildcard** (S4)
-4. **Remove `Program.enableCheats = true`** (S1) or add a debug command blocker
-5. **Prevent `!login` password rebroadcast** (S8)
+1. **Require API_KEY when API is enabled** (S3) or disable API by default
+2. **Remove CORS wildcard** (S4)
+3. **Remove `Program.enableCheats = true`** (S1) or add a debug command blocker
+4. **Prevent `!login` password rebroadcast** (S8)
 
 ### Short-term (next 1-2 releases)
-6. **Filter outgoing messages to unauthenticated players** (S9)
-7. **Fix name-based command targeting** (S10, S11) -- join args for spaces, handle ambiguity
-8. **Protect admin operators from admin-on-admin attacks** (S7)
-9. **Use constant-time comparison for API key** (S13)
-10. **Add API rate limiting** (S14)
-11. **Use server-side timestamp for auth timeout** (S17)
+5. **Filter outgoing messages to unauthenticated players** (S9)
+6. **Fix name-based command targeting** (S10, S11) -- join args for spaces, handle ambiguity
+7. **Protect admin operators from admin-on-admin attacks** (S7)
+8. **Use constant-time comparison for API key** (S13)
+9. **Add API rate limiting** (S14)
+10. **Use server-side timestamp for auth timeout** (S17)
 
 ### Medium-term
-12. **Implement server-side game protocol validation** (S6) -- at minimum for `farmerDelta` money/inventory
-13. **Respect lobby privacy settings** (S5)
-14. **Persist bans to save data** (S19)
-15. **Add command rate limiting** (S15, S16)
-16. **Block `playerIntroduction` replay** (S20)
-17. **Prevent chat spam via auth command prefixes** (S21)
-18. **Add admin check for invite code commands** (S22)
+11. **Implement server-side game protocol validation** (S6) -- at minimum for `farmerDelta` money/inventory
+12. **Respect lobby privacy settings** (S5)
+13. **Persist bans to save data** (S19)
+14. **Add command rate limiting** (S15, S16)
+15. **Prevent chat spam via auth command prefixes** (S21)
+16. **Add admin check for invite code commands** (S22)
+
+---
+
+## Extracted to standalone plans (removed from this audit)
+
+- **S2** (`farmerDelta` allowed for unauthenticated players) and **S20** (`playerIntroduction` replay) -- fully covered by `.claude/plans/features/security-farmerdelta-auth-filter.md`.

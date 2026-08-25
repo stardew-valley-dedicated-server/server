@@ -1,8 +1,14 @@
-# `.claude/rules/` — Index
+# Rule Index
 
-Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load every session. `rules/*.md` (L2) load when a `paths:` glob matches. Authoring guidance: `.claude/skills/extract-session-rules/SKILL.md`.
+Rules are layered:
 
-`paths:` semantics: gitignore-style globs, OR'd together. A rule loads when an edited path matches any entry.
+- `CLAUDE.md` — repository-wide guidance.
+- `.claude/rules/universal/*.md` — always loaded.
+- `.claude/rules/*.md` — loaded when an edited path matches `paths:`.
+
+`paths:` uses gitignore-style globs; multiple patterns are OR'd.
+
+For rule authoring/extraction, see `.claude/skills/extract-session-rules/SKILL.md`.
 
 ## L1 — `universal/` (always-on)
 
@@ -48,10 +54,12 @@ Project policy is layered. `CLAUDE.md` (L0) and `rules/universal/*.md` (L1) load
 | `drain-before-consume-disposal.md` | `tests/JunimoServer.TestRunner/**`, test `Containers/**` | Drain producer streams explicitly before consumer disposal — `await using` ordering isn't enough |
 | `ffmpeg-pixel-measurement.md` | `ContainerRecorder.cs`, `TestOverlay.cs`, `RenderingTests.cs`, `tools/.playground/recording-validator/**` | Measure ffmpeg-rendered pixels with per-column `crop=1:H` + rgb24, not a full-frame `format=gray` raw scan — the raw stream's stride drifts and reports phantom edges |
 | `follow-true-created-state-eof.md` | test `Containers/**`, `Helpers/Docker*.cs` | `GetContainerLogsAsync(Follow=true)` returns immediate EOF for a `Created` (not yet running) container — retry on first-read EOF with no prior reads |
+| `github-run-script-evaluates-expressions.md` | `.github/**` | GitHub evaluates `${{ }}` inside `run:` script text (even in comments) at compose time — pass data via `env:`/`$VAR`, never write the literal token in a run body |
 | `glibc-execstack-dlopen.md` | `docker/**`, `tools/steam-service/**` | glibc >= 2.41 refuses to dlopen executable-stack libs — clear the ELF flag via `ExecstackPatcher`, never the `glibc.rtld.execstack` tunable (deadlocks .NET under emulated amd64) |
 | `harmony-patch-reachability.md` | `mod/JunimoServer/**` | Three reachability bounds on a Harmony patch: the registering constructor must complete, patches never reach farmhand clients, and the target's shape/timing must admit a patch (else source-patch SMAPI) |
 | `host-automation.md` | `AlwaysOnServer/`, `HostAutomation/`, `Lobby/`, `CabinManager/` | Decompiled-first; `hasDedicatedHost = false`, `netReady` formula, festival repro caveat, draw-coupled FarmEvent completion, host farmhouse internal-only |
 | `image-runtime-deps-must-be-explicit.md` | `docker/**/Dockerfile*` | Removing image packages can silently drop the app's transitive runtime deps (libicu) — boot the image after package removals; declare real runtime deps explicitly with a consumer comment |
+| `local-composite-action-needs-head-checkout.md` | `.github/**` | A local `uses: ./…` action must exist in the checked-out tree; under `pull_request_target` (base workflow, head checkout) adding one reds every in-flight PR until it rebases — inline or pin `@ref` to avoid |
 | `master-mail-gates-world-state.md` | `SaveImport/`, `GameLoader/` | World geometry (CC/greenhouse/island) is gated on `MasterPlayer.mailReceived`/`eventsSeen` (per-Farmer, NOT team-stored) — a master swap must copy mail/events or the world reverts |
 | `masterplayer-is-player-on-server.md` | `mod/JunimoServer/**` | `multiplayerMode = 2` on this server makes `IsMasterGame` always true, so `Game1.MasterPlayer` always resolves to `Game1.player` (same `Farmer`) — reject any bug/design that hinges on host-vs-master divergence |
 | `minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md` | `tests/**/*.cs` | `docker exec` degrades ~24× under parallel load — one in-shell wait loop, not N C# polls; cut diagnostic execs with no consumer |
