@@ -128,29 +128,55 @@ jobs:
           allow_forks: false
 
       # deploy-pages replaces the WHOLE site, so a half not rebuilt this run is restored from
-      # the currently-live site (the last github-pages artifact deploy-docs uploaded). The next
-      # step extracts the inner artifact.tar; ignore = tolerate it being absent/expired.
-      - name: Download live site snapshot
-        uses: dawidd6/action-download-artifact@d63b86af1b34672e53c440b1b83979861906bad7 # v24
-        with:
-          workflow: deploy-docs.yml
-          # Only runs on the default branch actually deploy to live Pages — a dispatch
-          # on a feature branch can leave a github-pages artifact that was never deployed.
-          branch: ${{ github.event.repository.default_branch }}
-          name: github-pages
-          path: live
-          if_no_artifact_found: ignore
-          allow_forks: false
+      # the currently-live site. That snapshot lives in R2 (durable, no lifecycle rule),
+      # mirrored by "Persist live snapshot to R2" after every successful deploy.
+      # Unconfigured R2 is tolerated: live/site stays empty and a full-build run still deploys;
+      # only a partial deploy then hits the guard below.
+      - name: Restore live snapshot from R2
+        id: restore
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          # Bucket kept as a var, not a secret: the name has a hyphen and GitHub's secret
+          # masker would turn every `-` in the whole log into *** (see e2e-tests.yml).
+          R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
+        run: |
+          # No `-e`: a sync error must NOT abort the step. A full-rebuild run (both halves
+          # built this run) doesn't need the snapshot and must still deploy even if R2 is
+          # down. The decide step reads restore_status to tell a genuine miss (ok/skipped,
+          # so the half truly isn't live) from a read failure (failed, so we're blind).
+          set -uo pipefail
+          mkdir -p live/site
+          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
+             || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
+            echo "::warning::R2 not configured — skipping live-snapshot restore."
+            echo "restore_status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! command -v aws >/dev/null 2>&1; then
+            echo "::warning::aws CLI not found on runner — skipping live-snapshot restore."
+            echo "restore_status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if aws s3 sync "s3://${R2_BUCKET}/" live/site/ \
+               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress; then
+            echo "restore_status=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::R2 live-snapshot read failed — a partial deploy will be refused by the decide step below."
+            echo "restore_status=failed" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restore missing halves and decide deploy
         id: check
+        env:
+          RESTORE_STATUS: ${{ steps.restore.outputs.restore_status }}
         run: |
           set -euo pipefail
 
-          # Extract the live snapshot (upload-pages-artifact tars uncompressed: tar -cvf).
-          if [ -f live/artifact.tar ]; then
-            mkdir -p live/site && tar -xf live/artifact.tar -C live/site
-          fi
+          # live/site holds the last deployed site, restored from R2 by the step above
+          # (empty if R2 was unconfigured or the restore skipped).
 
           # A dir counts as having content only if it holds at least one entry.
           has_root() { [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null | grep -v '^preview$')" ]; }
@@ -187,33 +213,78 @@ jobs:
           echo "latest_src=$LATEST_SRC" >> "$GITHUB_OUTPUT"
           echo "preview_src=$PREVIEW_SRC" >> "$GITHUB_OUTPUT"
 
-          # Latest (site root) is required: deploy-pages replaces the whole site, so deploying
-          # without it would wipe the live root. If it's neither built this run nor recoverable
-          # from the live snapshot (artifact expired after >14d quiet), fail loudly rather than
-          # publish an empty root — re-run with rebuild_latest=true to repopulate it.
+          # deploy-pages replaces the whole site, so a half we can't obtain must not be
+          # published — that would wipe it live. A missing half is only safe to treat as
+          # genuinely-absent when the snapshot read succeeded or was config-skipped; a restore
+          # *failure* leaves us blind, so refuse (retry) rather than risk wiping a live half.
+          # A full-rebuild run never reaches these branches, so an R2 outage can't block it.
           if [ "$LATEST_SRC" = none ]; then
-            echo "::error::Latest docs missing and not recoverable from the live site (artifact likely expired)."
-            echo "::error::Refusing to deploy — that would wipe the live root. Re-run with rebuild_latest=true."
+            if [ "${RESTORE_STATUS:-}" = failed ]; then
+              echo "::error::Latest half not built this run and the R2 snapshot read failed (see warning above)."
+              echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe the live root."
+            else
+              echo "::error::Latest docs missing and absent from the R2 live snapshot (empty bucket or R2 unconfigured)."
+              echo "::error::Refusing to deploy — that would wipe the live root. Re-run with rebuild_latest=true."
+            fi
             exit 1
           fi
           if [ "$PREVIEW_SRC" = none ]; then
+            if [ "${RESTORE_STATUS:-}" = failed ]; then
+              echo "::error::Preview half not built this run and the R2 snapshot read failed (see warning above)."
+              echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe the live preview."
+              exit 1
+            fi
             echo "::warning::Deploying LATEST ONLY — dist/preview/ absent this deploy."
           fi
 
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      # The backfill above re-downloads this artifact, so it must outlive a deploy gap.
-      # Default 1d is too short; 14d matches the docs-latest / docs-preview window.
+      # Consumed by deploy-pages within this run; durable cross-run recovery is R2, not this
+      # artifact, so default retention is fine.
       - name: Upload merged artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
-          retention-days: 14
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      # Mirror the just-deployed site to R2 (durable, no lifecycle rule) so the next run can
+      # restore whichever half it doesn't rebuild. Gated on success() alone: deploy-pages
+      # succeeds only when it actually published to live Pages (the github-pages environment's
+      # protection rules decide which refs may), so the snapshot always equals what's live —
+      # this fires for both default-branch and release-tag deploys. --delete keeps it byte-exact.
+      - name: Persist live snapshot to R2
+        if: success()
+        # The deploy already published; a snapshot-write failure must not red the run or
+        # suppress the summary/notification below. It leaves the previous snapshot in place
+        # (identical for any half unchanged this run), so recovery barely degrades.
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
+        run: |
+          set -uo pipefail
+          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
+             || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
+            echo "::warning::R2 not configured — live snapshot NOT persisted. Recovery on the next partial deploy will fail until this is set."
+            exit 0
+          fi
+          if ! command -v aws >/dev/null 2>&1; then
+            echo "::warning::aws CLI not found on runner — live snapshot NOT persisted."
+            exit 0
+          fi
+          if aws s3 sync dist/ "s3://${R2_BUCKET}/" \
+               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress --delete; then
+            echo "Live snapshot updated in R2."
+          else
+            echo "::warning::Failed to persist live snapshot to R2 — the next partial deploy may recover from a stale snapshot."
+          fi
 
       - name: Build summary
         run: |
