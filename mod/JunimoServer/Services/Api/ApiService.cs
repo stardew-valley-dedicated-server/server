@@ -5318,7 +5318,7 @@ public partial class ApiService : ModService
 
     private string GetScalarHtml()
     {
-        return $@"<!DOCTYPE html>
+        return @"<!DOCTYPE html>
 <html>
 <head>
     <title>Stardew Dedicated Server API</title>
@@ -5326,7 +5326,7 @@ public partial class ApiService : ModService
     <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
 </head>
 <body>
-    <script id=""api-reference"" data-url=""http://localhost:{Env.ApiPort}/swagger/v1/swagger.json""></script>
+    <script id=""api-reference"" data-url=""/swagger/v1/swagger.json""></script>
     <script src=""https://cdn.jsdelivr.net/npm/@scalar/api-reference""></script>
 </body>
 </html>";
