@@ -5318,9 +5318,6 @@ public partial class ApiService : ModService
 
     private string GetScalarHtml()
     {
-        // The spec URL must be relative: data-url is fetched by the viewer's browser, so an
-        // absolute localhost URL only works when the browser runs on the server itself and
-        // breaks LAN/reverse-proxy access (plus mixed content when proxied over HTTPS).
         return @"<!DOCTYPE html>
 <html>
 <head>
