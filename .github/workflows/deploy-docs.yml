@@ -162,7 +162,21 @@ jobs:
           fi
           if aws s3 sync "s3://${R2_BUCKET}/" live/site/ \
                --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress; then
-            echo "restore_status=ok" >> "$GITHUB_OUTPUT"
+            # The persist step writes a `.snapshot-complete` marker LAST, after a full mirror.
+            # Its absence beside non-empty content means the previous persist was interrupted
+            # mid-sync (aws s3 sync isn't atomic), so the snapshot is partial — treat that as a
+            # read failure so a single-half run refuses rather than deploying a truncated half.
+            # An empty bucket (never seeded) has no marker but nothing to be partial about: ok.
+            if [ -z "$(ls -A live/site 2>/dev/null)" ]; then
+              echo "restore_status=ok" >> "$GITHUB_OUTPUT"
+            elif [ -f live/site/.snapshot-complete ]; then
+              echo "restore_status=ok" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::R2 snapshot has content but no completion marker — previous persist was interrupted; a partial deploy will be refused."
+              echo "restore_status=failed" >> "$GITHUB_OUTPUT"
+            fi
+            # Never let the marker leak into the merged/deployed site.
+            rm -f live/site/.snapshot-complete
           else
             echo "::warning::R2 live-snapshot read failed — a partial deploy will be refused by the decide step below."
             echo "restore_status=failed" >> "$GITHUB_OUTPUT"
@@ -214,10 +228,21 @@ jobs:
           echo "preview_src=$PREVIEW_SRC" >> "$GITHUB_OUTPUT"
 
           # deploy-pages replaces the whole site, so a half we can't obtain must not be
-          # published — that would wipe it live. A missing half is only safe to treat as
-          # genuinely-absent when the snapshot read succeeded or was config-skipped; a restore
-          # *failure* leaves us blind, so refuse (retry) rather than risk wiping a live half.
-          # A full-rebuild run never reaches these branches, so an R2 outage can't block it.
+          # published — that would wipe it live. A half is safe to ship only when it's built
+          # this run, restored intact, or confirmed genuinely absent by a successful read (ok);
+          # a failed/partial/skipped read leaves us blind and refuses below. A full-rebuild run
+          # never reaches these branches, so an R2 outage can't block it.
+
+          # A failed/partial restore can still leave live/site with SOME content, so a half can
+          # read as `live` off an incomplete snapshot. Deploying it would publish a truncated
+          # half and --delete the live files that didn't restore. Refuse whenever any half we'd
+          # ship was sourced from a restore we couldn't trust.
+          if [ "${RESTORE_STATUS:-}" = failed ] && { [ "$LATEST_SRC" = live ] || [ "$PREVIEW_SRC" = live ]; }; then
+            echo "::error::R2 snapshot restore was incomplete — a restored half may be truncated."
+            echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe a live half."
+            exit 1
+          fi
+
           if [ "$LATEST_SRC" = none ]; then
             if [ "${RESTORE_STATUS:-}" = failed ]; then
               echo "::error::Latest half not built this run and the R2 snapshot read failed (see warning above)."
@@ -229,12 +254,17 @@ jobs:
             exit 1
           fi
           if [ "$PREVIEW_SRC" = none ]; then
-            if [ "${RESTORE_STATUS:-}" = failed ]; then
-              echo "::error::Preview half not built this run and the R2 snapshot read failed (see warning above)."
-              echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe the live preview."
+            # Deploying LATEST ONLY wipes any preview the live site currently has, so it's only
+            # safe when we've positively CONFIRMED the live site has no preview. Only a
+            # successful restore (ok) confirms that — the snapshot is byte-exact with live via
+            # --delete. A failed read or an unconfigured/skipped restore leaves us blind, so
+            # refuse rather than risk wiping a live preview.
+            if [ "${RESTORE_STATUS:-}" != ok ]; then
+              echo "::error::Preview half not built this run and its absence from the live site is unconfirmed (restore: ${RESTORE_STATUS:-unknown})."
+              echo "::error::Refusing to deploy LATEST ONLY — that could wipe a live preview. Retry once R2 is reachable, or re-run with rebuild_preview=true."
               exit 1
             fi
-            echo "::warning::Deploying LATEST ONLY — dist/preview/ absent this deploy."
+            echo "::warning::Deploying LATEST ONLY — preview genuinely absent from the confirmed R2 snapshot."
           fi
 
       - name: Setup Pages
@@ -279,11 +309,21 @@ jobs:
             echo "::warning::aws CLI not found on runner — live snapshot NOT persisted."
             exit 0
           fi
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          # Clear the completion marker BEFORE mirroring so the snapshot is marked incomplete
+          # for the whole write window: if this step is interrupted mid-sync, no marker remains
+          # and the next restore treats the partial snapshot as unusable instead of deploying it.
+          aws s3 rm "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1 || true
           if aws s3 sync dist/ "s3://${R2_BUCKET}/" \
-               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress --delete; then
-            echo "Live snapshot updated in R2."
+               --endpoint-url "$endpoint" --no-progress --delete; then
+            # Mirror succeeded — write the marker LAST to certify the snapshot is complete.
+            if printf 'ok' | aws s3 cp - "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1; then
+              echo "Live snapshot updated in R2."
+            else
+              echo "::warning::Snapshot mirrored but completion marker write failed — the next partial deploy will refuse until the next successful persist."
+            fi
           else
-            echo "::warning::Failed to persist live snapshot to R2 — the next partial deploy may recover from a stale snapshot."
+            echo "::warning::Failed to persist live snapshot to R2 — the next partial deploy will refuse (no completion marker) until the next successful persist."
           fi
 
       - name: Build summary
