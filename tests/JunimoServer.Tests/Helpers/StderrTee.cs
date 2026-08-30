@@ -63,6 +63,15 @@ internal static class StderrTee
             ToFile(f => f.WriteLine(value));
         }
 
+        // TextWriter routes WriteLine() and the span overloads through this;
+        // the base falls back to one Write(char) per character, each a
+        // separate console lock and file flush.
+        public override void Write(char[] buffer, int index, int count)
+        {
+            console.Write(buffer, index, count);
+            ToFile(f => f.Write(buffer, index, count));
+        }
+
         public override void Flush()
         {
             console.Flush();

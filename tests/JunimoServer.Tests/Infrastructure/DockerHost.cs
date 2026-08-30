@@ -620,7 +620,7 @@ public sealed class DockerHost : IAsyncDisposable
                 catch (Exception healEx)
                 {
                     // The heal has no cancellation token, so nothing here is a cooperative
-                    // cancel; any throw is a harness defect and is recorded with its stack.
+                    // cancel; the throw is recorded with its stack.
                     // The fault still resolves as a recoverable blip below — the next
                     // container op re-tries the daemon forward through the normal seam.
                     TestLog.Test($"[ssh] daemon forward heal threw on '{Id}': {healEx.Message}");

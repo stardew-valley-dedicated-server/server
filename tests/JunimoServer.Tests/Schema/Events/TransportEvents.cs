@@ -61,8 +61,8 @@ public static class TransportEventFormat
 
     /// <summary>
     /// Full <see cref="Exception.ToString"/> (type, message, inner chain, stack)
-    /// for a throw that signals a harness defect rather than an expected transport
-    /// verdict. Bounded so the row survives the runner→UI 4096-char pipe.
+    /// for a heal that threw instead of returning a verdict. Bounded so the row
+    /// survives the runner→UI 4096-char pipe.
     /// </summary>
     public static string StackTrace(Exception ex)
     {
@@ -188,9 +188,7 @@ public sealed record StreamGapEvent(
 /// <summary>
 /// <see cref="TransportEventNames.TransportStateUnreadable"/>: a read of the runner's
 /// transport-state.{hostId}.json failed. <c>Label</c>/<c>HostId</c> identify the reader when it
-/// has them — null from the static owned-action-window check
-/// (<c>TransportActionWindow</c>), set from a per-container reader
-/// (<c>ContainerLogStreamReader</c>). <c>ExceptionType</c>/<c>Error</c> are the failure.
+/// has them, null otherwise. <c>ExceptionType</c>/<c>Error</c> are the failure.
 /// </summary>
 public sealed record TransportStateUnreadableEvent(
     string Path,

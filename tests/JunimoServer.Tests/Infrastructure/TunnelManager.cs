@@ -318,16 +318,18 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("TCPKeepAlive=yes");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add("BatchMode=yes");
-        // VERBOSE: the silent-drop line "Timeout, server not responding." is
-        // LOG_INFO, and a wedge needs the mux's channel open/close and keepalive
-        // lines around the stall — ERROR would log nothing. The file is per master
-        // process: a respawn archives the old one (ArchiveMasterLog), so its tail
-        // is the old master's last minutes, not the new master's first.
+        // INFO, not ERROR: the silent-drop line "Timeout, server not responding."
+        // is LOG_INFO, so ERROR would suppress the one line this log exists for.
+        // A healthy -N master stays at 0 bytes, so the happy path stays lean
+        // (VERBOSE would only add the "Authenticated to" line — mux channel
+        // open/close is debug2+). The file is per master process: a respawn
+        // archives the old one (ArchiveMasterLog), so its tail is the old
+        // master's last minutes, not the new master's first.
         // -E *moves* ssh's stderr to the file (parent pipe goes empty), so the
-        // spawn/check failure paths read the tail instead. An RST drop still
-        // leaves no line here (caught by the classifier).
+        // spawn/check failure paths read the tail instead. Only the silent-timeout
+        // drop lands here; an RST drop leaves it empty (caught by the classifier).
         psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add("LogLevel=VERBOSE");
+        psi.ArgumentList.Add("LogLevel=INFO");
         psi.ArgumentList.Add("-E");
         psi.ArgumentList.Add(logPath);
         psi.ArgumentList.Add(sshDestination);

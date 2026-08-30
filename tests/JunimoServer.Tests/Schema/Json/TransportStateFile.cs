@@ -89,9 +89,9 @@ public sealed record TransportState
 /// <summary>
 /// Reader and writer for <see cref="TransportState"/>. The writer replaces the
 /// file atomically (temp file + move), so a reader never sees a partial
-/// document. One file per host: the master monitor and a poison-corroboration respawn
-/// can act on different hosts concurrently, and a shared slot would let one host's
-/// action erase the attribution a child on the other host is about to read.
+/// document. One file per host: a host's action must stay readable for its whole
+/// attribution window, and the master monitor can act on another host inside that
+/// window — a shared slot would erase the first host's attribution.
 /// </summary>
 public static class TransportStateFile
 {

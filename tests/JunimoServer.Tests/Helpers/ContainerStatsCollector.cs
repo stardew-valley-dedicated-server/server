@@ -95,20 +95,23 @@ public static class ContainerStatsCollector
         // The daemon's stats stream delivers one sample per second, so a
         // sample arriving more than StatsGapThreshold after the previous one
         // is a transport stall (or daemon stall) worth its bounds on record.
-        public DateTime LastSampleAtUtc;
+        // UTC ticks, exchanged atomically: Progress<T> posts each sample to the
+        // thread pool, so a burst of buffered samples after a stall runs
+        // concurrently and would otherwise report the same gap twice.
+        public long LastSampleTicks;
     }
 
     private static readonly TimeSpan StatsGapThreshold = TimeSpan.FromSeconds(5);
 
     private static void RecordStatsGap(InstanceEntry entry, DateTime nowUtc)
     {
-        var previous = entry.LastSampleAtUtc;
-        entry.LastSampleAtUtc = nowUtc;
-        if (previous == default || nowUtc - previous < StatsGapThreshold)
+        var previousTicks = Interlocked.Exchange(ref entry.LastSampleTicks, nowUtc.Ticks);
+        if (previousTicks == 0 || nowUtc.Ticks - previousTicks < StatsGapThreshold.Ticks)
         {
             return;
         }
 
+        var previous = new DateTime(previousTicks, DateTimeKind.Utc);
         InfrastructureEventLog.Emit(
             TransportEventNames.ContainerStatsStreamGap,
             new StreamGapEvent(

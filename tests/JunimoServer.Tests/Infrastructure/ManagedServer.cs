@@ -1348,8 +1348,8 @@ internal sealed class ManagedServer : IAsyncDisposable
         }
         catch (Exception healEx)
         {
-            // HealApiForwardAsync reports a dead master by returning false; a throw is a
-            // harness defect. Record it with its stack, then count the probe as a failure.
+            // HealApiForwardAsync reports a dead master by returning false; a throw is
+            // recorded with its stack, then counted as a probe failure.
             TestLog.Server(
                 $"{_displayLabel} forward re-open threw after {ex.GetType().Name}: {healEx.Message}"
             );

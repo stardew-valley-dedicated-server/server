@@ -95,7 +95,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 }
 
                 // `heal_failed` is the heal's own verdict (master dead); `heal_threw` means the
-                // heal itself crashed — a harness defect, so it carries the stack trace.
+                // heal itself threw, so the attempt carries its stack trace.
                 bool healed;
                 string? healError = null;
                 string? healStackTrace = null;
