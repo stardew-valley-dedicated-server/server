@@ -537,7 +537,11 @@ public sealed class TunnelManager : IAsyncDisposable
                 // while every poll emits tunnel_forward_reopen_failed.
                 cause = "forward_reopen_failing";
             }
-            else if (canary.Result != SocketForwardProbeResult.Wedged)
+            else if (canary.Result == SocketForwardProbeResult.NotApplicable)
+            {
+                return true;
+            }
+            else if (canary.Result == SocketForwardProbeResult.Healthy)
             {
                 EndWedgeStreak(hostId, canary.Observation);
                 ResetStreak(_reopenFailStreaks, hostId);
@@ -605,7 +609,7 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// A non-wedged poll after wedged ones ends the streak: emits
+    /// A healthy poll after wedged ones ends the streak: emits
     /// <c>ssh_master_canary_recovered</c> with the stall's measured length (first
     /// wedged poll → this poll) — the number the stall-tolerance threshold is tuned
     /// against — and clears the streak. No-op when no streak was running.

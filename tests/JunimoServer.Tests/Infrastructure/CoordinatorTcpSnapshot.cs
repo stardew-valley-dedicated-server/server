@@ -75,6 +75,7 @@ internal static class CoordinatorTcpSnapshot
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(ToolTimeout);
             var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            _ = process.StandardError.ReadToEndAsync(timeoutCts.Token);
             try
             {
                 await process.WaitForExitAsync(timeoutCts.Token);

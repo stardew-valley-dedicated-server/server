@@ -683,6 +683,7 @@ public class GameClientContainer : IAsyncDisposable
             _host.ApiClient,
             _container,
             $"client-{_clientIndex}",
+            HostId,
             HandleLine,
             msg => _logCallback?.Invoke($"client-{_clientIndex} {msg}")
         );

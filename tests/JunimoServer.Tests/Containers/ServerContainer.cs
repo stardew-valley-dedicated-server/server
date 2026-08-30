@@ -976,6 +976,7 @@ public class ServerContainer : IAsyncDisposable
             _host.ApiClient,
             _serverContainer,
             $"server-{_serverIndex}",
+            HostId,
             HandleLine,
             msg => _logCallback?.Invoke(msg)
         );

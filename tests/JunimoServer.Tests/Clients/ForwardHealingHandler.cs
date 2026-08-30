@@ -53,7 +53,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
-        var deadline = TimeSpan.Zero;
+        long? firstFault = null;
         var attempt = 0;
         while (true)
         {
@@ -75,8 +75,9 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 // the test is reported skipped, not failed. A real assertion/crash never reaches
                 // here (Classify returns ForwardScoped=false for it), so genuine bugs still fail.
                 attempt++;
+                firstFault ??= Stopwatch.GetTimestamp();
                 var port = request.RequestUri?.Port;
-                if (deadline >= _healRetryBudget)
+                if (Stopwatch.GetElapsedTime(firstFault.Value) >= _healRetryBudget)
                 {
                     EmitAttempt(
                         attempt,
@@ -138,7 +139,6 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 }
 
                 await Task.Delay(_retryDelay, cancellationToken);
-                deadline += _retryDelay;
 
                 // A used HttpRequestMessage can't be re-sent — clone it for the retry.
                 request = await CloneRequestAsync(request);

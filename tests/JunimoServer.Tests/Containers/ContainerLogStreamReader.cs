@@ -54,6 +54,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     private readonly DockerClient _client;
     private readonly IContainer _container;
     private readonly string _diagnosticLabel;
+    private readonly string _hostId;
     private readonly LineHandler _onLine;
     private readonly Action<string>? _diagnosticCallback;
 
@@ -96,6 +97,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// <paramref name="diagnosticCallback"/> (e.g. <c>"server-0"</c>,
     /// <c>"client-2"</c>, <c>"steam-auth-shared"</c>).
     /// </param>
+    /// <param name="hostId">Docker host the container runs on; stamped on stream-gap events.</param>
     /// <param name="onLine">
     /// Per-line callback. Called for each non-empty line after the daemon
     /// timestamp prefix and the logmonitor process tag have been stripped.
@@ -108,6 +110,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         DockerClient client,
         IContainer container,
         string diagnosticLabel,
+        string hostId,
         LineHandler onLine,
         Action<string>? diagnosticCallback = null
     )
@@ -115,6 +118,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         _client = client;
         _container = container;
         _diagnosticLabel = diagnosticLabel;
+        _hostId = hostId;
         _onLine = onLine;
         _diagnosticCallback = diagnosticCallback;
     }
@@ -402,7 +406,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             TransportEventNames.ContainerLogStreamGap,
             new StreamGapEvent(
                 _diagnosticLabel,
-                HostId: null,
+                _hostId,
                 previous,
                 nowUtc,
                 (long)(nowUtc - previous).TotalMilliseconds

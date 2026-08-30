@@ -35,32 +35,59 @@ internal static class StderrTee
         }
     }
 
+    /// <summary>
+    /// The file sink is diagnostics only: its first I/O failure drops it for the rest
+    /// of the process, so a full disk or vanished run dir can't mask the error being logged.
+    /// </summary>
     private sealed class TeeWriter(TextWriter console, TextWriter file) : TextWriter
     {
+        private TextWriter? _file = file;
+
         public override Encoding Encoding => console.Encoding;
 
         public override void Write(char value)
         {
             console.Write(value);
-            file.Write(value);
+            ToFile(f => f.Write(value));
         }
 
         public override void Write(string? value)
         {
             console.Write(value);
-            file.Write(value);
+            ToFile(f => f.Write(value));
         }
 
         public override void WriteLine(string? value)
         {
             console.WriteLine(value);
-            file.WriteLine(value);
+            ToFile(f => f.WriteLine(value));
         }
 
         public override void Flush()
         {
             console.Flush();
-            file.Flush();
+            ToFile(f => f.Flush());
+        }
+
+        private void ToFile(Action<TextWriter> write)
+        {
+            var f = _file;
+            if (f is null)
+            {
+                return;
+            }
+
+            try
+            {
+                write(f);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                _file = null;
+                console.WriteLine(
+                    $"[stderr-tee] file sink disabled: {ex.GetType().Name}: {ex.Message}"
+                );
+            }
         }
     }
 }

@@ -89,7 +89,8 @@ public sealed record TransportState
 /// <summary>
 /// Reader and writer for <see cref="TransportState"/>. The writer replaces the
 /// file atomically (temp file + move), so a reader never sees a partial
-/// document; one state at a time because the runner performs one action at a time.
+/// document. One slot holds the latest action across all hosts: a later action on
+/// another host replaces it, so the reader must check <see cref="TransportState.HostId"/>.
 /// </summary>
 public static class TransportStateFile
 {
@@ -132,7 +133,7 @@ public static class TransportStateFile
     {
         var path = PathFor(runDir);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + ".tmp";
+        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(state, Options));
         File.Move(temp, path, overwrite: true);
     }
