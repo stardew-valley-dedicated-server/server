@@ -100,6 +100,8 @@ internal static class TransportFaultClassifier
     /// <summary>
     /// Classifies <paramref name="ex"/> (walking the inner-exception chain) against the
     /// runner's current transport action (<see cref="TransportActionWindow.IsOpenNow"/>).
+    /// <paramref name="hostId"/> scopes that window to the fault's host; pass it wherever
+    /// the caller knows it, so another host's action cannot re-scope this host's fault.
     /// A bare <see cref="TimeoutException"/> is <see cref="TransportFaultKind.None"/>
     /// (ambiguous: a slow-but-live server times out the same way a dead forward does — the
     /// caller corroborates with <c>ssh -O check</c>; see
@@ -120,11 +122,11 @@ internal static class TransportFaultClassifier
     /// and poison directly.
     /// </para>
     /// </summary>
-    public static TransportFaultVerdict Classify(Exception? ex) =>
-        Classify(ex, TransportActionWindow.IsOpenNow);
+    public static TransportFaultVerdict Classify(Exception? ex, string? hostId = null) =>
+        Classify(ex, () => TransportActionWindow.IsOpenNow(hostId));
 
     /// <summary>
-    /// Pure core of <see cref="Classify(Exception?)"/>. <paramref name="insideOwnedActionWindow"/>
+    /// Pure core of <see cref="Classify(Exception?, string?)"/>. <paramref name="insideOwnedActionWindow"/>
     /// is consulted lazily, only for a signal whose scope depends on it
     /// (<see cref="HttpRequestError.ResponseEnded"/>). A wrapper the tables don't know
     /// (a plain <see cref="IOException"/> around a <see cref="SocketException"/>) does not

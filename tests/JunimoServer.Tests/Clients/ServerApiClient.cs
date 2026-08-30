@@ -1500,18 +1500,24 @@ public class ServerApiClient : IDisposable
     /// when a forward is re-opened on a new port); <paramref name="healAsync"/> re-opens
     /// the forward on a forward-scoped fault. Both null ⇒ a plain client (local hosts /
     /// tests that pass a bare URL) — behaves exactly as before.
+    /// <paramref name="hostId"/> scopes the healing handler's owned-action window to the
+    /// server's Docker host.
     /// </summary>
     public ServerApiClient(
         string baseUrl,
         Func<string>? liveBaseUrl,
-        Func<CancellationToken, Task<bool>>? healAsync
+        Func<CancellationToken, Task<bool>>? healAsync,
+        string? hostId = null
     )
     {
         _baseUrl = baseUrl;
         HttpMessageHandler inner = new HttpClientHandler();
         if (liveBaseUrl != null && healAsync != null)
         {
-            inner = new ForwardHealingHandler(liveBaseUrl, healAsync) { InnerHandler = inner };
+            inner = new ForwardHealingHandler(liveBaseUrl, healAsync, hostId)
+            {
+                InnerHandler = inner,
+            };
         }
         var handler = new TracingHandler("server") { InnerHandler = inner };
         _httpClient = new HttpClient(handler)

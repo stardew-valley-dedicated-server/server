@@ -1167,18 +1167,24 @@ public class GameTestClient : IDisposable
     /// keepalive blip instead of failing the test. <paramref name="liveBaseUrl"/> returns
     /// the client container's CURRENT base URL; <paramref name="healAsync"/> re-opens the
     /// client's forward. Both null ⇒ a plain client (unchanged behavior).
+    /// <paramref name="hostId"/> scopes the healing handler's owned-action window to the
+    /// client's Docker host.
     /// </summary>
     public GameTestClient(
         string baseUrl,
         TimeSpan? defaultWaitTimeout,
         Func<string>? liveBaseUrl,
-        Func<CancellationToken, Task<bool>>? healAsync
+        Func<CancellationToken, Task<bool>>? healAsync,
+        string? hostId = null
     )
     {
         HttpMessageHandler inner = new HttpClientHandler();
         if (liveBaseUrl != null && healAsync != null)
         {
-            inner = new ForwardHealingHandler(liveBaseUrl, healAsync) { InnerHandler = inner };
+            inner = new ForwardHealingHandler(liveBaseUrl, healAsync, hostId)
+            {
+                InnerHandler = inner,
+            };
         }
         var handler = new TracingHandler("test-client") { InnerHandler = inner };
         _httpClient = new HttpClient(handler)

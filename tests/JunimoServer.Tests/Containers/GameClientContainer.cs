@@ -527,7 +527,8 @@ public class GameClientContainer : IAsyncDisposable
             BaseUrl,
             defaultWaitTimeout: null,
             liveBaseUrl: () => BaseUrl,
-            healAsync: HealApiForwardAsync
+            healAsync: HealApiForwardAsync,
+            hostId: HostId
         );
         // Copy the client reference (GameTestClient is a wrapper, we need to update the internal HttpClient)
         typeof(GameTestClient)

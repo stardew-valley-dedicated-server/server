@@ -743,7 +743,8 @@ public class ServerContainer : IAsyncDisposable
         var client = new ServerApiClient(
             BaseUrl,
             liveBaseUrl: () => BaseUrl,
-            healAsync: HealApiForwardAsync
+            healAsync: HealApiForwardAsync,
+            hostId: HostId
         );
         try
         {
@@ -846,7 +847,8 @@ public class ServerContainer : IAsyncDisposable
         return new ServerApiClient(
             BaseUrl,
             liveBaseUrl: () => BaseUrl,
-            healAsync: HealApiForwardAsync
+            healAsync: HealApiForwardAsync,
+            hostId: HostId
         );
     }
 

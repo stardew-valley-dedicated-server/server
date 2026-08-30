@@ -572,7 +572,7 @@ public sealed class DockerHost : IAsyncDisposable
     /// </summary>
     internal async Task<TransportFaultOutcome> PoisonIfTransportFaultAsync(Exception ex)
     {
-        var verdict = TransportFaultClassifier.Classify(ex);
+        var verdict = TransportFaultClassifier.Classify(ex, Id);
         var forwardScoped = verdict.ForwardScoped;
         // Unclassified never poisons: an unmapped code is treated as application-level.
         var transportReason = verdict.IsTransportFault ? verdict.Reason : null;

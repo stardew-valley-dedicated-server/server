@@ -31,18 +31,25 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
 {
     private readonly Func<string> _liveBaseUrl;
     private readonly Func<CancellationToken, Task<bool>> _healAsync;
+    private readonly string? _hostId;
     private readonly TimeSpan _healRetryBudget;
     private readonly TimeSpan _retryDelay;
 
+    /// <param name="hostId">
+    /// Docker host behind the forward; scopes the owned-action window consulted by the
+    /// classifier so another host's respawn cannot re-scope this host's fault.
+    /// </param>
     public ForwardHealingHandler(
         Func<string> liveBaseUrl,
         Func<CancellationToken, Task<bool>> healAsync,
+        string? hostId = null,
         TimeSpan? healRetryBudget = null,
         TimeSpan? retryDelay = null
     )
     {
         _liveBaseUrl = liveBaseUrl;
         _healAsync = healAsync;
+        _hostId = hostId;
         // Long enough to outlast a master keepalive blip + heal (watchdog cadence ~5s,
         // -O check retries ~8s, re-open ~1s); short enough not to mask a real outage.
         _healRetryBudget = healRetryBudget ?? TimeSpan.FromSeconds(45);
@@ -65,7 +72,8 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
             }
             catch (Exception ex)
                 when (!cancellationToken.IsCancellationRequested
-                    && TransportFaultClassifier.Classify(ex) is { ForwardScoped: true } verdict
+                    && TransportFaultClassifier.Classify(ex, _hostId)
+                        is { ForwardScoped: true } verdict
                 )
             {
                 // Forward-scoped fault: the -L forward dropped. Heal it and retry the same
