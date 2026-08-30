@@ -4,6 +4,7 @@ using System.Text.Json;
 using Docker.DotNet;
 using DotNet.Testcontainers.Containers;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -598,7 +599,10 @@ public sealed class DockerHost : IAsyncDisposable
             // the host is recoverable: don't poison. See host-poison-deadlocks-run.md.
             if (!masterAlive)
             {
-                masterAlive = await TunnelManager.Default.TryRespawnMasterAsync(Id);
+                masterAlive = await TunnelManager.Default.TryRespawnMasterAsync(
+                    Id,
+                    cause: "poison_corroboration"
+                );
             }
 
             if (masterAlive)
@@ -615,7 +619,22 @@ public sealed class DockerHost : IAsyncDisposable
                 }
                 catch (Exception healEx)
                 {
-                    TestLog.Test($"[ssh] daemon forward heal failed on '{Id}': {healEx.Message}");
+                    // The heal has no cancellation token, so nothing here is a cooperative
+                    // cancel; any throw is a harness defect and is recorded with its stack.
+                    // The fault still resolves as a recoverable blip below — the next
+                    // container op re-tries the daemon forward through the normal seam.
+                    TestLog.Test($"[ssh] daemon forward heal threw on '{Id}': {healEx.Message}");
+                    InfrastructureEventLog.Emit(
+                        TransportEventNames.ForwardHealThrew,
+                        new ForwardHealThrewEvent(
+                            Id,
+                            Site: "daemon_forward",
+                            Label: null,
+                            Trigger: transportReason,
+                            TransportEventFormat.Chain(healEx),
+                            TransportEventFormat.StackTrace(healEx)
+                        )
+                    );
                 }
 
                 InfrastructureEventLog.Emit(

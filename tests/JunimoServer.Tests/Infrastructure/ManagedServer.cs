@@ -1341,10 +1341,28 @@ internal sealed class ManagedServer : IAsyncDisposable
             }
             return healed;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Watchdog shutdown, not a heal verdict — let the loop unwind.
+            throw;
+        }
         catch (Exception healEx)
         {
+            // HealApiForwardAsync reports a dead master by returning false; a throw is a
+            // harness defect. Record it with its stack, then count the probe as a failure.
             TestLog.Server(
-                $"{_displayLabel} forward re-open failed after {ex.GetType().Name}: {healEx.Message}"
+                $"{_displayLabel} forward re-open threw after {ex.GetType().Name}: {healEx.Message}"
+            );
+            InfrastructureEventLog.Emit(
+                TransportEventNames.ForwardHealThrew,
+                new ForwardHealThrewEvent(
+                    Host.Id,
+                    Site: "server_api_forward",
+                    Label: _displayLabel,
+                    Trigger: TransportEventFormat.Chain(ex),
+                    TransportEventFormat.Chain(healEx),
+                    TransportEventFormat.StackTrace(healEx)
+                )
             );
             return false;
         }

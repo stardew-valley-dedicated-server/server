@@ -83,6 +83,20 @@ public static class RunArtifactNames
     public const string ParentInfrastructureJsonl = "infrastructure.parent.jsonl";
 
     public const string DiagnosticsDir = "diagnostics";
+
+    /// <summary>
+    /// Runner-written record of its latest transport action (master respawn)
+    /// under <see cref="DiagnosticsDir"/>; schema and parser in
+    /// <c>Schema.Json.TransportStateFile</c>.
+    /// </summary>
+    public const string TransportStateJson = "transport-state.json";
+
+    /// <summary>
+    /// Copy of the xUnit child's stderr (every <c>TestLog</c> line) under
+    /// <see cref="DiagnosticsDir"/>, written by <c>StderrTee</c>.
+    /// </summary>
+    public const string TestProcessStderrLog = "test-process-stderr.log";
+
     public const string TestsDir = "tests";
     public const string ContainersDir = "containers";
 

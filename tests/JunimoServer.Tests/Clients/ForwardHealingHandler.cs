@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Infrastructure;
+using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Clients;
 
@@ -51,6 +54,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
     )
     {
         var deadline = TimeSpan.Zero;
+        var attempt = 0;
         while (true)
         {
             RebaseToLiveUrl(request);
@@ -70,46 +74,108 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 // trip StopOnFail → cascade), so instead convert it to an InfrastructureSkipException:
                 // the test is reported skipped, not failed. A real assertion/crash never reaches
                 // here (Classify returns ForwardScoped=false for it), so genuine bugs still fail.
+                attempt++;
+                var port = request.RequestUri?.Port;
                 if (deadline >= _healRetryBudget)
                 {
+                    EmitAttempt(
+                        attempt,
+                        port,
+                        ex,
+                        healMs: null,
+                        "budget_exhausted",
+                        healError: null,
+                        healStackTrace: null
+                    );
                     throw new InfrastructureSkipException(
                         $"Unrecoverable forward-scoped transport fault after {_healRetryBudget.TotalSeconds:F0}s "
                             + $"heal budget ({ex.GetType().Name}: {ex.Message}). Skipped — not a test defect."
                     );
                 }
 
+                // `heal_failed` is the heal's own verdict (master dead); `heal_threw` means the
+                // heal itself crashed — a harness defect, so it carries the stack trace.
                 bool healed;
+                string? healError = null;
+                string? healStackTrace = null;
+                var healStarted = Stopwatch.GetTimestamp();
                 try
                 {
                     healed = await _healAsync(cancellationToken);
                 }
-                catch
-                {
-                    healed = false;
-                }
-
-                if (!healed)
-                {
-                    throw new InfrastructureSkipException(
-                        $"Forward-scoped transport fault and the ssh master is down (heal failed: "
-                            + $"{ex.GetType().Name}: {ex.Message}). Skipped — not a test defect."
-                    );
-                }
-
-                try
-                {
-                    await Task.Delay(_retryDelay, cancellationToken);
-                }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
+                catch (Exception healEx)
+                {
+                    healed = false;
+                    healError = TransportEventFormat.Chain(healEx);
+                    healStackTrace = TransportEventFormat.StackTrace(healEx);
+                }
+
+                var healMs = (long)Stopwatch.GetElapsedTime(healStarted).TotalMilliseconds;
+
+                EmitAttempt(
+                    attempt,
+                    port,
+                    ex,
+                    healMs,
+                    healed ? "healed"
+                        : healError is null ? "heal_failed"
+                        : "heal_threw",
+                    healError,
+                    healStackTrace
+                );
+
+                if (!healed)
+                {
+                    var why = healError is null ? "ssh master is down" : $"heal threw {healError}";
+                    throw new InfrastructureSkipException(
+                        $"Forward-scoped transport fault ({ex.GetType().Name}: {ex.Message}) and "
+                            + $"the {why}. Skipped — not a test defect."
+                    );
+                }
+
+                await Task.Delay(_retryDelay, cancellationToken);
                 deadline += _retryDelay;
 
                 // A used HttpRequestMessage can't be re-sent — clone it for the retry.
                 request = await CloneRequestAsync(request);
             }
         }
+    }
+
+    /// <summary>
+    /// One <c>forward_heal_attempt</c> per heal cycle, so a run's artifact shows
+    /// how many times which port was re-opened for which fault — the only way to
+    /// tell a single blip from two handlers re-opening the same forward in turns.
+    /// </summary>
+    private static void EmitAttempt(
+        int attempt,
+        int? port,
+        Exception fault,
+        long? healMs,
+        string outcome,
+        string? healError,
+        string? healStackTrace
+    )
+    {
+        InfrastructureEventLog.Emit(
+            TransportEventNames.ForwardHealAttempt,
+            new ForwardHealAttemptEvent(
+                attempt,
+                port,
+                fault.GetType().Name,
+                fault.Message,
+                TransportEventFormat.Chain(fault),
+                TransportFaultClassifier.Classify(fault).Reason,
+                healMs,
+                outcome,
+                healError,
+                healStackTrace
+            )
+        );
     }
 
     /// <summary>
