@@ -85,11 +85,11 @@ public static class RunArtifactNames
     public const string DiagnosticsDir = "diagnostics";
 
     /// <summary>
-    /// Runner-written record of its latest transport action (master respawn)
-    /// under <see cref="DiagnosticsDir"/>; schema and parser in
+    /// Runner-written record of its latest transport action (master respawn) on one
+    /// host, under <see cref="DiagnosticsDir"/>; schema and parser in
     /// <c>Schema.Json.TransportStateFile</c>.
     /// </summary>
-    public const string TransportStateJson = "transport-state.json";
+    public static string TransportStateJson(string hostId) => $"transport-state.{hostId}.json";
 
     /// <summary>
     /// Copy of the xUnit child's stderr (every <c>TestLog</c> line) under

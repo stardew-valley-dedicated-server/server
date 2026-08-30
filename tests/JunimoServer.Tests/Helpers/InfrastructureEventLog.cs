@@ -264,7 +264,7 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>ssh_master_respawn_attempt</c> (<see cref="Schema.Events.SshMasterRespawnAttemptEvent"/>:
 /// <c>host_id, incidentId, cause, oldPid?, termination, exitCode, exitStderr,
 /// killOutcome, elapsedMs, terminatedAtUtc, masterLogArchivePath?</c>; the same
-/// record is published to the child as <c>diagnostics/transport-state.json</c>) ·
+/// record is published to the child as <c>diagnostics/transport-state.{hostId}.json</c>) ·
 /// <c>ssh_master_respawned</c> (<c>host_id, incidentId, alive</c>) ·
 /// <c>ssh_master_respawn_failed</c> (<c>host_id, incidentId, error, killOutcome?</c>) ·
 /// <c>transport_state_write_failed</c> / <c>ssh_master_log_archive_failed</c>

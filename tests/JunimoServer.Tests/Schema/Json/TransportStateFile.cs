@@ -6,7 +6,7 @@ namespace JunimoServer.Tests.Schema.Json;
 
 /// <summary>
 /// The runner's most recent transport action on a host, published to the xUnit
-/// child through <c>{runDir}/diagnostics/transport-state.json</c>. Owner and
+/// child through <c>{runDir}/diagnostics/transport-state.{hostId}.json</c>. Owner and
 /// only writer: <c>TunnelManager.TryRespawnMasterAsync</c> in the runner process
 /// (the child never owns a master, so it never writes). The child reads it on
 /// demand to attribute a transport fault to a runner action; env vars cannot
@@ -89,8 +89,9 @@ public sealed record TransportState
 /// <summary>
 /// Reader and writer for <see cref="TransportState"/>. The writer replaces the
 /// file atomically (temp file + move), so a reader never sees a partial
-/// document. One slot holds the latest action across all hosts: a later action on
-/// another host replaces it, so the reader must check <see cref="TransportState.HostId"/>.
+/// document. One file per host: the master monitor and a poison-corroboration respawn
+/// can act on different hosts concurrently, and a shared slot would let one host's
+/// action erase the attribution a child on the other host is about to read.
 /// </summary>
 public static class TransportStateFile
 {
@@ -100,17 +101,21 @@ public static class TransportStateFile
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static string PathFor(string runDir) =>
-        Path.Combine(runDir, RunArtifactNames.DiagnosticsDir, RunArtifactNames.TransportStateJson);
+    public static string PathFor(string runDir, string hostId) =>
+        Path.Combine(
+            runDir,
+            RunArtifactNames.DiagnosticsDir,
+            RunArtifactNames.TransportStateJson(hostId)
+        );
 
     /// <summary>
-    /// Returns the current state, or null when the runner has not performed a
-    /// transport action this run. A malformed file throws <see cref="JsonException"/>
+    /// Returns the host's current state, or null when the runner has not performed a
+    /// transport action on it this run. A malformed file throws <see cref="JsonException"/>
     /// — writer and parser disagree, which must not pass silently.
     /// </summary>
-    public static TransportState? TryRead(string runDir)
+    public static TransportState? TryRead(string runDir, string hostId)
     {
-        var path = PathFor(runDir);
+        var path = PathFor(runDir, hostId);
         if (!File.Exists(path))
         {
             return null;
@@ -131,9 +136,9 @@ public static class TransportStateFile
 
     public static void Write(string runDir, TransportState state)
     {
-        var path = PathFor(runDir);
+        var path = PathFor(runDir, state.HostId);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
+        var temp = path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(state, Options));
         File.Move(temp, path, overwrite: true);
     }

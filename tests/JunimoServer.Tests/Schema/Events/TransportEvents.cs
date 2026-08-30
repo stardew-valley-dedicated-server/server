@@ -37,7 +37,7 @@ public static class TransportEventNames
     /// <summary>A Docker stats stream delivered a sample again after a gap.</summary>
     public const string ContainerStatsStreamGap = "container_stats_stream_gap";
 
-    /// <summary>A child reader could not read the runner's <c>transport-state.json</c>.</summary>
+    /// <summary>A child reader could not read the runner's <c>transport-state.{hostId}.json</c>.</summary>
     public const string TransportStateUnreadable = "transport_state_unreadable";
 }
 
@@ -187,7 +187,7 @@ public sealed record StreamGapEvent(
 
 /// <summary>
 /// <see cref="TransportEventNames.TransportStateUnreadable"/>: a read of the runner's
-/// transport-state.json failed. <c>Label</c>/<c>HostId</c> identify the reader when it
+/// transport-state.{hostId}.json failed. <c>Label</c>/<c>HostId</c> identify the reader when it
 /// has them — null from the static owned-action-window check
 /// (<c>TransportActionWindow</c>), set from a per-container reader
 /// (<c>ContainerLogStreamReader</c>). <c>ExceptionType</c>/<c>Error</c> are the failure.

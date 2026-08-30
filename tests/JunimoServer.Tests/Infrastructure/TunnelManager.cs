@@ -58,7 +58,7 @@ public sealed class TunnelManager : IAsyncDisposable
     private string _sshPath = "ssh";
 
     // Faults seen this long after a master respawn completes are attributed to
-    // it (transport-state.json windowEndUtc). Matches ForwardHealingHandler's
+    // it (transport-state.{hostId}.json windowEndUtc). Matches ForwardHealingHandler's
     // heal budget, the longest a consumer keeps retrying against the new master.
     private static readonly TimeSpan RespawnAttributionWindow = TimeSpan.FromSeconds(45);
 
@@ -925,7 +925,7 @@ public sealed class TunnelManager : IAsyncDisposable
     /// Only the owner (parent) can respawn — an adopted child entry has no spawn rights, so
     /// it returns false and lets the normal poison proceed.
     /// <paramref name="cause"/> names what tripped the respawn; it is recorded in the
-    /// <c>ssh_master_respawn_attempt</c> event and <c>transport-state.json</c>.
+    /// <c>ssh_master_respawn_attempt</c> event and <c>transport-state.{hostId}.json</c>.
     /// </summary>
     public async Task<bool> TryRespawnMasterAsync(
         string hostId,
@@ -1116,7 +1116,7 @@ public sealed class TunnelManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Writes <c>diagnostics/transport-state.json</c> for the xUnit child. A write
+    /// Writes the host's <c>diagnostics/transport-state.{hostId}.json</c> for the xUnit child. A write
     /// failure is reported as an event rather than thrown: the respawn itself must
     /// still complete, and the child's reader treats a missing file as "no action".
     /// </summary>
@@ -1134,7 +1134,7 @@ public sealed class TunnelManager : IAsyncDisposable
                 {
                     host_id = state.HostId,
                     incidentId = state.IncidentId,
-                    path = TransportStateFile.PathFor(TestArtifacts.RunDir),
+                    path = TransportStateFile.PathFor(TestArtifacts.RunDir, state.HostId),
                     error = $"{ex.GetType().Name}: {ex.Message}",
                 }
             );
