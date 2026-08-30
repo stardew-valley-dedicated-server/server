@@ -31,6 +31,9 @@ public static class TransportEventNames
     /// </summary>
     public const string ForwardHealThrew = "forward_heal_threw";
 
+    /// <summary>A transport-layer exception whose typed code is not in the classifier's tables.</summary>
+    public const string TransportFaultUnclassified = "transport_fault_unclassified";
+
     /// <summary>A container log stream delivered data again after a silent gap.</summary>
     public const string ContainerLogStreamGap = "container_log_stream_gap";
 
@@ -148,7 +151,8 @@ public sealed record SshMasterRespawnAttemptEvent(
 /// <summary>
 /// <c>FaultChain</c> lists exception types outermost to innermost, joined by
 /// <c> -> </c>. <c>Outcome</c> is <c>healed</c>, <c>heal_failed</c>,
-/// <c>heal_threw</c> or <c>budget_exhausted</c>.
+/// <c>heal_threw</c>, <c>budget_exhausted</c> or <c>not_retry_safe</c> (forward-scoped
+/// fault on a request not declared safe to re-send; it propagated unhealed).
 /// </summary>
 public sealed record ForwardHealAttemptEvent(
     int Attempt,
@@ -196,4 +200,15 @@ public sealed record TransportStateUnreadableEvent(
     string Error,
     string? Label = null,
     [property: JsonPropertyName("host_id")] string? HostId = null
+);
+
+/// <summary>
+/// <c>ExceptionChain</c> lists <c>FullName: Message</c> outermost to innermost, joined
+/// by <c> -> </c>; <c>Classification</c> is the <c>unclassified: ...</c> reason.
+/// </summary>
+public sealed record TransportFaultUnclassifiedEvent(
+    string ExceptionType,
+    string Message,
+    string ExceptionChain,
+    string Classification
 );

@@ -1404,11 +1404,18 @@ public class GameTestClient : IDisposable
 
     #region HTTP Helpers
 
+    /// <summary>
+    /// Every test-client GET (including the long-polling <c>/wait/*</c> endpoints) is read-only,
+    /// so it is marked safe for a transport re-send after a forward drop; POST/DELETE are not.
+    /// </summary>
     public async Task<T?> GetAsync<T>(string path, CancellationToken ct = default)
         where T : class
     {
         var effective = ct == default ? CancellationToken : ct;
-        var response = await _httpClient.GetAsync(path, effective);
+        var response = await _httpClient.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, path).Mark(),
+            effective
+        );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<T>(effective);
     }

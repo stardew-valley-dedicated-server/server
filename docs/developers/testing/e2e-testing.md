@@ -460,7 +460,7 @@ If you're sizing a remote host or interpreting `infrastructure.jsonl`, treat the
 
 ### Host disconnect
 
-When a Docker.DotNet call against a remote host throws a transport-class exception (HTTP timeout, broken pipe, SSH auth failure), the host is poisoned for the rest of the run. Future placements skip it; the active test fails with status `host_disconnected` (distinct from cancel/timeout/test-fail). A `KeepConnected` session pinned to a class on a poisoned host fails the rest of that class with `host_disconnected` (N-test cascade). This is by design — re-placing the class on a different host would defeat the no-auto-retry rule and silently mask the disconnect.
+When a Docker.DotNet call against a remote host throws a transport-class exception (daemon-responsiveness timeout, connection reset, host unreachable), the host is poisoned for the rest of the run. Future placements skip it; the active test fails with status `host_disconnected` (distinct from cancel/timeout/test-fail). A `KeepConnected` session pinned to a class on a poisoned host fails the rest of that class with `host_disconnected` (N-test cascade). This is by design — re-placing the class on a different host would defeat the no-auto-retry rule and silently mask the disconnect.
 
 If every host is poisoned, the run aborts with a non-zero exit code and a final `run_aborted` event naming the disconnect reasons per host.
 
