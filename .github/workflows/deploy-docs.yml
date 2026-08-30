@@ -304,10 +304,15 @@ jobs:
             exit 0
           fi
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          # Clear the completion marker BEFORE mirroring so the snapshot is marked incomplete
-          # for the whole write window: if this step is interrupted mid-sync, no marker remains
-          # and the next restore treats the partial snapshot as unusable instead of deploying it.
-          aws s3 rm "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1 || true
+          # Clear the completion marker before mirroring so the snapshot reads as incomplete for
+          # the whole write window: an interrupted sync then leaves no marker and the next restore
+          # refuses. If the marker can't be cleared, skip the mirror — overwriting the snapshot
+          # while a stale marker survives would let an interrupted sync pass as complete. (rm of a
+          # missing marker returns 0, so the first-ever persist isn't blocked here.)
+          if ! aws s3 rm "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1; then
+            echo "::warning::Couldn't clear the R2 completion marker — leaving the last certified snapshot untouched."
+            exit 0
+          fi
           if aws s3 sync dist/ "s3://${R2_BUCKET}/" \
                --endpoint-url "$endpoint" --no-progress --delete; then
             # Mirror succeeded — write the marker last to certify the snapshot is complete.
