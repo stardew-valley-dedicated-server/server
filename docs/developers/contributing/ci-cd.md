@@ -306,6 +306,25 @@ GitHub forbids approving your own pull request, which with a single maintainer m
 
 Deploys the documentation site to GitHub Pages. Runs automatically after builds or can be triggered manually to rebuild from existing Docker images.
 
+The site has two halves — `latest` (site root) and `preview` (`/preview/`) — and `deploy-pages` replaces the whole site each run. A run that rebuilds only one half restores the other from a durable snapshot of the currently-live site kept in Cloudflare R2, so recovery never depends on an expiring artifact. After every successful deploy the merged site is mirrored back to R2 (`aws s3 sync … --delete`), best-effort — a snapshot-write failure warns but never fails the deploy.
+
+A full rebuild (both halves built that run) never needs the snapshot, so it deploys even if R2 is down. A single-half run only proceeds when the half it doesn't rebuild is *confirmed* — either restored intact from the snapshot, or confirmed genuinely absent by a successful snapshot read. Otherwise it refuses rather than wipe a live half: it refuses when the missing half is `latest` and absent from the snapshot (empty bucket or R2 unconfigured; re-run with `rebuild_latest=true` to seed), when the snapshot read failed or was only partially restored (retry once R2 is reachable), and when `preview` isn't rebuilt this run and its absence can't be confirmed — an unconfigured/skipped or failed restore can't prove the live site has no preview, so LATEST-ONLY is only deployed against a confirmed snapshot (re-run with `rebuild_preview=true` to force a preview, or seed R2 first).
+
+The snapshot's integrity is self-certifying: the persist step clears a `.snapshot-complete` marker before mirroring and rewrites it last, so an interrupted persist leaves no marker and the next restore treats that partial snapshot as unusable rather than deploying truncated content.
+
+### Setup Requirements
+
+Add to the **`github-pages`** GitHub Environment (Settings → Environments):
+
+| Name | Kind | Description |
+|------|------|-------------|
+| `R2_ACCOUNT_ID` | Secret | Cloudflare account ID (S3 endpoint host) |
+| `R2_ACCESS_KEY_ID` | Secret | R2 token key with object read/write on the docs bucket |
+| `R2_SECRET_ACCESS_KEY` | Secret | R2 token secret |
+| `R2_BUCKET_DOCS` | Variable | Name of a **dedicated** R2 bucket with **no lifecycle rule** (a per-age expiry would sweep the snapshot). Kept as a variable, not a secret — the name's hyphen would trip the secret masker. |
+
+The deploy mirrors with `aws s3 sync … --delete`, so this bucket must be dedicated to the docs snapshot — pointing it at a shared bucket (e.g. the E2E report bucket) would delete everything else in it, and a shared retention rule could sweep the snapshot. If R2 is left unconfigured, full-rebuild deploys still work; single-half deploys refuse (the half they don't rebuild can't be confirmed), so configure R2 or re-run rebuilding both halves.
+
 ## Deploy Server Pipeline
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-server.yml)
