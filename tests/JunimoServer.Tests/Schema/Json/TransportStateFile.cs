@@ -138,8 +138,17 @@ public static class TransportStateFile
     {
         var path = PathFor(runDir, state.HostId);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, Options));
-        File.Move(temp, path, overwrite: true);
+        // Unique temp name: writes are sequential today, but a shared temp path
+        // would let any future concurrent writer corrupt or steal another's move.
+        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(temp, JsonSerializer.Serialize(state, Options));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temp); // no-op after a successful move
+        }
     }
 }

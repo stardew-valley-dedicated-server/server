@@ -105,7 +105,21 @@ public static class ContainerStatsCollector
 
     private static void RecordStatsGap(InstanceEntry entry, DateTime nowUtc)
     {
-        var previousTicks = Interlocked.Exchange(ref entry.LastSampleTicks, nowUtc.Ticks);
+        // Monotonic CAS: an out-of-order callback never moves the value backward
+        // (a regressed value would time the next gap against a stale sample).
+        long previousTicks;
+        do
+        {
+            previousTicks = Volatile.Read(ref entry.LastSampleTicks);
+            if (nowUtc.Ticks <= previousTicks)
+            {
+                return;
+            }
+        } while (
+            Interlocked.CompareExchange(ref entry.LastSampleTicks, nowUtc.Ticks, previousTicks)
+            != previousTicks
+        );
+
         if (previousTicks == 0 || nowUtc.Ticks - previousTicks < StatsGapThreshold.Ticks)
         {
             return;
