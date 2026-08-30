@@ -40,6 +40,12 @@ public static class TransportEventNames
     /// <summary>A Docker stats stream delivered a sample again after a gap.</summary>
     public const string ContainerStatsStreamGap = "container_stats_stream_gap";
 
+    /// <summary>A container log stream re-opened after a transport loss.</summary>
+    public const string ContainerLogStreamReconnected = "container_log_stream_reconnected";
+
+    /// <summary>A container log reader stopped; every exit path emits it.</summary>
+    public const string ContainerLogStreamEnded = "container_log_stream_ended";
+
     /// <summary>A child reader could not read the runner's <c>transport-state.{hostId}.json</c>.</summary>
     public const string TransportStateUnreadable = "transport_state_unreadable";
 }
@@ -200,6 +206,47 @@ public sealed record TransportStateUnreadableEvent(
     string Error,
     string? Label = null,
     [property: JsonPropertyName("host_id")] string? HostId = null
+);
+
+/// <summary>
+/// <c>Cursor</c> is the daemon timestamp of the last line emitted before the
+/// loss (the <c>Since</c> value the re-open used). <c>OpenFailures</c> counts
+/// the failed re-opens during the outage. <c>IncidentId</c> is the runner's
+/// transport action whose re-establish window covered the outage, when one did.
+/// </summary>
+public sealed record StreamReconnectedEvent(
+    string Label,
+    [property: JsonPropertyName("host_id")] string? HostId,
+    DateTime OutageStartUtc,
+    DateTime ReconnectedAtUtc,
+    long GapMs,
+    int OpenFailures,
+    string? Cursor,
+    string? IncidentId
+);
+
+/// <summary>
+/// <c>Reason</c> is <c>container_exited</c> (inspect confirmed the container
+/// is not running or no longer exists), <c>open_failures_exhausted</c> (no
+/// re-open succeeded before the budget deadline), <c>cancelled</c> (drain,
+/// dispose or process shutdown) or <c>docker_down</c> (the daemon answered
+/// 500). <c>Detail</c> names the confirming observation (inspect state,
+/// budget source, shutdown trigger). The fault fields describe the last
+/// exception seen on the path, null when the exit was not fault-driven.
+/// </summary>
+public sealed record StreamEndedEvent(
+    string Label,
+    [property: JsonPropertyName("host_id")] string? HostId,
+    string Reason,
+    string Detail,
+    string? FaultType,
+    string? FaultMessage,
+    string? FaultChain,
+    string? Cursor,
+    long LinesEmitted,
+    int Reconnects,
+    long? OutageMs,
+    string? IncidentId
 );
 
 /// <summary>
