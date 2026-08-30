@@ -397,4 +397,6 @@ export interface InstanceStatsEvent {
     blkWriteBytesPerSec: number | null;
     /** Container memory limit in MB (0 = no limit set). */
     memoryLimitMb: number;
+    /** Age of the Docker sample behind the container fields at emit time. Null when there is none. */
+    sampleAgeMs: number | null;
 }

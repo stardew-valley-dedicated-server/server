@@ -56,6 +56,7 @@ interface MetricStats {
     pendingActions: number | null;
     gameThreadWaitMs: number | null;
     memoryLimitMb: number;
+    sampleAgeMs?: number | null;
 }
 
 /** TPS color class based on % of target. */
@@ -179,4 +180,23 @@ export function formatBytesPerSec(bps: number): string {
         return `${(bps / 1024).toFixed(1)} KB/s`;
     }
     return `${Math.round(bps)} B/s`;
+}
+
+/** Docker pushes a stats sample about once a second; an age past this means the stream is down
+ *  and the container fields (CPU, container memory, I/O) are a repeat of the last sample. */
+export const STALE_SAMPLE_MS = 2500;
+
+/** True when the container-side fields of `stats` come from a sample older than the stream interval. */
+export function isStaleSample(stats: MetricStats | undefined): boolean {
+    return stats?.sampleAgeMs != null && stats.sampleAgeMs > STALE_SAMPLE_MS;
+}
+
+/** Suffix for a metric tooltip whose value is a stale container sample; empty when fresh. */
+export function staleSampleSuffix(stats: MetricStats | undefined): string {
+    if (!isStaleSample(stats)) {
+        return "";
+    }
+    // isStaleSample guarantees sampleAgeMs is non-null here; ?? 0 keeps the type checker happy.
+    const ageMs = stats?.sampleAgeMs ?? 0;
+    return ` (stale: sample is ${(ageMs / 1000).toFixed(0)}s old)`;
 }

@@ -30,6 +30,7 @@ const props = withDefaults(
             blkReadBytesPerSec: number | null;
             blkWriteBytesPerSec: number | null;
             memoryLimitMb: number;
+            sampleAgeMs: number | null;
         };
         setupSteps?: SetupStepSnapshot[];
         setupStatus?: "pending" | "running" | "completed" | "failed" | null;

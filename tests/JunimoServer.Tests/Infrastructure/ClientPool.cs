@@ -775,7 +775,7 @@ internal sealed class ClientPool : IAsyncDisposable
                 client.Container.Id,
                 client.Container.Name,
                 _host,
-                client.BaseUrl
+                () => client.BaseUrl
             );
 
             return client;
