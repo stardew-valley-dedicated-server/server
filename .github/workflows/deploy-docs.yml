@@ -145,8 +145,8 @@ jobs:
         run: |
           # No `-e`: a sync error must NOT abort the step. A full-rebuild run (both halves
           # built this run) doesn't need the snapshot and must still deploy even if R2 is
-          # down. The decide step reads restore_status to tell a genuine miss (ok/skipped,
-          # so the half truly isn't live) from a read failure (failed, so we're blind).
+          # down. The decide step reads restore_status: `ok` = snapshot read and reflects
+          # live; `skipped`/`failed` = unconfirmed, so a single-half run refuses.
           set -uo pipefail
           mkdir -p live/site
           if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
@@ -162,14 +162,11 @@ jobs:
           fi
           if aws s3 sync "s3://${R2_BUCKET}/" live/site/ \
                --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress; then
-            # The persist step writes a `.snapshot-complete` marker LAST, after a full mirror.
-            # Its absence beside non-empty content means the previous persist was interrupted
-            # mid-sync (aws s3 sync isn't atomic), so the snapshot is partial — treat that as a
-            # read failure so a single-half run refuses rather than deploying a truncated half.
-            # An empty bucket (never seeded) has no marker but nothing to be partial about: ok.
-            if [ -z "$(ls -A live/site 2>/dev/null)" ]; then
-              echo "restore_status=ok" >> "$GITHUB_OUTPUT"
-            elif [ -f live/site/.snapshot-complete ]; then
+            # Persist writes a `.snapshot-complete` marker last, after a full mirror. Content
+            # without the marker means persist was interrupted mid-sync (aws s3 sync isn't
+            # atomic), so the snapshot is partial — treat it as a failed read so a single-half
+            # run refuses. An empty bucket (never seeded) has no marker but nothing partial: ok.
+            if [ -z "$(ls -A live/site 2>/dev/null)" ] || [ -f live/site/.snapshot-complete ]; then
               echo "restore_status=ok" >> "$GITHUB_OUTPUT"
             else
               echo "::warning::R2 snapshot has content but no completion marker — previous persist was interrupted; a partial deploy will be refused."
@@ -229,14 +226,11 @@ jobs:
 
           # deploy-pages replaces the whole site, so a half we can't obtain must not be
           # published — that would wipe it live. A half is safe to ship only when it's built
-          # this run, restored intact, or confirmed genuinely absent by a successful read (ok);
-          # a failed/partial/skipped read leaves us blind and refuses below. A full-rebuild run
-          # never reaches these branches, so an R2 outage can't block it.
+          # this run, restored intact, or confirmed absent by a successful read (ok). A
+          # full-rebuild run never reaches these branches, so an R2 outage can't block it.
 
-          # A failed/partial restore can still leave live/site with SOME content, so a half can
-          # read as `live` off an incomplete snapshot. Deploying it would publish a truncated
-          # half and --delete the live files that didn't restore. Refuse whenever any half we'd
-          # ship was sourced from a restore we couldn't trust.
+          # A failed restore can still leave partial content, so a half may read as `live` off
+          # a truncated snapshot. Deploying it would --delete the live files that didn't restore.
           if [ "${RESTORE_STATUS:-}" = failed ] && { [ "$LATEST_SRC" = live ] || [ "$PREVIEW_SRC" = live ]; }; then
             echo "::error::R2 snapshot restore was incomplete — a restored half may be truncated."
             echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe a live half."
@@ -289,8 +283,8 @@ jobs:
       - name: Persist live snapshot to R2
         if: success()
         # The deploy already published; a snapshot-write failure must not red the run or
-        # suppress the summary/notification below. It leaves the previous snapshot in place
-        # (identical for any half unchanged this run), so recovery barely degrades.
+        # suppress the summary/notification below. It clears the completion marker, so the
+        # next single-half run refuses (retry) instead of recovering from a partial snapshot.
         continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -316,7 +310,7 @@ jobs:
           aws s3 rm "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1 || true
           if aws s3 sync dist/ "s3://${R2_BUCKET}/" \
                --endpoint-url "$endpoint" --no-progress --delete; then
-            # Mirror succeeded — write the marker LAST to certify the snapshot is complete.
+            # Mirror succeeded — write the marker last to certify the snapshot is complete.
             if printf 'ok' | aws s3 cp - "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1; then
               echo "Live snapshot updated in R2."
             else
