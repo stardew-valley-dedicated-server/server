@@ -139,7 +139,7 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           # Bucket kept as a var, not a secret: the name has a hyphen and GitHub's secret
           # masker would turn every `-` in the whole log into *** (see e2e-tests.yml).
-          R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
+          R2_BUCKET: ${{ vars.R2_BUCKET_DOCS }}
         run: |
           # restore_status, read by the decide step: skipped (R2 off) | ok (snapshot reflects
           # live, empty bucket included) | failed (read error, or a partial snapshot missing its
@@ -255,7 +255,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
+          R2_BUCKET: ${{ vars.R2_BUCKET_DOCS }}
         run: |
           set -uo pipefail
           endpoint="https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com"

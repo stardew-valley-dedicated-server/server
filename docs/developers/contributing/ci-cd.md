@@ -321,7 +321,7 @@ Add to the **`github-pages`** GitHub Environment (Settings → Environments):
 | `R2_ACCOUNT_ID` | Secret | Cloudflare account ID (S3 endpoint host) |
 | `R2_ACCESS_KEY_ID` | Secret | R2 token key with object read/write on the docs bucket |
 | `R2_SECRET_ACCESS_KEY` | Secret | R2 token secret |
-| `DOCS_R2_BUCKET` | Variable | Name of a **dedicated** R2 bucket with **no lifecycle rule** (a per-age expiry would sweep the snapshot). Kept as a variable, not a secret — the name's hyphen would trip the secret masker. |
+| `R2_BUCKET_DOCS` | Variable | Name of a **dedicated** R2 bucket with **no lifecycle rule** (a per-age expiry would sweep the snapshot). Kept as a variable, not a secret — the name's hyphen would trip the secret masker. |
 
 The deploy mirrors with `aws s3 sync … --delete`, so this bucket must be dedicated to the docs snapshot — pointing it at a shared bucket (e.g. the E2E report bucket) would delete everything else in it, and a shared retention rule could sweep the snapshot. If R2 is left unconfigured, full-rebuild deploys still work; single-half deploys refuse (the half they don't rebuild can't be confirmed), so configure R2 or re-run rebuilding both halves.
 
