@@ -127,11 +127,9 @@ jobs:
           if_no_artifact_found: warn
           allow_forks: false
 
-      # deploy-pages replaces the WHOLE site, so a half not rebuilt this run is restored from
-      # the currently-live site. That snapshot lives in R2 (durable, no lifecycle rule),
-      # mirrored by "Persist live snapshot to R2" after every successful deploy.
-      # Unconfigured R2 is tolerated: live/site stays empty and a full-build run still deploys;
-      # only a partial deploy then hits the guard below.
+      # A half not rebuilt this run is restored from the currently-live site, snapshotted in R2
+      # (durable, no lifecycle rule) by "Persist live snapshot to R2". Unconfigured R2 is
+      # tolerated: live/site stays empty, so only a single-half deploy refuses (in the decide step).
       - name: Restore live snapshot from R2
         id: restore
         env:
@@ -143,41 +141,25 @@ jobs:
           # masker would turn every `-` in the whole log into *** (see e2e-tests.yml).
           R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
         run: |
-          # No `-e`: a sync error must NOT abort the step. A full-rebuild run (both halves
-          # built this run) doesn't need the snapshot and must still deploy even if R2 is
-          # down. The decide step reads restore_status: `ok` = snapshot read and reflects
-          # live; `skipped`/`failed` = unconfirmed, so a single-half run refuses.
+          # restore_status, read by the decide step: skipped (R2 off) | ok (snapshot reflects
+          # live, empty bucket included) | failed (read error, or a partial snapshot missing its
+          # .snapshot-complete marker). A single-half deploy ships only a confirmed (ok) half.
           set -uo pipefail
           mkdir -p live/site
-          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
-             || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
-            echo "::warning::R2 not configured — skipping live-snapshot restore."
-            echo "restore_status=skipped" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if ! command -v aws >/dev/null 2>&1; then
-            echo "::warning::aws CLI not found on runner — skipping live-snapshot restore."
-            echo "restore_status=skipped" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if aws s3 sync "s3://${R2_BUCKET}/" live/site/ \
-               --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" --no-progress; then
-            # Persist writes a `.snapshot-complete` marker last, after a full mirror. Content
-            # without the marker means persist was interrupted mid-sync (aws s3 sync isn't
-            # atomic), so the snapshot is partial — treat it as a failed read so a single-half
-            # run refuses. An empty bucket (never seeded) has no marker but nothing partial: ok.
-            if [ -z "$(ls -A live/site 2>/dev/null)" ] || [ -f live/site/.snapshot-complete ]; then
-              echo "restore_status=ok" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::R2 snapshot has content but no completion marker — previous persist was interrupted; a partial deploy will be refused."
-              echo "restore_status=failed" >> "$GITHUB_OUTPUT"
-            fi
-            # Never let the marker leak into the merged/deployed site.
-            rm -f live/site/.snapshot-complete
+          endpoint="https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com"
+          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
+            echo "::warning::R2 not configured — skipping snapshot restore."; status=skipped
+          elif ! command -v aws >/dev/null 2>&1; then
+            echo "::warning::aws CLI not found — skipping snapshot restore."; status=skipped
+          elif ! aws s3 sync "s3://${R2_BUCKET}/" live/site/ --endpoint-url "$endpoint" --no-progress; then
+            echo "::warning::R2 snapshot read failed — a single-half deploy will refuse."; status=failed
+          elif [ -n "$(ls -A live/site 2>/dev/null)" ] && [ ! -f live/site/.snapshot-complete ]; then
+            echo "::warning::R2 snapshot has no completion marker (persist was interrupted) — a single-half deploy will refuse."; status=failed
           else
-            echo "::warning::R2 live-snapshot read failed — a partial deploy will be refused by the decide step below."
-            echo "restore_status=failed" >> "$GITHUB_OUTPUT"
+            status=ok
           fi
+          rm -f live/site/.snapshot-complete   # never let the marker leak into the deployed site
+          echo "restore_status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Restore missing halves and decide deploy
         id: check
@@ -186,15 +168,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # live/site holds the last deployed site, restored from R2 by the step above
-          # (empty if R2 was unconfigured or the restore skipped).
-
-          # A dir counts as having content only if it holds at least one entry.
+          # Assemble dist/: for each half keep what this run built, else restore it from
+          # live/site (the R2 snapshot), else none. Latest = site root; preview = dist/preview.
+          # has_* treat a dir as content only if it holds an entry.
           has_root() { [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null | grep -v '^preview$')" ]; }
           has_dir()  { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; }
 
-          # Latest = site root (everything except preview/); preview = dist/preview/.
-          # Each half: keep what this run built, else restore it from the live snapshot, else none.
           if has_root; then
             LATEST_SRC=this-run
           elif has_dir live/site; then
@@ -220,45 +199,34 @@ jobs:
             PREVIEW_SRC=none
           fi
 
-          echo "latest=$LATEST_SRC preview=$PREVIEW_SRC"
           echo "latest_src=$LATEST_SRC" >> "$GITHUB_OUTPUT"
           echo "preview_src=$PREVIEW_SRC" >> "$GITHUB_OUTPUT"
 
-          # deploy-pages replaces the whole site, so a half we can't obtain must not be
-          # published — that would wipe it live. A half is safe to ship only when it's built
-          # this run, restored intact, or confirmed absent by a successful read (ok). A
-          # full-rebuild run never reaches these branches, so an R2 outage can't block it.
+          # deploy-pages replaces the whole site, so never publish a half we can't fully obtain —
+          # that wipes it live. Ship a half only if built this run, restored intact, or confirmed
+          # absent (ok). Full rebuilds never reach these guards, so an R2 outage can't block them.
 
-          # A failed restore can still leave partial content, so a half may read as `live` off
-          # a truncated snapshot. Deploying it would --delete the live files that didn't restore.
+          # Failed restore can leave partial content, so a `live` half may be truncated.
           if [ "${RESTORE_STATUS:-}" = failed ] && { [ "$LATEST_SRC" = live ] || [ "$PREVIEW_SRC" = live ]; }; then
-            echo "::error::R2 snapshot restore was incomplete — a restored half may be truncated."
-            echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe a live half."
+            echo "::error::R2 restore was incomplete — a restored half may be truncated. Retry once R2 is reachable."
             exit 1
           fi
-
           if [ "$LATEST_SRC" = none ]; then
             if [ "${RESTORE_STATUS:-}" = failed ]; then
-              echo "::error::Latest half not built this run and the R2 snapshot read failed (see warning above)."
-              echo "::error::Refusing to deploy — retry once R2 is reachable rather than wipe the live root."
+              echo "::error::Latest not built this run and the R2 read failed — refusing. Retry once R2 is reachable."
             else
-              echo "::error::Latest docs missing and absent from the R2 live snapshot (empty bucket or R2 unconfigured)."
-              echo "::error::Refusing to deploy — that would wipe the live root. Re-run with rebuild_latest=true."
+              echo "::error::Latest missing and absent from R2 — refusing. Re-run with rebuild_latest=true."
             fi
             exit 1
           fi
           if [ "$PREVIEW_SRC" = none ]; then
-            # Deploying LATEST ONLY wipes any preview the live site currently has, so it's only
-            # safe when we've positively CONFIRMED the live site has no preview. Only a
-            # successful restore (ok) confirms that — the snapshot is byte-exact with live via
-            # --delete. A failed read or an unconfigured/skipped restore leaves us blind, so
-            # refuse rather than risk wiping a live preview.
+            # LATEST-ONLY wipes any live preview, so ship it only when a successful read (ok)
+            # confirmed the snapshot — hence live — has no preview.
             if [ "${RESTORE_STATUS:-}" != ok ]; then
-              echo "::error::Preview half not built this run and its absence from the live site is unconfirmed (restore: ${RESTORE_STATUS:-unknown})."
-              echo "::error::Refusing to deploy LATEST ONLY — that could wipe a live preview. Retry once R2 is reachable, or re-run with rebuild_preview=true."
+              echo "::error::Preview absence unconfirmed (restore: ${RESTORE_STATUS:-unknown}) — refusing LATEST-ONLY. Retry, or re-run with rebuild_preview=true."
               exit 1
             fi
-            echo "::warning::Deploying LATEST ONLY — preview genuinely absent from the confirmed R2 snapshot."
+            echo "::warning::Deploying LATEST-ONLY — preview confirmed absent from R2."
           fi
 
       - name: Setup Pages
@@ -275,16 +243,12 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
-      # Mirror the just-deployed site to R2 (durable, no lifecycle rule) so the next run can
-      # restore whichever half it doesn't rebuild. Gated on success() alone: deploy-pages
-      # succeeds only when it actually published to live Pages (the github-pages environment's
-      # protection rules decide which refs may), so the snapshot always equals what's live —
-      # this fires for both default-branch and release-tag deploys. --delete keeps it byte-exact.
+      # Mirror the deployed site to R2 so the next run can restore the half it doesn't rebuild.
+      # success() ⇒ deploy-pages actually published (its github-pages env decides which refs may),
+      # so the snapshot always equals live — for both default-branch and release-tag deploys.
       - name: Persist live snapshot to R2
         if: success()
-        # The deploy already published; a snapshot-write failure must not red the run or
-        # suppress the summary/notification below. It clears the completion marker, so the
-        # next single-half run refuses (retry) instead of recovering from a partial snapshot.
+        # Best-effort: a snapshot-write failure must not red the deploy that already published.
         continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -294,36 +258,25 @@ jobs:
           R2_BUCKET: ${{ vars.DOCS_R2_BUCKET }}
         run: |
           set -uo pipefail
-          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] \
-             || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
-            echo "::warning::R2 not configured — live snapshot NOT persisted. Recovery on the next partial deploy will fail until this is set."
-            exit 0
+          endpoint="https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com"
+          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
+            echo "::warning::R2 not configured — snapshot not persisted; single-half deploys will refuse until it is."; exit 0
           fi
-          if ! command -v aws >/dev/null 2>&1; then
-            echo "::warning::aws CLI not found on runner — live snapshot NOT persisted."
-            exit 0
+          command -v aws >/dev/null 2>&1 || { echo "::warning::aws CLI not found — snapshot not persisted."; exit 0; }
+
+          # The .snapshot-complete marker certifies a full mirror. Clear it first so an interrupted
+          # sync leaves the snapshot uncertified; mirror; write it last. Bail if it can't be cleared
+          # — a surviving marker would certify a partial sync. (rm of a missing key exits 0: first seed.)
+          marker="s3://${R2_BUCKET}/.snapshot-complete"
+          if ! aws s3 rm "$marker" --endpoint-url "$endpoint" >/dev/null 2>&1; then
+            echo "::warning::Could not clear the R2 completion marker — keeping the last certified snapshot."; exit 0
           fi
-          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          # Clear the completion marker before mirroring so the snapshot reads as incomplete for
-          # the whole write window: an interrupted sync then leaves no marker and the next restore
-          # refuses. If the marker can't be cleared, skip the mirror — overwriting the snapshot
-          # while a stale marker survives would let an interrupted sync pass as complete. (rm of a
-          # missing marker returns 0, so the first-ever persist isn't blocked here.)
-          if ! aws s3 rm "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1; then
-            echo "::warning::Couldn't clear the R2 completion marker — leaving the last certified snapshot untouched."
-            exit 0
+          if ! aws s3 sync dist/ "s3://${R2_BUCKET}/" --endpoint-url "$endpoint" --no-progress --delete; then
+            echo "::warning::R2 mirror failed — next single-half deploy will refuse until the next persist."; exit 0
           fi
-          if aws s3 sync dist/ "s3://${R2_BUCKET}/" \
-               --endpoint-url "$endpoint" --no-progress --delete; then
-            # Mirror succeeded — write the marker last to certify the snapshot is complete.
-            if printf 'ok' | aws s3 cp - "s3://${R2_BUCKET}/.snapshot-complete" --endpoint-url "$endpoint" >/dev/null 2>&1; then
-              echo "Live snapshot updated in R2."
-            else
-              echo "::warning::Snapshot mirrored but completion marker write failed — the next partial deploy will refuse until the next successful persist."
-            fi
-          else
-            echo "::warning::Failed to persist live snapshot to R2 — the next partial deploy will refuse (no completion marker) until the next successful persist."
-          fi
+          printf 'ok' | aws s3 cp - "$marker" --endpoint-url "$endpoint" >/dev/null 2>&1 \
+            || echo "::warning::Mirror done but marker write failed — next single-half deploy will refuse until the next persist."
+          echo "Live snapshot updated in R2."
 
       - name: Build summary
         run: |
