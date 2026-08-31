@@ -4,6 +4,7 @@ using Docker.DotNet;
 using Docker.DotNet.Models;
 using DotNet.Testcontainers.Containers;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Containers;
 
@@ -53,12 +54,21 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     private readonly DockerClient _client;
     private readonly IContainer _container;
     private readonly string _diagnosticLabel;
+    private readonly string _hostId;
     private readonly LineHandler _onLine;
     private readonly Action<string>? _diagnosticCallback;
 
     private readonly CancellationTokenSource _cts = new();
     private Task? _runTask;
     private string? _sinceCursor;
+
+    // Silent-gap measurement: a chunk arriving more than GapThreshold after the
+    // previous one emits container_log_stream_gap with the gap's bounds. A
+    // quiet container produces the same shape as a stalled transport; the
+    // discriminator is every stream on a host gapping at the same instant, so
+    // the reader records and the reader of the artifact correlates.
+    private static readonly TimeSpan GapThreshold = TimeSpan.FromSeconds(10);
+    private DateTime _lastChunkAtUtc;
 
     // The last raw (pre-strip) line emitted, including the timestamp prefix.
     // Used to dedup a single line of overlap on reconnect: Docker's `Since`
@@ -87,6 +97,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// <paramref name="diagnosticCallback"/> (e.g. <c>"server-0"</c>,
     /// <c>"client-2"</c>, <c>"steam-auth-shared"</c>).
     /// </param>
+    /// <param name="hostId">Docker host the container runs on; stamped on stream-gap events.</param>
     /// <param name="onLine">
     /// Per-line callback. Called for each non-empty line after the daemon
     /// timestamp prefix and the logmonitor process tag have been stripped.
@@ -99,6 +110,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         DockerClient client,
         IContainer container,
         string diagnosticLabel,
+        string hostId,
         LineHandler onLine,
         Action<string>? diagnosticCallback = null
     )
@@ -106,6 +118,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         _client = client;
         _container = container;
         _diagnosticLabel = diagnosticLabel;
+        _hostId = hostId;
         _onLine = onLine;
         _diagnosticCallback = diagnosticCallback;
     }
@@ -359,6 +372,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 firstRead = false;
             }
 
+            RecordGap(DateTime.UtcNow);
+
             var sb =
                 result.Target == MultiplexedStream.TargetStream.StandardError
                     ? stderrBuffer
@@ -376,6 +391,27 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 EmitLine(line);
             }
         }
+    }
+
+    private void RecordGap(DateTime nowUtc)
+    {
+        var previous = _lastChunkAtUtc;
+        _lastChunkAtUtc = nowUtc;
+        if (previous == default || nowUtc - previous < GapThreshold)
+        {
+            return;
+        }
+
+        InfrastructureEventLog.Emit(
+            TransportEventNames.ContainerLogStreamGap,
+            new StreamGapEvent(
+                _diagnosticLabel,
+                _hostId,
+                previous,
+                nowUtc,
+                (long)(nowUtc - previous).TotalMilliseconds
+            )
+        );
     }
 
     private static int IndexOfNewline(StringBuilder sb)

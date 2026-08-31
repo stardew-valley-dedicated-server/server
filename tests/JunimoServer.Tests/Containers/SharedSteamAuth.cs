@@ -66,6 +66,7 @@ public class SharedSteamAuth : IAsyncDisposable
             _host.ApiClient,
             _container,
             "steam-auth-shared",
+            HostId,
             HandleLine
         );
         // SuppressFlow: shared-steam log streaming runs for the whole process and

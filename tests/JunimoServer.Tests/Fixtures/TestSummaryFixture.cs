@@ -444,6 +444,12 @@ public class TestSummaryFixture : IAsyncLifetime
         // container log streamers always see a set TestArtifacts.RunDir
         // instead of the default TestResults root.
         RunMetadata.BeginRun();
+        Helpers.StderrTee.Install(
+            Path.Combine(
+                TestArtifacts.GetDiagnosticsDir(),
+                Helpers.RunArtifactNames.TestProcessStderrLog
+            )
+        );
 
         lock (_instanceLock)
         {

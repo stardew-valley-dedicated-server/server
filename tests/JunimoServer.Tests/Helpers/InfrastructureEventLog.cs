@@ -255,11 +255,31 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>ssh_master_pid_unmapped</c> (<c>host_id, reportedPid</c>; the Cygwin-space
 /// pid could not be mapped to a Windows pid, so every kill degrades to
 /// <c>-O exit</c> + check-based confirmation) ·
-/// <c>ssh_master_respawn_attempt</c> (<c>host_id, oldPid?, oldMasterKill,
-/// oldMasterGone</c>; see <see cref="Infrastructure.TunnelManager"/> for
-/// kill-outcome variants) ·
-/// <c>ssh_master_respawned</c> (<c>host_id, alive</c>) ·
-/// <c>ssh_master_respawn_failed</c> (<c>host_id, error, killOutcome?</c>) ·
+/// <c>ssh_master_canary_stall</c> / <c>ssh_master_canary_recovered</c> /
+/// <c>ssh_master_wedge_observed</c> (typed records in
+/// <see cref="Schema.Events.TransportEventNames"/>; the canary streak's start,
+/// its measured end, and — at the action threshold — every canary of the streak
+/// plus <c>-O check</c>, coordinator TCP state, a reachability probe and the
+/// master log tail, captured before any respawn) ·
+/// <c>ssh_master_respawn_attempt</c> (<see cref="Schema.Events.SshMasterRespawnAttemptEvent"/>:
+/// <c>host_id, incidentId, cause, oldPid?, termination, exitCode, exitStderr,
+/// killOutcome, elapsedMs, terminatedAtUtc, masterLogArchivePath?</c>; the same
+/// action, plus its outcome and attribution window, is published to the child as
+/// <c>diagnostics/transport-state.{hostId}.json</c>) ·
+/// <c>ssh_master_respawned</c> (<c>host_id, incidentId, alive</c>) ·
+/// <c>ssh_master_respawn_failed</c> (<c>host_id, incidentId, error, killOutcome?</c>) ·
+/// <c>transport_state_write_failed</c> / <c>ssh_master_log_archive_failed</c>
+/// (<c>error</c> plus the paths involved; a diagnostics write that failed) ·
+/// <c>forward_heal_attempt</c> (<see cref="Schema.Events.ForwardHealAttemptEvent"/>;
+/// one per heal cycle of <c>ForwardHealingHandler</c>; <c>heal_threw</c> carries the
+/// heal's stack trace) ·
+/// <c>forward_heal_threw</c> (<see cref="Schema.Events.ForwardHealThrewEvent"/>; a
+/// heal outside the handler — <c>DockerHost</c> daemon forward, <c>ManagedServer</c>
+/// watchdog — threw instead of returning a verdict; chain + stack trace) ·
+/// <c>container_log_stream_gap</c> / <c>container_stats_stream_gap</c>
+/// (<see cref="Schema.Events.StreamGapEvent"/>; a stream resumed after a silent gap
+/// above the reader's threshold — all streams of a host gapping together is a
+/// transport stall, one stream alone is a quiet container) ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
 /// <c>tunnel_forward_reopened</c> / <c>tunnel_forward_reopen_failed</c>

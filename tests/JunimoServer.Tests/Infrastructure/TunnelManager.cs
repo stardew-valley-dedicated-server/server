@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using JunimoServer.Tests.Helpers;
+using JunimoServer.Tests.Schema.Events;
+using JunimoServer.Tests.Schema.Json;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -47,7 +49,18 @@ public sealed class TunnelManager : IAsyncDisposable
     private readonly Dictionary<string, HostMaster> _masters = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _canaryWedgeStreaks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _reopenFailStreaks = new(StringComparer.Ordinal);
+
+    // Canary observations of the current wedge streak per host, oldest first,
+    // so the wedge record can show every poll that led to the verdict.
+    private readonly Dictionary<string, List<CanaryObservation>> _canaryWedgeHistory = new(
+        StringComparer.Ordinal
+    );
     private string _sshPath = "ssh";
+
+    // Faults seen this long after a master respawn completes are attributed to
+    // it (transport-state.{hostId}.json windowEndUtc). Matches ForwardHealingHandler's
+    // heal budget, the longest a consumer keeps retrying against the new master.
+    private static readonly TimeSpan RespawnAttributionWindow = TimeSpan.FromSeconds(45);
 
     // Set at DrainAsync entry. Teardown owns master lifecycle from that point: the
     // owner-side health monitor must not respawn a master (or re-open forwards) that
@@ -307,7 +320,11 @@ public sealed class TunnelManager : IAsyncDisposable
         psi.ArgumentList.Add("BatchMode=yes");
         // INFO, not ERROR: the silent-drop line "Timeout, server not responding."
         // is LOG_INFO, so ERROR would suppress the one line this log exists for.
-        // A healthy -N master stays at 0 bytes, so the happy path stays lean.
+        // A healthy -N master stays at 0 bytes, so the happy path stays lean
+        // (VERBOSE would only add the "Authenticated to" line — mux channel
+        // open/close is debug2+). The file is per master process: a respawn
+        // archives the old one (ArchiveMasterLog), so its tail is the old
+        // master's last minutes, not the new master's first.
         // -E *moves* ssh's stderr to the file (parent pipe goes empty), so the
         // spawn/check failure paths read the tail instead. Only the silent-timeout
         // drop lands here; an RST drop leaves it empty (caught by the classifier).
@@ -502,9 +519,12 @@ public sealed class TunnelManager : IAsyncDisposable
         if (await IsMasterAliveAsync(hostId, ct))
         {
             var canary = await ProbeSocketForwardDataPathAsync(hostId, ct);
-            if (canary == SocketForwardProbeResult.Dropped)
+            if (canary.Result == SocketForwardProbeResult.Dropped)
             {
-                ResetStreak(_canaryWedgeStreaks, hostId);
+                // A drop ends any wedge streak but is not a recovery — the forward is gone
+                // and the reopen below handles it, emitting its own events. Clear the streak
+                // without a canary_recovered that would carry a dropped observation.
+                EndWedgeStreak(hostId, canary.Observation, emitRecovered: false);
                 if (await ReopenRegisteredForwardsAsync(hostId, skipAliveListeners: true, ct))
                 {
                     ResetStreak(_reopenFailStreaks, hostId);
@@ -519,18 +539,26 @@ public sealed class TunnelManager : IAsyncDisposable
                 // while every poll emits tunnel_forward_reopen_failed.
                 cause = "forward_reopen_failing";
             }
-            else if (canary != SocketForwardProbeResult.Wedged)
+            else if (canary.Result == SocketForwardProbeResult.NotApplicable)
             {
-                ResetStreak(_canaryWedgeStreaks, hostId);
+                return true;
+            }
+            else if (canary.Result == SocketForwardProbeResult.Healthy)
+            {
+                EndWedgeStreak(hostId, canary.Observation);
                 ResetStreak(_reopenFailStreaks, hostId);
                 return true;
             }
-            else if (IncrementStreak(_canaryWedgeStreaks, hostId) < 2)
-            {
-                return true; // single wedged poll: could be transfer-load slowness
-            }
             else
             {
+                var streak = RecordWedgedCanary(hostId, canary.Observation);
+                if (streak < 2)
+                {
+                    return true; // single wedged poll: could be transfer-load slowness
+                }
+                // Everything observable about the wedge, captured BEFORE the respawn
+                // destroys the evidence (the old master, its connections, its log).
+                await EmitWedgeObservedAsync(master, streak, ct);
                 cause = "datapath_wedged";
             }
         }
@@ -541,11 +569,132 @@ public sealed class TunnelManager : IAsyncDisposable
 
         ResetStreak(_canaryWedgeStreaks, hostId);
         ResetStreak(_reopenFailStreaks, hostId);
+        lock (_lock)
+        {
+            _canaryWedgeHistory.Remove(hostId);
+        }
 
         // Respawn at the same ControlPath so the child's adopted entry (and its in-flight
         // forward re-opens) recover transparently.
         EmitSafe("ssh_master_unhealthy_owner", new { host_id = hostId, cause });
-        return await TryRespawnMasterAsync(hostId, ct);
+        return await TryRespawnMasterAsync(hostId, ct, cause);
+    }
+
+    /// <summary>
+    /// Appends a wedged canary to the host's streak and returns the streak length.
+    /// The first wedged poll emits <c>ssh_master_canary_stall</c> (stall start).
+    /// </summary>
+    private int RecordWedgedCanary(string hostId, CanaryObservation canary)
+    {
+        var streak = IncrementStreak(_canaryWedgeStreaks, hostId);
+
+        lock (_lock)
+        {
+            if (!_canaryWedgeHistory.TryGetValue(hostId, out var history))
+            {
+                history = new List<CanaryObservation>();
+                _canaryWedgeHistory[hostId] = history;
+            }
+
+            history.Add(canary);
+        }
+
+        if (streak == 1)
+        {
+            EmitSafe(
+                TransportEventNames.SshMasterCanaryStall,
+                new SshMasterCanaryStallEvent(hostId, canary)
+            );
+        }
+
+        return streak;
+    }
+
+    /// <summary>
+    /// A healthy poll after wedged ones ends the streak: emits
+    /// <c>ssh_master_canary_recovered</c> with the stall's measured length (first
+    /// wedged poll → this poll) — the number the stall-tolerance threshold is tuned
+    /// against — and clears the streak. No-op when no streak was running.
+    /// </summary>
+    private void EndWedgeStreak(string hostId, CanaryObservation canary, bool emitRecovered = true)
+    {
+        List<CanaryObservation>? history;
+
+        lock (_lock)
+        {
+            _canaryWedgeStreaks.Remove(hostId);
+            _canaryWedgeHistory.Remove(hostId, out history);
+        }
+
+        if (!emitRecovered || history is null || history.Count == 0)
+        {
+            return;
+        }
+
+        EmitSafe(
+            TransportEventNames.SshMasterCanaryRecovered,
+            new SshMasterCanaryRecoveredEvent(
+                hostId,
+                (long)(canary.AtUtc - history[0].AtUtc).TotalMilliseconds,
+                history.Count,
+                canary
+            )
+        );
+    }
+
+    /// <summary>
+    /// The detection record for a wedge verdict: every canary of the streak, a
+    /// fresh <c>-O check</c>, the coordinator's TCP state toward the host, a plain
+    /// TCP reachability probe, and the master's <c>-E</c> log tail.
+    /// </summary>
+    private async Task EmitWedgeObservedAsync(HostMaster master, int streak, CancellationToken ct)
+    {
+        IReadOnlyList<CanaryObservation> canaries;
+        lock (_lock)
+        {
+            canaries = _canaryWedgeHistory.TryGetValue(master.HostId, out var history)
+                ? history.ToArray()
+                : Array.Empty<CanaryObservation>();
+        }
+
+        var checkStarted = Stopwatch.GetTimestamp();
+        MuxCheckObservation muxCheck;
+        try
+        {
+            var (exit, stderr) = await RunCheckAsync(master.ControlPath, master.SshDestination, ct);
+            muxCheck = new MuxCheckObservation(exit, stderr, ElapsedMs(checkStarted));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            muxCheck = new MuxCheckObservation(
+                -1,
+                $"{ex.GetType().Name}: {ex.Message}",
+                ElapsedMs(checkStarted)
+            );
+        }
+
+        var (tcp, reachability) = await CoordinatorTcpSnapshot.CaptureAsync(
+            master.SshDestination,
+            _sshPath,
+            ct
+        );
+
+        EmitSafe(
+            TransportEventNames.SshMasterWedgeObserved,
+            new SshMasterWedgeObservedEvent(
+                master.HostId,
+                streak,
+                canaries,
+                muxCheck,
+                tcp,
+                reachability,
+                ReadMasterLogTail(master.LogPath, MaxLogTailBytes)
+            )
+        );
     }
 
     private int IncrementStreak(Dictionary<string, int> streaks, string hostId)
@@ -586,7 +735,7 @@ public sealed class TunnelManager : IAsyncDisposable
     /// through the host's registered socket forward. Pure TCP — no <c>ssh -O</c> op, so it
     /// doesn't consume the mux gate and works even when the mux listener is dead.
     /// </summary>
-    private async Task<SocketForwardProbeResult> ProbeSocketForwardDataPathAsync(
+    private async Task<CanaryProbe> ProbeSocketForwardDataPathAsync(
         string hostId,
         CancellationToken ct
     )
@@ -598,16 +747,30 @@ public sealed class TunnelManager : IAsyncDisposable
                 f.HostId == hostId && f.RemoteSocketPath is not null
             );
         }
+
+        var atUtc = DateTime.UtcNow;
+
         if (entry is null)
         {
-            return SocketForwardProbeResult.NotApplicable;
+            return CanaryProbe.Of(
+                SocketForwardProbeResult.NotApplicable,
+                atUtc,
+                0,
+                null,
+                null,
+                "no socket forward registered"
+            );
         }
 
+        var connectTimeout = TimeSpan.FromSeconds(2);
+        var ioTimeout = TimeSpan.FromSeconds(5);
+        var started = Stopwatch.GetTimestamp();
+        long connectMs;
         try
         {
             using var client = new TcpClient();
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            connectCts.CancelAfter(TimeSpan.FromSeconds(2));
+            connectCts.CancelAfter(connectTimeout);
             try
             {
                 await client.ConnectAsync(
@@ -615,16 +778,31 @@ public sealed class TunnelManager : IAsyncDisposable
                     entry.CoordinatorPort,
                     connectCts.Token
                 );
+                connectMs = ElapsedMs(started);
             }
-            catch (SocketException)
+            catch (SocketException ex)
             {
-                return SocketForwardProbeResult.Dropped;
+                return CanaryProbe.Of(
+                    SocketForwardProbeResult.Dropped,
+                    atUtc,
+                    ElapsedMs(started),
+                    null,
+                    null,
+                    $"connect: {ex.SocketErrorCode}"
+                );
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
                 // Loopback connect only stalls when the listener's backlog is full of
                 // never-accepted connections — the wedge signature, not a slow daemon.
-                return SocketForwardProbeResult.Wedged;
+                return CanaryProbe.Of(
+                    SocketForwardProbeResult.Wedged,
+                    atUtc,
+                    ElapsedMs(started),
+                    null,
+                    null,
+                    $"connect deadline {connectTimeout.TotalSeconds:F0}s"
+                );
             }
 
             var stream = client.GetStream();
@@ -632,37 +810,107 @@ public sealed class TunnelManager : IAsyncDisposable
                 "GET /_ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
             );
             using var ioCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            ioCts.CancelAfter(TimeSpan.FromSeconds(5));
+            ioCts.CancelAfter(ioTimeout);
+            long? writeMs = null;
             try
             {
+                var writeStarted = Stopwatch.GetTimestamp();
                 await stream.WriteAsync(request, ioCts.Token);
+                writeMs = ElapsedMs(writeStarted);
+                var readStarted = Stopwatch.GetTimestamp();
                 var buffer = new byte[1];
                 var read = await stream.ReadAsync(buffer, ioCts.Token);
+                var readMs = ElapsedMs(readStarted);
                 return read > 0
-                    ? SocketForwardProbeResult.Healthy
-                    : SocketForwardProbeResult.Dropped;
+                    ? CanaryProbe.Of(
+                        SocketForwardProbeResult.Healthy,
+                        atUtc,
+                        connectMs,
+                        writeMs,
+                        readMs,
+                        null
+                    )
+                    : CanaryProbe.Of(
+                        SocketForwardProbeResult.Dropped,
+                        atUtc,
+                        connectMs,
+                        writeMs,
+                        readMs,
+                        "read: EOF"
+                    );
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                return SocketForwardProbeResult.Wedged;
+                return CanaryProbe.Of(
+                    SocketForwardProbeResult.Wedged,
+                    atUtc,
+                    connectMs,
+                    writeMs,
+                    null,
+                    $"{(writeMs is null ? "write" : "read")} deadline {ioTimeout.TotalSeconds:F0}s"
+                );
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or SocketException)
             {
-                return SocketForwardProbeResult.Dropped;
-            }
-            catch (SocketException)
-            {
-                return SocketForwardProbeResult.Dropped;
+                return CanaryProbe.Of(
+                    SocketForwardProbeResult.Dropped,
+                    atUtc,
+                    connectMs,
+                    writeMs,
+                    null,
+                    $"{(writeMs is null ? "write" : "read")}: {ex.GetType().Name}: {ex.Message}"
+                );
             }
         }
         catch (OperationCanceledException)
         {
             throw; // outer ct: caller is shutting down
         }
-        catch
+        catch (Exception ex)
         {
-            return SocketForwardProbeResult.NotApplicable; // probe glitch must not condemn a host
+            // A probe glitch must not condemn a host, but its shape is recorded.
+            return CanaryProbe.Of(
+                SocketForwardProbeResult.NotApplicable,
+                atUtc,
+                ElapsedMs(started),
+                null,
+                null,
+                $"probe glitch: {ex.GetType().Name}: {ex.Message}"
+            );
         }
+    }
+
+    /// <summary>Canary verdict plus the observation that produced it.</summary>
+    private readonly record struct CanaryProbe(
+        SocketForwardProbeResult Result,
+        CanaryObservation Observation
+    )
+    {
+        public static CanaryProbe Of(
+            SocketForwardProbeResult result,
+            DateTime atUtc,
+            long connectMs,
+            long? writeMs,
+            long? readMs,
+            string? detail
+        ) =>
+            new(
+                result,
+                new CanaryObservation(
+                    atUtc,
+                    result switch
+                    {
+                        SocketForwardProbeResult.Healthy => "healthy",
+                        SocketForwardProbeResult.Wedged => "wedged",
+                        SocketForwardProbeResult.Dropped => "dropped",
+                        _ => "not_applicable",
+                    },
+                    connectMs,
+                    writeMs,
+                    readMs,
+                    detail
+                )
+            );
     }
 
     /// <summary>
@@ -678,8 +926,14 @@ public sealed class TunnelManager : IAsyncDisposable
     /// exhaustion) otherwise loses the whole host even though the host is fine.
     /// Only the owner (parent) can respawn — an adopted child entry has no spawn rights, so
     /// it returns false and lets the normal poison proceed.
+    /// <paramref name="cause"/> names what tripped the respawn; it is recorded in the
+    /// <c>ssh_master_respawn_attempt</c> event and <c>transport-state.{hostId}.json</c>.
     /// </summary>
-    public async Task<bool> TryRespawnMasterAsync(string hostId, CancellationToken ct = default)
+    public async Task<bool> TryRespawnMasterAsync(
+        string hostId,
+        CancellationToken ct = default,
+        string cause = "master_check_failing"
+    )
     {
         if (_draining || Helpers.ShutdownCoordinator.IsShuttingDown)
         {
@@ -704,6 +958,9 @@ public sealed class TunnelManager : IAsyncDisposable
 
         var destination = master.SshDestination;
         var keyPath = master.SshKeyPath;
+        var actionStartedAtUtc = DateTime.UtcNow;
+        var actionStarted = Stopwatch.GetTimestamp();
+        var incidentId = $"{hostId}-{actionStartedAtUtc:yyyyMMddTHHmmssfff}";
 
         // Terminal teardown of the old master: bounded -O exit, pid-kill
         // fallback, then CONFIRM the process is gone. The old process must be
@@ -720,6 +977,7 @@ public sealed class TunnelManager : IAsyncDisposable
             master.SpawnedAtUtc,
             TimeSpan.FromSeconds(3)
         );
+        var terminatedAtUtc = DateTime.UtcNow;
 
         // Evict the dead entry so RegisterHostMasterAsync's ContainsKey guard
         // doesn't short-circuit. (The core already unlinked the socket iff the
@@ -730,15 +988,54 @@ public sealed class TunnelManager : IAsyncDisposable
             _masters.Remove(hostId);
         }
 
+        // The old master's -E log is its evidence; the new master must not
+        // append into it. Archived only once the process is gone (a survivor
+        // keeps writing to it).
+        var archivePath = teardown.Gone
+            ? ArchiveMasterLog(master.LogPath, master.MasterPid, master.SpawnedAtUtc)
+            : null;
+
+        var termination = teardown switch
+        {
+            { KillOutcome: "killed" } => "killed",
+            { Gone: false } => "unconfirmed",
+            { ExitCode: 0 } => "exit_ok",
+            _ => "socket_gone",
+        };
+
+        var state = new TransportState
+        {
+            IncidentId = incidentId,
+            HostId = hostId,
+            Cause = cause,
+            Action = "master_respawn",
+            Termination = termination,
+            ExitCode = teardown.ExitCode,
+            ExitStderr = teardown.ExitStderr,
+            KillOutcome = teardown.KillOutcome,
+            OldPid = master.MasterPid,
+            MasterLogArchivePath = archivePath,
+            ActionStartedAtUtc = actionStartedAtUtc,
+            TerminatedAtUtc = terminatedAtUtc,
+            Outcome = "in_progress",
+        };
+        PublishTransportState(state);
+
         EmitSafe(
-            "ssh_master_respawn_attempt",
-            new
-            {
-                host_id = hostId,
-                oldPid = master.MasterPid,
-                oldMasterKill = teardown.KillOutcome,
-                oldMasterGone = teardown.Gone,
-            }
+            TransportEventNames.SshMasterRespawnAttempt,
+            new SshMasterRespawnAttemptEvent(
+                hostId,
+                incidentId,
+                cause,
+                master.MasterPid,
+                termination,
+                teardown.ExitCode,
+                teardown.ExitStderr,
+                teardown.KillOutcome,
+                ElapsedMs(actionStarted),
+                terminatedAtUtc,
+                archivePath
+            )
         );
 
         if (!teardown.Gone)
@@ -755,10 +1052,12 @@ public sealed class TunnelManager : IAsyncDisposable
                 new
                 {
                     host_id = hostId,
+                    incidentId,
                     error = "old master process not confirmed gone",
                     killOutcome = teardown.KillOutcome,
                 }
             );
+            PublishTransportState(CompleteTransportState(state, "old_master_survived"));
             return false;
         }
 
@@ -766,7 +1065,15 @@ public sealed class TunnelManager : IAsyncDisposable
         {
             await RegisterHostMasterAsync(hostId, destination, keyPath, ct);
             var alive = await IsMasterAliveAsync(hostId, ct);
-            EmitSafe("ssh_master_respawned", new { host_id = hostId, alive });
+            EmitSafe(
+                "ssh_master_respawned",
+                new
+                {
+                    host_id = hostId,
+                    incidentId,
+                    alive,
+                }
+            );
             if (alive)
             {
                 // Same-port restoration for forwards THIS process registered (the parent's
@@ -777,12 +1084,101 @@ public sealed class TunnelManager : IAsyncDisposable
                 // stale ports now fail fast as forward-scoped faults.
                 await ReopenRegisteredForwardsAsync(hostId, skipAliveListeners: false, ct);
             }
+
+            PublishTransportState(
+                CompleteTransportState(state, alive ? "respawned" : "respawn_failed")
+            );
             return alive;
         }
         catch (Exception ex)
         {
-            EmitSafe("ssh_master_respawn_failed", new { host_id = hostId, error = ex.Message });
+            EmitSafe(
+                "ssh_master_respawn_failed",
+                new
+                {
+                    host_id = hostId,
+                    incidentId,
+                    error = ex.Message,
+                }
+            );
+            PublishTransportState(CompleteTransportState(state, "respawn_failed"));
             return false;
+        }
+    }
+
+    private static TransportState CompleteTransportState(TransportState state, string outcome)
+    {
+        var endedAtUtc = DateTime.UtcNow;
+        return state with
+        {
+            Outcome = outcome,
+            ActionEndedAtUtc = endedAtUtc,
+            WindowEndUtc = endedAtUtc + RespawnAttributionWindow,
+        };
+    }
+
+    /// <summary>
+    /// Writes the host's <c>diagnostics/transport-state.{hostId}.json</c> for the xUnit child. A write
+    /// failure is reported as an event rather than thrown: the respawn itself must
+    /// still complete, and the child's reader treats a missing file as "no action".
+    /// </summary>
+    private static void PublishTransportState(TransportState state)
+    {
+        try
+        {
+            TransportStateFile.Write(TestArtifacts.RunDir, state);
+        }
+        catch (Exception ex)
+        {
+            EmitSafe(
+                "transport_state_write_failed",
+                new
+                {
+                    host_id = state.HostId,
+                    incidentId = state.IncidentId,
+                    path = TransportStateFile.PathFor(TestArtifacts.RunDir, state.HostId),
+                    error = $"{ex.GetType().Name}: {ex.Message}",
+                }
+            );
+        }
+    }
+
+    /// <summary>
+    /// Moves the dead master's <c>-E</c> log to <c>ssh-master-{host}.pid{pid}-{spawn}.log</c>
+    /// so the replacement master starts a fresh file at the deterministic path.
+    /// Returns the archive path, or null when there was no log to archive; a
+    /// failed move is reported as an event and leaves the file in place.
+    /// </summary>
+    private static string? ArchiveMasterLog(string? logPath, int? masterPid, DateTime spawnedAtUtc)
+    {
+        if (string.IsNullOrEmpty(logPath) || !File.Exists(logPath))
+        {
+            return null;
+        }
+
+        var archivePath = Path.Combine(
+            Path.GetDirectoryName(logPath)!,
+            $"{Path.GetFileNameWithoutExtension(logPath)}"
+                + $".pid{(masterPid is int pid ? pid.ToString() : "unknown")}"
+                + $"-{spawnedAtUtc:HHmmss}{Path.GetExtension(logPath)}"
+        );
+        try
+        {
+            File.Move(logPath, archivePath, overwrite: true);
+            return archivePath;
+        }
+        catch (Exception ex)
+        {
+            EmitSafe(
+                "ssh_master_log_archive_failed",
+                new
+                {
+                    logPath,
+                    archivePath,
+                    error = $"{ex.GetType().Name}: {ex.Message}",
+                }
+            );
+            return null;
         }
     }
 

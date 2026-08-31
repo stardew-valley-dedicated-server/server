@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Docker.DotNet;
 using Docker.DotNet.Models;
+using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Helpers;
 
@@ -90,6 +91,51 @@ public static class ContainerStatsCollector
         // budget. Updated atomically via ShouldEmitStrike below.
         public int DockerStatsFailureStreak;
         public int GameStatsFailureStreak;
+
+        // The daemon's stats stream delivers one sample per second, so a
+        // sample arriving more than StatsGapThreshold after the previous one
+        // is a transport stall (or daemon stall) worth its bounds on record.
+        // UTC ticks, exchanged atomically: Progress<T> posts each sample to the
+        // thread pool, so a burst of buffered samples after a stall runs
+        // concurrently and would otherwise report the same gap twice.
+        public long LastSampleTicks;
+    }
+
+    private static readonly TimeSpan StatsGapThreshold = TimeSpan.FromSeconds(5);
+
+    private static void RecordStatsGap(InstanceEntry entry, DateTime nowUtc)
+    {
+        // Monotonic CAS: an out-of-order callback never moves the value backward
+        // (a regressed value would time the next gap against a stale sample).
+        long previousTicks;
+        do
+        {
+            previousTicks = Volatile.Read(ref entry.LastSampleTicks);
+            if (nowUtc.Ticks <= previousTicks)
+            {
+                return;
+            }
+        } while (
+            Interlocked.CompareExchange(ref entry.LastSampleTicks, nowUtc.Ticks, previousTicks)
+            != previousTicks
+        );
+
+        if (previousTicks == 0 || nowUtc.Ticks - previousTicks < StatsGapThreshold.Ticks)
+        {
+            return;
+        }
+
+        var previous = new DateTime(previousTicks, DateTimeKind.Utc);
+        InfrastructureEventLog.Emit(
+            TransportEventNames.ContainerStatsStreamGap,
+            new StreamGapEvent(
+                entry.InstanceId,
+                entry.HostId,
+                previous,
+                nowUtc,
+                (long)(nowUtc - previous).TotalMilliseconds
+            )
+        );
     }
 
     private static readonly ConcurrentDictionary<string, InstanceEntry> _instances = new();
@@ -275,6 +321,8 @@ public static class ContainerStatsCollector
                 {
                     try
                     {
+                        RecordStatsGap(entry, DateTime.UtcNow);
+
                         // The daemon omits these blocks for a container that has no
                         // CPU/memory accounting yet (just-created, or between restarts);
                         // skip the sample rather than synthesize zeroes.
