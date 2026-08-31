@@ -32,6 +32,7 @@ Detailed always-on and path-specific rules live in `.claude/rules/`. Read `.clau
 - `make help` — available Make targets
 - `make test FILTER=ClassName` — run specific E2E tests
 - `make test-llm` — structured JSONL test output for AI debugging
+- `make test-unit` — unit tests (no Docker, no Steam)
 - `make build-test-ui` — type-check/build the test UI
 - `dotnet build mod/JunimoServer/JunimoServer.csproj` — build the mod (`GAME_PATH` required)
 

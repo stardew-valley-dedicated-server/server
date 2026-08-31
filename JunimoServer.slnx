@@ -6,6 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj" />
     <Project Path="tests/JunimoServer.Tests/JunimoServer.Tests.csproj" />
+    <Project Path="tests/SteamService.Tests/SteamService.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/fixtures/">
     <Project Path="tests/fixtures/TestFarmMod/TestFarmMod.csproj" />

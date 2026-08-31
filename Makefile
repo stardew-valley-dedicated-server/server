@@ -184,6 +184,10 @@ export COLUMNS=160
 test:
 	@dotnet run --project $(RUNNER_PROJECT) -- $(if $(VERBOSE),--verbose) $(if $(FILTER),--filter "$(FILTER)")
 
+# Run unit tests (no Docker, no Steam)
+test-unit:
+	@dotnet test tests/SteamService.Tests/SteamService.Tests.csproj
+
 # Run tests with verbose output (detailed setup steps, diagnostics inline)
 test-verbose:
 	@dotnet run --project $(RUNNER_PROJECT) -- --verbose $(if $(FILTER),--filter "$(FILTER)")
@@ -303,6 +307,7 @@ help:
 	@echo "  make test-llm     - Run tests with structured JSONL output (for AI agents)"
 	@echo "  make test-web     - Run tests with web UI (opens browser with live results)"
 	@echo "  make test-web-report - Run tests with web UI + static report generation"
+	@echo "  make test-unit    - Run unit tests (no Docker, no Steam)"
 	@echo "  make og-preview   - Render OG link-preview card mockups for design review"
 	@echo "  FILTER=X          - Filter tests, e.g. FILTER=PasswordProtection"
 	@echo "  VERBOSE=1         - Show detailed setup steps, e.g. make test VERBOSE=1"

@@ -69,7 +69,7 @@ The custom runner (`tests/JunimoServer.TestRunner/`) is the only supported entry
 - **LLM** (`make test-llm`) — structured JSONL to stdout, optimized for AI debugging.
 - **Web** (`make test-web`) — Vue UI with VNC grid (`tests/test-ui/`).
 
-The test assembly fails fast with a clear error if invoked outside the runner (e.g. via plain `dotnet test`); use `make test FILTER=…` instead.
+The E2E test assembly fails fast with a clear error if invoked outside the runner (e.g. via plain `dotnet test`); use `make test FILTER=…` instead. Unit tests (`tests/SteamService.Tests/`) need neither Docker nor Steam and run with `make test-unit`.
 
 ## Setup-phase IPC
 
