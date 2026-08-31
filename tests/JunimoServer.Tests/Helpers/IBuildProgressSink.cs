@@ -17,8 +17,7 @@ public interface IBuildProgressSink
 /// <summary>
 /// Child-side sink: forwards build progress to <see cref="SetupEventBus"/>,
 /// which serialises each event onto the named pipe consumed by the parent
-/// runner. Used by <c>TestResourceBroker</c> and
-/// <c>DownloadValidationFixture</c>.
+/// runner.
 /// </summary>
 public sealed class SetupEventBusBuildProgressSink : IBuildProgressSink
 {

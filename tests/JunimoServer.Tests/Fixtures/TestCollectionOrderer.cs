@@ -1,6 +1,5 @@
 using System.Reflection;
 using JunimoServer.Tests.Infrastructure;
-using Xunit;
 using Xunit.v3;
 
 namespace JunimoServer.Tests.Fixtures;
@@ -15,7 +14,6 @@ namespace JunimoServer.Tests.Fixtures;
 ///           class count descending (most-used config starts first)
 ///   80      SharedClass / PerTest / DeferAcquisition (run after shared tests)
 ///   N       Explicit [TestServer(Priority = N)] overrides auto-assignment
-///   Explicit [CollectionPriority]: Honored for [CollectionDefinition] classes
 /// </summary>
 public class TestCollectionOrderer : ITestCollectionOrderer
 {
@@ -23,9 +21,7 @@ public class TestCollectionOrderer : ITestCollectionOrderer
     private const int UnknownPriority = 50;
 
     /// <summary>
-    /// Keyed by full type name (e.g. "JunimoServer.Tests.CabinStrategyTests")
-    /// for TestBase subclasses, and by collection definition name (e.g.
-    /// "DownloadValidation") for explicit [CollectionDefinition] classes.
+    /// Keyed by full type name (e.g. "JunimoServer.Tests.CabinStrategyTests").
     /// </summary>
     private static readonly Dictionary<string, int> PriorityMap = BuildPriorityMap();
 
@@ -35,17 +31,6 @@ public class TestCollectionOrderer : ITestCollectionOrderer
     {
         var map = new Dictionary<string, int>(StringComparer.Ordinal);
         var assembly = typeof(TestBase).Assembly;
-
-        // Discover explicit [CollectionDefinition] classes with [CollectionPriority]
-        foreach (var type in assembly.GetTypes())
-        {
-            var collectionDef = type.GetCustomAttribute<CollectionDefinitionAttribute>();
-            var priority = type.GetCustomAttribute<CollectionPriorityAttribute>();
-            if (collectionDef?.Name != null && priority != null)
-            {
-                map[collectionDef.Name] = priority.Priority;
-            }
-        }
 
         // Group TestBase subclasses by server config key
         // Key: server config key → Value: list of full type names
@@ -152,15 +137,8 @@ public class TestCollectionOrderer : ITestCollectionOrderer
             return UnknownPriority;
         }
 
-        // Exact match (explicit collections like "DownloadValidation")
-        if (PriorityMap.TryGetValue(collectionName, out var priority))
-        {
-            return priority;
-        }
-
-        // Implicit collections: xUnit uses a decorated display name that contains
-        // the full type name. Check if any of our known type name keys appear
-        // within the display name.
+        // xUnit uses a decorated display name that contains the full type name.
+        // Check if any of our known type name keys appear within the display name.
         foreach (var (key, p) in PriorityMap)
         {
             if (collectionName.Contains(key, StringComparison.Ordinal))

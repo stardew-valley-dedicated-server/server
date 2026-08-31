@@ -1677,7 +1677,10 @@ public class SteamAuthService
                             FileAccess.Read,
                             FileShare.Read
                         );
-                        var invalidChunks = ValidateFileChunks(existingFs, file.Chunks);
+                        var invalidChunks = ChunkValidator.ValidateFileChunks(
+                            existingFs,
+                            file.Chunks
+                        );
 
                         if (invalidChunks.Count == 0)
                         {
@@ -1757,7 +1760,7 @@ public class SteamAuthService
                     await fs.FlushAsync();
 
                     // Verify downloaded chunks by re-reading and checking checksums
-                    var failedChunks = ValidateFileChunks(fs, chunksToDownload);
+                    var failedChunks = ChunkValidator.ValidateFileChunks(fs, chunksToDownload);
                     if (failedChunks.Count > 0)
                     {
                         throw new Exception(
@@ -1842,48 +1845,6 @@ public class SteamAuthService
     // ========================================================================
     // Helpers
     // ========================================================================
-
-    /// <summary>
-    /// Calculates Adler-32 checksum for a portion of a stream.
-    /// This is the same algorithm Steam uses for chunk validation.
-    /// </summary>
-    private static uint AdlerHash(Stream stream, int length)
-    {
-        uint a = 0,
-            b = 0;
-        for (var i = 0; i < length; i++)
-        {
-            var c = (uint)stream.ReadByte();
-            a = (a + c) % 65521;
-            b = (b + a) % 65521;
-        }
-        return a | (b << 16);
-    }
-
-    /// <summary>
-    /// Validates all chunks in a file against their expected checksums.
-    /// Returns list of chunks that need to be (re)downloaded.
-    /// </summary>
-    private static List<DepotManifest.ChunkData> ValidateFileChunks(
-        FileStream fs,
-        IEnumerable<DepotManifest.ChunkData> chunks
-    )
-    {
-        var invalidChunks = new List<DepotManifest.ChunkData>();
-
-        foreach (var chunk in chunks.OrderBy(c => c.Offset))
-        {
-            fs.Seek((long)chunk.Offset, SeekOrigin.Begin);
-            var actualChecksum = AdlerHash(fs, (int)chunk.UncompressedLength);
-
-            if (actualChecksum != chunk.Checksum)
-            {
-                invalidChunks.Add(chunk);
-            }
-        }
-
-        return invalidChunks;
-    }
 
     private static string FormatSize(long bytes)
     {

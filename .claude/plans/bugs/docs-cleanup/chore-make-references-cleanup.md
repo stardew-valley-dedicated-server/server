@@ -31,7 +31,7 @@ Each prints a fixed-width ASCII box:
 ```
 
 **Out of scope** — every other `make setup` reference is in the test harness, developer docs, or CI, where `make` *is* the correct tool and the audience has it:
-- `tests/**` (DownloadValidationTests, SharedSteamAuth, GameDataDistributor, fixtures) — developers run `make`.
+- `tests/**` (SharedSteamAuth, GameDataDistributor, fixtures) — developers run `make`.
 - `docs/developers/**`, `Makefile`, `.github/workflows/e2e-tests.yml` — build/contributor surfaces.
 
 Do not touch these.

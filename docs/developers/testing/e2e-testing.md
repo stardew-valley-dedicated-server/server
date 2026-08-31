@@ -152,7 +152,6 @@ TestResults/runs/{timestamp}_{sha}/tests/{Class}.{Method}/
 |----------|---------|-------------|
 | `SDVD_IMAGE_TAG` | `local` | Docker image tag for server/client |
 | `SDVD_HOST_CLIENT` | `false` | Use local Stardew Valley process instead of Docker containers (requires Steam) |
-| `SDVD_VOLUME_PREFIX` | `server` | Docker volume name prefix |
 | `SDVD_TEST_SCREENSHOTS` | `done` | Screenshot capture mode: none/done/all |
 | `SDVD_TEST_RECORDING` | `none` | Video recording mode: none/failure/all |
 | `NO_COLOR` | unset | Set (to any value) to disable colored output |

@@ -269,7 +269,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj', 'tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-
 
       - name: Restore .NET tools
@@ -288,6 +288,7 @@ jobs:
           run: |
             dotnet restore tests/JunimoServer.Tests/JunimoServer.Tests.csproj
             dotnet restore tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj
+            dotnet restore tests/SteamService.Tests/SteamService.Tests.csproj
 
       # Analyzer style rules ride compilation, so they only gate where CI compiles
       # C#. The mod projects gate via the Docker image build (Validate Build); the
@@ -297,6 +298,46 @@ jobs:
         run: |
           dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes --no-restore
           dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes --no-restore
+          dotnet format style tests/SteamService.Tests/SteamService.Tests.csproj --severity error --verify-no-changes --no-restore
+
+  unit-tests-steam-service:
+    name: Unit Tests Steam Service
+    # Checks out fork head — `needs: authorize` keeps it behind the fork-pr approval gate.
+    needs: authorize
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup .NET
+        id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.400"
+
+      # Key the cache by the resolved SDK version so a new SDK band always restores
+      # from scratch instead of inheriting another band's package extraction via a
+      # restore-keys prefix fallback. restore-keys is scoped to the same SDK for the
+      # same reason.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-unit-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-unit-${{ steps.dotnet.outputs.dotnet-version }}-
+
+      # Restore explicitly with retry, then `dotnet test --no-restore`: test's own
+      # implicit restore isn't retried and hides NuGet errors as "Restore operation failed."
+      - name: Restore
+        uses: ./.github/actions/retry
+        with:
+          run: dotnet restore tests/SteamService.Tests/SteamService.Tests.csproj
+
+      - name: Run unit tests
+        run: dotnet test tests/SteamService.Tests/SteamService.Tests.csproj --no-restore
 
   validate-js:
     name: Validate JS/TS

@@ -78,10 +78,6 @@ e2e Quick Start succeeds on paper against `Makefile` + `.env.test.example`.
 - **M3. CI Usage omits the nightly trigger.** Fourth entry point: cron `0 8 * * *` full suite on
   master for the README badge (`e2e-tests.yml:62-66`); "all manual" is wrong (the never-a-merge-gate
   claim stays true). Same fix in `ci-cd.md` — plan 04.
-- **M4. `SDVD_VOLUME_PREFIX` scope overstated.** Only `DownloadValidationFixture.cs:38` reads it;
-  the main suite hardcodes `server_game-data`/`server_steam-session`
-  (`ServerContainerOptions.cs:19,24`, `GameClientOptions.cs:23`). Scope the row or wire it through
-  before documenting it as general.
 - **M5. Configuration Reference incomplete and unanchored.** Omits consumed knobs
   (SDVD_TEST_TRACING, SDVD_TEST_STATS, SDVD_STOP_ON_FAIL, SDVD_PARALLEL,
   SDVD_CLIENT_LEASE_PATIENCE_S, SDVD_MAX_CONCURRENT_STARTS/EXTRACTIONS, transfer-retry vars,

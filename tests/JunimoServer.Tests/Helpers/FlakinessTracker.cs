@@ -65,8 +65,7 @@ public static class FlakinessTracker
                     // "infrastructure" failures from the fail rate.
                     failureCategory = r.FailureCategory,
                     durationMs = r.DurationMs,
-                    // Breakdown is null for tests that didn't go through TestBase (e.g.
-                    // DownloadValidationFixture). Serializer drops nulls via JsonOptions.
+                    // Serializer drops nulls via JsonOptions.
                     testBodyMs = r.Breakdown?.TestBodyMs,
                     artifactsMs = r.Breakdown?.ArtifactsMs,
                     cleanupMs = r.Breakdown?.CleanupMs,

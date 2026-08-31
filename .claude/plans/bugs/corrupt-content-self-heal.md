@@ -26,7 +26,7 @@ The repair mechanism already exists.
 * `"Always validate files to detect corruption/deletion"` at line 1434;
 * invalid chunks are re-downloaded at line 1568.
 
-This behavior is covered by `DownloadValidationTests.CorruptedFile_IsDetectedAndRepaired`, which asserts that corrupted chunks are detected and that the XNB header is restored.
+The chunk-hash check itself (`ChunkValidator`) is unit-tested in `tests/SteamService.Tests`; CI's pre-suite `steam-auth download` into an empty volume exercises only the fresh-download path — the existing-file repair branch in `DownloadGameAsync` (missing or corrupt files among an otherwise-complete install) has no automated test.
 
 The missing piece is the **boot-time trigger**.
 
@@ -138,9 +138,17 @@ The incident class being addressed is corrupt game content, so validating only t
 
 ## Verification
 
-Extend `DownloadValidationTests` — its fixture already performs corrupt-then-repair against a standalone steam-auth container — to exercise the actual boot path:
+TODO: add an E2E test that exercises the actual boot path. Steam allows one live login per account, so the test must not log in on its own; instead it borrows what the broker already holds:
 
-1. corrupt an XNB in the shared game volume;
+* lease a client account from `SteamAccountAllocator` like any `[TestServer(WithSteam=true)]` test;
+* ask the host's existing `SharedSteamAuth` sidecar to run the download/repair against a scratch copy of the game volume with that account (new sidecar HTTP endpoint wrapping the `download` command with a target dir and slice-local account index — none exists yet);
+* release the lease afterwards.
+
+No account is reserved; the cost is one client lease for ~2-3 min per run, dominated by the full-file chunk hash over the ~500 MB install (the branch under test is "validate everything, redownload what is bad").
+
+Steps:
+
+1. corrupt an XNB in the scratch game volume;
 2. restart the relevant services;
 3. allow boot-time validation to run;
 4. assert that the file is repaired;
@@ -165,7 +173,7 @@ Finally, confirm that the steam-auth healthcheck remains healthy throughout a fu
 | `docker/rootfs/startapp.sh:106-145`                   | `init_stardew` — current early-return/wait loop; boot validation gate belongs here      |
 | `docker-compose.yml`                                  | `server` depends on `steam-auth: service_healthy`; shared `game-data:/data/game` volume |
 | `tools/steam-service/Dockerfile:29`                   | steam-auth healthcheck and its startup budget                                           |
-| `tests/JunimoServer.Tests/DownloadValidationTests.cs` | Existing corrupt-then-repair coverage (Skip-gated; requires `make setup`)               |
+| `tests/SteamService.Tests/ChunkValidatorTests.cs`      | Unit coverage of the chunk-hash check                                                   |
 
 ## Sidenote: operator runbook (shipped)
 

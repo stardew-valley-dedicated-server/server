@@ -112,7 +112,7 @@ Per `simplest-solution.md`: the existing block is 5 lines, the added lines are ~
 
 ### Step 2 — Add `ResourceLimitEnv.cs` env-var reader
 
-New file: `tests/JunimoServer.Tests/Helpers/ResourceLimitEnv.cs`. Mirrors the existing inline pattern (`RecordingPolicy.cs`, `DownloadValidationFixture.cs` — no central env class for SDVD_*). Lazy reads with safe defaults:
+New file: `tests/JunimoServer.Tests/Helpers/ResourceLimitEnv.cs`. Mirrors the existing inline pattern (`RecordingPolicy.cs` — no central env class for SDVD_*). Lazy reads with safe defaults:
 
 ```csharp
 public static class ResourceLimitEnv

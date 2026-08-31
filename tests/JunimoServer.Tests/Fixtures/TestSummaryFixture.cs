@@ -147,25 +147,6 @@ public class TestSummaryFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Records the duration for a completed test (no queue-duration / breakdown context).
-    /// Used by callers outside the TestBase pipeline (e.g. DownloadValidationFixture).
-    /// </summary>
-    public void MarkCompleted(
-        string collectionName,
-        string className,
-        string? testName,
-        TimeSpan duration
-    ) =>
-        MarkCompleted(
-            collectionName,
-            className,
-            testName,
-            duration,
-            queueDuration: null,
-            breakdown: null
-        );
-
-    /// <summary>
     /// Marks a test as completed: records active duration + queue duration + phase breakdown.
     /// If outcome is still <see cref="TestOutcome.Running"/>, promotes to <see cref="TestOutcome.Passed"/>.
     /// If a prior <see cref="MarkFailed"/> or <see cref="MarkCanceled"/> already terminalized
