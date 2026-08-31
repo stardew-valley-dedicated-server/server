@@ -29,7 +29,7 @@
             "id": "testFilter",
             "type": "promptString",
             "description": "Test filter — substring of the class FullName or {Class}.{Method}; '|' separates alternatives",
-            "default": "FarmerCreationTests"
+            "default": "FarmhandManagementTests"
         }
     ]
 }

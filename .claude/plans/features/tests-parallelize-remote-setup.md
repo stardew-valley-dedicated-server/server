@@ -131,7 +131,7 @@ needs no concurrent-routing change — leave it on inference like the orphans be
 3. **Live WS `evt`** — `TestRunState.cs:805-814`: add `Phase = e.PhaseName` (the TS store's phase-exact branch needs it). `GetArtifactView` (`:1563-end`) builds test views from `_collections` and does **not** project setup steps — verified by reading the full body; no snapshot change needed.
 4. **`IBuildProgressSink`** — the builder runs exactly one phase (`"Docker Images"`). Make both sinks carry the phase as instance state (captured in `PhaseStarted`, reused in `Step`) rather than threading a phase arg into all 13 `DockerImageBuilder.Step(...)` calls. Edit `RendererBuildProgressSink.cs:30-38` (parent — needs the phase) and, for symmetry/correctness if a future concurrent child build appears, `SetupEventBusBuildProgressSink` (`IBuildProgressSink.cs:34-38`): store `_currentPhase` set by `PhaseStarted`, pass it into the emitted event. `Step()`'s interface signature is unchanged.
 5. **Parent direct constructors** — pass the in-scope phase literal at the concurrent-routing parent sites: `Program.cs` (5 sites: `:498,510,542,559,574`), `ImageDistributor.cs` (7: `:133,239,259,304,335,356,727`), `GameDataDistributor.cs` (**8**: `:135,145,156,186,227,258,279,736`). The phase name is a constant already in or adjacent to each (`ImageDistributor.SetupPhase` exists at `:42`; `GameDataDistributor` has **no** `SetupPhase` const today — add one, e.g. `"Game data distribution"`; `Program.cs` needs `const`s for `"Preflight"`/`"Cleanup leftovers"`). `RunnerCallbacks.cs:276` is excluded — it's `"Setup"`-category and single-phase (see edit-surface note above).
-6. **Child callers untouched** — the 33 `SetupEventBus.EmitStep` sites (`ServerContainer`, `GameClientContainer`, `ManagedServer`, `WaitUntilGameReadyInContainer`, `DownloadValidationFixture`, `RunMetadata`) and `RunnerCallbacks.cs:276` omit `PhaseName` and keep collection-based routing. No edits, no risk to already-correct code.
+6. **Child callers untouched** — the `SetupEventBus.EmitStep` sites (`ServerContainer`, `GameClientContainer`, `ManagedServer`, `WaitUntilGameReadyInContainer`, `RunMetadata`) and `RunnerCallbacks.cs:276` omit `PhaseName` and keep collection-based routing. No edits, no risk to already-correct code.
 7. **test-ui** — `tests/test-ui/src/types/events.ts:183` add optional `phase?: string`. `useTestStore.ts` setup_step handler (`:816-817`): when `event.phase` present, match `(category, phase, collection)` via the existing `makePhaseKey`; else keep `findActiveSetupPhase(category, collection)`. **`findActiveSetupPhase` is NOT deleted** (same child-bridging reason as the C# twin). Verify with `make build-test-ui` (vue-tsc).
 
 **Why no exact-literal-match contract risk:** because routing falls back to inference
@@ -196,9 +196,9 @@ dependency.
 - `tests/test-ui/src/types/events.ts`, `tests/test-ui/src/composables/useTestStore.ts` — optional `phase` field, phase-exact route when present, **keep** `findActiveSetupPhase` fallback.
 - `tests/JunimoServer.TestRunner/Program.cs` — Stage 2 fan-out.
 
-**Untouched:** the 33 `SetupEventBus.EmitStep` child callers (`ManagedServer`,
+**Untouched:** the `SetupEventBus.EmitStep` child callers (`ManagedServer`,
 `ServerContainer`, `GameClientContainer`, `WaitUntilGameReadyInContainer`,
-`DownloadValidationFixture`, `RunMetadata`, `RunnerCallbacks`) — they route by
+`RunMetadata`, `RunnerCallbacks`) — they route by
 collection today and keep doing so. No `SetupEventBus.cs` signature change required (the
 record's new param is optional; the `EmitStep` overload only needs a phase param if a
 child caller ever wants phase-exact routing, which none do now).

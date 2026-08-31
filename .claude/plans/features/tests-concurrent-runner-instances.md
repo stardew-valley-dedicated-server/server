@@ -194,17 +194,15 @@ identifier*, not the file — so the fix is disjoint accounts, not disjoint sess
 **Per the user's decision (document constraints, no auto-split), the plan does NOT add
 cross-process account/volume coordination.** Instead:
 
-1. **Wire the existing `SDVD_VOLUME_PREFIX` escape hatch into the main path** so an operator
-   *can* give each runner a disjoint steam-session volume by setting one env var. Today only
-   `DownloadValidationFixture.cs:37-40` reads it; `ServerContainerOptions`, `GameClientOptions`,
-   and the broker hardcode `"server_game-data"`/`"server_steam-session"`. Make all three derive
-   from the prefix:
+1. **Introduce an `SDVD_VOLUME_PREFIX` env var** so an operator *can* give each runner a
+   disjoint steam-session volume by setting one env var. Today `ServerContainerOptions`,
+   `GameClientOptions`, and the broker hardcode `"server_game-data"`/`"server_steam-session"`
+   and nothing reads a prefix. Make all three derive from it:
    - `ServerContainerOptions.cs:19,24` → `GameDataVolume = $"{VolumePrefix}_game-data"`,
      `SteamSessionVolume = $"{VolumePrefix}_steam-session"`, where
      `VolumePrefix = Environment.GetEnvironmentVariable("SDVD_VOLUME_PREFIX") ?? "server"`
-     (mirror `DownloadValidationFixture`'s resolution exactly — one canonical read, per
-     `one-parser-per-contract.md`; consider a `TestVolumes.Prefix` static so all four sites
-     share one definition).
+     (one canonical read, per `one-parser-per-contract.md`; consider a `TestVolumes.Prefix`
+     static so all sites share one definition).
    - `GameClientOptions.cs:23` → same for `GameDataVolume`.
    - Confirm `TestResourceBroker.cs:604-605,726,855` and `ClientPool.cs:613` propagate the
      option values (they read `defaults.GameDataVolume` etc., so they inherit automatically —
@@ -221,8 +219,7 @@ cross-process account/volume coordination.** Instead:
 > distinct prefix just gets a distinct (initially empty) game-data cache that the
 > `GameDataDistributor` will populate on first use. If they want to *share* the read-only
 > game-data cache while isolating only the session, that's a finer split we are explicitly
-> **not** building (documented as a known limitation): the prefix is coarse-grained by design,
-> matching the existing `DownloadValidationFixture` semantics.
+> **not** building (documented as a known limitation): the prefix is coarse-grained by design.
 
 ### Problem 4 — `KillTestChildren` can kill a sibling runner's xUnit child
 
@@ -347,8 +344,7 @@ handle. The "build simultaneously" race an earlier draft described **cannot occu
   the same prefix (Problem 3).
 - **(optional) `tests/JunimoServer.Tests/Helpers/TestVolumes.cs`** *(new, if extracting the
   prefix read)* — single canonical `SDVD_VOLUME_PREFIX` resolution consumed by
-  `ServerContainerOptions`, `GameClientOptions`, and `DownloadValidationFixture`
-  (per `one-parser-per-contract.md`).
+  `ServerContainerOptions` and `GameClientOptions` (per `one-parser-per-contract.md`).
 - **`tests/JunimoServer.TestRunner/Program.cs`** — start the live-marker heartbeat before the
   "Cleanup leftovers" phase and register its teardown (Problem 2); set `SDVD_PARENT_PID` before
   spawning and rewrite `KillTestChildren` to kill the child pid recorded in
@@ -362,7 +358,7 @@ handle. The "build simultaneously" race an earlier draft described **cannot occu
 - **`tests/JunimoServer.Tests/Helpers/FlakinessTracker.cs`** — guard the append burst
   (`:48-78`) with a machine-wide named `Mutex("sdvd-flakiness-jsonl")` so two runners' writes
   don't interleave into corrupt JSONL (Problem 7, same-machine only).
-- **`.env.test.example`** — extend the existing `SDVD_VOLUME_PREFIX` doc line (`:141-142`) with
+- **`.env.test.example`** — add an `SDVD_VOLUME_PREFIX` doc line (next to `SDVD_SKIP_BUILD`) with
   the concurrent-runner coexistence note; add a `STEAM_ACCOUNTS` note that concurrent
   Steam-enabled runners need **physically different** `STEAM_ACCOUNTS` values (there is no
   per-runner slice knob — the slicer only divides across one run's host fleet). (Problem 6
@@ -405,8 +401,8 @@ Add a concise section stating exactly what an operator must do to run N runners 
      own. Merged cross-machine flakiness is out of scope (would need a shared store).
 
 Follow `verify-claims.md`: after wiring `SDVD_VOLUME_PREFIX` into the
-main path, `grep -rn SDVD_VOLUME_PREFIX` must show consumers in `ServerContainerOptions`,
-`GameClientOptions`, and `DownloadValidationFixture` (not just the doc line).
+main path, `grep -rn SDVD_VOLUME_PREFIX` must show consumers in `ServerContainerOptions`
+and `GameClientOptions` (not just the doc line).
 
 ### Capacity & TPS sizing — constraints and gotchas (operator-facing)
 

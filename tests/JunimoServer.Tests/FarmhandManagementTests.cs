@@ -7,7 +7,7 @@ namespace JunimoServer.Tests;
 
 /// <summary>
 /// Integration tests for farmhand management via the server API.
-/// Verifies farmhand listing, customization state, and deletion behavior.
+/// Verifies farmhand listing and deletion behavior.
 ///
 /// Uses TestBase which provides:
 /// - Automatic retry on connection failures
@@ -18,54 +18,6 @@ namespace JunimoServer.Tests;
 public class FarmhandManagementTests : TestBase
 {
     public FarmhandManagementTests() { }
-
-    /// <summary>
-    /// Verifies that GET /farmhands (server API) correctly reflects which farmhand
-    /// slots are customized vs uncustomized after a player creates a character.
-    /// </summary>
-    [Fact(
-        Skip = "Redundant: IsCustomized verified by DeleteFarmhand tests via Farmers.DisconnectAndWaitForPersistenceAsync"
-    )]
-    public async Task ServerFarmhands_ReflectCustomizationState()
-    {
-        var client = await Farmers.ConnectNewAsync(ct: TestCt);
-
-        // Check server-side farmhand list (poll until name syncs and customized flag is set)
-        var found = await ServerApi.WaitForFarmhandByNameAsync(
-            client.FarmerName,
-            requireCustomized: true,
-            ct: TestCt
-        );
-
-        Assert.True(
-            found,
-            $"Farmhand '{client.FarmerName}' should appear in /farmhands within timeout"
-        );
-        var farmhands = await ServerApi.GetFarmhands(TestCt);
-        Assert.NotNull(farmhands);
-        Assert.NotEmpty(farmhands.Farmhands);
-
-        Log($"Server reports {farmhands.Farmhands.Count} farmhand(s):");
-        foreach (var fh in farmhands.Farmhands)
-        {
-            Log($"  Name='{fh.Name}', IsCustomized={fh.IsCustomized}, Id={fh.Id}");
-        }
-
-        // Our farmer should be listed as customized
-        var ourFarmhand = farmhands.Farmhands.FirstOrDefault(f =>
-            f.Name.Equals(client.FarmerName, StringComparison.OrdinalIgnoreCase)
-        );
-        Assert.NotNull(ourFarmhand);
-        Assert.True(
-            ourFarmhand.IsCustomized,
-            $"Farmhand '{client.FarmerName}' should be marked as customized"
-        );
-
-        // There should be at least one uncustomized slot (the default cabins)
-        var uncustomized = farmhands.Farmhands.Where(f => !f.IsCustomized).ToList();
-        Assert.NotEmpty(uncustomized);
-        Log($"Found {uncustomized.Count} uncustomized slot(s) as expected");
-    }
 
     /// <summary>
     /// Verifies that deleting an offline farmhand via DELETE /farmhands?name=X
