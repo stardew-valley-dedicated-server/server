@@ -25,7 +25,10 @@ EXCLUDE_ARGS=()
 for tag in $(git tag -l --points-at "$HEAD_OID" $TAG_MATCH); do
   EXCLUDE_ARGS+=(--exclude "$tag")
 done
-BASE=$(git describe --tags --abbrev=0 "${MATCH_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} "$HEAD_OID" 2>/dev/null) || {
+# --first-parent keeps the base on the same chain `git log --first-parent` walks later, so a
+# matching tag on a merged side branch could never yield a skewed range. (No-op on this
+# repository's linear history — verified identical on all current build tags.)
+BASE=$(git describe --tags --abbrev=0 --first-parent "${MATCH_ARGS[@]}" ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} "$HEAD_OID" 2>/dev/null) || {
   echo "::error::no base tag matching '$TAG_MATCH' strictly below $HEAD_REF"
   exit 1
 }

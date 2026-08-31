@@ -108,4 +108,4 @@ runs:
           echo "$payload"
           exit 0
         fi
-        curl -sS --fail-with-body -H "Content-Type: application/json" -d "$payload" "$WEBHOOK"
+        curl -sS --fail-with-body --proto '=https' -H "Content-Type: application/json" -d "$payload" "$WEBHOOK"
