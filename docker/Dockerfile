@@ -139,7 +139,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-13-v4.13 AS server
 
 ARG SMAPI_VERSION
-ARG TMUX_VERSION=3.7b
+ARG TMUX_VERSION=3.7c
 
 ENV APP_NAME="Stardew Dedicated Server" \
     USER_ID=0 \
