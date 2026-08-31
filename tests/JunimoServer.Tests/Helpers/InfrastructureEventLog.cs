@@ -280,6 +280,17 @@ namespace JunimoServer.Tests.Helpers;
 /// (<see cref="Schema.Events.StreamGapEvent"/>; a stream resumed after a silent gap
 /// above the reader's threshold — all streams of a host gapping together is a
 /// transport stall, one stream alone is a quiet container) ·
+/// <c>container_log_stream_reconnected</c> (<see cref="Schema.Events.StreamReconnectedEvent"/>;
+/// a log reader re-opened after a transport loss: <c>outageStartUtc, reconnectedAtUtc,
+/// gapMs, openFailures, lastLineTimestamp, incidentId?</c>) ·
+/// <c>container_log_stream_ended</c> (<see cref="Schema.Events.StreamEndedEvent"/>;
+/// every reader exit: <c>reason:"container_exited"|"open_failures_exhausted"|
+/// "cancelled"|"docker_down"|"line_handler_faulted", detail, faultType?, faultMessage?, faultChain?, lastLineTimestamp?,
+/// linesEmitted, reconnects, outageMs?, incidentId?</c>) ·
+/// <c>transport_state_unreadable</c> (<see cref="Schema.Events.TransportStateUnreadableEvent"/>:
+/// <c>path, exceptionType, error, label?, host_id?</c>; the child could not read the
+/// runner's <c>transport-state.{hostId}.json</c>, so the reader fell back to its
+/// default reconnect budget) ·
 /// <c>tunnel_forward_opened</c> (<c>host_id, coordinator_port, mapped_port?,
 /// remote_socket?, durationMs, attempts</c>) ·
 /// <c>tunnel_forward_reopened</c> / <c>tunnel_forward_reopen_failed</c>
