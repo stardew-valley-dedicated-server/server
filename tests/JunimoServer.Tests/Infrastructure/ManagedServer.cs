@@ -1323,8 +1323,10 @@ internal sealed class ManagedServer : IAsyncDisposable
     /// </summary>
     private async Task<bool> TryHealForwardScopedFaultAsync(Exception ex, CancellationToken ct)
     {
-        var (_, forwardScoped) = TransportFaultClassifier.Classify(ex);
-        if (!forwardScoped || Host.SshDestination is null)
+        if (
+            !TransportFaultClassifier.Classify(ex, Host.Id).ForwardScoped
+            || Host.SshDestination is null
+        )
         {
             return false;
         }

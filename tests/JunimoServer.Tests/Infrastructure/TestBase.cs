@@ -386,8 +386,8 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
 
         // Reuse the same classifier the broker poison path uses (walks the inner-exception
         // chain), so the acquire-time skip and the host-poison decision agree on what counts
-        // as transport. A non-null reason means Socket/Http/EOF/broken-pipe etc.
-        return TransportFaultClassifier.Classify(ex).Reason is not null;
+        // as transport: forward- or host-scoped only — an unclassified fault is application-level.
+        return TransportFaultClassifier.Classify(ex).IsTransportFault;
     }
 
     /// <summary>

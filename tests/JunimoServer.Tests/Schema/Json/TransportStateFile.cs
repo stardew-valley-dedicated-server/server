@@ -109,13 +109,28 @@ public static class TransportStateFile
         );
 
     /// <summary>
+    /// Every host's state file present in the run, for a reader with no host to look
+    /// up (<see cref="Infrastructure.TransportActionWindow"/>).
+    /// </summary>
+    public static IEnumerable<string> PathsIn(string runDir)
+    {
+        var dir = Path.Combine(runDir, RunArtifactNames.DiagnosticsDir);
+        return Directory.Exists(dir)
+            ? Directory.EnumerateFiles(dir, RunArtifactNames.TransportStateJson("*"))
+            : Array.Empty<string>();
+    }
+
+    /// <summary>
     /// Returns the host's current state, or null when the runner has not performed a
     /// transport action on it this run. A malformed file throws <see cref="JsonException"/>
     /// — writer and parser disagree, which must not pass silently.
     /// </summary>
-    public static TransportState? TryRead(string runDir, string hostId)
+    public static TransportState? TryRead(string runDir, string hostId) =>
+        ReadPath(PathFor(runDir, hostId));
+
+    /// <summary><see cref="TryRead"/> for a path from <see cref="PathsIn"/>.</summary>
+    public static TransportState? ReadPath(string path)
     {
-        var path = PathFor(runDir, hostId);
         if (!File.Exists(path))
         {
             return null;

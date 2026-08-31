@@ -22,26 +22,34 @@ namespace JunimoServer.Tests.Clients;
 ///   <item><b>Heal + retry.</b> On a forward-scoped transport fault it invokes
 ///     <see cref="_healAsync"/> (which corroborates the master is alive and re-opens the
 ///     forward) and retries the SAME request against the freshly-healed port, bounded by
-///     <see cref="_healRetryBudget"/>. Non-transport faults and success pass straight
-///     through.</item>
+///     <see cref="_healRetryBudget"/> — but only for requests the call site marked via
+///     <see cref="RetrySafeRequest"/>; an unmarked request propagates the fault.
+///     Non-transport faults and success pass straight through.</item>
 /// </list>
 /// </summary>
 internal sealed class ForwardHealingHandler : DelegatingHandler
 {
     private readonly Func<string> _liveBaseUrl;
     private readonly Func<CancellationToken, Task<bool>> _healAsync;
+    private readonly string? _hostId;
     private readonly TimeSpan _healRetryBudget;
     private readonly TimeSpan _retryDelay;
 
+    /// <param name="hostId">
+    /// Docker host behind the forward; scopes the owned-action window consulted by the
+    /// classifier so another host's respawn cannot re-scope this host's fault.
+    /// </param>
     public ForwardHealingHandler(
         Func<string> liveBaseUrl,
         Func<CancellationToken, Task<bool>> healAsync,
+        string? hostId = null,
         TimeSpan? healRetryBudget = null,
         TimeSpan? retryDelay = null
     )
     {
         _liveBaseUrl = liveBaseUrl;
         _healAsync = healAsync;
+        _hostId = hostId;
         // Long enough to outlast a master keepalive blip + heal (watchdog cadence ~5s,
         // -O check retries ~8s, re-open ~1s); short enough not to mask a real outage.
         _healRetryBudget = healRetryBudget ?? TimeSpan.FromSeconds(45);
@@ -64,7 +72,8 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
             }
             catch (Exception ex)
                 when (!cancellationToken.IsCancellationRequested
-                    && TransportFaultClassifier.Classify(ex).ForwardScoped
+                    && TransportFaultClassifier.Classify(ex, _hostId)
+                        is { ForwardScoped: true } verdict
                 )
             {
                 // Forward-scoped fault: the -L forward dropped. Heal it and retry the same
@@ -77,12 +86,32 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 attempt++;
                 firstFault ??= Stopwatch.GetTimestamp();
                 var port = request.RequestUri?.Port;
+
+                // The forward can drop AFTER the server fully processed the request, so a
+                // re-send repeats the action. Only call sites that declared the request safe
+                // to repeat (RetrySafeRequest) get a retry; the rest propagate the raw fault.
+                if (!RetrySafeRequest.IsMarked(request))
+                {
+                    EmitAttempt(
+                        attempt,
+                        port,
+                        ex,
+                        verdict.Reason,
+                        healMs: null,
+                        "not_retry_safe",
+                        healError: null,
+                        healStackTrace: null
+                    );
+                    throw;
+                }
+
                 if (Stopwatch.GetElapsedTime(firstFault.Value) >= _healRetryBudget)
                 {
                     EmitAttempt(
                         attempt,
                         port,
                         ex,
+                        verdict.Reason,
                         healMs: null,
                         "budget_exhausted",
                         healError: null,
@@ -121,6 +150,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                     attempt,
                     port,
                     ex,
+                    verdict.Reason,
                     healMs,
                     healed ? "healed"
                         : healError is null ? "heal_failed"
@@ -155,6 +185,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
         int attempt,
         int? port,
         Exception fault,
+        string? classification,
         long? healMs,
         string outcome,
         string? healError,
@@ -169,7 +200,7 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
                 fault.GetType().Name,
                 fault.Message,
                 TransportEventFormat.Chain(fault),
-                TransportFaultClassifier.Classify(fault).Reason,
+                classification,
                 healMs,
                 outcome,
                 healError,
@@ -210,6 +241,12 @@ internal sealed class ForwardHealingHandler : DelegatingHandler
         foreach (var header in original.Headers)
         {
             clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        // Options carry the retry-safe mark; without them the second retry would be refused.
+        foreach (var option in original.Options)
+        {
+            ((IDictionary<string, object?>)clone.Options)[option.Key] = option.Value;
         }
 
         if (original.Content != null)

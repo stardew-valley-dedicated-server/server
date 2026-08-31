@@ -1500,18 +1500,24 @@ public class ServerApiClient : IDisposable
     /// when a forward is re-opened on a new port); <paramref name="healAsync"/> re-opens
     /// the forward on a forward-scoped fault. Both null ⇒ a plain client (local hosts /
     /// tests that pass a bare URL) — behaves exactly as before.
+    /// <paramref name="hostId"/> scopes the healing handler's owned-action window to the
+    /// server's Docker host.
     /// </summary>
     public ServerApiClient(
         string baseUrl,
         Func<string>? liveBaseUrl,
-        Func<CancellationToken, Task<bool>>? healAsync
+        Func<CancellationToken, Task<bool>>? healAsync,
+        string? hostId = null
     )
     {
         _baseUrl = baseUrl;
         HttpMessageHandler inner = new HttpClientHandler();
         if (liveBaseUrl != null && healAsync != null)
         {
-            inner = new ForwardHealingHandler(liveBaseUrl, healAsync) { InnerHandler = inner };
+            inner = new ForwardHealingHandler(liveBaseUrl, healAsync, hostId)
+            {
+                InnerHandler = inner,
+            };
         }
         var handler = new TracingHandler("server") { InnerHandler = inner };
         _httpClient = new HttpClient(handler)
@@ -1524,17 +1530,27 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
+    /// GET is read-only on every server endpoint, so a transport-level re-send after a
+    /// forward drop is always safe: each GET goes out marked for <see cref="ForwardHealingHandler"/>.
+    /// </summary>
+    private Task<HttpResponseMessage> GetRetrySafeAsync(string path, CancellationToken ct) =>
+        _httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Get, path).Mark(), ct);
+
+    /// <summary>
     /// Sends an HTTP request with automatic retry on 503 (Service Unavailable).
     /// The server returns 503 when the game thread is blocked during day transitions
     /// or saves. These are transient and resolve within seconds. Only mutating
     /// endpoints (POST /time, DELETE /farmhands, etc.) can return 503; read-only
-    /// endpoints use a periodic snapshot and call _httpClient directly.
+    /// endpoints use a periodic snapshot and go through <see cref="GetRetrySafeAsync"/>.
+    /// <paramref name="retrySafe"/> declares that a transport-level re-send after a forward
+    /// drop is harmless (an idempotent setter); see <see cref="RetrySafeRequest"/>.
     /// </summary>
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         HttpMethod method,
         string path,
         CancellationToken ct,
-        Func<HttpContent>? contentFactory = null
+        Func<HttpContent>? contentFactory = null,
+        bool retrySafe = false
     )
     {
         for (var attempt = 1; ; attempt++)
@@ -1543,6 +1559,11 @@ public class ServerApiClient : IDisposable
             if (contentFactory != null)
             {
                 request.Content = contentFactory();
+            }
+
+            if (retrySafe)
+            {
+                request.Mark();
             }
 
             var response = await _httpClient.SendAsync(request, ct);
@@ -1585,7 +1606,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<ServerStatus?> GetStatus(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/status", ct);
+        var response = await GetRetrySafeAsync("/status", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ServerStatus>(ct);
     }
@@ -1647,7 +1668,7 @@ public class ServerApiClient : IDisposable
         query.Add($"timeout={serverTimeoutMs}");
         var url = "/wait/status?" + string.Join("&", query);
 
-        var response = await _httpClient.GetAsync(url, ct);
+        var response = await GetRetrySafeAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
         {
             return null;
@@ -1682,7 +1703,7 @@ public class ServerApiClient : IDisposable
         query.Add($"timeout={serverTimeoutMs}");
         var url = "/wait/players?" + string.Join("&", query);
 
-        var response = await _httpClient.GetAsync(url, ct);
+        var response = await GetRetrySafeAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
         {
             return null;
@@ -1699,7 +1720,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<PlayersResponse?> GetPlayers(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/players", ct);
+        var response = await GetRetrySafeAsync("/players", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PlayersResponse>(ct);
     }
@@ -1747,7 +1768,7 @@ public class ServerApiClient : IDisposable
             query.Count == 0
                 ? "/diagnostics/state"
                 : "/diagnostics/state?" + string.Join("&", query);
-        var response = await _httpClient.GetAsync(path, ct);
+        var response = await GetRetrySafeAsync(path, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<DiagnosticsStateResponse>(ct);
     }
@@ -1758,7 +1779,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<InviteCodeResponse?> GetInviteCode(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/invite-code", ct);
+        var response = await GetRetrySafeAsync("/invite-code", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<InviteCodeResponse>(ct);
     }
@@ -1769,7 +1790,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<HealthResponse?> GetHealth(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/health", ct);
+        var response = await GetRetrySafeAsync("/health", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HealthResponse>(ct);
     }
@@ -1806,7 +1827,7 @@ public class ServerApiClient : IDisposable
         query.Add($"timeout={serverTimeoutMs}");
         var url = "/wait/health" + (query.Count > 0 ? "?" + string.Join("&", query) : "");
 
-        var response = await _httpClient.GetAsync(url, ct);
+        var response = await GetRetrySafeAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
         {
             return null;
@@ -1822,7 +1843,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<string> GetOpenApiSpec(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/swagger/v1/swagger.json", ct);
+        var response = await GetRetrySafeAsync("/swagger/v1/swagger.json", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(ct);
     }
@@ -1834,7 +1855,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<AuthStatusResponse?> GetAuthStatus(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/auth", ct);
+        var response = await GetRetrySafeAsync("/auth", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<AuthStatusResponse>(ct);
     }
@@ -1851,7 +1872,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/auth/timeout?value={seconds}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<AuthTimeoutResponse>(ct);
@@ -1863,7 +1885,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<SettingsResponse?> GetSettings(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/settings", ct);
+        var response = await GetRetrySafeAsync("/settings", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<SettingsResponse>(ct);
     }
@@ -1882,7 +1904,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<CabinsResponse?> GetCabins(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/cabins", ct);
+        var response = await GetRetrySafeAsync("/cabins", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<CabinsResponse>(ct);
     }
@@ -1900,7 +1922,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<ServerFarmhandsResponse?> GetFarmhands(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/farmhands", ct);
+        var response = await GetRetrySafeAsync("/farmhands", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ServerFarmhandsResponse>(ct);
     }
@@ -1942,7 +1964,7 @@ public class ServerApiClient : IDisposable
         query.Add($"timeout={serverTimeoutMs}");
         var url = "/wait/farmhands?" + string.Join("&", query);
 
-        var response = await _httpClient.GetAsync(url, ct);
+        var response = await GetRetrySafeAsync(url, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
         {
             return null;
@@ -1997,7 +2019,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<RenderingStatusResponse?> GetRendering(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/rendering", ct);
+        var response = await GetRetrySafeAsync("/rendering", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<RenderingStatusResponse>(ct);
     }
@@ -2008,7 +2030,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<ScreenshotResponse?> GetScreenshot(CancellationToken ct = default)
     {
-        var response = await SendWithRetryAsync(HttpMethod.Get, "/screenshot", ct);
+        var response = await SendWithRetryAsync(HttpMethod.Get, "/screenshot", ct, retrySafe: true);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ScreenshotResponse>(ct);
     }
@@ -2019,7 +2041,12 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<RenderingSetResponse?> SetServerFps(int fps, CancellationToken ct = default)
     {
-        var response = await SendWithRetryAsync(HttpMethod.Post, $"/rendering?fps={fps}", ct);
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/rendering?fps={fps}",
+            ct,
+            retrySafe: true
+        );
         // Safe to add: server returns 200 with Success=false for validation errors (e.g., missing param).
         // Only 503 (game thread blocked) triggers EnsureSuccessStatusCode to throw.
         response.EnsureSuccessStatusCode();
@@ -2032,7 +2059,12 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<TimeSetResponse?> SetTime(int value, CancellationToken ct = default)
     {
-        var response = await SendWithRetryAsync(HttpMethod.Post, $"/time?value={value}", ct);
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/time?value={value}",
+            ct,
+            retrySafe: true
+        );
         // Safe to add: server returns 200 with Success=false for invalid time values.
         // Only 503 (game thread blocked) triggers EnsureSuccessStatusCode to throw.
         response.EnsureSuccessStatusCode();
@@ -2046,7 +2078,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<TestCropsResponse?> GetAllCrops(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/test/crops", ct);
+        var response = await GetRetrySafeAsync("/test/crops", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestCropsResponse>(ct);
     }
@@ -2060,7 +2092,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<TestFestivalStateResponse?> GetFestivalState(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync("/test/festival_state", ct);
+        var response = await GetRetrySafeAsync("/test/festival_state", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestFestivalStateResponse>(ct);
     }
@@ -2082,7 +2114,8 @@ public class ServerApiClient : IDisposable
         {
             query += $"?farmhandId={farmhandId.Value}&npc={Uri.EscapeDataString(npc)}";
         }
-        var response = await _httpClient.GetAsync(query, ct);
+
+        var response = await GetRetrySafeAsync(query, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestWeddingStateResponse>(ct);
     }
@@ -2115,7 +2148,7 @@ public class ServerApiClient : IDisposable
                     // min, so an unbounded request could outlive the poll and hang.
                     using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var response = await _httpClient.GetAsync("/test/farmers", reqCts.Token);
+                    var response = await GetRetrySafeAsync("/test/farmers", reqCts.Token);
                     response.EnsureSuccessStatusCode();
                     var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(
                         reqCts.Token
@@ -2168,7 +2201,7 @@ public class ServerApiClient : IDisposable
                     // min, so an unbounded request could outlive the poll and hang.
                     using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var response = await _httpClient.GetAsync(url, reqCts.Token);
+                    var response = await GetRetrySafeAsync(url, reqCts.Token);
                     response.EnsureSuccessStatusCode();
                     var body = await response.Content.ReadFromJsonAsync<TestObjectAtTileResponse>(
                         reqCts.Token
@@ -2255,7 +2288,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Get,
             $"/test/pacing_probe_state?kind={Uri.EscapeDataString(kind)}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PacingProbeStateResponse>(ct);
@@ -2409,7 +2443,12 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        var response = await SendWithRetryAsync(HttpMethod.Get, "/test/npc_sprite_integrity", ct);
+        var response = await SendWithRetryAsync(
+            HttpMethod.Get,
+            "/test/npc_sprite_integrity",
+            ct,
+            retrySafe: true
+        );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestNpcSpriteIntegrityResponse>(ct);
     }
@@ -2568,7 +2607,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/test/set_ip_connections?enabled={(enabled ? "true" : "false")}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSetIpConnectionsResponse>(ct);
@@ -2583,7 +2623,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/test/host_menu?open={(open ? "true" : "false")}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestHostMenuResponse>(ct);
@@ -2602,7 +2643,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Get,
             $"/test/save_tmp_exists?saveName={Uri.EscapeDataString(saveName)}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSaveFileOpResponse>(ct);
@@ -2707,7 +2749,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/clock-speed?multiplier={multiplierStr}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ClockSpeedResponse>(ct);
@@ -2727,7 +2770,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/roles/admin?name={Uri.EscapeDataString(playerName)}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<RoleGrantResponse>(ct);
@@ -2746,7 +2790,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
             $"/roles/admin?playerId={playerId}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<RoleGrantResponse>(ct);
@@ -2989,7 +3034,7 @@ public class ServerApiClient : IDisposable
         // Reload runs during title/save transitions, where the game thread is most
         // likely busy and the server returns a transient 503. Go through the retry
         // helper so those are retried transparently like every other mutating call.
-        var response = await SendWithRetryAsync(HttpMethod.Post, "/reload", ct);
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/reload", ct, retrySafe: true);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<NewGameResponse>(ct);
     }

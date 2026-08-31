@@ -34,7 +34,9 @@ reviews:
       instructions: >-
         E2E tests use xUnit v3 with IPC. Never suggest Console.WriteLine or any stdout writes in test
         assemblies — it corrupts xUnit v3 discovery. Output goes through ITestOutputHelper or IMessageSink.
-        Tests are E2E only (Testcontainers); there is no unit-test layer, so don't suggest adding one.
+        Most tests are E2E (Testcontainers). A small in-process layer also exists for pure
+        infrastructure logic (e.g. ExclusiveGateOwnershipTests, TransportFaultClassifierTests);
+        don't flag those as forbidden unit tests.
     - path: "tests/test-client/**"
       instructions: >-
         This is a SMAPI mod (net6.0) driving the E2E test client. Game/SMAPI identifiers
