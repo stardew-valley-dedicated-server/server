@@ -81,6 +81,7 @@ export interface TestStore {
             blkReadBytesPerSec: number | null;
             blkWriteBytesPerSec: number | null;
             memoryLimitMb: number;
+            sampleAgeMs: number | null;
         }
     >;
     /** Stats history, keyed by instanceId. Unbounded; kept for the entire run. */
@@ -221,6 +222,7 @@ export function useTestStore(): TestStore {
                 blkReadBytesPerSec: number | null;
                 blkWriteBytesPerSec: number | null;
                 memoryLimitMb: number;
+                sampleAgeMs: number | null;
             }
         >(),
     );
@@ -1267,6 +1269,7 @@ export function useTestStore(): TestStore {
                     blkReadBytesPerSec: event.blkReadBytesPerSec ?? null,
                     blkWriteBytesPerSec: event.blkWriteBytesPerSec ?? null,
                     memoryLimitMb: event.memoryLimitMb ?? 0,
+                    sampleAgeMs: event.sampleAgeMs ?? null,
                 };
                 instanceStats.set(event.instanceId, statsEntry);
                 let history = instanceStatsHistory.get(event.instanceId);

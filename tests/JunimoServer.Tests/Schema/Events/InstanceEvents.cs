@@ -123,7 +123,7 @@ public sealed record InstanceDisconnectedEvent(string InstanceId) : IRendererEve
 /// <summary>
 /// Container performance stats for an instance.
 /// Carries the full <see cref="InstanceStatsData"/> by reference; the
-/// <see cref="InstanceStatsEventConverter"/> flattens its 18 fields onto the
+/// <see cref="InstanceStatsEventConverter"/> flattens its 19 fields onto the
 /// wire alongside <c>instanceId</c> and <c>hostId</c>:
 /// <c>{ event, timestamp, instanceId, hostId, cpuPercent, memoryMb, … }</c>.
 /// </summary>
@@ -195,6 +195,7 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
             BlkReadBytesPerSec = GetOptDouble(root, "blkReadBytesPerSec"),
             BlkWriteBytesPerSec = GetOptDouble(root, "blkWriteBytesPerSec"),
             MemoryLimitMb = GetDouble(root, "memoryLimitMb"),
+            SampleAgeMs = GetOptInt(root, "sampleAgeMs"),
         };
 
         return new InstanceStatsEvent(instanceId, hostId, data) { Timestamp = timestamp };
@@ -232,6 +233,7 @@ public sealed class InstanceStatsEventConverter : JsonConverter<InstanceStatsEve
         WriteOptDouble(writer, "blkReadBytesPerSec", d.BlkReadBytesPerSec);
         WriteOptDouble(writer, "blkWriteBytesPerSec", d.BlkWriteBytesPerSec);
         writer.WriteNumber("memoryLimitMb", d.MemoryLimitMb);
+        WriteOptInt(writer, "sampleAgeMs", d.SampleAgeMs);
 
         writer.WriteEndObject();
     }

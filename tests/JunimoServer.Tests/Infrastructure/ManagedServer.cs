@@ -923,7 +923,7 @@ internal sealed class ManagedServer : IAsyncDisposable
             Server.Container.Id,
             Server.Container.Name,
             Host,
-            Server.BaseUrl
+            () => Server.BaseUrl
         );
 
         SetupEventBus.EmitStep(

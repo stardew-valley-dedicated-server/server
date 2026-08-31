@@ -12,6 +12,8 @@ import {
     queueTextClass as _queueText,
     tpsTextClass as _tpsText,
     formatMem,
+    isStaleSample,
+    staleSampleSuffix,
 } from "../utils/metrics";
 
 const props = withDefaults(
@@ -40,6 +42,7 @@ const props = withDefaults(
             blkReadBytesPerSec: number | null;
             blkWriteBytesPerSec: number | null;
             memoryLimitMb: number;
+            sampleAgeMs: number | null;
         };
         setupSteps?: SetupStepSnapshot[];
         setupStatus?: "pending" | "running" | "completed" | "failed" | null;
@@ -77,13 +80,27 @@ function fpsTextClass(): string {
     return _fpsText(props.stats);
 }
 function cpuTextClass(): string {
-    return _cpuText(props.stats, props.instanceCount!);
+    return _cpuText(props.stats, props.instanceCount ?? 1);
 }
 function memTextClass(): string {
-    return _memText(props.stats, props.instanceCount!);
+    return _memText(props.stats, props.instanceCount ?? 1);
 }
 function queueTextClass(): string {
     return _queueText(props.stats);
+}
+function staleClass(): string {
+    return isStaleSample(props.stats) ? "opacity-40" : "";
+}
+function staleSuffix(): string {
+    return staleSampleSuffix(props.stats);
+}
+// MEM shows game memory when available, else the container sample — only the
+// latter can go stale, so the staleness cue applies only in that fallback.
+function memStaleClass(): string {
+    return props.stats?.gameMemoryMb == null ? staleClass() : "";
+}
+function memStaleSuffix(): string {
+    return props.stats?.gameMemoryMb == null ? staleSuffix() : "";
 }
 function displayMem(): number | null {
     return _displayMem(props.stats);
@@ -216,12 +233,12 @@ onBeforeUnmount(() => {
                 :title="stats.fps != null ? `FPS: ${stats.fps.toFixed(1)}` : 'FPS: not available'">
             <span class="text-base-content/25">FPS:</span> {{ stats.fps != null ? Math.round(stats.fps) : '-' }}
           </span>
-          <span class="flex-none" :class="cpuTextClass()"
-                :title="stats ? `CPU: ${stats.cpuPercent.toFixed(1)}%` : 'CPU: not available'">
+          <span class="flex-none" :class="[cpuTextClass(), staleClass()]"
+                :title="`CPU: ${stats.cpuPercent.toFixed(1)}%${staleSuffix()}`">
             <span class="text-base-content/25">CPU:</span> {{ stats.cpuPercent.toFixed(0) }}%
           </span>
-          <span class="flex-none" :class="memTextClass()"
-                :title="displayMem() != null ? `Memory: ${displayMem()! >= 1024 ? (displayMem()! / 1024).toFixed(1) + ' GB' : Math.round(displayMem()!) + ' MB'}` : 'Memory: not available'">
+          <span class="flex-none" :class="[memTextClass(), memStaleClass()]"
+                :title="displayMem() != null ? `Memory: ${displayMem()! >= 1024 ? (displayMem()! / 1024).toFixed(1) + ' GB' : Math.round(displayMem()!) + ' MB'}${memStaleSuffix()}` : 'Memory: not available'">
             <span class="text-base-content/25">MEM:</span> {{ displayMem() != null ? formatMem(displayMem()!) : '-' }}
           </span>
           <span v-if="stats.pendingActions != null" class="flex-none" :class="queueTextClass()"

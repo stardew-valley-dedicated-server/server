@@ -68,6 +68,7 @@ const props = withDefaults(
             blkReadBytesPerSec: number | null;
             blkWriteBytesPerSec: number | null;
             memoryLimitMb: number;
+            sampleAgeMs: number | null;
         };
         statsHistory: StatsSnapshotEntry[];
         instanceCount: number;

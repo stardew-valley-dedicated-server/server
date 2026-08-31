@@ -106,6 +106,8 @@ export interface StatsSnapshotEntry {
     blkReadBytesPerSec: number | null;
     blkWriteBytesPerSec: number | null;
     memoryLimitMb: number;
+    /** Age of the Docker sample behind the container fields at emit time. Null when there is none. */
+    sampleAgeMs: number | null;
 }
 
 export interface InstanceHistoryEntry {

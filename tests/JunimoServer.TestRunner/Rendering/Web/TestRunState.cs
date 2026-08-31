@@ -1434,6 +1434,7 @@ public sealed class TestRunState
                     BlkReadBytesPerSec = roundedBlkRead,
                     BlkWriteBytesPerSec = roundedBlkWrite,
                     MemoryLimitMb = roundedMemLimit,
+                    SampleAgeMs = d.SampleAgeMs,
                 }
             );
 
@@ -1461,6 +1462,7 @@ public sealed class TestRunState
                 BlkReadBytesPerSec = roundedBlkRead,
                 BlkWriteBytesPerSec = roundedBlkWrite,
                 MemoryLimitMb = roundedMemLimit,
+                d.SampleAgeMs,
             };
             // Not added to event log; stats are too frequent
             return Serialize(evt);
@@ -1536,6 +1538,7 @@ public sealed class TestRunState
                                 s.BlkReadBytesPerSec,
                                 s.BlkWriteBytesPerSec,
                                 s.MemoryLimitMb,
+                                s.SampleAgeMs,
                             }
                         )
                     );
@@ -2199,6 +2202,7 @@ public sealed class TestRunState
                                     s.BlkReadBytesPerSec,
                                     s.BlkWriteBytesPerSec,
                                     s.MemoryLimitMb,
+                                    s.SampleAgeMs,
                                 })
                                 .ToList()
                             : null,
@@ -2592,6 +2596,7 @@ public sealed class TestRunState
         public double? BlkReadBytesPerSec { get; set; }
         public double? BlkWriteBytesPerSec { get; set; }
         public double MemoryLimitMb { get; set; }
+        public int? SampleAgeMs { get; set; }
     }
 
     private sealed class InstanceHistoryEntry
