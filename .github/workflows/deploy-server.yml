@@ -82,8 +82,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # discord-notify must exist in the tree for the `uses: ./…` steps below.
           sparse-checkout: |
             docker-compose.yml
+            .github/actions/discord-notify
           sparse-checkout-cone-mode: false
 
       - name: Graceful shutdown preparation
@@ -162,6 +164,66 @@ jobs:
           source: "docker-compose.yml,.env"
           target: ~/srv/${{ matrix.environment }}
 
+      # Resolves what the alias (matrix.image_tag) actually points at, for the internal-ci
+      # notification: the image's revision label → the build tag on that commit → the
+      # IMAGE_VERSION operators would type. Reading the registry (not github.sha) is correct
+      # for all three triggers — workflow_run, release, workflow_dispatch. The alias could in
+      # principle move between this inspect and the VPS's `docker compose pull`, but that
+      # needs a full preview build to finish inside that window; accepted. This step must
+      # never fail the deploy: every lookup degrades to a short SHA or "unknown".
+      - name: Resolve deployed version
+        id: version
+        env:
+          TAG: ${{ matrix.image_tag }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          FALLBACK_SHA: ${{ github.sha }}
+        run: |
+          sha=$(docker buildx imagetools inspect "sdvd/server:$TAG" \
+            --format '{{index .Image.Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            # Also hit if the image ever goes multi-arch (.Image becomes a per-platform map;
+            # the template must switch to '{{json .Image}}' + jq on one platform then).
+            echo "::warning::no usable revision label on sdvd/server:$TAG (got '${sha:0:60}')"
+            sha=""
+          fi
+
+          # SHA → version via the build tags (both kinds are lightweight, so ls-remote lists
+          # the commit oid directly). When one commit carries both kinds, pick by the alias
+          # being deployed.
+          version=""
+          if [ -n "$sha" ]; then
+            tags=$(git ls-remote --tags origin 'preview-[0-9]*' 'sdvd-server-v*' 2>/dev/null \
+              | awk -v s="$sha" '$1 == s { sub("refs/tags/", "", $2); sub(/\^\{\}$/, "", $2); print $2 }' || true)
+            case "$TAG" in
+              latest) tag=$(grep -m1 '^sdvd-server-v' <<< "$tags" || true) ;;
+              *) tag=$(grep -m1 '^preview-' <<< "$tags" || true) ;;
+            esac
+            [ -n "$tag" ] || tag=$(head -n 1 <<< "$tags")
+            case "$tag" in
+              preview-*) rest=${tag#preview-}; version="${rest%.*}-preview.${rest##*.}" ;;
+              sdvd-server-v*) version=${tag#sdvd-server-v} ;;
+            esac
+          fi
+
+          if [ -n "$version" ]; then
+            version_value="\`$version\` (\`$TAG\`)"
+          elif [ -n "$sha" ]; then
+            version_value="\`${sha:0:7}\` (\`$TAG\`, no build tag on this commit)"
+          else
+            version_value="unknown (\`$TAG\`)"
+          fi
+          commit_sha=${sha:-$FALLBACK_SHA}
+          commit_value="[\`${commit_sha:0:7}\`]($REPO_URL/commit/$commit_sha)"
+
+          jq -cn --arg version "$version_value" --arg commit "$commit_value" \
+            '[
+              {name: "Version", value: $version, inline: true},
+              {name: "Commit", value: $commit, inline: true}
+            ]' | sed 's/^/fields=/' >> "$GITHUB_OUTPUT"
+          jq -cn --arg commit "$commit_value" \
+            '[{name: "Commit", value: $commit, inline: true}]' \
+            | sed 's/^/failure_fields=/' >> "$GITHUB_OUTPUT"
+
       - name: Pull and restart containers
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
@@ -228,44 +290,24 @@ jobs:
 
       - name: Discord notification
         if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n \
-              --arg env "${{ matrix.environment }}" \
-              --arg tag "${{ matrix.image_tag }}" \
-              --arg commit "${GITHUB_SHA:0:7}" \
-              '{
-                embeds: [{
-                  title: "Server Deployed",
-                  color: 3066993,
-                  fields: [
-                    {name: "Environment", value: $env, inline: true},
-                    {name: "Image", value: ("`" + $tag + "`"), inline: true},
-                    {name: "Commit", value: ("`" + $commit + "`"), inline: true}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
+        # A Discord outage must never red a deploy that succeeded.
+        continue-on-error: true
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL_CI }}
+          title: 'Server deployed: ${{ matrix.environment }}'
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: "9807270"
+          fields: ${{ steps.version.outputs.fields }}
 
       - name: Discord notification (failure)
         if: failure()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n \
-              --arg env "${{ matrix.environment }}" \
-              --arg commit "${GITHUB_SHA:0:7}" \
-              '{
-                embeds: [{
-                  title: "Deployment Failed",
-                  color: 15158332,
-                  fields: [
-                    {name: "Environment", value: $env, inline: true},
-                    {name: "Commit", value: ("`" + $commit + "`"), inline: true}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL_CI }}
+          title: 'Server deploy failed: ${{ matrix.environment }}'
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: "15158332"
+          # The resolve step hasn't run when the failure was earlier (checkout, .env, scp);
+          # fall back to the workflow's own commit.
+          fields: ${{ steps.version.outputs.failure_fields || format('[{{"name":"Commit","value":"[{0}]({1}/{2}/commit/{0})","inline":true}}]', github.sha, github.server_url, github.repository) }}

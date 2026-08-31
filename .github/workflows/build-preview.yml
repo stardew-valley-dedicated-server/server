@@ -119,6 +119,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history + tags for the changelog range (previous build tag → this commit).
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Update version in files (for Docker build only)
         run: |
@@ -169,6 +173,37 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
+      # Changelog + notification run BEFORE the tracking-tag push: with cancel-in-progress
+      # concurrency, a cancellation between "tag pushed" and "post sent" would move the next
+      # build's range past changes that were never announced. In this order a cancellation
+      # loses nothing (the tag didn't move, the next build re-covers the range).
+      # continue-on-error on both: notification machinery must never red a successful build
+      # or block the tag push / downstream deploy.
+      - name: Build changelog
+        id: changelog
+        continue-on-error: true
+        uses: ./.github/actions/build-changelog
+        with:
+          head: ${{ github.sha }}
+          # Everything since the previous build of either channel — same rule as issue stamping.
+          tag-match: sdvd-server-v* preview-[0-9]*
+
+      - name: Discord notification
+        if: steps.changelog.outcome == 'success'
+        continue-on-error: true
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_PREVIEW }}
+          title: Preview build ${{ needs.calculate-version.outputs.preview_version }}
+          url: ${{ steps.changelog.outputs.compare-url }}
+          color: "16753920"
+          description: |
+            ${{ steps.changelog.outputs.markdown }}
+
+            **Use it**
+            ```IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}``` (or `preview` for the newest)
+            ```docker compose pull && docker compose up -d```
+
       - name: Update preview tracking tag
         run: |
           git config user.name "github-actions[bot]"
@@ -195,58 +230,6 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull sdvd/server:preview" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Get merged PR info
-        id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[0] // empty')
-          if [ -n "$PR_JSON" ]; then
-            echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> $GITHUB_OUTPUT
-            echo "title=$(echo "$PR_JSON" | jq -r '.title')" >> $GITHUB_OUTPUT
-            echo "url=$(echo "$PR_JSON" | jq -r '.html_url')" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Discord notification
-        if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          PR_TITLE: ${{ steps.pr.outputs.title }}
-          PR_URL: ${{ steps.pr.outputs.url }}
-          PREVIEW_VERSION: ${{ needs.calculate-version.outputs.preview_version }}
-        run: |
-          if [ -n "$PR_NUMBER" ]; then
-            # Use jq to safely build JSON with user-provided content
-            jq -n \
-              --arg version "$PREVIEW_VERSION" \
-              --arg pr_num "$PR_NUMBER" \
-              --arg pr_title "$PR_TITLE" \
-              --arg pr_url "$PR_URL" \
-              '{
-                embeds: [{
-                  title: "Preview Build Published",
-                  color: 16753920,
-                  fields: [
-                    {name: "Version", value: "`\($version)`"},
-                    {name: "Changes", value: "[#\($pr_num) - \($pr_title)](\($pr_url))"}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          else
-            jq -n \
-              --arg version "$PREVIEW_VERSION" \
-              '{
-                embeds: [{
-                  title: "Preview Build Published",
-                  color: 16753920,
-                  fields: [
-                    {name: "Version", value: "`\($version)`"}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
 
   stamp-issue-versions:
     name: Stamp Issue Versions
@@ -326,11 +309,13 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    needs: build-docs
+    needs: [build-docs, calculate-version]
     permissions:
       contents: read
       pages: write
       id-token: write
       actions: read
     uses: ./.github/workflows/deploy-docs.yml
+    with:
+      preview_version: ${{ needs.calculate-version.outputs.preview_version }}
     secrets: inherit

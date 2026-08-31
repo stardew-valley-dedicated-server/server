@@ -52,27 +52,7 @@ runs:
       env:
         HEAD_REF: ${{ inputs.head-ref }}
         TAG_MATCH: ${{ inputs.tag-match }}
-      run: |
-        set -f # tag globs must reach git verbatim, not expand against the working tree
-        HEAD_OID=$(git rev-parse "$HEAD_REF^{commit}")
-        MATCH_ARGS=()
-        for glob in $TAG_MATCH; do MATCH_ARGS+=(--match "$glob"); done
-        # The base must sit strictly below HEAD. A candidate tag pointing at HEAD itself is this
-        # build's own tag or a previous build of the same commit — taking it as base would empty
-        # the range and permanently skip a failed run's issues. Re-walking an already-stamped
-        # range is a no-op (first value wins, comments are marker-deduped).
-        EXCLUDE_ARGS=()
-        for tag in $(git tag -l --points-at "$HEAD_OID" $TAG_MATCH); do
-          EXCLUDE_ARGS+=(--exclude "$tag")
-        done
-        BASE=$(git describe --tags --abbrev=0 "${MATCH_ARGS[@]}" "${EXCLUDE_ARGS[@]}" "$HEAD_OID" 2>/dev/null) || {
-          echo "::error::no base tag matching '$TAG_MATCH' strictly below $HEAD_REF"
-          exit 1
-        }
-        BASE_OID=$(git rev-parse "$BASE^{commit}")
-        echo "HEAD=$HEAD_OID BASE=$BASE ($BASE_OID)"
-        echo "head-oid=$HEAD_OID" >> "$GITHUB_OUTPUT"
-        echo "base-oid=$BASE_OID" >> "$GITHUB_OUTPUT"
+      run: '"$GITHUB_ACTION_PATH/../../scripts/resolve-build-range.sh"'
 
     - name: Install dependencies
       shell: bash

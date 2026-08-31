@@ -472,6 +472,25 @@ GitHub Actions caches can accumulate over time. This pipeline removes every cach
 
 ## Discord Notifications
 
-Most pipelines try to send notifications to Discord when builds complete or deployments finish.
+CI posts to Discord in two clearly separated streams, all through the shared composite action `.github/actions/discord-notify`:
 
-To enable notifications, the `DISCORD_WEBHOOK_URL` repository secret needs to be set with a [Discord webhook URL](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
+- **Public release feeds**: `#releases` (stable releases) and `#releases-preview` (preview builds). Each post carries the full changelog since the previous build — every first-parent commit, grouped like the GitHub release page (built by `.github/actions/build-changelog` on top of `.github/scripts/build-changelog.js`) — plus the exact `IMAGE_VERSION=…` value to deploy it.
+- **Internal CI feed** for maintainers: `#internal-ci` gets docs deploys (with the versions per half), server deploys (with the resolved image version and commit), and deploy failures.
+
+### Secrets
+
+One repository secret per channel, each holding a [Discord webhook URL](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks):
+
+| Secret | Channel | Posted by |
+|--------|---------|-----------|
+| `DISCORD_WEBHOOK_PREVIEW` | `#releases-preview` | Build Preview (`build-preview.yml`) |
+| `DISCORD_WEBHOOK_RELEASES` | `#releases` | Build Release (`build-release.yml`) |
+| `DISCORD_WEBHOOK_INTERNAL_CI` | `#internal-ci` | Deploy Documentation (`deploy-docs.yml`), Deploy Server (`deploy-server.yml`, success and failure) |
+
+A missing secret is not an error: the notify action logs "no webhook configured" and skips, so notifications silently stop while everything else runs unaffected. A malformed or over-limit payload fails the notify step loudly instead of truncating; success-path notify steps run with `continue-on-error`, so a Discord outage never reds a build or deploy that succeeded.
+
+### Discord server setup
+
+`#releases` and `#releases-preview` are public **Announcement** channels (so other servers can Follow them; requires Community to be enabled); `#internal-ci` is a private text channel for the maintainer role. Each has one webhook (Channel Settings → Integrations → Webhooks) whose URL is stored in the matching secret above.
+
+Webhook posts are not auto-published to Follower servers (that would need a bot with `crosspost`); accepted until someone actually follows the channels.

@@ -42,8 +42,13 @@ jobs:
       packages: write
 
     steps:
+      # github.sha IS the tagged release commit here (release-please tags before this job
+      # starts); full history + tags let the changelog resolve the previous release locally.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -107,29 +112,33 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
 
+      # continue-on-error on both notification steps: a range or Discord failure must never
+      # red a release build that already published its images.
+      - name: Build changelog
+        id: changelog
+        continue-on-error: true
+        uses: ./.github/actions/build-changelog
+        with:
+          head: ${{ needs.release-please.outputs.tag_name }}
+          # Everything since the previous release — the stable stream carries a complete
+          # changelog even when previews already announced parts of it.
+          tag-match: sdvd-server-v*
+
       - name: Discord notification
-        if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-          RELEASE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}
-        run: |
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n \
-              --arg tag "$TAG_NAME" \
-              --arg url "$RELEASE_URL" \
-              '{
-                embeds: [{
-                  title: "New Release Published",
-                  color: 5763719,
-                  fields: [
-                    {name: "Version", value: "`\($tag)`"},
-                    {name: "How to update", value: "```docker compose pull```"},
-                    {name: "Release Notes", value: "[View Release](\($url))"}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
+        if: steps.changelog.outcome == 'success'
+        continue-on-error: true
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
+          title: Release ${{ needs.release-please.outputs.version }}
+          url: https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}
+          color: "5763719"
+          description: |
+            ${{ steps.changelog.outputs.markdown }}
+
+            **Use it**
+            ```IMAGE_VERSION=${{ needs.release-please.outputs.version }}``` (or `latest` for the newest release)
+            ```docker compose pull && docker compose up -d```
 
   stamp-issue-versions:
     name: Stamp Issue Versions
@@ -206,11 +215,13 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    needs: build-docs
+    needs: [build-docs, release-please]
     permissions:
       contents: read
       pages: write
       id-token: write
       actions: read
     uses: ./.github/workflows/deploy-docs.yml
+    with:
+      latest_version: ${{ needs.release-please.outputs.version }}
     secrets: inherit
