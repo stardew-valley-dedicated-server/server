@@ -37,9 +37,12 @@
             "groupName": "server"
         },
         {
-            "description": "steam-service — standalone Steam auth sidecar (NuGet).",
+            "description": "steam-service — standalone Steam auth sidecar and its unit tests (NuGet).",
             "matchManagers": ["nuget"],
-            "matchFileNames": ["tools/steam-service/SteamService.csproj"],
+            "matchFileNames": [
+                "tools/steam-service/SteamService.csproj",
+                "tests/SteamService.Tests/SteamService.Tests.csproj"
+            ],
             "semanticCommitScope": "deps/steam-service",
             "groupName": "steam-service"
         },
@@ -179,23 +182,25 @@
             "allowedVersions": "<2.0.0"
         },
         {
-            "description": "CAP — Microsoft.NET.Test.Sdk below 18.0 in the E2E test project. 18.x bundles Microsoft Testing Platform v2.0, but the default xunit.v3 package targets MTP v1, so the pair fails at runtime with TypeLoadException for IDataConsumer (xunit#3416, by design). Lift only as part of a coordinated migration to the xunit.v3.mtp-v2 packages and matching coverlet 10 (coverlet.collector is left ungated so it can move with that migration).",
+            "description": "CAP — Microsoft.NET.Test.Sdk below 18.0 in the xunit.v3 test projects. 18.x bundles Microsoft Testing Platform v2.0, but the default xunit.v3 package targets MTP v1, so the pair fails at runtime with TypeLoadException for IDataConsumer (xunit#3416, by design). Lift only as part of a coordinated migration to the xunit.v3.mtp-v2 packages and matching coverlet 10 (coverlet.collector is left ungated so it can move with that migration).",
             "matchManagers": ["nuget"],
             "matchFileNames": [
-                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj"
+                "tests/JunimoServer.Tests/JunimoServer.Tests.csproj",
+                "tests/SteamService.Tests/SteamService.Tests.csproj"
             ],
             "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
             "versioning": "semver",
             "allowedVersions": "<18.0.0"
         },
         {
-            "description": "CAP — xunit.v3 stack below 4.0 (coordinated MTP-v2 major, deferred alongside the Test.Sdk 18 cap above). xunit.v3 (Tests) + xunit.v3.runner.utility (TestRunner) must move together — split majors fail restore (NU1107, mismatched xunit.v3.runner.common) — and 4.x drops AssemblyRunnerOptions.ParallelizeTestCollections, set in TestRunner/Program.cs. xunit.runner.visualstudio has no xunit.v3 dependency; capped only as a precaution (3.1.5 is the terminal 3.x, so nothing is forfeited). Lift all three together. versioning:semver — nuget silently no-ops allowedVersions on interleaved prereleases.",
+            "description": "CAP — xunit.v3 stack below 4.0 (coordinated MTP-v2 major, deferred alongside the Test.Sdk 18 cap above). xunit.v3 (Tests, SteamService.Tests) + xunit.v3.runner.utility (TestRunner) must move together — split majors fail restore (NU1107, mismatched xunit.v3.runner.common) — and 4.x drops AssemblyRunnerOptions.ParallelizeTestCollections, set in TestRunner/Program.cs. xunit.runner.visualstudio is deliberately NOT capped: it has no xunit.v3 package dependency, and 4.0.0 runs xunit.v3 3.2.2 projects under VSTest (verified: SteamService.Tests 7/7 green on the runner-4.0 Renovate PR). versioning:semver — nuget silently no-ops allowedVersions on interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": [
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj",
-                "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj"
+                "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj",
+                "tests/SteamService.Tests/SteamService.Tests.csproj"
             ],
-            "matchPackageNames": ["xunit.v3", "xunit.v3.runner.utility", "xunit.runner.visualstudio"],
+            "matchPackageNames": ["xunit.v3", "xunit.v3.runner.utility"],
             "versioning": "semver",
             "allowedVersions": "<4.0.0"
         },
