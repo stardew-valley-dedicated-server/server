@@ -125,6 +125,17 @@ test("markdown special characters in subjects are escaped", () => {
     );
 });
 
+test("a subject with markdown link syntax cannot inject a masked link", () => {
+    const result = buildChangelog(["feat: [deployment guide](https://attacker.example) (#13)"], OPTS);
+    assert.equal(
+        result.markdown,
+        [
+            "**Features**",
+            "- feat: \\[deployment guide\\](https://attacker.example) · [#13](https://github.com/o/r/pull/13)",
+        ].join("\n"),
+    );
+});
+
 test("a non-ASCII subject passes through and the budget counts code points", () => {
     const result = buildChangelog(["feat: 🎉 支持中文标题 (#12)"], OPTS);
     assert.equal(

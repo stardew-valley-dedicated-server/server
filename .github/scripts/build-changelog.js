@@ -38,13 +38,14 @@ function codePoints(s) {
 
 /**
  * Backslash-escape Discord inline-markdown characters so a commit subject renders as
- * plain text. `[`/`]` stay unescaped: subjects are emitted as plain text, never as link
- * text, so they cannot break the appended PR link.
+ * plain text. Brackets are escaped too: a subject containing `[label](url)` must render
+ * literally, not as a masked link — commit subjects are contributor-controlled and these
+ * posts go to public channels. (Embeds never ping, so @-mentions need no handling.)
  * @param {string} text
  * @returns {string}
  */
 function escapeMarkdown(text) {
-    return text.replace(/[\\`*_~|]/g, (c) => `\\${c}`);
+    return text.replace(/[\\`*_~|[\]]/g, (c) => `\\${c}`);
 }
 
 /**
