@@ -209,10 +209,11 @@ public sealed record TransportStateUnreadableEvent(
 );
 
 /// <summary>
-/// <c>Cursor</c> is the daemon timestamp of the last line emitted before the
-/// loss (the <c>Since</c> value the re-open used). <c>OpenFailures</c> counts
-/// the failed re-opens during the outage. <c>IncidentId</c> is the runner's
-/// transport action whose re-establish window covered the outage, when one did.
+/// <c>LastLineTimestamp</c> is the daemon timestamp of the last line delivered
+/// before the loss — the high-water mark of forwarded logs, and the <c>Since</c>
+/// value the re-open resumed from. <c>OpenFailures</c> counts the failed
+/// re-opens during the outage. <c>IncidentId</c> is the runner's transport
+/// action whose re-establish window covered the outage, when one did.
 /// </summary>
 public sealed record StreamReconnectedEvent(
     string Label,
@@ -221,7 +222,7 @@ public sealed record StreamReconnectedEvent(
     DateTime ReconnectedAtUtc,
     long GapMs,
     int OpenFailures,
-    string? Cursor,
+    string? LastLineTimestamp,
     string? IncidentId
 );
 
@@ -242,7 +243,7 @@ public sealed record StreamEndedEvent(
     string? FaultType,
     string? FaultMessage,
     string? FaultChain,
-    string? Cursor,
+    string? LastLineTimestamp,
     long LinesEmitted,
     int Reconnects,
     long? OutageMs,
