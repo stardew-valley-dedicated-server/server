@@ -44,6 +44,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     private const string EndReasonOpenFailuresExhausted = "open_failures_exhausted";
     private const string EndReasonCancelled = "cancelled";
     private const string EndReasonDockerDown = "docker_down";
+    private const string EndReasonLineHandlerFaulted = "line_handler_faulted";
 
     private const int ReadBufferSize = 8 * 1024;
 
@@ -94,6 +95,11 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     // hashing on every line. Reconnects follow a transport loss only.
     private string? _lastRawEmitted;
     private bool _expectDedupNextEmit;
+
+    // Last transport-state read error emitted, so a persistently unreadable
+    // file during an outage doesn't emit one event per read. Cleared on a
+    // successful read.
+    private string? _lastUnreadableError;
 
     /// <param name="client">
     /// Host-scoped Docker client (per <c>docker-test-resources.md</c> — every
@@ -209,13 +215,19 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         // time-based reconnect budget and the reconnected event's gap.
         DateTime? outageStartUtc = null;
         var outageOpenFailures = 0;
+        // Incident that governed the current outage's reconnect deadline,
+        // resolved once at each budget decision. Reconnect/ended events report
+        // this instead of re-resolving at emit time, so a transport-state file
+        // rewritten mid-outage can't make the event name a different incident
+        // than the one whose window set the deadline.
+        string? outageIncidentId = null;
         Exception? lastFault = null;
 
         while (true)
         {
             if (ct.IsCancellationRequested)
             {
-                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc);
+                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc, outageIncidentId);
                 return;
             }
 
@@ -259,9 +271,10 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         hasReadAny = true;
                         if (outageStartUtc is { } outageStart)
                         {
-                            EmitReconnected(outageStart, outageOpenFailures);
+                            EmitReconnected(outageStart, outageOpenFailures, outageIncidentId);
                             outageStartUtc = null;
                             outageOpenFailures = 0;
+                            outageIncidentId = null;
                             lastFault = null;
                         }
                     },
@@ -298,7 +311,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                             EndReasonContainerExited,
                             verdict.Detail,
                             lastFault: null,
-                            outageStartUtc
+                            outageStartUtc,
+                            outageIncidentId
                         );
                         return;
                     }
@@ -318,13 +332,15 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                     outageStartUtc ??= now;
                     outageOpenFailures++;
                     var budget = ResolveBudget(outageStartUtc.Value);
+                    outageIncidentId = budget.IncidentId;
                     if (now >= budget.DeadlineUtc)
                     {
                         EmitEnded(
                             EndReasonOpenFailuresExhausted,
                             $"{outageOpenFailures} EOF re-opens while container running; budget {budget.Source}",
                             lastFault,
-                            outageStartUtc
+                            outageStartUtc,
+                            outageIncidentId
                         );
                         return;
                     }
@@ -338,7 +354,22 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc);
+                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc, outageIncidentId);
+                return;
+            }
+            catch (LineHandlerException ex)
+            {
+                // A per-line callback failed. That is a sink fault, not a
+                // transport loss: end here rather than reconnecting (which
+                // would reset the outage budget and skip the line), so the
+                // failure surfaces as its own terminal event.
+                EmitEnded(
+                    EndReasonLineHandlerFaulted,
+                    "line handler threw",
+                    ex.InnerException,
+                    outageStartUtc,
+                    outageIncidentId
+                );
                 return;
             }
             catch (Exception ex)
@@ -351,7 +382,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         EndReasonCancelled,
                         "shutdown_coordinator",
                         lastFault,
-                        outageStartUtc
+                        outageStartUtc,
+                        outageIncidentId
                     );
                     return;
                 }
@@ -361,7 +393,13 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 // coordinator and stop; nothing to reconnect to.
                 if (IsDaemonInternalError(lastFault))
                 {
-                    EmitEnded(EndReasonDockerDown, "daemon_500", lastFault, outageStartUtc);
+                    EmitEnded(
+                        EndReasonDockerDown,
+                        "daemon_500",
+                        lastFault,
+                        outageStartUtc,
+                        outageIncidentId
+                    );
                     ShutdownCoordinator.NotifyDockerDown(
                         $"{_diagnosticLabel} log stream: {lastFault.Message}"
                     );
@@ -375,7 +413,13 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                     // StartAsync. Retry outside the outage budget.
                     if (!await TryDelayAsync(ReopenDelay, ct))
                     {
-                        EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc);
+                        EmitEnded(
+                            EndReasonCancelled,
+                            "token",
+                            lastFault,
+                            outageStartUtc,
+                            outageIncidentId
+                        );
                         return;
                     }
                     continue;
@@ -389,13 +433,15 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 outageStartUtc ??= now;
                 outageOpenFailures++;
                 var budget = ResolveBudget(outageStartUtc.Value);
+                outageIncidentId = budget.IncidentId;
                 if (now >= budget.DeadlineUtc)
                 {
                     EmitEnded(
                         EndReasonOpenFailuresExhausted,
                         $"{outageOpenFailures} failed re-opens; budget {budget.Source}",
                         lastFault,
-                        outageStartUtc
+                        outageStartUtc,
+                        outageIncidentId
                     );
                     _diagnosticCallback?.Invoke(
                         $"{_diagnosticLabel} log stream gave up after {outageOpenFailures} "
@@ -410,7 +456,13 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
 
                 if (!await TryDelayAsync(ReopenDelay, ct))
                 {
-                    EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc);
+                    EmitEnded(
+                        EndReasonCancelled,
+                        "token",
+                        lastFault,
+                        outageStartUtc,
+                        outageIncidentId
+                    );
                     return;
                 }
             }
@@ -441,6 +493,14 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     /// </summary>
     private sealed class EofUnconfirmedException(string detail, Exception inner)
         : Exception(detail, inner);
+
+    /// <summary>
+    /// Wraps a fault thrown by the per-line <see cref="LineHandler"/> so
+    /// <see cref="RunInternalAsync"/> ends the reader with
+    /// <c>line_handler_faulted</c> rather than misclassifying a sink failure as
+    /// a transport loss and reconnecting.
+    /// </summary>
+    private sealed class LineHandlerException(Exception inner) : Exception(inner.Message, inner);
 
     private readonly record struct EofVerdict(bool Exited, string Detail, Exception? Fault);
 
@@ -541,7 +601,9 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
     {
         try
         {
-            return TransportStateFile.TryRead(TestArtifacts.RunDir, _hostId);
+            var state = TransportStateFile.TryRead(TestArtifacts.RunDir, _hostId);
+            _lastUnreadableError = null;
+            return state;
         }
         catch (Exception ex)
             when (ex
@@ -551,21 +613,30 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         or NotSupportedException
             )
         {
-            InfrastructureEventLog.Emit(
-                TransportEventNames.TransportStateUnreadable,
-                new TransportStateUnreadableEvent(
-                    TransportStateFile.PathFor(TestArtifacts.RunDir, _hostId),
-                    ex.GetType().Name,
-                    ex.Message,
-                    Label: _diagnosticLabel,
-                    HostId: _hostId
-                )
-            );
+            // ResolveBudget reads this file once per reopen (~1s) during an
+            // outage, so a persistently unreadable file would emit one event
+            // per second per container. Emit only when the error first appears
+            // or changes; a successful read re-arms it.
+            var signature = $"{ex.GetType().Name}: {ex.Message}";
+            if (signature != _lastUnreadableError)
+            {
+                _lastUnreadableError = signature;
+                InfrastructureEventLog.Emit(
+                    TransportEventNames.TransportStateUnreadable,
+                    new TransportStateUnreadableEvent(
+                        TransportStateFile.PathFor(TestArtifacts.RunDir, _hostId),
+                        ex.GetType().Name,
+                        ex.Message,
+                        Label: _diagnosticLabel,
+                        HostId: _hostId
+                    )
+                );
+            }
             return null;
         }
     }
 
-    private void EmitReconnected(DateTime outageStartUtc, int openFailures)
+    private void EmitReconnected(DateTime outageStartUtc, int openFailures, string? incidentId)
     {
         _reconnects++;
         var now = DateTime.UtcNow;
@@ -579,7 +650,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 (long)(now - outageStartUtc).TotalMilliseconds,
                 openFailures,
                 _sinceCursor,
-                ResolveBudget(outageStartUtc).IncidentId
+                incidentId
             )
         );
         _diagnosticCallback?.Invoke(
@@ -591,7 +662,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         string reason,
         string detail,
         Exception? lastFault,
-        DateTime? outageStartUtc
+        DateTime? outageStartUtc,
+        string? incidentId
     )
     {
         InfrastructureEventLog.Emit(
@@ -610,7 +682,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 outageStartUtc is { } start
                     ? (long)(DateTime.UtcNow - start).TotalMilliseconds
                     : null,
-                outageStartUtc is { } s ? ResolveBudget(s).IncidentId : null
+                incidentId
             )
         );
     }
@@ -764,7 +836,18 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             return;
         }
 
+        // A line-handler fault is a sink failure, not a transport loss. Wrap it
+        // so RunInternalAsync ends the reader instead of catching it as a failed
+        // read and reconnecting. _linesEmitted counts only delivered lines.
+        try
+        {
+            _onLine(line);
+        }
+        catch (Exception ex)
+        {
+            throw new LineHandlerException(ex);
+        }
+
         _linesEmitted++;
-        _onLine(line);
     }
 }

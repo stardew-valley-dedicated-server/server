@@ -285,7 +285,7 @@ namespace JunimoServer.Tests.Helpers;
 /// gapMs, openFailures, cursor, incidentId?</c>) ·
 /// <c>container_log_stream_ended</c> (<see cref="Schema.Events.StreamEndedEvent"/>;
 /// every reader exit: <c>reason:"container_exited"|"open_failures_exhausted"|
-/// "cancelled"|"docker_down", detail, faultType?, faultMessage?, faultChain?, cursor?,
+/// "cancelled"|"docker_down"|"line_handler_faulted", detail, faultType?, faultMessage?, faultChain?, cursor?,
 /// linesEmitted, reconnects, outageMs?, incidentId?</c>) ·
 /// <c>transport_state_unreadable</c> (<see cref="Schema.Events.TransportStateUnreadableEvent"/>:
 /// <c>path, exceptionType, error, label?, host_id?</c>; the child could not read the
