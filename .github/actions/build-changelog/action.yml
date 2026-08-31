@@ -1,0 +1,57 @@
+name: Build Changelog
+description: >
+  Builds Discord-ready changelog markdown for a build: every first-parent commit since the
+  previous build tag, grouped into release-please's sections and budgeted for an embed
+  description. Performs no checkout — the caller's checkout must have full history and tags
+  (fetch-depth: 0, fetch-tags: true).
+
+inputs:
+  head:
+    description: Commit-ish of the build's head (SHA or tag name)
+    required: true
+  tag-match:
+    description: Space-separated `git describe --match` globs that select base-tag candidates
+    required: true
+
+outputs:
+  markdown:
+    description: Changelog markdown (at most 3500 code points)
+    value: ${{ steps.changelog.outputs.markdown }}
+  count:
+    description: Commits in the range
+    value: ${{ steps.changelog.outputs.count }}
+  visible-count:
+    description: Commits listed individually (visible sections plus Other)
+    value: ${{ steps.changelog.outputs.visible-count }}
+  hidden-count:
+    description: Commits folded into the internal-changes line
+    value: ${{ steps.changelog.outputs.hidden-count }}
+  base-tag:
+    description: Tag the range starts from (the previous build)
+    value: ${{ steps.range.outputs.base-tag }}
+  compare-url:
+    description: GitHub compare URL for the range
+    value: ${{ steps.changelog.outputs.compare-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve commit range
+      id: range
+      shell: bash
+      env:
+        HEAD_REF: ${{ inputs.head }}
+        TAG_MATCH: ${{ inputs.tag-match }}
+      run: '"$GITHUB_ACTION_PATH/../../scripts/resolve-build-range.sh"'
+
+    - name: Build changelog
+      id: changelog
+      shell: bash
+      env:
+        BASE_OID: ${{ steps.range.outputs.base-oid }}
+        HEAD_OID: ${{ steps.range.outputs.head-oid }}
+        BASE_TAG: ${{ steps.range.outputs.base-tag }}
+        REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      run: |
+        git log --first-parent --format='%H%x1f%s' "$BASE_OID..$HEAD_OID" \
+          | node "$GITHUB_ACTION_PATH/../../scripts/build-changelog.js"

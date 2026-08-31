@@ -275,3 +275,6 @@ jobs:
 
       - name: Check JS/TS formatting and lints
         run: npx biome ci --max-diagnostics=50 .
+
+      - name: Run workflow-script tests
+        run: npm test

@@ -1,0 +1,111 @@
+name: Discord Notify
+description: >
+  Posts a single-embed message to a Discord webhook. Validates Discord's embed limits up
+  front and fails the step with a clear message instead of truncating; an empty webhook
+  input logs a skip and exits 0, so notifications degrade to silence when the secret is
+  absent. A failed post fails the step (curl --fail-with-body) — success-path callers set
+  continue-on-error so a Discord outage never reds a build or deploy that succeeded.
+
+inputs:
+  webhook:
+    description: Discord webhook URL; empty means log "no webhook configured" and skip
+    required: true
+  title:
+    description: Embed title (at most 256 characters)
+    required: true
+  url:
+    description: Optional URL the title links to
+    required: false
+    default: ""
+  color:
+    description: Embed color as a decimal number
+    required: true
+  description:
+    description: Optional embed description, markdown (at most 4096 characters)
+    required: false
+    default: ""
+  fields:
+    description: >
+      Optional JSON array of {name, value, inline?} objects. Callers build it with
+      `jq -n --arg` so user-supplied text is never string-interpolated into JSON.
+    required: false
+    default: "[]"
+  dry-run:
+    description: Print the payload instead of posting (used by payload tests)
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Build and post embed
+      shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook }}
+        TITLE: ${{ inputs.title }}
+        URL: ${{ inputs.url }}
+        COLOR: ${{ inputs.color }}
+        DESCRIPTION: ${{ inputs.description }}
+        FIELDS: ${{ inputs.fields }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -euo pipefail
+
+        if [ "$DRY_RUN" != "true" ] && [ -z "$WEBHOOK" ]; then
+          echo "No webhook configured, skipping Discord notification."
+          exit 0
+        fi
+
+        [[ "$COLOR" =~ ^[0-9]+$ ]] || { echo "::error::discord-notify: color must be decimal, got '$COLOR'"; exit 1; }
+        [ -n "$TITLE" ] || { echo "::error::discord-notify: title must not be empty"; exit 1; }
+        jq -e 'type == "array" and all(.[]; (.name | type == "string") and (.value | type == "string"))' \
+          >/dev/null 2>&1 <<< "$FIELDS" \
+          || { echo "::error::discord-notify: fields must be a JSON array of {name, value} objects"; exit 1; }
+
+        payload=$(jq -cn \
+          --arg title "$TITLE" \
+          --arg url "$URL" \
+          --arg desc "$DESCRIPTION" \
+          --argjson color "$COLOR" \
+          --argjson fields "$FIELDS" \
+          '{
+            embeds: [(
+              {title: $title, color: $color, timestamp: (now | todate)}
+              + (if $url == "" then {} else {url: $url} end)
+              + (if $desc == "" then {} else {description: $desc} end)
+              + (if ($fields | length) == 0 then {} else {fields: $fields} end)
+            )]
+          }')
+
+        # Discord API "Embed Limits": title 256, description 4096, field name 256 /
+        # value 1024, 25 fields, 6000 characters across the embed. Fail loudly instead of
+        # truncating — a clipped ops message is worse than a red step, and the changelog
+        # builder owns its own budget upstream.
+        errors=$(jq -r '
+          .embeds[0]
+          | (.description // "") as $d
+          | (.fields // []) as $f
+          | [
+              (select((.title | length) > 256) | "title exceeds 256 characters"),
+              (select(($d | length) > 4096) | "description exceeds 4096 characters"),
+              (select(($f | length) > 25) | "more than 25 fields"),
+              ($f[] | select((.name | length) < 1 or (.name | length) > 256)
+                | "field name empty or over 256 characters"),
+              ($f[] | select((.value | length) < 1 or (.value | length) > 1024)
+                | "field value empty or over 1024 characters (field: \(.name))"),
+              (select(
+                ((.title | length) + ($d | length)
+                  + ([$f[] | (.name | length) + (.value | length)] | add // 0)) > 6000)
+                | "embed exceeds 6000 characters total")
+            ]
+          | join("; ")' <<< "$payload")
+        if [ -n "$errors" ]; then
+          echo "::error::discord-notify: embed over Discord limits: $errors"
+          exit 1
+        fi
+
+        if [ "$DRY_RUN" = "true" ]; then
+          echo "$payload"
+          exit 0
+        fi
+        curl -sS --fail-with-body -H "Content-Type: application/json" -d "$payload" "$WEBHOOK"

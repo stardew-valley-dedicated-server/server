@@ -2,6 +2,15 @@ name: Deploy Documentation
 
 on:
   workflow_call:
+    inputs:
+      latest_version:
+        description: 'Version deployed to the latest half, shown in the internal-ci notification (e.g. 1.4.1)'
+        required: false
+        type: string
+      preview_version:
+        description: 'Version deployed to the preview half, shown in the internal-ci notification (e.g. 1.5.0-preview.127)'
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       rebuild_latest:
@@ -60,6 +69,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+      # The Discord notify action must exist in the checked-out tree (`uses: ./…`); this job
+      # otherwise needs no checkout, so take just the action. Runs first: checkout cleans the
+      # workspace, which must not eat the downloaded artifacts below.
+      - name: Checkout notify action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions/discord-notify
+          sparse-checkout-cone-mode: false
+
       # Each half is sourced in order: this run's artifact → its primary build workflow →
       # a prior manual rebuild. Present in this run when invoked by build-release.yml /
       # build-preview.yml, which run build-docs first.
@@ -278,43 +296,56 @@ jobs:
             || echo "::warning::Mirror done but marker write failed — next single-half deploy will refuse until the next persist."
           echo "Live snapshot updated in R2."
 
-      - name: Build summary
+      - name: Build summary and notification fields
+        id: labels
+        env:
+          LATEST_SRC: ${{ steps.check.outputs.latest_src }}
+          PREVIEW_SRC: ${{ steps.check.outputs.preview_src }}
+          LATEST_VERSION: ${{ inputs.latest_version }}
+          PREVIEW_VERSION: ${{ inputs.preview_version }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # Single label definition for both the job summary and the Discord fields.
+          # *_src: this-run (built now) | live (preserved from last deploy) | none (omitted —
+          # preview only). A deployed half is version-prefixed when the calling build workflow
+          # passed its version (a manual dispatch rebuild has none).
+          label() { # $1 = src, $2 = version
+            case "$1" in
+              this-run) if [ -n "$2" ]; then echo "$2 — deployed"; else echo "deployed"; fi ;;
+              live) echo "preserved" ;;
+              *) echo "not included" ;;
+            esac
+          }
+          LATEST_LABEL=$(label "$LATEST_SRC" "$LATEST_VERSION")
+          PREVIEW_LABEL=$(label "$PREVIEW_SRC" "$PREVIEW_VERSION")
+
           echo "### Documentation Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Site URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Site URL:** $PAGE_URL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Half | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          # *_src: this-run (built now) | live (preserved from last deploy) | none (omitted — preview only).
-          status() { case "$1" in this-run) echo "Deployed";; live) echo "Preserved from live site";; *) echo "Not included this deploy";; esac; }
-          echo "| Latest | $(status '${{ steps.check.outputs.latest_src }}') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Preview | $(status '${{ steps.check.outputs.preview_src }}') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest | $LATEST_LABEL |" >> $GITHUB_STEP_SUMMARY
+          echo "| Preview | $PREVIEW_LABEL |" >> $GITHUB_STEP_SUMMARY
+
+          jq -cn \
+            --arg latest "$LATEST_LABEL" \
+            --arg preview "$PREVIEW_LABEL" \
+            --arg run "$RUN_URL" \
+            '[
+              {name: "Latest", value: $latest, inline: true},
+              {name: "Preview", value: $preview, inline: true},
+              {name: "Run", value: "[view run](\($run))"}
+            ]' | sed 's/^/fields=/' >> "$GITHUB_OUTPUT"
 
       - name: Discord notification
         if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-          LATEST_STATE: ${{ steps.check.outputs.latest_src }}
-          PREVIEW_STATE: ${{ steps.check.outputs.preview_src }}
-        run: |
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            # Same mapping as the job summary's status().
-            label() { case "$1" in this-run) echo "Deployed";; live) echo "Preserved from live site";; *) echo "Not included";; esac; }
-            jq -n \
-              --arg url "$PAGE_URL" \
-              --arg latest "$(label "$LATEST_STATE")" \
-              --arg preview "$(label "$PREVIEW_STATE")" \
-              '{
-                embeds: [{
-                  title: "Documentation Updated",
-                  color: 3447003,
-                  fields: [
-                    {name: "View Docs", value: "[stardew-valley-dedicated-server.github.io/server](\($url))"},
-                    {name: "Latest", value: $latest, inline: true},
-                    {name: "Preview", value: $preview, inline: true}
-                  ]
-                }]
-              }' | curl -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
-          fi
+        continue-on-error: true
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL_CI }}
+          title: Docs deployed
+          url: ${{ steps.deployment.outputs.page_url }}
+          color: "9807270"
+          fields: ${{ steps.labels.outputs.fields }}
