@@ -215,19 +215,28 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
         // time-based reconnect budget and the reconnected event's gap.
         DateTime? outageStartUtc = null;
         var outageOpenFailures = 0;
-        // Incident that governed the current outage's reconnect deadline,
-        // resolved once at each budget decision. Reconnect/ended events report
-        // this instead of re-resolving at emit time, so a transport-state file
-        // rewritten mid-outage can't make the event name a different incident
-        // than the one whose window set the deadline.
-        string? outageIncidentId = null;
+        // Highest reconnect budget resolved for the current outage. Re-latched to
+        // the max deadline at each decision, so a later transport-state change can
+        // only extend patience — a completing action that publishes an earlier
+        // window, a transiently unreadable file, or a shorter replacement incident
+        // can't cut the outage short. Cleared by the next successful open. Its
+        // Source/IncidentId are the ones the honoured deadline came from, so the
+        // ended event's detail and incident always agree, and reconnect/ended
+        // events report it instead of re-resolving at emit time.
+        ReconnectBudget? outageBudget = null;
         Exception? lastFault = null;
 
         while (true)
         {
             if (ct.IsCancellationRequested)
             {
-                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc, outageIncidentId);
+                EmitEnded(
+                    EndReasonCancelled,
+                    "token",
+                    lastFault,
+                    outageStartUtc,
+                    outageBudget?.IncidentId
+                );
                 return;
             }
 
@@ -271,10 +280,14 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         hasReadAny = true;
                         if (outageStartUtc is { } outageStart)
                         {
-                            EmitReconnected(outageStart, outageOpenFailures, outageIncidentId);
+                            EmitReconnected(
+                                outageStart,
+                                outageOpenFailures,
+                                outageBudget?.IncidentId
+                            );
                             outageStartUtc = null;
                             outageOpenFailures = 0;
-                            outageIncidentId = null;
+                            outageBudget = null;
                             lastFault = null;
                         }
                     },
@@ -312,7 +325,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                             verdict.Detail,
                             lastFault: null,
                             outageStartUtc,
-                            outageIncidentId
+                            outageBudget?.IncidentId
                         );
                         return;
                     }
@@ -331,8 +344,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                     var now = DateTime.UtcNow;
                     outageStartUtc ??= now;
                     outageOpenFailures++;
-                    var budget = ResolveBudget(outageStartUtc.Value);
-                    outageIncidentId = budget.IncidentId;
+                    outageBudget = LatchBudget(outageBudget, ResolveBudget(outageStartUtc.Value));
+                    var budget = outageBudget.Value;
                     if (now >= budget.DeadlineUtc)
                     {
                         EmitEnded(
@@ -340,7 +353,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                             $"{outageOpenFailures} EOF re-opens while container running; budget {budget.Source}",
                             lastFault,
                             outageStartUtc,
-                            outageIncidentId
+                            budget.IncidentId
                         );
                         return;
                     }
@@ -354,7 +367,13 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                EmitEnded(EndReasonCancelled, "token", lastFault, outageStartUtc, outageIncidentId);
+                EmitEnded(
+                    EndReasonCancelled,
+                    "token",
+                    lastFault,
+                    outageStartUtc,
+                    outageBudget?.IncidentId
+                );
                 return;
             }
             catch (LineHandlerException ex)
@@ -368,7 +387,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                     "line handler threw",
                     ex.InnerException,
                     outageStartUtc,
-                    outageIncidentId
+                    outageBudget?.IncidentId
                 );
                 return;
             }
@@ -383,7 +402,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         "shutdown_coordinator",
                         lastFault,
                         outageStartUtc,
-                        outageIncidentId
+                        outageBudget?.IncidentId
                     );
                     return;
                 }
@@ -398,7 +417,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         "daemon_500",
                         lastFault,
                         outageStartUtc,
-                        outageIncidentId
+                        outageBudget?.IncidentId
                     );
                     ShutdownCoordinator.NotifyDockerDown(
                         $"{_diagnosticLabel} log stream: {lastFault.Message}"
@@ -418,7 +437,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                             "token",
                             lastFault,
                             outageStartUtc,
-                            outageIncidentId
+                            outageBudget?.IncidentId
                         );
                         return;
                     }
@@ -432,8 +451,8 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                 var now = DateTime.UtcNow;
                 outageStartUtc ??= now;
                 outageOpenFailures++;
-                var budget = ResolveBudget(outageStartUtc.Value);
-                outageIncidentId = budget.IncidentId;
+                outageBudget = LatchBudget(outageBudget, ResolveBudget(outageStartUtc.Value));
+                var budget = outageBudget.Value;
                 if (now >= budget.DeadlineUtc)
                 {
                     EmitEnded(
@@ -441,7 +460,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         $"{outageOpenFailures} failed re-opens; budget {budget.Source}",
                         lastFault,
                         outageStartUtc,
-                        outageIncidentId
+                        budget.IncidentId
                     );
                     _diagnosticCallback?.Invoke(
                         $"{_diagnosticLabel} log stream gave up after {outageOpenFailures} "
@@ -461,7 +480,7 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
                         "token",
                         lastFault,
                         outageStartUtc,
-                        outageIncidentId
+                        outageBudget?.IncidentId
                     );
                     return;
                 }
@@ -596,6 +615,15 @@ internal sealed class ContainerLogStreamReader : IAsyncDisposable
             )
             : new ReconnectBudget(defaultDeadline, defaultSource, state.IncidentId);
     }
+
+    /// <summary>
+    /// Keeps the outage deadline monotonic: returns whichever budget has the
+    /// later deadline, so re-resolving can only push the give-up point out.
+    /// </summary>
+    private static ReconnectBudget LatchBudget(
+        ReconnectBudget? current,
+        ReconnectBudget resolved
+    ) => current is { } c && c.DeadlineUtc >= resolved.DeadlineUtc ? c : resolved;
 
     private TransportState? TryReadTransportState()
     {
