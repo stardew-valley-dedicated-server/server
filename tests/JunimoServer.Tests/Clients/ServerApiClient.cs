@@ -2030,7 +2030,7 @@ public class ServerApiClient : IDisposable
     /// </summary>
     public async Task<ScreenshotResponse?> GetScreenshot(CancellationToken ct = default)
     {
-        var response = await SendWithRetryAsync(HttpMethod.Get, "/screenshot", ct);
+        var response = await SendWithRetryAsync(HttpMethod.Get, "/screenshot", ct, retrySafe: true);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ScreenshotResponse>(ct);
     }
@@ -2288,7 +2288,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Get,
             $"/test/pacing_probe_state?kind={Uri.EscapeDataString(kind)}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PacingProbeStateResponse>(ct);
@@ -2442,7 +2443,12 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        var response = await SendWithRetryAsync(HttpMethod.Get, "/test/npc_sprite_integrity", ct);
+        var response = await SendWithRetryAsync(
+            HttpMethod.Get,
+            "/test/npc_sprite_integrity",
+            ct,
+            retrySafe: true
+        );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestNpcSpriteIntegrityResponse>(ct);
     }
@@ -2637,7 +2643,8 @@ public class ServerApiClient : IDisposable
         var response = await SendWithRetryAsync(
             HttpMethod.Get,
             $"/test/save_tmp_exists?saveName={Uri.EscapeDataString(saveName)}",
-            ct
+            ct,
+            retrySafe: true
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestSaveFileOpResponse>(ct);
