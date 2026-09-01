@@ -42,7 +42,7 @@ export function isDashboardEmbed(embed: EmbedLike | null | undefined): boolean {
 
 /**
  * - `mine` — dashboard embed stamped with our owner id
- * - `legacy` — dashboard embed with no stamp (pre-upgrade dashboard; adopt and stamp)
+ * - `legacy` — dashboard embed with no ownership stamp (adopt and stamp)
  * - `foreign` — dashboard embed stamped by another deployment (never touch)
  * - `unrelated` — not a dashboard embed (chat relay line, command reply, ...)
  */
@@ -51,8 +51,8 @@ export type DashboardMessageKind = "mine" | "legacy" | "foreign" | "unrelated";
 /**
  * Classifies a bot-authored message's first embed against our owner id.
  * With `ownerId` null (degraded mode) adoption is title-based: every dashboard
- * embed classifies as `mine`, whether stamped, legacy, or unstamped — a restart
- * without persistence must still re-adopt its own message.
+ * embed classifies as `mine`, stamped or not — a restart without persistence
+ * must still re-adopt its own message.
  */
 export function classifyDashboardEmbed(
     embed: EmbedLike | null | undefined,

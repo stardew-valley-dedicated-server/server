@@ -492,6 +492,7 @@ function persistDashboardState(): void {
     }
 }
 
+/** Forgets the tracked dashboard message so the next update rescans the channel. */
 function clearTrackedMessage(): void {
     dashboardState.messageId = null;
     persistDashboardState();
@@ -551,7 +552,7 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
     return embed;
 }
 
-// Auto-updating status dashboard
+/** Interval entry point: runs one dashboard update, skipping ticks that overlap. */
 async function updateLiveDashboard(): Promise<void> {
     if (!STATUS_DASHBOARD_CHANNEL_ID) {
         return;
@@ -569,6 +570,10 @@ async function updateLiveDashboard(): Promise<void> {
     }
 }
 
+/**
+ * Updates the dashboard: edits the tracked message when it is still ours,
+ * otherwise scans the channel to adopt our dashboard or posts a fresh one.
+ */
 async function runDashboardUpdate(channelId: string): Promise<void> {
     const channel = (await client.channels.fetch(channelId)) as TextChannel;
     if (!channel?.isTextBased()) {
