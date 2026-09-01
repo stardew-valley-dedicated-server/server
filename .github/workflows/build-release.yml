@@ -130,8 +130,8 @@ jobs:
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
-          # Bot identity: per-channel var → shared var → literal default. Empty avatar falls
-          # back to the project logo inside the action.
+          # Bot name: try the channel-specific variable, then the shared one, then this default.
+          # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_RELEASES || vars.DISCORD_BOT_USERNAME || 'Release Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_RELEASES || vars.DISCORD_BOT_AVATAR_URL }}
           title: Release ${{ needs.release-please.outputs.version }}

@@ -194,8 +194,8 @@ jobs:
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_PREVIEW }}
-          # Bot identity: per-channel var → shared var → literal default. Empty avatar falls
-          # back to the project logo inside the action.
+          # Bot name: try the channel-specific variable, then the shared one, then this default.
+          # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_PREVIEW || vars.DISCORD_BOT_USERNAME || 'Preview Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_PREVIEW || vars.DISCORD_BOT_AVATAR_URL }}
           title: Preview ${{ needs.calculate-version.outputs.preview_version }}

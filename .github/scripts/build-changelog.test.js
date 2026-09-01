@@ -1,10 +1,10 @@
-// Tests for build-changelog.js — fixed subject lists in, exact markdown out. Run with
-// `npm test` (wired into the Validate JS/TS job). No dependencies: Node's built-in runner.
+// Tests for build-changelog.js — fixed lists of commit subjects in, exact markdown out. Run with
+// `npm test` (part of the Validate JS/TS job). No dependencies: Node's built-in test runner.
 //
-// These pin the Discord-facing contract: one flat "Changes" list ordered by release-please's
-// type priority, no change ever dropped (unparseable ⇒ listed after the visible types),
-// markdown characters in subjects escaped, a trailing diff link on every path, and the output
-// under the 3500-code-point budget with a line-boundary cut and an "…and N more" notice.
+// These lock in how the Discord post looks: one flat "Changes" list in release-please's type order,
+// nothing ever dropped (a subject we can't parse is listed after the known types), markdown special
+// characters escaped, a diff link on every result, and the whole thing kept under the 3500-code-point
+// budget — trimming between whole lines with an "…and N more" note when it's too long.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
