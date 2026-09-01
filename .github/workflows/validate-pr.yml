@@ -58,10 +58,10 @@ jobs:
 
   validate-pr-title:
     name: Validate PR Title
-    # Squash-merge makes the PR title the commit subject, which the merge queue lints — but
-    # validate-commits lints only the fork's commits, not the title. Lint it here through the same
-    # commitlint.config.js so a bad title fails on the PR, not cryptically in the queue. Title-only,
-    # no fork code or secrets, so no `authorize` gate.
+    # Squash-merge makes the PR title the commit subject — but validate-commits lints only the
+    # fork's commits, not the title. Lint it here through the same commitlint.config.js so a bad
+    # title fails on the PR before it merges. Title-only, no fork code or secrets, so no
+    # `authorize` gate.
     runs-on: ubuntu-latest
 
     steps:

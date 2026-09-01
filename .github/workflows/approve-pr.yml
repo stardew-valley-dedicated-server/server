@@ -3,7 +3,7 @@
 # GitHub forbids approving your own pull request; with a single maintainer that makes
 # the master ruleset's required-approval rule unsatisfiable, and the `--admin` merge
 # bypass that would take its place is total — it also skips the required status
-# checks, the up-to-date policy, thread resolution, and the merge queue. This command
+# checks, the up-to-date policy, and thread resolution. This command
 # records the maintainer's decision as an approving review from github-actions[bot],
 # an identity GitHub accepts, so a normal non-admin merge proceeds with every other
 # rule enforced. The maintainer still reads the diff; the command only records that

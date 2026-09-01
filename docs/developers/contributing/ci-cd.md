@@ -9,7 +9,6 @@ We use GitHub Actions for automated building, testing, and deployment.
 | [Build Release](#build-release-pipeline) | Merge release candidate PR to `master` | Creates releases and publishes stable Docker images |
 | [Build Preview](#build-preview-pipeline) | Manual `workflow_dispatch`, or push to `master` when `AUTO_BUILD_PREVIEW=true` | Builds and publishes preview Docker images |
 | [Validate PR](#validate-pr-pipeline) | Pull requests to `master` | Validates commits, builds, formatting, and line endings |
-| [Validate Merge Group](#merge-queue) | Merge queue (`merge_group`) | Re-validates each PR against the latest `master` before it merges |
 | [CodeQL](#codeql-pipeline) | Pull requests / push to `master` / weekly | Static security analysis (advisory) |
 | [E2E Tests](#e2e-tests-pipeline) | Manual (`workflow_dispatch`, a maintainer's `!run-tests-e2e` PR comment / re-run checkbox) or nightly schedule | Runs the Docker E2E suite on a remote VPS (never a required check) |
 | [Approve PR](#approve-pr-pipeline) | A maintainer's `!approve` PR comment | Records an approving review from `github-actions[bot]` so the required-approval rule is satisfiable on the maintainer's own PRs |
@@ -148,7 +147,7 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 
 ### What It Validates
 
-- **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject the merge queue lints — checking it here fails a bad title on the PR rather than cryptically in the queue.
+- **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject — checking it here fails a bad title on the PR before it merges.
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
 - **Docker build** - Ensures the image builds successfully (without pushing)
 - **Formatting** - Runs `dotnet csharpier check .` over the whole tree, plus the analyzer style rules for the test projects (the only C# that compiles game-free on the runner — the mod's analyzers gate via the Docker build); fails on formatting drift or style violations (fix locally with `make lint-fix`)
@@ -180,28 +179,21 @@ The pipeline uses a single GitHub Environment, `fork-pr`, purely as an authoriza
 
 Same-repo and Renovate PRs resolve the `authorize` job's `environment:` expression to an empty string, which GitHub treats as **no environment** — so no gate, no approval, and nothing extra in the repo's environment list.
 
-## Merge Queue
+## Merging
 
-Merges to `master` go through a [GitHub merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue). You do not merge a PR directly — once it is approved and its checks pass, enabling auto-merge adds it to the queue, and GitHub merges it for you.
+Merges to `master` are guarded before merge, not queued. The `master` ruleset requires the [Validate PR](#validate-pr-pipeline) checks and one approval, with **strict "up to date before merge"** (`strict_required_status_checks_policy`): a PR whose branch is behind `master` cannot merge until it is updated to the current tip and its checks re-run against it. There is no merge queue — once a PR is up to date, approved, and green, a maintainer merges it (one click, squash) or Renovate automerges it.
 
 ### How a PR merges
 
 1. The PR passes its [Validate PR](#validate-pr-pipeline) checks and receives the required approval.
-2. Enabling auto-merge (or, for Renovate PRs, Renovate arming it automatically) hands the PR to the queue.
-3. The queue builds a temporary `gh-readonly-queue/master/...` branch containing the latest `master` plus the PR's changes, and runs the required checks against it. This is what the **Validate Merge Group** workflow ([`validate-merge-group.yml`](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/validate-merge-group.yml)) validates — the PR is re-tested against the current tip of `master`, not the stale base it was branched from.
-4. If those checks pass, the queue fast-forwards `master`. PRs are merged one at a time, each squashed into a single commit.
+2. If `master` moved ahead in the meantime, the PR's branch must be updated (**Update branch**, or Renovate's auto-rebase for its own PRs) so the required checks re-run against the current tip.
+3. Once the branch is up to date and every required check is green, the PR merges — squashed into a single commit. A maintainer clicks merge, or Renovate merges its own PR via platform automerge.
 
-A PR sitting in the queue shows **`AWAITING_CHECKS`** while its merge-group build runs, and **`UNMERGEABLE`** if its changes no longer apply cleanly on top of the current `master` (typically because an overlapping PR merged ahead of it). An unmergeable PR is dropped from the queue; rebasing it onto `master` and re-queuing resolves it.
+### Guard before merge
 
-### Why Validate Merge Group is a separate workflow
+Strict up-to-date is what preserves the "catch a bad interaction before it hits `master`" property the queue used to provide: if a PR breaks once its predecessor lands, updating its branch re-runs the full required-check set against the real tip and the PR goes red **on its own check list** — visible and debuggable on the PR — before it can merge, rather than inside an opaque merge-group context. The trade is that this is serial: each PR rebases and re-runs CI one at a time instead of the queue's speculative parallel batching. Because the required checks are all cheap and independent, and PR volume is low, that costs CI time, not maintainer time.
 
-The merge queue fires the `merge_group` event, which [Validate PR](#validate-pr-pipeline) does not respond to (it triggers on `pull_request_target`). The merge queue requires the same `Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate JS/TS`, `Validate Line Endings`, and `Validate PR Title` checks to report **on the merge-group ref**, so `validate-merge-group.yml` reproduces all six under the same names. All but the title check run the same commitlint, Docker build, CSharpier, Biome, and line-ending scans, but without the `authorize` gate — merge-group code is already approved and runs from the base repository, so there is no fork-secret exposure to gate.
-
-`Validate PR Title` is the exception: there is nothing to re-lint in the queue. The `merge_group` payload carries no `pull_request.title`, the title is immutable once a PR is queued (it was already linted at PR time), and the queue branch holds the PR's original commits — not the squash subject — so `Validate Commits` doesn't cover it either. Its merge-group job is therefore a no-op that exists only to report the required status; without it the queue would wait on the title check forever.
-
-::: warning
-All six required checks (`Validate Build`, `Validate Commits`, `Validate Formatting`, `Validate JS/TS`, `Validate Line Endings`, `Validate PR Title`) must have a `merge_group` producer. A required check with no merge-group workflow leaves every queued PR stuck in `AWAITING_CHECKS` until the queue's timeout. If you add a required check, make sure it reports on `merge_group` too — even if, like the title check, the merge-group job is only a stub that satisfies the contract.
-:::
+Renovate is configured (`renovate.json`) to fit this model: continuous scheduling opens PRs as releases are detected, `rebaseWhen: behind-base-branch` auto-rebases a behind PR so it re-validates against the tip, and `platformAutomerge` merges each PR once a maintainer approves it and its checks pass — one at a time, unattended.
 
 ## CodeQL Pipeline
 
@@ -211,12 +203,12 @@ All six required checks (`Validate Build`, `Validate Commits`, `Validate Formatt
 
 ### Advisory, Not Required
 
-CodeQL is **not** a required status check — a PR merges on `Validate Build` + `Validate Commits` + `Validate Line Endings` alone, and CodeQL findings surface under **Security → Code scanning** without blocking the merge.
+CodeQL is **not** a required status check — a PR merges on its required [Validate PR](#validate-pr-pipeline) checks alone, and CodeQL findings surface under **Security → Code scanning** without blocking the merge.
 
 This is deliberate. The pipeline uses per-language path scoping (below), so a PR that touches no analyzable source runs **zero** analyze jobs. A *required* check that never reports leaves a PR stuck on "Expected — Waiting for status", so the path-scoping optimization is only safe while CodeQL stays advisory.
 
 ::: warning
-If CodeQL is ever promoted to a required check, this pipeline must be revisited: a required check needs a `merge_group` producer (like `validate-merge-group.yml`) and a way to report even when path-scoped out. The current advisory design has neither, on purpose.
+If CodeQL is ever promoted to a required check, this pipeline must be revisited: under strict "up to date before merge" a required check must report on every PR, but the per-language path scoping creates **zero** analyze jobs for a PR that touches no analyzable source, leaving the check stuck on "Expected — Waiting for status". The current advisory design sidesteps that, on purpose.
 :::
 
 ### Languages Analyzed
@@ -244,13 +236,13 @@ On push to `master` and on the weekly schedule there is no PR diff base, so the 
 
 ### Trigger & Fork Safety
 
-CodeQL triggers on `pull_request`, **not** `pull_request_target` (the opposite choice from [Validate PR](#validate-pr-pipeline)). It analyzes the PR head read-only with the default `GITHUB_TOKEN` and needs no secrets, so it is safe to run on fork PRs — fork code must be read to be scanned, but no secret is ever exposed to it. It is not run on `merge_group`: that event is only for required checks, and running an advisory scan there would be pure waste.
+CodeQL triggers on `pull_request`, **not** `pull_request_target` (the opposite choice from [Validate PR](#validate-pr-pipeline)). It analyzes the PR head read-only with the default `GITHUB_TOKEN` and needs no secrets, so it is safe to run on fork PRs — fork code must be read to be scanned, but no secret is ever exposed to it.
 
 ## E2E Tests Pipeline
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/e2e-tests.yml)
 
-Runs the heavy Docker E2E suite. The coordinator (`JunimoServer.TestRunner`) runs on the GitHub runner; the actual Stardew game containers run on a **remote VPS over SSH**. It is **manual and maintainer-gated** — never an automatic merge gate, and **never a required check** (an external VPS being down must not block the queue). For how to *use* it (triggers, results, the re-run checkbox), see [E2E Testing → CI Usage](../testing/e2e-testing.md#ci-usage); this section covers the pipeline's safety model and one-time setup.
+Runs the heavy Docker E2E suite. The coordinator (`JunimoServer.TestRunner`) runs on the GitHub runner; the actual Stardew game containers run on a **remote VPS over SSH**. It is **manual and maintainer-gated** — never an automatic merge gate, and **never a required check** (an external VPS being down must not block merges). For how to *use* it (triggers, results, the re-run checkbox), see [E2E Testing → CI Usage](../testing/e2e-testing.md#ci-usage); this section covers the pipeline's safety model and one-time setup.
 
 ### Entry points
 
@@ -290,7 +282,7 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color .github/
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/approve-pr.yml)
 
-GitHub forbids approving your own pull request, which with a single maintainer makes the `master` ruleset's required-approval rule unsatisfiable — and the admin-bypass merge that would take its place also skips the required checks, thread resolution, and the merge queue. Commenting `!approve` on a PR records the maintainer's decision as an approving review from `github-actions[bot]`, so a normal non-admin merge proceeds with every other rule enforced. The maintainer still reads the diff; the command only records that decision.
+GitHub forbids approving your own pull request, which with a single maintainer makes the `master` ruleset's required-approval rule unsatisfiable — and the admin-bypass merge that would take its place also skips the required checks, the up-to-date policy, and thread resolution. Commenting `!approve` on a PR records the maintainer's decision as an approving review from `github-actions[bot]`, so a normal non-admin merge proceeds with every other rule enforced. The maintainer still reads the diff; the command only records that decision.
 
 | Behaviour | Detail |
 |-----------|--------|
