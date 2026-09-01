@@ -181,7 +181,7 @@ Same-repo and Renovate PRs resolve the `authorize` job's `environment:` expressi
 
 ## Merging
 
-Merges to `master` are guarded before merge, not queued. The `master` ruleset requires the [Validate PR](#validate-pr-pipeline) checks and one approval, with **strict "up to date before merge"** (`strict_required_status_checks_policy`): a PR whose branch is behind `master` cannot merge until it is updated to the current tip and its checks re-run against it. There is no merge queue — once a PR is up to date, approved, and green, a maintainer merges it (one click, squash) or Renovate automerges it.
+Merges to `master` are guarded before merge. The `master` ruleset requires the [Validate PR](#validate-pr-pipeline) checks and one approval, with **strict "up to date before merge"** (`strict_required_status_checks_policy`): a PR whose branch is behind `master` cannot merge until it is updated to the current tip and its checks re-run against it. Once a PR is up to date, approved, and green, a maintainer merges it (one click, squash) or Renovate automerges its own PRs.
 
 ### How a PR merges
 
@@ -191,7 +191,7 @@ Merges to `master` are guarded before merge, not queued. The `master` ruleset re
 
 ### Guard before merge
 
-Strict up-to-date is what preserves the "catch a bad interaction before it hits `master`" property the queue used to provide: if a PR breaks once its predecessor lands, updating its branch re-runs the full required-check set against the real tip and the PR goes red **on its own check list** — visible and debuggable on the PR — before it can merge, rather than inside an opaque merge-group context. The trade is that this is serial: each PR rebases and re-runs CI one at a time instead of the queue's speculative parallel batching. Because the required checks are all cheap and independent, and PR volume is low, that costs CI time, not maintainer time.
+Strict up-to-date catches a bad interaction before it reaches `master`: if a PR breaks once a predecessor lands, updating its branch re-runs the full required-check set against the current tip, and the PR goes red **on its own check list** — visible and debuggable on the PR — before it can merge. PRs are validated and merged serially: each rebases and re-runs CI one at a time. Because the required checks are all cheap and independent, and PR volume is low, that costs CI time, not maintainer time.
 
 Renovate is configured (`renovate.json`) to fit this model: continuous scheduling opens PRs as releases are detected, `rebaseWhen: behind-base-branch` auto-rebases a behind PR so it re-validates against the tip, and `platformAutomerge` merges each PR once a maintainer approves it and its checks pass — one at a time, unattended.
 
