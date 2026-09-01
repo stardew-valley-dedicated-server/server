@@ -174,7 +174,7 @@ The E2E suite runs from `.github/workflows/e2e-tests.yml` (the coordinator runs 
 the GitHub runner; the game containers run on a remote VPS over SSH). That workflow
 is the source of truth for CI invocation. There are three ways to launch it, all
 manual and **maintainer-gated** — it is never an automatic merge gate (an external
-VPS being down must not block the queue):
+VPS being down must not block merges):
 
 - **Actions tab → "Run workflow"** (`workflow_dispatch`) — runs the full suite from a
   trusted branch; the optional `filter` input narrows it to a class/method. The optional

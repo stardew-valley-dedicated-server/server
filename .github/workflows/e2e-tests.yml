@@ -32,11 +32,10 @@
 #     cancel triggers the runner's abort path (writes summary.json, sweeps VPS containers
 #     by run-id), and the sticky reports "⚪ aborted".
 #   - This workflow must NEVER become a required check (external-VPS availability can't
-#     gate the merge queue). The nightly `schedule` is the ONLY automatic trigger and is
+#     gate merges). The nightly `schedule` is the ONLY automatic trigger and is
 #     safe precisely because it doesn't gate anything — it runs on master after the fact,
 #     never blocks a merge, and is bounded to one run/day on the single VPS. Do NOT add a
-#     merge-coupled trigger (push / pull_request_target / merge_group) or mark any job a
-#     required check.
+#     merge-coupled trigger (push / pull_request_target) or mark any job a required check.
 #
 # PR visibility: issue_comment and dispatch+pr runs execute at github.sha (the default
 # branch's HEAD), not the PR's head SHA, so GitHub Actions' own auto-registered check for

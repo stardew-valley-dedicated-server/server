@@ -69,7 +69,7 @@ reviews:
         version requirements. Call out majors that need code changes in test-ui/docs/discord-bot.
     - path: ".github/workflows/**"
       instructions: >-
-        validate-pr.yml and validate-merge-group.yml keep their commitlint job and path filters aligned.
+        validate-pr.yml is the single PR validation pipeline; keep its commitlint job and path filters coherent.
         Fork PRs are gated behind an authorize job — preserve that boundary for any secret-using step.
         For action-version bumps (often from Renovate), flag major bumps with breaking input/output or
         runtime changes that affect these workflows.
