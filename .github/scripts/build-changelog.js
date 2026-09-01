@@ -1,34 +1,31 @@
-// Builds the Discord changelog for a build: every first-parent commit in the build's range,
-// grouped into the same sections release-please uses, budgeted for a Discord embed description.
-// Used by .github/actions/build-changelog; the pure logic is exported for `npm test`.
+// Turns a build's commit range into the changelog we post to Discord: one flat "Changes" list,
+// ordered the way release-please orders its release notes, trimmed to fit a Discord embed. Used
+// by .github/actions/build-changelog; the core function is exported so `npm test` can call it.
 //
-// CLI contract (the composite action wires this up): `git log --first-parent
-// --format='%H%x1f%s' BASE..HEAD` lines on stdin; BASE_TAG, HEAD_OID, REPO_URL env in;
-// markdown / count / visible-count / hidden-count / compare-url appended to $GITHUB_OUTPUT
-// (printed to stdout when GITHUB_OUTPUT is unset, for local runs).
+// How the action runs it: it pipes `git log --first-parent --format='%H%x1f%s' BASE..HEAD` in on
+// stdin and sets the BASE_TAG, HEAD_OID and REPO_URL env vars. We write markdown / count /
+// visible-count / hidden-count / compare-url to $GITHUB_OUTPUT (or print them to stdout locally).
 
-// Section order and titles mirror release-please-config.json's changelog-sections, so a
-// Discord post reads like the GitHub release page. Types "hidden" there fold into one
-// "+N internal changes" line here. Anything else — unknown type or non-conventional
-// subject — lands under "Other" verbatim; a change is never dropped for a parse failure.
-const VISIBLE_SECTIONS = [
-    { type: "feat", title: "Features" },
-    { type: "fix", title: "Bug Fixes" },
-    { type: "perf", title: "Performance Improvements" },
-    { type: "revert", title: "Reverts" },
-    { type: "docs", title: "Documentation" },
-];
+// The heading above the list. One flat list, no per-type sub-headings.
+const HEADER = "**Changes**";
+
+// The commit types we list individually, in the order release-please uses, so a post reads like
+// the GitHub release page. The "hidden" types below are counted but not listed. Anything else (an
+// unknown type, or a subject that isn't a conventional commit) is listed after these, as-is — we
+// never drop a commit just because we couldn't parse it.
+const VISIBLE_TYPES = ["feat", "fix", "perf", "revert", "docs"];
 const HIDDEN_TYPES = new Set(["style", "chore", "refactor", "test", "build", "ci"]);
 
-// Code points, not UTF-16 units — leaves headroom under Discord's 4096-char description
-// limit for the caller's trailing "Use it" block, and under the 6000-char embed total.
+// We measure length in code points (what Discord counts), not JS string length. 3500 leaves room
+// under Discord's 4096-char description limit for the "Use it" block the caller appends, and under
+// the 6000-char limit for the whole embed.
 const BUDGET = 3500;
 
 const CONVENTIONAL_RE = /^([a-z]+)(\([^()]*\))?(!)?: \S/i;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)$/;
-// release-please's own release commit ("chore(master): release sdvd-server 1.4.1") is the
-// commit a release tag points at, so it sits inside its own range. It is release machinery,
-// not a change — excluded from every count so it can't pad "+N internal changes".
+// release-please's own "release" commit (e.g. "chore(master): release sdvd-server 1.4.1") is what
+// a release tag points at, so it falls inside its own range. It's release plumbing, not a real
+// change, so we drop it from every count — otherwise it would inflate the "+N internal changes" line.
 const RELEASE_COMMIT_RE = /^chore(\([^()]*\))?: release\b.*\d+\.\d+\.\d+/;
 
 /** @param {string} s @returns {number} length in code points (what Discord counts) */
@@ -37,10 +34,10 @@ function codePoints(s) {
 }
 
 /**
- * Backslash-escape Discord inline-markdown characters so a commit subject renders as
- * plain text. Brackets are escaped too: a subject containing `[label](url)` must render
- * literally, not as a masked link — commit subjects are contributor-controlled and these
- * posts go to public channels. (Embeds never ping, so @-mentions need no handling.)
+ * Escapes the characters Discord treats as markdown so a commit subject shows as plain text.
+ * We escape brackets too, so a subject like `[label](url)` shows literally instead of turning
+ * into a clickable link — subjects come from contributors and these posts are public. (Embeds
+ * never ping, so we don't need to handle @-mentions.)
  * @param {string} text
  * @returns {string}
  */
@@ -52,8 +49,8 @@ function escapeMarkdown(text) {
  * Classify one commit subject.
  * @param {string} subject - Raw `git log %s` subject line.
  * @returns {{text: string, type: string|null, breaking: boolean, pr: number|null}}
- *   `text` is the subject without its trailing `(#N)`; `type` is the lowercased
- *   conventional-commit type or null for a non-conventional subject.
+ *   `text` is the subject with its trailing `(#N)` removed; `type` is the lowercased
+ *   conventional-commit type, or null if the subject isn't a conventional commit.
  */
 function parseSubject(subject) {
     const prMatch = subject.match(PR_SUFFIX_RE);
@@ -68,16 +65,11 @@ function parseSubject(subject) {
     };
 }
 
-/** @returns {string} one `- …` bullet; ⚠ marks a breaking change, the PR link is appended. */
+/** @returns {string} one `- …` bullet. A breaking change gets a ⚠ prefix; the PR link goes on the end. */
 function renderEntry(entry, repoUrl) {
     const warn = entry.breaking ? "⚠ " : "";
     const link = entry.pr === null ? "" : ` · [#${entry.pr}](${repoUrl}/pull/${entry.pr})`;
     return `- ${warn}${escapeMarkdown(entry.text)}${link}`;
-}
-
-/** @returns {string} the "+N internal changes" summary line. */
-function internalNote(hiddenCount) {
-    return `+${hiddenCount} internal change${hiddenCount === 1 ? "" : "s"}`;
 }
 
 /**
@@ -85,16 +77,16 @@ function internalNote(hiddenCount) {
  * @param {string[]} subjects - `git log %s` subjects, newest first (git log order).
  * @param {{repoUrl: string, baseTag: string, headOid: string}} opts
  * @returns {{markdown: string, count: number, visibleCount: number, hiddenCount: number, compareUrl: string}}
- *   `markdown` is at most BUDGET code points; over-budget ranges end with
- *   "…and N more — [full diff](…)" cut at a line boundary.
+ *   `markdown` is never longer than BUDGET code points. If the full list wouldn't fit, we drop
+ *   entries from the end (always between whole lines) and say how many we dropped on the bottom line.
  */
 function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     const compareUrl = `${repoUrl}/compare/${baseTag}...${headOid}`;
-    const fullDiff = `[full diff](${compareUrl})`;
+    const diffLink = `[diff](${compareUrl})`;
 
     const changes = subjects.filter((s) => !RELEASE_COMMIT_RE.test(s));
-    const sections = VISIBLE_SECTIONS.map((s) => ({ ...s, entries: [] }));
-    const other = { title: "Other", entries: [] };
+    const visible = new Map(VISIBLE_TYPES.map((t) => [t, []]));
+    const other = [];
     let hiddenCount = 0;
     for (const subject of changes) {
         const entry = parseSubject(subject);
@@ -102,8 +94,7 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
             hiddenCount += 1;
             continue;
         }
-        const section = sections.find((s) => s.type === entry.type) ?? other;
-        section.entries.push(entry);
+        (visible.get(entry.type) ?? other).push(entry);
     }
 
     const count = changes.length;
@@ -111,56 +102,47 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     const result = { count, visibleCount, hiddenCount, compareUrl };
 
     if (count === 0) {
-        return { ...result, markdown: `No changes since \`${baseTag}\` — ${fullDiff}` };
-    }
-    if (visibleCount === 0) {
-        return { ...result, markdown: `No user-facing changes (${internalNote(hiddenCount)}) — ${fullDiff}` };
+        return { ...result, markdown: `No changes since \`${baseTag}\` · ${diffLink}` };
     }
 
-    // Flat line list, tagged so truncation can count dropped changes and trim headers
-    // whose entries were all cut.
-    const lines = [];
-    for (const section of [...sections, other]) {
-        if (section.entries.length === 0) {
-            continue;
+    // The last line of the changelog. It holds up to three pieces, joined with " · ": an "…and N
+    // more" note when we had to drop entries, the "+N internal changes" count, and always the diff
+    // link. The " · " separator matches the "· #PR" that ends each entry above, so it all reads alike.
+    const bottomLine = (droppedCount) => {
+        const parts = [];
+        if (droppedCount > 0) {
+            parts.push(`…and ${droppedCount} more`);
         }
-        if (lines.length > 0) {
-            lines.push({ text: "", isEntry: false });
+        if (hiddenCount > 0) {
+            parts.push(`+${hiddenCount} internal change${hiddenCount === 1 ? "" : "s"}`);
         }
-        lines.push({ text: `**${section.title}**`, isEntry: false });
-        for (const entry of section.entries) {
-            lines.push({ text: renderEntry(entry, repoUrl), isEntry: true });
-        }
-    }
-    const hiddenLine = hiddenCount > 0 ? internalNote(hiddenCount) : null;
-    const tailAfter = (body) => (hiddenLine === null ? body : `${body}\n\n${hiddenLine}`);
+        parts.push(diffLink);
+        return parts.join(" · ");
+    };
 
-    const full = tailAfter(lines.map((l) => l.text).join("\n"));
+    const entryLines = [...VISIBLE_TYPES.flatMap((t) => visible.get(t)), ...other].map((e) => renderEntry(e, repoUrl));
+
+    const full = [HEADER, ...entryLines, bottomLine(0)].join("\n");
     if (codePoints(full) <= BUDGET) {
         return { ...result, markdown: full };
     }
 
-    // Over budget: emit whole lines while the worst-case tail (notice with the largest
-    // possible N, plus the internal-changes line) still fits, then trim trailing headers
-    // and blanks so the cut lands after an entry.
-    const notice = (n) => `…and ${n} more — ${fullDiff}`;
-    const reserve =
-        codePoints(`\n${notice(visibleCount)}`) + (hiddenLine === null ? 0 : codePoints(`\n\n${hiddenLine}`));
+    // Too long to fit: add whole entry lines until we'd run out of room for the bottom line —
+    // measured at its longest, in case every remaining entry ends up dropped — then note how many
+    // we left off.
+    const reserve = 1 + codePoints(bottomLine(visibleCount));
+    let used = codePoints(HEADER);
     const kept = [];
-    let used = 0;
-    for (const line of lines) {
-        const cost = codePoints(line.text) + (kept.length > 0 ? 1 : 0);
-        if (used + cost > BUDGET - reserve) {
+    for (const line of entryLines) {
+        const cost = 1 + codePoints(line);
+        if (used + cost + reserve > BUDGET) {
             break;
         }
         kept.push(line);
         used += cost;
     }
-    while (kept.length > 0 && !kept[kept.length - 1].isEntry) {
-        kept.pop();
-    }
-    const dropped = visibleCount - kept.filter((l) => l.isEntry).length;
-    const markdown = tailAfter(`${kept.map((l) => l.text).join("\n")}\n${notice(dropped)}`);
+    const dropped = visibleCount - kept.length;
+    const markdown = [HEADER, ...kept, bottomLine(dropped)].join("\n");
     return { ...result, markdown };
 }
 
@@ -186,8 +168,8 @@ function main() {
     const headOid = requireEnv("HEAD_OID");
     const repoUrl = requireEnv("REPO_URL");
 
-    // One `<sha>\x1f<subject>` line per commit; the sha guarantees a non-empty line per
-    // commit so the count stays right even for an empty subject.
+    // Each line is `<sha>\x1f<subject>`. We split on the \x1f, which guarantees one line per commit
+    // even when the subject is empty, so the commit count stays correct.
     const subjects = readFileSync(0, "utf8")
         .split("\n")
         .filter((line) => line.includes("\x1f"))

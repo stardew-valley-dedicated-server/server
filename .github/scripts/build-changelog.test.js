@@ -1,10 +1,10 @@
-// Tests for build-changelog.js — fixed subject lists in, exact markdown out. Run with
-// `npm test` (wired into the Validate JS/TS job). No dependencies: Node's built-in runner.
+// Tests for build-changelog.js — fixed lists of commit subjects in, exact markdown out. Run with
+// `npm test` (part of the Validate JS/TS job). No dependencies: Node's built-in test runner.
 //
-// These pin the Discord-facing contract: section grouping mirrors release-please's
-// changelog-sections, no change is ever dropped (unparseable ⇒ "Other"), markdown
-// characters in subjects are escaped, and the output stays under the 3500-code-point
-// budget with a line-boundary cut and an "…and N more" notice.
+// These lock in how the Discord post looks: one flat "Changes" list in release-please's type order,
+// nothing ever dropped (a subject we can't parse is listed after the known types), markdown special
+// characters escaped, a diff link on every result, and the whole thing kept under the 3500-code-point
+// budget — trimming between whole lines with an "…and N more" note when it's too long.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -17,7 +17,7 @@ const OPTS = {
 };
 const COMPARE = "https://github.com/o/r/compare/preview-1.5.0.1...deadbee";
 
-test("groups each visible type into its release-please section, in order", () => {
+test("lists visible types in release-please priority order under one Changes heading", () => {
     const result = buildChangelog(
         [
             "docs: explain cabins (#5)",
@@ -31,40 +31,32 @@ test("groups each visible type into its release-please section, in order", () =>
     assert.equal(
         result.markdown,
         [
-            "**Features**",
+            "**Changes**",
             "- feat: add the thing · [#1](https://github.com/o/r/pull/1)",
-            "",
-            "**Bug Fixes**",
             "- fix: stop the crash · [#2](https://github.com/o/r/pull/2)",
-            "",
-            "**Performance Improvements**",
             "- perf: fewer allocations · [#3](https://github.com/o/r/pull/3)",
-            "",
-            "**Reverts**",
             "- revert: undo the thing · [#4](https://github.com/o/r/pull/4)",
-            "",
-            "**Documentation**",
             "- docs: explain cabins · [#5](https://github.com/o/r/pull/5)",
+            `[diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [5, 5, 0]);
 });
 
-test("hidden-only range folds into an internal-changes note with the compare link", () => {
+test("hidden-only range is just the Changes heading and the internal-changes bottom line", () => {
     const result = buildChangelog(["ci: bump action (#9)", "chore: tidy", "refactor: rename (#8)"], OPTS);
-    assert.equal(result.markdown, `No user-facing changes (+3 internal changes) — [full diff](${COMPARE})`);
+    assert.equal(result.markdown, ["**Changes**", `+3 internal changes · [diff](${COMPARE})`].join("\n"));
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [3, 0, 3]);
 });
 
-test("mixed range lists visible sections and appends the internal-changes line", () => {
+test("mixed range lists visible entries and folds hidden ones into the bottom line", () => {
     const result = buildChangelog(["test: cover cabins (#3)", "fix(ci): quote globs (#2)", "chore: bump deps"], OPTS);
     assert.equal(
         result.markdown,
         [
-            "**Bug Fixes**",
+            "**Changes**",
             "- fix(ci): quote globs · [#2](https://github.com/o/r/pull/2)",
-            "",
-            "+2 internal changes",
+            `+2 internal changes · [diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [3, 1, 2]);
@@ -72,34 +64,38 @@ test("mixed range lists visible sections and appends the internal-changes line",
 
 test("a single internal change uses the singular note", () => {
     const result = buildChangelog(["chore: bump deps"], OPTS);
-    assert.equal(result.markdown, `No user-facing changes (+1 internal change) — [full diff](${COMPARE})`);
+    assert.equal(result.markdown, ["**Changes**", `+1 internal change · [diff](${COMPARE})`].join("\n"));
 });
 
 test("a subject without (#N) is listed without a PR link", () => {
     const result = buildChangelog(["feat(tools): add request-correlation context"], OPTS);
-    assert.equal(result.markdown, ["**Features**", "- feat(tools): add request-correlation context"].join("\n"));
+    assert.equal(
+        result.markdown,
+        ["**Changes**", "- feat(tools): add request-correlation context", `[diff](${COMPARE})`].join("\n"),
+    );
 });
 
-test("a non-conventional subject lands under Other verbatim, never dropped", () => {
+test("a non-conventional subject is listed after the visible types, verbatim, never dropped", () => {
     const result = buildChangelog(["Update README badges (#7)", "feat: real feature (#6)"], OPTS);
     assert.equal(
         result.markdown,
         [
-            "**Features**",
+            "**Changes**",
             "- feat: real feature · [#6](https://github.com/o/r/pull/6)",
-            "",
-            "**Other**",
             "- Update README badges · [#7](https://github.com/o/r/pull/7)",
+            `[diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.equal(result.visibleCount, 2);
 });
 
-test("an unknown conventional type lands under Other", () => {
+test("an unknown conventional type is listed after the visible types", () => {
     const result = buildChangelog(["wip: half-done thing (#7)"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Other**", "- wip: half-done thing · [#7](https://github.com/o/r/pull/7)"].join("\n"),
+        ["**Changes**", "- wip: half-done thing · [#7](https://github.com/o/r/pull/7)", `[diff](${COMPARE})`].join(
+            "\n",
+        ),
     );
 });
 
@@ -107,7 +103,11 @@ test("feat!: gets the breaking-change warning marker", () => {
     const result = buildChangelog(["feat!: drop LAN transport (#10)"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Features**", "- ⚠ feat!: drop LAN transport · [#10](https://github.com/o/r/pull/10)"].join("\n"),
+        [
+            "**Changes**",
+            "- ⚠ feat!: drop LAN transport · [#10](https://github.com/o/r/pull/10)",
+            `[diff](${COMPARE})`,
+        ].join("\n"),
     );
 });
 
@@ -119,8 +119,9 @@ test("markdown special characters in subjects are escaped", () => {
     assert.equal(
         result.markdown,
         [
-            "**Bug Fixes**",
+            "**Changes**",
             "- fix: escape \\`code\\` and \\*stars\\* and \\_under\\_ and \\~tilde\\~ and \\|pipe\\| and \\\\slash",
+            `[diff](${COMPARE})`,
         ].join("\n"),
     );
 });
@@ -130,8 +131,9 @@ test("a subject with markdown link syntax cannot inject a masked link", () => {
     assert.equal(
         result.markdown,
         [
-            "**Features**",
+            "**Changes**",
             "- feat: \\[deployment guide\\](https://attacker.example) · [#13](https://github.com/o/r/pull/13)",
+            `[diff](${COMPARE})`,
         ].join("\n"),
     );
 });
@@ -140,7 +142,9 @@ test("a non-ASCII subject passes through and the budget counts code points", () 
     const result = buildChangelog(["feat: 🎉 支持中文标题 (#12)"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Features**", "- feat: 🎉 支持中文标题 · [#12](https://github.com/o/r/pull/12)"].join("\n"),
+        ["**Changes**", "- feat: 🎉 支持中文标题 · [#12](https://github.com/o/r/pull/12)", `[diff](${COMPARE})`].join(
+            "\n",
+        ),
     );
 });
 
@@ -154,13 +158,12 @@ test("an over-budget list is cut at a line boundary with an …and N more notice
     const markdown = result.markdown;
     assert.ok([...markdown].length <= BUDGET, `markdown is ${[...markdown].length} code points, budget is ${BUDGET}`);
     const lines = markdown.split("\n");
-    // Every kept entry is whole (cut at a line boundary), the notice names the dropped
-    // count, and the internal-changes line survives truncation.
+    assert.equal(lines[0], "**Changes**");
+    // Every kept entry is whole (cut at a line boundary); the bottom line names the dropped
+    // count, folds the internal change in, and carries the diff link.
     const keptEntries = lines.filter((l) => l.startsWith("- feat:")).length;
     assert.ok(keptEntries > 0 && keptEntries < 100);
-    const noticeLine = lines.find((l) => l.startsWith("…and "));
-    assert.equal(noticeLine, `…and ${100 - keptEntries} more — [full diff](${COMPARE})`);
-    assert.equal(lines[lines.length - 1], "+1 internal change");
+    assert.equal(lines[lines.length - 1], `…and ${100 - keptEntries} more · +1 internal change · [diff](${COMPARE})`);
     for (const line of lines.filter((l) => l.startsWith("- "))) {
         assert.match(line, /· \[#\d+\]\(https:\/\/github\.com\/o\/r\/pull\/\d+\)$/);
     }
@@ -173,9 +176,11 @@ test("release-please's release commit is excluded from every count", () => {
     );
     assert.equal(
         result.markdown,
-        ["**Bug Fixes**", "- fix: stop the crash · [#2](https://github.com/o/r/pull/2)", "", "+1 internal change"].join(
-            "\n",
-        ),
+        [
+            "**Changes**",
+            "- fix: stop the crash · [#2](https://github.com/o/r/pull/2)",
+            `+1 internal change · [diff](${COMPARE})`,
+        ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [2, 1, 1]);
     // A plain chore mentioning "release" without a version is NOT the release commit.
@@ -184,6 +189,6 @@ test("release-please's release commit is excluded from every count", () => {
 
 test("zero commits reports no changes since the base tag", () => {
     const result = buildChangelog([], OPTS);
-    assert.equal(result.markdown, `No changes since \`preview-1.5.0.1\` — [full diff](${COMPARE})`);
+    assert.equal(result.markdown, `No changes since \`preview-1.5.0.1\` · [diff](${COMPARE})`);
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [0, 0, 0]);
 });

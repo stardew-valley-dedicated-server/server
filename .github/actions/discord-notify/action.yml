@@ -1,10 +1,10 @@
 name: Discord Notify
 description: >
-  Posts a single-embed message to a Discord webhook. Validates Discord's embed limits up
-  front and fails the step with a clear message instead of truncating; an empty webhook
-  input logs a skip and exits 0, so notifications degrade to silence when the secret is
-  absent. A failed post fails the step (curl --fail-with-body) — success-path callers set
-  continue-on-error so a Discord outage never reds a build or deploy that succeeded.
+  Posts one embed message to a Discord webhook. It checks Discord's size limits first and fails
+  the step with a clear message rather than posting something cut off. If the webhook input is
+  empty it just logs a note and exits 0, so notifications quietly stop when the secret isn't set.
+  If the post itself fails the step fails (curl --fail-with-body); callers on the success path set
+  continue-on-error, so a Discord outage never turns a passing build or deploy red.
 
 inputs:
   webhook:
@@ -15,6 +15,18 @@ inputs:
     required: true
   url:
     description: Optional URL the title links to
+    required: false
+    default: ""
+  username:
+    description: >
+      The name shown as the message author. Leave empty to keep whatever name the webhook is set
+      to in Discord — so callers that don't set a name (internal CI) are left alone.
+    required: false
+    default: ""
+  avatar-url:
+    description: >
+      The avatar shown next to the name. If empty, we use the project logo, but only when a name is
+      also set — so the release/preview bot gets a picture while other callers keep their own avatar.
     required: false
     default: ""
   color:
@@ -44,6 +56,8 @@ runs:
         WEBHOOK: ${{ inputs.webhook }}
         TITLE: ${{ inputs.title }}
         URL: ${{ inputs.url }}
+        USERNAME: ${{ inputs.username }}
+        AVATAR_URL: ${{ inputs.avatar-url }}
         COLOR: ${{ inputs.color }}
         DESCRIPTION: ${{ inputs.description }}
         FIELDS: ${{ inputs.fields }}
@@ -62,25 +76,35 @@ runs:
           >/dev/null 2>&1 <<< "$FIELDS" \
           || { echo "::error::discord-notify: fields must be a JSON array of {name, value} objects"; exit 1; }
 
+        # If a caller sets a name (release/preview) but no avatar, fall back to the project logo.
+        # This is the one place that URL lives; it's served from the docs site. Callers with no name
+        # (internal CI) are left alone and keep the avatar their webhook is configured with.
+        if [ -n "$USERNAME" ] && [ -z "$AVATAR_URL" ]; then
+          AVATAR_URL="https://stardew-valley-dedicated-server.github.io/server/logo.png"
+        fi
+
         payload=$(jq -cn \
           --arg title "$TITLE" \
           --arg url "$URL" \
           --arg desc "$DESCRIPTION" \
+          --arg username "$USERNAME" \
+          --arg avatar "$AVATAR_URL" \
           --argjson color "$COLOR" \
           --argjson fields "$FIELDS" \
           '{
             embeds: [(
-              {title: $title, color: $color, timestamp: (now | todate)}
+              {title: $title, color: $color}
               + (if $url == "" then {} else {url: $url} end)
               + (if $desc == "" then {} else {description: $desc} end)
               + (if ($fields | length) == 0 then {} else {fields: $fields} end)
             )]
-          }')
+          }
+          + (if $username == "" then {} else {username: $username} end)
+          + (if $avatar == "" then {} else {avatar_url: $avatar} end)')
 
-        # Discord API "Embed Limits": title 256, description 4096, field name 256 /
-        # value 1024, 25 fields, 6000 characters across the embed. Fail loudly instead of
-        # truncating — a clipped ops message is worse than a red step, and the changelog
-        # builder owns its own budget upstream.
+        # Discord's embed limits: title 256, description 4096, field name 256 / value 1024, 25 fields,
+        # and 6000 characters across the whole embed. We fail loudly rather than trim — a cut-off
+        # message is worse than a red step, and the changelog builder already keeps itself under budget.
         errors=$(jq -r '
           .embeds[0]
           | (.description // "") as $d

@@ -466,7 +466,7 @@ GitHub Actions caches can accumulate over time. This pipeline removes every cach
 
 CI posts to Discord in two clearly separated streams, all through the shared composite action `.github/actions/discord-notify`:
 
-- **Public release feeds**: `#releases` (stable releases) and `#releases-preview` (preview builds). Each post carries the full changelog since the previous build — every first-parent commit, grouped like the GitHub release page (built by `.github/actions/build-changelog` on top of `.github/scripts/build-changelog.js`) — plus the exact `IMAGE_VERSION=…` value to deploy it.
+- **Public release feeds**: `#releases` (stable releases) and `#releases-preview` (preview builds). Each post carries the full changelog since the previous build — every first-parent commit as one **Changes** list ordered like the GitHub release page, with hidden types folded into a trailing `+N internal changes` line and a `[diff]` link to the range (built by `.github/actions/build-changelog` on top of `.github/scripts/build-changelog.js`) — plus the exact `IMAGE_VERSION=…` value to deploy it.
 - **Internal CI feed** for maintainers: `#internal-ci` gets docs deploys (with the versions per half), server deploys (with the resolved image version and commit), and deploy failures.
 
 ### Secrets
@@ -480,6 +480,21 @@ One repository secret per channel, each holding a [Discord webhook URL](https://
 | `DISCORD_WEBHOOK_INTERNAL_CI` | `#internal-ci` | Deploy Documentation (`deploy-docs.yml`), Deploy Server (`deploy-server.yml`, success and failure) |
 
 A missing secret is not an error: the notify action logs "no webhook configured" and skips, so notifications silently stop while everything else runs unaffected. A malformed or over-limit payload fails the notify step loudly instead of truncating; success-path notify steps run with `continue-on-error`, so a Discord outage never reds a build or deploy that succeeded.
+
+### Bot identity (release feeds)
+
+The release and preview posts set the webhook's display name and avatar per message. Both are optional repository **variables** — unset means the defaults below apply, so it works out of the box:
+
+| Variable | Applies to | Default |
+|----------|-----------|---------|
+| `DISCORD_BOT_USERNAME` | both release feeds | `Release Bot` / `Preview Bot` (per channel) |
+| `DISCORD_BOT_USERNAME_RELEASES` | `#releases` only | falls back to `DISCORD_BOT_USERNAME` |
+| `DISCORD_BOT_USERNAME_PREVIEW` | `#releases-preview` only | falls back to `DISCORD_BOT_USERNAME` |
+| `DISCORD_BOT_AVATAR_URL` | both release feeds | the project logo |
+| `DISCORD_BOT_AVATAR_URL_RELEASES` | `#releases` only | falls back to `DISCORD_BOT_AVATAR_URL` |
+| `DISCORD_BOT_AVATAR_URL_PREVIEW` | `#releases-preview` only | falls back to `DISCORD_BOT_AVATAR_URL` |
+
+Resolution is per-channel var → shared var → default. The internal CI feed posts no identity, so `#internal-ci` keeps whatever name/avatar its webhook is configured with in Discord.
 
 ### Discord server setup
 

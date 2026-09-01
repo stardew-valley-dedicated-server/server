@@ -1,9 +1,9 @@
 name: Build Changelog
 description: >
   Builds Discord-ready changelog markdown for a build: every first-parent commit since the
-  previous build tag, grouped into release-please's sections and budgeted for an embed
-  description. Performs no checkout — the caller's checkout must have full history and tags
-  (fetch-depth: 0, fetch-tags: true).
+  previous build tag, as one "Changes" list ordered by release-please's type priority and
+  budgeted for an embed description. Performs no checkout — the caller's checkout must have
+  full history and tags (fetch-depth: 0, fetch-tags: true).
 
 inputs:
   head:
