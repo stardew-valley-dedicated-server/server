@@ -64,6 +64,7 @@ Your data lives in Docker volumes and bind mounts that persist across container 
 | Saves | `saves` volume | Save files |
 | Game data | `game-data` volume | Game files |
 | Steam session | `steam-session` volume | Steam tokens |
+| Discord dashboard | `discord-bot-data` volume | Dashboard ownership id ([details](/admins/configuration/discord#status-dashboard)) |
 | Settings | `.local-container/settings/` bind mount | Server configuration (`server-settings.json`) |
 
 ::: info Volume Names
