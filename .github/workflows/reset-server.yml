@@ -1,0 +1,138 @@
+name: Reset Server
+
+# Wipes the public test server's world on a schedule so it stays fresh without
+# moderation: stop the stack, delete the saves volume, start the stack. The mod
+# auto-creates a new farm from server-settings.json when no loadable save exists
+# (GameManagerService). Everything else is kept deliberately:
+#   game-data         game files + SMAPI save-backups (recovery stays possible)
+#   steam-session     avoids a fresh Steam login
+#   discord-bot-data  dashboard ownership id (the dashboard survives resets)
+#   settings          bind mount; the new farm is created from it
+
+on:
+  schedule:
+    # Weekly, Sunday 04:00 UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to reset'
+        required: true
+        type: choice
+        options:
+          - public-test
+
+# Same group as the automatic preview deploys so a reset never interleaves with
+# a deploy's down/up on the same host.
+concurrency:
+  group: deploy-auto
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  reset:
+    name: Reset ${{ github.event.inputs.environment || 'public-test' }}
+    # Skip in forks — resets need our VPS secrets, so a fork run can only fail red.
+    if: github.repository == 'stardew-valley-dedicated-server/server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment: ${{ github.event.inputs.environment || 'public-test' }}
+
+    permissions:
+      contents: read
+
+    env:
+      DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment || 'public-test' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # discord-notify must exist in the tree for the `uses: ./…` steps below.
+          sparse-checkout: |
+            .github/actions/discord-notify
+          sparse-checkout-cone-mode: false
+
+      - name: Stop stack, wipe world, restart
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          envs: DEPLOY_ENVIRONMENT
+          script: |
+            set -e
+            cd ~/srv/"$DEPLOY_ENVIRONMENT"
+
+            echo "::group::Stop containers"
+            docker compose down --timeout 30
+            echo "::endgroup::"
+
+            echo "::group::Delete saves volume"
+            # Mirror compose's project-name resolution (COMPOSE_PROJECT_NAME env,
+            # then .env, then directory basename; docker-compose.yml sets no
+            # top-level name:) — the volume is named <project>_saves.
+            project="$COMPOSE_PROJECT_NAME"
+            [ -n "$project" ] || project=$(grep -s '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2- | tr -d '"' || true)
+            [ -n "$project" ] || project=$(basename "$PWD")
+            vol="${project}_saves"
+
+            if docker volume inspect "$vol" >/dev/null 2>&1; then
+              docker volume rm "$vol"
+              echo "Deleted $vol"
+            else
+              echo "$vol not found - nothing to delete"
+            fi
+            echo "::endgroup::"
+
+            echo "::group::Start containers"
+            docker compose up -d
+            echo "::endgroup::"
+
+      - name: Verify server came back
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          envs: DEPLOY_ENVIRONMENT
+          script: |
+            set -e
+            cd ~/srv/"$DEPLOY_ENVIRONMENT"
+
+            echo "::group::Wait for startup"
+            sleep 30
+            echo "::endgroup::"
+
+            echo "::group::Health check"
+            if docker compose ps | grep -qE "unhealthy|Exit"; then
+              echo "::error::Container health check failed after reset"
+              docker compose logs --tail=50
+              exit 1
+            fi
+            docker compose ps
+            echo "::endgroup::"
+
+      - name: Discord notification
+        if: success()
+        # A Discord outage must never red a reset that succeeded.
+        continue-on-error: true
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL_CI }}
+          title: 'Server reset: ${{ github.event.inputs.environment || ''public-test'' }}'
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: "9807270"
+
+      - name: Discord notification (failure)
+        if: failure()
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL_CI }}
+          title: 'Server reset failed: ${{ github.event.inputs.environment || ''public-test'' }}'
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: "15158332"
