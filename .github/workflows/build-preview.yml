@@ -194,14 +194,17 @@ jobs:
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_PREVIEW }}
-          title: Preview build ${{ needs.calculate-version.outputs.preview_version }}
-          url: ${{ steps.changelog.outputs.compare-url }}
+          # Bot identity: per-channel var → shared var → literal default. Empty avatar falls
+          # back to the project logo inside the action.
+          username: ${{ vars.DISCORD_BOT_USERNAME_PREVIEW || vars.DISCORD_BOT_USERNAME || 'Preview Bot' }}
+          avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_PREVIEW || vars.DISCORD_BOT_AVATAR_URL }}
+          title: Preview ${{ needs.calculate-version.outputs.preview_version }}
           color: "16753920"
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
             **Use it**
-            ```IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}``` (or `preview` for the newest)
+            ```IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}```
             ```docker compose pull && docker compose up -d```
 
       - name: Update preview tracking tag

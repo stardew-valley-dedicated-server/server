@@ -130,14 +130,17 @@ jobs:
         uses: ./.github/actions/discord-notify
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
+          # Bot identity: per-channel var → shared var → literal default. Empty avatar falls
+          # back to the project logo inside the action.
+          username: ${{ vars.DISCORD_BOT_USERNAME_RELEASES || vars.DISCORD_BOT_USERNAME || 'Release Bot' }}
+          avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_RELEASES || vars.DISCORD_BOT_AVATAR_URL }}
           title: Release ${{ needs.release-please.outputs.version }}
-          url: https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}
           color: "5763719"
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
             **Use it**
-            ```IMAGE_VERSION=${{ needs.release-please.outputs.version }}``` (or `latest` for the newest release)
+            ```IMAGE_VERSION=${{ needs.release-please.outputs.version }}```
             ```docker compose pull && docker compose up -d```
 
   stamp-issue-versions:

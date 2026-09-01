@@ -1,23 +1,21 @@
 // Builds the Discord changelog for a build: every first-parent commit in the build's range,
-// grouped into the same sections release-please uses, budgeted for a Discord embed description.
-// Used by .github/actions/build-changelog; the pure logic is exported for `npm test`.
+// as one flat "Changes" list ordered by release-please's type priority, budgeted for a Discord
+// embed description. Used by .github/actions/build-changelog; the pure logic is exported for
+// `npm test`.
 //
 // CLI contract (the composite action wires this up): `git log --first-parent
 // --format='%H%x1f%s' BASE..HEAD` lines on stdin; BASE_TAG, HEAD_OID, REPO_URL env in;
 // markdown / count / visible-count / hidden-count / compare-url appended to $GITHUB_OUTPUT
 // (printed to stdout when GITHUB_OUTPUT is unset, for local runs).
 
-// Section order and titles mirror release-please-config.json's changelog-sections, so a
-// Discord post reads like the GitHub release page. Types "hidden" there fold into one
-// "+N internal changes" line here. Anything else — unknown type or non-conventional
-// subject — lands under "Other" verbatim; a change is never dropped for a parse failure.
-const VISIBLE_SECTIONS = [
-    { type: "feat", title: "Features" },
-    { type: "fix", title: "Bug Fixes" },
-    { type: "perf", title: "Performance Improvements" },
-    { type: "revert", title: "Reverts" },
-    { type: "docs", title: "Documentation" },
-];
+// The single "Changes" list heading. One flat list, no per-type sub-headers.
+const HEADER = "**Changes**";
+
+// Visible commit types in the order release-please lists them, so a Discord post reads like
+// the GitHub release page. Hidden types fold into one "+N internal changes" line. Anything
+// else — unknown type or non-conventional subject — sorts after these visible types, listed
+// verbatim; a change is never dropped for a parse failure.
+const VISIBLE_TYPES = ["feat", "fix", "perf", "revert", "docs"];
 const HIDDEN_TYPES = new Set(["style", "chore", "refactor", "test", "build", "ci"]);
 
 // Code points, not UTF-16 units — leaves headroom under Discord's 4096-char description
@@ -75,26 +73,21 @@ function renderEntry(entry, repoUrl) {
     return `- ${warn}${escapeMarkdown(entry.text)}${link}`;
 }
 
-/** @returns {string} the "+N internal changes" summary line. */
-function internalNote(hiddenCount) {
-    return `+${hiddenCount} internal change${hiddenCount === 1 ? "" : "s"}`;
-}
-
 /**
  * Build the changelog markdown for a commit range.
  * @param {string[]} subjects - `git log %s` subjects, newest first (git log order).
  * @param {{repoUrl: string, baseTag: string, headOid: string}} opts
  * @returns {{markdown: string, count: number, visibleCount: number, hiddenCount: number, compareUrl: string}}
- *   `markdown` is at most BUDGET code points; over-budget ranges end with
- *   "…and N more — [full diff](…)" cut at a line boundary.
+ *   `markdown` is at most BUDGET code points; over-budget ranges drop trailing entries and
+ *   name the dropped count on the bottom line, cut at a line boundary.
  */
 function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     const compareUrl = `${repoUrl}/compare/${baseTag}...${headOid}`;
-    const fullDiff = `[full diff](${compareUrl})`;
+    const diffLink = `[diff](${compareUrl})`;
 
     const changes = subjects.filter((s) => !RELEASE_COMMIT_RE.test(s));
-    const sections = VISIBLE_SECTIONS.map((s) => ({ ...s, entries: [] }));
-    const other = { title: "Other", entries: [] };
+    const visible = new Map(VISIBLE_TYPES.map((t) => [t, []]));
+    const other = [];
     let hiddenCount = 0;
     for (const subject of changes) {
         const entry = parseSubject(subject);
@@ -102,8 +95,7 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
             hiddenCount += 1;
             continue;
         }
-        const section = sections.find((s) => s.type === entry.type) ?? other;
-        section.entries.push(entry);
+        (visible.get(entry.type) ?? other).push(entry);
     }
 
     const count = changes.length;
@@ -111,56 +103,46 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     const result = { count, visibleCount, hiddenCount, compareUrl };
 
     if (count === 0) {
-        return { ...result, markdown: `No changes since \`${baseTag}\` — ${fullDiff}` };
-    }
-    if (visibleCount === 0) {
-        return { ...result, markdown: `No user-facing changes (${internalNote(hiddenCount)}) — ${fullDiff}` };
+        return { ...result, markdown: `No changes since \`${baseTag}\` · ${diffLink}` };
     }
 
-    // Flat line list, tagged so truncation can count dropped changes and trim headers
-    // whose entries were all cut.
-    const lines = [];
-    for (const section of [...sections, other]) {
-        if (section.entries.length === 0) {
-            continue;
+    // Bottom line: an optional "…and N more" truncation notice, the internal-changes count,
+    // and always the diff link — joined with " · " so it reads like the "· #PR" suffix on
+    // every entry above.
+    const bottomLine = (droppedCount) => {
+        const parts = [];
+        if (droppedCount > 0) {
+            parts.push(`…and ${droppedCount} more`);
         }
-        if (lines.length > 0) {
-            lines.push({ text: "", isEntry: false });
+        if (hiddenCount > 0) {
+            parts.push(`+${hiddenCount} internal change${hiddenCount === 1 ? "" : "s"}`);
         }
-        lines.push({ text: `**${section.title}**`, isEntry: false });
-        for (const entry of section.entries) {
-            lines.push({ text: renderEntry(entry, repoUrl), isEntry: true });
-        }
-    }
-    const hiddenLine = hiddenCount > 0 ? internalNote(hiddenCount) : null;
-    const tailAfter = (body) => (hiddenLine === null ? body : `${body}\n\n${hiddenLine}`);
+        parts.push(diffLink);
+        return parts.join(" · ");
+    };
 
-    const full = tailAfter(lines.map((l) => l.text).join("\n"));
+    const entryLines = [...VISIBLE_TYPES.flatMap((t) => visible.get(t)), ...other].map((e) => renderEntry(e, repoUrl));
+
+    const full = [HEADER, ...entryLines, bottomLine(0)].join("\n");
     if (codePoints(full) <= BUDGET) {
         return { ...result, markdown: full };
     }
 
-    // Over budget: emit whole lines while the worst-case tail (notice with the largest
-    // possible N, plus the internal-changes line) still fits, then trim trailing headers
-    // and blanks so the cut lands after an entry.
-    const notice = (n) => `…and ${n} more — ${fullDiff}`;
-    const reserve =
-        codePoints(`\n${notice(visibleCount)}`) + (hiddenLine === null ? 0 : codePoints(`\n\n${hiddenLine}`));
+    // Over budget: keep whole entry lines while the worst-case bottom line (the largest
+    // possible dropped count) still fits, then report how many were dropped.
+    const reserve = 1 + codePoints(bottomLine(visibleCount));
+    let used = codePoints(HEADER);
     const kept = [];
-    let used = 0;
-    for (const line of lines) {
-        const cost = codePoints(line.text) + (kept.length > 0 ? 1 : 0);
-        if (used + cost > BUDGET - reserve) {
+    for (const line of entryLines) {
+        const cost = 1 + codePoints(line);
+        if (used + cost + reserve > BUDGET) {
             break;
         }
         kept.push(line);
         used += cost;
     }
-    while (kept.length > 0 && !kept[kept.length - 1].isEntry) {
-        kept.pop();
-    }
-    const dropped = visibleCount - kept.filter((l) => l.isEntry).length;
-    const markdown = tailAfter(`${kept.map((l) => l.text).join("\n")}\n${notice(dropped)}`);
+    const dropped = visibleCount - kept.length;
+    const markdown = [HEADER, ...kept, bottomLine(dropped)].join("\n");
     return { ...result, markdown };
 }
 

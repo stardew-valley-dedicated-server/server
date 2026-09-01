@@ -17,6 +17,18 @@ inputs:
     description: Optional URL the title links to
     required: false
     default: ""
+  username:
+    description: >
+      Webhook display name (the release/preview bot identity). Empty keeps the webhook's
+      Discord-configured name, so callers that post no identity (internal CI) are untouched.
+    required: false
+    default: ""
+  avatar-url:
+    description: >
+      Webhook avatar URL. Empty falls back to the project logo only when a username is set,
+      so identity-bearing posts get a face while other callers keep their webhook's avatar.
+    required: false
+    default: ""
   color:
     description: Embed color as a decimal number
     required: true
@@ -44,6 +56,8 @@ runs:
         WEBHOOK: ${{ inputs.webhook }}
         TITLE: ${{ inputs.title }}
         URL: ${{ inputs.url }}
+        USERNAME: ${{ inputs.username }}
+        AVATAR_URL: ${{ inputs.avatar-url }}
         COLOR: ${{ inputs.color }}
         DESCRIPTION: ${{ inputs.description }}
         FIELDS: ${{ inputs.fields }}
@@ -62,20 +76,31 @@ runs:
           >/dev/null 2>&1 <<< "$FIELDS" \
           || { echo "::error::discord-notify: fields must be a JSON array of {name, value} objects"; exit 1; }
 
+        # A caller that sets an identity (release/preview) but no avatar gets the project logo —
+        # the single canonical URL, served from the deployed docs site. Callers with no username
+        # (internal CI) keep their webhook's Discord-configured identity untouched.
+        if [ -n "$USERNAME" ] && [ -z "$AVATAR_URL" ]; then
+          AVATAR_URL="https://stardew-valley-dedicated-server.github.io/server/logo.png"
+        fi
+
         payload=$(jq -cn \
           --arg title "$TITLE" \
           --arg url "$URL" \
           --arg desc "$DESCRIPTION" \
+          --arg username "$USERNAME" \
+          --arg avatar "$AVATAR_URL" \
           --argjson color "$COLOR" \
           --argjson fields "$FIELDS" \
           '{
             embeds: [(
-              {title: $title, color: $color, timestamp: (now | todate)}
+              {title: $title, color: $color}
               + (if $url == "" then {} else {url: $url} end)
               + (if $desc == "" then {} else {description: $desc} end)
               + (if ($fields | length) == 0 then {} else {fields: $fields} end)
             )]
-          }')
+          }
+          + (if $username == "" then {} else {username: $username} end)
+          + (if $avatar == "" then {} else {avatar_url: $avatar} end)')
 
         # Discord API "Embed Limits": title 256, description 4096, field name 256 /
         # value 1024, 25 fields, 6000 characters across the embed. Fail loudly instead of
