@@ -78,6 +78,12 @@ STATUS_DASHBOARD_REFRESH_RATE=60
 
 The dashboard may share a channel with the chat relay.
 
+The dashboard message is owned by your deployment: the bot stamps an ownership id into the embed footer and persists it in the `discord-bot-data` volume (shipped in the compose file), so the same message survives restarts and server resets. If a second server posts its dashboard to the same channel, the bot detects the foreign dashboard, logs a warning, and leaves it untouched instead of overwriting it.
+
+::: warning One bot application per server
+The ownership id protects only the dashboard message. Presence and nickname are global to the bot user, so two servers sharing one bot token still overwrite each other's presence and nickname. Run one bot application per server.
+:::
+
 ## Bot Nickname
 
 | Configuration | Behavior |

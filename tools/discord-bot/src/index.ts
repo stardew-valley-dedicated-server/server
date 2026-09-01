@@ -1,14 +1,25 @@
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import {
     ActivityType,
     Client,
     Colors,
+    DiscordAPIError,
     EmbedBuilder,
     Events,
     GatewayIntentBits,
     type Message,
     PermissionFlagsBits,
+    RESTJSONErrorCodes,
     type TextChannel,
 } from "discord.js";
+import {
+    classifyDashboardEmbed,
+    DASHBOARD_TITLE,
+    type DashboardMessageKind,
+    formatFooter,
+    parseOwnerId,
+} from "./dashboard";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -23,7 +34,6 @@ const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED =
         ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds`
         : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`;
 const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
-let targetMessageId: string | null = null;
 const COOLDOWN_DURATION_MS = 30000;
 const MAX_COMMANDS_PER_WINDOW = 10;
 const commandHistory = new Map<string, number[]>();
@@ -390,95 +400,269 @@ function isRateLimited(userId: string): boolean {
     return false;
 }
 
+// ============================================================================
+// STATUS DASHBOARD
+// ============================================================================
+// The dashboard message is owned by one deployment: a UUID generated on first
+// boot, persisted to the bot's volume, and stamped into the embed footer. The
+// stamp lets the bot re-adopt its own message across restarts and refuse to
+// touch a dashboard owned by another deployment sharing the channel.
+
+const DASHBOARD_STATE_FILE = "/data/dashboard-state.json";
+
+interface DashboardState {
+    // null only in degraded mode (persistence unavailable): no id is stamped
+    // and adoption falls back to title-based matching.
+    ownerId: string | null;
+    messageId: string | null;
+}
+
+const dashboardState: DashboardState = { ownerId: null, messageId: null };
+let dashboardStateWritable = false;
+let dashboardUpdateInFlight = false;
+const warnedForeignOwnerIds = new Set<string>();
+
+/**
+ * Loads (or initializes) the persisted dashboard state. A missing file is a
+ * normal first boot — the id is never recovered from channel contents, since
+ * that could steal a foreign deployment's dashboard.
+ */
+function loadDashboardState(): void {
+    let raw: string | null = null;
+    try {
+        raw = readFileSync(DASHBOARD_STATE_FILE, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.warn(`[Dashboard] Could not read ${DASHBOARD_STATE_FILE} (${error}) - treating as first boot.`);
+        }
+    }
+
+    if (raw !== null) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (typeof parsed?.ownerId === "string" && parsed.ownerId.length > 0) {
+                dashboardState.ownerId = parsed.ownerId;
+                dashboardState.messageId = typeof parsed.messageId === "string" ? parsed.messageId : null;
+                dashboardStateWritable = true;
+                console.log(`[Dashboard] Ownership id: ${dashboardState.ownerId}`);
+                return;
+            }
+            console.warn(`[Dashboard] ${DASHBOARD_STATE_FILE} has no ownerId - treating as first boot.`);
+        } catch {
+            console.warn(`[Dashboard] ${DASHBOARD_STATE_FILE} is unparseable - treating as first boot.`);
+        }
+    }
+
+    dashboardState.ownerId = crypto.randomUUID();
+    dashboardState.messageId = null;
+    dashboardStateWritable = true;
+    persistDashboardState();
+    if (dashboardStateWritable) {
+        console.log(`[Dashboard] Ownership id created: ${dashboardState.ownerId}`);
+    }
+}
+
+/**
+ * Atomically persists the dashboard state (tmp file + rename). A failed write
+ * at any point drops the bot into degraded mode: the ownership guard is
+ * disabled and the footer is written without an id, so a later healthy boot
+ * can re-adopt the message via the legacy branch and re-stamp it.
+ */
+function persistDashboardState(): void {
+    if (!dashboardStateWritable) {
+        return;
+    }
+    try {
+        mkdirSync(dirname(DASHBOARD_STATE_FILE), { recursive: true });
+        const tmpFile = `${DASHBOARD_STATE_FILE}.tmp`;
+        writeFileSync(tmpFile, JSON.stringify(dashboardState));
+        renameSync(tmpFile, DASHBOARD_STATE_FILE);
+    } catch (error) {
+        dashboardStateWritable = false;
+        dashboardState.ownerId = null;
+        console.warn(
+            `[Dashboard] ⚠️ Cannot persist ${DASHBOARD_STATE_FILE} (${error}) - ownership guard disabled. ` +
+                "The dashboard still updates, but a second deployment sharing this channel is no longer detected. " +
+                "Check that the bot's /data volume is mounted and writable.",
+        );
+    }
+}
+
+function clearTrackedMessage(): void {
+    dashboardState.messageId = null;
+    persistDashboardState();
+}
+
+/** Builds the dashboard embed from the current server status. */
+async function buildDashboardEmbed(): Promise<EmbedBuilder> {
+    const status: ServerStatus | null = await fetchServerStatus();
+
+    const embed = new EmbedBuilder()
+        .setTitle(DASHBOARD_TITLE)
+        .setTimestamp()
+        .setFooter({ text: formatFooter(STATUS_DASHBOARD_REFRESH_RATE_FORMATTED, dashboardState.ownerId) });
+
+    if (!status?.isOnline) {
+        embed
+            .setColor(Colors.Red)
+            .setDescription(
+                "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_",
+            );
+    } else {
+        const seasonEmojis: Record<string, string> = {
+            spring: "🌸 Spring",
+            summer: "☀️ Summer",
+            fall: "🍂 Fall",
+            winter: "❄️ Winter",
+        };
+        const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
+
+        embed.setColor(Colors.Blue).addFields(
+            { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
+            { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
+            {
+                name: "📶 Server Status",
+                value: status.isReady ? "✅ Ready & Running" : "⏳ Saving / Loading",
+                inline: true,
+            },
+            {
+                name: "👥 Active Players",
+                value: `**${status.playerCount} / ${status.maxPlayers}** ${status.isPaused ? "_(Paused)_" : ""}`,
+                inline: true,
+            },
+            {
+                name: "📅 In-Game Date",
+                value: `Year ${status.year}, ${formattedSeason}, Day ${status.day}`,
+                inline: true,
+            },
+            { name: "⏰ Clock Time", value: formatStardewTime(status.timeOfDay), inline: true },
+            {
+                name: "🔑 Connection Code",
+                value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``,
+                inline: false,
+            },
+        );
+    }
+
+    return embed;
+}
+
 // Auto-updating status dashboard
-async function updateLiveDashboard() {
+async function updateLiveDashboard(): Promise<void> {
     if (!STATUS_DASHBOARD_CHANNEL_ID) {
         return;
     }
-
+    if (dashboardUpdateInFlight) {
+        return;
+    }
+    dashboardUpdateInFlight = true;
     try {
-        const channel = (await client.channels.fetch(STATUS_DASHBOARD_CHANNEL_ID)) as TextChannel;
-        if (!channel?.isTextBased()) {
-            console.error("[Dashboard] Target channel not found or is not text-based.");
-            return;
-        }
+        await runDashboardUpdate(STATUS_DASHBOARD_CHANNEL_ID);
+    } catch (error) {
+        console.error(`[Dashboard] Loop execution failed: ${error}`);
+    } finally {
+        dashboardUpdateInFlight = false;
+    }
+}
 
-        const status: ServerStatus | null = await fetchServerStatus();
+async function runDashboardUpdate(channelId: string): Promise<void> {
+    const channel = (await client.channels.fetch(channelId)) as TextChannel;
+    if (!channel?.isTextBased()) {
+        console.error("[Dashboard] Target channel not found or is not text-based.");
+        return;
+    }
 
-        const embed = new EmbedBuilder()
-            .setTitle("🧑‍🌾 Stardew Valley Server Status Dashboard")
-            .setTimestamp()
-            .setFooter({ text: `Automatically updates every ${STATUS_DASHBOARD_REFRESH_RATE_FORMATTED}` });
+    const embed = await buildDashboardEmbed();
 
-        if (!status?.isOnline) {
-            embed
-                .setColor(Colors.Red)
-                .setDescription(
-                    "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_",
-                );
-        } else {
-            const seasonEmojis: Record<string, string> = {
-                spring: "🌸 Spring",
-                summer: "☀️ Summer",
-                fall: "🍂 Fall",
-                winter: "❄️ Winter",
-            };
-            const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
-
-            embed.setColor(Colors.Blue).addFields(
-                { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
-                { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
-                {
-                    name: "📶 Server Status",
-                    value: status.isReady ? "✅ Ready & Running" : "⏳ Saving / Loading",
-                    inline: true,
-                },
-                {
-                    name: "👥 Active Players",
-                    value: `**${status.playerCount} / ${status.maxPlayers}** ${status.isPaused ? "_(Paused)_" : ""}`,
-                    inline: true,
-                },
-                {
-                    name: "📅 In-Game Date",
-                    value: `Year ${status.year}, ${formattedSeason}, Day ${status.day}`,
-                    inline: true,
-                },
-                { name: "⏰ Clock Time", value: formatStardewTime(status.timeOfDay), inline: true },
-                {
-                    name: "🔑 Connection Code",
-                    value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``,
-                    inline: false,
-                },
-            );
-        }
-
-        // Dispatch/edit
-        if (targetMessageId) {
-            try {
-                const existingMsg = await channel.messages.fetch(targetMessageId);
-                await existingMsg.edit({ content: "", embeds: [embed] });
-                console.log("[Dashboard] Live status display updated successfully.");
+    // Primary path: edit the tracked message.
+    if (dashboardState.messageId) {
+        let existing: Message | null = null;
+        try {
+            existing = await channel.messages.fetch(dashboardState.messageId);
+        } catch (error) {
+            if (error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMessage) {
+                console.log("[Dashboard] Tracked message was deleted - scanning for a replacement.");
+                clearTrackedMessage();
+            } else {
+                // Transient failure (network, 5xx, rate limit, permissions): keep the id
+                // and retry next tick — falling through to the scan here is what would
+                // duplicate the dashboard.
+                console.error(`[Dashboard] Could not fetch tracked message (${error}) - retrying next tick.`);
                 return;
-            } catch (_err) {
-                console.log("[Dashboard] Saved message ID missing or deleted. Generating a replacement entry...");
             }
         }
 
-        // Fallback
-        const recentMessages = await channel.messages.fetch({ limit: 10 });
-        const botOldMessage = recentMessages.find((m) => m.author.id === client.user?.id);
-
-        if (botOldMessage) {
-            targetMessageId = botOldMessage.id;
-            await botOldMessage.edit({ content: "", embeds: [embed] });
-            console.log("[Dashboard] Recovered old message reference and applied edits.");
-        } else {
-            const newMsg = await channel.send({ embeds: [embed] });
-            targetMessageId = newMsg.id;
-            console.log("[Dashboard] Fresh status message initialized.");
+        if (existing) {
+            const kind = classifyDashboardEmbed(existing.embeds[0], dashboardState.ownerId);
+            if (kind === "mine" || kind === "legacy") {
+                await existing.edit({ content: "", embeds: [embed] });
+                console.log("[Dashboard] Live status display updated successfully.");
+                return;
+            }
+            console.warn("[Dashboard] Tracked message is not our dashboard anymore - scanning for a replacement.");
+            clearTrackedMessage();
         }
+    }
+
+    // Scan path: classify recent bot-authored messages and adopt our dashboard.
+    let recentMessages: Awaited<ReturnType<typeof channel.messages.fetch>>;
+    try {
+        recentMessages = await channel.messages.fetch({ limit: 50 });
     } catch (error) {
-        console.error(`[Dashboard] Loop execution failed: ${error}`);
+        console.error(`[Dashboard] Message scan failed (${error}) - retrying next tick.`);
+        return;
+    }
+
+    const ownDashboards: { message: Message; kind: DashboardMessageKind }[] = [];
+    for (const message of recentMessages.values()) {
+        if (message.author.id !== client.user?.id) {
+            continue;
+        }
+        const kind = classifyDashboardEmbed(message.embeds[0], dashboardState.ownerId);
+        if (kind === "mine" || kind === "legacy") {
+            ownDashboards.push({ message, kind });
+        } else if (kind === "foreign") {
+            const foreignId = parseOwnerId(message.embeds[0]?.footer?.text) ?? "unknown";
+            if (!warnedForeignOwnerIds.has(foreignId)) {
+                warnedForeignOwnerIds.add(foreignId);
+                console.warn(
+                    `[Dashboard] ⚠️ This channel has a dashboard owned by another deployment (id:${foreignId}) - ` +
+                        "leaving it untouched. Each server needs its own bot application and channel setup.",
+                );
+            }
+        }
+    }
+
+    // fetch() returns newest-first; prefer a stamped dashboard over a legacy one.
+    const adopted = ownDashboards.find((d) => d.kind === "mine") ?? ownDashboards.find((d) => d.kind === "legacy");
+
+    if (adopted) {
+        dashboardState.messageId = adopted.message.id;
+        persistDashboardState();
+        // The edit re-stamps: legacy dashboards get the id on adoption.
+        await adopted.message.edit({ content: "", embeds: [embed] });
+        console.log(`[Dashboard] Adopted existing ${adopted.kind} dashboard message.`);
+    } else {
+        const newMsg = await channel.send({ embeds: [embed] });
+        dashboardState.messageId = newMsg.id;
+        persistDashboardState();
+        console.log("[Dashboard] Fresh status message initialized.");
+    }
+
+    // Best-effort cleanup of our own surplus dashboards. Skipped in degraded mode,
+    // where "mine" is title-based and could match a foreign deployment's dashboard.
+    if (dashboardState.ownerId !== null) {
+        for (const { message } of ownDashboards) {
+            if (message.id === dashboardState.messageId) {
+                continue;
+            }
+            try {
+                await message.delete();
+                console.log("[Dashboard] Deleted a surplus dashboard message of ours.");
+            } catch (error) {
+                console.warn(`[Dashboard] Could not delete a surplus dashboard message: ${error}`);
+            }
+        }
     }
 }
 
@@ -810,6 +994,7 @@ client.once(Events.ClientReady, async () => {
     connectWebSocket();
 
     if (STATUS_DASHBOARD_CHANNEL_ID) {
+        loadDashboardState();
         await updateLiveDashboard();
         setInterval(updateLiveDashboard, STATUS_DASHBOARD_REFRESH_RATE * 1000);
     }

@@ -94,6 +94,9 @@ services:
       STATUS_DASHBOARD_REFRESH_RATE: "${STATUS_DASHBOARD_REFRESH_RATE:-}"
       # API key (must match server's API_KEY if set)
       API_KEY: "${API_KEY:-}"
+    volumes:
+      # Dashboard ownership state (persists the dashboard message across restarts)
+      - discord-bot-data:/data
 
     depends_on:
       - server
@@ -105,3 +108,4 @@ volumes:
   game-data:
   saves:
   settings:
+  discord-bot-data:
