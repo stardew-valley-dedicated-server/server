@@ -440,9 +440,13 @@ function loadDashboardState(): void {
     if (raw !== null) {
         try {
             const parsed = JSON.parse(raw);
-            if (typeof parsed?.ownerId === "string" && parsed.ownerId.length > 0) {
-                dashboardState.ownerId = parsed.ownerId;
-                dashboardState.messageId = typeof parsed.messageId === "string" ? parsed.messageId : null;
+            const ownerId = typeof parsed?.ownerId === "string" ? parsed.ownerId.trim() : "";
+            if (ownerId.length > 0) {
+                dashboardState.ownerId = ownerId;
+                // A non-snowflake messageId would fail the tracked fetch with a 400,
+                // which the transient-error branch retries forever - drop it instead.
+                dashboardState.messageId =
+                    typeof parsed.messageId === "string" && /^\d+$/.test(parsed.messageId) ? parsed.messageId : null;
                 dashboardStateWritable = true;
                 console.log(`[Dashboard] Ownership id: ${dashboardState.ownerId}`);
                 return;
@@ -578,7 +582,9 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
     if (dashboardState.messageId) {
         let existing: Message | null = null;
         try {
-            existing = await channel.messages.fetch(dashboardState.messageId);
+            // force: bypass the message cache (populated by our own edits), or a
+            // deletion / foreign takeover of the tracked message is never seen.
+            existing = await channel.messages.fetch({ message: dashboardState.messageId, force: true });
         } catch (error) {
             if (error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMessage) {
                 console.log("[Dashboard] Tracked message was deleted - scanning for a replacement.");
