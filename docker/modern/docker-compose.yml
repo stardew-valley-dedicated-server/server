@@ -86,6 +86,9 @@ services:
       STATUS_DASHBOARD_CHANNEL_ID: "${STATUS_DASHBOARD_CHANNEL_ID:-}"
       STATUS_DASHBOARD_REFRESH_RATE: "${STATUS_DASHBOARD_REFRESH_RATE:-}"
       API_KEY: "${API_KEY:-}"
+    volumes:
+      # Dashboard ownership state (persists the dashboard message across restarts)
+      - discord-bot-data:/data
     depends_on:
       - server
     restart: on-failure
@@ -94,6 +97,7 @@ volumes:
   steam-session:
   game-data:
   saves:
+  discord-bot-data:
 
 secrets:
   steam_username:

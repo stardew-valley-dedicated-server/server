@@ -11,6 +11,11 @@ RUN bun install --frozen-lockfile --production
 # Copy source
 COPY src ./src
 
+# Dashboard ownership state lives in /data (named volume). A fresh volume
+# inherits the mountpoint's ownership from the image, so chown here is what
+# lets the non-root user write to it.
+RUN mkdir -p /data && chown bun:bun /data
+
 # Run as non-root user
 USER bun
 
