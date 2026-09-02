@@ -21,7 +21,7 @@ docker exec <name> ps -eLo tid,pcpu,stat,wchan:30,comm   # thread states + kerne
 cat /proc/<pid>/task/<tid>/syscall                        # sample twice, a few seconds apart
 ```
 
-Same futex address twice with a NULL timeout arg = parked indefinitely (an infinite `pthread_cond_wait`), not slow. `wait_for_partner` is the kernel's blocking FIFO open waiting for a peer; on an early-created thread it is the CLR's debugger transport blocked opening `/tmp/clr-debug-pipe-<pid>-*` — benign, present in every .NET process. Confirm with `ls /proc/<pid>/root/tmp/clr-debug-pipe-*` before dismissing it.
+Same futex address twice with a NULL timeout arg = parked indefinitely (an infinite `pthread_cond_wait`), not slow. `wait_for_partner` is the kernel's blocking FIFO open waiting for a peer; on an early-created thread it is normally the CLR's debugger transport blocked opening `/tmp/clr-debug-pipe-<pid>-*`. Treat it as benign only after `ls /proc/<pid>/root/tmp/clr-debug-pipe-*` shows that FIFO pair; otherwise correlate the thread with the managed stack before dismissing it.
 
 ## Procedure
 
