@@ -8,15 +8,23 @@ Project-specific git rules; generic git knowledge is assumed.
 - Verify ignore status with `git check-ignore -v --no-index <path>` (without `--no-index` it reports nothing for tracked paths); parent patterns (e.g. `**/bin`) affect nested files. Tracked files inside an ignored directory: stage with `-f` or add a negation pattern.
 - `git commit` commits the **entire index**, not just what you staged. Run `git diff --cached --name-only` immediately before committing; `git restore --staged` any extras. Recovery for a bad commit: `git reset --soft HEAD~1` + re-stage — safe only while unpushed.
 
+## Merging
+
+- `master` enforces strict "up to date before merge". A PR merges once its branch is up to date with `master`, it is approved, and its required checks pass. Update a behind branch (the PR's **Update branch** button) so checks re-run against the tip, then merge with `gh pr merge <num> --squash` — or `--squash --auto` to merge automatically once checks pass.
+- The PR author self-approves by commenting `!approve` on the PR (repo automation posts the approving review); `gh pr review --approve` fails for the author's own token.
+
 ## Chained PRs
 
 When a child PR depends on a parent PR, after the parent merges:
 
 ```bash
 gh pr edit <child-num> --base master
-git checkout <child-branch> && git rebase master && git push --force-with-lease
-sleep 2 && gh pr merge <child-num> --squash --admin   # sleep: GitHub reports "not mergeable" right after a force-push
+git checkout <child-branch> && git fetch origin master
+git rebase --onto origin/master <old-parent-head> && git push --force-with-lease
+gh pr merge <child-num> --squash --auto
 ```
+
+Rebase with `--onto origin/master <old-parent-head>` (the parent branch's final commit), not plain `git rebase master`: the parent was squash-merged, so a plain rebase replays its now-squashed commits and conflicts or duplicates them.
 
 ## Rebasing
 

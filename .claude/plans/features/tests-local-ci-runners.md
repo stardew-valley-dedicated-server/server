@@ -112,7 +112,7 @@ single-host fleet whose `endpoint` is the Mac's tailnet hostname.
 - `fork-pr` environment approval (already wired, `:240-247`) is **even more important** here:
   the inline SSH key + tailnet access reaching fork code = control of the Mac's Docker
   daemon (root-equivalent on that host). Required reviewers = maintainers only. Reaffirm the
-  header ban (`:30-35`) on `pull_request_target` / `push` / `merge_group` triggers.
+  header ban (`:30-35`) on `pull_request_target` / `push` triggers.
 
 ### `.github/workflows/e2e-tests.yml` edits
 | Location | Change |

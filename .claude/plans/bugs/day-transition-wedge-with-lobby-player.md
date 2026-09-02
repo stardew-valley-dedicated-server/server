@@ -1,10 +1,12 @@
 # Day transition wedges the server when a lobby player is connected
 
-**Status:** Root cause narrowed to a host-side blocking barrier inside the NewDay task. The exact barrier **name** remains unknown and requires one targeted log line plus a deterministic repro. Not fixed.
-
-**Intermittent:** ~50% of full-suite runs on 2026-08-03 (`07-13-01Z` and `11-16-51Z` of four).
-
-**Pre-existing:** The identical failure occurred at `1b5ea11` (2026-07-12, `TestResults/runs/2026-07-12T19-48-23Z_1b5ea11` in the main checkout), before the wedding-speedup work.
+**Status:** validation
+**Priority:** 4 (critical)
+**GitHub Issue(s):** none
+**Area:** server
+**Related:** [PR #494](https://github.com/stardew-valley-dedicated-server/server/pull/494); [`tests-password-config-shared-with-exclusive-class.md`](tests-password-config-shared-with-exclusive-class.md)
+**Observed:** ~50% of full-suite runs on 2026-08-03 (`2026-08-03T07-13-01Z_38d72b9` and `2026-08-03T11-16-51Z` of four); identical failure pre-exists at `2026-07-12T19-48-23Z_1b5ea11`, before the wedding-speedup work
+**Next step:** add the throttled barrier-name diagnostic to `BarrierReady_Postfix`, then build the deterministic repro below; no fix until the stalled barrier is named
 
 ## Symptom
 
@@ -12,27 +14,29 @@
 
 The server it ran on is dead for the remainder of the run: every game-thread endpoint returns 503. Under `stopOnFail`, the whole run therefore dies with it.
 
-## Sequence
+## Root cause
+
+Narrowed to a host-side blocking barrier inside the NewDay task. The exact barrier name remains unknown.
+
+### Sequence
 
 Run `2026-08-03T07-13-01Z_38d72b9`, `containers/server-3/container.log`:
 
 * **07:26:57:** A client registers unauthenticated in the lobby (`lobby_unauthenticated_registered`, player `-183582307287801172`). This is the client owned by `PasswordProtectionTests.Help_Command_WorksInLobby`, which intentionally parks a client in the lobby without authenticating.
 * **07:27:00:** That client confirms character creation.
 * **07:27:02:** The server logs `[Auth] Player … finished character customization`. The client remains unauthenticated.
-* **07:27:03:** `LobbyHomedSpouseSteadyStateTests` drives its night: `DayEnding`, `Synchronizing 'NewDay' task`, then `[Auth] Blocked startNewDaySync` ×1 and `Blocked newDaySync` ×4 for that player. `PasswordProtectionService.cs:456-473` deliberately blocks those two message types to unauthenticated peers so their customization menu is not closed.
+* **07:27:03:** `LobbyHomedSpouseSteadyStateTests` drives its night: `DayEnding`, `Synchronizing 'NewDay' task`, then `[Auth] Blocked startNewDaySync` ×1 and `Blocked newDaySync` ×4 for that player. `PasswordProtectionService`'s outbound message filter deliberately blocks those two message types to unauthenticated peers so their customization menu is not closed.
 * **07:27:06:** `game_thread_stall_started lastTickMs=3150`. The game thread never recovers.
 
 ### Why every endpoint then returns 503
 
-`ApiService` drains its game-thread queue in `OnUpdateTicked` (`ApiService.cs:1132-1140`), deliberately on the validated tick so mutating callbacks cannot corrupt a save.
+`ApiService` drains its game-thread queue in `OnUpdateTicked`, deliberately on the validated tick so mutating callbacks cannot corrupt a save.
 
-Once the game thread stops ticking, the queue is never drained and `RunOnGameThreadAsync`'s 5s guard (`ApiService.cs:1773`) fires on every game-thread request.
+Once the game thread stops ticking, the queue is never drained and `RunOnGameThreadAsync`'s 5s guard fires on every game-thread request.
 
 `/stats` and `/health` continue answering in 0ms because they read the cached snapshot.
 
 This is **not resource starvation**: CPU remains at 3-8%, while `avgTickMs` is frozen at 4.66 because no new ticks are occurring.
-
-## What is proven
 
 ### The lobby exclusion is working
 
@@ -40,7 +44,7 @@ The `sleep` ready check reports `numberRequired: 3` at `07:26:57.9` — computed
 
 A passing run corroborates this from the other direction: `2026-06-30T19-28-04Z_864566d` server-2 completed a full transition with a lobby player connected and 27 blocked `newDaySync` sends at `sleep numberRequired: 1`.
 
-Therefore `LobbyService`'s `IsFarmerRequired` postfix (`LobbyService.cs:273-298`, body `:580-599`) is applying correctly; this is not a case where the Harmony patch was lost or bypassed.
+Therefore `LobbyService`'s `IsFarmerRequired` postfix is applying correctly; this is not a case where the Harmony patch was lost or bypassed.
 
 ### `ready_for_save` is not the stalled gate
 
@@ -55,13 +59,13 @@ Therefore `ready_for_save.Update` never ran during the stalled transition.
 
 The frozen `SaveGameMenu` readout — `"waiting for other players… (3/…)"` — is consequently not evidence that the live `ready_for_save` gate requires four players. Its `numReadyForSave()` value of 3 is a **stale cached value from the previous night**.
 
-The denominator shown by the menu is also `Game1.getOnlineFarmers().Count`, which is unfiltered (`decompiled/.../Menus/SaveGameMenu.cs:186,208`).
+The denominator shown by the menu is also `Game1.getOnlineFarmers().Count`, which is unfiltered (`SaveGameMenu.draw` in `decompiled/.../Menus/SaveGameMenu.cs`).
 
 ### The host is blocked inside the NewDay task, before the save handshake
 
 SMAPI runs the transition on a background thread while the main game thread is frozen.
 
-The identified hard blocking wait in the relevant NewDay range is `NetSynchronizer.barrier()` (`decompiled/.../StardewValley/NetSynchronizer.cs:55-73`). Its:
+The identified hard blocking wait in the relevant NewDay range is `NetSynchronizer.barrier()` (`decompiled/.../StardewValley/NetSynchronizer.cs`). Its:
 
 ```text
 while (!barrierReady(name))
@@ -71,20 +75,13 @@ loop cannot exit on the host if the barrier never becomes ready: `shouldAbort()`
 
 A host-side barrier stall is therefore permanent by construction.
 
-The stall must therefore be in one of the roughly 15 barriers spanning `start` through `saveFarmhands` (`Game1.cs:7786-8241`).
+The stall must therefore be in one of the roughly 15 barriers in `Game1._newDayAfterFade` spanning `start` through `saveFarmhands`.
 
-`BarrierReady_Postfix` (`LobbyService.cs:500-566`) exists specifically to release barriers for excluded players, yet it did not release the barrier that stalled this transition.
+`BarrierReady_Postfix` (`LobbyService.cs`) exists specifically to release barriers for excluded players, yet it did not release the barrier that stalled this transition.
 
 **The exact barrier name and the reason its postfix did not release it are the remaining unknowns.**
 
-## Ruled out
-
-Do not rebuild these theories:
-
-* **“The lobby player is counted as required at `ready_for_save`.”** `ready_for_save.Update` never ran. The `SaveGameMenu` `3/…` value is stale from the previous night and says nothing about the live gate.
-* **Harmony patch lost to JIT inlining of `IsFarmerRequired`.** Disproved by the `sleep` ready counts above and by the passing run with a lobby player connected.
-
-## Open question: which barrier?
+### Open question: which barrier?
 
 The barrier system currently emits no events, so no artifact records the barrier name.
 
@@ -96,11 +93,19 @@ Once the barrier name is known, inspect why `BarrierReady_Postfix` failed to rel
 
 * `__result` is already true;
 * `_instance` is null;
-* `HasPlayersToExclude()` is false (`LobbyService.cs:511-525`).
+* `HasPlayersToExclude()` is false.
 
 It also reads `Game1.otherFarmers.Keys` from the background task thread while the main thread can mutate that collection, so the threading behavior around that read should be considered once the failing barrier is identified.
 
-## Repro
+## Fix
+
+**No fix proposed yet.**
+
+Every candidate currently depends on which barrier stalls and why `BarrierReady_Postfix` did not release it. Anything more specific would be guesswork.
+
+Do not add a retry or re-apply loop as the fix; per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, that would mask the blocking condition rather than explain it.
+
+## Verification
 
 The current full-suite failure depends on the broker scheduling two classes onto one server, which makes it roughly 50% reproducible rather than deterministic.
 
@@ -115,19 +120,18 @@ The artifact assertion is important. Per `.claude/rules/universal/passing-test-i
 
 This deterministic repro should be the gate for any production fix.
 
-## Fix
+## Non-causes
 
-**No fix proposed yet.**
+Do not rebuild these theories:
 
-Every candidate currently depends on which barrier stalls and why `BarrierReady_Postfix` did not release it. Anything more specific would be guesswork.
-
-Do not add a retry or re-apply loop as the fix; per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, that would mask the blocking condition rather than explain it.
+* **“The lobby player is counted as required at `ready_for_save`.”** `ready_for_save.Update` never ran. The `SaveGameMenu` `3/…` value is stale from the previous night and says nothing about the live gate.
+* **Harmony patch lost to JIT inlining of `IsFarmerRequired`.** Disproved by the `sleep` ready counts above and by the passing run with a lobby player connected.
 
 ## Secondary finding: stuck-barrier recovery cannot run during the stall
 
-`DesyncKicker` detects the stall at +20s and **enqueues** its kick onto `_pendingGameThreadActions` (`DesyncKicker.cs:168`).
+`DesyncKicker` detects the stall at +20s and **enqueues** its kick onto `_pendingGameThreadActions`.
 
-Those actions are drained in `GameLoop.UpdateTicked` (`DesyncKicker.cs:48-50`).
+Those actions are drained in `DesyncKicker`'s `GameLoop.UpdateTicked` handler.
 
 The game thread is frozen, so the queued kick can never execute. This matches the log:
 
@@ -148,7 +152,7 @@ The mechanism is entirely server-side and reproduces at `1b5ea11` on main, befor
 
 However, the PR is not cleanly independent of the exposure rate:
 
-`SessionJoinMode.Unauthenticated` routes through `Connect.JoinWithoutAuthAsync` (`PersistentSessionCoordinator.cs:258-259`), one of the two methods rewired by #494 (`ConnectionRetryHelper.cs:139-181`).
+`SessionJoinMode.Unauthenticated` routes through `Connect.JoinWithoutAuthAsync` (`PersistentSessionCoordinator.cs`), one of the two methods rewired by #494 (`ConnectionRetryHelper.cs`).
 
 Therefore #494 resequences the lobby join that creates the precondition, so an exposure-rate change cannot be excluded from the four-run sample.
 
@@ -175,6 +179,5 @@ Check the recording before adding broader instrumentation.
 
 ## Related
 
-* `tests-password-config-shared-with-exclusive-class.md` — the test-side collision that creates the precondition in CI. Fixing it reduces exposure but does not fix the underlying server bug.
-* `newgame-day-transition-completion-stalls.md` — same symptom family (transition never completes), but a different mechanism: the game thread remains healthy and there are zero players.
-* `tests-flake-cropsaver-day-advance.md` Mode 1 — also “day doesn't happen,” but the clock freezes before any transition starts. Distinct mechanism.
+* [`tests-password-config-shared-with-exclusive-class.md`](tests-password-config-shared-with-exclusive-class.md) — the test-side collision that creates the precondition in CI. Fixing it reduces exposure but does not fix the underlying server bug.
+* [`newgame-day-transition-completion-stalls.md`](newgame-day-transition-completion-stalls.md) — same symptom family (transition never completes), but a different mechanism: the game thread remains healthy and there are zero players.

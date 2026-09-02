@@ -1,6 +1,92 @@
 # Content Filtering & Asset Stripping for Dedicated Server
 
-## Goal
+**Status:** validation
+**Priority:** 1 (low)
+**GitHub Issue(s):** none
+**Area:** steam-service, docker
+**Related:** [`corrupt-content-self-heal.md`](corrupt-content-self-heal.md)
+**Observed:** production report: `Failed to spawn NPC 'Vincent'` (`ContentLoadException` on a stripped portrait); the `MermaidHouse` tilesheet path found by reading
+**Next step:** design sign-off on the `Texture2D` interceptor and the expanded skip patterns before Phase 1 starts
+
+## Symptom
+
+The existing manifest protection handles asset loads that pass through the game's guarded `LocalizedContentManager` path.
+
+`LocalizedContentManager.DoesAssetExist<T>()` checks the in-memory manifest loaded from `ContentHashes.json`.
+
+`LoadImpl<T>()` uses that check before attempting the underlying load.
+
+Because `PruneContentManifest()` removes entries for files intentionally skipped during the Steam download, guarded loads do not attempt to parse an XNB that was deliberately removed.
+
+However, some vanilla code performs direct `Texture2D` loads without first calling `DoesAssetExist<T>()`.
+
+These direct loads can still fail with:
+
+```text
+ContentLoadException: Asset does not appear to be a valid XNB file
+```
+
+and cause otherwise valid server operations to fail.
+
+### Confirmed failure: Vincent
+
+`Game1.AddCharacterIfNecessary()` contains:
+
+```csharp
+nPC = new NPC(
+    new AnimatedSprite("Characters\\" + textureNameForCharacter, 0, size.X, size.Y),
+    new Vector2(tile.X * 64, tile.Y * 64),
+    locationName,
+    direction,
+    characterId,
+    canBeRomanced,
+    content.Load<Texture2D>("Portraits\\" + textureNameForCharacter)
+);
+```
+
+The two texture loads have different behavior.
+
+#### Character sprite
+
+```text
+Characters/Vincent
+        ↓
+AnimatedSprite.LoadTexture()
+        ↓
+DoesAssetExist<Texture2D>()
+        ↓
+guarded
+```
+
+If the sprite has been stripped, the guarded path can recognize that it is absent.
+
+#### Portrait
+
+```text
+Portraits/Vincent
+        ↓
+content.Load<Texture2D>()
+        ↓
+no explicit DoesAssetExist check
+        ↓
+direct XNB load
+        ↓
+ContentLoadException
+```
+
+This is the proven cause of the `Failed to spawn NPC 'Vincent'` failure.
+
+### Confirmed failure: MermaidHouse
+
+With rendering enabled, `MermaidHouse` can load its tilesheet through xTile's `XnaDisplayDevice.LoadTileSheet()`.
+
+That path performs a direct texture load rather than relying on the normal guarded asset-existence check.
+
+Therefore, stripping a tilesheet can produce the same raw missing-XNB failure.
+
+## Fix
+
+### Goal
 
 Aggressively reduce the dedicated-server `Content/` footprint by removing visual, audio, and font assets that server gameplay does not require, while ensuring intentionally stripped assets cannot cause the server to crash.
 
@@ -17,7 +103,7 @@ The implementation must:
 9. Measure the actual Docker and `Content/` reduction.
 10. Handle required assets through the smallest possible exceptions rather than weakening the optimization.
 
-### Architectural constraint
+#### Architectural constraint
 
 The existing `PruneContentManifest()` mechanism is the **only manifest-filtering mechanism**.
 
@@ -43,87 +129,9 @@ The new `Texture2D` interceptor exists only to cover texture loads that bypass t
 
 ---
 
-# 1. Establish the missing-texture fallback first
-
-## Problem
-
-The existing manifest protection handles asset loads that pass through the game's guarded `LocalizedContentManager` path.
-
-`LocalizedContentManager.DoesAssetExist<T>()` checks the in-memory manifest loaded from `ContentHashes.json`.
-
-`LoadImpl<T>()` uses that check before attempting the underlying load.
-
-Because `PruneContentManifest()` removes entries for files intentionally skipped during the Steam download, guarded loads do not attempt to parse an XNB that was deliberately removed.
-
-However, some vanilla code performs direct `Texture2D` loads without first calling `DoesAssetExist<T>()`.
-
-These direct loads can still fail with:
-
-```text
-ContentLoadException: Asset does not appear to be a valid XNB file
-```
-
-and cause otherwise valid server operations to fail.
-
-## Confirmed failure: Vincent
-
-`Game1.AddCharacterIfNecessary()` contains:
-
-```csharp
-nPC = new NPC(
-    new AnimatedSprite("Characters\\" + textureNameForCharacter, 0, size.X, size.Y),
-    new Vector2(tile.X * 64, tile.Y * 64),
-    locationName,
-    direction,
-    characterId,
-    canBeRomanced,
-    content.Load<Texture2D>("Portraits\\" + textureNameForCharacter)
-);
-```
-
-The two texture loads have different behavior.
-
-### Character sprite
-
-```text
-Characters/Vincent
-        ↓
-AnimatedSprite.LoadTexture()
-        ↓
-DoesAssetExist<Texture2D>()
-        ↓
-guarded
-```
-
-If the sprite has been stripped, the guarded path can recognize that it is absent.
-
-### Portrait
-
-```text
-Portraits/Vincent
-        ↓
-content.Load<Texture2D>()
-        ↓
-no explicit DoesAssetExist check
-        ↓
-direct XNB load
-        ↓
-ContentLoadException
-```
-
-This is the proven cause of the `Failed to spawn NPC 'Vincent'` failure.
-
-## Confirmed failure: MermaidHouse
-
-With rendering enabled, `MermaidHouse` can load its tilesheet through xTile's `XnaDisplayDevice.LoadTileSheet()`.
-
-That path performs a direct texture load rather than relying on the normal guarded asset-existence check.
-
-Therefore, stripping a tilesheet can produce the same raw missing-XNB failure.
-
 ---
 
-# 2. Implement the `Texture2D` fallback
+### 1. Implement the `Texture2D` fallback
 
 Add:
 
@@ -176,7 +184,7 @@ private void OnAssetRequested(object sender, AssetRequestedEventArgs e)
 
 The production implementation may adjust path normalization or texture creation as required by the actual SMAPI/XNA lifecycle.
 
-## Important limitation
+#### Important limitation
 
 The interceptor is a **crash-prevention fallback**, not a general replacement for arbitrary textures.
 
@@ -198,7 +206,7 @@ Do not hide such a dependency behind the placeholder.
 
 ---
 
-# 3. Initialization safety is a hard requirement
+### 2. Initialization safety is a hard requirement
 
 The placeholder creation uses:
 
@@ -216,13 +224,13 @@ The interceptor is not considered complete until this has been demonstrated in r
 
 ---
 
-# 4. Required interceptor tests before expanding the filter
+### 3. Required interceptor tests before expanding the filter
 
 Before broadening the Steam filter, prove the fallback independently.
 
 Use intentionally missing assets and reproduce both known failures.
 
-### Test A — Vincent portrait
+#### Test A — Vincent portrait
 
 Strip:
 
@@ -245,7 +253,7 @@ Expected:
 
 The portrait does not need to render correctly.
 
-### Test B — MermaidHouse tilesheet
+#### Test B — MermaidHouse tilesheet
 
 Strip the relevant `MermaidHouse` tilesheet.
 
@@ -265,7 +273,7 @@ The resulting visual output does not need to be meaningful.
 
 ---
 
-# 5. Expand the Steam content filter
+### 4. Expand the Steam content filter
 
 Update:
 
@@ -313,7 +321,7 @@ These remove:
 * fonts;
 * audio/XACT content.
 
-## Characters exception
+#### Characters exception
 
 The `Characters` rule deliberately retains:
 
@@ -335,7 +343,7 @@ Do not replace this with a broader `Content/Characters/.*` rule.
 
 ---
 
-# 6. Content that must remain
+### 5. Content that must remain
 
 Retain:
 
@@ -356,7 +364,7 @@ Do not accidentally remove base-English data while expanding the visual-content 
 
 ---
 
-# 7. Why `Characters/Farmer/` remains
+### 6. Why `Characters/Farmer/` remains
 
 `Characters/Farmer/` is intentionally retained even though most visual content is unnecessary to a headless server.
 
@@ -382,7 +390,7 @@ That is not required for this optimization.
 
 ---
 
-# 8. Preserve the existing manifest/filesystem relationship
+### 7. Preserve the existing manifest/filesystem relationship
 
 Do not add another manifest-generation or manifest-filtering mechanism.
 
@@ -426,7 +434,7 @@ Upgrade caveat: `PruneContentManifest()` only drops manifest entries for files t
 
 ---
 
-# 9. Verify the filter against the real manifest
+### 8. Verify the filter against the real manifest
 
 Before merging the expanded filter, use the actual:
 
@@ -498,7 +506,7 @@ Regex inspection alone is insufficient.
 
 ---
 
-# 10. Verify an actual filtered Steam download
+### 9. Verify an actual filtered Steam download
 
 Static manifest analysis is not sufficient.
 
@@ -506,7 +514,7 @@ Perform an actual filtered download using the modified Steam service.
 
 After the download and `PruneContentManifest()` have completed, verify both directions of the relationship.
 
-## Retained-entry invariant
+#### Retained-entry invariant
 
 For every retained `ContentHashes.json` entry:
 
@@ -518,7 +526,7 @@ corresponding Content/<entry> file exists
 
 No retained manifest entry may point to a deliberately skipped file.
 
-## Skipped-file invariant
+#### Skipped-file invariant
 
 For every intentionally skipped Content file:
 
@@ -543,7 +551,7 @@ No second pruning mechanism should be introduced to make this pass.
 
 ---
 
-# 11. Runtime validation — headless mode
+### 10. Runtime validation — headless mode
 
 The primary target configuration is:
 
@@ -575,7 +583,7 @@ Headless operation is the primary optimization target.
 
 ---
 
-# 12. Runtime validation — rendering-enabled mode
+### 11. Runtime validation — rendering-enabled mode
 
 Use:
 
@@ -606,7 +614,7 @@ However, a visual defect must not be used to excuse a crash in actual server fun
 
 ---
 
-# 13. Explicitly test texture consumers
+### 12. Explicitly test texture consumers
 
 Do not treat successful placeholder creation as proof that every texture-dependent system is safe.
 
@@ -640,7 +648,7 @@ Do not restore unrelated visual content.
 
 ---
 
-# 14. Run the real E2E test suite
+### 13. Run the real E2E test suite
 
 Run:
 
@@ -670,7 +678,7 @@ Do not disable the test merely because the asset optimization caused it to fail.
 
 ---
 
-# 15. Measure the actual reduction
+### 14. Measure the actual reduction
 
 Measure the deployed artifact before and after the optimization.
 
@@ -705,7 +713,7 @@ If the actual byte reduction is insignificant, reassess whether the additional f
 
 ---
 
-# 16. Third-party SMAPI mod compatibility
+### 15. Third-party SMAPI mod compatibility
 
 The interceptor is a fallback for stripped base-game assets.
 
@@ -743,15 +751,15 @@ Do not weaken the entire filter.
 
 ---
 
-# 17. Regression handling
+### 16. Regression handling
 
 If any stripped asset causes a real regression:
 
-### Step 1 — Identify the dependency
+#### Step 1 — Identify the dependency
 
 Determine the exact asset or category being consumed.
 
-### Step 2 — Determine whether it is genuinely required
+#### Step 2 — Determine whether it is genuinely required
 
 Distinguish between:
 
@@ -767,7 +775,7 @@ asset is merely being loaded unnecessarily
 
 Do not retain assets merely because a load occurs if the resulting texture is not actually needed for server behavior.
 
-### Step 3 — Add the smallest exception
+#### Step 3 — Add the smallest exception
 
 Prefer:
 
@@ -793,11 +801,11 @@ over:
 all visual content
 ```
 
-### Step 4 — Add regression coverage
+#### Step 4 — Add regression coverage
 
 Where practical, add a test that exercises the dependency.
 
-### Step 5 — Keep unrelated stripping
+#### Step 5 — Keep unrelated stripping
 
 Never respond to one required asset by restoring the entire visual/audio/font content set.
 
@@ -818,11 +826,11 @@ one regression
 
 ---
 
-# 18. Required implementation order
+### 17. Required implementation order
 
 The work must proceed in this order:
 
-## Phase 1 — Interceptor
+#### Phase 1 — Interceptor
 
 Implement:
 
@@ -838,7 +846,7 @@ Verify:
 * `Portraits/Vincent`;
 * `MermaidHouse` with rendering enabled.
 
-## Phase 2 — Filter
+#### Phase 2 — Filter
 
 Update:
 
@@ -848,13 +856,13 @@ BuildSkipPatterns()
 
 with the approved `Content/`-prefixed patterns.
 
-## Phase 3 — Static manifest validation
+#### Phase 3 — Static manifest validation
 
 Run the new filtering logic against the actual supported `ContentHashes.json`.
 
 Produce the category/count report.
 
-## Phase 4 — Real filtered download
+#### Phase 4 — Real filtered download
 
 Run the real Steam download.
 
@@ -866,7 +874,7 @@ filesystem ↔ ContentHashes.json
 
 in both directions.
 
-## Phase 5 — Runtime tests
+#### Phase 5 — Runtime tests
 
 Run:
 
@@ -877,7 +885,7 @@ SERVER_FPS>0
 
 against the stripped content set.
 
-## Phase 6 — Functional/E2E validation
+#### Phase 6 — Functional/E2E validation
 
 Run:
 
@@ -887,17 +895,19 @@ make test
 
 using the stripped server environment.
 
-## Phase 7 — Measurement
+#### Phase 7 — Measurement
 
 Record the actual Docker and Content reductions.
 
-## Phase 8 — Narrow regressions
+#### Phase 8 — Narrow regressions
 
 Only after observing real failures, add narrowly scoped exceptions.
 
 ---
 
-# 19. Success criteria
+## Verification
+
+### Success criteria
 
 The implementation is complete only when **all** of the following are true:
 
@@ -930,7 +940,7 @@ The implementation is complete only when **all** of the following are true:
 
 ---
 
-# Related files
+## Related files
 
 | File                                                                   | Role                                                                   |
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -951,7 +961,7 @@ The implementation is complete only when **all** of the following are true:
 
 ---
 
-# Final engineering principle
+## Final engineering principle
 
 Strip the dedicated-server content as aggressively as practical, but prove every retained dependency.
 

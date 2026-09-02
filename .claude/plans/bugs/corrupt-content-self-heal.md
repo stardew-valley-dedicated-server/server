@@ -1,8 +1,14 @@
 # Boot-time validation: self-heal corrupt game content
 
-**Status:** Open; needs design sign-off. An operator runbook already covers manual repair (see sidenote below). This plan covers the remaining automatic repair path.
+**Status:** validation
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** steam-service, server
+**Related:** none
+**Observed:** production report (`Failed to spawn NPC 'Vincent'` / invalid XNB); recurs every boot until repaired by hand
+**Next step:** design sign-off on trigger shape B and the four open decisions below
 
-## Incident
+## Symptom
 
 Production reported:
 
@@ -17,26 +23,26 @@ A missing file produces `"content file was not found"` instead and is handled cl
 
 Therefore this incident class is **corrupt-on-disk content**, not missing content. Without repair, the same corrupt file can fail every boot.
 
-## Why it persists
+## Root cause
 
 The repair mechanism already exists.
 
-`DownloadGameAsync` (`tools/steam-service/SteamAuthService.cs:1322`) always chunk-hash-validates existing files:
+`DownloadGameAsync` (`tools/steam-service/SteamAuthService.cs`) always chunk-hash-validates existing files:
 
-* `"Always validate files to detect corruption/deletion"` at line 1434;
-* invalid chunks are re-downloaded at line 1568.
+* the `"Always validate files to detect corruption/deletion"` pass runs on every download;
+* invalid chunks are re-downloaded.
 
 The chunk-hash check itself (`ChunkValidator`) is unit-tested in `tests/SteamService.Tests`; CI's pre-suite `steam-auth download` into an empty volume exercises only the fresh-download path — the existing-file repair branch in `DownloadGameAsync` (missing or corrupt files among an otherwise-complete install) has no automated test.
 
 The missing piece is the **boot-time trigger**.
 
-The server entrypoint (`docker/rootfs/startapp.sh:106-145`, `init_stardew`) currently early-returns when the game executable exists and otherwise only polls for files to appear. It never validates existing files.
+The server entrypoint (`init_stardew` in `docker/rootfs/startapp.sh`) currently early-returns when the game executable exists and otherwise only polls for files to appear. It never validates existing files.
 
 Downloads therefore happen only through explicit `make setup` / `SteamService.dll download`.
 
 The server entrypoint also has no Steam session. The steam-auth sidecar owns the logged-in account needed to obtain the depot manifest and validate/repair the content. Therefore the automatic trigger must live in, or go through, the sidecar.
 
-## Design
+## Fix
 
 There are two plausible trigger shapes.
 
@@ -48,7 +54,7 @@ This is the simplest implementation. The compose dependency:
 
 would naturally hold the server back while validation runs.
 
-The problem is the steam-auth image's healthcheck (`tools/steam-service/Dockerfile:29`): `GET /health` allows roughly 10s of start period plus 3 × 30s retries before the container is considered unhealthy.
+The problem is the steam-auth image's healthcheck (`HEALTHCHECK` in `tools/steam-service/Dockerfile`): `GET /health` allows roughly 10s of start period plus 3 × 30s retries before the container is considered unhealthy.
 
 A full chunk-hash pass over roughly 500 MB can exceed that budget on a slow disk. A blocking validation pass would therefore race the healthcheck and could cause the dependent server container to fail even though repair itself is healthy.
 
@@ -64,7 +70,7 @@ The state could be exposed through a dedicated endpoint such as:
 
 or as a field on an existing endpoint.
 
-Do **not** make `/health` trigger validation or login. `/health` is deliberately a pure status probe (`Program.cs:469`) and should remain cheap and side-effect-free.
+Do **not** make `/health` trigger validation or login. `/health` is deliberately a pure status probe (the `/health` handler in `tools/steam-service/Program.cs`) and should remain cheap and side-effect-free.
 
 `init_stardew` then gains a **wait-for-validated** step before its current early-return. A restart with corrupt-but-present files therefore blocks the game from starting until validation/repair has completed.
 
@@ -86,7 +92,34 @@ validation completes successfully
 server starts/uses game content
 ```
 
-## Decisions required at sign-off
+## Verification
+
+TODO: add an E2E test that exercises the actual boot path. Steam allows one live login per account, so the test must not log in on its own; instead it borrows what the broker already holds:
+
+* lease a client account from `SteamAccountAllocator` like any `[TestServer(WithSteam=true)]` test;
+* ask the host's existing `SharedSteamAuth` sidecar to run the download/repair against a scratch copy of the game volume with that account (new sidecar HTTP endpoint wrapping the `download` command with a target dir and slice-local account index — none exists yet);
+* release the lease afterwards.
+
+No account is reserved; the cost is one client lease for ~2-3 min per run, dominated by the full-file chunk hash over the ~500 MB install (the branch under test is "validate everything, redownload what is bad").
+
+Steps:
+
+1. corrupt an XNB in the scratch game volume;
+2. restart the relevant services;
+3. allow boot-time validation to run;
+4. assert that the file is repaired;
+5. assert that the server proceeds past `init_stardew`.
+
+Also verify the failure policy:
+
+* run validate-on-boot with no usable Steam session;
+* assert that validation logs a warning;
+* assert that the validation gate is released;
+* assert that the server still proceeds to boot.
+
+Finally, confirm that the steam-auth healthcheck remains healthy throughout a full validation pass. This is particularly important for design B because validation intentionally runs after HTTP becomes available.
+
+## Open decisions
 
 ### 1. Cost bound
 
@@ -127,7 +160,7 @@ Non-login failures (malformed manifest, disk I/O error, cancellation, unhandled 
 
 ### 4. Validation scope
 
-`download` also fetches the Steamworks SDK depot (`Program.cs:395`, `DownloadAllAsync`).
+`download` also fetches the Steamworks SDK depot (`DownloadAllAsync` in `tools/steam-service/Program.cs`).
 
 Decide whether boot-time validation should cover:
 
@@ -136,48 +169,21 @@ Decide whether boot-time validation should cover:
 
 The incident class being addressed is corrupt game content, so validating only the game depot may be the narrower and cheaper choice.
 
-## Verification
-
-TODO: add an E2E test that exercises the actual boot path. Steam allows one live login per account, so the test must not log in on its own; instead it borrows what the broker already holds:
-
-* lease a client account from `SteamAccountAllocator` like any `[TestServer(WithSteam=true)]` test;
-* ask the host's existing `SharedSteamAuth` sidecar to run the download/repair against a scratch copy of the game volume with that account (new sidecar HTTP endpoint wrapping the `download` command with a target dir and slice-local account index — none exists yet);
-* release the lease afterwards.
-
-No account is reserved; the cost is one client lease for ~2-3 min per run, dominated by the full-file chunk hash over the ~500 MB install (the branch under test is "validate everything, redownload what is bad").
-
-Steps:
-
-1. corrupt an XNB in the scratch game volume;
-2. restart the relevant services;
-3. allow boot-time validation to run;
-4. assert that the file is repaired;
-5. assert that the server proceeds past `init_stardew`.
-
-Also verify the failure policy:
-
-* run validate-on-boot with no usable Steam session;
-* assert that validation logs a warning;
-* assert that the validation gate is released;
-* assert that the server still proceeds to boot.
-
-Finally, confirm that the steam-auth healthcheck remains healthy throughout a full validation pass. This is particularly important for design B because validation intentionally runs after HTTP becomes available.
-
 ## Related files
 
 | File                                                  | Role                                                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `tools/steam-service/SteamAuthService.cs:1322`        | `DownloadGameAsync` — existing chunk validation (1434) and repair (1568)                |
-| `tools/steam-service/SteamAuthService.cs:1104`        | `PruneContentManifest` — manifest/filesystem synchronization                            |
-| `tools/steam-service/Program.cs:365`                  | `serve` → `RunHttpServerAsync`; existing endpoints including pure-probe `/health`       |
-| `docker/rootfs/startapp.sh:106-145`                   | `init_stardew` — current early-return/wait loop; boot validation gate belongs here      |
+| `tools/steam-service/SteamAuthService.cs`             | `DownloadGameAsync` — existing chunk validation and repair                              |
+| `tools/steam-service/SteamAuthService.cs`             | `PruneContentManifest` — manifest/filesystem synchronization                            |
+| `tools/steam-service/Program.cs`                      | `serve` → `RunHttpServerAsync`; existing endpoints including pure-probe `/health`       |
+| `docker/rootfs/startapp.sh`                           | `init_stardew` — current early-return/wait loop; boot validation gate belongs here      |
 | `docker-compose.yml`                                  | `server` depends on `steam-auth: service_healthy`; shared `game-data:/data/game` volume |
-| `tools/steam-service/Dockerfile:29`                   | steam-auth healthcheck and its startup budget                                           |
+| `tools/steam-service/Dockerfile`                      | steam-auth `HEALTHCHECK` and its startup budget                                         |
 | `tests/SteamService.Tests/ChunkValidatorTests.cs`      | Unit coverage of the chunk-hash check                                                   |
 
 ## Sidenote: operator runbook (shipped)
 
-Manual repair is already documented in `docs/community/faq.md` (`"Asset does not appear to be a valid XNB file"`, line 102).
+Manual repair is already documented in `docs/community/faq.md` under the `"Asset does not appear to be a valid XNB file"` entry.
 
 The documented recovery is to rerun the download:
 

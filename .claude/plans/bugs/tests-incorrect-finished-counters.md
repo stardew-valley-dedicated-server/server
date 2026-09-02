@@ -1,4 +1,14 @@
-## Problem
+# `run_finished` reports wrong failed/canceled counters under StopOnFail
+
+**Status:** ready-to-implement
+**Priority:** 1 (low)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** none
+**Observed:** StopOnFail runs where `run_finished` disagreed with `summary.json`; run id not recorded
+**Next step:** derive the `run_finished` counts from the final per-test statuses and add the StopOnFail test
+
+## Symptom
 
 When a run stops after a failure, the `run_finished` event can report the wrong number of failed and canceled tests.
 
@@ -6,7 +16,7 @@ Some tests that are canceled because of StopOnFail are first counted as failed w
 
 This means `run_finished` can disagree with `summary.json`, even though `summary.json` has the correct final test statuses.
 
-## What to change
+## Fix
 
 Use the final per-test statuses as the single source of truth for the `run_finished` counts.
 
@@ -14,7 +24,7 @@ Do not maintain a separate set of counters that can get out of sync with the fin
 
 The final counts for passed, failed, canceled, and skipped should match the counts in `summary.json`.
 
-## Testing
+## Verification
 
 Add or update a test covering a StopOnFail run with tests that are still queued when the run is aborted.
 

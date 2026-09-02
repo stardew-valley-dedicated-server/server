@@ -1,4 +1,14 @@
-## Problem
+# `RecreateSteamLobby` updates the Galaxy lobby off the game thread
+
+**Status:** ready-to-implement
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** server
+**Related:** none
+**Observed:** not observed, found by reading
+**Next step:** replace the direct `UpdateGalaxyLobbyWithSteamLobbyId()` call in `RecreateSteamLobby` with the `_pendingGalaxyLobbyUpdate` deferral
+
+## Symptom
 
 `RecreateSteamLobby` can update the Galaxy lobby from a background task.
 

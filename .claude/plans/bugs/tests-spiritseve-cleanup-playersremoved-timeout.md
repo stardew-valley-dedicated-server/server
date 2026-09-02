@@ -1,6 +1,12 @@
 # SpiritsEve test: `WaitForPlayersRemovedByIdAsync` timeout during cleanup
 
-Status: open — observed once, not root-caused.
+**Status:** validation
+**Priority:** 1 (low)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** none
+**Observed:** once, in a full E2E suite run alongside cabin work; run id not recorded; not reproduced since
+**Next step:** rerun `FestivalTests` under full-suite parallelism with server logs retained and tabulate festival-active-at-disconnect across pass/fail
 
 ## Symptom
 
@@ -10,7 +16,9 @@ the cleanup/teardown path (`DisposeAsync`), so the failure is an infrastructure/
 not a festival-logic regression. Seen exactly once; not reproduced since. Unrelated to the cabin
 work it was observed alongside.
 
-## What is known
+## Root cause
+
+Not root-caused. What is known:
 
 - The wait helper is `ServerApiClient.WaitForPlayersRemovedByIdAsync` — it gates on the server
   removing the disconnected players from its active list, per
@@ -24,7 +32,7 @@ work it was observed alongside.
   but a cleanup timeout can still cascade (a reset `/newgame` racing a still-registered player 409s,
   retiring a healthy pooled server; see `test-broker-invariants.md`).
 
-## Hypotheses to check when it recurs
+### Hypotheses to check when it recurs
 
 1. **Festival-coupled removal lag.** `Multiplayer.removeDisconnectedFarmers` only runs when
    `Game1.CurrentEvent == null` (`host-automation.md` invariant 7). If SpiritsEve's teardown
@@ -36,9 +44,9 @@ work it was observed alongside.
 3. **Budget vs teardown.** Confirm the removal budget used in the festival class's cleanup is sized
    for the worst-case festival-teardown window, not the happy path.
 
-## Next step
+## Fix
 
 Reproduce by running `FestivalTests` under full-suite parallelism a few times with server logs
 retained; tabulate festival-active-at-disconnect vs clean per pass/fail
 (`diff-flaky-runs-before-theorizing-mechanism.md`). If it never recurs, close as a one-off
-tail-contention artifact; if it does, fix at whichever of the three the diff localizes.
+tail-contention artifact; if it does, fix at whichever of the three hypotheses the diff localizes.

@@ -1,15 +1,27 @@
 # Password test classes share one server: three `KeepConnected` classes alongside an `Exclusive` one
 
-Status: root-caused, fix is one attribute. Not applied.
+**Status:** ready-to-implement
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** [PR #494](https://github.com/stardew-valley-dedicated-server/server/pull/494); [`day-transition-wedge-with-lobby-player.md`](day-transition-wedge-with-lobby-player.md)
+**Observed:** 2 of 4 full-suite runs on 2026-08-03 died this way (`config-21937f75bcf8`)
+**Next step:** add the `SharedGroup` attribute to `LobbyHomedSpouseSteadyStateTests` and check the extra instance against host `serverSlots`
+
+## Symptom
 
 `.claude/rules/test-broker-invariants.md` already forbids this pairing ("DO NOT use
 `[TestServer(Exclusive = true)]` on classes sharing a server with KeepConnected"). Nothing enforces
 it, and the password config violates it today.
 
+This is the CI trigger for `day-transition-wedge-with-lobby-player.md` — two of four full-suite runs
+on 2026-08-03 died this way. Fixing it removes the collision in the suite; it does **not** fix the
+underlying server bug (a real player sitting at the password prompt at 2am hits the same wedge).
+
 ## Root cause
 
-`ComputeConfigHash` deliberately excludes `Clients` (`ResourceRequirements.cs:63-72`) and
-`Isolation` defaults to `SharedClass` (`TestServerAttribute.cs:103-105`), which keys as
+`ComputeConfigHash` deliberately excludes `Clients` (`ResourceRequirements.cs`) and
+`Isolation` defaults to `SharedClass` (`TestServerAttribute.cs`), which keys as
 `config-{hash}` — the same form `SharedAssembly` produces. So every class with
 `Password = "test-password-123"` and default farm/cabins/strategy lands on **one** server instance
 (`config-21937f75bcf8`, label `lan+pw-farm0-CabinStack-c30`, 33 tests in the 2026-08-03 runs):
@@ -27,7 +39,7 @@ it, and the password config violates it today.
 `KeepConnected` session already connected to that instance. So a lobby client can sit inside another
 class's night.
 
-**The cross-class sharing itself is by design, not the defect.** `test-broker-invariants.md:45`:
+**The cross-class sharing itself is by design, not the defect.** `test-broker-invariants.md`:
 "same config produces the same server key, regardless of `SharedAssembly` vs `SharedClass`
 lifetime — the broker reuses an existing matching server." Isolation governs server *lifetime and
 reuse*, not exclusivity, and pooling by config is what keeps the run inside its per-host
@@ -36,16 +48,10 @@ classes are `SharedClass` (some explicitly, some by default), so that would spli
 per-class servers at ~41s boot apiece. The defect is narrower — an *unauthenticated* session held on
 a server where another class drives day transitions.
 
-## Consequence
-
-This is the CI trigger for `day-transition-wedge-with-lobby-player.md` — two of four full-suite runs
-on 2026-08-03 died this way. Fixing it removes the collision in the suite; it does **not** fix the
-underlying server bug (a real player sitting at the password prompt at 2am hits the same wedge).
-
 ## Fix
 
-Give `LobbyHomedSpouseSteadyStateTests` its own instance. At
-`tests/JunimoServer.Tests/LobbyHomedSpouseTests.cs:38-43`:
+Give `LobbyHomedSpouseSteadyStateTests` its own instance. On the class attribute in
+`tests/JunimoServer.Tests/LobbyHomedSpouseTests.cs`:
 
 ```csharp
 [TestServer(
@@ -57,7 +63,7 @@ Give `LobbyHomedSpouseSteadyStateTests` its own instance. At
 )]
 ```
 
-`SharedGroup` keys as `group-{SharedGroup}-{hash}` (`ResourceRequirements.cs:38-45`), so the class
+`SharedGroup` keys as `group-{SharedGroup}-{hash}` (`ResourceRequirements.cs`), so the class
 gets its own server while keeping its password semantics. One attribute added.
 
 Cost: one more server instance for the run. Check it against host `serverSlots` before landing —
