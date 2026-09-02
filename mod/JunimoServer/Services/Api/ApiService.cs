@@ -5175,8 +5175,20 @@ public partial class ApiService : ModService
     )
     {
         gameManager.Disruption.TryAcquire(holder);
-        return request()
-            .ContinueWith(
+        Task task;
+        try
+        {
+            task = request();
+        }
+        catch
+        {
+            // A synchronous throw (ExitToTitle itself) would otherwise leave the lease held
+            // until restart, with every later transition answering 409.
+            gameManager.Disruption.Release(holder);
+            throw;
+        }
+
+        return task.ContinueWith(
                 t =>
                 {
                     gameManager.Disruption.Release(holder);

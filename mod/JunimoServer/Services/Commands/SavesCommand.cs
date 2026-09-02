@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameManager;
@@ -271,23 +272,33 @@ internal static class SavesCommand
                 manager.Disruption.TryAcquire(leaseHolder);
 
                 // Can't await across the tick boundary from a void command — fire-and-forget, log on resolve.
-                manager
-                    .RequestReloadSave()
-                    .ContinueWith(t =>
+                Task reload;
+                try
+                {
+                    reload = manager.RequestReloadSave();
+                }
+                catch
+                {
+                    // A synchronous throw would otherwise leave the lease held until restart.
+                    manager.Disruption.Release(leaseHolder);
+                    throw;
+                }
+
+                reload.ContinueWith(t =>
+                {
+                    manager.Disruption.Release(leaseHolder);
+                    if (t.IsFaulted)
                     {
-                        manager.Disruption.Release(leaseHolder);
-                        if (t.IsFaulted)
-                        {
-                            _monitor.Log(
-                                $"World reload failed: {t.Exception?.GetBaseException().Message}",
-                                LogLevel.Warn
-                            );
-                        }
-                        else
-                        {
-                            _monitor.Log($"World reloaded ({contextLine}).", LogLevel.Info);
-                        }
-                    });
+                        _monitor.Log(
+                            $"World reload failed: {t.Exception?.GetBaseException().Message}",
+                            LogLevel.Warn
+                        );
+                    }
+                    else
+                    {
+                        _monitor.Log($"World reloaded ({contextLine}).", LogLevel.Info);
+                    }
+                });
             }
         );
     }

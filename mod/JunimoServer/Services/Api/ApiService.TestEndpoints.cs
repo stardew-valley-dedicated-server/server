@@ -174,7 +174,7 @@ public partial class ApiService
                         await WriteJsonAsync(response, await HandlePostTestForceSaveAsync());
                         return;
                     case "/test/fail_next_newgame":
-                        await WriteJsonAsync(response, HandlePostTestFailNextNewGame());
+                        await WriteJsonAsync(response, await HandlePostTestFailNextNewGameAsync());
                         return;
                     case "/test/set_ip_connections":
                         await WriteJsonAsync(
@@ -2116,7 +2116,7 @@ public partial class ApiService
         Tag = "Test"
     )]
     [ApiResponse(typeof(TestFailNextNewGameResponse), 200)]
-    private TestFailNextNewGameResponse HandlePostTestFailNextNewGame()
+    private async Task<TestFailNextNewGameResponse> HandlePostTestFailNextNewGameAsync()
     {
         var gameManager = GameManager.GameManagerService.Instance;
         if (gameManager == null)
@@ -2124,8 +2124,8 @@ public partial class ApiService
             return new TestFailNextNewGameResponse { Error = "Game manager not initialized yet" };
         }
 
-        // A plain flag read on the game thread at creation time; no marshal needed to set it.
-        gameManager.FailNextNewGameForTest();
+        // The flag is read and cleared on the game thread, so it is written there too.
+        await RunOnGameThreadAsync(gameManager.FailNextNewGameForTest);
         return new TestFailNextNewGameResponse { Success = true };
     }
 
