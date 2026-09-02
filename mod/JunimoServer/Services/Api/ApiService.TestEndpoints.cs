@@ -173,6 +173,9 @@ public partial class ApiService
                     case "/test/force_save":
                         await WriteJsonAsync(response, await HandlePostTestForceSaveAsync());
                         return;
+                    case "/test/fail_next_newgame":
+                        await WriteJsonAsync(response, await HandlePostTestFailNextNewGameAsync());
+                        return;
                     case "/test/set_ip_connections":
                         await WriteJsonAsync(
                             response,
@@ -2104,6 +2107,26 @@ public partial class ApiService
         {
             return new TestSaveFileOpResponse { Success = false, Error = ex.Message };
         }
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/fail_next_newgame",
+        Summary = "Make the next new-game creation throw, to exercise failed-creation recovery (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestFailNextNewGameResponse), 200)]
+    private async Task<TestFailNextNewGameResponse> HandlePostTestFailNextNewGameAsync()
+    {
+        var gameManager = GameManager.GameManagerService.Instance;
+        if (gameManager == null)
+        {
+            return new TestFailNextNewGameResponse { Error = "Game manager not initialized yet" };
+        }
+
+        // The flag is read and cleared on the game thread, so it is written there too.
+        await RunOnGameThreadAsync(gameManager.FailNextNewGameForTest);
+        return new TestFailNextNewGameResponse { Success = true };
     }
 
     [ApiEndpoint(

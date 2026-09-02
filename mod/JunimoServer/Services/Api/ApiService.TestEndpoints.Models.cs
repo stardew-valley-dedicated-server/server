@@ -449,6 +449,13 @@ public class TestForceSaveResponse
     public string SaveFolderName { get; set; } = "";
 }
 
+/// <summary>Response from POST /test/fail_next_newgame (test-only).</summary>
+public class TestFailNextNewGameResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+}
+
 /// <summary>Response from POST /test/set_ip_connections (test-only).</summary>
 public class TestSetIpConnectionsResponse
 {

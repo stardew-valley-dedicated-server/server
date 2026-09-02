@@ -70,7 +70,7 @@ public class ServerStatus
     /// the host is back in normal play — UNLIKE <see cref="IsReady"/>, this ignores post-transition
     /// festival/wedding activity. Lets a post-day-change settle proceed once the transition itself is
     /// done instead of dead-waiting through a festival or wedding. Equals <see cref="IsReady"/> on an
-    /// ordinary day. See ApiService.ComputeDayTransitionComplete.
+    /// ordinary day. See GameManagerService.IsDayTransitionComplete.
     /// </summary>
     public bool DayTransitionComplete { get; set; }
 
@@ -942,8 +942,8 @@ public partial class ApiService : ModService
 
     // Set in the constructor (DI singleton — single construction) so GameManagerService
     // can republish the snapshot at /reload and /newgame completion via the static
-    // RefreshSnapshotAtLoadCompletion hook. Mirrors the static-access pattern of
-    // ComputeDayTransitionComplete.
+    // RefreshSnapshotAtLoadCompletion hook, the same static-access shape as
+    // GameManagerService.Instance.
     private static ApiService? _instance;
 
     // Monotonic snapshot version. Incremented every time a new snapshot is
@@ -1424,7 +1424,7 @@ public partial class ApiService : ModService
             );
             snap.MaxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
             snap.IsReady = Game1.server?.isGameAvailable() ?? false;
-            snap.DayTransitionComplete = ComputeDayTransitionComplete();
+            snap.DayTransitionComplete = GameManagerService.IsDayTransitionComplete();
             snap.FarmName = Game1.player?.farmName.Value ?? "";
             snap.Day = Game1.dayOfMonth;
             snap.Season = Game1.currentSeason ?? "";
@@ -1728,48 +1728,6 @@ public partial class ApiService : ModService
     /// snapshot) as at every call site; completion resolves regardless, by that shared contract.
     /// </summary>
     public static void RefreshSnapshotAtLoadCompletion() => _instance?.TakeGameStateSnapshot();
-
-    /// <summary>
-    /// True once the day-transition machinery is finished and the host is back in normal play —
-    /// the transition-only subset of <c>GameServer.isGameAvailable</c>
-    /// (decompiled <c>Network/GameServer.cs:459-470</c>). Mirrors that method's
-    /// <c>flag</c> (intro/day-0), <c>flag3</c> (<c>newDaySync</c> in progress), and
-    /// <c>gameMode == loadingMode</c> checks, but DELIBERATELY OMITS the wedding (<c>flag2</c> +
-    /// <c>weddingsToday</c>), festival (<c>isFestival()</c>), and demolish-lock (<c>flag4</c>)
-    /// factors — those keep <c>isGameAvailable</c> (and thus <c>IsReady</c>) false through a
-    /// festival/wedding that runs AFTER the transition itself completed. A post-day-change settle
-    /// only needs the transition (sync barrier + save + map load) done; the test's own
-    /// festival/wedding polling handles the rest. On an ordinary day this equals <c>IsReady</c>.
-    /// If the decompiled <c>isGameAvailable</c> gains a new transition-phase factor, mirror it here.
-    ///
-    /// Public so <see cref="GameManager.GameManagerService"/> gates /newgame completion on the same
-    /// predicate — its deferred new-day save must finish before the API reports the game created.
-    /// </summary>
-    public static bool ComputeDayTransitionComplete()
-    {
-        if (Game1.gameMode == Game1.loadingMode)
-        {
-            return false; // mid load/save
-        }
-
-        // Intro minigame or the pre-first-day sentinel — not a completed day yet.
-        if (Game1.currentMinigame is StardewValley.Minigames.Intro || Game1.Date.DayOfMonth == 0)
-        {
-            return false;
-        }
-
-        // The day-transition sync barrier (save + per-player newDay handshake) is still running.
-        if (
-            Game1.newDaySync != null
-            && Game1.newDaySync.hasInstance()
-            && !Game1.newDaySync.hasFinished()
-        )
-        {
-            return false;
-        }
-
-        return true;
-    }
 
     /// <summary>
     /// Populates cabin data in the snapshot. Reads cabin ownership from farmhandReference,
@@ -4869,35 +4827,6 @@ public partial class ApiService : ModService
 
         body ??= new NewGameRequest();
 
-        // Validate no clients are connected
-        int connectedClients = 0;
-        try
-        {
-            await RunOnGameThreadAsync(() =>
-            {
-                connectedClients = Game1.otherFarmers.Count;
-            });
-        }
-        catch
-        {
-            // Game thread unavailable; allow the attempt anyway
-        }
-
-        if (connectedClients > 0)
-        {
-            response.StatusCode = 409;
-            await WriteJsonAsync(
-                response,
-                new NewGameResponse
-                {
-                    Success = false,
-                    Error =
-                        $"Cannot create new game while {connectedClients} client(s) are connected. Disconnect all players first.",
-                }
-            );
-            return;
-        }
-
         // Build the config from the settings file (defaults), overriding with any explicitly
         // provided request values. Starting from FromSettings guarantees EVERY file setting
         // flows into the created game unless the request overrides it — a hand-picked
@@ -5003,26 +4932,65 @@ public partial class ApiService : ModService
             return;
         }
 
-        // Call RequestNewGame on the game thread. This sets flags and calls ExitToTitle().
-        // Capture the returned Task which completes when the new game is fully created.
+        // Lease check → client-count check → take lease → request, in ONE game-thread action so
+        // no join or competing transition can land between check and act, and no early return
+        // ever holds a lease it must give back. Lease before count: the body is stable while a
+        // reset's own client is still connected. The lease is released when the operation's
+        // task settles — never on the 120 s HTTP timeout below, so an operation that outlives
+        // its request still holds it until the world is loaded.
         Task? newGameTask = null;
+        string? rejection = null;
         try
         {
             await RunOnGameThreadAsync(() =>
             {
-                newGameTask = gameManager.RequestNewGame(config);
+                if (gameManager.Disruption.Holder is { } holder)
+                {
+                    rejection = $"{holder} in progress";
+                    return;
+                }
+
+                var connectedClients = Game1.otherFarmers.Count;
+                if (connectedClients > 0)
+                {
+                    rejection =
+                        $"Cannot create new game while {connectedClients} client(s) are connected. Disconnect all players first.";
+                    return;
+                }
+
+                newGameTask = StartWorldTransition(
+                    gameManager,
+                    WorldTransitionNewGame,
+                    () => gameManager.RequestNewGame(config)
+                );
             });
         }
         catch (Exception ex)
         {
-            response.StatusCode = 500;
+            // Fail closed: the count could not be read, so don't assume nobody is connected.
+            Monitor.Log(
+                $"[API] New game precheck could not run on the game thread: {ex.Message}",
+                LogLevel.Warn
+            );
+            response.StatusCode = 503;
             await WriteJsonAsync(
                 response,
                 new NewGameResponse
                 {
                     Success = false,
-                    Error = $"Failed to initiate new game: {ex.Message}",
+                    Error =
+                        "Cannot verify server state right now (game thread busy, likely a day transition or save sync). Retry after a few seconds.",
                 }
+            );
+            return;
+        }
+
+        if (rejection != null)
+        {
+            response.StatusCode = 409;
+            await WriteJsonAsync(
+                response,
+                new NewGameResponse { Success = false, Error = rejection }
             );
             return;
         }
@@ -5083,53 +5051,6 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(ReloadResponse), 200, Description = "World reloaded successfully")]
     private async Task HandlePostReloadAsync(HttpListenerResponse response)
     {
-        // Validate no clients are connected — reload returns to title and would
-        // disconnect everyone. Fail closed: if the count can't be read because the
-        // game thread is busy, treat it as transient (503) rather than assuming 0
-        // connected, which could silently disconnect active players if the thread
-        // recovers before the reload fires.
-        int connectedClients = 0;
-        try
-        {
-            await RunOnGameThreadAsync(() =>
-            {
-                connectedClients = Game1.otherFarmers.Count;
-            });
-        }
-        catch (Exception ex)
-        {
-            Monitor.Log(
-                $"[API] Reload precheck could not read connected-client count: {ex.Message}",
-                LogLevel.Warn
-            );
-            response.StatusCode = 503;
-            await WriteJsonAsync(
-                response,
-                new ReloadResponse
-                {
-                    Success = false,
-                    Error =
-                        "Cannot verify connected clients right now (game thread busy, likely a day transition or save sync). Retry after a few seconds.",
-                }
-            );
-            return;
-        }
-
-        if (connectedClients > 0)
-        {
-            response.StatusCode = 409;
-            await WriteJsonAsync(
-                response,
-                new ReloadResponse
-                {
-                    Success = false,
-                    Error =
-                        $"Cannot reload while {connectedClients} client(s) are connected. Disconnect all players first.",
-                }
-            );
-            return;
-        }
-
         var gameManager = GameManagerService.Instance;
         if (gameManager == null)
         {
@@ -5143,26 +5064,61 @@ public partial class ApiService : ModService
 
         Monitor.Log("[API] World reload requested", LogLevel.Info);
 
-        // Call RequestReloadSave on the game thread (sets flags + ExitToTitle).
-        // The returned Task completes when the world has finished reloading.
+        // Same single-action shape as /newgame: lease → client count → take lease → request.
+        // Reload returns to title and would disconnect everyone, so fail closed when the count
+        // can't be read (503), never assume 0.
         Task? reloadTask = null;
+        string? rejection = null;
         try
         {
             await RunOnGameThreadAsync(() =>
             {
-                reloadTask = gameManager.RequestReloadSave();
+                if (gameManager.Disruption.Holder is { } holder)
+                {
+                    rejection = $"{holder} in progress";
+                    return;
+                }
+
+                var connectedClients = Game1.otherFarmers.Count;
+                if (connectedClients > 0)
+                {
+                    rejection =
+                        $"Cannot reload while {connectedClients} client(s) are connected. Disconnect all players first.";
+                    return;
+                }
+
+                reloadTask = StartWorldTransition(
+                    gameManager,
+                    WorldTransitionReload,
+                    gameManager.RequestReloadSave
+                );
             });
         }
         catch (Exception ex)
         {
-            response.StatusCode = 500;
+            Monitor.Log(
+                $"[API] Reload precheck could not run on the game thread: {ex.Message}",
+                LogLevel.Warn
+            );
+            response.StatusCode = 503;
             await WriteJsonAsync(
                 response,
                 new ReloadResponse
                 {
                     Success = false,
-                    Error = $"Failed to initiate reload: {ex.Message}",
+                    Error =
+                        "Cannot verify server state right now (game thread busy, likely a day transition or save sync). Retry after a few seconds.",
                 }
+            );
+            return;
+        }
+
+        if (rejection != null)
+        {
+            response.StatusCode = 409;
+            await WriteJsonAsync(
+                response,
+                new ReloadResponse { Success = false, Error = rejection }
             );
             return;
         }
@@ -5199,6 +5155,48 @@ public partial class ApiService : ModService
                 new ReloadResponse { Success = false, Error = $"World reload failed: {ex.Message}" }
             );
         }
+    }
+
+    /// <summary>Lease holder names for the two HTTP world transitions; they surface in 409 bodies as "&lt;name&gt; in progress".</summary>
+    private const string WorldTransitionNewGame = "new game";
+    private const string WorldTransitionReload = "reload";
+
+    /// <summary>
+    /// Takes the world-disruption lease for <paramref name="holder"/> and starts the transition.
+    /// The returned task carries the operation's outcome and settles only after the lease has
+    /// been released, so a caller that observes completion can start the next transition at
+    /// once. Game thread only, and only after the caller has checked the lease is free in the
+    /// same action — the acquire cannot fail here, so the request always runs under the lease.
+    /// </summary>
+    private static Task StartWorldTransition(
+        GameManagerService gameManager,
+        string holder,
+        Func<Task> request
+    )
+    {
+        gameManager.Disruption.TryAcquire(holder);
+        Task task;
+        try
+        {
+            task = request();
+        }
+        catch
+        {
+            // A synchronous throw (ExitToTitle itself) would otherwise leave the lease held
+            // until restart, with every later transition answering 409.
+            gameManager.Disruption.Release(holder);
+            throw;
+        }
+
+        return task.ContinueWith(
+                t =>
+                {
+                    gameManager.Disruption.Release(holder);
+                    return t;
+                },
+                TaskContinuationOptions.ExecuteSynchronously
+            )
+            .Unwrap();
     }
 
     #endregion

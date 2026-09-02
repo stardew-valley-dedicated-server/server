@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using JunimoServer.Tests.Helpers;
@@ -39,7 +40,7 @@ public class ServerStatus
     public bool IsReady { get; set; }
 
     // Day-transition machinery done (newDaySync + save + map load), ignoring post-transition
-    // festival/wedding — see ApiService.ComputeDayTransitionComplete. Equals IsReady on an ordinary day.
+    // festival/wedding — see GameManagerService.IsDayTransitionComplete. Equals IsReady on an ordinary day.
     [JsonPropertyName("dayTransitionComplete")]
     public bool DayTransitionComplete { get; set; }
 
@@ -1073,6 +1074,16 @@ public class TestForceSaveResponse
 
     [JsonPropertyName("saveFolderName")]
     public string SaveFolderName { get; set; } = "";
+}
+
+/// <summary>Response from /test/fail_next_newgame (test-only).</summary>
+public class TestFailNextNewGameResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
 }
 
 /// <summary>Response from /test/set_ip_connections (test-only).</summary>
@@ -3021,6 +3032,59 @@ public class ServerApiClient : IDisposable
         var response = await _httpClient.PostAsync("/newgame", content, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<NewGameResponse>(ct);
+    }
+
+    /// <summary>
+    /// POST /newgame with the server's configured defaults, returning the status code and body
+    /// instead of throwing on a non-2xx, so a test can assert the 409/500 rejections directly.
+    /// Runs to completion (up to the server's 120 s creation timeout) on a 200.
+    /// </summary>
+    public async Task<(HttpStatusCode StatusCode, NewGameResponse? Body)> TryCreateNewGameAsync(
+        CancellationToken ct = default
+    )
+    {
+        var response = await _httpClient.PostAsync("/newgame", JsonContent.Create(new { }), ct);
+        return (response.StatusCode, await ReadBodyOrNullAsync<NewGameResponse>(response, ct));
+    }
+
+    /// <summary>
+    /// POST /reload, returning the status code and body instead of throwing on a non-2xx.
+    /// Not retried on 503: the caller asserts the exact status.
+    /// </summary>
+    public async Task<(HttpStatusCode StatusCode, NewGameResponse? Body)> TryReloadAsync(
+        CancellationToken ct = default
+    )
+    {
+        var response = await _httpClient.PostAsync("/reload", null, ct);
+        return (response.StatusCode, await ReadBodyOrNullAsync<NewGameResponse>(response, ct));
+    }
+
+    private static async Task<T?> ReadBodyOrNullAsync<T>(
+        HttpResponseMessage response,
+        CancellationToken ct
+    )
+        where T : class
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(ct);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Test-only: makes the server's next new-game creation throw, so a test can drive the
+    /// failed-creation recovery path.
+    /// POST /test/fail_next_newgame
+    /// </summary>
+    public async Task<TestFailNextNewGameResponse?> FailNextNewGame(CancellationToken ct = default)
+    {
+        var response = await SendWithRetryAsync(HttpMethod.Post, "/test/fail_next_newgame", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestFailNextNewGameResponse>(ct);
     }
 
     /// <summary>

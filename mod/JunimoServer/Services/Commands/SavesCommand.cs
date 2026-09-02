@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameManager;
@@ -213,6 +214,27 @@ internal static class SavesCommand
                     return;
                 }
 
+                var manager = GameManagerService.Instance;
+                if (manager == null)
+                {
+                    _monitor.Log(
+                        "Game manager not ready; cannot reload in-process. Restart to load.",
+                        LogLevel.Warn
+                    );
+                    return;
+                }
+
+                // Lease before the player count, like the HTTP handlers: never kick players for
+                // a reload that a running transition or announced disruption then refuses.
+                if (manager.Disruption.Holder is { } holder)
+                {
+                    _monitor.Log(
+                        $"Refusing to reload: {holder} in progress ({contextLine}).",
+                        LogLevel.Warn
+                    );
+                    return;
+                }
+
                 var others = OnlineFarmers.Others();
 
                 if (others.Count > 0 && !force)
@@ -242,35 +264,41 @@ internal static class SavesCommand
                     );
                 }
 
-                var manager = GameManagerService.Instance;
-                if (manager == null)
-                {
-                    _monitor.Log(
-                        "Game manager not ready; cannot reload in-process. Restart to load.",
-                        LogLevel.Warn
-                    );
-                    return;
-                }
-
                 _monitor.Log($"Reloading the active world ({contextLine})…", LogLevel.Info);
 
+                // Same action as the lease check above, so the acquire cannot fail. Released when
+                // the reload settles, from the continuation.
+                const string leaseHolder = "reload";
+                manager.Disruption.TryAcquire(leaseHolder);
+
                 // Can't await across the tick boundary from a void command — fire-and-forget, log on resolve.
-                manager
-                    .RequestReloadSave()
-                    .ContinueWith(t =>
+                Task reload;
+                try
+                {
+                    reload = manager.RequestReloadSave();
+                }
+                catch
+                {
+                    // A synchronous throw would otherwise leave the lease held until restart.
+                    manager.Disruption.Release(leaseHolder);
+                    throw;
+                }
+
+                reload.ContinueWith(t =>
+                {
+                    manager.Disruption.Release(leaseHolder);
+                    if (t.IsFaulted)
                     {
-                        if (t.IsFaulted)
-                        {
-                            _monitor.Log(
-                                $"World reload failed: {t.Exception?.GetBaseException().Message}",
-                                LogLevel.Warn
-                            );
-                        }
-                        else
-                        {
-                            _monitor.Log($"World reloaded ({contextLine}).", LogLevel.Info);
-                        }
-                    });
+                        _monitor.Log(
+                            $"World reload failed: {t.Exception?.GetBaseException().Message}",
+                            LogLevel.Warn
+                        );
+                    }
+                    else
+                    {
+                        _monitor.Log($"World reloaded ({contextLine}).", LogLevel.Info);
+                    }
+                });
             }
         );
     }

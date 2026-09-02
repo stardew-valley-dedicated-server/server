@@ -32,7 +32,7 @@ The new game itself is created successfully and quickly. In the investigated occ
 
 The server generates the `504` itself (the `/newgame` handler in `ApiService.cs`); this is not a reverse-proxy timeout or a lost response.
 
-After creation finishes, `/newgame` waits on `ComputeDayTransitionComplete()` (`ApiService.cs`) until the 120-second timeout. The completion check remains false while:
+After creation finishes, `/newgame` waits on `IsDayTransitionComplete()` (`GameManagerService.cs`) until the 120-second timeout. The completion check remains false while:
 
 ```text
 Game1.newDaySync != null
@@ -64,7 +64,7 @@ This is the leading hypothesis, but it needs live confirmation.
 
 There is a separate mechanism where `HostPaused` prevents `Game1.UpdateOther` from running (`Game1.Update` → `Game1.UpdateOther` in `Game1.cs`). With zero players, that can stop the day-transition screen from progressing.
 
-This was hardened on 2026-07-20 so that auto-pause does not engage while `ComputeDayTransitionComplete()` is false.
+This was hardened on 2026-07-20 so that auto-pause does not engage while `IsDayTransitionComplete()` is false.
 
 That closes the empty-server fade-phase hazard, but it does **not** explain this occurrence. The `snapshot_skipped_newday` evidence shows that the transition had already progressed past the fade phase before the 120-second stall.
 
@@ -75,7 +75,7 @@ Add a diagnostics probe, either to `/diagnostics/state` or as a log entry on eac
 Record:
 
 * `Game1.newDay`
-* `Game1.gameMode`, `Game1.currentMinigame`, `Game1.Date.DayOfMonth` (to confirm the other two `ComputeDayTransitionComplete()` false branches are not the cause)
+* `Game1.gameMode`, `Game1.currentMinigame`, `Game1.Date.DayOfMonth` (to confirm the other two `IsDayTransitionComplete()` false branches are not the cause)
 * `fadeToBlackAlpha`
 * `newDaySync.hasInstance()`
 * `newDaySync.hasFinished()`
@@ -95,11 +95,11 @@ Then repeatedly reproduce the same sequence on one server instance:
 4. Immediately call `/newgame`.
 5. Repeat.
 
-The goal is to capture exactly which condition is holding `ComputeDayTransitionComplete()` false during the 120-second wait.
+The goal is to capture exactly which condition is holding `IsDayTransitionComplete()` false during the 120-second wait.
 
 If a stale or disconnected peer is blocking `newDaySync`, fix the connection lifecycle or ready-check membership—for example, by removing dead peers during `ExitToTitle` or excluding disconnected peers from the ready check.
 
-Do not fix this by increasing or weakening the `/newgame` timeout or completion gate. The existing gate intentionally waits for both `SaveLoaded` and `ComputeDayTransitionComplete()` to avoid an earlier race. The rule in `.claude/rules/tests-assert-via-http-api.md` documents this contract.
+Do not fix this by increasing or weakening the `/newgame` timeout or completion gate. The existing gate intentionally waits for both `SaveLoaded` and `IsDayTransitionComplete()` to avoid an earlier race. The rule in `.claude/rules/tests-assert-via-http-api.md` documents this contract.
 
 ## Verification
 
