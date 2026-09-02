@@ -2,7 +2,7 @@
 name: extract-session-rules
 description: Reviews the current session for durable, non-obvious learnings worth persisting to `.claude/` (rules, skills, or `CLAUDE.md` edits). Use when the user asks to extract/save/capture session lessons, or at the end of a session that produced corrections or surprising findings.
 argument-hint: [optional instructions for the review]
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash(mkdir -p *)
 ---
 
 # Extract Session Rules
@@ -102,7 +102,7 @@ allowed-tools: <tools pre-approved for the invoking turn — omit if the skill n
 ## <Sections as needed: When to use, Procedure, Guardrails, etc.>
 ```
 
-- Scope `allowed-tools` where possible (e.g. `Bash(docker compose *)`); a rule must match each `&&`/`;`/`|` subcommand on its own.
+- Scope `allowed-tools` where possible (e.g. `Bash(docker compose exec discli discli *)`); a rule must match each `&&`/`;`/`|` subcommand on its own.
 - If the skill takes arguments, place `\$ARGUMENTS` where the procedure reads them.
 - Write repo-absolute paths in commands as the project-dir variable (`CLAUDE_PROJECT_DIR` in `${...}` form); Claude Code substitutes it on load.
 

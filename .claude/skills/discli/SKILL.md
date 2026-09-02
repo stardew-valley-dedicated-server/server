@@ -2,7 +2,7 @@
 name: discli
 description: Manages the project's Discord servers from the command line via the `discli` CLI — inspects and adjusts the server itself (channels, FAQ/onboarding content, webhooks, and other settings). Use when the user wants to review or edit Discord content or configuration, e.g. reading FAQ/onboarding pages to improve them, or checking/tweaking webhooks and channel settings. discli is wrapped in a Docker container under `tools/discli-docker/`; invoke it only through `docker compose exec`.
 argument-hint: [what to review or adjust on Discord]
-allowed-tools: Bash(docker compose *), WebFetch
+allowed-tools: Bash(docker compose ps), Bash(docker compose up -d), Bash(docker compose exec discli discli *), WebFetch
 ---
 
 # Using discli
