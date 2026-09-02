@@ -1,0 +1,15 @@
+services:
+  discli:
+    build: .
+    container_name: discli
+    env_file: .env
+    volumes:
+      # Persists config.json, permissions.json, audit.log across restarts.
+      - discli-config:/root/.discli
+    # Keep the container idle so we exec commands into it instead of
+    # starting a fresh container per command.
+    command: sleep infinity
+    restart: unless-stopped
+
+volumes:
+  discli-config:
