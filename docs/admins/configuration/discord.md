@@ -114,7 +114,7 @@ The ownership id protects only the dashboard message. Presence is global to the 
 
 1. If `API_KEY` is set on the server, the bot needs the same key
 2. Check for authentication errors: `docker compose logs discord-bot`
-3. A server that is still downloading or booting shows as "Starting", not "Offline" — "Offline" means the bot cannot reach the server's API port at all
+3. A server that is still downloading or booting shows as "Starting", not "Offline" — "Offline" means the bot got no valid `/status` response, either because the port is unreachable or because the request was rejected
 
 ### Wrong Bot Nickname
 

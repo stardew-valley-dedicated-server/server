@@ -41,7 +41,7 @@ Authenticate with Steam:
 docker compose run --rm -it steam-auth setup
 ```
 
-Follow the prompts for Steam Guard (email code, mobile app, or QR code). Setup also downloads the game files right away. If you skip it and Steam can log in without prompts (a saved session or `STEAM_REFRESH_TOKEN`), the server downloads them itself on first start and reports "starting" until they are in place.
+Follow the prompts for Steam Guard (email code, mobile app, or QR code). Setup also downloads the game files right away. If you skip it and Steam can log in without prompts (a saved session or `STEAM_REFRESH_TOKEN`), the server downloads them itself on first start and reports a startup phase (downloading, then starting) until the game is up.
 
 ## 5. Start the Server
 

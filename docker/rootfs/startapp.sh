@@ -111,20 +111,36 @@ init_display_settings() {
     xset s noblank 2>/dev/null || true
 }
 
-# 503 for everything but /status, so /health keeps meaning "the mod's API is up".
+# Mirrors the mod's API on the two points a client can observe: /status needs the API key when
+# one is set, and everything else gets 503 so /health keeps meaning "the mod's API is up".
 phase_response() {
-    local request_line line path body status
+    local request_line line path name value scheme token="" header_count=0 body status
     IFS= read -r request_line || return 0
     path="${request_line#* }"
     path="${path%% *}"
     path="${path%%\?*}"
-    while IFS= read -r line; do
+    # The client is connected from here on and holds the only listener, so a slow or endless
+    # header stream is cut off instead of waited for.
+    while [ "${header_count}" -lt 64 ] && IFS= read -r -t 5 line; do
+        header_count=$((header_count + 1))
         line="${line%$'\r'}"
         [ -n "${line}" ] || break
+        name="${line%%:*}"
+        if [ "${name,,}" = "authorization" ]; then
+            value="${line#*:}"
+            value="${value#"${value%%[! ]*}"}"
+            scheme="${value:0:7}"
+            if [ "${scheme,,}" = "bearer " ]; then
+                token="${value:7}"
+            fi
+        fi
     done
 
     body="{\"isOnline\":false,\"phase\":\"$(cat "${PHASE_FILE}" 2>/dev/null || echo starting)\"}"
-    if [ "${path}" = "/status" ]; then
+    if [ -n "${API_KEY:-}" ] && [ "${token}" != "${API_KEY}" ]; then
+        status="401 Unauthorized"
+        body='{"error":"Unauthorized. Provide a valid Authorization header: Bearer <api-key>"}'
+    elif [ "${path}" = "/status" ]; then
         status="200 OK"
     else
         status="503 Service Unavailable"
