@@ -47,6 +47,33 @@ class GameManagerService : ModService
     /// </summary>
     internal static GameManagerService? Instance { get; private set; }
 
+    /// <summary>
+    /// The world-disruption lease every transition and announced disruption holds. Callers of
+    /// <see cref="RequestNewGame"/> and <see cref="RequestReloadSave"/> take it before calling
+    /// and release it when the returned task settles; the request methods themselves do not
+    /// check it.
+    /// </summary>
+    public WorldDisruptionLease Disruption { get; } = new();
+
+    private bool _failNextNewGameForTest;
+
+    /// <summary>
+    /// Test-only: makes the next new-game creation throw before the creator runs, so the
+    /// failed-creation recovery path can be exercised end-to-end. Unreachable outside
+    /// <see cref="Env.IsTest"/>.
+    /// </summary>
+    public void FailNextNewGameForTest()
+    {
+        if (!Env.IsTest)
+        {
+            throw new InvalidOperationException(
+                "FailNextNewGameForTest is only available when SDVD_ENV=test"
+            );
+        }
+
+        _failNextNewGameForTest = true;
+    }
+
     public GameManagerService(
         GameCreatorService gameCreator,
         GameLoaderService gameLoader,
@@ -71,15 +98,25 @@ class GameManagerService : ModService
     /// </summary>
     public Task RequestNewGame(NewGameConfig config)
     {
-        // One load operation in flight at a time: reject if a /reload is already pending.
-        // Without this, both completion TCSs would be armed at once and OnUpdateTicked's
-        // first SaveLoaded would resolve both, returning a false success to whichever
-        // operation never ran. Game-thread serialized, so the check needs no lock.
+        // One load operation in flight at a time. A concurrent reload would arm both completion
+        // TCSs at once and OnUpdateTicked's first SaveLoaded would resolve both, returning a false
+        // success to whichever operation never ran; a concurrent new game would re-arm
+        // _newGameCompletion and orphan the first caller (two requests can carry different
+        // configs, so this is a rejection, not a coalesce). Game-thread serialized, so the check
+        // needs no lock. Defence in depth: every caller also holds Disruption.
         if (_reloadCompletion != null)
         {
             return Task.FromException(
                 new InvalidOperationException(
                     "A reload is already in progress; cannot start a new game."
+                )
+            );
+        }
+        if (_newGameCompletion != null)
+        {
+            return Task.FromException(
+                new InvalidOperationException(
+                    "A new game is already in progress; cannot start another."
                 )
             );
         }
@@ -120,9 +157,11 @@ class GameManagerService : ModService
 
         // Coalesce overlapping requests: a second /reload while one is in flight would
         // otherwise replace _reloadCompletion and orphan the first caller until its 120s
-        // timeout. Always invoked on the game thread (via RunOnGameThreadAsync), so this
-        // check-and-act needs no lock. Returns the in-flight task to the late caller.
-        if (_pendingReload && _reloadCompletion != null)
+        // timeout. Keyed on the completion alone — ConditionallyStartGame clears _pendingReload
+        // before SaveLoaded, so keying on it would re-arm in that window. Always invoked on the
+        // game thread (via RunOnGameThreadAsync), so this check-and-act needs no lock. Returns
+        // the in-flight task to the late caller.
+        if (_reloadCompletion != null)
         {
             return _reloadCompletion.Task;
         }
@@ -178,7 +217,7 @@ class GameManagerService : ModService
         // /newgame's deferred Game1.NewDay save runs over later ticks, so its gating SaveLoaded can
         // fire pre-save — returning while the fresh game's save is in flight lets a joining client's
         // customization race it and vanish on the next reload (AbandonedClaim_SweptOnReload flake).
-        if (_newGameCompletion != null && !Api.ApiService.ComputeDayTransitionComplete())
+        if (_newGameCompletion != null && !IsDayTransitionComplete())
         {
             return;
         }
@@ -284,12 +323,21 @@ class GameManagerService : ModService
             try
             {
                 Monitor.Log($"Creating new game from API request: {config}", LogLevel.Info);
+                if (_failNextNewGameForTest)
+                {
+                    _failNextNewGameForTest = false;
+                    throw new InvalidOperationException("test-injected new game failure");
+                }
                 _gameCreatorService.CreateNewGame(config);
                 // Success is signalled from OnUpdateTicked once SaveLoaded has fired — see
                 // the reload branch. CreateNewGame's loadForNewGame also loads over later ticks.
             }
             catch (Exception ex)
             {
+                // Reset startup so the next tick re-enters with no pending config and reloads
+                // whatever the load pointer targets — the old save if creation threw before
+                // SetCurrentGameAsSaveToLoad, else a fresh world — instead of parking at title.
+                _gameStarted = false;
                 // Warn, not Error: LogLevel.Error trips ServerContainer's ERROR/FATAL test-
                 // poison detector. The faulted TCS already surfaces the failure as a 500.
                 Monitor.Log($"New game creation failed: {ex}", LogLevel.Warn);
@@ -315,6 +363,50 @@ class GameManagerService : ModService
         {
             _gameCreatorService.CreateNewGameFromConfig();
         }
+    }
+
+    /// <summary>
+    /// True once the day-transition machinery is finished and the host is back in normal play —
+    /// the transition-only subset of <c>GameServer.isGameAvailable</c>
+    /// (decompiled <c>Network/GameServer.cs:459-470</c>). Mirrors that method's
+    /// <c>flag</c> (intro/day-0), <c>flag3</c> (<c>newDaySync</c> in progress), and
+    /// <c>gameMode == loadingMode</c> checks, but DELIBERATELY OMITS the wedding (<c>flag2</c> +
+    /// <c>weddingsToday</c>), festival (<c>isFestival()</c>), and demolish-lock (<c>flag4</c>)
+    /// factors — those keep <c>isGameAvailable</c> (and thus the API's <c>IsReady</c>) false
+    /// through a festival/wedding that runs AFTER the transition itself completed. A
+    /// post-day-change settle only needs the transition (sync barrier + save + map load) done;
+    /// the test's own festival/wedding polling handles the rest. On an ordinary day this equals
+    /// <c>IsReady</c>. If the decompiled <c>isGameAvailable</c> gains a new transition-phase
+    /// factor, mirror it here.
+    ///
+    /// Pure <c>Game1</c> reads; game thread only. Gates /newgame completion (its deferred new-day
+    /// save must finish before the API reports the game created), the API snapshot's
+    /// <c>DayTransitionComplete</c>, and AlwaysOn's auto-pause.
+    /// </summary>
+    public static bool IsDayTransitionComplete()
+    {
+        if (Game1.gameMode == Game1.loadingMode)
+        {
+            return false; // mid load/save
+        }
+
+        // Intro minigame or the pre-first-day sentinel — not a completed day yet.
+        if (Game1.currentMinigame is StardewValley.Minigames.Intro || Game1.Date.DayOfMonth == 0)
+        {
+            return false;
+        }
+
+        // The day-transition sync barrier (save + per-player newDay handshake) is still running.
+        if (
+            Game1.newDaySync != null
+            && Game1.newDaySync.hasInstance()
+            && !Game1.newDaySync.hasFinished()
+        )
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private bool HasDurationPassedSinceLastNullCode(TimeSpan duration)

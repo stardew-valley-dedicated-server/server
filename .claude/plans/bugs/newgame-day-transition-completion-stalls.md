@@ -6,7 +6,7 @@
 **Area:** server
 **Related:** [`newgame-stalls-after-forced-reload.md`](newgame-stalls-after-forced-reload.md)
 **Observed:** more than once in full E2E suite runs, not specific to one test
-**Next step:** trace `NewDaySynchronizer.finish()` / `hasFinished()` / `destroy()` across the save-reload path to find which state keeps `ComputeDayTransitionComplete()` false
+**Next step:** trace `NewDaySynchronizer.finish()` / `hasFinished()` / `destroy()` across the save-reload path to find which state keeps `IsDayTransitionComplete()` false
 
 ## Symptom
 
@@ -29,7 +29,7 @@ This means the request is genuinely waiting for the new-day transition to finish
 
 ### What we know
 
-The `/newgame` request waits for `ComputeDayTransitionComplete()`.
+The `/newgame` request waits for `IsDayTransitionComplete()`.
 
 That predicate has three false branches: mid-load (`gameMode == loadingMode`), intro/day-zero (`currentMinigame is Intro || Date.DayOfMonth == 0`), and the day-transition sync barrier. The observed evidence — playing game mode reached, transition already past the fade phase, day ≥ 1 — rules out the first two, leaving the barrier:
 
@@ -56,7 +56,7 @@ Start with `NewDaySynchronizer.finish()` and `hasFinished()` to establish how th
 
 Then trace `newDaySync.destroy()` and the return-to-title/save-reload path to check whether an old synchronizer can survive into the new `/newgame` request.
 
-Do not simply remove or loosen the `ComputeDayTransitionComplete()` check. The `/newgame` completion contract was deliberately changed to wait for both `SaveLoaded` and the day transition after an earlier race, so the fix needs to make the transition state resolve correctly rather than hide the problem.
+Do not simply remove or loosen the `IsDayTransitionComplete()` check. The `/newgame` completion contract was deliberately changed to wait for both `SaveLoaded` and the day transition after an earlier race, so the fix needs to make the transition state resolve correctly rather than hide the problem.
 
 ## Non-causes
 
