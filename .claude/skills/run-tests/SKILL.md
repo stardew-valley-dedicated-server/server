@@ -1,3 +1,10 @@
+---
+name: run-tests
+description: Runs the E2E test suite via `make test`/`make test-llm` and walks the structured run output (summary, per-test failures, infrastructure context, flakiness history, screenshots). Use when the user asks to run, rerun, or debug E2E tests, or when a test run needs to be launched safely on a machine that may already have one active.
+argument-hint: [optional FILTER=ClassName or focus hint]
+allowed-tools: Bash, Read, Grep, Glob
+---
+
 # Running E2E Tests
 
 ## Before launching: one run per machine
@@ -40,12 +47,12 @@ make test-llm FILTER=PasswordProtectionTests
 make test-llm FILTER=Login_WithCorrectPassword
 ```
 
-`dotnet test` directly is no longer supported — the test assembly fails fast
+`dotnet test` directly is not supported — the test assembly fails fast
 with a clear error message if invoked outside the custom runner.
 
 ## Debugging Loop (LLM-Optimized)
 
-When tests fail, follow this sequence:
+When tests fail, follow `docs/developers/testing/test-failure-runbook.md` exactly — it is the authoritative triage order, including container-log slicing and SSH-tunnel failures. The steps below are the quick reference for what each command shows:
 
 ### 1. Read the summary
 ```bash
@@ -115,11 +122,13 @@ All E2E tests extend `TestBase` and use `[TestServer(...)]` attribute:
 
 | Attribute Property | Description |
 |-------------------|-------------|
-| `Isolation` | `SharedClass` (default), `SharedAssembly`, `PerTest` |
+| `Isolation` | `SharedClass` (default), `SharedGroup`, `SharedAssembly`, `PerTest` |
+| `SharedGroup` | Group name for `SharedGroup` isolation |
 | `Clients` | Number of client slots needed (0 for API-only) |
 | `Password` | Server password (null = no password) |
 | `KeepConnected` | Keep client connected across tests in class |
 | `Exclusive` | Drain other tests before running (use sparingly) |
+| `DeferAcquisition` | Skip acquisition in `InitializeAsync`; the test calls `AcquireServerAsync()` itself (Theory tests whose server config depends on parameters) |
 
 ## Common Issues
 

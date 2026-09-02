@@ -1,8 +1,8 @@
 ---
 name: discli
-description: Work with our servers' Discord from the command line using the `discli` CLI — inspect and adjust the server itself (channels, FAQ/onboarding content, webhooks, and other settings). Use when the user wants to review or edit Discord content or configuration, e.g. reading FAQ/onboarding pages to improve them, or checking/tweaking webhooks and channel settings. discli is wrapped in a Docker container under `tools/discli-docker/`; invoke it only through `docker compose exec`.
+description: Manages the project's Discord servers from the command line via the `discli` CLI — inspects and adjusts the server itself (channels, FAQ/onboarding content, webhooks, and other settings). Use when the user wants to review or edit Discord content or configuration, e.g. reading FAQ/onboarding pages to improve them, or checking/tweaking webhooks and channel settings. discli is wrapped in a Docker container under `tools/discli-docker/`; invoke it only through `docker compose exec`.
 argument-hint: [what to review or adjust on Discord]
-tools: Bash, WebFetch
+allowed-tools: Bash(docker compose ps), Bash(docker compose up -d), Bash(docker compose exec discli discli *), WebFetch
 ---
 
 # Using discli
@@ -28,12 +28,20 @@ Fetch it with WebFetch (raw form: `https://raw.githubusercontent.com/DevRohit06/
 
 The tool lives in `tools/discli-docker/` (`Dockerfile`, `docker-compose.yml`, `.env.example`). It runs as a long-lived idle container; never start a one-off container or install discli locally.
 
-1. First-time setup: copy `.env.example` to `.env` and fill in the token.
+All `docker compose` calls must run from `tools/discli-docker/`. The Bash tool's working directory persists between calls, so a second `cd tools/discli-docker` fails ("No such file or directory") once you're already inside it. Use the absolute path each time to stay call-order-independent: `cd "${CLAUDE_PROJECT_DIR}/tools/discli-docker" && docker compose ...`.
 
-2. Ensure the container is up (start once, it stays running):
+1. Check whether the container is already up — it normally is, since it stays running:
 
    ```bash
-   cd tools/discli-docker && docker compose up -d
+   docker compose ps
+   ```
+
+   If it's up (`STATUS` shows `Up ...`), skip straight to step 3.
+
+2. Only if it's not running, start it (first-time setup: copy `.env.example` to `.env` and fill in the token beforehand):
+
+   ```bash
+   docker compose up -d
    ```
 
 3. Run every command by exec'ing into the running container:
@@ -51,6 +59,20 @@ The tool lives in `tools/discli-docker/` (`Dockerfile`, `docker-compose.yml`, `.
    ```
 
    Confirm exact subcommands and flags against the reference above.
+
+## Navigating to a channel (verified command shapes)
+
+The command families are not the obvious Discord terms — check `discli --help` before guessing. Notably: it's **`server`**, not `guild`; and `channel list` takes the server as a **`--server` flag**, not a positional argument.
+
+Typical FAQ/onboarding lookup, top to bottom:
+
+```bash
+docker compose exec discli discli --json server list                       # -> server id + name
+docker compose exec discli discli --json channel list --server <id-or-name>  # find the channel + its id
+docker compose exec discli discli --json message list "#faq" --limit 100     # read the page(s)
+```
+
+`#channel` name references work in `message`/`webhook` commands; use raw ids (or the server name) where a `--server` is needed.
 
 ## Conventions
 

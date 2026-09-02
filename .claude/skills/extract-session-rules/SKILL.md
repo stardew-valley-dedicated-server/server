@@ -2,7 +2,7 @@
 name: extract-session-rules
 description: Reviews the current session for durable, non-obvious learnings worth persisting to `.claude/` (rules, skills, or `CLAUDE.md` edits). Use when the user asks to extract/save/capture session lessons, or at the end of a session that produced corrections or surprising findings.
 argument-hint: [optional instructions for the review]
-tools: Read, Grep, Glob, Write, Edit, Bash, AskUserQuestion
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash(mkdir -p *)
 ---
 
 # Extract Session Rules
@@ -13,7 +13,11 @@ Review the current conversation for durable learnings that would otherwise be lo
 
 ## Extra instructions
 
-If the skill was invoked with arguments (e.g. `/extract-session-rules focus on test infra only`), treat them as constraints or focus hints that narrow or supplement the default procedure. Apply them throughout — they may restrict which candidates qualify, change scope decisions, or otherwise shape any step of the review. Extra instructions take precedence over the defaults in this file where they conflict.
+Arguments passed on invocation (e.g. `/extract-session-rules focus on test infra only`):
+
+> $ARGUMENTS
+
+Treat them as constraints or focus hints that narrow or supplement the default procedure. Apply them throughout — they may restrict which candidates qualify, change scope decisions, or otherwise shape any step of the review. Extra instructions take precedence over the defaults in this file where they conflict.
 
 ## When to extract
 
@@ -88,7 +92,7 @@ Only use when the candidate is a multi-step procedure. Structure:
 name: <kebab-name>
 description: <One sentence. What the skill does and when to invoke it.>
 argument-hint: <[optional hint] — omit if the skill takes no arguments>
-tools: <comma-separated list of tools the skill actually needs>
+allowed-tools: <tools pre-approved for the invoking turn — omit if the skill needs no grant>
 ---
 
 # <Title>
@@ -97,6 +101,10 @@ tools: <comma-separated list of tools the skill actually needs>
 
 ## <Sections as needed: When to use, Procedure, Guardrails, etc.>
 ```
+
+- Scope `allowed-tools` where possible (e.g. `Bash(docker compose exec discli discli *)`); a rule must match each `&&`/`;`/`|` subcommand on its own.
+- If the skill takes arguments, place `\$ARGUMENTS` where the procedure reads them.
+- Write repo-absolute paths in commands as the project-dir variable (`CLAUDE_PROJECT_DIR` in `${...}` form); Claude Code substitutes it on load.
 
 ## Procedure
 
@@ -108,7 +116,7 @@ tools: <comma-separated list of tools the skill actually needs>
 
 2. **Overlap check.** For each candidate, grep for overlap before proposing:
    - `Grep` `.claude/rules/` and `.claude/rules/universal/` for related keywords.
-   - `Read` `CLAUDE.md` and check its Prohibitions / Conventions / Core Principles sections.
+   - `Read` `CLAUDE.md` and `.claude/rules/README.md` for an existing rule on the same subject.
    - If a match exists → propose as *update-existing*, not *new*. If fully covered → drop the candidate.
 
 3. **Pick target + scope** per candidate (see tables above).

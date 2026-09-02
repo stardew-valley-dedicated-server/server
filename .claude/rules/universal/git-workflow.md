@@ -41,6 +41,15 @@ No `Co-Authored-By` trailer on commits — same as the PR rule below. This delib
 
 Bullet points of changes. No co-author attributions.
 
+## Bot review threads
+
+Every CodeRabbit/Greptile inline thread ends **resolved**, never merely outdated — an outdated-but-open thread reads as unaddressed to a human. CodeRabbit auto-resolves only threads its re-review of the pushed commit judges satisfied, so:
+
+- **Applied finding:** push the fix, then check the thread resolved. If the bot still holds out, reply in-thread naming the commit and what changed, and resolve it yourself.
+- **Rejected finding:** reply *inside the thread* (not a PR-level comment) with the reason and a citation, then resolve it. Rejections still get verified per `bot-review-blind-spots.md` — resolving is bookkeeping, not agreement.
+
+Resolve via GraphQL (`gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<PRRT_…>"}) { thread { isResolved } } }'`); thread ids come from `pullRequest.reviewThreads`. Reply to a thread with `gh api repos/<owner>/<repo>/pulls/<num>/comments/<root-comment-id>/replies -f body=…`.
+
 ## Worktrees
 
 A worktree has **no `decompiled/`** — it's gitignored (~1 GB) and `.worktreeinclude` copies files, not directories. Read decompiled sources from the main checkout (`git worktree list` lists it first); every `decompiled/...` citation in rules and plans resolves against that checkout, not your worktree.
