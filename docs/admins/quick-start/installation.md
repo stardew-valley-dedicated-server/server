@@ -35,13 +35,13 @@ docker compose pull
 
 ## 4. First-Time Setup
 
-Authenticate with Steam and download game files:
+Authenticate with Steam:
 
 ```sh
 docker compose run --rm -it steam-auth setup
 ```
 
-Follow the prompts for Steam Guard (email code, mobile app, or QR code).
+Follow the prompts for Steam Guard (email code, mobile app, or QR code). Setup also downloads the game files right away. If you skip it and Steam can log in without prompts (a saved session or `STEAM_REFRESH_TOKEN`), the server downloads them itself on first start and reports a startup phase (downloading, then starting) until the game is up.
 
 ## 5. Start the Server
 

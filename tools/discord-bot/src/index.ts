@@ -3,7 +3,6 @@ import { dirname } from "node:path";
 import {
     ActivityType,
     Client,
-    Colors,
     DiscordAPIError,
     EmbedBuilder,
     Events,
@@ -20,6 +19,7 @@ import {
     formatFooter,
     parseOwnerId,
 } from "./dashboard";
+import { resolveServerState, type StatusSignals } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -62,14 +62,12 @@ function getApiHeaders(): HeadersInit {
     return headers;
 }
 
-interface ServerStatus {
+interface ServerStatus extends StatusSignals {
     playerCount: number;
     maxPlayers: number;
     steamInviteCode: string | null;
     gogInviteCode: string | null;
     serverVersion: string;
-    isOnline: boolean;
-    isReady: boolean;
     lastUpdated: string;
     farmName: string;
     day: number;
@@ -188,15 +186,16 @@ async function fetchServerStatus(): Promise<ServerStatus | null> {
  */
 async function updatePresence(): Promise<void> {
     const status = await fetchServerStatus();
+    const state = resolveServerState(status);
 
     let activityName: string;
 
-    if (!status?.isOnline) {
-        activityName = "Server Offline";
-    } else {
+    if (state.kind === "online" && status) {
         const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
         const inviteCode = status.steamInviteCode || status.gogInviteCode || "No code";
         activityName = `${playerInfo} | ${inviteCode}`;
+    } else {
+        activityName = `${state.label} — ${state.detail}`;
     }
 
     client.user?.setPresence({
@@ -207,7 +206,7 @@ async function updatePresence(): Promise<void> {
                 state: activityName,
             },
         ],
-        status: status?.isOnline ? "online" : "idle",
+        status: state.presence,
     });
 
     console.log(`[Discord Bot] Status updated: ${activityName}`);
@@ -501,6 +500,7 @@ function clearTrackedMessage(): void {
 /** Builds the dashboard embed from the current server status. */
 async function buildDashboardEmbed(): Promise<EmbedBuilder> {
     const status: ServerStatus | null = await fetchServerStatus();
+    const state = resolveServerState(status);
 
     const embed = new EmbedBuilder()
         .setTitle(DASHBOARD_TITLE)
@@ -508,11 +508,11 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
         .setFooter({ text: formatFooter(STATUS_DASHBOARD_REFRESH_RATE_FORMATTED, dashboardState.ownerId) });
 
     if (!status?.isOnline) {
-        embed
-            .setColor(Colors.Red)
-            .setDescription(
-                "🔴 **The server is currently offline.**\n\n_No game data can be pulled right now. Check back later!_",
-            );
+        const hint =
+            state.kind === "offline"
+                ? "No game data can be pulled right now. Check back later!"
+                : "Game data appears once the save is loaded.";
+        embed.setColor(state.color).setDescription(`${state.label} — **${state.detail}**\n\n_${hint}_`);
     } else {
         const seasonEmojis: Record<string, string> = {
             spring: "🌸 Spring",
@@ -522,12 +522,12 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
         };
         const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
 
-        embed.setColor(Colors.Blue).addFields(
+        embed.setColor(state.color).addFields(
             { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
             { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
             {
                 name: "📶 Server Status",
-                value: status.isReady ? "✅ Ready & Running" : "⏳ Saving / Loading",
+                value: status.isReady ? "✅ Ready & Running" : `⏳ ${state.detail}`,
                 inline: true,
             },
             {
@@ -742,9 +742,10 @@ client.on(Events.MessageCreate, async (message: Message) => {
         if (input === "!status") {
             try {
                 const status: ServerStatus | null = await fetchServerStatus();
+                const state = resolveServerState(status);
 
                 if (!status?.isOnline) {
-                    await message.reply("❌ **Server Status:** The server is currently offline.");
+                    await message.reply(`**Server Status:** ${state.label} — ${state.detail}`);
                     return;
                 }
 
@@ -762,7 +763,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
                     `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
                     `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
-                    `📡 **Server State:** ${status.isReady ? "Ready ✓" : "Busy (Saving/Transitioning) ⏳"}`,
+                    `📡 **Server State:** ${status.isReady ? "Ready ✓" : `Busy (${state.detail}) ⏳`}`,
                     `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``,
                 ];
 
@@ -951,7 +952,7 @@ async function performStartupChecks(): Promise<void> {
     try {
         const status = await fetchServerStatus();
         if (status) {
-            console.log(`[Discord Bot] API connectivity: OK (server ${status.isOnline ? "online" : "offline"})`);
+            console.log(`[Discord Bot] API connectivity: OK (server ${resolveServerState(status).kind})`);
         } else {
             warnings.push("Could not fetch server status - API may be unavailable");
         }

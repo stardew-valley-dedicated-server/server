@@ -10,6 +10,14 @@ GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
 STEAM_SDK_DIR="/root/.steam/sdk64"
+# Completion marker written by steam-auth only after the full depot download succeeds. Gate on it
+# rather than the StardewValley executable: the downloader pre-allocates every file at full size
+# up front, so the executable exists (zero-filled) mid-download — launching on it would run a
+# half-downloaded game. StardewValleyAppId is 413150 (see tools/steam-service/Program.cs).
+GAME_DOWNLOAD_MARKER="${GAME_DEST_DIR}/.download-manifest-413150"
+API_PORT="${API_PORT:-8080}"
+# Lifecycle phase served on the API port until the mod takes over: "downloading" | "starting".
+PHASE_FILE="/tmp/startup-phase"
 
 # Validate required environment variables
 validate_environment() {
@@ -103,13 +111,85 @@ init_display_settings() {
     xset s noblank 2>/dev/null || true
 }
 
+# Mirrors the mod's API on the two points a client can observe: /status needs the API key when
+# one is set, and everything else gets 503 so /health keeps meaning "the mod's API is up".
+phase_response() {
+    local request_line line path name value scheme token="" deadline body status
+    # Lines over 8 KiB are dropped (connection closed), not parsed as several records.
+    IFS= read -r -n 8193 request_line || return 0
+    [ "${#request_line}" -le 8192 ] || return 0
+    path="${request_line#* }"
+    path="${path%% *}"
+    path="${path%%\?*}"
+    # The client is connected from here on and holds the only listener, so the rest of the
+    # request gets a 5s deadline instead of patience.
+    deadline=$((SECONDS + 5))
+    while [ $((deadline - SECONDS)) -gt 0 ] && IFS= read -r -t $((deadline - SECONDS)) -n 8193 line; do
+        [ "${#line}" -le 8192 ] || return 0
+        line="${line%$'\r'}"
+        [ -n "${line}" ] || break
+        name="${line%%:*}"
+        if [ "${name,,}" = "authorization" ]; then
+            value="${line#*:}"
+            value="${value#"${value%%[! ]*}"}"
+            scheme="${value:0:7}"
+            if [ "${scheme,,}" = "bearer " ]; then
+                token="${value:7}"
+            fi
+        fi
+    done
+
+    body="{\"isOnline\":false,\"phase\":\"$(cat "${PHASE_FILE}" 2>/dev/null || echo starting)\"}"
+    if [ -n "${API_KEY:-}" ] && [ "${token}" != "${API_KEY}" ]; then
+        status="401 Unauthorized"
+        body='{"error":"Unauthorized. Provide a valid Authorization header: Bearer <api-key>"}'
+    elif [ "${path}" = "/status" ]; then
+        status="200 OK"
+    else
+        status="503 Service Unavailable"
+    fi
+    printf 'HTTP/1.1 %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s' \
+        "${status}" "${#body}" "${body}"
+}
+
+# Keeps /status answering while the game downloads and boots. bash + nc because the image has
+# nothing else. The mod stops it the moment it binds the port itself (ApiPortHandoff).
+start_phase_responder() {
+    if [ "${API_ENABLED:-true}" != "true" ]; then
+        return
+    fi
+
+    if [ -e "${GAME_DOWNLOAD_MARKER}" ]; then
+        echo "starting" > "${PHASE_FILE}"
+    else
+        echo "downloading" > "${PHASE_FILE}"
+    fi
+
+    local in_fifo="/tmp/phase-responder.in" out_fifo="/tmp/phase-responder.out"
+    rm -f "${in_fifo}" "${out_fifo}"
+    mkfifo "${in_fifo}" "${out_fifo}"
+
+    (
+        # The mod TERMs this loop and then asserts the port is free, so the trap has to take nc
+        # down too. Both ends run in the background: bash defers traps during a foreground
+        # command, but not during wait.
+        trap 'pkill -TERM -P $BASHPID || true; exit 0' TERM
+        while true; do
+            # -N makes nc exit when the client closes (Connection: close); -w 5 covers a client that
+            # never does. Each FIFO open blocks until the other end opens, so the two commands open
+            # them in opposite order to avoid a deadlock.
+            nc -l -N -w 5 "${API_PORT}" > "${in_fifo}" < "${out_fifo}" &
+            phase_response < "${in_fifo}" > "${out_fifo}" &
+            wait
+        done
+    ) &
+    # The mod kills this pid before binding; the healthcheck waits for the file to go.
+    echo "$!" > "${API_HANDOFF_PID_FILE}"
+    echo "Phase responder serving /status on port ${API_PORT} ($(cat "${PHASE_FILE}"))"
+}
+
 init_stardew() {
     local STEAM_AUTH_GAME_DIR="/data/game"
-    # Completion marker written by steam-auth only after the full depot download succeeds. Gate on it
-    # rather than the StardewValley executable: the downloader pre-allocates every file at full size
-    # up front, so the executable exists (zero-filled) mid-download — launching on it would run a
-    # half-downloaded game. StardewValleyAppId is 413150 (see tools/steam-service/Program.cs).
-    local GAME_DOWNLOAD_MARKER="${STEAM_AUTH_GAME_DIR}/.download-manifest-413150"
 
     # Installation check
     if [ -e "${GAME_DOWNLOAD_MARKER}" ]; then
@@ -126,25 +206,15 @@ init_stardew() {
         echo "Waiting for steam-auth to re-verify them (it only writes the marker once the depot is complete)."
     fi
 
-    # The early return above already handled the marker-present case, so the download is still in
-    # flight here. Warn, then poll until it completes (the loop's own check skips safely if the
-    # marker races in before the first iteration).
-    echo ""
-    echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
-    echo -e "\e[33m║  Game files not found! Please run setup first:                        ║\e[0m"
-    echo -e "\e[33m║                                                                       ║\e[0m"
-    echo -e "\e[33m║  make setup                                                           ║\e[0m"
-    echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
-    echo ""
-    echo "Waiting for game files to appear..."
+    echo "Waiting for steam-auth to finish downloading the game files (see: docker compose logs -f steam-auth)..."
 
-    # Poll until the download completes (marker appears)
     while [ ! -e "${GAME_DOWNLOAD_MARKER}" ]; do
         sleep 5
         echo "Still waiting for game files at ${STEAM_AUTH_GAME_DIR}..."
     done
 
     echo "Game files detected!"
+    echo "starting" > "${PHASE_FILE}"
 
     # Symlink the game directory to expected location
     if [ ! -e "${GAME_DEST_DIR}" ]; then
@@ -251,6 +321,7 @@ init_steam_sdk() {
 echo "Initializing SMAPI..."
 
 # Prepare
+start_phase_responder
 init_time_sync
 init_xauthority
 init_display_settings
