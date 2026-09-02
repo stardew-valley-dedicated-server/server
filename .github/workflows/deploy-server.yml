@@ -17,8 +17,8 @@ on:
         required: true
         type: choice
         options:
-          - public-test
-          # - production
+          - public-test-preview
+          # - public-test-latest
       skip_graceful_shutdown:
         description: 'Skip graceful shutdown (emergency deploy)'
         required: false
@@ -50,9 +50,9 @@ jobs:
         run: |
           # Define deployment targets as JSON
           TARGETS='[
-            {"environment": "public-test", "image_tag": "preview", "on_preview": true, "on_release": false}
+            {"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
           ]'
-          # {"environment": "production", "image_tag": "latest", "on_preview": false, "on_release": true}
+          # {"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
 
           MATRIX=$(echo "$TARGETS" | jq -c '[.[] | select(
             (env.TRIGGER == "workflow_dispatch" and env.SELECTED == .environment) or
