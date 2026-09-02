@@ -101,8 +101,9 @@ public class GameThreadDispatcher : ModService
             action();
         };
         var item = new PendingGameAction(wrapped, tcs);
-        _pending.Enqueue(item);
 
+        // Register before enqueueing so an already-canceled token claims the item before the
+        // drain can see it; the action then never runs.
         using var registration = ct.Register(() =>
         {
             // Claim pending→canceled before faulting. If the game thread already claimed
@@ -113,6 +114,7 @@ public class GameThreadDispatcher : ModService
                 tcs.TrySetCanceled(ct);
             }
         });
+        _pending.Enqueue(item);
 
         await tcs.Task.ConfigureAwait(false);
     }
