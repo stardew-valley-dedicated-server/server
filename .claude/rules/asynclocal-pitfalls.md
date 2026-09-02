@@ -21,7 +21,7 @@ _pendingActions.Enqueue(() =>
 ```
 
 **Boundaries that break flow in this codebase:**
-- `ApiService.RunOnGameThreadAsync` / `TestApiServer.ExecuteOnGameThread` → game-loop queue.
+- `GameThreadDispatcher.RunAsync` (behind `ApiService.RunOnGameThreadAsync`) / `TestApiServer.ExecuteOnGameThread` → game-loop queue.
 - SteamKit `CallbackManager.RunCallbacks()` → library-owned thread.
 - HttpListener handlers without `ConfigureAwait(false)` (continuation may resume on a different thread-pool thread; `ThreadLocal<T>` silently loses the value).
 - xUnit v3 `IAsyncLifetime`: captures the EC *before* `InitializeAsync` runs and re-uses it for the test method body. A custom AsyncLocal mutated inside `InitializeAsync` doesn't reach the body. Use `Xunit.TestContext.Current` (xUnit's own ambient) for test-time identity instead of rolling your own.

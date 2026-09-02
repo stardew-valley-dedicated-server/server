@@ -14,6 +14,7 @@ using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameCreator;
 using JunimoServer.Services.GameManager;
+using JunimoServer.Services.GameThread;
 using JunimoServer.Services.PasswordProtection;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
@@ -878,41 +879,10 @@ public partial class ApiService : ModService
     private Timer? _wsCleanupTimer;
 
     /// <summary>
-    /// A queued game-thread action whose execution and timeout compete for an atomic claim: the game
-    /// thread claims pending→executing before running, the timeout callback claims pending→timed-out
-    /// before cancelling. Exactly one side wins, so a timed-out request can never mutate the world
-    /// after its caller was told nothing changed, and an in-flight action is never reported as timed
-    /// out (the caller awaits its real result instead). Must be a reference type — the claim state
-    /// has to be shared between the queue and the timeout callback, not copied per dequeue. Same
-    /// claim pattern as the test client's <c>ExecuteOnGameThread</c> (tests/test-client/ModEntry.cs);
-    /// keep the two in sync.
+    /// Game-thread marshaling for mutating handlers (see <see cref="RunOnGameThreadAsync"/>);
+    /// the game-state snapshot is refreshed after every drain that ran an action.
     /// </summary>
-    private sealed class PendingGameAction
-    {
-        // 0 = pending, 1 = timed out (execution must skip), 2 = executing (timeout must not cancel).
-        private int _state;
-
-        public PendingGameAction(Action action, TaskCompletionSource<bool> completion)
-        {
-            Action = action;
-            Completion = completion;
-        }
-
-        public Action Action { get; }
-        public TaskCompletionSource<bool> Completion { get; }
-
-        public bool TryClaimExecution() => Interlocked.CompareExchange(ref _state, 2, 0) == 0;
-
-        public bool TryClaimTimeout() => Interlocked.CompareExchange(ref _state, 1, 0) == 0;
-    }
-
-    /// <summary>
-    /// Queue of actions to execute on the main game thread.
-    /// Used for game state modifications that would cause collection modification errors
-    /// if executed from the async HTTP thread (e.g., removing buildings during draw).
-    /// Each action includes a TaskCompletionSource to signal completion back to the caller.
-    /// </summary>
-    private readonly ConcurrentQueue<PendingGameAction> _pendingGameActions = new();
+    private readonly GameThreadDispatcher _dispatcher;
 
     /// <summary>
     /// Ticks timestamp of the last OnUpdateTicked call, used by /health to detect game thread stalls.
@@ -1169,10 +1139,12 @@ public partial class ApiService : ModService
         SaveImport.SaveImportService saveImportService,
         NpcIntegrity.NpcSpriteIntegrityService npcSpriteIntegrity,
         Auth.FarmhandOwnershipService farmhandOwnership,
+        GameThreadDispatcher dispatcher,
         PasswordProtectionService? passwordProtectionService = null
     )
         : base(helper, monitor)
     {
+        _dispatcher = dispatcher;
         _settings = settings;
         _persistentOptions = persistentOptions;
         _cabinManager = cabinManager;
@@ -1194,6 +1166,10 @@ public partial class ApiService : ModService
 
         Helper.Events.GameLoop.GameLaunched += OnGameLaunched;
         Helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        // Mutations (DELETE /farmhands, POST /time, etc.) change game state that read-only
+        // endpoints serve from the snapshot. Refresh immediately after a drain so subsequent
+        // reads see the updated state without waiting up to 1 second.
+        _dispatcher.Drained += TakeGameStateSnapshot;
         Helper.Events.Specialized.UnvalidatedUpdateTicking += OnUnvalidatedUpdateTicking;
         Helper.Events.Specialized.UnvalidatedUpdateTicked += OnUnvalidatedUpdateTicked;
         Helper.Events.Display.Rendered += OnRendered;
@@ -1277,41 +1253,6 @@ public partial class ApiService : ModService
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
-        // Process pending game actions on the main thread.
-        // Intentionally in UpdateTicked (not UnvalidatedUpdateTicked). SMAPI
-        // suppresses this during saving, which prevents mutating API callbacks
-        // (POST /time, /newgame, DELETE /farmhands) from corrupting save data.
-        // Read-only endpoints use the periodic snapshot instead (see TakeGameStateSnapshot).
-        var actionsProcessed = false;
-        while (_pendingGameActions.TryDequeue(out var item))
-        {
-            if (!item.TryClaimExecution())
-            {
-                // The caller's RunOnGameThreadAsync timed out and returned an error; the atomic claim
-                // guarantees the timeout can no longer land once execution starts (and vice versa).
-                continue;
-            }
-            actionsProcessed = true;
-            try
-            {
-                item.Action();
-                item.Completion.TrySetResult(true);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"Error executing pending game action: {ex}", LogLevel.Error);
-                item.Completion.TrySetException(ex);
-            }
-        }
-
-        // Mutations (DELETE /farmhands, POST /time, etc.) change game state that
-        // read-only endpoints serve from the snapshot. Refresh immediately so
-        // subsequent reads see the updated state without waiting up to 1 second.
-        if (actionsProcessed)
-        {
-            TakeGameStateSnapshot();
-        }
-
         // Drain completed wait times and update rolling average (zero-allocation ring buffer)
         while (_completedWaitTimes.TryDequeue(out var waitMs))
         {
@@ -1435,7 +1376,7 @@ public partial class ApiService : ModService
     /// <item><see cref="OnUnvalidatedUpdateTicked"/> (periodic, 1/sec) -- fires even during
     /// game thread stalls but skipped during day transitions to avoid concurrent access
     /// with the save task's farmhand/cabin mutations.</item>
-    /// <item><see cref="OnUpdateTicked"/> (after mutations) -- ensures changes from
+    /// <item><see cref="GameThreadDispatcher.Drained"/> (after mutations) -- ensures changes from
     /// mutating endpoints are immediately visible to subsequent reads.</item>
     /// </list>
     /// HTTP threads read the published snapshot without blocking.
@@ -1956,50 +1897,19 @@ public partial class ApiService : ModService
 
     /// <summary>
     /// Queues an action to run on the main game thread and waits for it to complete.
-    /// Use this for game state modifications from async HTTP handlers.
-    /// Captures the ambient ModRequestContext.RequestId at queue time and
-    /// re-binds it on the game-thread side so structured events emitted
-    /// inside <paramref name="action"/> carry the triggering request id.
-    /// AsyncLocal does not flow across the external pump boundary.
+    /// Use this for game state modifications from async HTTP handlers. Throws
+    /// <see cref="TaskCanceledException"/> if the action is still queued after
+    /// <paramref name="timeoutMs"/>. The measured wait feeds the /stats rolling average;
+    /// a timed-out or faulted call is not recorded (not representative of normal wait times).
     /// </summary>
     private async Task RunOnGameThreadAsync(Action action, int timeoutMs = 5000)
     {
         var sw = Stopwatch.StartNew();
-        var tcs = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        var capturedRequestId = Diagnostics.ModRequestContext.RequestId;
-        Action wrapped = () =>
-        {
-            using var _correlationScope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
-            action();
-        };
-        var item = new PendingGameAction(wrapped, tcs);
-        _pendingGameActions.Enqueue(item);
-
-        using var cts = new CancellationTokenSource(timeoutMs);
-        using var registration = cts.Token.Register(() =>
-        {
-            // Claim pending→timed-out before cancelling. If the game thread already claimed
-            // execution, don't cancel — the caller awaits the action's real result instead of
-            // being told a mutation that is running right now didn't apply.
-            if (item.TryClaimTimeout())
-            {
-                tcs.TrySetCanceled();
-            }
-        });
-
-        try
-        {
-            await tcs.Task.ConfigureAwait(false);
-            sw.Stop();
-            _completedWaitTimes.Enqueue(sw.Elapsed.TotalMilliseconds);
-        }
-        catch (TaskCanceledException)
-        {
-            // Timeout: don't record (not representative of normal wait times)
-            throw;
-        }
+        await _dispatcher
+            .RunAsync(action, TimeSpan.FromMilliseconds(timeoutMs))
+            .ConfigureAwait(false);
+        sw.Stop();
+        _completedWaitTimes.Enqueue(sw.Elapsed.TotalMilliseconds);
     }
 
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
@@ -3572,7 +3482,7 @@ public partial class ApiService : ModService
                     (DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds
                 : null;
 
-        var pendingActions = _pendingGameActions.Count;
+        var pendingActions = _dispatcher.PendingCount;
 
         bool? gameAvailable = null;
         try
@@ -4235,7 +4145,7 @@ public partial class ApiService : ModService
             GcGen0 = GC.CollectionCount(0),
             GcGen1 = GC.CollectionCount(1),
             GcGen2 = GC.CollectionCount(2),
-            PendingActions = _pendingGameActions.Count,
+            PendingActions = _dispatcher.PendingCount,
             GameThreadWaitMs = Math.Round(Volatile.Read(ref _avgGameThreadWaitMs), 2),
             StartedAtUtc = startedAt?.ToString("o"),
             UptimeSeconds = startedAt is { } t ? (long)(DateTime.UtcNow - t).TotalSeconds : null,
