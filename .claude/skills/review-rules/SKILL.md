@@ -2,20 +2,24 @@
 name: review-rules
 description: Audits and refines the project's `.claude/` rules and `CLAUDE.md` for conciseness, format consistency, correctness, and pull-its-weight tokens. Use when the user asks to review, refine, audit, lint, or clean up rules; when a rule directory has grown enough that adherence is degrading; and — before reporting done — whenever you have written, merged, split, or materially rewritten a rule file yourself, since the checklist below is what catches title form, backticks, cited identifiers, `paths:` accuracy, and index sync in one pass.
 argument-hint: [optional path/glob or focus hint]
-tools: Read, Grep, Glob, Edit, Write
+allowed-tools: Read, Grep, Glob, Edit, Write
 ---
 
 # Review Rules
 
 Audit `.claude/rules/**`, `CLAUDE.md`, and `.claude/skills/**/SKILL.md` and propose edits before writing any. Curates what exists; does not grow the set — for new rules, route the user to `/extract-session-rules`.
 
-If the skill was invoked with arguments (e.g. `/review-rules universal only`, `/review-rules tests/**`, `/review-rules conciseness pass`), apply them as scope or focus filters in pass 1 and propagate to pass 2. They take precedence over the defaults below.
+Arguments passed on invocation (e.g. `/review-rules universal only`, `/review-rules tests/**`, `/review-rules conciseness pass`):
+
+> $ARGUMENTS
+
+Apply them as scope or focus filters in pass 1 and propagate to pass 2. They take precedence over the defaults below.
 
 ## Scope
 
 In scope: `.claude/rules/**/*.md`, `.claude/rules/README.md`, `CLAUDE.md` (root + nested), `.claude/skills/**/SKILL.md`.
 
-Out of scope unless the user opts in: `.claude/tasks/**`, `.claude/commands/**`, `docs/**`, anything outside `.claude/` and root `CLAUDE.md`.
+Out of scope unless the user opts in: `.claude/plans/**`, `docs/**`, anything outside `.claude/` and root `CLAUDE.md`.
 
 ## Procedure
 
@@ -49,7 +53,7 @@ The keep-test for every line: **"Would removing this cause Claude to make mistak
 
 #### Format
 
-- **Frontmatter.** Path-scoped rules: `paths:` only, gitignore globs. Universal rules: no frontmatter. SKILL.md: `name`, `description`, optional `argument-hint`, optional `tools`.
+- **Frontmatter.** Path-scoped rules: `paths:` only, gitignore globs. Universal rules: no frontmatter. SKILL.md: `name`, `description`, optional `argument-hint`, optional `allowed-tools` (scoped where possible, e.g. `Bash(docker compose *)`; a rule must match each `&&`/`;`/`|` subcommand on its own). A skill that takes arguments places `\$ARGUMENTS` where the procedure reads them; repo-absolute paths in commands use the project-dir variable (`CLAUDE_PROJECT_DIR` in `${...}` form). Don't set `disable-model-invocation` on a skill whose description asks Claude to self-invoke it — the flag removes the description from Claude's context entirely.
 - **SKILL.md description shape.** The description is the only thing Claude sees when deciding whether to load the skill — it's the discovery surface, not just metadata. Required: third person, first sentence states the capability, second clause states *when to use* with concrete triggers. Reject "Helps with X"-style vagueness.
 - **Title is a clause that states the rule** (e.g. `# AsyncLocal flows through awaits, not through external queue pumps`). Not a noun phrase like `# Cabin Notes`.
 - **Body skeleton.** Opening one-line statement; optional sub-sections; trailing `**Why:**` and `**How to apply:**`. Match this across rules — if a rule omits one of those blocks and the content would benefit, [FIX].
@@ -66,7 +70,7 @@ The keep-test for every line: **"Would removing this cause Claude to make mistak
 - **Cited paths exist.** Spot-check with Glob.
 - **Cited identifiers exist.** Grep one or two per rule.
 - **No refactor history.** "previously", "no longer", "has been removed", "this used to" — see `no-refactor-history-in-code.md`.
-- **No machine-local content.** Dev-machine paths, full session IDs, `.claude/tasks/...` references, dates.
+- **No machine-local content.** Dev-machine paths, full session IDs, `.claude/plans/...` references, dates.
 - **No contradictions across rules.** If `rule-A` says "always X" and `rule-B` says "never X under condition Y", at least one needs to acknowledge the other.
 - **Trigger still real.** If the `**Why:**` cites a condition (a feature flag, a config default, a framework quirk), confirm the condition still exists. A rule guarding against a removed surface is dead weight.
 - **Earned, not speculative.** A rule should trace to a real incident, not "we should be careful about X." Speculative rules age the worst — flag for [QUESTION] if the `**Why:**` doesn't ground it in something concrete.
