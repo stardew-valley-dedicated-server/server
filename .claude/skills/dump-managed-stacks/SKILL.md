@@ -21,7 +21,7 @@ docker exec <name> ps -eLo tid,pcpu,stat,wchan:30,comm   # thread states + kerne
 cat /proc/<pid>/task/<tid>/syscall                        # sample twice, a few seconds apart
 ```
 
-Same futex address twice with a NULL timeout arg = parked indefinitely (an infinite `pthread_cond_wait`), not slow. `wait_for_partner` is the kernel's blocking FIFO open waiting for a peer; on an early-created thread it is normally the CLR's debugger transport blocked opening `/tmp/clr-debug-pipe-<pid>-*`. Treat it as benign only after `ls /proc/<pid>/root/tmp/clr-debug-pipe-*` shows that FIFO pair; otherwise correlate the thread with the managed stack before dismissing it.
+Same futex address twice with a NULL timeout arg = parked indefinitely (an infinite `pthread_cond_wait`), not slow. `wait_for_partner` is the kernel's blocking FIFO open waiting for a peer. Every .NET process has one early-created native thread parked there for its whole lifetime: the CLR debugger transport waiting on `/tmp/clr-debug-pipe-<pid>-*` (`ls -l /proc/<pid>/root/tmp/clr-debug-pipe-*` shows the pair as type `p`). Because that thread is native it never appears in the `dotnet-stack` report below — so a `wait_for_partner` thread that is absent from the managed report is this listener and benign; one that does show managed frames is something else and needs a real look.
 
 ## Procedure
 
