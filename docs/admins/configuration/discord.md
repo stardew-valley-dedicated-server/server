@@ -110,10 +110,11 @@ The ownership id protects only the dashboard message. Presence is global to the 
 2. Check `DISCORD_CHAT_CHANNEL_ID` is correct
 3. Ensure the bot can read and send in that channel
 
-### Bot Shows "Server Offline" But Server Is Running
+### Bot Shows "Offline" But Server Is Running
 
 1. If `API_KEY` is set on the server, the bot needs the same key
 2. Check for authentication errors: `docker compose logs discord-bot`
+3. A server that is still downloading or booting shows as "Starting", not "Offline" — "Offline" means the bot cannot reach the server's API port at all
 
 ### Wrong Bot Nickname
 

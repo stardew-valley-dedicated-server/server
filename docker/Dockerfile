@@ -160,7 +160,9 @@ ENV APP_NAME="Stardew Dedicated Server" \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
     SMAPI_VERSION=${SMAPI_VERSION} \
-    SMAPI_MODS_PATH=/data/Mods
+    SMAPI_MODS_PATH=/data/Mods \
+    # Pid file of startapp.sh's phase responder; read by the mod (ApiPortHandoff) and the HEALTHCHECK
+    API_HANDOFF_PID_FILE=/tmp/phase-responder.pid
 
 # add-pkg (base image helper), not raw apt-get: it pre-creates /var/log's symlink target
 # (/config — a runtime volume, absent at build time, so tcpdump's postinst fails without it)
@@ -286,8 +288,10 @@ VOLUME [ "/data/game", "/config/xdg/config/StardewValley" ]
 # Expose HTTP API port for external tools and automated testing
 EXPOSE 8080
 
+# Unhealthy without connecting while the phase responder owns the port: it serves one connection at
+# a time, and a 2s probe would keep stealing it from real status clients.
 HEALTHCHECK --interval=2s --timeout=2s --start-period=120s --retries=15 \
-    CMD curl -fsS --max-time 2 "http://127.0.0.1:${API_PORT:-8080}/health" > /dev/null \
+    CMD { [ ! -e "${API_HANDOFF_PID_FILE}" ] && curl -fsS --max-time 2 "http://127.0.0.1:${API_PORT:-8080}/health" > /dev/null; } \
         || [ "${API_ENABLED:-true}" = "false" ] || exit 1
 
 WORKDIR /data

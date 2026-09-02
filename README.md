@@ -64,13 +64,13 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 2. **First-Time Setup**:
 
-    Run the interactive setup to authenticate with Steam and download the game files:
+    Run the interactive setup to authenticate with Steam:
 
     ```sh
     docker compose run --rm -it steam-auth setup
     ```
 
-    This will prompt you for Steam Guard authentication if enabled on your account.
+    This will prompt you for Steam Guard authentication if enabled on your account, and downloads the game files. Once Steam can log in without prompts, a fresh server downloads the game files itself on first start.
 
 3. **Start the Server**:
 

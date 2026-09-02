@@ -71,6 +71,14 @@ internal class Env
     public static readonly int ApiPort = ParseInt("API_PORT", 8080);
 
     /// <summary>
+    /// Pid file of the startup script's phase responder (see ApiPortHandoff). Set by the server
+    /// image, unset elsewhere.
+    /// </summary>
+    public static readonly string? ApiHandoffPidFile = Environment.GetEnvironmentVariable(
+        "API_HANDOFF_PID_FILE"
+    );
+
+    /// <summary>
     /// Override verbose logging setting from environment.
     /// Returns null if not set (uses config file value).
     /// Set to "true" or "false" to override.

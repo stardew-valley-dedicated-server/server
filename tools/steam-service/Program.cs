@@ -381,18 +381,24 @@ return;
 // Helper functions
 // ============================================================================
 
+/// <summary>
+/// SDK first: the game container launches as soon as the game's completion marker appears and
+/// only links an SDK that is already on the volume.
+/// </summary>
+async Task DownloadGameAndSdkAsync(SteamAuthService svc)
+{
+    if (!args.Contains("--skip-sdk"))
+    {
+        await svc.DownloadGameAsync(SteamworksSdkAppId, Path.Combine(gameDir, ".steam-sdk"));
+    }
+    await svc.DownloadGameAsync(StardewValleyAppId);
+}
+
 async Task DownloadAllAsync(SteamAuthService svc)
 {
     try
     {
-        await svc.DownloadGameAsync(StardewValleyAppId);
-
-        // Also download Steamworks SDK for GameServer mode (unless --skip-sdk)
-        if (!args.Contains("--skip-sdk"))
-        {
-            var steamSdkDir = Path.Combine(gameDir, ".steam-sdk");
-            await svc.DownloadGameAsync(SteamworksSdkAppId, steamSdkDir);
-        }
+        await DownloadGameAndSdkAsync(svc);
     }
     catch (Exception ex)
     {
@@ -755,48 +761,68 @@ async Task RunHttpServerAsync(
 
     await Task.WhenAll(loginTasks);
 
-    // First-run bootstrap: if the game depot isn't present yet, download it in the background so a
-    // fresh `docker compose up` self-provisions instead of waiting for a manual `setup`. Keyed on the
-    // download-complete marker (same signal startapp.sh gates on), so a half-finished prior download
-    // resumes rather than being mistaken for done. Runs off the request path (HTTP server + /health
-    // come up first). On shutdown the task isn't cancelled — Disconnect() aborts the in-flight
-    // download, which is resumable on the next boot; a failed download is likewise retried next boot.
+    // First-run bootstrap, so a fresh `docker compose up` self-provisions without a manual `setup`.
+    // Keyed on the completion marker startapp.sh gates on, so a half-finished download resumes
+    // instead of passing for done. Off the request path so /health comes up first; shutdown just
+    // aborts the in-flight download, which resumes next boot.
     if (!File.Exists(gameDownloadMarker))
     {
-        var bootstrapAccount = accts.Values.FirstOrDefault(s => s.IsLoggedIn);
-        if (bootstrapAccount == null)
+        if (accts.Count == 0)
         {
             Logger.Log(
-                "[SteamService] Game files missing and no account is logged in — cannot auto-download. "
-                    + "Check credentials, or run `setup` manually."
+                "[SteamService] Game files missing and no Steam account is configured — cannot "
+                    + "auto-download. Set STEAM_USERNAME/STEAM_PASSWORD (or STEAM_ACCOUNTS), or run `setup`."
             );
         }
         else
         {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    Logger.Log("[SteamService] Game files not found, downloading on first run...");
-                    await bootstrapAccount.DownloadGameAsync(StardewValleyAppId);
-                    if (!args.Contains("--skip-sdk"))
-                    {
-                        await bootstrapAccount.DownloadGameAsync(
-                            SteamworksSdkAppId,
-                            Path.Combine(gameDir, ".steam-sdk")
-                        );
-                    }
-                    Logger.Log("[SteamService] First-run game download complete.");
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[SteamService] First-run game download failed: {ex.Message}");
-                }
-            });
+            _ = Task.Run(() => BootstrapGameFilesAsync(accts, configs));
         }
     }
 
     await app.RunAsync();
+}
+
+/// <summary>
+/// Retries with back-off instead of failing serve: the game container waits on the marker
+/// indefinitely, so a CDN or login flake must heal without an operator restart. Uses account 0's
+/// one Steam session (login is serialized per account), so no second login can overlap the
+/// ticket endpoints. Each app's own marker skips it once complete, so a retry after a partial
+/// success fetches only what is missing.
+/// </summary>
+async Task BootstrapGameFilesAsync(
+    Dictionary<int, SteamAuthService> accts,
+    Dictionary<int, (string user, string? pass, string? token)> configs
+)
+{
+    var (accountIndex, svc) = accts.OrderBy(kv => kv.Key).First();
+    var cfg = configs[accountIndex];
+    var loginConfig = new SteamAuthService.LoginConfig(cfg.user, cfg.pass, cfg.token);
+    var delay = TimeSpan.FromSeconds(30);
+    var maxDelay = TimeSpan.FromMinutes(5);
+
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            Logger.Log(
+                $"[SteamService] Game files not found, downloading on first run (attempt {attempt})..."
+            );
+            await svc.EnsureLoggedInAsync(loginConfig);
+            await DownloadGameAndSdkAsync(svc);
+            Logger.Log("[SteamService] First-run game download complete.");
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log(
+                $"[SteamService] First-run game download failed (attempt {attempt}): {ex.Message}. "
+                    + $"Retrying in {delay.TotalSeconds:0}s."
+            );
+            await Task.Delay(delay);
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, maxDelay.Ticks));
+        }
+    }
 }
 
 // ============================================================================

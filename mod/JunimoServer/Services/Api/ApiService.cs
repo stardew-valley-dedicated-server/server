@@ -1996,7 +1996,9 @@ public partial class ApiService : ModService
             );
             _openApiSpec = document.ToJson();
 
-            // Create and configure listener
+            // Take the port from the startup script's phase responder right before binding, so
+            // it is never unanswered in between.
+            ApiPortHandoff.TakeOver(Env.ApiHandoffPidFile, Env.ApiPort, Monitor);
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://+:{Env.ApiPort}/");
             _listener.Start();
