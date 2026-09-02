@@ -115,14 +115,17 @@ init_display_settings() {
 # one is set, and everything else gets 503 so /health keeps meaning "the mod's API is up".
 phase_response() {
     local request_line line path name value scheme token="" deadline body status
-    IFS= read -r -n 8192 request_line || return 0
+    # Lines over 8 KiB are dropped (connection closed), not parsed as several records.
+    IFS= read -r -n 8193 request_line || return 0
+    [ "${#request_line}" -le 8192 ] || return 0
     path="${request_line#* }"
     path="${path%% *}"
     path="${path%%\?*}"
     # The client is connected from here on and holds the only listener, so the rest of the
-    # request gets a 5s deadline and 8 KiB lines instead of patience.
+    # request gets a 5s deadline instead of patience.
     deadline=$((SECONDS + 5))
-    while [ $((deadline - SECONDS)) -gt 0 ] && IFS= read -r -t $((deadline - SECONDS)) -n 8192 line; do
+    while [ $((deadline - SECONDS)) -gt 0 ] && IFS= read -r -t $((deadline - SECONDS)) -n 8193 line; do
+        [ "${#line}" -le 8192 ] || return 0
         line="${line%$'\r'}"
         [ -n "${line}" ] || break
         name="${line%%:*}"
