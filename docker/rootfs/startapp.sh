@@ -114,15 +114,15 @@ init_display_settings() {
 # Mirrors the mod's API on the two points a client can observe: /status needs the API key when
 # one is set, and everything else gets 503 so /health keeps meaning "the mod's API is up".
 phase_response() {
-    local request_line line path name value scheme token="" header_count=0 body status
-    IFS= read -r request_line || return 0
+    local request_line line path name value scheme token="" deadline body status
+    IFS= read -r -n 8192 request_line || return 0
     path="${request_line#* }"
     path="${path%% *}"
     path="${path%%\?*}"
-    # The client is connected from here on and holds the only listener, so a slow or endless
-    # header stream is cut off instead of waited for.
-    while [ "${header_count}" -lt 64 ] && IFS= read -r -t 5 line; do
-        header_count=$((header_count + 1))
+    # The client is connected from here on and holds the only listener, so the rest of the
+    # request gets a 5s deadline and 8 KiB lines instead of patience.
+    deadline=$((SECONDS + 5))
+    while [ $((deadline - SECONDS)) -gt 0 ] && IFS= read -r -t $((deadline - SECONDS)) -n 8192 line; do
         line="${line%$'\r'}"
         [ -n "${line}" ] || break
         name="${line%%:*}"
