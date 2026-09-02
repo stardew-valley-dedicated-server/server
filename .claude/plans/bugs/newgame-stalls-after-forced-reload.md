@@ -1,4 +1,14 @@
-## Problem
+# `POST /newgame` stalls after a forced save reload with client churn
+
+**Status:** validation
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** server
+**Related:** [`newgame-day-transition-completion-stalls.md`](newgame-day-transition-completion-stalls.md)
+**Observed:** two occurrences on shared server instances, roughly 1 in 13 `/newgame` calls in the affected runs (`SaveImportTests`, `CabinPositionPersistenceTests`)
+**Next step:** add the pending-transition diagnostics probe and loop the kick → reload → `/newgame` sequence until the blocking condition is captured
+
+## Symptom
 
 `POST /newgame` can occasionally wait for its full 120-second handler timeout and return `504` after a forced save reload followed by client disconnect/reconnect activity.
 
@@ -6,7 +16,9 @@ The failure has occurred more than once on a shared server instance. Other `/new
 
 The affected test is marked as an infrastructure failure. Under StopOnFail, later tests are canceled as a consequence of the first failure; those later cancellations are not separate failures.
 
-## What we know
+## Root cause
+
+### What we know
 
 The new game itself is created successfully and quickly. In the investigated occurrence, the following all completed within the first second:
 
@@ -18,9 +30,9 @@ The new game itself is created successfully and quickly. In the investigated occ
 * The SMAPI `SaveLoaded` callbacks
 * Cabin setup, pet setup, automation setup, and the host warp
 
-The server generates the `504` itself (`ApiService.cs:4814/4949`); this is not a reverse-proxy timeout or a lost response.
+The server generates the `504` itself (the `/newgame` handler in `ApiService.cs`); this is not a reverse-proxy timeout or a lost response.
 
-After creation finishes, `/newgame` waits on `ComputeDayTransitionComplete()` (`ApiService.cs:1664-1672`) until the 120-second timeout. The completion check remains false while:
+After creation finishes, `/newgame` waits on `ComputeDayTransitionComplete()` (`ApiService.cs`) until the 120-second timeout. The completion check remains false while:
 
 ```text
 Game1.newDaySync != null
@@ -32,7 +44,7 @@ or while `DayOfMonth == 0`.
 
 The game thread is not frozen during this wait. The server continues ticking at the expected 5 ticks per second. The recording shows the day-transition screen remaining active with no players connected. Two frames 85 seconds apart show the tick counter advancing from 2130 to 2555, exactly 425 ticks, confirming that the game loop is running normally throughout the wait.
 
-The `snapshot_skipped_newday` latch (`ApiService.cs:1238`) also continues throughout the timeout. It is emitted while `Game1.newDay` is true and only resets after a completed snapshot with `Game1.newDay == false`. In the failing run it appears near the start of the request and again immediately before the timeout.
+The `snapshot_skipped_newday` latch (`ApiService.cs`) also continues throughout the timeout. It is emitted while `Game1.newDay` is true and only resets after a completed snapshot with `Game1.newDay == false`. In the failing run it appears near the start of the request and again immediately before the timeout.
 
 This shows that the initial fade and `_newDayAfterFade` phase completed. The request is instead blocked by the later completion condition, most likely the `newDaySync` state or the day-of-month check.
 
@@ -40,7 +52,7 @@ At roughly the 120-second timeout, the day-transition machinery starts moving ag
 
 The `/screenshot` endpoint is not involved; it only reads the backbuffer. There is also no retry in `GameCreatorService`.
 
-## Leading candidate: stale server connection
+### Leading candidate: stale server connection
 
 Both known occurrences followed tests that kicked or disconnected clients immediately before a forced reload. `Game1.server` and its connection tables persist across `ExitToTitle`, so a disconnected or half-dead connection may still be present when the new-day ready checks are created.
 
@@ -48,15 +60,15 @@ Both known occurrences followed tests that kicked or disconnected clients immedi
 
 This is the leading hypothesis, but it needs live confirmation.
 
-## Other known mechanism: empty-server auto-pause
+### Other known mechanism: empty-server auto-pause
 
-There is a separate mechanism where `HostPaused` prevents `Game1.UpdateOther` from running (`Game1.cs:4308 -> 6436`). With zero players, that can stop the day-transition screen from progressing.
+There is a separate mechanism where `HostPaused` prevents `Game1.UpdateOther` from running (`Game1.Update` → `Game1.UpdateOther` in `Game1.cs`). With zero players, that can stop the day-transition screen from progressing.
 
 This was hardened on 2026-07-20 so that auto-pause does not engage while `ComputeDayTransitionComplete()` is false.
 
 That closes the empty-server fade-phase hazard, but it does **not** explain this occurrence. The `snapshot_skipped_newday` evidence shows that the transition had already progressed past the fade phase before the 120-second stall.
 
-## Next step
+## Fix
 
 Add a diagnostics probe, either to `/diagnostics/state` or as a log entry on each `OneSecond` tick while a transition has been pending for more than 10 seconds.
 
@@ -89,7 +101,9 @@ If a stale or disconnected peer is blocking `newDaySync`, fix the connection lif
 
 Do not fix this by increasing or weakening the `/newgame` timeout or completion gate. The existing gate intentionally waits for both `SaveLoaded` and `ComputeDayTransitionComplete()` to avoid an earlier race. The rule in `.claude/rules/tests-assert-via-http-api.md` documents this contract.
 
-## Reproduction
+## Verification
+
+### Reproduction
 
 Run:
 

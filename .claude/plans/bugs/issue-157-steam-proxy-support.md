@@ -1,16 +1,19 @@
 # Issue #157 — verify Steam-behind-a-proxy on the default bridge network
 
-**Verdict:** ✅ hypothesis to confirm — Steam auth honors a proxy env var on the
-default bridge network, so host networking is unnecessary.
-**Action:** run the verification harness below, then post the evidence-backed
-#157 comment (Step 6).
+**Status:** validation
+**Priority:** 1 (low)
+**GitHub Issue(s):** [#157](https://github.com/stardew-valley-dedicated-server/server/issues/157)
+**Area:** docker, steam-service
+**Related:** [`issue-157-xvnc-host-networking.md`](issue-157-xvnc-host-networking.md)
+**Observed:** reporter on #157 switched to `network_mode: host` to reach an outbound Steam proxy; not reproduced here
+**Next step:** run the verification harness below, then post the evidence-backed #157 comment (Step 6), coordinated with the companion plan so the issue gets one reply
 
-Companion plan `issue-157-xvnc-host-networking.md` triages the xvnc timeout this
+Companion plan [`issue-157-xvnc-host-networking.md`](issue-157-xvnc-host-networking.md) triages the xvnc timeout this
 host-networking change caused. This plan proves the reporter never needed host
 networking in the first place; coordinate the #157 comment with that plan so the
 issue gets one reply, not two.
 
-## Context
+## Symptom
 
 Issue #157: a reporter in China switched `network_mode: host` to make their
 outbound Steam proxy work, which broke xvnc ("not ready after 10000 msec") and would also
@@ -25,17 +28,19 @@ built from a default `new HttpClient()`, and a default .NET `HttpClient` honors
 auth/CM traffic through the proxy — no xvnc breakage, no DNS breakage.
 
 This plan proves that hypothesis **end-to-end in throwaway containers**, then posts an
-evidence-backed comment on #157. Code chain verified: `SteamAuthService.cs:98`
+evidence-backed comment on #157. Code chain verified: `SteamAuthService.cs`
 (`new SteamClient()`), `SteamConfigurationBuilder.cs` (`ProtocolTypes = Tcp|WebSocket`,
-`DefaultHttpClientFactory`), `CMClient.cs:415` (factory → `WebSocketConnection`),
-`WebSocketContext.cs:50` (`socket.ConnectAsync(uri, invoker, …)`).
+`DefaultHttpClientFactory`), `CMClient.cs` (factory → `WebSocketConnection`),
+`WebSocketContext.cs` (`socket.ConnectAsync(uri, invoker, …)`).
 
 **The verification builds the existing image and runs throwaway containers/networks, then
 tears them down — no source edits, no commits, no changes to `.env`/compose.** The only
 outward-facing action is the final #157 comment (Step 6), posted _after_ evidence is in hand
 and shown to the user.
 
-## What this test proves — and what it deliberately does NOT (honesty bound)
+## Verification
+
+### What this test proves — and what it deliberately does NOT (honesty bound)
 
 **Proves:** our software stack honors a proxy env var on the _default bridge network_ for the
 Steam **auth/CM** path — i.e. the reporter does **not** need `network_mode: host` (and the
@@ -51,7 +56,7 @@ xvnc breakage it causes) to proxy Steam login.
   carry. So even green auth-through-proxy may still leave actual hosting blocked from China.
   This is out of scope for any HTTP/SOCKS proxy and must be flagged as an open caveat.
 
-## What "verified" must mean (the trap to avoid)
+### What "verified" must mean (the trap to avoid)
 
 Per `runtime-post-conditions-are-gates.md`: a login succeeding **with a proxy env set
 proves nothing** — the host has direct Steam egress, so login would succeed even if the
@@ -66,7 +71,7 @@ proxy var were silently ignored. The decisive gate is a **deny-direct / force-pr
 
 Only if #1 fails-closed and #2 succeeds-through-proxy is the hypothesis confirmed.
 
-## Prerequisites (read-only checks first)
+### Prerequisites (read-only checks first)
 
 - Steam creds: `.env` has `STEAM_USERNAME`/`STEAM_PASSWORD` (account `hzlpo73263`) plus a
   `STEAM_ACCOUNTS` JSON line. **These accounts have no Steam Guard** (confirmed by user), so
@@ -74,15 +79,15 @@ Only if #1 fails-closed and #2 succeeds-through-proxy is the hypothesis confirme
   `make setup` / token-export needed. Pass these env vars straight into each throwaway
   container.
 - Verify Docker Desktop is running and `make build-steam-service` succeeds (wraps
-  `docker compose build steam-auth`, Makefile:73-75).
+  `docker compose build steam-auth`, `build-steam-service` target in `Makefile`).
 
-## Verification harness (all throwaway, all in `/tmp`-style scratch)
+### Harness (all throwaway, all in `/tmp`-style scratch)
 
 Build the image once, then run the scenarios below on throwaway networks/containers. The
 decisive force-proxy test is run **twice** — once with SOCKS5 (`ALL_PROXY`) and once with
 HTTP CONNECT (`HTTPS_PROXY`) — since China setups use both (user choice: cover both).
 
-### Network topology (egress isolation = the decisive ingredient)
+#### Network topology (egress isolation = the decisive ingredient)
 
 User choice: **Docker `internal` network + proxy bridge**. Two throwaway networks:
 
@@ -94,14 +99,14 @@ User choice: **Docker `internal` network + proxy bridge**. Two throwaway network
 This makes the negative control fail-closed by construction: with no proxy var,
 `steam-auth` on `sdvd-157-internal` simply cannot reach Steam.
 
-### Step 0 — Build
+#### Step 0 — Build
 
 - `make build-steam-service` (image tag `sdvd/steam-service:<IMAGE_VERSION>`; reuse whatever
   tag compose produces).
 - `docker network create --internal sdvd-157-internal`
 - `docker network create sdvd-157-egress`
 
-### Step 1 — Throwaway proxy container (dual: SOCKS5 + HTTP)
+#### Step 1 — Throwaway proxy container (dual: SOCKS5 + HTTP)
 
 - Run a proxy attached to **both** networks, name `verify-proxy`, with an **accessible
   access log** (so we can read which upstream hosts it dialed — the proof traffic went
@@ -118,13 +123,13 @@ the default `serve` command. Poll `GET /health` (`logged_in` field) and `GET /st
 `docker exec` the in-container healthcheck — either way, the API probe must not become a
 back-channel that defeats the egress isolation.
 
-### Step 2 — Baseline (sanity, normal egress, no proxy)
+#### Step 2 — Baseline (sanity, normal egress, no proxy)
 
 - Run `steam-auth serve` on `sdvd-157-egress` only, no proxy env, normal egress.
 - **Gate:** baseline login succeeds (`logged_in:true` / `ready:true`). If it fails, creds or
   build are the problem — stop and fix before drawing any proxy conclusions.
 
-### Step 3 — Negative control (internal net, no proxy)
+#### Step 3 — Negative control (internal net, no proxy)
 
 - Run `steam-auth serve` on **`sdvd-157-internal` only**, **no** proxy env.
 - **Gate:** login must **fail** (`logged_in:false` / `ready:false`) for the whole window.
@@ -132,7 +137,7 @@ back-channel that defeats the egress isolation.
   isolation before trusting Step 4 (re-create the network with `--internal`, confirm no
   other network is attached).
 
-### Step 4a — Force-proxy via SOCKS5 — THE decisive test
+#### Step 4a — Force-proxy via SOCKS5 — THE decisive test
 
 - Run `steam-auth serve` on **`sdvd-157-internal` only** (no direct egress), with
   `ALL_PROXY=socks5://verify-proxy:1080`.
@@ -143,7 +148,7 @@ back-channel that defeats the egress isolation.
        proxy was the _only_ path that could have worked (Step 3 proved no direct path exists).
 - Capture the `/health`+`/steam/ready` JSON and the matching proxy log lines as evidence.
 
-### Step 4b — Force-proxy via HTTP CONNECT
+#### Step 4b — Force-proxy via HTTP CONNECT
 
 - Same as 4a but `HTTPS_PROXY=http://verify-proxy:3128` (Squid). Note: SteamKit's CM
   connection is WebSocket-over-TLS (443), so an HTTP proxy must allow **CONNECT** to :443 —
@@ -151,14 +156,14 @@ back-channel that defeats the egress isolation.
   (not the repo) needs the ACL, and we note that as a proxy-setup requirement for docs.
 - **Gates:** same two as 4a, reading Squid `access.log` for `CONNECT cm*...:443`.
 
-### Step 5 — Teardown
+#### Step 5 — Teardown
 
 - Stop/rm all throwaway containers (`steam-auth` runs, `verify-proxy`),
   `docker network rm sdvd-157-internal sdvd-157-egress`. Nothing untracked/generated is
   deleted — only ephemeral containers and the throwaway networks created by this run. No
   volumes touched (creds come from env, not a seeded session).
 
-### Step 6 — Present evidence, then post the #157 comment (gated on results)
+#### Step 6 — Present evidence, then post the #157 comment (gated on results)
 
 - First, show the user the captured verdict: baseline pass, negative-control fail-closed,
   4a + 4b pass-through-proxy with proxy-log excerpts. **Do not post if the gates didn't pass**
@@ -180,14 +185,14 @@ back-channel that defeats the egress isolation.
 - Leave open vs. close: recommend leaving **open** pending their reply (we just gave concrete,
   verified guidance). Confirm posting wording with the user before it goes out.
 
-## Deliverable
+### Deliverable
 
 - A short written verdict with captured evidence (baseline / negative-control / 4a / 4b +
   proxy-log excerpts + the China/UDP caveats), shown to the user.
 - A posted #157 comment (Step 6), gated on green results and on the user approving the
   wording.
 
-## Out of scope (explicit)
+## Out of scope
 
 - Editing repo source, `.env`, `docker-compose.yml`, or production docs (a "Steam behind a
   proxy" docs section is a possible _future_ follow-up, not part of this plan).

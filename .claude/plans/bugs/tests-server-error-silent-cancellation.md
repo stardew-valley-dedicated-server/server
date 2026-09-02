@@ -1,6 +1,15 @@
 # Server-error abort is reported as silent cancellation, never a failure
 
-**Status: traced, not fixed. Own PR — independent of the Debian 13 base bump it was found under.**
+**Status:** validation
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** none
+**Observed:** full-suite runs under the Debian 13 base-image bump ending `passed: 3, failed: 0, canceled: 164`; run id not recorded
+**Next step:** build a repro (a server that logs a fatal ERROR on demand after becoming ready), capture the console `TestLog`, and identify which path cancelled the run
+**Notes:** own PR, independent of the base-image bump it was found under
+
+## Symptom
 
 When a server dies *after* becoming ready (e.g. a fatal mod ERROR during deferred init, once
 tests are already running against it), the run ends as
@@ -13,7 +22,7 @@ fans out via `TestResourceBroker`'s `_runCts`, and later acquisitions fail throu
 `BuildAcquisitionFault` (whose `_stopOnFailNotified && !host.IsPoisoned` branch labels them as
 collateral rather than cause).
 
-## Traced mechanism
+## Root cause
 
 Test-side symbols, all in `tests/JunimoServer.Tests` unless noted:
 
@@ -40,9 +49,9 @@ Test-side symbols, all in `tests/JunimoServer.Tests` unless noted:
 - Repro needs a server that turns unhealthy after becoming ready (see the shape distinction
   above) — e.g. a mod command/flag that logs a fatal ERROR on demand mid-test.
 
-## Dead end — do not retry
+## Dead ends
 
 Subscribing `OnErrorDetected → PoisonServer(ServerLogError)` in the `ManagedServer` constructor
 plus a `RecordServerErrorFailure()` hop in TestBase/TestLifecycle was tried and reverted: it
 produced no poison events, and it cannot cover the cancellation victims — they die inside
-acquisition and never hold the `Lease` that hop requires.
+acquisition and never hold the `Lease` that hop requires. Do not retry.

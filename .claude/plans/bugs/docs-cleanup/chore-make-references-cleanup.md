@@ -1,5 +1,13 @@
 # Make References Cleanup
 
+**Status:** ready-to-implement
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** docker
+**Related:** [`README.md`](README.md)
+**Observed:** startup banner text in both runtime scripts, verified by reading them
+**Next step:** edit the two banner lines, re-render the box, open a PR
+
 We currently have hardcoded references to run "make" commands in the **runtime startup banner**, even for the remotely pushed docker image where `make` is not available or intended to be used. Users who just pull the image and don't build it locally do not use `make` — they use normal `docker compose` commands.
 
 See the "make setup" in the "game files not found" startup banner:
@@ -17,8 +25,8 @@ Log a hint that works for people who only run the image after pulling it: instea
 
 The banner appears in **two** runtime scripts, byte-identical in wording. Both must be changed:
 
-- `docker/rootfs/startapp.sh:122-124` (glibc/Debian image)
-- `docker/modern/rootfs/opt/bin/start-game.sh:96-98` (Alpine/musl image)
+- `docker/rootfs/startapp.sh` (glibc/Debian image)
+- `docker/modern/rootfs/opt/bin/start-game.sh` (Alpine/musl image)
 
 Each prints a fixed-width ASCII box:
 
@@ -38,13 +46,13 @@ Do not touch these.
 
 ## The replacement command is verified correct
 
-`make setup` (Makefile:105-108) runs exactly:
+`make setup` (Makefile) runs exactly:
 
 ```
 docker compose run --rm -it $(if .env.test exists, --env-from-file .env.test) steam-auth setup
 ```
 
-So `docker compose run --rm -it steam-auth setup` is the image-user equivalent, minus the test-only `--env-from-file .env.test` flag (correctly dropped — that file is a test artifact, not present for a pull-and-run user). The service name `steam-auth` is confirmed in both `docker-compose.yml:44` and `docker/modern/docker-compose.yml:51`.
+So `docker compose run --rm -it steam-auth setup` is the image-user equivalent, minus the test-only `--env-from-file .env.test` flag (correctly dropped — that file is a test artifact, not present for a pull-and-run user). The service name `steam-auth` is confirmed in both `docker-compose.yml` and `docker/modern/docker-compose.yml`.
 
 ## Box-alignment gotcha
 
@@ -56,8 +64,8 @@ If the command plus padding exceeds the existing box width, widen the whole box 
 
 For each of the two banner scripts, replace the `make setup` line with `docker compose run --rm -it steam-auth setup`, preserving each script's existing wrapping (`echo -e "\e[33m…\e[0m"` vs. `print_warning "…"`) and the `║  ` / ` ║` borders. Pad the trailing spaces so the right border lines up with the rest of the box (see the gotcha above).
 
-- `docker/rootfs/startapp.sh:124`: `echo -e "\e[33m║  docker compose run --rm -it steam-auth setup<PAD> ║\e[0m"`
-- `docker/modern/rootfs/opt/bin/start-game.sh:98`: `print_warning "║  docker compose run --rm -it steam-auth setup<PAD> ║"`
+- `docker/rootfs/startapp.sh`: `echo -e "\e[33m║  docker compose run --rm -it steam-auth setup<PAD> ║\e[0m"`
+- `docker/modern/rootfs/opt/bin/start-game.sh`: `print_warning "║  docker compose run --rm -it steam-auth setup<PAD> ║"`
 
 `<PAD>` = enough trailing spaces to match the box's inner width.
 

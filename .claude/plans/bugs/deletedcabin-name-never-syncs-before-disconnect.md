@@ -1,6 +1,12 @@
 # `DeletedCabin_DoesNotPoisonSubsequentJoins` flakes when the farmhand name never syncs before disconnect
 
-**Status:** Root-caused from run `2026-07-16T07-04-54Z_ecdbb05` (worktree `steam-single-account-deadlock`, full-suite run under heavy host contention; `queueDurationTotal=54751s`). Not yet fixed. First recorded failure of this test; ledger history is all passed/canceled since 2026-05-28.
+**Status:** ready-to-implement
+**Priority:** 1 (low)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** none
+**Observed:** once, run `2026-07-16T07-04-54Z_ecdbb05` (worktree `steam-single-account-deadlock`, full suite under heavy host contention, `queueDurationTotal=54751s`); first recorded failure of this test, ledger all passed/canceled since 2026-05-28
+**Next step:** audit `DisconnectAndWaitForSlotAsync` call sites to pick test-local vs shared placement, then add the wait
 
 ## Symptom
 
@@ -35,7 +41,7 @@ As a result, the server-side farmhand entry can remain unnamed, and `WaitForFarm
 
 This is consistent with the other sync-related failure in the same run: `SaveImportTests.Import_ForceReload_KicksThenFinalizes` timed out in `WaitForFarmhandByNameAsync` with `requireCustomized:true` for Farmer66 before cancellation.
 
-## Fix sketch
+## Fix
 
 Before disconnecting, explicitly wait until the server knows the farmhand:
 

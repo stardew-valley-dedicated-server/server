@@ -1,6 +1,14 @@
 # Cancelled gate-only exclusive acquire leaks the gate and wedges the shared server
 
-## Gap
+**Status:** ready-to-implement
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** tests
+**Related:** none
+**Observed:** not observed, found by reading `ManagedServer.AcquireExclusiveGateOnlyAsync`
+**Next step:** wrap the post-claim awaits in the token-specific rollback and add the two `ExclusiveGateOwnershipTests` guards
+
+## Root cause
 
 `ManagedServer.AcquireExclusiveGateOnlyAsync` (the path an Exclusive test takes when it reuses a KeepConnected session) claims the gate **before any cancellable await**: it sets `_exclusiveDone`, `_exclusiveOwnerClass`, and `_exclusiveOwnerToken` under `_exclusiveLock`, then awaits the other-refs-drain poll loop. That loop honors the per-test ct (`Task.Delay(100, ct)` + `ThrowIfCancellationRequested`).
 
@@ -13,7 +21,7 @@ Every later test on that server can then block at the exclusive TCS (`AddRefExcl
 
 The sibling broker path (`AddRefAndAcquireExclusiveAsync`) already handles this failure mode: both of its awaits are covered by catch blocks that undo the gate claim when acquisition fails. The gate-only variant has no equivalent rollback.
 
-## Trigger conditions
+### Trigger conditions
 
 All three conditions are required:
 
@@ -23,7 +31,7 @@ All three conditions are required:
 
 This is rare because the drain normally completes well within a poll interval, and stopOnFail aborts tend to end the run anyway. A per-test timeout during the drain on an otherwise healthy run, however, produces the wedge.
 
-## Fix sketch
+## Fix
 
 Once the gate has been claimed, wrap the subsequent acquisition awaits in `try/catch`; on any throw, call `ReleaseExclusive(token, testName)` and rethrow.
 
@@ -37,7 +45,7 @@ Reusing `ReleaseExclusive` also preserves the existing waiter semantics:
 
 The fix is ~6 lines and uses the existing ownership/release mechanism rather than introducing a second rollback path.
 
-## Tests
+## Verification
 
 Add deterministic guards in the `ExclusiveGateOwnershipTests` harness:
 

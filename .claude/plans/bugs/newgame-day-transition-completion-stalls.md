@@ -1,4 +1,14 @@
-## Problem
+# `POST /newgame` stalls on day-transition completion with no other players
+
+**Status:** validation
+**Priority:** 2 (medium)
+**GitHub Issue(s):** none
+**Area:** server
+**Related:** [`newgame-stalls-after-forced-reload.md`](newgame-stalls-after-forced-reload.md)
+**Observed:** more than once in full E2E suite runs, not specific to one test
+**Next step:** trace `NewDaySynchronizer.finish()` / `hasFinished()` / `destroy()` across the save-reload path to find which state keeps `ComputeDayTransitionComplete()` false
+
+## Symptom
 
 `POST /newgame` can remain incomplete for two minutes and return a `504`, even though the game server is still running normally.
 
@@ -15,7 +25,9 @@ In the failing case:
 
 This means the request is genuinely waiting for the new-day transition to finish; it is not a lost HTTP response or a frozen game thread.
 
-## What we know
+## Root cause
+
+### What we know
 
 The `/newgame` request waits for `ComputeDayTransitionComplete()`.
 
@@ -36,7 +48,9 @@ There are two likely possibilities:
 
 `NewDaySynchronizer.finish()` only marks the synchronizer finished when `Game1.IsServer` is true, while `hasFinished()` reads that state. The synchronizer cleanup path, including `newDaySync.destroy()`, should also be checked because `/newgame` follows a save-reload path immediately before starting the new day.
 
-## Investigation
+## Fix
+
+### Investigation
 
 Start with `NewDaySynchronizer.finish()` and `hasFinished()` to establish how the server-side completion state is set and cleared.
 
@@ -44,19 +58,21 @@ Then trace `newDaySync.destroy()` and the return-to-title/save-reload path to ch
 
 Do not simply remove or loosen the `ComputeDayTransitionComplete()` check. The `/newgame` completion contract was deliberately changed to wait for both `SaveLoaded` and the day transition after an earlier race, so the fix needs to make the transition state resolve correctly rather than hide the problem.
 
-## Evidence that rules out the lobby wedge
+## Non-causes
+
+### The lobby wedge
 
 The server recording shows the game thread continuing to run at the expected rate while `/newgame` is stuck. The on-screen tick counter advances by 250 ticks over 50 seconds, matching the configured server tick rate, while the world remains black and shows zero players online.
 
 This rules out the previously investigated failure mode where the game thread freezes while waiting for a connected peer.
 
-## Previous explanation
+### Reverse-proxy timeout
 
 Do not assume the earlier explanation that this was a reverse-proxy timeout caused by end-of-run saturation.
 
 For this failure, the server itself emits the `504`, `snapshot_skipped_newday` continues after the timeout, and the game thread remains healthy. Those observations point to `/newgame` waiting indefinitely for its own day-transition completion condition.
 
-## Scope
+## Out of scope
 
 This is a game/server issue, not a test-runner issue.
 
