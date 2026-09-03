@@ -41,7 +41,7 @@ When consecutive full runs keep ending in a stall cascade (a `ssh_master_wedge_o
 1. Take the union of `status == "passed"` test names across the runs' `ctrf-report.json` files; the complement is the set still unexercised.
 2. Run that set with `make test FILTER="ClassA|ClassB|Method_C"` (`|` joins independent substring patterns) — a shorter run finishes before the tunnel wedges.
 
-**Confirm with the user before doing this.** Every failure being folded away must first be tied to a stall event by timestamp (step 7 above); a real regression that happens to sit next to a stall would otherwise be laundered into "canceled, re-run later". If any failure lacks a matching `ssh_master_*` / `host_daemon_forward_healed` event, it is a real failure and the runbook's normal path applies.
+**Confirm with the user before doing this.** Every failure being folded away must first be tied to a causal transport window on its own host: its `failedAt` falls between a `ssh_master_wedge_observed` (or `ssh_master_canary_stall`) and the matching `ssh_master_respawned` / `tunnel_forward_reopened`, or inside a `host_daemon_forward_healed` heal cycle, for the same `host_id`. Healthy lifecycle events (`ssh_master_ready`, `ssh_master_exited` at teardown) do not count. A failure without such a window is a real failure and the runbook's normal path applies; a real regression that happens to sit next to a stall would otherwise be laundered into "canceled, re-run later".
 
 ## Stalled / wedged runs (`aborted: true`, tests "Not executed", 0 failed)
 

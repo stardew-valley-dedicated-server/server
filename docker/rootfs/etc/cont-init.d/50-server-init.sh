@@ -4,21 +4,32 @@
 # Handles the two things startapp.sh can no longer do once it runs as the non-root app user:
 # fixing ownership of the volumes/paths the app writes, and syncing the system clock.
 
+set -e
+
 USER_ID="${USER_ID:-1000}"
 GROUP_ID="${GROUP_ID:-1000}"
 
-# Take ownership of everything the app writes: the game volume (also written by the steam-auth
-# sidecar), the image-baked Mods, the settings/diagnostics bind mounts, and the saves volume
-# nested under /config. Fresh Docker volumes and COPYed image dirs start root-owned, so this
-# must run every boot. steam-auth chowns the same game volume to the same uid, so the two
-# writers stay consistent.
 # The game and SMAPI resolve their config dir via Environment.GetFolderPath(ApplicationData),
 # which yields "" (a relative path into the service's cwd) unless XDG_CONFIG_HOME already
 # exists. The saves volume normally mounts inside it, but not every deployment mounts one.
 mkdir -p "${XDG_CONFIG_HOME:-/config/xdg/config}"
 
+# Take ownership of everything the app writes: the game volume (also written by the steam-auth
+# sidecar), the image-baked Mods, the settings/diagnostics bind mounts, and the saves volume
+# nested under /config. Fresh Docker volumes and COPYed image dirs start root-owned, so this
+# must run every boot. steam-auth chowns the same game volume to the same uid, so the two
+# writers stay consistent. Individual failures are expected on some bind mounts (Docker Desktop
+# host folders reject chown), so the sweep is tolerant; the check below is what gates startup.
 echo "[server-init] Taking ownership of /data and /config for ${USER_ID}:${GROUP_ID}..."
-chown -R "${USER_ID}:${GROUP_ID}" /data /config 2>/dev/null || true
+chown -R "${USER_ID}:${GROUP_ID}" /data /config || true
+
+# The app user must own the paths it writes unconditionally; anything else is a broken start.
+for dir in /config /data/game /data/Mods; do
+    if [ "$(stat -c %u "${dir}")" != "${USER_ID}" ]; then
+        echo "[server-init] ERROR: ${dir} is not owned by USER_ID ${USER_ID} after chown" >&2
+        exit 1
+    fi
+done
 
 # Sync the system clock. Needs root + the SYS_TIME cap (docker-compose.yml); as the dropped app
 # user it silently fails, and a skewed clock breaks GOG Galaxy P2P (~30s disconnects).
