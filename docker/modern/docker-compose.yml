@@ -27,6 +27,10 @@ services:
       - saves:/data/Saves
       - ./.local-container/settings:/data/settings
     environment:
+      # OS user the container runs as (create a dedicated host user and use its id -u / id -g).
+      # 0/0 runs as root. Must match steam-auth so the shared game-data volume stays writable.
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
       # Steam auth service URL (for runtime ticket requests)
       STEAM_AUTH_URL: "http://steam-auth:${STEAM_AUTH_PORT:-3001}"
       # Server configuration
@@ -50,8 +54,8 @@ services:
 
   steam-auth:
     build:
-      context: ../../tools/steam-service
-      dockerfile: Dockerfile
+      context: ../../
+      dockerfile: tools/steam-service/Dockerfile
     image: sdvd/steam-service:${IMAGE_VERSION:-latest}
     container_name: sdvd-steam-auth-modern
     stdin_open: true
@@ -62,6 +66,10 @@ services:
       - steam-session:/data/steam-session
       - game-data:/data/game
     environment:
+      # Must match the server's USER_ID/GROUP_ID: both containers read/write the shared
+      # game-data volume, so the sidecar chowns it and drops to this user. 0/0 runs as root.
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
       PORT: "${STEAM_AUTH_PORT:-3001}"
       GAME_DIR: "/data/game"
       SESSION_DIR: "/data/steam-session"
@@ -78,6 +86,9 @@ services:
     image: sdvd/discord-bot:${IMAGE_VERSION:-latest}
     container_name: sdvd-discord-bot-modern
     environment:
+      # OS user the container runs as; matches the server/steam-auth. 0/0 runs as root.
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
       API_URL: "http://server:${API_PORT:-8080}"
       UPDATE_INTERVAL_MS: "30000"

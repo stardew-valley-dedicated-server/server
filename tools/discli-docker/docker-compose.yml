@@ -3,9 +3,13 @@ services:
     build: .
     container_name: discli
     env_file: .env
+    # Run as a non-root user (default 1000; override with USER_ID/GROUP_ID). Applies to both the
+    # idle process and `docker compose exec` sessions, so nothing here runs as root.
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     volumes:
-      # Persists config.json, permissions.json, audit.log across restarts.
-      - discli-config:/root/.discli
+      # Persists config.json, permissions.json, audit.log across restarts. Lives under the
+      # non-root user's HOME (see Dockerfile).
+      - discli-config:/home/discli/.discli
     # Keep the container idle so we exec commands into it instead of
     # starting a fresh container per command.
     command: sleep infinity

@@ -35,6 +35,27 @@ These must be set for the server to function:
 | `API_KEY` | API key for authenticating write requests | (empty = disabled) |
 | `ALLOW_INSECURE_SETUP` | Allow startup when `VNC_PASSWORD` or `API_KEY` is empty | `false` |
 
+## Host / Permissions
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `USER_ID` | Numeric OS user id the containers run as | `1000` |
+| `GROUP_ID` | Numeric OS group id the containers run as | `1000` |
+
+By default the stack runs as a non-root user (`1000:1000`) rather than root. To run it as a
+dedicated host account and have the mounted volumes owned by that account, create the user and
+set these to its ids:
+
+```sh
+sudo useradd --system --create-home sdv
+id -u sdv   # -> USER_ID
+id -g sdv   # -> GROUP_ID
+```
+
+Every service (server, `steam-auth`, `discord-bot`) reads the same values — they share the
+game-data volume, so the ids **must match** (they do automatically when set in `.env`). Set both
+to `0` to run as root.
+
 ## Discord Integration
 
 | Variable | Description | Default |

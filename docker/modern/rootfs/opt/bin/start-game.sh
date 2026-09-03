@@ -6,7 +6,7 @@ MODS_DEST_DIR="/data/Mods"
 GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
-STEAM_DEST_DIR="/root/.steam/sdk64/"
+STEAM_DEST_DIR="${HOME}/.steam/sdk64/"
 
 # ============================================================================
 # Helpers
@@ -51,28 +51,6 @@ validate_environment() {
         echo ""
         exit 1
     fi
-}
-
-# ============================================================================
-# Time sync
-# ============================================================================
-
-init_time_sync() {
-    echo "Synchronizing system time..."
-
-    if hwclock --hctosys 2>/dev/null; then
-        echo "Time synced from hardware clock"
-        return 0
-    fi
-
-    if ntpdate -u pool.ntp.org 2>/dev/null; then
-        echo "Time synced from NTP server"
-        return 0
-    fi
-
-    echo "Warning: Could not sync time automatically"
-    echo "Current time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    echo "If Galaxy P2P disconnects occur after ~30 seconds, check system time sync"
 }
 
 # ============================================================================
@@ -194,9 +172,10 @@ init_mods() {
 # ============================================================================
 
 init_permissions() {
+    # Ownership is set by the root init-runtime oneshot (etc/s6-overlay/s6-rc.d/init-runtime)
+    # before this service drops to the app user; here we only ensure the game binary is
+    # executable (the app user owns it by now, so this succeeds without root).
     chmod +x "${GAME_EXECUTABLE}"
-    chmod -R 755 "${GAME_DEST_DIR}"
-    chown -R 1000:1000 "${GAME_DEST_DIR}"
 }
 
 # ============================================================================
@@ -204,7 +183,7 @@ init_permissions() {
 # ============================================================================
 
 validate_environment
-init_time_sync
+# System time is synced as root by the init-runtime oneshot before this service starts.
 init_stardew
 init_steam_sdk
 init_smapi
