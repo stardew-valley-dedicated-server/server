@@ -3,6 +3,7 @@ paths:
   - "docker/**"
   - "mod/**/*.cs"
   - "tests/test-client/**"
+  - "tools/xnb-unpacker/**"
 ---
 
 # `GetFolderPath(ApplicationData)` returns "" unless the XDG config dir already exists
