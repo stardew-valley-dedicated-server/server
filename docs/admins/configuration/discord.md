@@ -101,7 +101,7 @@ The ownership id protects only the dashboard message. Presence is global to the 
 ### Bot Not Coming Online
 
 1. Verify `DISCORD_BOT_TOKEN` is correct
-2. If `DISCORD_CHAT_CHANNEL_ID` is set, **Message Content Intent** must be enabled — login fails with `Used disallowed intents` otherwise
+2. If `DISCORD_CHAT_CHANNEL_ID` is set, **Message Content Intent** must be enabled — otherwise the bot logs `Discord refused the bot's gateway intents` and stops
 3. Check logs: `docker compose logs -f discord-bot`
 
 ### Messages Not Relaying
@@ -109,6 +109,7 @@ The ownership id protects only the dashboard message. Presence is global to the 
 1. Verify Message Content Intent is enabled
 2. Check `DISCORD_CHAT_CHANNEL_ID` is correct
 3. Ensure the bot can read and send in that channel
+4. Run `docker compose logs discord-bot`: `Cannot reach the server WebSocket` means the server API is not up yet or `API_ENABLED` is false; `closed the WebSocket before authentication completed` means `API_KEY` differs between the two services
 
 ### Bot Shows "Offline" But Server Is Running
 

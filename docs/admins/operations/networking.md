@@ -49,7 +49,7 @@ Steam SDR uses these ports internally but traffic goes through Valve's relay. No
 
 ### Changing Ports
 
-To change host-side port mappings (for conflicts):
+To change ports (for conflicts):
 
 ```sh
 # In .env
@@ -58,6 +58,8 @@ API_PORT=8081
 GAME_PORT=24643
 QUERY_PORT=27016
 ```
+
+`VNC_PORT`, `GAME_PORT`, and `QUERY_PORT` change only the host mapping; the container ports stay fixed. `API_PORT` changes the API port on the host and inside the container, and the Discord bot follows it.
 
 ## Troubleshooting
 

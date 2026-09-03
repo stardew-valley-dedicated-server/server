@@ -14,7 +14,7 @@ services:
     tty: true
     ports:
       - "${WEBRTC_PORT:-1984}:1984"       # WebRTC web UI
-      - "${API_PORT:-8080}:8080"           # Game API
+      - "${API_PORT:-8080}:${API_PORT:-8080}"           # Game API
       # Steam relay ports (used by GameServer.Init for relay network)
       - "${GAME_PORT:-24642}:24642/udp"
       - "${QUERY_PORT:-27015}:27015/udp"
@@ -79,7 +79,7 @@ services:
     container_name: sdvd-discord-bot-modern
     environment:
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
-      API_URL: "http://server:8080"
+      API_URL: "http://server:${API_PORT:-8080}"
       UPDATE_INTERVAL_MS: "30000"
       DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
       DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
