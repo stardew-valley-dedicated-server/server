@@ -226,14 +226,14 @@ jobs:
 
           # Failed restore can leave partial content, so a `live` half may be truncated.
           if [ "${RESTORE_STATUS:-}" = failed ] && { [ "$LATEST_SRC" = live ] || [ "$PREVIEW_SRC" = live ]; }; then
-            echo "::error::R2 restore was incomplete — a restored half may be truncated. Retry once R2 is reachable."
+            echo "::error::Refusing deploy: the R2 snapshot restore was incomplete, so a preserved half may be truncated and would publish partial docs. Retry once R2 is reachable."
             exit 1
           fi
           if [ "$LATEST_SRC" = none ]; then
             case "${RESTORE_STATUS:-}" in
-              failed)  echo "::error::Latest not built this run and the R2 read failed — refusing. Retry once R2 is reachable." ;;
-              skipped) echo "::error::Latest not built this run and the R2 restore was skipped (see the restore step's warning for why) — fix that, or re-run with rebuild_latest=true." ;;
-              *)       echo "::error::Latest missing and absent from R2 — refusing. Re-run with rebuild_latest=true." ;;
+              failed)  echo "::error::Refusing deploy: 'latest' wasn't rebuilt this run and the R2 snapshot read failed, so the live copy can't be preserved. Retry once R2 is reachable." ;;
+              skipped) echo "::error::Refusing deploy: 'latest' wasn't rebuilt this run and the R2 snapshot restore was skipped, so the live copy can't be preserved — see the \"Restore live snapshot from R2\" step's warning for why. Fix that, or re-run with rebuild_latest=true." ;;
+              *)       echo "::error::Refusing deploy: 'latest' wasn't rebuilt this run and no R2 snapshot exists to preserve the live copy — publishing now would wipe live 'latest'. Re-run with rebuild_latest=true (or configure R2)." ;;
             esac
             exit 1
           fi
@@ -241,10 +241,10 @@ jobs:
             # LATEST-ONLY wipes any live preview, so ship it only when a successful read (ok)
             # confirmed the snapshot — hence live — has no preview.
             if [ "${RESTORE_STATUS:-}" != ok ]; then
-              echo "::error::Preview absence unconfirmed (restore: ${RESTORE_STATUS:-unknown}) — refusing LATEST-ONLY. Retry, or re-run with rebuild_preview=true."
+              echo "::error::Refusing latest-only deploy: couldn't confirm whether live 'preview' exists (snapshot restore: ${RESTORE_STATUS:-unknown}), so publishing might silently wipe it. Retry, or re-run with rebuild_preview=true."
               exit 1
             fi
-            echo "::warning::Deploying LATEST-ONLY — preview confirmed absent from R2."
+            echo "::warning::Deploying latest-only — live 'preview' confirmed absent from the R2 snapshot, so nothing is wiped."
           fi
 
       - name: Setup Pages
