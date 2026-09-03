@@ -366,7 +366,7 @@ public class PasswordProtectionTests : TestBase
     /// for every farmer it knows about, lobby player included, and no patch reaches it. With
     /// both connected the farmhand waited for the lobby player forever, the host waited for
     /// the farmhand at the next barrier, and every game-thread endpoint returned 503 for the
-    /// rest of the server's life. The server now checks in on the lobby player's behalf.
+    /// rest of the server's life. The server checks in on the lobby player's behalf.
     ///
     /// The single-client variant above cannot catch this: with only the host and the lobby
     /// player connected there is no farmhand to wait. The lobby player must also stay

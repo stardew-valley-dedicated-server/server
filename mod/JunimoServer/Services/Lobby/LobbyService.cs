@@ -527,11 +527,8 @@ public class LobbyService : ModService
             return;
         }
 
-        if (!___barriers.TryGetValue(name, out var barrierPlayers))
-        {
-            barrierPlayers = new HashSet<long>();
-            ___barriers[name] = barrierPlayers;
-        }
+        // The original creates the entry before it checks it, so this lookup cannot miss.
+        var barrierPlayers = ___barriers[name];
 
         // Every non-excluded player must have checked in; collect the excluded ones that haven't.
         List<long> missingExcluded = null;
