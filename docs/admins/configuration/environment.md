@@ -39,38 +39,39 @@ These must be set for the server to function:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `USER_ID` | Numeric OS user id the containers run as | `1000` |
-| `GROUP_ID` | Numeric OS group id the containers run as | `1000` |
+| `USER_ID` | Numeric uid the game and sidecar processes run as | `1000` |
+| `GROUP_ID` | Numeric gid the game and sidecar processes run as | `1000` |
 
-By default the stack runs as a non-root user (`1000:1000`) rather than root. To run it as a
-dedicated host account and have the mounted volumes owned by that account, create the user and
-set these to its ids:
+Each container starts as root inside the container, prepares its volumes (ownership, and on the
+server the clock sync), then runs the application as `USER_ID:GROUP_ID`. Only the container init
+stays root. The game, SMAPI and every mod run as the configured user, so a misbehaving mod has no
+root inside the container. This is the standard model for Docker images and the recommended setup.
 
-```sh
-sudo useradd --system --create-home sdv
-id -u sdv   # -> USER_ID
-id -g sdv   # -> GROUP_ID
-```
+All services read the same two values because they share the game-data volume. Set them in `.env`
+and every service picks them up.
 
-Every service (server, `steam-auth`, `discord-bot`) reads the same values — they share the
-game-data volume, so the ids **must match** (they do automatically when set in `.env`). Set both
-to `0` to run as root.
+**What to set**
 
-How it works: each container starts as root *inside the container* only long enough to take
-ownership of its volumes (and, for the server, to sync the clock), then hands the application
-off to `USER_ID:GROUP_ID`. Files in the mounted folders and volumes end up owned by that user on
-the host. Only the container's tiny init process stays root; `docker top sdvd-server` shows it.
-The host account that runs `docker compose` needs no special privileges beyond Docker access.
+- **Linux:** the container uid is the host uid. Set both to your account so files in the mounted
+  folders and volumes belong to you:
 
-**Existing deployments:** the first boot after changing `USER_ID`/`GROUP_ID` re-owns the volumes
-(a few seconds on the game volume). No manual chown is needed.
+  ```sh
+  id -u   # -> USER_ID
+  id -g   # -> GROUP_ID
+  ```
 
-**Rootless Docker:** the stack works unchanged. In rootless mode the container's root *is* your
-host user, so set `USER_ID=0` and `GROUP_ID=0` there — that is what makes mounted files come out
-owned by you. A non-zero `USER_ID` under rootless Docker maps to a subordinate uid on the host
-(something like `100999`), which is rarely what you want. The clock-sync step cannot run without
-real root and logs a harmless "could not sync time" warning; the container uses the host clock
-regardless.
+  The default `1000` is the first user created on most distributions. If that is you, nothing to do.
+- **Windows and macOS (Docker Desktop):** leave the default. Bind-mounted folders are translated to
+  your desktop user regardless of the container uid, and named volumes live inside the Docker VM.
+- **Root (`0`):** set both to `0` to run everything as root inside the container. Not needed for
+  normal operation.
+
+Changing the ids on an existing installation is safe: the next start re-owns the volumes.
+
+**Rootless Docker: not recommended.** The stack starts, but the clock sync needs real root and
+fails; an incorrect host clock breaks the Galaxy connection handshake, so you must keep the host
+clock right yourself. If you run rootless anyway, set `USER_ID=0` and `GROUP_ID=0`: container root
+is already your host user there, and a non-zero uid maps to a subordinate uid on the host.
 
 ## Discord Integration
 
