@@ -142,9 +142,9 @@ ARG SMAPI_VERSION
 ARG TMUX_VERSION=3.7c
 
 ENV APP_NAME="Stardew Dedicated Server" \
-    USER_ID=0 \
-    GROUP_ID=0 \
-    HOME=/root \
+    USER_ID=1000 \
+    GROUP_ID=1000 \
+    HOME=/config \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8 \
@@ -228,10 +228,12 @@ RUN \
     rm -f /etc/cont-init.d/89-info.sh && \
     # Prevent overriding OpenGL drivers
     rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH && \
-    # Pin the runtime HOME to match the ENV above — the base defaults it to /config, and
-    # Steam resolves steamclient.so via ~/.steam while startapp.sh links it into
-    # /root/.steam/sdk64; a mismatch fails SteamAPI_Init and with it GameServer.Init()
-    set-cont-env HOME /root
+    # Pin the runtime HOME so Steam's ~/.steam lookup matches where startapp.sh links
+    # steamclient.so (${HOME}/.steam/sdk64); a mismatch fails SteamAPI_Init and with it
+    # GameServer.Init(). /config is owned by USER_ID at startup, so it stays writable for any
+    # configured non-root user. set-cont-env is used because cont-env overrides container env,
+    # so HOME can't be supplied from compose.
+    set-cont-env HOME /config
 
 # Copy pre-built tools from build stages
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher
@@ -263,7 +265,7 @@ COPY docker/rootfs/ /
 # Apply our chmod'd services and set other script permissions
 RUN cp -a /tmp/services/. /etc/services.d/ && \
     rm -rf /tmp/services && \
-    chmod +x /startapp.sh /opt/base/bin/*
+    chmod +x /startapp.sh /opt/base/bin/* /etc/cont-init.d/50-server-init.sh
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer

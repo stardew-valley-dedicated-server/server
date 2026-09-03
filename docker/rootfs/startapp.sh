@@ -9,7 +9,7 @@ MODS_DEST_DIR="/data/Mods"
 GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
-STEAM_SDK_DIR="/root/.steam/sdk64"
+STEAM_SDK_DIR="${HOME}/.steam/sdk64"
 # Completion marker written by steam-auth only after the full depot download succeeds. Gate on it
 # rather than the StardewValley executable: the downloader pre-allocates every file at full size
 # up front, so the executable exists (zero-filled) mid-download — launching on it would run a
@@ -67,27 +67,6 @@ validate_environment
 
 print_error() {
     echo -e "\e[31m$1\e[0m"
-}
-
-init_time_sync() {
-    echo "Synchronizing system time..."
-
-    # Try hardware clock sync first (works with host in most cases)
-    if hwclock --hctosys 2>/dev/null; then
-        echo "Time synced from hardware clock"
-        return 0
-    fi
-
-    # Fallback to NTP sync (requires internet)
-    if ntpdate -u pool.ntp.org 2>/dev/null; then
-        echo "Time synced from NTP server"
-        return 0
-    fi
-
-    # If both fail, warn but continue (time might already be correct)
-    echo "Warning: Could not sync time automatically"
-    echo "Current time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    echo "If Galaxy P2P disconnects occur after ~30 seconds, check system time sync"
 }
 
 init_xauthority() {
@@ -288,9 +267,10 @@ init_mods() {
 }
 
 init_permissions() {
+    # Ownership is set by the root cont-init hook (etc/cont-init.d/50-server-init.sh) before
+    # this script runs as the non-root app user; here we only ensure the game binary is
+    # executable (the app user owns it by now, so this succeeds without root).
     chmod +x "${GAME_EXECUTABLE}"
-    chmod -R 755 "${GAME_DEST_DIR}"
-    chown -R 1000:1000 "${GAME_DEST_DIR}"
 }
 
 init_steam_sdk() {
@@ -320,9 +300,8 @@ init_steam_sdk() {
 
 echo "Initializing SMAPI..."
 
-# Prepare
+# Prepare (system time is synced as root by etc/cont-init.d/50-server-init.sh before this runs)
 start_phase_responder
-init_time_sync
 init_xauthority
 init_display_settings
 init_stardew

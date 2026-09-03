@@ -14,6 +14,8 @@ RUN apt-get update && \
     xvfb \
     mesa-utils \
     x11-utils \
+    # gosu drops privileges to USER_ID:GROUP_ID in the entrypoint (see entrypoint.sh).
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
@@ -30,20 +32,10 @@ RUN set -e; \
     chmod +x StardewXnbHack; \
     rm -rf "StardewXnbHack ${TAG} for Linux"
 
-# Create run script:
-# 1. Starts Xvfb so the game can run headlessly
-# 2. Copies StardewXnbHack from /tmp to the current working directory /game
-# 3. Launches StardewXnbHack
-# 4. Moves unpacked content to /output dir if mounted via volume
-# 5. Deletes StardewXnbHack
-RUN echo '#!/bin/sh\n'\
-    'set -e\n'\
-    'cp -f /tmp/StardewXnbHack .\n'\
-    'Xvfb :99 -screen 0 1024x768x24 &\n'\
-    'export DISPLAY=:99\n'\
-    './StardewXnbHack\n'\
-    'rm -rf ./StardewXnbHack\n'\
-    > /entrypoint.sh && chmod +x /entrypoint.sh
+# Entrypoint: chown the mounted host dirs to USER_ID:GROUP_ID, drop privileges, start Xvfb, and
+# run StardewXnbHack (see entrypoint.sh).
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Mount the game folder
 WORKDIR /game

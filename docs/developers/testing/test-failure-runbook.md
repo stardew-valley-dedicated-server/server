@@ -34,6 +34,15 @@ A Wi‑Fi or ssh-mux stall shows as every `container.log` of a host ending withi
 4. **`diagnostics/ssh-master-{host}.log`** (current master) and `ssh-master-{host}.pid{N}-{hhmmss}.log` (archived masters): ssh's own death line (`Timeout, server not responding.`) when the master saw the stall as a keepalive timeout; empty when it did not.
 5. **`diagnostics/test-process-stderr.log`** — every `TestLog` line of the xUnit child (`[Server]` / `[Client]` / `[Test]` prefixes), including the lease/reuse and "marking dead" lines that exist nowhere else.
 
+### Finishing coverage when every full run dies to a tunnel stall
+
+When consecutive full runs keep ending in a stall cascade (a `ssh_master_wedge_observed` followed within a minute by "connection refused (localhost:NNNNN)" failures and mass cancellation), run the never-passed remainder instead of a fifth full run:
+
+1. Take the union of `status == "passed"` test names across the runs' `ctrf-report.json` files; the complement is the set still unexercised.
+2. Run that set with `make test FILTER="ClassA|ClassB|Method_C"` (`|` joins independent substring patterns) — a shorter run finishes before the tunnel wedges.
+
+**Confirm with the user before doing this.** Every failure being folded away must first be tied to a stall event by timestamp (step 7 above); a real regression that happens to sit next to a stall would otherwise be laundered into "canceled, re-run later". If any failure lacks a matching `ssh_master_*` / `host_daemon_forward_healed` event, it is a real failure and the runbook's normal path applies.
+
 ## Stalled / wedged runs (`aborted: true`, tests "Not executed", 0 failed)
 
 A run aborted by the stall watchdog (`abortReason: "child-stall-watchdog"`, `notDispatched > 0`) has no failing test to start from — something is blocked while holding a lease. Diagnose the *waiter*, not a test:

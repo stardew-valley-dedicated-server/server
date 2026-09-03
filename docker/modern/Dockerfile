@@ -215,7 +215,15 @@ ARG GO2RTC_VERSION
 
 # ---------- Environment ----------
 
-ENV HOME=/root \
+# USER_ID/GROUP_ID: the app services drop to this uid/gid via s6-applyuidgid (see the s6-rc.d
+# run scripts); the init-runtime oneshot chowns the volumes to match. Defaults to non-root;
+# override per deployment from docker-compose. HOME is a writable dir owned by that user (the
+# app's ~/.steam SDK link and any dotfiles live here), not /root.
+# TODO: the non-root drop is only verified on the production image (docker/Dockerfile); this
+# image has not been built or booted with it — confirm all s6 services come up as USER_ID.
+ENV USER_ID=1000 \
+    GROUP_ID=1000 \
+    HOME=/home/app \
     LANG=en_US.UTF-8 \
     # X11 display
     DISPLAY=:99 \
@@ -311,7 +319,9 @@ RUN apk add --no-cache gcc musl-dev && \
 
 RUN chmod +x /opt/bin/* && \
     find /etc/s6-overlay/s6-rc.d -name run -exec chmod +x {} \; && \
-    find /etc/s6-overlay/s6-rc.d -name up -exec chmod +x {} \;
+    find /etc/s6-overlay/s6-rc.d -name up -exec chmod +x {} \; && \
+    # App-user HOME (chowned to USER_ID:GROUP_ID at runtime by the init-runtime oneshot).
+    mkdir -p /home/app
 
 # ---------- Copy mod from build stage ----------
 
