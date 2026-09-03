@@ -232,7 +232,7 @@ jobs:
           if [ "$LATEST_SRC" = none ]; then
             case "${RESTORE_STATUS:-}" in
               failed)  echo "::error::Latest not built this run and the R2 read failed — refusing. Retry once R2 is reachable." ;;
-              skipped) echo "::error::Latest not built this run and R2 is not configured (no snapshot to restore) — configure R2, or re-run with rebuild_latest=true." ;;
+              skipped) echo "::error::Latest not built this run and the R2 restore was skipped (R2 not configured, or aws CLI unavailable — see the restore step's warning) — fix that, or re-run with rebuild_latest=true." ;;
               *)       echo "::error::Latest missing and absent from R2 — refusing. Re-run with rebuild_latest=true." ;;
             esac
             exit 1
