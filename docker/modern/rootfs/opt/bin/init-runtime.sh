@@ -10,6 +10,14 @@ USER_ID="${USER_ID:-1000}"
 GROUP_ID="${GROUP_ID:-1000}"
 APP_HOME="${HOME:-/home/app}"
 
+# The app uid/gid need real passwd/group entries: Openbox (via glib) segfaults on a uid with no
+# passwd record, and other tools misbehave. Only add them when the ids aren't already known.
+if [ "${USER_ID}" != "0" ]; then
+    getent group "${GROUP_ID}" >/dev/null || addgroup -g "${GROUP_ID}" app
+    getent passwd "${USER_ID}" >/dev/null \
+        || adduser -D -H -u "${USER_ID}" -G "$(getent group "${GROUP_ID}" | cut -d: -f1)" -h "${APP_HOME}" app
+fi
+
 # Per-user runtime dir for pipewire (XDG_RUNTIME_DIR=/tmp/runtime), owned by the app user.
 mkdir -p /tmp/runtime
 chown "${USER_ID}:${GROUP_ID}" /tmp/runtime
