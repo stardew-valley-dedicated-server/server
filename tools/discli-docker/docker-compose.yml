@@ -9,8 +9,8 @@ services:
     volumes:
       # Persists config.json, permissions.json, audit.log across restarts. Lives under the
       # non-root user's HOME (see Dockerfile). A fresh volume inherits the image's ownership; a
-      # volume that already holds root-owned files needs a one-time
-      # `docker run --rm -v discli-docker_discli-config:/d alpine chown -R 1000:1000 /d`.
+      # volume that already holds root-owned files needs a one-time chown to the ids in use:
+      # `docker run --rm -v discli-docker_discli-config:/d alpine chown -R "${USER_ID:-1000}:${GROUP_ID:-1000}" /d`
       - discli-config:/home/discli/.discli
     # Keep the container idle so we exec commands into it instead of
     # starting a fresh container per command.
