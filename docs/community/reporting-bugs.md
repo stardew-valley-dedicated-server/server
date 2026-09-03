@@ -35,6 +35,10 @@ The zip is saved in a `diagnostics` folder next to your `docker-compose.yml` fil
 your issue — it covers the environment and logs the template asks for. See the [diagnostics
 command](/admins/operations/commands) for what's included.
 
+Passwords and API keys are masked in the bundle, but the logs are included as-is and can contain
+details like player names, platform IDs, or file paths. GitHub issues are public, so skim the zip
+and remove anything you'd rather not share.
+
 ::: tip
 This command is part of the standard server image. The [modern (Alpine)
 image](/admins/operations/modern-docker) doesn't include it, so attach your logs manually there.
