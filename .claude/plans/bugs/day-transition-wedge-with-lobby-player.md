@@ -54,7 +54,7 @@ No retry or re-arm loop: after the kick, vanilla's own path completes the barrie
 
 1. Locally comment out the check-in broadcast loop in `LobbyService.BarrierReady_Postfix` (the `Game1.server.sendMessage(peerId, checkIn)` fan-out) so the wedge reproduces.
 2. Run `make test FILTER=LobbyPlayer_WithAuthenticatedFarmhand`.
-3. In `containers/server-0/container.log` expect, in order: `Synchronizing 'NewDay' task...`, `waited 20 sec to kick barrier`, `kicking due to not making past barrier: <farmhand id>` within a second of it, then the barrier check-in lines and `task complete.` The day must advance. The test itself will fail on its "driver farmhand must be online" assertion, which is the expected outcome in this configuration; the gate is the log sequence plus the day advancing.
+3. In `containers/server-0/container.log` expect, in order: `Synchronizing 'NewDay' task...`, `waited 20 sec to kick barrier`, `kicking due to not making past barrier: <farmhand id>` within a second of it, then the barrier check-in lines and `task complete.` The day must advance. The test itself will fail at its post-transition `/auth` count assertion (the kicked driver is no longer online, so `authenticated` reads 0), which is the expected outcome in this configuration; the gate is the log sequence plus the day advancing.
 4. Restore the broadcast and run the same test plus `LobbyPlayer_SurvivesDayTransition_CanAuthenticateAfter`; both must pass with no `kicking` line.
 
 ## Open questions, same scenario, not yet verified
