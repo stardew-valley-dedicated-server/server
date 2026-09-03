@@ -109,7 +109,7 @@ The ownership id protects only the dashboard message. Presence is global to the 
 1. Verify Message Content Intent is enabled
 2. Check `DISCORD_CHAT_CHANNEL_ID` is correct
 3. Ensure the bot can read and send in that channel
-4. Run `docker compose logs discord-bot`: `Cannot reach the server WebSocket` means the server API is not up yet or `API_ENABLED` is false; `closed the WebSocket before authentication completed` means `API_KEY` differs between the two services
+4. Run `docker compose logs discord-bot`: `Cannot reach the server WebSocket` means the server API is not up yet or `API_ENABLED` is false; `closed the WebSocket before authentication completed` usually means `API_KEY` differs between the two services; if the keys match, check the server logs
 
 ### Bot Shows "Offline" But Server Is Running
 

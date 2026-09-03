@@ -159,7 +159,7 @@ By default the server aborts startup when `VNC_PASSWORD` is empty or (with `API_
 | 24642 | UDP | Game (Steam SDR) | No (relay handles NAT) |
 | 27015 | UDP | Steam query | No (relay handles NAT) |
 | 5800 | TCP | VNC web interface | Only for remote access |
-| 8080 | TCP | REST API | Only for external tools |
+| `API_PORT` (default 8080) | TCP | REST API | Only for external tools |
 | 3001 | TCP | Steam auth (internal) | No |
 
 ## Changing Ports

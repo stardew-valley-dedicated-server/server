@@ -43,7 +43,7 @@ joinable over direct IP — even for the account's own player. See
 | 24642 | UDP | Steam SDR game port | No (relay handles NAT) |
 | 27015 | UDP | Steam SDR query port | No (relay handles NAT) |
 | 5800 | TCP | VNC web interface | Only for remote access |
-| 8080 | TCP | HTTP API | Only for external tools |
+| `API_PORT` (default 8080) | TCP | HTTP API | Only for external tools |
 
 Steam SDR uses these ports internally but traffic goes through Valve's relay. No port forwarding required for most setups.
 
