@@ -140,12 +140,12 @@ openssl rand -base64 32
 ::: tip When do I need this?
 Currently, only the Discord bot uses the API. If you:
 - **Use the Discord bot**: Set the same `API_KEY` for both server and bot
-- **Don't use the Discord bot**: You can skip `API_KEY` if the API port (8080) is not exposed externally
+- **Don't use the Discord bot**: You can skip `API_KEY` if the API port (default 8080) is not exposed externally
 - **Build custom integrations** (web dashboard, monitoring, etc.): Set `API_KEY` and include it in your requests
 :::
 
 ::: warning
-Without `API_KEY`, anyone with network access to port 8080 can read server data and control your server. Always set this if the API is accessible from untrusted networks.
+Without `API_KEY`, anyone with network access to the API port (default 8080) can read server data and control your server. Always set this if the API is accessible from untrusted networks.
 :::
 
 ### ALLOW_INSECURE_SETUP
@@ -171,7 +171,7 @@ VNC_PORT=5801
 API_PORT=8081
 ```
 
-The internal container ports remain unchanged; only the host mapping changes.
+The VNC container port stays fixed; only its host mapping changes. `API_PORT` changes the API port both on the host and inside the container, so the server, its health check, and the Discord bot all follow it.
 
 ## Advanced Variables
 

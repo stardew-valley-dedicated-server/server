@@ -7,7 +7,7 @@ services:
     tty: true
     ports:
       - "${VNC_PORT:-5800}:5800"
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
       # Steam relay ports (used by GameServer.Init for relay network)
       - "${GAME_PORT:-24642}:24642/udp"
       - "${QUERY_PORT:-27015}:27015/udp"
@@ -81,7 +81,7 @@ services:
     environment:
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
       # HTTP API URL for fetching server status
-      API_URL: "http://server:8080"
+      API_URL: "http://server:${API_PORT:-8080}"
       # Min 20s to respect Discord rate limits, default 30s
       UPDATE_INTERVAL_MS: "30000"
       # Bot nickname (optional, falls back to farm name)
@@ -100,7 +100,7 @@ services:
 
     depends_on:
       - server
-    # on-failure: won't restart when disabled (exit 0), will restart on crashes
+    # on-failure: won't restart when the bot stops on purpose (exit 0: token unset, bad token, missing intent), will restart on crashes
     restart: on-failure
 
 volumes:

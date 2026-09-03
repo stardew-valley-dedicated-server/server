@@ -1,6 +1,6 @@
 # REST API
 
-The dedicated server exposes an HTTP REST API on port 8080 for monitoring and controlling your server programmatically.
+The dedicated server exposes an HTTP REST API (port 8080 by default, see `API_PORT`) for monitoring and controlling your server programmatically.
 
 Use the sidebar to browse available endpoints.
 

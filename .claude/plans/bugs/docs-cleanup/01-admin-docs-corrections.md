@@ -5,14 +5,14 @@
 **GitHub Issue(s):** none
 **Area:** docs
 **Related:** [`README.md`](README.md)
-**Observed:** docs audit 2026-06-13; C1–C3 re-confirmed by hand against compose, `startapp.sh`, and the doc text
-**Next step:** open a PR fixing C1–C3 first; resolve D1–D3 with the maintainer before touching H1/H2
+**Observed:** docs audit 2026-06-13; C2–C3 re-confirmed by hand against compose, `startapp.sh`, and the doc text
+**Next step:** open a PR fixing C2–C3 first; resolve D2–D3 with the maintainer before touching H1/H2
 
 **Objective:** Fix every statement in the operator-facing docs that, if followed, breaks the server,
 loses data, or sends the operator chasing signals that don't exist.
 
 **Scope:** `docs/admins/**`, `docs/features/backup.md` (operator content), companion touchpoints
-`.env.example` and the D1–D3 decision-register items (see README).
+`.env.example` and the D2–D3 decision-register items (see README).
 
 **Verification gate:** after edits, `make docs` builds clean; `grep -rn "Ready for players" docs/`
 returns nothing; every command quoted in the changed pages was run-or-traced against the code path
@@ -21,18 +21,6 @@ cited below.
 ---
 
 ## Critical
-
-### C1. `environment.md` "Changing Ports" — the API_PORT example breaks the API  **[DECISION D1]**
-- **File:** `docs/admins/configuration/environment.md` (~lines 162-171: "VNC_PORT=5801 / API_PORT=8081 … only the host mapping changes")
-- **Problem:** `docker-compose.yml` maps `${API_PORT:-8080}:8080` (fixed container port), but
-  `docker-compose.yml` ALSO forwards `API_PORT` into the container, and the mod listens on it
-  (`mod/JunimoServer/Env.cs`, `Services/Api/ApiService.cs`). Setting `API_PORT=8081` makes
-  the mod listen on 8081 in-container while the host maps 8081→8080 → no listener; the Discord bot
-  (`API_URL: http://server:8080` in compose) breaks too.
-- **Fix (doc-side default):** remove `API_PORT` from the example; state that `API_PORT` currently
-  changes the port both inside and outside the container and is **not** safely remappable until the
-  compose file is fixed. If D1 is resolved code-side instead (stop forwarding API_PORT into the
-  container), the existing prose becomes true — coordinate with the decision.
 
 ### C2. `upgrading.md` — "server automatically downloads the latest game files on startup" is false
 - **File:** `docs/admins/operations/upgrading.md` (after the `docker volume rm server_game-data` step)

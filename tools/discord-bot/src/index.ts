@@ -4,8 +4,11 @@ import {
     ActivityType,
     Client,
     DiscordAPIError,
+    DiscordjsError,
+    DiscordjsErrorCodes,
     EmbedBuilder,
     Events,
+    GatewayCloseCodes,
     GatewayIntentBits,
     type Message,
     PermissionFlagsBits,
@@ -19,6 +22,7 @@ import {
     formatFooter,
     parseOwnerId,
 } from "./dashboard";
+import { createLogger, log } from "./log";
 import { resolveServerState, type StatusSignals } from "./serverState";
 
 // Configuration from environment
@@ -47,7 +51,7 @@ const UPDATE_INTERVAL_MS = Math.max(
 );
 
 if (!DISCORD_BOT_TOKEN) {
-    console.log("[Discord Bot] DISCORD_BOT_TOKEN not set - bot disabled");
+    log.info("DISCORD_BOT_TOKEN not set - bot disabled");
     process.exit(0);
 }
 
@@ -155,6 +159,9 @@ function startHeartbeat(): void {
     }, 30000);
 }
 
+// Polled by several callers, so only reachability changes are logged.
+let statusFetchFailure: string | null | undefined;
+
 /**
  * Fetches the server status from the HTTP API.
  */
@@ -166,20 +173,34 @@ async function fetchServerStatus(): Promise<ServerStatus | null> {
         });
 
         if (!response.ok) {
-            console.error(`[Discord Bot] API request failed: ${response.status} ${response.statusText}`);
+            reportStatusFetch(`${response.status} ${response.statusText}`);
             return null;
         }
 
-        return await response.json();
+        const status = await response.json();
+        reportStatusFetch(null);
+        return status;
     } catch (error) {
-        if (error instanceof Error) {
-            console.error(`[Discord Bot] Failed to fetch status: ${error.message}`);
-        } else {
-            console.error(`[Discord Bot] Failed to fetch status: ${error}`);
-        }
+        reportStatusFetch(error instanceof Error ? error.message : String(error));
         return null;
     }
 }
+
+function reportStatusFetch(failure: string | null): void {
+    if (failure === statusFetchFailure) {
+        return;
+    }
+    if (failure) {
+        log.warn(
+            `Cannot fetch ${API_URL}/status (${failure}); presence and dashboard will show the server as offline until it responds`,
+        );
+    } else if (statusFetchFailure) {
+        log.info("Server API reachable again");
+    }
+    statusFetchFailure = failure;
+}
+
+let lastActivityName: string | null = null;
 
 /**
  * Updates the bot's presence/status based on server state.
@@ -209,7 +230,10 @@ async function updatePresence(): Promise<void> {
         status: state.presence,
     });
 
-    console.log(`[Discord Bot] Status updated: ${activityName}`);
+    if (activityName !== lastActivityName) {
+        log.info(`Status updated: ${activityName}`);
+        lastActivityName = activityName;
+    }
 }
 
 /**
@@ -235,12 +259,12 @@ async function updateBotNickname(): Promise<void> {
             const currentNickname = guild.members.me?.nickname;
             if (currentNickname !== nickname) {
                 await guild.members.me?.setNickname(nickname);
-                console.log(`[Discord Bot] Nickname set to "${nickname}" in ${guild.name}`);
+                log.info(`Nickname set to "${nickname}" in ${guild.name}`);
             }
         } catch (error) {
             // May lack permissions in some guilds
             if (error instanceof Error) {
-                console.error(`[Discord Bot] Failed to set nickname in ${guild.name}: ${error.message}`);
+                log.error(`Failed to set nickname in ${guild.name}: ${error.message}`);
             }
         }
     }
@@ -248,13 +272,16 @@ async function updateBotNickname(): Promise<void> {
 
 // Track WebSocket authentication state
 let wsAuthenticated = false;
+let wsFailedAttempts = 0;
+const WS_RECONNECT_DELAY_MS = 5000;
+const WS_FAILURE_LOG_EVERY = 12; // one progress line per minute at the 5s retry cadence
 
 /**
  * Connects to the game server's WebSocket for real-time chat relay.
  */
 function connectWebSocket(): void {
     if (!DISCORD_CHAT_CHANNEL_ID) {
-        console.log("[Discord Bot] DISCORD_CHAT_CHANNEL_ID not set - chat relay disabled");
+        log.info("DISCORD_CHAT_CHANNEL_ID not set - chat relay disabled");
         return;
     }
 
@@ -268,20 +295,27 @@ function connectWebSocket(): void {
     }
 
     wsAuthenticated = false;
-    console.log(`[Discord Bot] Connecting to WebSocket: ${WS_URL}`);
+    if (wsFailedAttempts === 0) {
+        log.info(`Connecting to WebSocket: ${WS_URL}`);
+    }
 
     try {
         ws = new WebSocket(WS_URL);
+        let opened = false;
 
         ws.onopen = () => {
+            opened = true;
             // Send auth message if API_KEY is set
             if (API_KEY) {
-                console.log("[Discord Bot] WebSocket connected, authenticating...");
+                if (wsFailedAttempts === 0) {
+                    log.info("WebSocket connected, authenticating...");
+                }
                 ws?.send(JSON.stringify({ type: "auth", payload: { token: API_KEY } }));
             } else {
                 // No auth required, start heartbeat immediately
-                console.log("[Discord Bot] WebSocket connected");
+                log.info("WebSocket connected");
                 wsAuthenticated = true;
+                wsFailedAttempts = 0;
                 startHeartbeat();
             }
         };
@@ -292,16 +326,17 @@ function connectWebSocket(): void {
 
                 // Handle auth response
                 if (msg.type === "auth_success") {
-                    console.log("[Discord Bot] WebSocket authenticated");
+                    log.info("WebSocket authenticated");
                     wsAuthenticated = true;
+                    wsFailedAttempts = 0;
                     startHeartbeat();
                     return;
                 }
 
                 if (msg.type === "auth_failed") {
-                    console.error(
-                        `[Discord Bot] WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`,
-                    );
+                    if (wsFailedAttempts === 0) {
+                        log.error(`WebSocket authentication failed: ${(msg.payload as any)?.error || "unknown error"}`);
+                    }
                     return;
                 }
 
@@ -322,31 +357,45 @@ function connectWebSocket(): void {
                 }
             } catch (error) {
                 if (error instanceof Error) {
-                    console.error(`[Discord Bot] Failed to process WebSocket message: ${error.message}`);
+                    log.error(`Failed to process WebSocket message: ${error.message}`);
                 }
             }
         };
 
         ws.onclose = () => {
-            console.log("[Discord Bot] WebSocket disconnected, reconnecting in 5s...");
+            if (wsAuthenticated) {
+                log.info("WebSocket disconnected, reconnecting...");
+            } else {
+                wsFailedAttempts++;
+                if (wsFailedAttempts === 1 && opened) {
+                    log.warn(
+                        `Server closed the WebSocket before authentication completed; check that API_KEY matches the server. Retrying every ${WS_RECONNECT_DELAY_MS / 1000}s`,
+                    );
+                } else if (wsFailedAttempts === 1) {
+                    log.info(
+                        `Cannot reach the server WebSocket at ${WS_URL} yet; retrying every ${WS_RECONNECT_DELAY_MS / 1000}s. ` +
+                            "This is normal while the game server is still starting. If it persists after the server is up, " +
+                            "check that API_ENABLED is true on the server and API_KEY matches.",
+                    );
+                } else if (wsFailedAttempts % WS_FAILURE_LOG_EVERY === 0) {
+                    log.info(`WebSocket still not connected (${wsFailedAttempts} attempts)`);
+                }
+            }
             ws = null;
             if (wsHeartbeatTimer) {
                 clearInterval(wsHeartbeatTimer);
                 wsHeartbeatTimer = null;
             }
-            wsReconnectTimer = setTimeout(connectWebSocket, 5000);
+            wsReconnectTimer = setTimeout(connectWebSocket, WS_RECONNECT_DELAY_MS);
         };
 
-        ws.onerror = (_event) => {
-            // WebSocket error events don't contain useful error details in the browser API
-            // The actual error will trigger onclose, so we just log that an error occurred
-            console.error(`[Discord Bot] WebSocket connection error - will attempt reconnection`);
-        };
+        // Error events carry no details; the close event that always follows does the logging.
+        ws.onerror = () => {};
     } catch (error) {
         if (error instanceof Error) {
-            console.error(`[Discord Bot] Failed to create WebSocket: ${error.message}`);
+            log.error(`Failed to create WebSocket: ${error.message}`);
         }
-        wsReconnectTimer = setTimeout(connectWebSocket, 5000);
+        wsReconnectTimer = setTimeout(connectWebSocket, WS_RECONNECT_DELAY_MS);
     }
 }
 
@@ -356,7 +405,7 @@ function connectWebSocket(): void {
  */
 function sendChatToGame(author: string, message: string): boolean {
     if (!ws || ws.readyState !== WebSocket.OPEN || !wsAuthenticated) {
-        console.log("[Discord Bot] WebSocket not ready, cannot send chat");
+        log.info("WebSocket not ready, cannot send chat");
         return false;
     }
 
@@ -370,7 +419,7 @@ function sendChatToGame(author: string, message: string): boolean {
         return true;
     } catch (error) {
         if (error instanceof Error) {
-            console.error(`[Discord Bot] Failed to send chat to game: ${error.message}`);
+            log.error(`Failed to send chat to game: ${error.message}`);
         }
         return false;
     }
@@ -407,6 +456,7 @@ function isRateLimited(userId: string): boolean {
 // stamp lets the bot re-adopt its own message across restarts and refuse to
 // touch a dashboard owned by another deployment sharing the channel.
 
+const dashboardLog = createLogger("Dashboard");
 const DASHBOARD_STATE_FILE = "/data/dashboard-state.json";
 
 interface DashboardState {
@@ -432,7 +482,7 @@ function loadDashboardState(): void {
         raw = readFileSync(DASHBOARD_STATE_FILE, "utf8");
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            console.warn(`[Dashboard] Could not read ${DASHBOARD_STATE_FILE} (${error}) - treating as first boot.`);
+            dashboardLog.warn(`Could not read ${DASHBOARD_STATE_FILE} (${error}) - treating as first boot`);
         }
     }
 
@@ -447,12 +497,12 @@ function loadDashboardState(): void {
                 dashboardState.messageId =
                     typeof parsed.messageId === "string" && /^\d+$/.test(parsed.messageId) ? parsed.messageId : null;
                 dashboardStateWritable = true;
-                console.log(`[Dashboard] Ownership id: ${dashboardState.ownerId}`);
+                dashboardLog.info(`Ownership id: ${dashboardState.ownerId}`);
                 return;
             }
-            console.warn(`[Dashboard] ${DASHBOARD_STATE_FILE} has no ownerId - treating as first boot.`);
+            dashboardLog.warn(`${DASHBOARD_STATE_FILE} has no ownerId - treating as first boot`);
         } catch {
-            console.warn(`[Dashboard] ${DASHBOARD_STATE_FILE} is unparseable - treating as first boot.`);
+            dashboardLog.warn(`${DASHBOARD_STATE_FILE} is unparseable - treating as first boot`);
         }
     }
 
@@ -461,7 +511,7 @@ function loadDashboardState(): void {
     dashboardStateWritable = true;
     persistDashboardState();
     if (dashboardStateWritable) {
-        console.log(`[Dashboard] Ownership id created: ${dashboardState.ownerId}`);
+        dashboardLog.info(`Ownership id created: ${dashboardState.ownerId}`);
     }
 }
 
@@ -483,8 +533,8 @@ function persistDashboardState(): void {
     } catch (error) {
         dashboardStateWritable = false;
         dashboardState.ownerId = null;
-        console.warn(
-            `[Dashboard] ⚠️ Cannot persist ${DASHBOARD_STATE_FILE} (${error}) - ownership guard disabled. ` +
+        dashboardLog.warn(
+            `Cannot persist ${DASHBOARD_STATE_FILE} (${error}) - ownership guard disabled. ` +
                 "The dashboard still updates, but a second deployment sharing this channel is no longer detected. " +
                 "Check that the bot's /data volume is mounted and writable.",
         );
@@ -564,7 +614,7 @@ async function updateLiveDashboard(): Promise<void> {
     try {
         await runDashboardUpdate(STATUS_DASHBOARD_CHANNEL_ID);
     } catch (error) {
-        console.error(`[Dashboard] Loop execution failed: ${error}`);
+        dashboardLog.error(`Loop execution failed: ${error}`);
     } finally {
         dashboardUpdateInFlight = false;
     }
@@ -577,7 +627,7 @@ async function updateLiveDashboard(): Promise<void> {
 async function runDashboardUpdate(channelId: string): Promise<void> {
     const channel = (await client.channels.fetch(channelId)) as TextChannel;
     if (!channel?.isTextBased()) {
-        console.error("[Dashboard] Target channel not found or is not text-based.");
+        dashboardLog.error("Target channel not found or is not text-based");
         return;
     }
 
@@ -592,13 +642,13 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
             existing = await channel.messages.fetch({ message: dashboardState.messageId, force: true });
         } catch (error) {
             if (error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMessage) {
-                console.log("[Dashboard] Tracked message was deleted - scanning for a replacement.");
+                dashboardLog.info("Tracked message was deleted - scanning for a replacement");
                 clearTrackedMessage();
             } else {
                 // Transient failure (network, 5xx, rate limit, permissions): keep the id
                 // and retry next tick — falling through to the scan here is what would
                 // duplicate the dashboard.
-                console.error(`[Dashboard] Could not fetch tracked message (${error}) - retrying next tick.`);
+                dashboardLog.error(`Could not fetch tracked message (${error}) - retrying next tick`);
                 return;
             }
         }
@@ -607,10 +657,9 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
             const kind = classifyDashboardEmbed(existing.embeds[0], dashboardState.ownerId);
             if (kind === "mine" || kind === "legacy") {
                 await existing.edit({ content: "", embeds: [embed] });
-                console.log("[Dashboard] Live status display updated successfully.");
                 return;
             }
-            console.warn("[Dashboard] Tracked message is not our dashboard anymore - scanning for a replacement.");
+            dashboardLog.warn("Tracked message is not our dashboard anymore - scanning for a replacement");
             clearTrackedMessage();
         }
     }
@@ -620,7 +669,7 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
     try {
         recentMessages = await channel.messages.fetch({ limit: 50 });
     } catch (error) {
-        console.error(`[Dashboard] Message scan failed (${error}) - retrying next tick.`);
+        dashboardLog.error(`Message scan failed (${error}) - retrying next tick`);
         return;
     }
 
@@ -636,8 +685,8 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
             const foreignId = parseOwnerId(message.embeds[0]?.footer?.text) ?? "unknown";
             if (!warnedForeignOwnerIds.has(foreignId)) {
                 warnedForeignOwnerIds.add(foreignId);
-                console.warn(
-                    `[Dashboard] ⚠️ This channel has a dashboard owned by another deployment (id:${foreignId}) - ` +
+                dashboardLog.warn(
+                    `This channel has a dashboard owned by another deployment (id:${foreignId}) - ` +
                         "leaving it untouched. Each server needs its own bot application and channel setup.",
                 );
             }
@@ -652,12 +701,12 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
         persistDashboardState();
         // The edit re-stamps: legacy dashboards get the id on adoption.
         await adopted.message.edit({ content: "", embeds: [embed] });
-        console.log(`[Dashboard] Adopted existing ${adopted.kind} dashboard message.`);
+        dashboardLog.info(`Adopted existing ${adopted.kind} dashboard message`);
     } else {
         const newMsg = await channel.send({ embeds: [embed] });
         dashboardState.messageId = newMsg.id;
         persistDashboardState();
-        console.log("[Dashboard] Fresh status message initialized.");
+        dashboardLog.info("Fresh status message initialized");
     }
 
     // Best-effort cleanup of our own surplus dashboards. Skipped in degraded mode,
@@ -669,9 +718,9 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
             }
             try {
                 await message.delete();
-                console.log("[Dashboard] Deleted a surplus dashboard message of ours.");
+                dashboardLog.info("Deleted a surplus dashboard message of ours");
             } catch (error) {
-                console.warn(`[Dashboard] Could not delete a surplus dashboard message: ${error}`);
+                dashboardLog.warn(`Could not delete a surplus dashboard message: ${error}`);
             }
         }
     }
@@ -733,7 +782,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                 );
                 setTimeout(() => reply.delete().catch(() => {}), 5000);
             } catch (err) {
-                console.error(`[Rate Limit] Failed to send cooldown warning: ${err}`);
+                log.error(`Failed to send cooldown warning: ${err}`);
             }
             return;
         }
@@ -873,7 +922,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
             await message.react("❌");
         } catch (error) {
             if (error instanceof Error) {
-                console.error(`[Discord Bot] Failed to add reaction: ${error.message}`);
+                log.error(`Failed to add reaction: ${error.message}`);
             }
         }
     }
@@ -884,14 +933,14 @@ client.on(Events.MessageCreate, async (message: Message) => {
  * Logs warnings for any missing permissions or configuration issues.
  */
 async function performStartupChecks(): Promise<void> {
-    console.log("[Discord Bot] Performing startup checks...");
+    log.info("Performing startup checks...");
 
     const warnings: string[] = [];
     const errors: string[] = [];
 
     // Check guilds
     const guildCount = client.guilds.cache.size;
-    console.log(`[Discord Bot] Connected to ${guildCount} guild(s)`);
+    log.info(`Connected to ${guildCount} guild(s)`);
 
     if (guildCount === 0) {
         warnings.push("Bot is not in any guilds - invite it to a server first");
@@ -930,7 +979,7 @@ async function performStartupChecks(): Promise<void> {
                     );
                 }
 
-                console.log(`[Discord Bot] Chat channel: #${channel.name} in ${channel.guild.name}`);
+                log.info(`Chat channel: #${channel.name} in ${channel.guild.name}`);
             }
         }
     }
@@ -948,51 +997,31 @@ async function performStartupChecks(): Promise<void> {
         }
     }
 
-    // Check API connectivity
-    try {
-        const status = await fetchServerStatus();
-        if (status) {
-            console.log(`[Discord Bot] API connectivity: OK (server ${resolveServerState(status).kind})`);
-        } else {
-            warnings.push("Could not fetch server status - API may be unavailable");
-        }
-    } catch {
-        warnings.push("API connectivity check failed");
+    // fetchServerStatus logs its own failure, so only success is reported here
+    const status = await fetchServerStatus();
+    if (status) {
+        log.info(`API connectivity: OK (server ${resolveServerState(status).kind})`);
     }
 
-    // Print warnings
-    if (warnings.length > 0) {
-        console.log("");
-        console.log("[Discord Bot] ⚠️  Warnings:");
-        for (const warning of warnings) {
-            console.log(`  - ${warning}`);
-        }
+    for (const warning of warnings) {
+        log.warn(`Startup check: ${warning}`);
     }
-
-    // Print errors
-    if (errors.length > 0) {
-        console.log("");
-        console.log("[Discord Bot] ❌ Errors:");
-        for (const error of errors) {
-            console.log(`  - ${error}`);
-        }
+    for (const error of errors) {
+        log.error(`Startup check: ${error}`);
     }
-
     if (warnings.length === 0 && errors.length === 0) {
-        console.log("[Discord Bot] All checks passed ✓");
+        log.info("All startup checks passed");
     }
-
-    console.log("");
 }
 
 client.once(Events.ClientReady, async () => {
-    console.log(`[Discord Bot] Logged in as ${client.user?.tag}`);
-    console.log(`[Discord Bot] API URL: ${API_URL}`);
-    console.log(`[Discord Bot] API authentication: ${API_KEY ? "enabled" : "disabled"}`);
-    console.log(`[Discord Bot] Update interval: ${UPDATE_INTERVAL_MS}ms`);
+    log.info(`Logged in as ${client.user?.tag}`);
+    log.info(`API URL: ${API_URL}`);
+    log.info(`API authentication: ${API_KEY ? "enabled" : "disabled"}`);
+    log.info(`Update interval: ${UPDATE_INTERVAL_MS}ms`);
 
     if (DISCORD_CHAT_CHANNEL_ID) {
-        console.log(`[Discord Bot] Chat relay channel: ${DISCORD_CHAT_CHANNEL_ID}`);
+        log.info(`Chat relay channel: ${DISCORD_CHAT_CHANNEL_ID}`);
     }
 
     // Perform startup checks
@@ -1014,24 +1043,65 @@ client.once(Events.ClientReady, async () => {
     // Periodic updates with error handling
     setInterval(() => {
         updatePresence().catch((error) => {
-            console.error(`[Discord Bot] Presence update failed: ${error instanceof Error ? error.message : error}`);
+            log.error(`Presence update failed: ${error instanceof Error ? error.message : error}`);
         });
     }, UPDATE_INTERVAL_MS);
 
     setInterval(() => {
         updateBotNickname().catch((error) => {
-            console.error(`[Discord Bot] Nickname update failed: ${error instanceof Error ? error.message : error}`);
+            log.error(`Nickname update failed: ${error instanceof Error ? error.message : error}`);
         });
     }, UPDATE_INTERVAL_MS);
 });
 
 client.on(Events.Error, (error) => {
-    console.error(`[Discord Bot] Client error: ${error.message}`);
+    log.error(`Client error: ${error.message}`);
+});
+
+client.on(Events.ShardError, (error) => {
+    log.error(`Gateway error: ${error.message}`);
+});
+
+const TOKEN_REJECTED_HINT =
+    "Discord rejected DISCORD_BOT_TOKEN. Copy a fresh token from the Developer Portal (Bot -> Reset Token).";
+const RESTART_HINT = "Bot stopped. After fixing the configuration, run: docker compose up -d discord-bot";
+
+/**
+ * Explains a configuration error and exits 0, so `restart: on-failure` does not
+ * loop against Discord's daily identify limit.
+ */
+function stopForConfigError(lines: string[]): never {
+    for (const line of lines) {
+        log.error(line);
+    }
+    log.error(RESTART_HINT);
+    process.exit(0);
+}
+
+// discord.js gives up on these close codes and then rejects an internal promise,
+// which Bun reports as a crash with a library stack trace. Exit here first.
+client.on(Events.ShardDisconnect, ({ code }) => {
+    switch (code) {
+        case GatewayCloseCodes.AuthenticationFailed:
+            stopForConfigError([TOKEN_REJECTED_HINT]);
+            break;
+        case GatewayCloseCodes.DisallowedIntents:
+            stopForConfigError([
+                "Discord refused the bot's gateway intents: DISCORD_CHAT_CHANNEL_ID is set, so the bot requests the",
+                "Message Content intent, but it is not enabled for this application.",
+                "Fix: Developer Portal -> your app -> Bot -> Privileged Gateway Intents -> enable Message Content Intent,",
+                "or unset DISCORD_CHAT_CHANNEL_ID to run without chat relay.",
+            ]);
+            break;
+        default:
+            log.error(`Gateway closed with unrecoverable code ${code} (${GatewayCloseCodes[code] ?? "unknown"})`);
+            process.exit(1);
+    }
 });
 
 // Graceful shutdown
 function shutdown() {
-    console.log("[Discord Bot] Shutting down...");
+    log.info("Shutting down...");
 
     if (wsReconnectTimer) {
         clearTimeout(wsReconnectTimer);
@@ -1055,5 +1125,11 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 // Start the bot
-console.log("[Discord Bot] Starting...");
-client.login(DISCORD_BOT_TOKEN);
+log.info("Starting...");
+client.login(DISCORD_BOT_TOKEN).catch((error: unknown) => {
+    if (error instanceof DiscordjsError && error.code === DiscordjsErrorCodes.TokenInvalid) {
+        stopForConfigError([TOKEN_REJECTED_HINT]);
+    }
+    log.error(`Login failed: ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
+});

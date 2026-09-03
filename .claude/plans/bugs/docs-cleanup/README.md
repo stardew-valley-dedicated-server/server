@@ -53,7 +53,6 @@ Critical → High → Medium → Low; Low items are "while you're in the file" r
 
 | # | Conflict | Doc-side fix (default) | Code-side alternative |
 |---|---|---|---|
-| D1 | `API_PORT` is both host-mapped to fixed container port 8080 (`docker-compose.yml`) AND forwarded into the container via `environment:`, so changing it breaks the API | Remove `API_PORT` from the "Changing Ports" example; document the breakage | Stop forwarding `API_PORT` into the container (container port stays 8080) — cleaner |
 | D2 | `VERBOSE_LOGGING`, `HEALTH_CHECK_SECONDS`, `ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS`, `FORCE_NEW_DEBUG_GAME` documented as `.env` knobs but never forwarded by compose | Annotate as "requires adding to docker-compose.yml `environment:`" | Add the four keys to the compose `environment:` block |
 | D3 | `ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS` documented default `true`; code default `false` (`Env.cs`) | Document `false` (in `environment.md` AND `.env.example`) | Flip the code default if `true` was intended |
 | D4 | `introduction.md` claims 400 on invalid params; handlers return 200 + `{success:false}` (no 400 exists anywhere in `ApiService.cs`) | Document the 200+body contract | Make handlers set 400 |
