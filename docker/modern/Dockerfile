@@ -291,7 +291,9 @@ RUN curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && 
 # ---------- go2rtc ----------
 
 ADD https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_amd64 /usr/local/bin/go2rtc
-RUN chmod +x /usr/local/bin/go2rtc
+# 0755, not +x: ADD from a URL lands the file 0600, and go2rtc re-opens /proc/self/exe at start,
+# so the non-root streaming service needs the read bit too.
+RUN chmod 0755 /usr/local/bin/go2rtc
 
 # ---------- Locale ----------
 
