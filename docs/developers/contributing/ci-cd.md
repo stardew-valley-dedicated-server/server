@@ -335,20 +335,11 @@ The deploy server pipeline deploys server instances to a VPS. It supports multip
 2. **Add the environment to the workflow matrix** in `.github/workflows/deploy-server.yml`
 3. **Update the workflow dispatch options** to include the new environment
 
-Example matrix entry:
+Example `TARGETS` entries:
 
-```yaml
-matrix:
-    include:
-        - environment: public-test
-          image_tag: preview
-          on_preview: true
-          on_release: false
-
-        - environment: production
-          image_tag: latest
-          on_preview: false
-          on_release: true
+```json
+{"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
+{"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
 ```
 
 ### Setup Requirements
@@ -359,8 +350,8 @@ Each deployment target needs a **GitHub Environment** with its configuration.
 
 1. Go to **Settings** → **Environments** in your repository
 2. Click **New environment**
-3. Name it to match the workflow matrix (e.g., `public-test`, `production`)
-4. Add the secrets listed below
+3. Name it to match the workflow matrix (e.g., `public-test-preview`, `public-test-latest`)
+4. Add the secrets and variables listed below
 
 #### Environment Secrets
 
@@ -390,8 +381,16 @@ Generate a secure API key with: `openssl rand -base64 32`
 :::
 
 ::: tip
-If multiple servers share the same VPS and credentials, **repository-level** secrets can be used as fallbacks. Environment-level secrets override repository-level secrets with the same name.
+If multiple servers share the same VPS and credentials, **repository-level** secrets and variables can be used as fallbacks. Environment-level values override repository-level ones with the same name.
 :::
+
+#### Environment Variables
+
+Add these under **Settings → Environments → Variables**, not as secrets.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DEPLOY_DISCORD_BOT_NICKNAME` | No | Discord bot nickname (defaults to the farm name) |
 
 ### VPS Preparation
 
@@ -422,7 +421,7 @@ The script outputs the private key to add as `DEPLOY_SSH_KEY` in GitHub.
 **3. Configure Firewall**
 
 ```sh
-# Example for public-test environment
+# Example for the public-test-preview environment
 ufw allow 24642/udp  # Game port
 ufw allow 5800/tcp   # VNC web interface
 ```
@@ -433,7 +432,7 @@ To manually trigger a deployment:
 
 1. Go to **Actions** → **Deploy Server**
 2. Click **Run workflow**
-3. Select which environment to deploy (e.g., `public-test`)
+3. Select which environment to deploy (e.g., `public-test-preview`)
 4. Optionally check "Skip graceful shutdown" for emergency deploys
 5. Click **Run workflow**
 

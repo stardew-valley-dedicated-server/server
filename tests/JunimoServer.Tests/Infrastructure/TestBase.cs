@@ -720,7 +720,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// </summary>
     protected async Task CreateNewGameOnServerAsync(
         FarmTypeSetting farmType,
-        string farmName = "Junimo",
+        string farmName = "Server",
         int startingCabins = 1,
         string cabinStrategy = "CabinStack",
         int? maxPlayers = null,
