@@ -42,10 +42,11 @@ These must be set for the server to function:
 | `USER_ID` | Numeric uid the game and sidecar processes run as | `1000` |
 | `GROUP_ID` | Numeric gid the game and sidecar processes run as | `1000` |
 
-Each container starts as root inside the container, prepares its volumes (ownership, and on the
-server the clock sync), then runs the application as `USER_ID:GROUP_ID`. Only the container init
-stays root. The game, SMAPI and every mod run as the configured user, so a misbehaving mod has no
-root inside the container. This is the standard model for Docker images and the recommended setup.
+Each service in the stack (server, `steam-auth`, `discord-bot`) starts as root inside its
+container, prepares its volumes (ownership, and on the server the clock sync), then runs the
+application as `USER_ID:GROUP_ID`. Only the container init stays root. With a non-zero id the game,
+SMAPI and every mod run unprivileged, so a misbehaving mod has no root inside the container. This
+is the standard model for Docker images and the recommended setup.
 
 All services read the same two values because they share the game-data volume. Set them in `.env`
 and every service picks them up.
