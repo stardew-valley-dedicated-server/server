@@ -1,183 +1,96 @@
-# Day transition wedges the server when a lobby player is connected
+# Stuck-barrier recovery cannot run while the new-day task is blocked
 
-**Status:** validation
-**Priority:** 4 (critical)
+**Status:** ready-to-implement
+**Priority:** 3 (high)
 **GitHub Issue(s):** none
 **Area:** server
-**Related:** [PR #494](https://github.com/stardew-valley-dedicated-server/server/pull/494); [`tests-password-config-shared-with-exclusive-class.md`](tests-password-config-shared-with-exclusive-class.md)
-**Observed:** ~50% of full-suite runs on 2026-08-03 (`2026-08-03T07-13-01Z_38d72b9` and `2026-08-03T11-16-51Z` of four); identical failure pre-exists at `2026-07-12T19-48-23Z_1b5ea11`, before the wedding-speedup work
-**Next step:** add the throttled barrier-name diagnostic to `BarrierReady_Postfix`, then build the deterministic repro below; no fix until the stalled barrier is named
+**Related:** [`tests-password-config-shared-with-exclusive-class.md`](tests-password-config-shared-with-exclusive-class.md)
+**Observed:** every wedged transition in the 2026-08-03 and 2026-07-12 full-suite runs; reproduced deterministically on 2026-09-02 by `PasswordProtectionTests.LobbyPlayer_WithAuthenticatedFarmhand_DayTransitionCompletes` against the mod without the barrier check-in broadcast
+**Next step:** implement the three changes in `DesyncKicker.cs` below, then run the verification recipe
+
+## Context
+
+The lobby-player day-transition wedge itself is fixed: `LobbyService.BarrierReady_Postfix` checks in at every new-day barrier on behalf of excluded players, for the vanilla farmhands' benefit (their own `barrierReady` waits on every farmer they know about, and no patch reaches them). `docs/developers/architecture/game-engine-notes.md` records the mechanism.
+
+What remains is the recovery path that was supposed to catch any such stall and did not.
 
 ## Symptom
 
-`LobbyHomedSpouseSteadyStateTests.MarriedCouples_UnderPassword_HomesStayRealAcrossNightsAndOffline` fails with `503 (Service Unavailable)`, `failureCategory: "infrastructure"`.
+While the new-day task is blocked in a barrier, `DesyncKicker` detects the stall after 20s and logs `still stuck in barrier, going to try kicking`, but no `kicking due to not making past barrier` line ever follows. The server stays wedged until the offending player disconnects on its own.
 
-The server it ran on is dead for the remainder of the run: every game-thread endpoint returns 503. Under `stopOnFail`, the whole run therefore dies with it.
+Run `2026-07-12T19-48-23Z_1b5ea11`, `containers/server-3/container.log`: `waiting 20 sec to kick barrier`, then `waited 20 sec to kick barrier`, then nothing. Same shape in the 2026-09-02 baseline run of the repro test: a stall of ~109s, recovered only by the lobby player's disconnect at test teardown.
 
 ## Root cause
 
-Narrowed to a host-side blocking barrier inside the NewDay task. The exact barrier name remains unknown.
+The new-day task never runs on a background thread. `Game1.Update` hands `_newDayTask` to `hooks.StartTask`, and SMAPI's `SModHooks.StartTask` calls `task.RunSynchronously()` on the game thread (the `Synchronizing 'NewDay' task...` log line is that call). While a barrier is unsatisfied the game thread sits inside `NetSynchronizer.barrier`'s spin loop, which calls `NewDaySynchronizer.processMessages` every 16ms and nothing else. No SMAPI event fires during that time, validated or unvalidated (`ApiService`'s stall watchdog reads a timestamp written from `UnvalidatedUpdateTicked`, which is why it reports the stall).
 
-### Sequence
+`DesyncKicker.OnDayEnding` waits 20s on a thread-pool task, then enqueues the kick onto `_pendingGameThreadActions`, which is drained only by its `GameLoop.UpdateTicked` handler. That handler cannot run until the barrier resolves, so the recovery is inert in exactly the situation it exists for.
 
-Run `2026-08-03T07-13-01Z_38d72b9`, `containers/server-3/container.log`:
+Two smaller defects in the same handler:
 
-* **07:26:57:** A client registers unauthenticated in the lobby (`lobby_unauthenticated_registered`, player `-183582307287801172`). This is the client owned by `PasswordProtectionTests.Help_Command_WorksInLobby`, which intentionally parks a client in the lobby without authenticating.
-* **07:27:00:** That client confirms character creation.
-* **07:27:02:** The server logs `[Auth] Player … finished character customization`. The client remains unauthenticated.
-* **07:27:03:** `LobbyHomedSpouseSteadyStateTests` drives its night: `DayEnding`, `Synchronizing 'NewDay' task`, then `[Auth] Blocked startNewDaySync` ×1 and `Blocked newDaySync` ×4 for that player. `PasswordProtectionService`'s outbound message filter deliberately blocks those two message types to unauthenticated peers so their customization menu is not closed.
-* **07:27:06:** `game_thread_stall_started lastTickMs=3150`. The game thread never recovers.
-
-### Why every endpoint then returns 503
-
-`ApiService` drains its game-thread queue in `OnUpdateTicked`, deliberately on the validated tick so mutating callbacks cannot corrupt a save.
-
-Once the game thread stops ticking, the queue is never drained and `RunOnGameThreadAsync`'s 5s guard fires on every game-thread request.
-
-`/stats` and `/health` continue answering in 0ms because they read the cached snapshot.
-
-This is **not resource starvation**: CPU remains at 3-8%, while `avgTickMs` is frozen at 4.66 because no new ticks are occurring.
-
-### The lobby exclusion is working
-
-The `sleep` ready check reports `numberRequired: 3` at `07:26:57.9` — computed **after** the lobby player joined, with four farmers online (host + 2 authenticated + 1 lobby) — and reaches `3/3 isReady:true` at `07:27:03`.
-
-A passing run corroborates this from the other direction: `2026-06-30T19-28-04Z_864566d` server-2 completed a full transition with a lobby player connected and 27 blocked `newDaySync` sends at `sleep numberRequired: 1`.
-
-Therefore `LobbyService`'s `IsFarmerRequired` postfix is applying correctly; this is not a case where the Harmony patch was lost or bypassed.
-
-### `ready_for_save` is not the stalled gate
-
-`GameEventTracer` emits `ready_check_transition` on every state change and demonstrably works for this check on this server:
-
-* `07:17:27`
-* the previous night at `07:25:58-59`, ending `3/3 isReady:true`
-
-During the wedge, 204 server-3 events were emitted and **zero `ready_for_save` transitions** occurred.
-
-Therefore `ready_for_save.Update` never ran during the stalled transition.
-
-The frozen `SaveGameMenu` readout — `"waiting for other players… (3/…)"` — is consequently not evidence that the live `ready_for_save` gate requires four players. Its `numReadyForSave()` value of 3 is a **stale cached value from the previous night**.
-
-The denominator shown by the menu is also `Game1.getOnlineFarmers().Count`, which is unfiltered (`SaveGameMenu.draw` in `decompiled/.../Menus/SaveGameMenu.cs`).
-
-### The host is blocked inside the NewDay task, before the save handshake
-
-SMAPI runs the transition on a background thread while the main game thread is frozen.
-
-The identified hard blocking wait in the relevant NewDay range is `NetSynchronizer.barrier()` (`decompiled/.../StardewValley/NetSynchronizer.cs`). Its:
-
-```text
-while (!barrierReady(name))
-```
-
-loop cannot exit on the host if the barrier never becomes ready: `shouldAbort()` reads `Game1.client.timedOut`, but `Game1.client` is null on the master.
-
-A host-side barrier stall is therefore permanent by construction.
-
-The stall must therefore be in one of the roughly 15 barriers in `Game1._newDayAfterFade` spanning `start` through `saveFarmhands`.
-
-`BarrierReady_Postfix` (`LobbyService.cs`) exists specifically to release barriers for excluded players, yet it did not release the barrier that stalled this transition.
-
-**The exact barrier name and the reason its postfix did not release it are the remaining unknowns.**
-
-### Open question: which barrier?
-
-The barrier system currently emits no events, so no artifact records the barrier name.
-
-The next step should therefore be **small and targeted**, not a general stall-diagnostic system:
-
-`BarrierReady_Postfix` already runs on the blocked thread and already has the barrier `name` and `___barriers` in scope. Add a diagnostic that logs the barrier name and unsatisfied IDs once a barrier invocation has remained unsatisfied for more than N seconds, with enough throttling to avoid logging on every spin iteration.
-
-Once the barrier name is known, inspect why `BarrierReady_Postfix` failed to release it. In particular, the postfix returns early when:
-
-* `__result` is already true;
-* `_instance` is null;
-* `HasPlayersToExclude()` is false.
-
-It also reads `Game1.otherFarmers.Keys` from the background task thread while the main thread can mutate that collection, so the threading behavior around that read should be considered once the failing barrier is identified.
+* The kick evaluates who is missing from the hardcoded `sleep` barrier. A stall at an earlier barrier (`start`, `date`) kicks every farmhand, including ones that have checked in at the current barrier.
+* A stall at a barrier after `sleep` (there are seventeen more, `handleMiniShippingBins` through `checkcompletion`) kicks nobody, because everyone reached `sleep`.
 
 ## Fix
 
-**No fix proposed yet.**
+All in `mod/JunimoServer/Services/NetworkTweaks/DesyncKicker.cs`. The constructor gains a `Harmony` parameter, the same way `LobbyService` receives one.
 
-Every candidate currently depends on which barrier stalls and why `BarrierReady_Postfix` did not release it. Anything more specific would be guesswork.
+1. **Drain from the barrier spin.** Move the `_pendingGameThreadActions` drain loop out of `OnUpdateTicked` into a private `DrainPendingGameThreadActions()` and call it from both `OnUpdateTicked` and a new Harmony postfix on `NewDaySynchronizer.processMessages`. That method is what the barrier loop calls on every spin iteration, on the game thread, so the existing "mutations run on the game thread" contract in the class comment still holds and the kick runs within one spin (16ms) of being enqueued. It is also called from `hasStarted`, `isBarrierReady` and `isVarReady`, so every wait in `_newDayAfterFade` is covered.
+2. **Track the current barrier.** Add a Harmony prefix on `NetSynchronizer.barrier(string name)` that stores `name` in a field, cleared in `OnSaved`. The `OnDayEnding` kick evaluates `barrierPlayers(<current name>)` instead of `"sleep"`; when no barrier has been entered yet (stall inside `newDaySync.start()`), it uses `"start"`.
+3. **Kick only the players missing from that barrier**, excluding `_lobbyService.GetExcludedPlayerIds()` as today.
 
-Do not add a retry or re-apply loop as the fix; per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, that would mask the blocking condition rather than explain it.
+No retry or re-arm loop: after the kick, vanilla's own path completes the barrier. `Server.kick` on both transports calls `playerDisconnected` synchronously (`LidgrenServer.kick`; `SteamGameServerNetServer.kick` via `ShutdownConnection`'s close callback), which marks the farmer in `disconnectingFarmers`; the next `processMessages` runs `Multiplayer.UpdateEarly`, whose `removeDisconnectedFarmers` drops the farmer from `otherFarmers`, and `barrierReady` stops waiting for it. This is the same thread and the same sequence vanilla uses when a client disconnects mid-barrier on its own, so it needs no thread-safety work.
+
+## Compatibility verification
+
+* **Transports:** `LidgrenServer.kick` and `SteamGameServerNetServer.kick` both reach `GameServer.playerDisconnected` synchronously (see above). The forced-kick message to the peer is sent before the connection closes on both.
+* **Lobby/unauthenticated players:** still excluded from the kick via `GetExcludedPlayerIds()`; they are never in a barrier set and `LobbyService.BarrierReady_Postfix` vouches for them.
+* **Test TPS (`SERVER_TPS=5`):** irrelevant; the spin loop sleeps 16ms wall-clock per iteration regardless of tick rate.
+* **Other subscribers on the same seam:** `LobbyService.BarrierReady_Postfix` patches `barrierReady`, not `processMessages` or `barrier`; no ordering dependency.
+* **Disconnect mid-operation:** a farmer that disconnects on its own between detection and drain is already in `disconnectingFarmers`; `kick` on a missing peer is a guarded no-op on Lidgren (`peers.ContainsLeft`) and on the Steam server (`_farmerConnectionMap.TryGetValue`).
+* **End-of-day kick (`OnSaving`, 60s):** unchanged by this plan. It targets the `ready_for_save` phase, which runs from `SaveGameMenu.update` on normal ticks after the task has completed, so its `UpdateTicked` drain is reachable. Not verified at runtime here.
 
 ## Verification
 
-The current full-suite failure depends on the broker scheduling two classes onto one server, which makes it roughly 50% reproducible rather than deterministic.
+1. Locally comment out the check-in broadcast loop in `LobbyService.BarrierReady_Postfix` (the `Game1.server.sendMessage(peerId, checkIn)` fan-out) so the wedge reproduces.
+2. Run `make test FILTER=LobbyPlayer_WithAuthenticatedFarmhand`.
+3. In `containers/server-0/container.log` expect, in order: `Synchronizing 'NewDay' task...`, `waited 20 sec to kick barrier`, `kicking due to not making past barrier: <farmhand id>` within a second of it, then the barrier check-in lines and `task complete.` The day must advance. The test itself will fail at its post-transition `/auth` count assertion (the kicked driver is no longer online, so `authenticated` reads 0), which is the expected outcome in this configuration; the gate is the log sequence plus the day advancing.
+4. Restore the broadcast and run the same test plus `LobbyPlayer_SurvivesDayTransition_CanAuthenticateAfter`; both must pass with no `kicking` line.
 
-A targeted test should make the precondition explicit:
+## Open questions, same scenario, not yet verified
 
-1. Park an unauthenticated client in the lobby and keep it connected.
-2. Drive a night transition on the same server.
-3. Assert that the transition completes.
-4. Confirm from the artifact that the lobby player remained connected throughout the transition.
+Both surfaced while reviewing the barrier check-in fix. Neither is confirmed at runtime; check
+before deciding whether either needs a change.
 
-The artifact assertion is important. Per `.claude/rules/universal/passing-test-isnt-proof-the-scenario-ran.md`, a green transition assertion alone is insufficient: the test could pass because the lobby client happened to disconnect before the transition reached the problematic barrier.
+### A lobby player who logs in during the night may hang client-side
 
-This deterministic repro should be the gate for any production fix.
+Reading `PasswordProtectionService.TryAuthenticate` and `WarpToDestination`: a successful
+`!login` flips the auth state immediately, so from then on `ShouldSendMessage` lets the host's
+`newDaySync` messages through to that client. The first one makes the client start its own
+new-day task (`Multiplayer.receiveNewDaySync`, no instance yet, source is the host), whose
+`NewDaySynchronizer.start` then waits for `startNewDaySync` (30). That message was sent once at
+the start of the night, blocked while the player was unauthenticated, and is never re-sent. The
+passout message this path sends only warps the client to its bed; it does not enter the night.
 
-## Non-causes
+The server side is unaffected: the player stays in `_unauthenticatedPlayers` until `DayStarted`,
+so `BarrierReady_Postfix` keeps vouching for them and the host does not wait.
 
-Do not rebuild these theories:
+Check: run `LobbyPlayer_WithAuthenticatedFarmhand_DayTransitionCompletes` with an extra
+`!login` from the lobby client after the driver sleeps and before the day changes. If the lobby
+client is stuck after the day starts, the candidate fix is to keep the auth state pending until
+`DayStarted`, reply in chat that the password was accepted, and finish the login with the normal
+warp there, deleting `SendPassoutToPlayer` and `_pendingPostTransitionAuth`.
 
-* **“The lobby player is counted as required at `ready_for_save`.”** `ready_for_save.Update` never ran. The `SaveGameMenu` `3/…` value is stale from the previous night and says nothing about the live gate.
-* **Harmony patch lost to JIT inlining of `IsFarmerRequired`.** Disproved by the `sleep` ready counts above and by the passing run with a lobby player connected.
+### The day-start heal warns on a known route
 
-## Secondary finding: stuck-barrier recovery cannot run during the stall
+`CabinManagerService.EnsureFarmhandRealHome` runs at `DayStarted` as a tripwire (steady state
+zero heals, logged at Warn). A lobby player parked through a night still carries the join-time
+`lastSleepLocation` lobby stamp from `FarmhandSenderService`, so the sweep rewrites it and logs
+`Healed lobby-homed farmhand ... (spawn hints only), lastSleepScrubbed=True` twice (persisted and
+live Farmer). Seen in every run of both lobby day-transition tests, including the unfixed
+baseline. The rewrite looks harmless: authentication uses an explicit warp, a rejoin under
+password re-stamps the lobby hints, a rejoin without password should land in the real cabin.
 
-`DesyncKicker` detects the stall at +20s and **enqueues** its kick onto `_pendingGameThreadActions`.
-
-Those actions are drained in `DesyncKicker`'s `GameLoop.UpdateTicked` handler.
-
-The game thread is frozen, so the queued kick can never execute. This matches the log:
-
-* `07:27:23`: kick announced
-* no subsequent `Kicking …` line
-
-This is a real latent defect: the recovery path is inert in exactly the situation it exists to recover.
-
-It is **not the fix for this bug**.
-
-If the recovery path is repaired, the execution seam must run while the game thread is blocked — for example, something called from `NetSynchronizer.processMessages`, which runs on each barrier spin iteration — or an off-thread `Game1.server.kick`. Which approach is appropriate is an open decision.
-
-## Relationship to PR #494
-
-The wedge itself is **not caused by PR #494**.
-
-The mechanism is entirely server-side and reproduces at `1b5ea11` on main, before the PR's changes.
-
-However, the PR is not cleanly independent of the exposure rate:
-
-`SessionJoinMode.Unauthenticated` routes through `Connect.JoinWithoutAuthAsync` (`PersistentSessionCoordinator.cs`), one of the two methods rewired by #494 (`ConnectionRetryHelper.cs`).
-
-Therefore #494 resequences the lobby join that creates the precondition, so an exposure-rate change cannot be excluded from the four-run sample.
-
-The distinction is:
-
-* **Wedge mechanism:** pre-existing and reproduced before #494.
-* **Whether #494 changes how often the precondition occurs:** still possible.
-
-## Evidence notes
-
-Run artifacts under `TestResults/runs/` are local and may be pruned.
-
-The decisive visual evidence came from the server's own recording: the host's screen identifies the menu in which it is stuck, and the on-screen TICK counter across two frames establishes whether the game thread is still advancing.
-
-Use:
-
-```bash
-ffmpeg -ss <seconds-from-start> -i containers/server-N/full_recording.mp4 -frames:v 1 out.png
-```
-
-For `2026-08-03T07-13-01Z_38d72b9`, server-3 recording is 686s long; approximately `t=650` shows the frozen `SaveGameMenu`.
-
-Check the recording before adding broader instrumentation.
-
-## Related
-
-* [`tests-password-config-shared-with-exclusive-class.md`](tests-password-config-shared-with-exclusive-class.md) — the test-side collision that creates the precondition in CI. Fixing it reduces exposure but does not fix the underlying server bug.
-* [`newgame-day-transition-completion-stalls.md`](newgame-day-transition-completion-stalls.md) — same symptom family (transition never completes), but a different mechanism: the game thread remains healthy and there are zero players.
+Check: confirm the rejoin-without-password case lands in the real cabin after such a night. If it
+does, the only defect is the Warn level for a player currently registered unauthenticated; the
+candidate change is to skip or log at Info for those players.

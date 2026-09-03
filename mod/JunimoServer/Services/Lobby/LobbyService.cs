@@ -228,9 +228,10 @@ public class LobbyService : ModService
         _settings = settings;
         _cabinManager = cabinManager;
 
-        // Patch NetSynchronizer.barrierReady to skip excluded players (editors + unauthenticated).
-        // Without this, day transition barriers wait for ALL otherFarmers, including lobby players
-        // who never receive newDaySync messages and therefore never reach the barriers.
+        // Patch NetSynchronizer.barrierReady so day-transition barriers don't wait for excluded
+        // players (editors + unauthenticated), who never receive newDaySync and never check in.
+        // The postfix also broadcasts their check-in to the other clients: vanilla farmhands run
+        // the same barrierReady against their own otherFarmers, and no patch reaches them.
         var barrierMethod = AccessTools.Method(typeof(NetSynchronizer), "barrierReady");
         if (barrierMethod == null)
         {
@@ -492,14 +493,28 @@ public class LobbyService : ModService
     #region Day Transition Barrier Exclusion
 
     /// <summary>
+    /// Inner message type of a barrier check-in inside a <see cref="Multiplayer.newDaySync"/>
+    /// envelope (<c>NetSynchronizer.MessageTypeBarrier</c>, private in vanilla).
+    /// </summary>
+    private const byte BarrierCheckInMessageType = 1;
+
+    /// <summary>
     /// Harmony postfix for NetSynchronizer.barrierReady(string name).
-    /// The original method checks if ALL otherFarmers have reached the barrier,
-    /// but unauthenticated lobby players never receive newDaySync messages and
-    /// therefore never reach barriers. Without this patch, day transitions hang
-    /// indefinitely when unauthenticated players are connected.
     ///
-    /// This postfix overrides the result to skip excluded players (editors + unauthenticated)
-    /// when checking barrier readiness, matching the ready-check exclusion behavior.
+    /// A barrier is ready once every farmer in Game1.otherFarmers has checked in. Excluded
+    /// players (unauthenticated lobby players, layout editors) never check in: the server
+    /// suppresses newDaySync/startNewDaySync to them so their menu stays open.
+    ///
+    /// Two waiters depend on that check-in, and once every non-excluded player has arrived
+    /// this postfix satisfies both:
+    /// - The host: the excluded ids are added to the barrier set, so the vanilla check passes.
+    /// - Every vanilla farmhand client: it runs the same barrierReady against its own
+    ///   otherFarmers (the excluded player was introduced to it at join) and no patch reaches
+    ///   it, so the server sends the check-in on the excluded player's behalf, the same message
+    ///   the client would otherwise have received via the server's rebroadcast.
+    ///
+    /// Without the broadcast every farmhand waits for the lobby player forever, the host then
+    /// waits for the farmhands at the next barrier, and the new-day task never completes.
     /// </summary>
     private static void BarrierReady_Postfix(
         string name,
@@ -507,62 +522,69 @@ public class LobbyService : ModService
         Dictionary<string, HashSet<long>> ___barriers
     )
     {
-        // Only act when the original returned false (some player hasn't reached the barrier)
-        if (__result)
+        if (__result || _instance == null || !_instance.HasPlayersToExclude())
         {
             return;
         }
 
-        // Only act when we have players to exclude
-        if (_instance == null)
-        {
-            return;
-        }
+        // The original creates the entry before it checks it, so this lookup cannot miss.
+        var barrierPlayers = ___barriers[name];
 
-        if (!_instance.HasPlayersToExclude())
+        // Every non-excluded player must have checked in; collect the excluded ones that haven't.
+        List<long> missingExcluded = null;
+        foreach (long playerId in Game1.otherFarmers.Keys)
         {
-            return;
-        }
-
-        // Build set of excluded player IDs
-        var excludedPlayerIds = new HashSet<long>();
-        foreach (var playerId in _instance._layoutEditingSessions.Keys)
-        {
-            excludedPlayerIds.Add(playerId);
-        }
-
-        foreach (var playerId in _instance._unauthenticatedPlayers.Keys)
-        {
-            excludedPlayerIds.Add(playerId);
-        }
-
-        if (excludedPlayerIds.Count == 0)
-        {
-            return;
-        }
-
-        // Re-check barrier readiness, skipping excluded players
-        HashSet<long> barrierPlayers;
-        if (!___barriers.TryGetValue(name, out barrierPlayers))
-        {
-            barrierPlayers = new HashSet<long>();
-        }
-
-        foreach (long key in Game1.otherFarmers.Keys)
-        {
-            if (excludedPlayerIds.Contains(key))
+            if (barrierPlayers.Contains(playerId))
             {
-                continue; // Skip excluded players
+                continue;
             }
 
-            if (!barrierPlayers.Contains(key))
+            if (!_instance.IsExcludedFromDayTransition(playerId))
             {
-                return; // Non-excluded player hasn't reached barrier yet
+                return;
+            }
+
+            (missingExcluded ??= new List<long>()).Add(playerId);
+        }
+
+        if (missingExcluded == null)
+        {
+            return;
+        }
+
+        foreach (long excludedId in missingExcluded)
+        {
+            barrierPlayers.Add(excludedId);
+
+            var checkIn = new OutgoingMessage(
+                Multiplayer.newDaySync,
+                excludedId,
+                BarrierCheckInMessageType,
+                name
+            );
+            // Same fan-out as vanilla's barrier send: every other peer, including layout editors
+            // (their clients run the transition). Unauthenticated peers are filtered by
+            // PasswordProtectionService like every other newDaySync.
+            foreach (long peerId in Game1.otherFarmers.Keys)
+            {
+                if (peerId != excludedId)
+                {
+                    Game1.server.sendMessage(peerId, checkIn);
+                }
             }
         }
 
-        // All non-excluded players have reached the barrier
+        _instance._monitor.Log(
+            $"[Lobby] Barrier '{name}': checked in on behalf of {missingExcluded.Count} excluded player(s)",
+            LogLevel.Debug
+        );
         __result = true;
+    }
+
+    private bool IsExcludedFromDayTransition(long playerId)
+    {
+        return _unauthenticatedPlayers.ContainsKey(playerId)
+            || _layoutEditingSessions.ContainsKey(playerId);
     }
 
     /// <summary>
@@ -589,10 +611,7 @@ public class LobbyService : ModService
             return;
         }
 
-        if (
-            _instance._unauthenticatedPlayers.ContainsKey(uid)
-            || _instance._layoutEditingSessions.ContainsKey(uid)
-        )
+        if (_instance.IsExcludedFromDayTransition(uid))
         {
             __result = false;
         }
