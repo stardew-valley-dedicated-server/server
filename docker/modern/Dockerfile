@@ -219,8 +219,6 @@ ARG GO2RTC_VERSION
 # run scripts); the init-runtime oneshot chowns the volumes to match. Defaults to non-root;
 # override per deployment from docker-compose. HOME is a writable dir owned by that user (the
 # app's ~/.steam SDK link and any dotfiles live here), not /root.
-# TODO: the non-root drop is only verified on the production image (docker/Dockerfile); this
-# image has not been built or booted with it — confirm all s6 services come up as USER_ID.
 ENV USER_ID=1000 \
     GROUP_ID=1000 \
     HOME=/home/app \
