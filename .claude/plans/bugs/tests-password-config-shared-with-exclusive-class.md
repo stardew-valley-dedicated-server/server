@@ -14,9 +14,12 @@
 `[TestServer(Exclusive = true)]` on classes sharing a server with KeepConnected"). Nothing enforces
 it, and the password config violates it today.
 
-This is the CI trigger for `day-transition-wedge-with-lobby-player.md` — two of four full-suite runs
-on 2026-08-03 died this way. Fixing it removes the collision in the suite; it does **not** fix the
-underlying server bug (a real player sitting at the password prompt at 2am hits the same wedge).
+This pairing is what exposed the lobby-player day-transition wedge — two of four full-suite runs
+on 2026-08-03 died with a lobby session parked on a server where another class drove a night.
+That server bug is fixed (`LobbyService.BarrierReady_Postfix` checks in at every new-day barrier
+on behalf of excluded players, for the vanilla farmhands' benefit), so the pairing no longer
+wedges a server; it remains an invariant violation that lets one class's held session sit inside
+another class's night.
 
 ## Root cause
 

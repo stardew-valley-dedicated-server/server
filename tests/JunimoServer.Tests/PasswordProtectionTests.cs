@@ -358,6 +358,109 @@ public class PasswordProtectionTests : TestBase
     }
 
     /// <summary>
+    /// Regression test for the day-transition wedge with a lobby player AND an authenticated
+    /// farmhand connected.
+    ///
+    /// The server never sends newDaySync to an unauthenticated player, so that player never
+    /// checks in at the new-day barriers. The host skips them, but a vanilla farmhand waits
+    /// for every farmer it knows about, lobby player included, and no patch reaches it. With
+    /// both connected the farmhand waited for the lobby player forever, the host waited for
+    /// the farmhand at the next barrier, and every game-thread endpoint returned 503 for the
+    /// rest of the server's life. The server now checks in on the lobby player's behalf.
+    ///
+    /// The single-client variant above cannot catch this: with only the host and the lobby
+    /// player connected there is no farmhand to wait. The lobby player must also stay
+    /// connected and unauthenticated for the whole transition, otherwise the barriers release
+    /// without the vouching path ever running.
+    /// </summary>
+    [Fact]
+    [TestServer(Exclusive = true, Clients = 2)]
+    public async Task LobbyPlayer_WithAuthenticatedFarmhand_DayTransitionCompletes()
+    {
+        // Primary client sits in the lobby, unauthenticated.
+        var lobby = await Farmers.ConnectNewAsync(
+            breakSession: true,
+            skipAutoLogin: true,
+            ct: TestCt
+        );
+        await GameClient.Chat.WaitForMessageContainingAsync(
+            WelcomeKeywords,
+            TestTimings.WelcomeMessageTimeout
+        );
+
+        // Second farmer auto-logs in and drives the transition by sleeping.
+        await using var driver = await Farmers.ConnectSecondFarmerAsync(ct: TestCt);
+
+        // The driver's join returns once its !login is sent; the auth verdict and the 1 Hz
+        // /auth snapshot land a moment later.
+        AuthStatusResponse? authBefore = null;
+        var settled = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_PasswordProtection_AuthCountsSettled,
+            async () =>
+            {
+                authBefore = await ServerApi.GetAuthStatus(TestCt);
+                return authBefore is { PendingCount: 1, AuthenticatedCount: 1 };
+            },
+            TestTimings.AuthLoginAttemptTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            settled,
+            "Precondition: exactly one unauthenticated lobby player and one authenticated farmhand; "
+                + $"got pending={authBefore?.PendingCount} authenticated={authBefore?.AuthenticatedCount}"
+        );
+
+        var statusBefore = await ServerApi.GetStatus(TestCt);
+        Assert.NotNull(statusBefore);
+
+        var driverSlept = await driver.Client.Actions.Sleep();
+        Assert.True(driverSlept?.Success == true, $"Driver sleep failed: {driverSlept?.Error}");
+
+        // checkConnection watches the lobby client: a lobby disconnect mid-transition would
+        // release the barriers by itself and the day advancing would prove nothing.
+        var (dayChanged, lobbyDisconnected) = await DayChange.WaitAsync(
+            statusBefore.Day,
+            statusBefore.Season,
+            statusBefore.Year,
+            checkConnection: true,
+            TestCt
+        );
+        Assert.False(
+            lobbyDisconnected,
+            "Lobby player must stay connected through the transition; a disconnect releases the "
+                + "barriers without exercising the server-side check-in"
+        );
+        Assert.True(
+            dayChanged,
+            "Day did not advance with a lobby player and an authenticated farmhand connected "
+                + "(farmhand stuck waiting for the lobby player at a new-day barrier)"
+        );
+
+        var authAfter = await ServerApi.GetAuthStatus(TestCt);
+        Assert.NotNull(authAfter);
+        Assert.True(
+            authAfter.PendingCount == 1 && authAfter.AuthenticatedCount == 1,
+            "Lobby player must still be pending and the farmhand authenticated after the transition; "
+                + $"got pending={authAfter.PendingCount} authenticated={authAfter.AuthenticatedCount}"
+        );
+
+        var players = await ServerApi.GetPlayers(TestCt);
+        Assert.NotNull(players);
+        Assert.True(
+            players.Players.Any(p => p.Id == lobby.JoinResult.UniqueMultiplayerId && p.IsOnline),
+            $"Lobby player {lobby.JoinResult.UniqueMultiplayerId} must be online after the transition"
+        );
+        Assert.True(
+            players.Players.Any(p => p.Id == driver.Uid && p.IsOnline),
+            $"Driver farmhand {driver.Uid} must be online after the transition"
+        );
+
+        await Exceptions.AssertNoExceptionsAsync(
+            "after day transition with lobby player + farmhand"
+        );
+    }
+
+    /// <summary>
     /// Regression test for stale-cabin lookup failures after farmhand deletion.
     ///
     /// Reproduces the deletion-fan-out scenario: a player joins, gets a real cabin
