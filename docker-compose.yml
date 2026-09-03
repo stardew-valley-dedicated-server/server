@@ -20,8 +20,7 @@ services:
       - ./.local-container/settings:/data/settings
       - ./diagnostics:/data/diagnostics
     environment:
-      # OS user the container runs as (create a dedicated host user and use its id -u / id -g).
-      # 0/0 runs as root. Must match steam-auth so the shared game-data volume stays writable.
+      # uid/gid the game runs as after the root init (docs: environment.md, Host / Permissions).
       USER_ID: "${USER_ID:-1000}"
       GROUP_ID: "${GROUP_ID:-1000}"
       # Steam auth service URL (for runtime ticket requests)
@@ -64,9 +63,7 @@ services:
       - steam-session:/data/steam-session
       - game-data:/data/game
     environment:
-      # Must match the server's USER_ID/GROUP_ID: both containers read/write the shared
-      # game-data volume, so the sidecar chowns it and drops to this user (see
-      # tools/steam-service/entrypoint.sh). 0/0 runs as root.
+      # Same ids as the server: both write the shared game-data volume.
       USER_ID: "${USER_ID:-1000}"
       GROUP_ID: "${GROUP_ID:-1000}"
       PORT: "${STEAM_AUTH_PORT:-3001}"
@@ -88,8 +85,7 @@ services:
     image: sdvd/discord-bot:${IMAGE_VERSION:-latest}
     container_name: sdvd-discord-bot
     environment:
-      # OS user the container runs as; matches the server/steam-auth so the whole stack runs as
-      # the operator's configured host user. 0/0 runs as root.
+      # Same ids as the server.
       USER_ID: "${USER_ID:-1000}"
       GROUP_ID: "${GROUP_ID:-1000}"
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
