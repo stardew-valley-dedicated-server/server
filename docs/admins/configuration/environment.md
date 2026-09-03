@@ -56,6 +56,22 @@ Every service (server, `steam-auth`, `discord-bot`) reads the same values — th
 game-data volume, so the ids **must match** (they do automatically when set in `.env`). Set both
 to `0` to run as root.
 
+How it works: each container starts as root *inside the container* only long enough to take
+ownership of its volumes (and, for the server, to sync the clock), then hands the application
+off to `USER_ID:GROUP_ID`. Files in the mounted folders and volumes end up owned by that user on
+the host. Only the container's tiny init process stays root; `docker top sdvd-server` shows it.
+The host account that runs `docker compose` needs no special privileges beyond Docker access.
+
+**Existing deployments:** the first boot after changing `USER_ID`/`GROUP_ID` re-owns the volumes
+(a few seconds on the game volume). No manual chown is needed.
+
+**Rootless Docker:** the stack works unchanged. In rootless mode the container's root *is* your
+host user, so set `USER_ID=0` and `GROUP_ID=0` there — that is what makes mounted files come out
+owned by you. A non-zero `USER_ID` under rootless Docker maps to a subordinate uid on the host
+(something like `100999`), which is rarely what you want. The clock-sync step cannot run without
+real root and logs a harmless "could not sync time" warning; the container uses the host clock
+regardless.
+
 ## Discord Integration
 
 | Variable | Description | Default |

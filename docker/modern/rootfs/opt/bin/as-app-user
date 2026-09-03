@@ -1,0 +1,8 @@
+#!/command/execlineb -S0
+# Drops to USER_ID:GROUP_ID (default 1000) and execs the rest of the command line. Every s6
+# app service runs through this so the uid/gid resolution lives in one place.
+with-contenv
+importas -D 1000 USER_ID USER_ID
+importas -D 1000 GROUP_ID GROUP_ID
+s6-applyuidgid -u ${USER_ID} -g ${GROUP_ID} -G ${GROUP_ID}
+$@
