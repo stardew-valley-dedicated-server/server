@@ -155,9 +155,6 @@ public enum WaitName
     // LobbyCommandsTestBase.cs (1)
     Polling_LobbyCommands_AdminGranted,
 
-    // PasswordProtectionTests.cs (1)
-    Polling_PasswordProtection_AuthCountsSettled,
-
     // NavigationTests.cs (3)
     Polling_Navigation_HasInviteCode,
     Polling_Navigation_HasGalaxyInviteCode,
@@ -167,8 +164,9 @@ public enum WaitName
     Polling_NoPassword_AuthMessageAppeared,
     Polling_NoPassword_HelloWorldAppeared,
 
-    // PasswordProtectionTests.cs (1)
+    // PasswordProtectionTests.cs (2)
     Polling_PasswordProtection_KickedDisconnect,
+    Polling_PasswordProtection_AuthCountsSettled,
 
     // PasswordProtectionDisruptiveTests.cs (1)
     Polling_PasswordProtectionDisruptive_KickedDisconnect,
