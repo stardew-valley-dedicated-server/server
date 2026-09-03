@@ -20,8 +20,25 @@ Check [open issues](https://github.com/stardew-valley-dedicated-server/server/is
    - Clear title
    - Steps to reproduce
    - Expected vs actual behavior
-   - Environment (OS, Docker version, JunimoServer version)
-   - Logs and error messages
+   - Environment and logs — the diagnostics bundle below gathers these for you
+
+## Collect Diagnostics
+
+Rather than copying logs by hand, run the diagnostics bundle. It gathers the server logs,
+version, and setup into a single zip:
+
+```sh
+docker compose exec -it server diagnostics
+```
+
+The zip is saved in a `diagnostics` folder next to your `docker-compose.yml` file. Attach it to
+your issue — it covers the environment and logs the template asks for. See the [diagnostics
+command](/admins/operations/commands) for what's included.
+
+::: tip
+This command is part of the standard server image. The [modern (Alpine)
+image](/admins/operations/modern-docker) doesn't include it, so attach your logs manually there.
+:::
 
 ## Found a Fix?
 
@@ -55,7 +72,7 @@ Server crashes with NullReferenceException
 - Mods: Expanded Cabins v2.1.0
 
 **Logs:**
-[Attach relevant log output here]
+[Attach the diagnostics zip, or paste relevant log output]
 
 **Additional Context:**
 Works fine with 10 or fewer cabins. Issue only occurs with 11+.
