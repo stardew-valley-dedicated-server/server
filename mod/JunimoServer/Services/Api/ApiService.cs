@@ -1132,7 +1132,8 @@ public partial class ApiService : ModService
     /// <summary>
     /// (method, path) pairs whose <see cref="ApiEndpointAttribute.Public"/> flag is set. Any
     /// request not in this set requires the API key when one is configured; a path with no
-    /// attribute is therefore never public.
+    /// attribute is therefore never public, and a /test/* route is never public regardless of
+    /// its attribute.
     /// </summary>
     private static readonly HashSet<(string Method, string Path)> _publicEndpoints =
         typeof(ApiService)
@@ -1143,7 +1144,7 @@ public partial class ApiService : ModService
                     | BindingFlags.Public
             )
             .Select(m => m.GetCustomAttribute<ApiEndpointAttribute>())
-            .Where(ep => ep is { Public: true })
+            .Where(ep => ep is { Public: true } && !IsTestPath(ep.Path))
             .Select(ep => (ep!.Method, ep.Path))
             .ToHashSet();
 
@@ -2227,7 +2228,7 @@ public partial class ApiService : ModService
                         );
                         break;
                     case "/diagnostics/handler-timing":
-                        await WriteJsonAsync(response, BuildHandlerTimingReport());
+                        await WriteJsonAsync(response, HandleGetHandlerTiming());
                         break;
                     case "/stats":
                         await WriteJsonAsync(response, HandleGetStats());
@@ -3706,7 +3707,7 @@ public partial class ApiService : ModService
         Tag = "Diagnostics"
     )]
     [ApiResponse(typeof(HandlerTimingReport), 200)]
-    private HandlerTimingReport BuildHandlerTimingReport()
+    private HandlerTimingReport HandleGetHandlerTiming()
     {
         var report = new HandlerTimingReport();
         foreach (var (name, acc) in _handlerTimings)
