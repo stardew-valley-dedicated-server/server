@@ -22,7 +22,7 @@ Download SMAPI mods from sources like:
 
 - [Nexus Mods](https://www.nexusmods.com/stardewvalley)
 - [ModDrop](https://www.moddrop.com/stardew-valley)
-- [Stardew Valley Official Forum](https://forums.stardewvalley.net/index.php?forums/mods.10/)
+- [CurseForge](https://www.curseforge.com/stardewvalley)
 
 Extract mod folders into your `mods` directory.
 
