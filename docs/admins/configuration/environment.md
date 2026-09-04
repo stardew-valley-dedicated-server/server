@@ -137,20 +137,15 @@ Generate a secure key:
 openssl rand -base64 32
 ```
 
-::: tip When do I need this?
-The Discord bot and the `diagnostics` command use the API. If you:
-- **Use the Discord bot**: Set the same `API_KEY` for both server and bot
-- **Don't use the Discord bot**: You can skip `API_KEY` if the API port (default 8080) is not exposed externally
-- **Build custom integrations** (web dashboard, monitoring, etc.): Set `API_KEY` and include it in your requests
-:::
-
-::: warning
-Without `API_KEY`, anyone with network access to the API port (default 8080) can read server data and control your server. Always set this if the API is accessible from untrusted networks.
+::: tip Who needs the key
+- **Discord bot**: set the same `API_KEY` for the server and the bot.
+- **`diagnostics` command**: reads the key from the container environment.
+- **Your own integrations**: send the `Authorization` header.
 :::
 
 ### ALLOW_INSECURE_SETUP
 
-By default the server aborts startup when `VNC_PASSWORD` is empty or (with `API_ENABLED=true`) `API_KEY` is empty — leaving the VNC interface or HTTP API exposed without authentication. Set `ALLOW_INSECURE_SETUP=true` to override the abort on closed networks where the affected ports are not reachable from untrusted clients.
+The server refuses to start without `VNC_PASSWORD`, or without `API_KEY` while `API_ENABLED=true`. Set `ALLOW_INSECURE_SETUP=true` to start anyway. Only do this on networks where the VNC and API ports are not reachable by untrusted clients.
 
 ## Port Summary
 
