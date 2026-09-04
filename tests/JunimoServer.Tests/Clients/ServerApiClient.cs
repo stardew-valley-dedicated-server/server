@@ -243,12 +243,12 @@ public class DiagnosticsCabinState
 
     /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
     /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, so it
-    /// reflects the live otherFarmers copy while the owner is connected. A bool, not the raw ID.</summary>
+    /// reflects the live otherFarmers copy while the owner is connected.</summary>
     [JsonPropertyName("ownerHasUserId")]
     public bool OwnerHasUserId { get; set; }
 
     /// <summary>Whether the cabin owner has a server-side ownership record (join-gate recorder
-    /// or save-import bind). Bool, not the raw ID.</summary>
+    /// or save-import bind).</summary>
     [JsonPropertyName("ownerHasOwner")]
     public bool OwnerHasOwner { get; set; }
 
@@ -296,12 +296,12 @@ public class DiagnosticsFarmhandState
     public string LastSleepLocation { get; set; } = "";
 
     /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
-    /// IsCustomized=false is the abandoned-claim state. A bool, not the raw ID.</summary>
+    /// IsCustomized=false is the abandoned-claim state.</summary>
     [JsonPropertyName("hasUserId")]
     public bool HasUserId { get; set; }
 
     /// <summary>Whether this slot has a server-side ownership record (join-gate recorder or
-    /// save-import bind). Bool, not the raw ID.</summary>
+    /// save-import bind).</summary>
     [JsonPropertyName("hasOwner")]
     public bool HasOwner { get; set; }
 
