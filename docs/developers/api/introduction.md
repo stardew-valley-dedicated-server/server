@@ -33,7 +33,7 @@ If `API_KEY` is set, send it with every request:
 Authorization: Bearer <your-api-key>
 ```
 
-Endpoints with a lock icon in the reference need the key. The others (health, status, docs) work without it.
+Each endpoint page in this reference says whether it needs the key. Health, status and the docs pages work without one.
 
 ### Example
 
