@@ -21,7 +21,7 @@ internal sealed class ServerClient
     private const string CabinsPath = "/cabins";
 
     /// <summary>
-    /// Collection order. /health, /stats and /diagnostics/state are public; the rest need the key
+    /// Collection order. /health is public; the rest need the key
     /// (sending Bearer on all is harmless). /health goes first — it answers without the game thread,
     /// so it's the one read that survives a frozen server.
     /// </summary>
