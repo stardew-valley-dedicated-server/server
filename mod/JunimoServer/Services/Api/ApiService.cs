@@ -1989,10 +1989,7 @@ public partial class ApiService : ModService
             );
             if (_authEnabled)
             {
-                Monitor.Log(
-                    "API authentication enabled - endpoints not marked public require Authorization header",
-                    LogLevel.Info
-                );
+                Monitor.Log("API authentication enabled", LogLevel.Info);
             }
             else
             {
@@ -2159,12 +2156,8 @@ public partial class ApiService : ModService
                 return;
             }
 
-            // Test-only routes — a third early-return gate, mirroring the WebSocket and auth
-            // gates above. Placed AFTER auth so production behaves identically to an unknown
-            // route: an unauthenticated caller already got 401 (same as any non-public path),
-            // and an authenticated caller gets the same 404 a missing route gets.
-            // Never mark a /test/* route Public — that would both unauthenticate these
-            // routes AND leak their existence (404 vs 401) in production.
+            // After auth on purpose: in production a /test/* path must look like any other
+            // unknown route (401 without a key, 404 with one).
             if (IsTestPath(path))
             {
                 if (!Env.IsTest)
