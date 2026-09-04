@@ -39,39 +39,45 @@ These must be set for the server to function:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `USER_ID` | Numeric uid the game and sidecar processes run as | `1000` |
-| `GROUP_ID` | Numeric gid the game and sidecar processes run as | `1000` |
+| `USER_ID` | The user account the game runs as inside the container | `1000` |
+| `GROUP_ID` | The group of that account | `1000` |
 
-The server and `steam-auth` containers start as root, take ownership of their volumes, then run the
-application as `USER_ID:GROUP_ID`. Only the container init stays root. With a non-zero id the game,
-SMAPI and every mod run unprivileged, so a misbehaving mod has no root inside the container. This
-is the standard model for Docker images and the recommended setup.
+**What this is about.** On Linux, every file has an owner. The server writes files into two folders
+on your computer, `.local-container/settings` and `diagnostics`, and those files are owned by
+whatever user the game runs as. If that is not your own account, you can read the files but cannot
+edit or delete them without `sudo`.
 
-Both containers read the same two values because they share the game-data volume. Set them in
-`.env` and both pick them up. The `discord-bot` container has no shared state and always runs as
-its own fixed non-root user.
+Inside the container the game does not run as the administrator ("root"). It runs as a normal user,
+identified by a number. `USER_ID` and `GROUP_ID` set that number. The container starts as root only
+long enough to hand the game its folders, then switches to this user for everything else. This is
+the usual, recommended way to run Docker software: a misbehaving mod cannot touch anything outside
+its own files.
 
-**What to set**
+**What you need to do**
 
-- **Linux:** the container uid is the host uid. Set both to your account so files in the mounted
-  folders and volumes belong to you:
+- **Windows and macOS:** nothing. Docker Desktop makes the files yours no matter what number is set.
+- **Linux:** find your own user number and put it in `.env`, so the files belong to you:
 
   ```sh
-  id -u   # -> USER_ID
-  id -g   # -> GROUP_ID
+  id -u   # your USER_ID
+  id -g   # your GROUP_ID
   ```
 
-  The default `1000` is the first user created on most distributions. If that is you, nothing to do.
-- **Windows and macOS (Docker Desktop):** leave the default. Bind-mounted folders are translated to
-  your desktop user regardless of the container uid, and named volumes live inside the Docker VM.
-- **Root (`0`):** set both to `0` to run everything as root inside the container. Not needed for
-  normal operation. On Linux, files the server writes into the mounted `settings` and
-  `diagnostics` folders are then owned by root on the host.
+  If both print `1000` you are already on the default and can skip this. `1000` is the number
+  most Linux systems give the first account created, so it is right for most people, but check.
+- **Rootless Docker** (Docker installed without administrator rights): set both to `0`. In that
+  setup "root inside the container" already means your own account on the computer.
 
-Changing the ids on an existing installation is safe: the next start re-owns the volumes.
+The same numbers are used by the server and by `steam-auth`, because both work on the same game
+files. Put them in `.env` once and both pick them up. The Discord bot keeps files of its own that
+nothing else uses, so it always runs as a fixed non-root user and ignores these values.
 
-**Rootless Docker:** set `USER_ID=0` and `GROUP_ID=0`. Container root is already your host user
-there, and a non-zero uid maps to a subordinate uid on the host.
+**Changing it later** is safe. The next start makes all the server's files belong to the new user.
+If you had run with a different number before, files already in the `settings` and `diagnostics`
+folders change owner on your computer at that start.
+
+**Running as root inside the container** is possible by setting both to `0`. It is not needed for
+normal use. On Linux the files in the two folders are then owned by root on your computer.
 
 ## Discord Integration
 

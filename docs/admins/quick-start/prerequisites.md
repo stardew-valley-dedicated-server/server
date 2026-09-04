@@ -48,14 +48,16 @@ The server runs continuously and uses resources even when no players are connect
 
 ## System Clock
 
-Containers share the host's kernel clock, so the server's time is whatever the host's is. The GOG
-Galaxy handshake rejects a skewed clock, which shows up as invite-code players dropping about 30
-seconds after they join. Keep the host synchronized with NTP:
+The server uses your computer's clock; it has no clock of its own. If that clock is wrong by more
+than a little, players who join with an invite code are dropped about 30 seconds after joining,
+because the GOG connection check compares clocks.
+
+Almost every computer sets its clock automatically over the internet, so normally there is nothing
+to do. On Linux you can confirm it:
 
 ```sh
-timedatectl status   # "System clock synchronized: yes"
+timedatectl status   # look for "System clock synchronized: yes"
 ```
 
-Linux distributions enable this by default (`systemd-timesyncd` or `chrony`). Docker Desktop syncs
-its VM from the host; if the clock drifts after the host wakes from sleep, restarting Docker Desktop
-resyncs it.
+On Windows and macOS, Docker Desktop takes the time from your computer. If it falls behind after
+the computer wakes from sleep, restart Docker Desktop.
