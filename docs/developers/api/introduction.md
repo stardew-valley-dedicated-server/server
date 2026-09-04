@@ -23,13 +23,13 @@ The API is enabled by default. Configure via environment variables:
 |----------|-------------|---------|
 | `API_ENABLED` | Enable/disable the API | `true` |
 | `API_PORT` | Port for the API server | `8080` |
-| `API_KEY` | API key required by authenticated endpoints | (empty = no auth) |
+| `API_KEY` | API key required by authenticated endpoints | (empty = no auth; startup then requires `ALLOW_INSECURE_SETUP=true`) |
 
 ## Authentication
 
 When `API_KEY` is set, every endpoint marked with the bearer lock in the reference requires it via the `Authorization` header:
 
-```
+```http
 Authorization: Bearer <your-api-key>
 ```
 
