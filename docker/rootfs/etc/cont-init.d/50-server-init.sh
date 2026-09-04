@@ -31,6 +31,15 @@ for dir in /config /data/game /data/Mods; do
     fi
 done
 
+# Opt-in Galaxy SDK debug logging (docs: troubleshooting, "Capturing Galaxy SDK logs"). The SDK
+# reads GalaxyPeer.ini from the game's working directory, which is this root-owned service dir,
+# so the operator's copy in the game volume is mirrored here; removing it there disables logging.
+if [ -f /data/game/GalaxyPeer.ini ]; then
+    cp /data/game/GalaxyPeer.ini /etc/services.d/app/GalaxyPeer.ini
+else
+    rm -f /etc/services.d/app/GalaxyPeer.ini
+fi
+
 # Sync the system clock. Needs root + the SYS_TIME cap (docker-compose.yml); as the dropped app
 # user it silently fails, and a skewed clock breaks GOG Galaxy P2P (~30s disconnects).
 echo "[server-init] Synchronizing system time..."
