@@ -186,7 +186,7 @@ public class DiagnosticsStateResponse
     /// <summary>UMIs in <c>Multiplayer.disconnectingFarmers</c> (mid-disconnect).</summary>
     public long[] DisconnectingFarmers { get; set; } = System.Array.Empty<long>();
 
-    // ── Save-import assertion probes (counts/booleans/small ints only; no identifiers). ──
+    // ── Save-import assertion probes ──
     // The post-swap Server-host FarmHouse must be empty after the contents/NPC move.
     /// <summary>Placed-object count in the host FarmHouse (must be 0 after a swap import).</summary>
     public int FarmHouseObjectCount { get; set; }
@@ -253,13 +253,11 @@ public class DiagnosticsCabinState
     /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
     /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, which
     /// yields the live otherFarmers copy while the owner is connected (so the in-flight userID
-    /// stamp is visible here before disconnect persists it to farmhandData). Exposed as a bool,
-    /// not the raw ID, so the snapshot never carries a platform identifier.</summary>
+    /// stamp is visible here before disconnect persists it to farmhandData). Exposed as a bool, not the raw ID.</summary>
     public bool OwnerHasUserId { get; set; }
 
     /// <summary>Whether the cabin owner (its farmhand) has a server-side ownership record
-    /// (recorded at the join gate's approve moment or by a save-import bind). Bool, not the raw
-    /// ID, as with <see cref="OwnerHasUserId"/>.</summary>
+    /// (recorded at the join gate's approve moment or by a save-import bind). Bool, not the raw ID.</summary>
     public bool OwnerHasOwner { get; set; }
 
     /// <summary>Platform tag of the cabin owner's ownership record ("steam"/"galaxy"), or ""
@@ -297,13 +295,11 @@ public class DiagnosticsFarmhandState
     public string LastSleepLocation { get; set; } = "";
 
     /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
-    /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID,
-    /// so the snapshot never carries a platform identifier.</summary>
+    /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID.</summary>
     public bool HasUserId { get; set; }
 
     /// <summary>Whether this slot has a server-side ownership record (recorded at the join
-    /// gate's approve moment or by a save-import bind). Bool, not the raw ID — same
-    /// rule as <see cref="HasUserId"/>.</summary>
+    /// gate's approve moment or by a save-import bind). Bool, not the raw ID.</summary>
     public bool HasOwner { get; set; }
 
     /// <summary>Platform tag of the ownership record ("steam"/"galaxy"), or "" when unowned.</summary>
@@ -1129,12 +1125,6 @@ public partial class ApiService : ModService
     /// </summary>
     private static readonly bool _authEnabled = !string.IsNullOrEmpty(Env.ApiKey);
 
-    /// <summary>
-    /// (method, path) pairs whose <see cref="ApiEndpointAttribute.Public"/> flag is set. Any
-    /// request not in this set requires the API key when one is configured; a path with no
-    /// attribute is therefore never public, and a /test/* route is never public regardless of
-    /// its attribute.
-    /// </summary>
     private static readonly HashSet<(string Method, string Path)> _publicEndpoints =
         typeof(ApiService)
             .GetMethods(
@@ -1959,7 +1949,6 @@ public partial class ApiService : ModService
             // Generate OpenAPI spec. Test-only endpoints are spec-visible iff they are
             // runtime-reachable (Env.IsTest) — the same gate the dispatcher uses, so the
             // published contract and the routing cannot drift.
-            // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this predicate's IsTestPath/Env.IsTest use.
             var document = OpenApiGenerator.Generate(
                 typeof(ApiService),
                 "Stardew Dedicated Server API",
@@ -2164,7 +2153,6 @@ public partial class ApiService : ModService
                 return;
             }
 
-            // Validate API key unless the endpoint's attribute marks it Public.
             if (!_publicEndpoints.Contains((method, path)) && !ValidateApiKey(request))
             {
                 await WriteUnauthorizedAsync(response);
@@ -2177,7 +2165,6 @@ public partial class ApiService : ModService
             // and an authenticated caller gets the same 404 a missing route gets.
             // Never mark a /test/* route Public — that would both unauthenticate these
             // routes AND leak their existence (404 vs 401) in production.
-            // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this block.
             if (IsTestPath(path))
             {
                 if (!Env.IsTest)
@@ -3734,11 +3721,6 @@ public partial class ApiService : ModService
         return report;
     }
 
-    /// <summary>
-    /// Long-poll variant of <c>/players</c>. Query params: <c>since=N</c> (last observed
-    /// snapshot version), <c>playerId=N</c> (wait until that player is present), and
-    /// <c>timeout=ms</c> (bounded by <see cref="WaitMaxTimeout"/>).
-    /// </summary>
     [ApiEndpoint("GET", "/wait/players", Summary = "Long-poll connected players", Tag = "Server")]
     [ApiResponse(typeof(PlayersResponse), 200, Description = "Player list once the filters match")]
     [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
@@ -5265,7 +5247,6 @@ public partial class ApiService : ModService
         await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
     }
 
-    /// <summary>Serialized OpenAPI document, generated once in <see cref="StartServer"/>.</summary>
     [ApiEndpoint(
         "GET",
         "/swagger/v1/swagger.json",
@@ -5275,10 +5256,6 @@ public partial class ApiService : ModService
     )]
     private string HandleGetOpenApiSpec() => _openApiSpec ?? "{}";
 
-    /// <summary>
-    /// Interactive API reference page. Served without the key because a browser navigation
-    /// cannot attach a bearer header, and the spec it renders is public anyway.
-    /// </summary>
     [ApiEndpoint("GET", "/docs", Summary = "API documentation UI", Tag = "Docs", Public = true)]
     private string HandleGetDocs()
     {

@@ -243,8 +243,7 @@ public class DiagnosticsCabinState
 
     /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
     /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, so it
-    /// reflects the live otherFarmers copy while the owner is connected. A bool, not the raw ID,
-    /// so the snapshot never carries a platform identifier.</summary>
+    /// reflects the live otherFarmers copy while the owner is connected. A bool, not the raw ID.</summary>
     [JsonPropertyName("ownerHasUserId")]
     public bool OwnerHasUserId { get; set; }
 
@@ -297,8 +296,7 @@ public class DiagnosticsFarmhandState
     public string LastSleepLocation { get; set; } = "";
 
     /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
-    /// IsCustomized=false is the abandoned-claim state. A bool, not the raw ID,
-    /// so the snapshot never carries a platform identifier.</summary>
+    /// IsCustomized=false is the abandoned-claim state. A bool, not the raw ID.</summary>
     [JsonPropertyName("hasUserId")]
     public bool HasUserId { get; set; }
 

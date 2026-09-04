@@ -52,7 +52,6 @@ public static class OpenApiGenerator
             },
         };
 
-        // Bearer scheme for the API key; every operation not marked Public requires it.
         document.Components.SecuritySchemes[BearerSchemeName] = new OpenApiSecurityScheme
         {
             Type = OpenApiSecuritySchemeType.Http,
