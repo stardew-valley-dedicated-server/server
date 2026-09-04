@@ -42,14 +42,14 @@ These must be set for the server to function:
 | `USER_ID` | Numeric uid the game and sidecar processes run as | `1000` |
 | `GROUP_ID` | Numeric gid the game and sidecar processes run as | `1000` |
 
-Each service in the stack (server, `steam-auth`, `discord-bot`) starts as root inside its
-container, takes ownership of its volumes, then runs the application as `USER_ID:GROUP_ID`. Only
-the container init stays root. With a non-zero id the game, SMAPI and every mod run unprivileged,
-so a misbehaving mod has no root inside the container. This is the standard model for Docker
-images and the recommended setup.
+The server and `steam-auth` containers start as root, take ownership of their volumes, then run the
+application as `USER_ID:GROUP_ID`. Only the container init stays root. With a non-zero id the game,
+SMAPI and every mod run unprivileged, so a misbehaving mod has no root inside the container. This
+is the standard model for Docker images and the recommended setup.
 
-All services read the same two values because they share the game-data volume. Set them in `.env`
-and every service picks them up.
+Both containers read the same two values because they share the game-data volume. Set them in
+`.env` and both pick them up. The `discord-bot` container has no shared state and always runs as
+its own fixed non-root user.
 
 **What to set**
 
@@ -65,7 +65,8 @@ and every service picks them up.
 - **Windows and macOS (Docker Desktop):** leave the default. Bind-mounted folders are translated to
   your desktop user regardless of the container uid, and named volumes live inside the Docker VM.
 - **Root (`0`):** set both to `0` to run everything as root inside the container. Not needed for
-  normal operation.
+  normal operation. On Linux, files the server writes into the mounted `settings` and
+  `diagnostics` folders are then owned by root on the host.
 
 Changing the ids on an existing installation is safe: the next start re-owns the volumes.
 

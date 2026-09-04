@@ -3,15 +3,9 @@ services:
     build: .
     container_name: discli
     env_file: .env
-    # Run as a non-root user (default 1000; override with USER_ID/GROUP_ID). Applies to both the
-    # idle process and `docker compose exec` sessions, so nothing here runs as root.
-    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     volumes:
-      # Persists config.json, permissions.json, audit.log across restarts. Lives under the
-      # non-root user's HOME (see Dockerfile). A fresh volume inherits the image's ownership; a
-      # volume that already holds root-owned files needs a one-time chown to the ids in use:
-      # `docker run --rm -v discli-docker_discli-config:/d alpine chown -R "${USER_ID:-1000}:${GROUP_ID:-1000}" /d`
-      - discli-config:/home/discli/.discli
+      # Persists config.json, permissions.json, audit.log across restarts.
+      - discli-config:/root/.discli
     # Keep the container idle so we exec commands into it instead of
     # starting a fresh container per command.
     command: sleep infinity

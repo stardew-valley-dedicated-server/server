@@ -25,6 +25,14 @@ STEAM_PASSWORD="your_steam_password"
 VNC_PASSWORD="your_secure_password"
 ```
 
+On Linux, also set the ids the server runs as to your own account, so the mounted folders stay
+yours (see [Host / Permissions](/admins/configuration/environment#host-permissions)):
+
+```sh
+USER_ID=1000   # id -u
+GROUP_ID=1000  # id -g
+```
+
 ## 3. Pull Images
 
 Download the pre-built Docker images:
