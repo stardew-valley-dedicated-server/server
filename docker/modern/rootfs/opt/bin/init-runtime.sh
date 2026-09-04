@@ -23,10 +23,6 @@ mkdir -p /tmp/runtime
 chown "${USER_ID}:${GROUP_ID}" /tmp/runtime
 chmod 0700 /tmp/runtime
 
-# X server socket dir, so a non-root Xvfb can create its socket.
-mkdir -p /tmp/.X11-unix
-chmod 1777 /tmp/.X11-unix
-
 # Take ownership of everything the app writes: the game volume (also written by the steam-auth
 # sidecar), the saves volume, the settings bind mount, the bundled Mods, and the app HOME.
 # Fresh Docker volumes and COPYed image dirs start root-owned, so this runs every boot.

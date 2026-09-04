@@ -321,7 +321,9 @@ RUN chmod +x /opt/bin/* && \
     find /etc/s6-overlay/s6-rc.d -name run -exec chmod +x {} \; && \
     find /etc/s6-overlay/s6-rc.d -name up -exec chmod +x {} \; && \
     # App-user HOME (chowned to USER_ID:GROUP_ID at runtime by the init-runtime oneshot).
-    mkdir -p /home/app
+    mkdir -p /home/app && \
+    # X socket dir with the standard sticky world-writable mode, so a non-root Xvfb can create its socket.
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # ---------- Copy mod from build stage ----------
 
