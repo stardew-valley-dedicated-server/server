@@ -34,15 +34,25 @@ chmod 1777 /tmp/.X11-unix
 # which yields "" (a relative path into the service's cwd) unless $HOME/.config already exists.
 mkdir -p "${APP_HOME}/.config"
 
+# Individual failures are expected on some bind mounts (Docker Desktop host folders reject chown),
+# so the sweep is tolerant; the check below is what gates startup.
 echo "[init-runtime] Taking ownership of /data and ${APP_HOME} for ${USER_ID}:${GROUP_ID}..."
 chown -R "${USER_ID}:${GROUP_ID}" /data "${APP_HOME}" 2>/dev/null || true
+
+# The app user must own the paths it writes unconditionally; anything else is a broken start.
+for dir in "${APP_HOME}" /data/game /data/Mods; do
+    if [ "$(stat -c %u "${dir}")" != "${USER_ID}" ]; then
+        echo "[init-runtime] ERROR: ${dir} is not owned by USER_ID ${USER_ID} after chown" >&2
+        exit 1
+    fi
+done
 
 # Sync the system clock. Needs root + the SYS_TIME cap (docker-compose.yml); as the dropped app
 # user it fails, and a skewed clock breaks GOG Galaxy P2P (~30s disconnects).
 echo "[init-runtime] Synchronizing system time..."
 if hwclock --hctosys 2>/dev/null; then
     echo "[init-runtime] Time synced from hardware clock"
-elif ntpdate -u pool.ntp.org 2>/dev/null; then
+elif timeout 15 ntpd -q -n -p pool.ntp.org 2>/dev/null; then
     echo "[init-runtime] Time synced from NTP server"
 else
     echo "[init-runtime] Warning: could not sync time (current: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))"
