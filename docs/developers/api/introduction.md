@@ -23,34 +23,26 @@ The API is enabled by default. Configure via environment variables:
 |----------|-------------|---------|
 | `API_ENABLED` | Enable/disable the API | `true` |
 | `API_PORT` | Port for the API server | `8080` |
-| `API_KEY` | API key for write endpoints | (empty = no auth) |
+| `API_KEY` | API key required by authenticated endpoints | (empty = no auth; startup then requires `ALLOW_INSECURE_SETUP=true`) |
 
 ## Authentication
 
-When `API_KEY` is set, all endpoints require authentication via the `Authorization` header:
+If `API_KEY` is set, send it with every request:
 
-```
+```http
 Authorization: Bearer <your-api-key>
 ```
 
-### Public Endpoints
-
-These endpoints remain accessible without authentication:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/health` | Health checks for monitoring tools |
-| `/docs` | API documentation UI |
-| `/swagger/v1/swagger.json` | OpenAPI specification |
+Each endpoint page in this reference says whether it needs the key. Health, status and the docs pages work without one.
 
 ### Example
 
 ```sh
 # Without auth (will fail if API_KEY is set)
-curl "http://localhost:8080/status"
+curl "http://localhost:8080/players"
 
 # With auth
-curl "http://localhost:8080/status" \
+curl "http://localhost:8080/players" \
   -H "Authorization: Bearer your-api-key"
 ```
 

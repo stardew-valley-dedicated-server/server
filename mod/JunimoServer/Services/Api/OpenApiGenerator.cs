@@ -13,6 +13,8 @@ namespace JunimoServer.Services.Api;
 /// </summary>
 public static class OpenApiGenerator
 {
+    private const string BearerSchemeName = "bearerAuth";
+
     /// <summary>
     /// Generates an OpenAPI document from a type's methods decorated with ApiEndpoint attributes.
     /// </summary>
@@ -50,6 +52,13 @@ public static class OpenApiGenerator
             },
         };
 
+        document.Components.SecuritySchemes[BearerSchemeName] = new OpenApiSecurityScheme
+        {
+            Type = OpenApiSecuritySchemeType.Http,
+            Scheme = "bearer",
+            Description = "The server's API_KEY. Only enforced when API_KEY is set.",
+        };
+
         var methods = serviceType
             .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
             .Where(m =>
@@ -72,6 +81,14 @@ public static class OpenApiGenerator
             if (!string.IsNullOrEmpty(endpoint.Tag))
             {
                 operation.Tags.Add(endpoint.Tag);
+            }
+
+            if (!endpoint.Public)
+            {
+                operation.Security = new List<OpenApiSecurityRequirement>
+                {
+                    new OpenApiSecurityRequirement { [BearerSchemeName] = Array.Empty<string>() },
+                };
             }
 
             // Add responses

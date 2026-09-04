@@ -24,11 +24,6 @@ namespace JunimoServer.Services.Api;
 // Test-only HTTP endpoints (/test/*), split out from ApiService so the production
 // dispatcher never names them. Reachable only under Env.IsTest — see the gate in
 // ApiService.HandleRequest and the OpenAPI filter in ApiService.StartServer.
-//
-// SEAM: to compile these out of production binaries entirely, define
-// INCLUDE_TEST_ENDPOINTS for test builds only and wrap this file's body (and
-// ApiService.TestEndpoints.Models.cs's body) plus the two // SEAM references in
-// ApiService.cs (the dispatcher gate and the OpenAPI predicate).
 public partial class ApiService
 {
     /// <summary>

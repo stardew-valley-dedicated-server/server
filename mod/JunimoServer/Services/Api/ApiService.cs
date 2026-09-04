@@ -186,7 +186,7 @@ public class DiagnosticsStateResponse
     /// <summary>UMIs in <c>Multiplayer.disconnectingFarmers</c> (mid-disconnect).</summary>
     public long[] DisconnectingFarmers { get; set; } = System.Array.Empty<long>();
 
-    // ── Save-import assertion probes (counts/booleans/small ints only; unauthenticated-safe). ──
+    // ── Save-import assertion probes ──
     // The post-swap Server-host FarmHouse must be empty after the contents/NPC move.
     /// <summary>Placed-object count in the host FarmHouse (must be 0 after a swap import).</summary>
     public int FarmHouseObjectCount { get; set; }
@@ -253,13 +253,11 @@ public class DiagnosticsCabinState
     /// <summary>Whether the owner has a platform ID (Steam/GOG) stamped; true with
     /// OwnerIsCustomized=false is the abandoned-claim state. Resolved via cabin.owner, which
     /// yields the live otherFarmers copy while the owner is connected (so the in-flight userID
-    /// stamp is visible here before disconnect persists it to farmhandData). Exposed as a bool,
-    /// not the raw ID: /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+    /// stamp is visible here before disconnect persists it to farmhandData).</summary>
     public bool OwnerHasUserId { get; set; }
 
     /// <summary>Whether the cabin owner (its farmhand) has a server-side ownership record
-    /// (recorded at the join gate's approve moment or by a save-import bind). Bool, not the raw
-    /// ID — same unauthenticated-endpoint rule as <see cref="OwnerHasUserId"/>.</summary>
+    /// (recorded at the join gate's approve moment or by a save-import bind).</summary>
     public bool OwnerHasOwner { get; set; }
 
     /// <summary>Platform tag of the cabin owner's ownership record ("steam"/"galaxy"), or ""
@@ -272,7 +270,7 @@ public class DiagnosticsCabinState
 
     /// <summary>Count of placed objects (chests/machines) in the cabin interior. Used by the
     /// save-import contents-move test to assert the owner's chests moved into the cabin. Count
-    /// only (not contents) — /diagnostics/state is unauthenticated.</summary>
+    /// only, not contents.</summary>
     public int ObjectCount { get; set; }
 
     /// <summary>Count of items in the cabin fridge (save-import contents move).</summary>
@@ -297,13 +295,11 @@ public class DiagnosticsFarmhandState
     public string LastSleepLocation { get; set; } = "";
 
     /// <summary>Whether a platform ID (Steam/GOG) is stamped on this slot; true with
-    /// IsCustomized=false is the abandoned-claim state. Exposed as a bool, not the raw ID:
-    /// /diagnostics/state is unauthenticated and the ID is a stable identifier.</summary>
+    /// IsCustomized=false is the abandoned-claim state.</summary>
     public bool HasUserId { get; set; }
 
     /// <summary>Whether this slot has a server-side ownership record (recorded at the join
-    /// gate's approve moment or by a save-import bind). Bool, not the raw ID — same
-    /// unauthenticated-endpoint rule as <see cref="HasUserId"/>.</summary>
+    /// gate's approve moment or by a save-import bind).</summary>
     public bool HasOwner { get; set; }
 
     /// <summary>Platform tag of the ownership record ("steam"/"galaxy"), or "" when unowned.</summary>
@@ -1129,6 +1125,19 @@ public partial class ApiService : ModService
     /// </summary>
     private static readonly bool _authEnabled = !string.IsNullOrEmpty(Env.ApiKey);
 
+    private static readonly HashSet<(string Method, string Path)> _publicEndpoints =
+        typeof(ApiService)
+            .GetMethods(
+                BindingFlags.Instance
+                    | BindingFlags.Static
+                    | BindingFlags.NonPublic
+                    | BindingFlags.Public
+            )
+            .Select(m => m.GetCustomAttribute<ApiEndpointAttribute>())
+            .Where(ep => ep is { Public: true } && !IsTestPath(ep.Path))
+            .Select(ep => (ep!.Method, ep.Path))
+            .ToHashSet();
+
     public ApiService(
         IModHelper helper,
         IMonitor monitor,
@@ -1940,7 +1949,6 @@ public partial class ApiService : ModService
             // Generate OpenAPI spec. Test-only endpoints are spec-visible iff they are
             // runtime-reachable (Env.IsTest) — the same gate the dispatcher uses, so the
             // published contract and the routing cannot drift.
-            // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this predicate's IsTestPath/Env.IsTest use.
             var document = OpenApiGenerator.Generate(
                 typeof(ApiService),
                 "Stardew Dedicated Server API",
@@ -1981,10 +1989,7 @@ public partial class ApiService : ModService
             );
             if (_authEnabled)
             {
-                Monitor.Log(
-                    "API authentication enabled - all endpoints require Authorization header",
-                    LogLevel.Info
-                );
+                Monitor.Log("API authentication enabled", LogLevel.Info);
             }
             else
             {
@@ -2145,34 +2150,14 @@ public partial class ApiService : ModService
                 return;
             }
 
-            // Public endpoints (no auth required).
-            // /diagnostics/state is public because it is a test-harness
-            // failure-diagnosis endpoint: callers are the test containers
-            // inside the Testcontainers network, not external Internet
-            // clients. Exposing it unauthenticated lets a timed-out poll
-            // grab ground-truth state without having to pass the API key.
-            var isPublicEndpoint =
-                path == "/health"
-                || path == "/wait/health"
-                || path == "/stats"
-                || path == "/docs"
-                || path == "/swagger/v1/swagger.json"
-                || path == "/diagnostics/state";
-
-            // Validate API key for protected endpoints
-            if (!isPublicEndpoint && !ValidateApiKey(request))
+            if (!_publicEndpoints.Contains((method, path)) && !ValidateApiKey(request))
             {
                 await WriteUnauthorizedAsync(response);
                 return;
             }
 
-            // Test-only routes — a third early-return gate, mirroring the WebSocket and auth
-            // gates above. Placed AFTER auth so production behaves identically to an unknown
-            // route: an unauthenticated caller already got 401 (same as any non-public path),
-            // and an authenticated caller gets the same 404 a missing route gets.
-            // DO NOT add /test/* to isPublicEndpoint — that would both unauthenticate these
-            // routes AND leak their existence (404 vs 401) in production.
-            // SEAM: if INCLUDE_TEST_ENDPOINTS is introduced, wrap this block.
+            // After auth on purpose: in production a /test/* path must look like any other
+            // unknown route (401 without a key, 404 with one).
             if (IsTestPath(path))
             {
                 if (!Env.IsTest)
@@ -2223,7 +2208,7 @@ public partial class ApiService : ModService
                         );
                         break;
                     case "/diagnostics/handler-timing":
-                        await WriteJsonAsync(response, BuildHandlerTimingReport());
+                        await WriteJsonAsync(response, HandleGetHandlerTiming());
                         break;
                     case "/stats":
                         await WriteJsonAsync(response, HandleGetStats());
@@ -2244,10 +2229,10 @@ public partial class ApiService : ModService
                         await WriteJsonAsync(response, HandleGetAuthStatus());
                         break;
                     case "/swagger/v1/swagger.json":
-                        await WriteJsonRawAsync(response, _openApiSpec ?? "{}");
+                        await WriteJsonRawAsync(response, HandleGetOpenApiSpec());
                         break;
                     case "/docs":
-                        await WriteHtmlAsync(response, GetScalarHtml());
+                        await WriteHtmlAsync(response, HandleGetDocs());
                         break;
                     default:
                         await WriteNotFoundAsync(response, path);
@@ -2789,7 +2774,7 @@ public partial class ApiService : ModService
     /// Invite code derivation and version are computed per-request (both thread-safe).
     /// Game state fields come from <see cref="TakeGameStateSnapshot"/>.
     /// </summary>
-    [ApiEndpoint("GET", "/status", Summary = "Get server status", Tag = "Server")]
+    [ApiEndpoint("GET", "/status", Summary = "Get server status", Tag = "Server", Public = true)]
     [ApiResponse(typeof(ServerStatus), 200, Description = "Server status and game state")]
     private ServerStatus HandleGetStatus()
     {
@@ -3430,7 +3415,7 @@ public partial class ApiService : ModService
         return s;
     }
 
-    [ApiEndpoint("GET", "/health", Summary = "Health check", Tag = "Health")]
+    [ApiEndpoint("GET", "/health", Summary = "Health check", Tag = "Health", Public = true)]
     [ApiResponse(typeof(HealthResponse), 200, Description = "Health status")]
     private HealthResponse HandleGetHealth()
     {
@@ -3509,6 +3494,9 @@ public partial class ApiService : ModService
     /// Returns 200 + current /status response when filters match a newer
     /// snapshot, or 408 if the timeout elapses with no match.
     /// </summary>
+    [ApiEndpoint("GET", "/wait/status", Summary = "Long-poll server status", Tag = "Server")]
+    [ApiResponse(typeof(ServerStatus), 200, Description = "Server status once the filters match")]
+    [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitStatusAsync(
         HttpListenerRequest request,
         HttpListenerResponse response,
@@ -3692,7 +3680,14 @@ public partial class ApiService : ModService
 
     private static long ToUs(TimeSpan ts) => (long)(ts.TotalMilliseconds * 1000.0);
 
-    private HandlerTimingReport BuildHandlerTimingReport()
+    [ApiEndpoint(
+        "GET",
+        "/diagnostics/handler-timing",
+        Summary = "Per-handler request timing averages",
+        Tag = "Diagnostics"
+    )]
+    [ApiResponse(typeof(HandlerTimingReport), 200)]
+    private HandlerTimingReport HandleGetHandlerTiming()
     {
         var report = new HandlerTimingReport();
         foreach (var (name, acc) in _handlerTimings)
@@ -3719,6 +3714,9 @@ public partial class ApiService : ModService
         return report;
     }
 
+    [ApiEndpoint("GET", "/wait/players", Summary = "Long-poll connected players", Tag = "Server")]
+    [ApiResponse(typeof(PlayersResponse), 200, Description = "Player list once the filters match")]
+    [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitPlayersAsync(
         HttpListenerRequest request,
         HttpListenerResponse response,
@@ -3792,6 +3790,13 @@ public partial class ApiService : ModService
     /// <item><c>timeout=ms</c> — bounded by <see cref="WaitMaxTimeout"/>.</item>
     /// </list>
     /// </summary>
+    [ApiEndpoint("GET", "/wait/farmhands", Summary = "Long-poll farmhand slots", Tag = "Farmhands")]
+    [ApiResponse(
+        typeof(FarmhandsResponse),
+        200,
+        Description = "Farmhand list once the filters match"
+    )]
+    [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitFarmhandsAsync(
         HttpListenerRequest request,
         HttpListenerResponse response,
@@ -3912,6 +3917,15 @@ public partial class ApiService : ModService
     /// <see cref="WaitMaxTimeout"/>; callers must wrap in an outer
     /// re-issue loop.
     /// </summary>
+    [ApiEndpoint(
+        "GET",
+        "/wait/health",
+        Summary = "Long-poll health",
+        Tag = "Health",
+        Public = true
+    )]
+    [ApiResponse(typeof(HealthResponse), 200, Description = "Health status once the filters match")]
+    [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitHealthAsync(
         HttpListenerRequest request,
         HttpListenerResponse response,
@@ -5226,7 +5240,17 @@ public partial class ApiService : ModService
         await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
     }
 
-    private string GetScalarHtml()
+    [ApiEndpoint(
+        "GET",
+        "/swagger/v1/swagger.json",
+        Summary = "OpenAPI specification",
+        Tag = "Docs",
+        Public = true
+    )]
+    private string HandleGetOpenApiSpec() => _openApiSpec ?? "{}";
+
+    [ApiEndpoint("GET", "/docs", Summary = "API documentation UI", Tag = "Docs", Public = true)]
+    private string HandleGetDocs()
     {
         return @"<!DOCTYPE html>
 <html>

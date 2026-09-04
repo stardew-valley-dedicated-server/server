@@ -14,6 +14,8 @@ public class ApiEndpointAttribute : Attribute
     public string? Description { get; set; }
     public string? Tag { get; set; }
 
+    public bool Public { get; set; }
+
     public ApiEndpointAttribute(string method, string path)
     {
         Method = method.ToUpperInvariant();
