@@ -27,13 +27,13 @@ The API is enabled by default. Configure via environment variables:
 
 ## Authentication
 
-When `API_KEY` is set, every endpoint marked with the bearer lock in the reference requires it via the `Authorization` header:
+If `API_KEY` is set, send it with every request:
 
 ```http
 Authorization: Bearer <your-api-key>
 ```
 
-Endpoints without the lock (health checks, server status, this documentation) answer without a key.
+Endpoints with a lock icon in the reference need the key. The others (health, status, docs) work without it.
 
 ### Example
 
