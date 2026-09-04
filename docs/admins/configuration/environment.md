@@ -138,7 +138,7 @@ openssl rand -base64 32
 ```
 
 ::: tip When do I need this?
-The Discord bot and the in-container `diagnostics` tool send the key on every request. If you:
+The Discord bot and the `diagnostics` command use the API. If you:
 - **Use the Discord bot**: Set the same `API_KEY` for both server and bot
 - **Don't use the Discord bot**: You can skip `API_KEY` if the API port (default 8080) is not exposed externally
 - **Build custom integrations** (web dashboard, monitoring, etc.): Set `API_KEY` and include it in your requests
