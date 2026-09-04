@@ -121,7 +121,7 @@ public sealed class ResourceLease : IAsyncDisposable
     /// </summary>
     public async Task CreateNewGameAsync(
         FarmTypeSetting farmType,
-        string farmName = "Junimo",
+        string farmName = "Server",
         int startingCabins = 1,
         string cabinStrategy = "CabinStack",
         int? maxPlayers = null,

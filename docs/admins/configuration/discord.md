@@ -7,7 +7,7 @@ The bot runs alongside your server, so its identity is your farm's: its nickname
 ## 1. Create the Bot
 
 1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**
-2. On **General Information**, copy the **Application ID** (needed in step 2)
+2. On **General Information**, set the bot's name and icon, then copy the **Application ID** (needed in step 2)
 3. On the **Bot** tab, click **Reset Token** and copy the token (needed in step 3)
 
 ::: warning Keep Token Secret
@@ -90,6 +90,8 @@ The ownership id protects only the dashboard message. Presence is global to the 
 :::
 
 ## Bot Nickname
+
+The nickname is what your Discord server shows in place of the bot's username; the username and profile picture themselves come from the Developer Portal.
 
 | Configuration | Behavior |
 |---------------|----------|

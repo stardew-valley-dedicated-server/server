@@ -26,9 +26,9 @@ public class ServerContainerOptions
     #region Game Settings (server-settings.json -> game)
 
     /// <summary>
-    /// Farm name. Default is "Junimo".
+    /// Farm name. Default is "Server".
     /// </summary>
-    public string FarmName { get; set; } = "Junimo";
+    public string FarmName { get; set; } = "Server";
 
     /// <summary>Boot farm type written to server-settings.json.</summary>
     public FarmTypeSetting FarmType { get; set; } = FarmTypeSetting.FromIndex(0);

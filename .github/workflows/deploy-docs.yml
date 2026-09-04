@@ -146,8 +146,10 @@ jobs:
           allow_forks: false
 
       # A half not rebuilt this run is restored from the currently-live site, snapshotted in R2
-      # (durable, no lifecycle rule) by "Persist live snapshot to R2". Unconfigured R2 is
-      # tolerated: live/site stays empty, so only a single-half deploy refuses (in the decide step).
+      # (durable, no lifecycle rule) by "Persist live snapshot to R2". R2 deliberately off (all
+      # four vars empty) is tolerated — live/site stays empty, so only a single-half deploy refuses
+      # (in the decide step). A configured-but-broken R2 (partial config, unreachable, AccessDenied,
+      # or an uncertified snapshot) fails the job here rather than deploy against a bad snapshot.
       - name: Restore live snapshot from R2
         id: restore
         env:
@@ -159,25 +161,45 @@ jobs:
           # masker would turn every `-` in the whole log into *** (see e2e-tests.yml).
           R2_BUCKET: ${{ vars.R2_BUCKET_DOCS }}
         run: |
-          # restore_status, read by the decide step: skipped (R2 off) | ok (snapshot reflects
-          # live, empty bucket included) | failed (read error, or a partial snapshot missing its
-          # .snapshot-complete marker). A single-half deploy ships only a confirmed (ok) half.
+          # restore_status, read by the decide step: skipped (R2 deliberately off — all four vars
+          # empty) | ok (snapshot reflects live; an empty but readable bucket counts). Any
+          # configured-but-broken state (partial config, aws missing, read error, or a snapshot
+          # missing its .snapshot-complete marker) fails the job here — a silently stale snapshot
+          # is worse than a red deploy.
           set -uo pipefail
           mkdir -p live/site
           endpoint="https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com"
-          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
-            echo "::warning::R2 not configured — skipping snapshot restore."; status=skipped
-          elif ! command -v aws >/dev/null 2>&1; then
-            echo "::warning::aws CLI not found — skipping snapshot restore."; status=skipped
-          elif ! aws s3 sync "s3://${R2_BUCKET}/" live/site/ --endpoint-url "$endpoint" --no-progress; then
-            echo "::warning::R2 snapshot read failed — a single-half deploy will refuse."; status=failed
-          elif [ -n "$(ls -A live/site 2>/dev/null)" ] && [ ! -f live/site/.snapshot-complete ]; then
-            echo "::warning::R2 snapshot has no completion marker (persist was interrupted) — a single-half deploy will refuse."; status=failed
-          else
-            status=ok
+
+          # Count the four R2 settings (names are the github-pages env keys, for error messages).
+          n=0; missing=""
+          for pair in "R2_BUCKET_DOCS:${R2_BUCKET:-}" "R2_ACCESS_KEY_ID:${AWS_ACCESS_KEY_ID:-}" "R2_SECRET_ACCESS_KEY:${AWS_SECRET_ACCESS_KEY:-}" "R2_ACCOUNT_ID:${R2_ACCOUNT_ID:-}"; do
+            if [ -n "${pair#*:}" ]; then n=$((n+1)); else missing="$missing ${pair%%:*}"; fi
+          done
+
+          if [ "$n" -eq 0 ]; then
+            echo "::warning::R2 not configured — skipping snapshot restore. Single-half deploys will refuse until R2 is set up in the github-pages environment."
+            echo "restore_status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$n" -lt 4 ]; then
+            echo "::error::R2 is partially configured — missing:${missing}. Set all four (R2_BUCKET_DOCS variable + R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_ACCOUNT_ID secrets) in the github-pages environment, or unset all four to disable R2."
+            exit 1
+          fi
+          if ! command -v aws >/dev/null 2>&1; then
+            echo "::error::aws CLI not found on the runner — cannot restore the R2 snapshot."
+            exit 1
+          fi
+          if ! err=$(aws s3 sync "s3://${R2_BUCKET}/" live/site/ --endpoint-url "$endpoint" --no-progress 2>&1); then
+            echo "$err"
+            echo "::error::R2 snapshot read failed for bucket '${R2_BUCKET}'. Verify the R2 token has Object Read & Write on this bucket and that R2_ACCOUNT_ID matches the bucket's account (see the aws error logged above)."
+            exit 1
+          fi
+          if [ -n "$(ls -A live/site 2>/dev/null)" ] && [ ! -f live/site/.snapshot-complete ]; then
+            echo "::error::R2 snapshot for '${R2_BUCKET}' has no .snapshot-complete marker — a prior persist was interrupted, so the snapshot may be truncated. Re-run with rebuild_latest=true and rebuild_preview=true to rebuild both halves and re-seed R2."
+            exit 1
           fi
           rm -f live/site/.snapshot-complete   # never let the marker leak into the deployed site
-          echo "restore_status=$status" >> "$GITHUB_OUTPUT"
+          echo "restore_status=ok" >> "$GITHUB_OUTPUT"
 
       - name: Restore missing halves and decide deploy
         id: check
@@ -221,30 +243,25 @@ jobs:
           echo "preview_src=$PREVIEW_SRC" >> "$GITHUB_OUTPUT"
 
           # deploy-pages replaces the whole site, so never publish a half we can't fully obtain —
-          # that wipes it live. Ship a half only if built this run, restored intact, or confirmed
-          # absent (ok). Full rebuilds never reach these guards, so an R2 outage can't block them.
-
-          # Failed restore can leave partial content, so a `live` half may be truncated.
-          if [ "${RESTORE_STATUS:-}" = failed ] && { [ "$LATEST_SRC" = live ] || [ "$PREVIEW_SRC" = live ]; }; then
-            echo "::error::R2 restore was incomplete — a restored half may be truncated. Retry once R2 is reachable."
-            exit 1
-          fi
+          # that wipes it live. Ship a half only if built this run or restored from a readable
+          # snapshot. A broken R2 already failed the restore step, so RESTORE_STATUS here is only
+          # 'ok' (snapshot readable) or 'skipped' (R2 deliberately off).
           if [ "$LATEST_SRC" = none ]; then
-            if [ "${RESTORE_STATUS:-}" = failed ]; then
-              echo "::error::Latest not built this run and the R2 read failed — refusing. Retry once R2 is reachable."
+            if [ "${RESTORE_STATUS:-}" = skipped ]; then
+              echo "::error::Refusing deploy: 'latest' wasn't rebuilt this run and R2 is off, so the live copy can't be preserved — publishing now would wipe live 'latest'. Configure R2, or re-run with rebuild_latest=true."
             else
-              echo "::error::Latest missing and absent from R2 — refusing. Re-run with rebuild_latest=true."
+              echo "::error::Refusing deploy: 'latest' wasn't rebuilt this run and the R2 snapshot holds no 'latest' to preserve — publishing now would wipe live 'latest'. Re-run with rebuild_latest=true to seed it."
             fi
             exit 1
           fi
           if [ "$PREVIEW_SRC" = none ]; then
-            # LATEST-ONLY wipes any live preview, so ship it only when a successful read (ok)
-            # confirmed the snapshot — hence live — has no preview.
+            # LATEST-ONLY wipes any live preview, so ship it only when a readable snapshot (ok)
+            # confirmed the live site has no preview.
             if [ "${RESTORE_STATUS:-}" != ok ]; then
-              echo "::error::Preview absence unconfirmed (restore: ${RESTORE_STATUS:-unknown}) — refusing LATEST-ONLY. Retry, or re-run with rebuild_preview=true."
+              echo "::error::Refusing latest-only deploy: R2 is off, so we can't confirm whether live 'preview' exists and publishing might silently wipe it. Configure R2, or re-run with rebuild_preview=true."
               exit 1
             fi
-            echo "::warning::Deploying LATEST-ONLY — preview confirmed absent from R2."
+            echo "::warning::Deploying latest-only — live 'preview' confirmed absent from the R2 snapshot, so nothing is wiped."
           fi
 
       - name: Setup Pages
@@ -266,8 +283,6 @@ jobs:
       # so the snapshot always equals live — for both default-branch and release-tag deploys.
       - name: Persist live snapshot to R2
         if: success()
-        # Best-effort: a snapshot-write failure must not red the deploy that already published.
-        continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -275,25 +290,45 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET_DOCS }}
         run: |
+          # Mirror the just-published site to R2 so a later single-half deploy can restore the half
+          # it doesn't rebuild. R2 deliberately off (all four vars empty) is tolerated; any
+          # configured-but-broken state fails the job — the site already published, but a silently
+          # stale snapshot would break the next single-half deploy with no warning.
           set -uo pipefail
           endpoint="https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com"
-          if [ -z "${R2_BUCKET:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ACCOUNT_ID:-}" ]; then
-            echo "::warning::R2 not configured — snapshot not persisted; single-half deploys will refuse until it is."; exit 0
+
+          n=0; missing=""
+          for pair in "R2_BUCKET_DOCS:${R2_BUCKET:-}" "R2_ACCESS_KEY_ID:${AWS_ACCESS_KEY_ID:-}" "R2_SECRET_ACCESS_KEY:${AWS_SECRET_ACCESS_KEY:-}" "R2_ACCOUNT_ID:${R2_ACCOUNT_ID:-}"; do
+            if [ -n "${pair#*:}" ]; then n=$((n+1)); else missing="$missing ${pair%%:*}"; fi
+          done
+          if [ "$n" -eq 0 ]; then
+            echo "::warning::R2 not configured — snapshot not persisted; single-half deploys will refuse until it is."
+            exit 0
           fi
-          command -v aws >/dev/null 2>&1 || { echo "::warning::aws CLI not found — snapshot not persisted."; exit 0; }
+          if [ "$n" -lt 4 ]; then
+            echo "::error::R2 is partially configured — missing:${missing}. Set all four in the github-pages environment, or unset all four to disable R2."
+            exit 1
+          fi
+          command -v aws >/dev/null 2>&1 || { echo "::error::aws CLI not found on the runner — cannot persist the R2 snapshot."; exit 1; }
 
           # The .snapshot-complete marker certifies a full mirror. Clear it first so an interrupted
-          # sync leaves the snapshot uncertified; mirror; write it last. Bail if it can't be cleared
-          # — a surviving marker would certify a partial sync. (rm of a missing key exits 0: first seed.)
+          # sync leaves the snapshot uncertified; mirror; write it last. (rm of a missing key exits 0.)
           marker="s3://${R2_BUCKET}/.snapshot-complete"
-          if ! aws s3 rm "$marker" --endpoint-url "$endpoint" >/dev/null 2>&1; then
-            echo "::warning::Could not clear the R2 completion marker — keeping the last certified snapshot."; exit 0
+          if ! err=$(aws s3 rm "$marker" --endpoint-url "$endpoint" 2>&1); then
+            echo "$err"
+            echo "::error::Could not clear the R2 completion marker in '${R2_BUCKET}'. Verify the R2 token has Object Read & Write on this bucket and that R2_ACCOUNT_ID matches its account (see the aws error above)."
+            exit 1
           fi
-          if ! aws s3 sync dist/ "s3://${R2_BUCKET}/" --endpoint-url "$endpoint" --no-progress --delete; then
-            echo "::warning::R2 mirror failed — next single-half deploy will refuse until the next persist."; exit 0
+          if ! err=$(aws s3 sync dist/ "s3://${R2_BUCKET}/" --endpoint-url "$endpoint" --no-progress --delete 2>&1); then
+            echo "$err"
+            echo "::error::R2 mirror (sync) to '${R2_BUCKET}' failed (see the aws error above)."
+            exit 1
           fi
-          printf 'ok' | aws s3 cp - "$marker" --endpoint-url "$endpoint" >/dev/null 2>&1 \
-            || echo "::warning::Mirror done but marker write failed — next single-half deploy will refuse until the next persist."
+          if ! err=$(printf 'ok' | aws s3 cp - "$marker" --endpoint-url "$endpoint" 2>&1); then
+            echo "$err"
+            echo "::error::R2 mirror completed but writing the .snapshot-complete marker failed, so the snapshot is uncertified and the next single-half deploy would refuse (see the aws error above)."
+            exit 1
+          fi
           echo "Live snapshot updated in R2."
 
       - name: Build summary and notification fields

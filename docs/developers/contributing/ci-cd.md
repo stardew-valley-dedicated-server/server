@@ -298,9 +298,16 @@ GitHub forbids approving your own pull request, which with a single maintainer m
 
 Deploys the documentation site to GitHub Pages. Runs automatically after builds or can be triggered manually to rebuild from existing Docker images.
 
-The site has two halves — `latest` (site root) and `preview` (`/preview/`) — and `deploy-pages` replaces the whole site each run. A run that rebuilds only one half restores the other from a durable snapshot of the currently-live site kept in Cloudflare R2, so recovery never depends on an expiring artifact. After every successful deploy the merged site is mirrored back to R2 (`aws s3 sync … --delete`), best-effort — a snapshot-write failure warns but never fails the deploy.
+The site has two halves — `latest` (site root) and `preview` (`/preview/`) — and `deploy-pages` replaces the whole site each run. A run that rebuilds only one half restores the other from a durable snapshot of the currently-live site kept in Cloudflare R2, so recovery never depends on an expiring artifact. After every successful deploy the merged site is mirrored back to R2 (`aws s3 sync … --delete`).
 
-A full rebuild (both halves built that run) never needs the snapshot, so it deploys even if R2 is down. A single-half run only proceeds when the half it doesn't rebuild is *confirmed* — either restored intact from the snapshot, or confirmed genuinely absent by a successful snapshot read. Otherwise it refuses rather than wipe a live half: it refuses when the missing half is `latest` and absent from the snapshot (empty bucket or R2 unconfigured; re-run with `rebuild_latest=true` to seed), when the snapshot read failed or was only partially restored (retry once R2 is reachable), and when `preview` isn't rebuilt this run and its absence can't be confirmed — an unconfigured/skipped or failed restore can't prove the live site has no preview, so LATEST-ONLY is only deployed against a confirmed snapshot (re-run with `rebuild_preview=true` to force a preview, or seed R2 first).
+R2 has exactly two acceptable states, and anything else fails the deploy loudly rather than silently deploying against a bad snapshot:
+
+- **Deliberately off** — all four R2 settings empty. Restore and persist skip; a full rebuild deploys fine, and a single-half run refuses (the half it doesn't rebuild can't be confirmed).
+- **Fully configured and reachable** — the snapshot restores and re-mirrors normally.
+
+A configured-but-broken R2 — partial configuration, an unreachable endpoint, an `AccessDenied` token, or a snapshot missing its `.snapshot-complete` marker — **reds the run** (the restore step fails before publishing, or the persist step fails after). This is deliberate: catching a misconfiguration immediately is worth more than tolerating a rare outage, since a silently stale snapshot would surface only later, as a hard-to-trace refusal. The error messages name the failed operation and the likely fix (token scope, `R2_ACCOUNT_ID`, missing settings).
+
+A single-half run still refuses rather than wipe a live half when the half it doesn't rebuild can't be confirmed present: the missing half is `latest` and absent from the snapshot (re-run with `rebuild_latest=true` to seed), or `preview` isn't rebuilt and R2 is off so its absence can't be confirmed (re-run with `rebuild_preview=true`, or configure R2). LATEST-ONLY deploys only against a readable snapshot that confirms no live preview exists.
 
 The snapshot's integrity is self-certifying: the persist step clears a `.snapshot-complete` marker before mirroring and rewrites it last, so an interrupted persist leaves no marker and the next restore treats that partial snapshot as unusable rather than deploying truncated content.
 
@@ -315,7 +322,7 @@ Add to the **`github-pages`** GitHub Environment (Settings → Environments):
 | `R2_SECRET_ACCESS_KEY` | Secret | R2 token secret |
 | `R2_BUCKET_DOCS` | Variable | Name of a **dedicated** R2 bucket with **no lifecycle rule** (a per-age expiry would sweep the snapshot). Kept as a variable, not a secret — the name's hyphen would trip the secret masker. |
 
-The deploy mirrors with `aws s3 sync … --delete`, so this bucket must be dedicated to the docs snapshot — pointing it at a shared bucket (e.g. the E2E report bucket) would delete everything else in it, and a shared retention rule could sweep the snapshot. If R2 is left unconfigured, full-rebuild deploys still work; single-half deploys refuse (the half they don't rebuild can't be confirmed), so configure R2 or re-run rebuilding both halves.
+The R2 token must have **Object Read & Write** on this bucket (both restore and persist run), and `R2_ACCOUNT_ID` must be the account that owns it. The deploy mirrors with `aws s3 sync … --delete`, so this bucket must be dedicated to the docs snapshot — pointing it at a shared bucket (e.g. the E2E report bucket) would delete everything else in it, and a shared retention rule could sweep the snapshot. Leave all four settings empty to disable R2 (full-rebuild deploys still work; single-half deploys refuse); set some but not all and the deploy fails, so it's all-or-nothing.
 
 ## Deploy Server Pipeline
 
@@ -335,20 +342,11 @@ The deploy server pipeline deploys server instances to a VPS. It supports multip
 2. **Add the environment to the workflow matrix** in `.github/workflows/deploy-server.yml`
 3. **Update the workflow dispatch options** to include the new environment
 
-Example matrix entry:
+Example `TARGETS` entries:
 
-```yaml
-matrix:
-    include:
-        - environment: public-test
-          image_tag: preview
-          on_preview: true
-          on_release: false
-
-        - environment: production
-          image_tag: latest
-          on_preview: false
-          on_release: true
+```json
+{"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
+{"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
 ```
 
 ### Setup Requirements
@@ -359,8 +357,8 @@ Each deployment target needs a **GitHub Environment** with its configuration.
 
 1. Go to **Settings** → **Environments** in your repository
 2. Click **New environment**
-3. Name it to match the workflow matrix (e.g., `public-test`, `production`)
-4. Add the secrets listed below
+3. Name it to match the workflow matrix (e.g., `public-test-preview`, `public-test-latest`)
+4. Add the secrets and variables listed below
 
 #### Environment Secrets
 
@@ -390,8 +388,16 @@ Generate a secure API key with: `openssl rand -base64 32`
 :::
 
 ::: tip
-If multiple servers share the same VPS and credentials, **repository-level** secrets can be used as fallbacks. Environment-level secrets override repository-level secrets with the same name.
+If multiple servers share the same VPS and credentials, **repository-level** secrets and variables can be used as fallbacks. Environment-level values override repository-level ones with the same name.
 :::
+
+#### Environment Variables
+
+Add these under **Settings → Environments → Variables**, not as secrets.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DEPLOY_DISCORD_BOT_NICKNAME` | No | Discord bot nickname (defaults to the farm name) |
 
 ### VPS Preparation
 
@@ -422,7 +428,7 @@ The script outputs the private key to add as `DEPLOY_SSH_KEY` in GitHub.
 **3. Configure Firewall**
 
 ```sh
-# Example for public-test environment
+# Example for the public-test-preview environment
 ufw allow 24642/udp  # Game port
 ufw allow 5800/tcp   # VNC web interface
 ```
@@ -433,7 +439,7 @@ To manually trigger a deployment:
 
 1. Go to **Actions** → **Deploy Server**
 2. Click **Run workflow**
-3. Select which environment to deploy (e.g., `public-test`)
+3. Select which environment to deploy (e.g., `public-test-preview`)
 4. Optionally check "Skip graceful shutdown" for emergency deploys
 5. Click **Run workflow**
 

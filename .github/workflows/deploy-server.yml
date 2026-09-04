@@ -105,6 +105,7 @@ jobs:
           DEPLOY_API_KEY: ${{ secrets.DEPLOY_API_KEY }}
           DEPLOY_DISCORD_BOT_TOKEN: ${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
           DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
+          DEPLOY_DISCORD_BOT_NICKNAME: ${{ vars.DEPLOY_DISCORD_BOT_NICKNAME }}
         run: |
           echo "::group::Generate .env file for ${{ matrix.environment }}"
 
@@ -143,6 +144,7 @@ jobs:
           echo "# Discord bot (optional)" >> .env
           echo "DISCORD_BOT_TOKEN=$DEPLOY_DISCORD_BOT_TOKEN" >> .env
           echo "DISCORD_CHAT_CHANNEL_ID=$DEPLOY_DISCORD_CHAT_CHANNEL_ID" >> .env
+          echo "DISCORD_BOT_NICKNAME=$DEPLOY_DISCORD_BOT_NICKNAME" >> .env
           echo "::endgroup::"
 
       - name: Create deploy directory

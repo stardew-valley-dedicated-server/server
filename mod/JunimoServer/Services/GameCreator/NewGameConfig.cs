@@ -8,7 +8,7 @@ public class NewGameConfig
     public FarmTypeSetting WhichFarm { get; set; } = FarmTypeSetting.Default;
     public bool UseSeparateWallets { get; set; } = false;
     public int StartingCabins { get; set; } = 1;
-    public string FarmName { get; set; } = "Junimo";
+    public string FarmName { get; set; } = "Server";
     public int MaxPlayers { get; set; } = 10;
     public CabinStrategy CabinStrategy { get; set; } = CabinStrategy.CabinStack;
     public bool AllowCabinRelocation { get; set; } = true;

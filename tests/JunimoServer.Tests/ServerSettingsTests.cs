@@ -46,7 +46,7 @@ public class ServerSettingsTests : TestBase
         new List<object[]>
         {
             // Game settings
-            new object[] { "Game.FarmName", "Junimo" },
+            new object[] { "Game.FarmName", "Server" },
             new object[] { "Game.FarmType", "0" },
             new object[] { "Game.ProfitMargin", 1.0f },
             new object[]

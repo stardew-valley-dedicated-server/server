@@ -25,7 +25,7 @@ public class ServerSettings
 
 public class GameSettings
 {
-    public string FarmName { get; set; } = "Junimo";
+    public string FarmName { get; set; } = "Server";
     public FarmTypeSetting FarmType { get; set; } = FarmTypeSetting.Default;
     public float ProfitMargin { get; set; } = 1.0f;
     public int StartingCabins { get; set; } = 1;

@@ -27,7 +27,7 @@ This file is auto-created with defaults on first server startup. If the file doe
 ```json
 {
   "Game": {
-    "FarmName": "Junimo",
+    "FarmName": "Server",
     "FarmType": 0,
     "ProfitMargin": 1.0,
     "StartingCabins": 1,
@@ -66,7 +66,7 @@ These settings only take effect when creating a **new** game. They are ignored w
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `FarmName` | Farm name displayed in-game | `"Junimo"` |
+| `FarmName` | Farm name displayed in-game | `"Server"` |
 | `FarmType` | Farm map type: a number `0`-`7` or a name for a built-in farm, or a farm Id string for a mod-added farm (see table below) | `0` |
 | `ProfitMargin` | Sell price multiplier | `1.0` |
 | `StartingCabins` | Number of cabins created with new game. Ignored when `CabinStrategy` is `"None"`, which always places `min(designated map spots, MaxPlayers)` cabins up front | `1` |
