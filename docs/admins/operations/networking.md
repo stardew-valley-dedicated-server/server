@@ -146,6 +146,8 @@ SDR takes a few seconds to initialize. Wait and retry.
 1. Verify invite code starts with "G"
 2. Run `netdebug nat` to check NAT type
 3. Try having player connect from different network
+4. If the server log shows no connection attempt at all, [capture the Galaxy SDK
+   log](/admins/troubleshooting#capturing-galaxy-sdk-logs)
 
 ## Firewall Configuration
 

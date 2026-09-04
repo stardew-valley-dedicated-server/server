@@ -137,6 +137,8 @@ ready-to-run fix command) — check the server log when a player reports a locke
 - Check server resources: `docker stats`
 - Review logs for errors: `docker compose logs -f`
 - Consider increasing server RAM if low on memory
+- Players drop about 30 seconds after joining via invite code: check the host's clock (`timedatectl`
+  on Linux). The container uses the host's clock, and the Galaxy handshake rejects a skewed one.
 
 ### Steam clients specifically failing
 
@@ -153,6 +155,47 @@ Check for these log messages:
 - Verify invite code starts with "G"
 - Run `netdebug nat` to check NAT type
 - GOG has ~50% success rate vs Steam's ~99%
+
+### Capturing Galaxy SDK logs
+
+Invite-code joins go through the GOG Galaxy SDK, a native library the game loads. When a join fails
+before it reaches the server (nothing in the server log, or a client shows `Galaxy auth failure` /
+`RequestLobbyData: not logged on`), the SDK's own log is the only place the reason appears.
+
+The SDK writes it when it finds a `GalaxyPeer.ini` at startup. On the standard server image, put
+the file in the game volume and restart:
+
+```sh
+docker compose exec server sh -c 'cat > /data/game/GalaxyPeer.ini <<EOF
+[DEFAULT]
+Logging.appenders = File
+
+Logging.Appender.File.level = DEBUG
+Logging.Appender.File.type = file
+Logging.Appender.File.filename = /data/game/GalaxyPeer-{pid}.log
+Logging.Appender.File.truncate = false
+EOF'
+docker compose restart server
+```
+
+From the next start the SDK writes `/data/game/GalaxyPeer-<pid>.log`, one file per start. Both
+files live in the game volume, so they survive `docker compose down`. Once the problem has
+happened, run [`diagnostics`](/admins/operations/commands#collecting-server-diagnostics) — the zip
+picks the log up — and remove the files so they stop growing:
+
+```sh
+docker compose exec server sh -c 'rm -f /data/game/GalaxyPeer.ini /data/game/GalaxyPeer-*.log'
+docker compose restart server
+```
+
+- The log is DEBUG level and never rotates. Leave it enabled only while capturing a problem.
+- GOG's stock `GalaxyPeer.ini` also streams the log to a GOG syslog server. The version above keeps
+  only the file appender; do not add the `Syslog` lines back.
+- The log contains account ids and IP addresses. Check it before posting it publicly.
+- The same file works on a player's PC next to `Stardew Valley.exe` (with a relative `filename`
+  such as `GalaxyPeer-{pid}.log`) and captures the client side of a failed join, which is usually
+  the more useful half when the server logs nothing.
+- The [modern (Alpine) image](/admins/operations/modern-docker) does not pick the file up.
 
 ## VNC Issues
 
@@ -323,7 +366,9 @@ docker system prune
 
 If none of these solutions work:
 
-1. **Collect logs:** `docker compose logs > logs.txt`
+1. **Collect logs:** `docker compose exec -it server diagnostics` (see
+   [Collecting server diagnostics](/admins/operations/commands#collecting-server-diagnostics)); for
+   invite-code join failures, [enable Galaxy SDK logging](#capturing-galaxy-sdk-logs) first
 2. **Check GitHub Issues:** [stardew-valley-dedicated-server/server/issues](https://github.com/stardew-valley-dedicated-server/server/issues)
 3. **Join Discord:** [discord.gg/w23GVXdSF7](https://discord.gg/w23GVXdSF7)
 4. **Create an issue:** Include logs, configuration (without passwords), and steps to reproduce

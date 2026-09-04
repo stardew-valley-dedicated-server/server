@@ -60,10 +60,12 @@ skips the prompts and writes a short "Technical details to include" template int
 to fill in.
 
 The zip contains `report.md` (a readable summary plus your answers), `server-output.log`,
-`SMAPI-latest.txt`, and `SMAPI-crash.txt` (only if a crash occurred). Logs are included as-is,
-trimmed to their last 32 MB. The report echoes this server's own container settings (tick rate, API,
-logging); passwords and API keys are shown only as set/not set, never by value. It is not a "file a
-bug" form — describe your problem in your own words first, then attach this for the technical facts.
+`SMAPI-latest.txt`, `SMAPI-crash.txt` (only if a crash occurred), and any `GalaxyPeer-*.log` (only
+while [Galaxy SDK logging](/admins/troubleshooting#capturing-galaxy-sdk-logs) is enabled). Logs are
+included as-is, trimmed to their last 32 MB. The report echoes this server's own container settings
+(tick rate, API, logging); passwords and API keys are shown only as set/not set, never by value. It
+is not a "file a bug" form — describe your problem in your own words first, then attach this for
+the technical facts.
 
 > The command ships in the standard server image only. The [modern (Alpine)
 > image](./modern-docker.md) does not include it.
