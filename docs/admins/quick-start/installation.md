@@ -25,15 +25,12 @@ STEAM_PASSWORD="your_steam_password"
 VNC_PASSWORD="your_secure_password"
 ```
 
-On Linux, add one more thing: the number of your own user account. Without it, files the server
-creates on your computer belong to a different user and you cannot edit or delete them. Run:
+On Linux, also add your own user account, so the files the server creates on your computer belong
+to you (Windows and macOS: skip this):
 
 ```sh
 printf 'USER_ID=%s\nGROUP_ID=%s\n' "$(id -u)" "$(id -g)" >> .env
 ```
-
-That appends two lines to `.env` with your numbers. On Windows and macOS skip this step; Docker
-Desktop handles it for you. Details in [Host / Permissions](/admins/configuration/environment#host-permissions).
 
 ## 3. Pull Images
 

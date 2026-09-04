@@ -48,16 +48,7 @@ The server runs continuously and uses resources even when no players are connect
 
 ## System Clock
 
-The server uses your computer's clock; it has no clock of its own. If that clock is wrong by more
-than a little, players who join with an invite code are dropped about 30 seconds after joining,
-because the GOG connection check compares clocks.
-
-Almost every computer sets its clock automatically over the internet, so normally there is nothing
-to do. On Linux you can confirm it:
-
-```sh
-timedatectl status   # look for "System clock synchronized: yes"
-```
-
-On Windows and macOS, Docker Desktop takes the time from your computer. If it falls behind after
-the computer wakes from sleep, restart Docker Desktop.
+The server uses your computer's clock. If it is off, players joining with an invite code are
+dropped about 30 seconds after joining. Computers set their clock automatically, so normally there
+is nothing to do; on Linux, `timedatectl status` should say `System clock synchronized: yes`. If
+Docker Desktop falls behind after the computer wakes from sleep, restart it.

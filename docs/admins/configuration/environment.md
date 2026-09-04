@@ -42,42 +42,24 @@ These must be set for the server to function:
 | `USER_ID` | The user account the game runs as inside the container | `1000` |
 | `GROUP_ID` | The group of that account | `1000` |
 
-**What this is about.** On Linux, every file has an owner. The server writes files into two folders
-on your computer, `.local-container/settings` and `diagnostics`, and those files are owned by
-whatever user the game runs as. If that is not your own account, you can read the files but cannot
-edit or delete them without `sudo`.
+The game runs as a normal user inside the container, not as root, so a misbehaving mod cannot touch
+anything outside its own files. The container starts as root only long enough to hand the game its
+folders. On Linux, the files the server writes into `.local-container/settings` and `diagnostics`
+belong to this user on your computer too, so it should be your own account.
 
-Inside the container the game does not run as the administrator ("root"). It runs as a normal user,
-identified by a number. `USER_ID` and `GROUP_ID` set that number. The container starts as root only
-long enough to hand the game its folders, then switches to this user for everything else. This is
-the usual, recommended way to run Docker software: a misbehaving mod cannot touch anything outside
-its own files.
-
-**What you need to do**
-
-- **Windows and macOS:** nothing. Docker Desktop makes the files yours no matter what number is set.
-- **Linux:** find your own user number and put it in `.env`, so the files belong to you:
+- **Windows and macOS:** nothing to do. Docker Desktop makes the files yours regardless.
+- **Linux:** set both to your own account. If both commands print `1000`, nothing to do.
 
   ```sh
-  id -u   # your USER_ID
-  id -g   # your GROUP_ID
+  id -u   # USER_ID
+  id -g   # GROUP_ID
   ```
 
-  If both print `1000` you are already on the default and can skip this. `1000` is the number
-  most Linux systems give the first account created, so it is right for most people, but check.
-- **Rootless Docker** (Docker installed without administrator rights): set both to `0`. In that
-  setup "root inside the container" already means your own account on the computer.
+- **Rootless Docker:** set both to `0`. There, root inside the container is already your own account.
 
-The same numbers are used by the server and by `steam-auth`, because both work on the same game
-files. Put them in `.env` once and both pick them up. The Discord bot keeps files of its own that
-nothing else uses, so it always runs as a fixed non-root user and ignores these values.
-
-**Changing it later** is safe. The next start makes all the server's files belong to the new user.
-If you had run with a different number before, files already in the `settings` and `diagnostics`
-folders change owner on your computer at that start.
-
-**Running as root inside the container** is possible by setting both to `0`. It is not needed for
-normal use. On Linux the files in the two folders are then owned by root on your computer.
+Setting both to `0` runs the game as root inside the container. Not needed; on Linux the files in
+the two folders are then owned by root. Changing the values later is safe: the next start re-owns
+the server's files.
 
 ## Discord Integration
 
