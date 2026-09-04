@@ -73,6 +73,17 @@ public class ServerOptimizer : ModService
             )
         );
 
+        // Skip content-pack audio (Data/AudioChanges): SoundEffect loads fail headless, spamming Error logs.
+        harmony.Patch(
+            original: AccessTools.Method(
+                "StardewValley.Audio.AudioCueModificationManager:ApplyCueModification"
+            ),
+            prefix: new HarmonyMethod(
+                typeof(ServerOptimizerOverrides),
+                nameof(ServerOptimizerOverrides.Disable_Prefix)
+            )
+        );
+
         // harmony.Patch(
         //     original: AccessTools.Method("StardewValley.Game1:CheckGamepadMode"),
         //     prefix: new HarmonyMethod(typeof(ServerOptimizerOverrides), nameof(ServerOptimizerOverrides.Disable_Prefix))
