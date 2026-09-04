@@ -19,8 +19,6 @@ services:
       - "${GAME_PORT:-24642}:24642/udp"
       - "${QUERY_PORT:-27015}:27015/udp"
     cap_add:
-      # Required to sync time, ensures GOG GalaxyAuth works
-      - SYS_TIME
       - SYS_PTRACE
     volumes:
       - game-data:/data/game

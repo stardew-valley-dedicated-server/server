@@ -43,10 +43,10 @@ These must be set for the server to function:
 | `GROUP_ID` | Numeric gid the game and sidecar processes run as | `1000` |
 
 Each service in the stack (server, `steam-auth`, `discord-bot`) starts as root inside its
-container, prepares its volumes (ownership, and on the server the clock sync), then runs the
-application as `USER_ID:GROUP_ID`. Only the container init stays root. With a non-zero id the game,
-SMAPI and every mod run unprivileged, so a misbehaving mod has no root inside the container. This
-is the standard model for Docker images and the recommended setup.
+container, takes ownership of its volumes, then runs the application as `USER_ID:GROUP_ID`. Only
+the container init stays root. With a non-zero id the game, SMAPI and every mod run unprivileged,
+so a misbehaving mod has no root inside the container. This is the standard model for Docker
+images and the recommended setup.
 
 All services read the same two values because they share the game-data volume. Set them in `.env`
 and every service picks them up.
@@ -69,10 +69,8 @@ and every service picks them up.
 
 Changing the ids on an existing installation is safe: the next start re-owns the volumes.
 
-**Rootless Docker: not recommended.** The stack starts, but the clock sync needs real root and
-fails; an incorrect host clock breaks the Galaxy connection handshake, so you must keep the host
-clock right yourself. If you run rootless anyway, set `USER_ID=0` and `GROUP_ID=0`: container root
-is already your host user there, and a non-zero uid maps to a subordinate uid on the host.
+**Rootless Docker:** set `USER_ID=0` and `GROUP_ID=0`. Container root is already your host user
+there, and a non-zero uid maps to a subordinate uid on the host.
 
 ## Discord Integration
 

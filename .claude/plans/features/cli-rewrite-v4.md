@@ -103,8 +103,8 @@ The CLI should:
 |---------|--------------|-------|
 | Docker Engine (Linux) | Full | Primary target, all features |
 | Docker Desktop (Win/Mac) | Full | Same API, different socket paths |
-| Podman | Unsupported | `SYS_TIME` cap may fail in rootless; `stdin_open`+`tty` may behave differently; not tested |
-| Rootless Docker | Unknown | Not tested, `SYS_TIME` may require `--privileged` |
+| Podman | Unsupported | `stdin_open`+`tty` may behave differently; not tested |
+| Rootless Docker | Unknown | Not tested |
 
 The CLI should:
 - Detect the runtime via `docker info --format json` and report it in `sdvd check`

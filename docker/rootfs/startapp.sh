@@ -300,7 +300,7 @@ init_steam_sdk() {
 
 echo "Initializing SMAPI..."
 
-# Prepare (system time is synced as root by etc/cont-init.d/50-server-init.sh before this runs)
+# Prepare
 start_phase_responder
 init_xauthority
 init_display_settings

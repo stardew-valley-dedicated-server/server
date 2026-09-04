@@ -13,7 +13,6 @@ After the earlier tasks, the shell functions still present are:
 
 - `validate_environment` — refuses to start if the API is enabled without an `API_KEY`, unless
   `ALLOW_INSECURE_SETUP=true`.
-- `init_time_sync` — tries `hwclock`, then `ntpdate`, to avoid Galaxy P2P drift.
 - `init_stardew` — symlinks the game files from the shared volume into place, waiting in a loop if
   the steam-auth sidecar hasn't produced them yet.
 - `init_steam_sdk` — places `steamclient.so` (the real one now, after phase 1) and writes
@@ -28,10 +27,6 @@ After the earlier tasks, the shell functions still present are:
   check in the mod) as a fail-fast, so the rule lives in one place with the other env parsing rather
   than duplicated in a shell script. Note `.claude/rules/universal/verify-claims.md`:
   test any new fail-fast against the committed compose config, not just the example.
-- **`init_time_sync` → drop or a tiny init.** Containers usually inherit the host clock; the
-  `SYS_TIME` capability plus `hwclock` handles drift. If kept, it's a one-shot, not part of the
-  serving path. `ntpdate` isn't installed anyway (a dead fallback today), so this is a good place to
-  simplify.
 - **`init_stardew`, `init_steam_sdk`, `init_mods`, `init_permissions` → build-time where static,
   a tiny init where dynamic.** Mod copying and permissions can largely be baked at build. The
   genuinely runtime part is linking the game files that the steam-auth sidecar produces at runtime,

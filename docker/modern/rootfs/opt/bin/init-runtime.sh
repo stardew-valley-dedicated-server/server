@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Runs as root (s6 oneshot 'init-runtime') before any app service. Does the root-only work the
-# app services can't, since they drop to USER_ID:GROUP_ID: prepare runtime dirs, take ownership
-# of the volumes/paths the app user writes, and sync the system clock.
+# app services can't, since they drop to USER_ID:GROUP_ID: prepare runtime dirs and take ownership
+# of the volumes/paths the app user writes.
 
 set -u
 
@@ -46,17 +46,5 @@ for dir in "${APP_HOME}" /data/game /data/Mods; do
         exit 1
     fi
 done
-
-# Sync the system clock. Needs root + the SYS_TIME cap (docker-compose.yml); as the dropped app
-# user it fails, and a skewed clock breaks GOG Galaxy P2P (~30s disconnects).
-echo "[init-runtime] Synchronizing system time..."
-if hwclock --hctosys 2>/dev/null; then
-    echo "[init-runtime] Time synced from hardware clock"
-elif timeout 15 ntpd -q -n -p pool.ntp.org 2>/dev/null; then
-    echo "[init-runtime] Time synced from NTP server"
-else
-    echo "[init-runtime] Warning: could not sync time (current: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))"
-    echo "[init-runtime] If Galaxy P2P disconnects occur after ~30 seconds, check system time sync"
-fi
 
 exit 0

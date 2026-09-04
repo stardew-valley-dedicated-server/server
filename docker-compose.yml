@@ -11,9 +11,6 @@ services:
       # Steam relay ports (used by GameServer.Init for relay network)
       - "${GAME_PORT:-24642}:24642/udp"
       - "${QUERY_PORT:-27015}:27015/udp"
-    cap_add:
-      # Required to sync time, ensures GOG GalaxyAuth works
-      - SYS_TIME
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley

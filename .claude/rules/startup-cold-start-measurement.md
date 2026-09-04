@@ -15,7 +15,6 @@ paths:
 **Already-verified dead ends — do NOT re-investigate as boot-band perf wins:**
 - **Xvnc/X cannot be removed.** A live `GraphicsDevice` is needed even at `SERVER_FPS=0` (`RenderingController.ShouldGameDraw` does `GraphicsDevice.Clear`; MapUtil/ApiService need it).
 - **OpenAPI DLLs are load-bearing** — the spec is generated live at runtime (`OpenApiGenerator.Generate`, invoked from `ApiService`).
-- **`ntpdate` is absent**, so `init_time_sync` is a few ms, not a stall.
 - A large fraction of the local boot band is **intrinsic Mono + SMAPI Cecil assembly-rewrite bootstrap** — not addressable in the Docker/rootfs layer.
 
 **How to apply:** Attribute a latency number to host/recording before treating it as image cost. The dead ends above were each verified non-removable — don't re-open them as perf wins.

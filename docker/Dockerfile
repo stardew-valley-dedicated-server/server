@@ -180,9 +180,6 @@ RUN add-pkg \
     procps \
     unzip \
     xz-utils \
-    # NTP fallback for the clock sync in etc/cont-init.d/50-server-init.sh (hwclock has no RTC
-    # in most container runtimes)
-    ntpsec-ntpdate \
     # Additional packages
     htop \
     nano \

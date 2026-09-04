@@ -183,7 +183,6 @@ init_permissions() {
 # ============================================================================
 
 validate_environment
-# System time is synced as root by the init-runtime oneshot before this service starts.
 init_stardew
 init_steam_sdk
 init_smapi

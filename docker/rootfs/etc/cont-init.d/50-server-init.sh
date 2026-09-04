@@ -1,8 +1,7 @@
 #!/bin/sh
 
-# Runs as root (cont-init.d) before the app service drops to USER_ID:GROUP_ID.
-# Handles the two things startapp.sh can no longer do once it runs as the non-root app user:
-# fixing ownership of the volumes/paths the app writes, and syncing the system clock.
+# Runs as root (cont-init.d) before the app service drops to USER_ID:GROUP_ID. Fixes ownership of
+# the volumes/paths the app writes, which startapp.sh can no longer do as the non-root app user.
 
 set -e
 
@@ -38,17 +37,4 @@ if [ -f /data/game/GalaxyPeer.ini ]; then
     cp /data/game/GalaxyPeer.ini /etc/services.d/app/GalaxyPeer.ini
 else
     rm -f /etc/services.d/app/GalaxyPeer.ini
-fi
-
-# Sync the system clock. Needs root + the SYS_TIME cap (docker-compose.yml); as the dropped app
-# user it silently fails, and a skewed clock breaks GOG Galaxy P2P (~30s disconnects).
-echo "[server-init] Synchronizing system time..."
-if hwclock --hctosys 2>/dev/null; then
-    echo "[server-init] Time synced from hardware clock"
-elif ntpdate -u pool.ntp.org 2>/dev/null; then
-    echo "[server-init] Time synced from NTP server"
-else
-    echo "[server-init] Warning: could not sync time automatically"
-    echo "[server-init] Current time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    echo "[server-init] If Galaxy P2P disconnects occur after ~30 seconds, check system time sync"
 fi

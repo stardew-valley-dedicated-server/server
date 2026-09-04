@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
@@ -225,9 +224,6 @@ public class GameClientContainer : IAsyncDisposable
             .WithGpuIfEnabled(host)
             .WithCreateParameterModifier(p =>
             {
-                p.HostConfig ??= new HostConfig();
-                p.HostConfig.CapAdd ??= new List<string>();
-                p.HostConfig.CapAdd.Add("SYS_TIME");
                 p.Labels ??= new Dictionary<string, string>();
                 p.Labels["sdvd.test"] = "true";
                 p.Labels["sdvd.run-id"] = runId;

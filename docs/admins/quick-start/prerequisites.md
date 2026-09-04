@@ -1,5 +1,5 @@
 ---
-description: What you need before installing JunimoServer — Docker Engine 20+ with Compose V2, a Steam copy of Stardew Valley, and system requirements.
+description: What you need before installing JunimoServer — Docker Engine 20+ with Compose V2, a Steam copy of Stardew Valley, system requirements, and an NTP-synced host clock.
 ---
 
 # Prerequisites
@@ -45,3 +45,17 @@ These are approximate figures based on testing. Actual requirements vary dependi
 :::
 
 The server runs continuously and uses resources even when no players are connected. For cloud hosting, factor in always-on costs.
+
+## System Clock
+
+Containers share the host's kernel clock, so the server's time is whatever the host's is. The GOG
+Galaxy handshake rejects a skewed clock, which shows up as invite-code players dropping about 30
+seconds after they join. Keep the host synchronized with NTP:
+
+```sh
+timedatectl status   # "System clock synchronized: yes"
+```
+
+Linux distributions enable this by default (`systemd-timesyncd` or `chrony`). Docker Desktop syncs
+its VM from the host; if the clock drifts after the host wakes from sleep, restarting Docker Desktop
+resyncs it.
