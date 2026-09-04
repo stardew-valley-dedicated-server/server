@@ -39,27 +39,32 @@ These must be set for the server to function:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `USER_ID` | The user account the game runs as inside the container | `1000` |
-| `GROUP_ID` | The group of that account | `1000` |
+| `USER_ID` | User ID (UID) the game runs as inside the container | `1000` |
+| `GROUP_ID` | Group ID (GID) of that user | `1000` |
 
-The game runs as a normal user inside the container, not as root, so a misbehaving mod cannot touch
-anything outside its own files. The container starts as root only long enough to hand the game its
-folders. On Linux, the files the server writes into `.local-container/settings` and `diagnostics`
-belong to this user on your computer too, so it should be your own account.
+The game runs as a normal user inside the container rather than as root, so a misbehaving mod cannot
+touch anything outside the game's own files. The container starts as root only long enough to
+prepare the server's files and assign their ownership.
 
-- **Windows and macOS:** nothing to do. Docker Desktop makes the files yours regardless.
-- **Linux:** set both to your own account. If both commands print `1000`, nothing to do.
+On Linux, files written to `.local-container/settings` and `diagnostics` are owned by this UID/GID
+on the host as well, so set them to your own user and group to access those files normally.
+
+- **Windows and macOS:** no configuration required. Docker Desktop handles file ownership for you.
+- **Linux:** set both values to your user and group IDs. If both commands print `1000`, the defaults
+  are already correct.
 
   ```sh
   id -u   # USER_ID
   id -g   # GROUP_ID
   ```
 
-- **Rootless Docker:** set both to `0`. There, root inside the container is already your own account.
+- **Rootless Docker:** set both to `0`. In rootless Docker, UID/GID `0` inside the container maps to
+  your host user.
+- **Root:** setting both to `0` on regular Docker runs the game as root inside the container. Not
+  needed; on Linux the two folders above are then owned by root on the host.
 
-Setting both to `0` runs the game as root inside the container. Not needed; on Linux the files in
-the two folders are then owned by root. Changing the values later is safe: the next start re-owns
-the server's files.
+You can change the values later. On the next start, the container updates the ownership of the
+server's files to match.
 
 ## Discord Integration
 
