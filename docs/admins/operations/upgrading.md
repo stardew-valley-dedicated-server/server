@@ -22,7 +22,7 @@ Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The curren
 
 The game runs as UID/GID `1000` inside the container unless `USER_ID`/`GROUP_ID` are set in `.env`.
 The first start after upgrading updates the ownership of existing files to match. On Linux, set the
-values to your own user before that start (see
+values to your own user, or `0` on rootless Docker, before that start (see
 [Host / Permissions](/admins/configuration/environment#host-permissions)).
 
 ## Using Preview Builds
