@@ -22,13 +22,12 @@ namespace JunimoServer.Tests;
 public class CabinMigrationTests : TestBase
 {
     /// <summary>
-    /// Designated cabin spot on the Standard farm used as the deliberately-obstructed
-    /// position (observed in prior None-strategy run logs; see cabin-system invariant 9).
-    /// The primary player's !cabin-placed cabin occupies it, so auto-place must skip it
-    /// and every later pass must leave it untouched.
+    /// Second designated cabin spot on the Standard farm (order: (23,31), (66,37), (17,10),
+    /// (17,48)). The first is the shared stack spot, which !cabin refuses. The primary's
+    /// !cabin-placed cabin obstructs it; auto-place must skip it and never move it.
     /// </summary>
-    private const int ObstructedSpotX = 23;
-    private const int ObstructedSpotY = 31;
+    private const int ObstructedSpotX = 66;
+    private const int ObstructedSpotY = 37;
 
     private bool _needsServerReset;
 

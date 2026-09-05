@@ -74,6 +74,33 @@ public static class CabinCommand
                 // Place cabin on the right-hand side of the farmer
                 var topLeft = new Point((int)farmer.Tile.X + 1, (int)farmer.Tile.Y);
 
+                // Under CabinStack the stack spot is empty on the master but every client
+                // renders a cabin there. Player moves only: migration may still use the spot.
+                if (cabinService.options.IsCabinStack)
+                {
+                    var stack = StackLocation.Create(cabinService.Data).ToPoint();
+                    var stackRect = new Rectangle(
+                        stack.X,
+                        stack.Y,
+                        cabin.tilesWide.Value,
+                        cabin.tilesHigh.Value
+                    );
+                    var targetRect = new Rectangle(
+                        topLeft.X,
+                        topLeft.Y,
+                        cabin.tilesWide.Value,
+                        cabin.tilesHigh.Value
+                    );
+                    if (stackRect.Intersects(targetRect))
+                    {
+                        helper.SendPrivateMessage(
+                            msg.SourceFarmer,
+                            "Can't move cabin: that spot is reserved for the shared cabin location."
+                        );
+                        return;
+                    }
+                }
+
                 if (
                     !CabinPlacementValidator.TryValidate(
                         Game1.getFarm(),

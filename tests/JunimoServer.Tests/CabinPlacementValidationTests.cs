@@ -260,6 +260,107 @@ public class CabinPlacementValidationTests : TestBase
         await Exceptions.AssertNoExceptionsAsync("after farmer-collision !cabin");
     }
 
+    /// <summary>
+    /// !cabin onto the shared stack spot is rejected as "reserved" before validation; the cabin
+    /// stays hidden and no intent is recorded.
+    /// </summary>
+    [Fact]
+    public async Task StackSpotTarget_RejectsAsReservedAndDoesNotMove()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(client, ct);
+        var baseline = await GetOurCabinAsync(ownerId, ct);
+
+        var cabinsBefore = await ServerApi.GetCabins(ct);
+        Assert.True(
+            cabinsBefore?.StackSpot != null,
+            "/cabins reports no StackSpot under CabinStack"
+        );
+        var stack = cabinsBefore!.StackSpot!;
+
+        // !cabin places at farmer.Tile + (1,0).
+        var farmerTileX = stack.TileX - 1;
+        var farmerTileY = stack.TileY;
+        var warp = await GameClient.Actions.Warp("Farm", farmerTileX, farmerTileY);
+        Assert.True(warp?.Success == true, $"Warp to Farm failed: {warp?.Error}");
+        var arrived = await GameClient.WaitForLocationAsync("^Farm$", ct: ct);
+        Assert.True(arrived is not null, "Client did not sync to Farm before the reserved check");
+
+        // The handler reads the server's farmer tile, which lags the client warp.
+        var farmerSettled = await ServerApi.WaitForFarmerServerTileAsync(
+            ownerId,
+            farmerTileX,
+            farmerTileY,
+            ct: ct
+        );
+        Assert.True(
+            farmerSettled,
+            "Our farmer did not replicate next to the stack spot before the reserved check"
+        );
+
+        // Resend is safe: a static check, nothing an early accept could mask.
+        var rejection = await Chat.ResendUntilResponseAsync(
+            "!cabin",
+            "reserved",
+            replyFamilyPrefix: "Can't move cabin",
+            timeout: TestTimings.CabinAssignmentTimeout
+        );
+        Assert.True(
+            rejection.Matched,
+            $"Expected a 'reserved' rejection reply; {rejection.Describe()}"
+        );
+
+        var after = await GetOurCabinAsync(ownerId, ct);
+        Assert.True(after.IsHidden, "Cabin should still be hidden after a reserved-spot reject");
+        Assert.Equal((baseline.TileX, baseline.TileY), (after.TileX, after.TileY));
+
+        var cabinsAfter = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabinsAfter);
+        Assert.DoesNotContain(ownerId, cabinsAfter.SavedPositionPlayerIds);
+
+        await Exceptions.AssertNoExceptionsAsync("after reserved-spot !cabin");
+    }
+
+    /// <summary>
+    /// The reservation is CabinStack-only: under FarmhouseStack nothing renders at the stack
+    /// spot, so !cabin onto it is an ordinary accepted move.
+    /// </summary>
+    [Fact]
+    public async Task StackSpotTarget_FarmhouseStack_AcceptsMove()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "FarmhouseStack");
+
+        var client = await Farmers.ConnectNewAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+        await SettleJoinAsync(client, ct);
+
+        var spot = CabinPlacementHelper.StandardFarmStackSpot;
+        await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, spot.X - 1, spot.Y, ct);
+
+        CabinInfoResponse? moved = null;
+        var ok = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinPlacement_Moved,
+            async () =>
+            {
+                await GameClient.SendChat("!cabin");
+                moved = await GetOurCabinAsync(ownerId, ct);
+                return !moved.IsHidden;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+
+        Assert.True(ok, "Cabin did not move onto the stack spot under FarmhouseStack");
+        Assert.Equal(spot, (moved!.TileX, moved.TileY));
+
+        await Exceptions.AssertNoExceptionsAsync("after FarmhouseStack stack-spot !cabin");
+    }
+
     #region Helpers
 
     /// <summary>

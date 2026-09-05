@@ -24,6 +24,13 @@ public static class CabinPlacementHelper
     /// <summary>Where !cabin places the cabin's top-left when the farmer stands at the tile above.</summary>
     public static readonly (int X, int Y) ExpectedCabinTile = (FarmerTileX + 1, FarmerTileY);
 
+    /// <summary>
+    /// The standard farm's default CabinStack stack spot: the first designated cabin position
+    /// of the separate layout (Maps/Farm Paths layer, tile index 30, Order 1), which the
+    /// default CabinLayoutNearby=false selects.
+    /// </summary>
+    public static readonly (int X, int Y) StandardFarmStackSpot = (23, 31);
+
     /// <summary>Expected cabin top-left for a farmer warped to (<paramref name="tileX"/>,<paramref name="tileY"/>).</summary>
     public static (int X, int Y) ExpectedCabinTileFor(int tileX, int tileY) => (tileX + 1, tileY);
 
