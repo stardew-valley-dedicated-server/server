@@ -21,7 +21,7 @@ A Worker on the free plan gives you a `workers.dev` hostname with TLS and a shor
 Prerequisites:
 
 - **A DNS name for your server.** Workers cannot fetch an IP literal, so point an A record at the server (a DNS-only record; it does not need to be proxied).
-- **A supported port.** Workers only reach ports on [Cloudflare's supported port list](https://developers.cloudflare.com/fundamentals/reference/network-ports/). The default `API_PORT` of 8080 is on it.
+- **A supported port.** Cloudflare only forwards traffic on its [supported port list](https://developers.cloudflare.com/fundamentals/reference/network-ports/), so `API_PORT` must be one of them. The default of 8080 is.
 
 Deploy from a checkout of the repository:
 
@@ -36,21 +36,30 @@ The Worker answers `GET /` with the upstream JSON, caches it for 30 seconds, and
 
 #### Firewall rule
 
-Once the Worker is the only intended client, restrict the API port to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). Docker publishes container ports through its own iptables chain, which bypasses host rules on `INPUT`, so add the rule to the `DOCKER-USER` chain:
+Once the Worker is the only intended client, restrict the API port to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). Docker publishes container ports through its own iptables rules in the `FORWARD` path, which bypass host rules on `INPUT`, so the filter goes into Docker's `DOCKER-USER` chain. Two details matter there: Docker ends that chain with a `RETURN` rule, so rules must be inserted at the top rather than appended, and traffic between containers (the Discord bot reaching the API over the Docker network) passes through the same chain, so the filter must match only packets arriving on the external interface.
+
+The script below keeps the allowlist in its own chain and rebuilds it from scratch on every run, so ranges Cloudflare withdraws disappear with the next refresh:
 
 ```sh
 API_PORT=8080
+EXT_IF=eth0   # the interface with your public address
+
+for cmd in iptables ip6tables; do
+  $cmd -N CF_STATUS 2>/dev/null || $cmd -F CF_STATUS
+  $cmd -C DOCKER-USER -i "$EXT_IF" -p tcp --dport "$API_PORT" -j CF_STATUS 2>/dev/null \
+    || $cmd -I DOCKER-USER 1 -i "$EXT_IF" -p tcp --dport "$API_PORT" -j CF_STATUS
+done
 for range in $(curl -s https://www.cloudflare.com/ips-v4); do
-  iptables -I DOCKER-USER -p tcp --dport "$API_PORT" -s "$range" -j ACCEPT
+  iptables -A CF_STATUS -s "$range" -j RETURN
 done
 for range in $(curl -s https://www.cloudflare.com/ips-v6); do
-  ip6tables -I DOCKER-USER -p tcp --dport "$API_PORT" -s "$range" -j ACCEPT
+  ip6tables -A CF_STATUS -s "$range" -j RETURN
 done
-iptables  -A DOCKER-USER -p tcp --dport "$API_PORT" -j DROP
-ip6tables -A DOCKER-USER -p tcp --dport "$API_PORT" -j DROP
+iptables  -A CF_STATUS -j DROP
+ip6tables -A CF_STATUS -j DROP
 ```
 
-Persist the rules with your distribution's iptables save mechanism. Cloudflare changes its ranges rarely and announces additions ahead of time, so a periodic refresh of this script is enough.
+Cloudflare ranges return to `DOCKER-USER` and continue to Docker's rules; everything else is dropped. Persist the result with your distribution's iptables save mechanism and run the script periodically. Cloudflare changes its ranges rarely and announces additions ahead of time, so a daily refresh is plenty. Skip the `ip6tables` lines if Docker's IPv6 support is disabled on the host.
 
 ### Route 2: your own TLS reverse proxy
 

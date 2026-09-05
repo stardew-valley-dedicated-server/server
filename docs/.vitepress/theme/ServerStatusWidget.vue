@@ -92,19 +92,25 @@ function classify(data: ServerStatus): WidgetState {
     return "live";
 }
 
+// A hung request must not settle after a newer one and overwrite its result.
+let latestRequest = 0;
+
 async function fetchStatus() {
+    const request = ++latestRequest;
+    let data: ServerStatus | null = null;
     try {
         const response = await fetch(props.apiUrl, { cache: "no-store" });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+        if (response.ok) {
+            data = (await response.json()) as ServerStatus;
         }
-        const data = (await response.json()) as ServerStatus;
-        status.value = data;
-        state.value = classify(data);
     } catch {
-        status.value = null;
-        state.value = "unreachable";
+        data = null;
     }
+    if (request !== latestRequest) {
+        return;
+    }
+    status.value = data;
+    state.value = data ? classify(data) : "unreachable";
 }
 
 async function copyInviteCode(key: CodeKey) {

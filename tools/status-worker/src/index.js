@@ -24,19 +24,21 @@ export default {
             return new Response(cached.body, { status: 200, headers: HEADERS });
         }
 
-        let upstream;
+        let body = null;
         try {
-            upstream = await fetch(`${env.UPSTREAM_URL}/status`, { headers: { Accept: "application/json" } });
+            const upstream = await fetch(`${env.UPSTREAM_URL}/status`, { headers: { Accept: "application/json" } });
+            if (upstream.status === 200) {
+                body = await upstream.text();
+            }
         } catch {
-            upstream = null;
+            body = null;
         }
-        if (!upstream || upstream.status !== 200) {
+        if (body === null) {
             // Empty 502 so the widget renders "unreachable" instead of stale data.
             return new Response(null, { status: 502, headers: { "Access-Control-Allow-Origin": "*" } });
         }
 
-        const body = await upstream.text();
-        cached = { body, expiresAt: now + CACHE_TTL_MS };
+        cached = { body, expiresAt: Date.now() + CACHE_TTL_MS };
         return new Response(body, { status: 200, headers: HEADERS });
     },
 };
