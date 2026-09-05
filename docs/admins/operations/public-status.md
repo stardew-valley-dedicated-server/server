@@ -34,33 +34,6 @@ npx wrangler deploy
 
 The Worker answers `GET /` with the upstream JSON, caches it for 30 seconds, and returns an empty `502` when the server does not answer so the widget shows it as unreachable.
 
-#### Firewall rule
-
-Once the Worker is the only intended client, restrict the API port to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). Docker publishes container ports through its own iptables rules in the `FORWARD` path, which bypass host rules on `INPUT`, so the filter goes into Docker's `DOCKER-USER` chain. Two details matter there: Docker ends that chain with a `RETURN` rule, so rules must be inserted at the top rather than appended, and traffic between containers (the Discord bot reaching the API over the Docker network) passes through the same chain, so the filter must match only packets arriving on the external interface.
-
-The script below keeps the allowlist in its own chain and rebuilds it from scratch on every run, so ranges Cloudflare withdraws disappear with the next refresh:
-
-```sh
-API_PORT=8080
-EXT_IF=eth0   # the interface with your public address
-
-for cmd in iptables ip6tables; do
-  $cmd -N CF_STATUS 2>/dev/null || $cmd -F CF_STATUS
-  $cmd -C DOCKER-USER -i "$EXT_IF" -p tcp --dport "$API_PORT" -j CF_STATUS 2>/dev/null \
-    || $cmd -I DOCKER-USER 1 -i "$EXT_IF" -p tcp --dport "$API_PORT" -j CF_STATUS
-done
-for range in $(curl -s https://www.cloudflare.com/ips-v4); do
-  iptables -A CF_STATUS -s "$range" -j RETURN
-done
-for range in $(curl -s https://www.cloudflare.com/ips-v6); do
-  ip6tables -A CF_STATUS -s "$range" -j RETURN
-done
-iptables  -A CF_STATUS -j DROP
-ip6tables -A CF_STATUS -j DROP
-```
-
-Cloudflare ranges return to `DOCKER-USER` and continue to Docker's rules; everything else is dropped. Persist the result with your distribution's iptables save mechanism and run the script periodically. Cloudflare changes its ranges rarely and announces additions ahead of time, so a daily refresh is plenty. Skip the `ip6tables` lines if Docker's IPv6 support is disabled on the host.
-
 ### Route 2: your own TLS reverse proxy
 
 If you already have a domain and a reverse proxy, put it in front of the API port and point the widget straight at `https://<host>/status`. The server's own CORS header does the rest. A minimal Caddy site:
@@ -71,7 +44,7 @@ status.example.com {
 }
 ```
 
-Caddy obtains the certificate automatically. With this route the firewall rule is your proxy's concern; the API port itself should not be reachable from the internet.
+Caddy obtains the certificate automatically.
 
 ## Embedding the widget
 
