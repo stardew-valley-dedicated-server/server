@@ -1,0 +1,32 @@
+# HTTPS gateway for the server's HTTP surfaces (API and VNC web UI), served under one
+# URL prefix per server so several stacks can share a host. Enabled by the `proxy`
+# compose profile; docs/admins/operations/reverse-proxy.md explains the setup.
+#
+# The certificate is a Let's Encrypt IP-address certificate: no domain needed, valid
+# six days, renewed automatically. Let's Encrypt validates it over port 80.
+
+{
+    # Browsers send no SNI for bare-IP URLs; serve the public IP's certificate then.
+    default_sni {$PUBLIC_IP}
+}
+
+{$PUBLIC_IP} {
+    tls {
+        issuer acme {
+            profile shortlived
+        }
+    }
+
+    redir /{$SERVER_SLUG}/vnc /{$SERVER_SLUG}/vnc/ 301
+    handle_path /{$SERVER_SLUG}/vnc/* {
+        reverse_proxy server:5800
+    }
+
+    handle_path /{$SERVER_SLUG}/* {
+        reverse_proxy server:{$API_PORT}
+    }
+
+    handle {
+        respond 404
+    }
+}

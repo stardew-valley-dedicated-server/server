@@ -1,5 +1,5 @@
 ---
-description: Show your server's live status on a website — expose /status over HTTPS through a Cloudflare Worker or your own reverse proxy, and embed the status widget.
+description: Show your server's live status on a website — what /status exposes, the HTTPS requirement, and how to embed the status widget.
 ---
 
 # Public Server Status
@@ -12,39 +12,7 @@ The endpoint returns the fields documented in the [API reference](/developers/ap
 
 ## The HTTPS requirement
 
-A browser on an HTTPS page refuses to fetch plain `http://<ip>:8080/status` as mixed content. The server already allows cross-origin reads (every JSON response carries `Access-Control-Allow-Origin: *`), so the only missing piece is an HTTPS origin in front of the API. There are two ways to get one.
-
-### Route 1: Cloudflare Worker
-
-A Worker on the free plan gives you a `workers.dev` hostname with TLS and a short cache, and nothing new runs on your server. The script lives in [`tools/status-worker/`](https://github.com/stardew-valley-dedicated-server/server/tree/master/tools/status-worker).
-
-Prerequisites:
-
-- **A DNS name for your server.** Workers cannot fetch an IP literal, so point an A record at the server (a DNS-only record; it does not need to be proxied).
-- **A supported port.** Cloudflare only forwards traffic on its [supported port list](https://developers.cloudflare.com/fundamentals/reference/network-ports/), so `API_PORT` must be one of them. The default of 8080 is.
-
-Deploy from a checkout of the repository:
-
-```sh
-cd tools/status-worker
-# Set UPSTREAM_URL in wrangler.toml to http://<your-dns-name>:<API_PORT>
-npx wrangler login
-npx wrangler deploy
-```
-
-The Worker answers `GET /` with the upstream JSON, caches it for 30 seconds, and returns an empty `502` when the server does not answer so the widget shows it as unreachable.
-
-### Route 2: your own TLS reverse proxy
-
-If you already have a domain and a reverse proxy, put it in front of the API port and point the widget straight at `https://<host>/status`. The server's own CORS header does the rest. A minimal Caddy site:
-
-```text
-status.example.com {
-    reverse_proxy localhost:8080
-}
-```
-
-Caddy obtains the certificate automatically.
+A browser on an HTTPS page refuses to fetch plain `http://<ip>:8080/status` as mixed content, so the API needs an HTTPS URL. [HTTPS & Reverse Proxy](/admins/operations/reverse-proxy) sets that up without a domain; the status URL is then `https://PUBLIC_IP/SERVER_SLUG/status`. The server already allows cross-origin reads (every JSON response carries `Access-Control-Allow-Origin: *`), so nothing else is needed.
 
 ## Embedding the widget
 
@@ -53,14 +21,14 @@ Caddy obtains the certificate automatically.
 Copy [`ServerStatusWidget.vue`](https://github.com/stardew-valley-dedicated-server/server/blob/master/docs/.vitepress/theme/ServerStatusWidget.vue) into your theme, register it in `enhanceApp`, and place it on a page:
 
 ```md
-<ServerStatusWidget api-url="https://<your-worker>.workers.dev/" title="My Farm" />
+<ServerStatusWidget api-url="https://203.0.113.10/farm/status" title="My Farm" />
 ```
 
 Props:
 
 | Prop | Description | Default |
 |------|-------------|---------|
-| `api-url` | HTTPS URL returning the `/status` JSON (the Worker root, or `https://<host>/status`) | required |
+| `api-url` | HTTPS URL of the `/status` endpoint | required |
 | `title` | Header text | `Server Status` |
 | `refresh-interval` | Poll interval in milliseconds; `0` disables polling | `30000` |
 
@@ -71,7 +39,7 @@ The widget shows four states: **live** (`isOnline` true), **offline** (server ru
 The whole contract is one `fetch`:
 
 ```js
-const res = await fetch("https://<your-worker>.workers.dev/", { cache: "no-store" });
+const res = await fetch("https://203.0.113.10/farm/status", { cache: "no-store" });
 if (!res.ok) throw new Error("unreachable");
 const status = await res.json();
 // status.isOnline, status.playerCount, status.maxPlayers,

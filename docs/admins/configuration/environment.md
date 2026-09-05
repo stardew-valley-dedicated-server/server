@@ -21,6 +21,10 @@ These must be set for the server to function:
 | `VNC_PORT` | TCP port for VNC web interface | `5800` |
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
+| `HTTP_BIND` | Host interface for `VNC_PORT` and `API_PORT`; `127.0.0.1` behind a [reverse proxy](/admins/operations/reverse-proxy) | `0.0.0.0` |
+| `COMPOSE_PROFILES` | `proxy` starts the bundled HTTPS gateway | - |
+| `PUBLIC_IP` | Public IP the gateway's certificate is issued for | - |
+| `SERVER_SLUG` | URL prefix of this server behind the gateway | `server` |
 | `SERVER_FPS` | Render rate: `0` = rendering disabled, `N > 0` = render at N fps | `0` |
 | `VERBOSE_LOGGING` | Override verbose logging setting | - |
 
@@ -186,6 +190,7 @@ The server refuses to start without `VNC_PASSWORD`, or without `API_KEY` while `
 | 27015 | UDP | Steam query | No (relay handles NAT) |
 | 5800 | TCP | VNC web interface | Only for remote access |
 | 8080 | TCP | REST API | Only for external tools |
+| 80, 443 | TCP | HTTPS gateway (optional `proxy` profile) | Yes, when enabled |
 | 3001 | TCP | Steam auth (internal) | No |
 
 ## Changing Ports

@@ -44,8 +44,11 @@ joinable over direct IP — even for the account's own player. See
 | 27015 | UDP | Steam SDR query port | No (relay handles NAT) |
 | 5800 | TCP | VNC web interface | Only for remote access |
 | 8080 | TCP | HTTP API | Only for external tools |
+| 80, 443 | TCP | HTTPS gateway (optional) | Only with the `proxy` profile |
 
 Steam SDR uses these ports internally but traffic goes through Valve's relay. No port forwarding required for most setups.
+
+With the [HTTPS gateway](/admins/operations/reverse-proxy) enabled, the API and VNC web UI are served on 443 under a URL prefix and their plain-HTTP ports stay on the host's loopback interface.
 
 ### Changing Ports
 
@@ -169,4 +172,8 @@ If you need to configure firewalls, allow:
 **For external API access:**
 
 - Inbound TCP 8080, REST API
+
+**With the HTTPS gateway (replaces the two above):**
+
+- Inbound TCP 80 and 443
 

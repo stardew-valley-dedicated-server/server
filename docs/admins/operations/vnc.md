@@ -28,6 +28,8 @@ Replace:
 
 Example: `http://localhost:5800`
 
+Behind the [HTTPS gateway](/admins/operations/reverse-proxy) the address is `https://PUBLIC_IP/SERVER_SLUG/vnc/` instead, and the plain-HTTP port is not reachable from outside.
+
 You'll be prompted to enter the VNC password configured in your `.env` file.
 
 ## VNC Settings Panel

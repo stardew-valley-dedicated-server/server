@@ -50,15 +50,15 @@ jobs:
         run: |
           # Define deployment targets as JSON
           TARGETS='[
-            {"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
+            {"environment": "public-test-preview", "image_tag": "preview", "slug": "preview", "on_preview": true, "on_release": false}
           ]'
-          # {"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
+          # {"environment": "public-test-latest", "image_tag": "latest", "slug": "latest", "on_preview": false, "on_release": true}
 
           MATRIX=$(echo "$TARGETS" | jq -c '[.[] | select(
             (env.TRIGGER == "workflow_dispatch" and env.SELECTED == .environment) or
             (env.TRIGGER == "workflow_run" and env.WORKFLOW_SUCCESS == "success" and .on_preview) or
             (env.TRIGGER == "release" and .on_release)
-          ) | {environment, image_tag}]')
+          ) | {environment, image_tag, slug}]')
 
           echo "matrix={\"include\":$MATRIX}" >> $GITHUB_OUTPUT
           echo "has_targets=$([ "$MATRIX" != "[]" ] && echo true || echo false)" >> $GITHUB_OUTPUT
@@ -106,6 +106,9 @@ jobs:
           DEPLOY_DISCORD_BOT_TOKEN: ${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
           DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
           DEPLOY_DISCORD_BOT_NICKNAME: ${{ vars.DEPLOY_DISCORD_BOT_NICKNAME }}
+          # Optional: enables the HTTPS gateway (docs: operations/reverse-proxy.md).
+          DEPLOY_PUBLIC_IP: ${{ secrets.DEPLOY_PUBLIC_IP }}
+          DEPLOY_SERVER_SLUG: ${{ matrix.slug }}
         run: |
           echo "::group::Generate .env file for ${{ matrix.environment }}"
 
@@ -145,6 +148,13 @@ jobs:
           echo "DISCORD_BOT_TOKEN=$DEPLOY_DISCORD_BOT_TOKEN" >> .env
           echo "DISCORD_CHAT_CHANNEL_ID=$DEPLOY_DISCORD_CHAT_CHANNEL_ID" >> .env
           echo "DISCORD_BOT_NICKNAME=$DEPLOY_DISCORD_BOT_NICKNAME" >> .env
+          if [[ -n "$DEPLOY_PUBLIC_IP" ]]; then
+            echo "# HTTPS gateway" >> .env
+            echo "COMPOSE_PROFILES=proxy" >> .env
+            echo "PUBLIC_IP=$DEPLOY_PUBLIC_IP" >> .env
+            echo "SERVER_SLUG=$DEPLOY_SERVER_SLUG" >> .env
+            echo "HTTP_BIND=127.0.0.1" >> .env
+          fi
           echo "::endgroup::"
 
       - name: Create deploy directory
@@ -163,7 +173,7 @@ jobs:
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          source: "docker-compose.yml,.env"
+          source: "docker-compose.yml,.env,docker/proxy/Caddyfile"
           target: ~/srv/${{ matrix.environment }}
 
       # Resolves what the alias (matrix.image_tag) actually points at, for the internal-ci

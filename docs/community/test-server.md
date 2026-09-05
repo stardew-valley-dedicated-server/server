@@ -6,7 +6,7 @@ description: Join the public JunimoServer test server — live status, player co
 
 The project runs a public test server so you can try JunimoServer before hosting your own. It runs the latest preview build, so expect occasional restarts and the odd rough edge. Anything that looks broken is worth a [bug report](/community/reporting-bugs).
 
-<ServerStatusWidget api-url="https://junimoserver-status.REPLACE-WITH-ACCOUNT-SUBDOMAIN.workers.dev/" title="Public Test Server" />
+<ServerStatusWidget api-url="https://REPLACE-WITH-VPS-IP/preview/status" title="Public Test Server" />
 
 ## How to join
 
