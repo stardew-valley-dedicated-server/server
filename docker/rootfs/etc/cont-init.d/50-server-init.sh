@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Runs as root (cont-init.d) before the app service drops to USER_ID:GROUP_ID. Fixes ownership of
-# the volumes/paths the app writes, which startapp.sh can no longer do as the non-root app user.
+# the volumes/paths the app writes; startapp.sh runs as the non-root app user and cannot.
 
 set -e
 
