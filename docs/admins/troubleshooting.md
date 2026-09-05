@@ -162,7 +162,8 @@ Invite-code joins go through the GOG Galaxy SDK, a native library the game loads
 before it reaches the server (nothing in the server log, or a client shows `Galaxy auth failure` /
 `RequestLobbyData: not logged on`), the SDK's own log is the only place the reason appears.
 
-The SDK writes it when it finds a `GalaxyPeer.ini` at startup. On the standard server image, put
+The SDK writes it when it finds a `GalaxyPeer.ini` at startup, the same mechanism GOG describes in
+its [developer FAQ](https://docs.gog.com/faq/#dev-support-logs). On the standard server image, put
 the file in the game volume and restart:
 
 ```sh
