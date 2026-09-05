@@ -1,5 +1,5 @@
 ---
-description: What you need before installing JunimoServer — Docker Engine 20+ with Compose V2, a Steam copy of Stardew Valley, system requirements, and an NTP-synced host clock.
+description: What you need before installing JunimoServer — Docker, a Steam copy of Stardew Valley, and the host requirements.
 ---
 
 # Prerequisites
