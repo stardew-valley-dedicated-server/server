@@ -48,7 +48,12 @@ The server runs continuously and uses resources even when no players are connect
 
 ## System Clock
 
-The server uses the host's clock. A wrong clock drops players who join with an invite code about
-30 seconds after they join. Clocks sync automatically on every current OS, so normally nothing is
-required. On Linux, `timedatectl status` should report `System clock synchronized: yes`. Docker
-Desktop can fall behind after the computer wakes from sleep; restarting it fixes that.
+The server uses the host's clock, and GOG invite-code connections fail when it is not accurate.
+Operating systems keep the clock synced automatically, so nothing is normally required. To check on
+Linux:
+
+```sh
+timedatectl status   # System clock synchronized: yes
+```
+
+Docker Desktop can fall behind after the computer wakes from sleep; restart it to resync.
