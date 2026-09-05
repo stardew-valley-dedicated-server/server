@@ -1,0 +1,12 @@
+# Cloudflare Worker that puts an HTTPS front door on a JunimoServer /status endpoint.
+# Deploy manually with `npx wrangler deploy` from this directory; not part of CI.
+# See docs/admins/operations/public-status.md for the full setup.
+name = "junimoserver-status"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Scheme, hostname and port of the API, no trailing slash. Must be a hostname, not a raw IP:
+# Workers refuse subrequests to IP literals, and the port must be on Cloudflare's supported
+# HTTP port list (https://developers.cloudflare.com/fundamentals/reference/network-ports/).
+UPSTREAM_URL = "http://status.example.com:8080"

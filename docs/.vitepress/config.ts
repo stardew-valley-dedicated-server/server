@@ -204,6 +204,7 @@ export default withMermaid(
                             { text: "Upgrading", link: "/admins/operations/upgrading" },
                             { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
                             { text: "Modern Docker Image", link: "/admins/operations/modern-docker" },
+                            { text: "Public Server Status", link: "/admins/operations/public-status" },
                         ],
                     },
                     {
@@ -319,6 +320,7 @@ export default withMermaid(
                         text: "Community",
                         items: [
                             { text: "Overview", link: "/community/" },
+                            { text: "Public Test Server", link: "/community/test-server" },
                             { text: "FAQ", link: "/community/faq" },
                             { text: "Getting Help", link: "/community/getting-help" },
                             { text: "Reporting Bugs", link: "/community/reporting-bugs" },
