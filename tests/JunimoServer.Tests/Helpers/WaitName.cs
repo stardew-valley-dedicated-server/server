@@ -105,8 +105,9 @@ public enum WaitName
     // CabinPositionPersistenceTests.cs — !cabin reset (1)
     Polling_CabinReset_CabinHidden,
 
-    // CabinPositionPersistenceTests.cs — dummy cabin at shared stack (1)
+    // CabinPositionPersistenceTests.cs — dummy cabin at shared stack (2)
     Polling_DummyCabin_VisibleInClientFarm,
+    Polling_DummyCabin_OtherHomeResolvableOnClient,
 
     // CabinPositionPersistenceTests.cs — same-pass sweep reflected in snapshot (1)
     Polling_CabinSweep_PostReloadSettled,
@@ -246,9 +247,9 @@ public enum WaitName
     /// <summary>'cabins stackspot x y' landed: /cabins StackSpot shows the override.</summary>
     Polling_CabinStackSpot_Set,
 
-    /// <summary>A connected peer's door-dead dummy interior became enterable after a →None commit
-    /// healed it live (no reconnect).</summary>
-    Polling_CabinDummyInterior_HealedLive,
+    /// <summary>Every master cabin is enterable at its placed tile on a connected peer after a
+    /// →None commit.</summary>
+    Polling_CabinMigration_PlacedCabinsVisibleOnPeer,
 
     // CabinStrategyFarmhouseStackTests.cs + CabinStrategyTests.cs — cabin-link repair (2)
     /// <summary>Cabin gone from /cabins after /test/break_cabin_link nulled its back-link.</summary>

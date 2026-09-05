@@ -459,7 +459,7 @@ public class CabinPositionPersistenceTests : TestBase
     /// triggers the new dummy-found branch in OnLocationIntroductionMessage on reconnect. The
     /// mutation lives only in the per-peer message copy, so /cabins (master) can't see it —
     /// this asserts the join completes, master's tile for the moved cabin is unchanged (the
-    /// dummy relocate must not touch master state), and no errors fired.
+    /// dummy must not touch master state), and no errors fired.
     /// </summary>
     [Fact]
     public async Task DummyCabin_ReconnectAfterMove_JoinSucceedsAndMasterUnchanged()
@@ -477,7 +477,7 @@ public class CabinPositionPersistenceTests : TestBase
         await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, ct);
         await Farmers.ReconnectAsync(client.FarmerName, ct: ct);
 
-        // Master cabin tile is unchanged — the dummy relocate mutated only the message copy.
+        // Master cabin tile is unchanged — the dummy lives only in the message copy.
         var afterReconnect = await GetOurCabinAsync(ownerId, ct);
         Assert.False(afterReconnect.IsHidden, "A's moved cabin should still be visible in master");
         Assert.Equal(movedTile, (afterReconnect.TileX, afterReconnect.TileY));
@@ -555,6 +555,91 @@ public class CabinPositionPersistenceTests : TestBase
         Log("Client rendered a door-dead dummy cabin at the shared stack after moving its own");
 
         await Exceptions.AssertNoExceptionsAsync("after dummy positive-observation");
+    }
+
+    /// <summary>
+    /// The stack dummy must not touch a real cabin: clients resolve homes by interior name and
+    /// never rebuild interiors. A moves and reconnects; on A's client B's home and every hidden
+    /// cabin keep their interior.
+    /// </summary>
+    [Fact]
+    public async Task DummyCabin_AfterMoveAndReconnect_OtherPlayersHomeStaysResolvable()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var clientA = await Farmers.ConnectFastAsync(ct: ct);
+        var ownerIdA = clientA.JoinResult.UniqueMultiplayerId;
+
+        await using var farmerB = await Farmers.ConnectSecondFarmerAsync(ct: ct);
+
+        var diagnostics = await ServerApi.GetDiagnosticsState(ct);
+        var bCabin = diagnostics?.Cabins.FirstOrDefault(c => c.OwnerId == farmerB.Uid);
+        Assert.True(
+            !string.IsNullOrEmpty(bCabin?.IndoorsName),
+            $"B's cabin has no interior name in master state (cabin found: {bCabin != null})"
+        );
+        var bHome = bCabin!.IndoorsName;
+
+        var movedTile = await MoveCabinViaCommandAsync(ownerIdA, ct);
+
+        // Reconnect: the fresh Farm intro carries the dummy.
+        await Farmers.DisconnectAndWaitForSlotAsync(ownerIdA, clientA.FarmerName, ct);
+        await Farmers.ReconnectAsync(clientA.FarmerName, ct: ct);
+
+        FarmBuildingsResult? view = null;
+        FarmBuildingInfo? bHomeOnA = null;
+        FarmBuildingInfo? dummy = null;
+        var resolved = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_DummyCabin_OtherHomeResolvableOnClient,
+            async () =>
+            {
+                view = await GameClient.Actions.GetFarmBuildings(ct);
+                if (view?.Success != true)
+                {
+                    return false;
+                }
+
+                bHomeOnA = view.Cabins.FirstOrDefault(c => c.Name == bHome);
+                dummy = view.Cabins.FirstOrDefault(c =>
+                    c.TileX >= 0 && !(c.TileX == movedTile.X && c.TileY == movedTile.Y)
+                );
+                return bHomeOnA != null && dummy != null;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+
+        var seen =
+            view == null
+                ? "null"
+                : string.Join(
+                    ", ",
+                    view.Cabins.Select(c =>
+                        $"({c.TileX},{c.TileY},name={c.Name},interior={c.HasInterior})"
+                    )
+                );
+        Assert.True(
+            resolved,
+            $"A's client did not see both the stack dummy and B's home '{bHome}' (saw: {seen})"
+        );
+        Assert.True(
+            bHomeOnA!.HasInterior,
+            $"B's home '{bHome}' lost its interior on A's client — B's home is unresolvable there (saw: {seen})"
+        );
+        Assert.False(dummy!.HasInterior, "Dummy cabin door is live — it must be door-dead");
+
+        // No hidden cabin was borrowed as the dummy.
+        var hiddenWithoutInterior = view!.Cabins.Where(c => c.TileX < 0 && !c.HasInterior).ToList();
+        Assert.True(
+            hiddenWithoutInterior.Count == 0,
+            $"A hidden-stack cabin lost its interior on A's client (saw: {seen})"
+        );
+        Log($"A's client resolves B's home '{bHome}' with the stack dummy present");
+
+        // Disconnect B before this class's DisposeAsync runs /newgame (409s while connected).
+        await farmerB.DisconnectAsync();
+        await Exceptions.AssertNoExceptionsAsync("after other-home resolvability check");
     }
 
     #region Helpers

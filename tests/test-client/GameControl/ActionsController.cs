@@ -428,7 +428,7 @@ public class ActionsController
     /// <summary>
     /// Lists this client's view of the farm's cabin buildings (name + tile). The server
     /// rewrites each peer's locationIntroduction copy (CabinManagerService), so the client's
-    /// farm can differ from master state — e.g. a dummy cabin relocated to the shared stack
+    /// farm can differ from master state — e.g. a door-less dummy cabin at the shared stack
     /// for a player whose own cabin was moved. /cabins (master state) cannot observe that, so
     /// this is the positive-observation gate for the per-peer cabin mutations.
     /// </summary>
