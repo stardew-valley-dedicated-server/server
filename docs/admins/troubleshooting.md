@@ -137,9 +137,8 @@ ready-to-run fix command) — check the server log when a player reports a locke
 - Check server resources: `docker stats`
 - Review logs for errors: `docker compose logs -f`
 - Consider increasing server RAM if low on memory
-- Players drop about 30 seconds after joining via invite code: check the host's clock (see
-  [System clock](/admins/quick-start/prerequisites#system-clock)). The container uses the host's
-  clock, and the GOG connection check rejects a clock that is off.
+- Players drop about 30 seconds after joining via invite code: the host clock is wrong. See
+  [System Clock](/admins/quick-start/prerequisites#system-clock).
 
 ### Steam clients specifically failing
 

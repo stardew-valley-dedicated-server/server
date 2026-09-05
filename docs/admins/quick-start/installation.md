@@ -25,8 +25,8 @@ STEAM_PASSWORD="your_steam_password"
 VNC_PASSWORD="your_secure_password"
 ```
 
-On Linux, also add your own user account, so the files the server creates on your computer belong
-to you (Windows and macOS: skip this):
+On Linux, also set the user the game runs as to your own, so the server's files on your computer
+belong to you (not needed on Windows and macOS):
 
 ```sh
 printf 'USER_ID=%s\nGROUP_ID=%s\n' "$(id -u)" "$(id -g)" >> .env

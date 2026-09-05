@@ -20,9 +20,9 @@ Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The curren
 
 ### The game now runs as a normal user inside the container
 
-Earlier versions ran the game as root inside the container; it now runs as user `1000` unless
-`USER_ID`/`GROUP_ID` are set in `.env`. The first start after upgrading re-owns the existing files.
-On Linux, set the values to your own account before that start (see
+Earlier versions ran the game as root inside the container. It now runs as UID/GID `1000` unless
+`USER_ID`/`GROUP_ID` are set in `.env`; the first start after upgrading updates the ownership of
+existing files. On Linux, set the values to your own user before that start (see
 [Host / Permissions](/admins/configuration/environment#host-permissions)).
 
 ## Using Preview Builds

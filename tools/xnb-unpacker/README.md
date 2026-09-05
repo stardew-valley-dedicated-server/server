@@ -8,7 +8,7 @@ Build the image:
 docker build -t xnb-unpacker .
 ```
 
-Then run the container as your own user, so the unpacked files belong to you and not root:
+Run it as your own user so the unpacked files belong to you:
 
 ```shell
 docker run --rm -it \
@@ -20,4 +20,4 @@ docker run --rm -it \
 
 > Bind mount to `/game/Content (unpacked)` is optional, but useful to be able to string-search through the unpacked files inside your IDE.
 >
-> On Windows and macOS (Docker Desktop) `--user` is harmless but not needed: bind-mounted files always belong to your desktop user.
+> On Windows and macOS `--user` is not needed; Docker Desktop handles file ownership.
