@@ -35,6 +35,37 @@ These must be set for the server to function:
 | `API_KEY` | API key for authenticating write requests | (empty = disabled) |
 | `ALLOW_INSECURE_SETUP` | Allow startup when `VNC_PASSWORD` or `API_KEY` is empty | `false` |
 
+## Host / Permissions
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `USER_ID` | User ID (UID) the game runs as inside the container | `1000` |
+| `GROUP_ID` | Group ID (GID) of that user | `1000` |
+
+The game runs as a normal user inside the container rather than as root, so a misbehaving mod cannot
+touch anything outside the game's own files. The container starts as root only long enough to
+prepare the server's files and assign their ownership.
+
+On Linux, files written to `.local-container/settings` and `diagnostics` are owned by this UID/GID
+on the host as well, so set them to your own user and group to access those files normally.
+
+- **Windows and macOS:** no configuration required. Docker Desktop handles file ownership for you.
+- **Linux:** set both values to your user and group IDs. If both commands print `1000`, the defaults
+  are already correct.
+
+  ```sh
+  id -u   # USER_ID
+  id -g   # GROUP_ID
+  ```
+
+- **Rootless Docker:** set both to `0`. In rootless Docker, UID/GID `0` inside the container maps to
+  your host user.
+- **Root:** setting both to `0` on regular Docker runs the game as root inside the container. Not
+  needed; on Linux the two folders above are then owned by root on the host.
+
+You can change the values later. On the next start, the container updates the ownership of the
+server's files to match.
+
 ## Discord Integration
 
 | Variable | Description | Default |

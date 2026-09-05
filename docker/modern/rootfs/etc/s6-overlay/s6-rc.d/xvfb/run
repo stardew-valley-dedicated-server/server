@@ -1,5 +1,5 @@
 #!/command/execlineb -P
-with-contenv
+/opt/bin/as-app-user
 /bin/bash -c "
 exec 2>&1
 

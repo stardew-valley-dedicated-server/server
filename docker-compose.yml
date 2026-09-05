@@ -11,15 +11,15 @@ services:
       # Steam relay ports (used by GameServer.Init for relay network)
       - "${GAME_PORT:-24642}:24642/udp"
       - "${QUERY_PORT:-27015}:27015/udp"
-    cap_add:
-      # Required to sync time, ensures GOG GalaxyAuth works
-      - SYS_TIME
     volumes:
       - game-data:/data/game
       - saves:/config/xdg/config/StardewValley
       - ./.local-container/settings:/data/settings
       - ./diagnostics:/data/diagnostics
     environment:
+      # uid/gid the game runs as after the root init (docs: environment.md, Host / Permissions).
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
       # Steam auth service URL (for runtime ticket requests)
       STEAM_AUTH_URL: "http://steam-auth:${STEAM_AUTH_PORT:-3001}"
       # Server configuration
@@ -60,6 +60,9 @@ services:
       - steam-session:/data/steam-session
       - game-data:/data/game
     environment:
+      # Same ids as the server: both write the shared game-data volume.
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
       PORT: "${STEAM_AUTH_PORT:-3001}"
       GAME_DIR: "/data/game"
       SESSION_DIR: "/data/steam-session"

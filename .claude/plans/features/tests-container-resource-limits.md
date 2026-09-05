@@ -2,7 +2,7 @@
 
 ## Context
 
-The E2E test harness at `D:/Development/projects/stardew-dedicated-server/repos/server` runs Stardew Valley game processes inside Docker containers under parallel orchestration (`xunit.runner.json: maxParallelThreads: unlimited`, gated by per-host `serverSlots` — typically 3 locally). Today the three Testcontainers call sites — `ServerContainer.cs`, `GameClientContainer.cs`, `SharedSteamAuth.cs` — set only `CapAdd("SYS_TIME")` and ownership labels. **No memory cap, no PIDs cap, no CPU quota is applied.** A leaky test, a thread runaway, or a CPU-pathological test can push the host into reclaim/swap and produce real wall-clock jitter (seconds, not microseconds) that surfaces as flaky timeouts on *other* containers.
+The E2E test harness at `D:/Development/projects/stardew-dedicated-server/repos/server` runs Stardew Valley game processes inside Docker containers under parallel orchestration (`xunit.runner.json: maxParallelThreads: unlimited`, gated by per-host `serverSlots` — typically 3 locally). Today the three Testcontainers call sites — `ServerContainer.cs`, `GameClientContainer.cs`, `SharedSteamAuth.cs` — set only ownership labels. **No memory cap, no PIDs cap, no CPU quota is applied.** A leaky test, a thread runaway, or a CPU-pathological test can push the host into reclaim/swap and produce real wall-clock jitter (seconds, not microseconds) that surfaces as flaky timeouts on *other* containers.
 
 Originating discussion considered `--cpuset-cpus` for "micro-jitter reduction." That was rejected as the wrong tool (the kernel scheduler is already good at keeping warm threads on warm cores; pinning constrains start-phase elasticity and is a no-op on WSL2 vCPUs anyway). Instead this plan targets the **real** jitter sources: cross-container interference under memory/CPU contention, plus undocumented operator levers.
 
@@ -79,8 +79,7 @@ Per `simplest-solution.md`: the existing block is 5 lines, the added lines are ~
 ```csharp
 .WithCreateParameterModifier(p =>
 {
-    p.HostConfig.CapAdd ??= new List<string>();
-    p.HostConfig.CapAdd.Add("SYS_TIME");
+    p.HostConfig ??= new HostConfig();
     p.Labels ??= new Dictionary<string, string>();
     p.Labels["sdvd.test"] = "true";
     p.Labels["sdvd.run-id"] = runId;

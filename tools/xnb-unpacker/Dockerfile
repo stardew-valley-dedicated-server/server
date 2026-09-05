@@ -30,14 +30,22 @@ RUN set -e; \
     chmod +x StardewXnbHack; \
     rm -rf "StardewXnbHack ${TAG} for Linux"
 
-# Create run script:
-# 1. Starts Xvfb so the game can run headlessly
-# 2. Copies StardewXnbHack from /tmp to the current working directory /game
-# 3. Launches StardewXnbHack
-# 4. Moves unpacked content to /output dir if mounted via volume
+# X socket dir with the standard sticky world-writable mode, so a non-root Xvfb can create its socket.
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+# Create run script. The container runs as the host user (`docker run --user`, see README) so the
+# unpacked files belong to them; a per-run HOME under /tmp works for any uid.
+# 1. Creates a HOME with an existing .config: the game instance StardewXnbHack spins up resolves
+#    its config dir via Environment.GetFolderPath(ApplicationData), which yields "" (a relative
+#    path into /game) unless $HOME/.config already exists
+# 2. Starts Xvfb so the game can run headlessly
+# 3. Copies StardewXnbHack from /tmp to the current working directory /game
+# 4. Launches StardewXnbHack
 # 5. Deletes StardewXnbHack
 RUN echo '#!/bin/sh\n'\
     'set -e\n'\
+    'export HOME=$(mktemp -d)\n'\
+    'mkdir -p "$HOME/.config"\n'\
     'cp -f /tmp/StardewXnbHack .\n'\
     'Xvfb :99 -screen 0 1024x768x24 &\n'\
     'export DISPLAY=:99\n'\

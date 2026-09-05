@@ -25,6 +25,14 @@ STEAM_PASSWORD="your_steam_password"
 VNC_PASSWORD="your_secure_password"
 ```
 
+On Linux, also set the user the game runs as to your own, so the server's files on your computer
+belong to you (not needed on Windows and macOS; for rootless Docker see
+[Host / Permissions](/admins/configuration/environment#host-permissions)):
+
+```sh
+printf 'USER_ID=%s\nGROUP_ID=%s\n' "$(id -u)" "$(id -g)" >> .env
+```
+
 ## 3. Pull Images
 
 Download the pre-built Docker images:

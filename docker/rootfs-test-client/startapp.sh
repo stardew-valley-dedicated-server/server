@@ -9,7 +9,7 @@ MODS_DEST_DIR="/data/Mods"
 GAME_DEST_DIR="/data/game"
 GAME_EXECUTABLE="${GAME_DEST_DIR}/StardewValley"
 SMAPI_EXECUTABLE="${GAME_DEST_DIR}/StardewModdingAPI"
-STEAM_SDK_DIR="/root/.steam/sdk64"
+STEAM_SDK_DIR="${HOME}/.steam/sdk64"
 
 print_error() {
     echo -e "\e[31m$1\e[0m"
@@ -123,8 +123,10 @@ init_steam_sdk() {
 }
 
 init_permissions() {
+    # Ownership is set by the root cont-init hook (etc/cont-init.d/50-client-init.sh) before this
+    # script runs as the non-root app user; here we only ensure the game binary is executable
+    # (the app user owns it by now, so this succeeds without root).
     chmod +x "${GAME_EXECUTABLE}"
-    chmod -R 755 "${GAME_DEST_DIR}"
 }
 
 echo "Initializing SMAPI..."

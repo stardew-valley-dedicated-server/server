@@ -18,6 +18,13 @@ Your save files and configuration are stored in Docker volumes and will be prese
 
 Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The current release surfaces it as a warning and aborts only when an insecure setup is detected (empty `VNC_PASSWORD`, or empty `API_KEY` with the API enabled). Set `ALLOW_INSECURE_SETUP=true` on closed networks to keep the warnings but skip the abort. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
 
+### The game runs as a non-root user
+
+The game runs as UID/GID `1000` inside the container unless `USER_ID`/`GROUP_ID` are set in `.env`.
+The first start after upgrading updates the ownership of existing files to match. On Linux, set the
+values to your own user, or `0` on rootless Docker, before that start (see
+[Host / Permissions](/admins/configuration/environment#host-permissions)).
+
 ## Using Preview Builds
 
 Preview builds contain the latest changes from the `master` branch. Use these when:

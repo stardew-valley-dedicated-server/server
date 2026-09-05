@@ -98,9 +98,9 @@ FROM jlesage/baseimage-gui:debian-13-v4.13 AS client
 ARG SMAPI_VERSION
 
 ENV APP_NAME="Stardew Test Client" \
-    USER_ID=0 \
-    GROUP_ID=0 \
-    HOME=/root \
+    USER_ID=1000 \
+    GROUP_ID=1000 \
+    HOME=/config \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8 \
@@ -155,9 +155,11 @@ RUN \
     rm -f /etc/cont-init.d/89-info.sh && \
     # Prevent overriding OpenGL drivers
     rm -rf /etc/cont-env.d/LIBGL_DRIVERS_PATH && \
-    # Pin the runtime HOME to match the ENV above — see docker/Dockerfile: the base defaults
-    # it to /config, moving Steam's ~/.steam lookup off the /root/.steam/sdk64 startapp.sh uses
-    set-cont-env HOME /root
+    # Pin the runtime HOME so Steam's ~/.steam lookup matches where startapp.sh links
+    # steamclient.so (${HOME}/.steam/sdk64) — see docker/Dockerfile. /config is owned by USER_ID
+    # at startup, so it stays writable for any configured non-root user; set-cont-env is used
+    # because cont-env overrides container env, so HOME can't be supplied from compose.
+    set-cont-env HOME /config
 
 # Copy SMAPI config (client-specific settings)
 COPY docker/rootfs-test-client/data/smapi-config.json /data/smapi-config.json
@@ -173,7 +175,11 @@ COPY --chmod=0644 docker/rootfs-test-client/etc/services.d/xrdb/min_running_time
 
 # Copy startup script
 COPY docker/rootfs-test-client/startapp.sh /startapp.sh
-RUN chmod +x /startapp.sh
+
+# Root init hook: takes ownership of the volumes/paths the non-root app user writes, before the
+# app service drops privileges (runs as root, alphabetically, ahead of services).
+COPY docker/rootfs-test-client/etc/cont-init.d/50-client-init.sh /etc/cont-init.d/50-client-init.sh
+RUN chmod +x /startapp.sh /etc/cont-init.d/50-client-init.sh
 
 # Copy test-client mod from build stage
 COPY --from=mod-builder /output/JunimoTestClient /data/Mods/JunimoTestClient

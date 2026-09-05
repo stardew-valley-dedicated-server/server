@@ -20,13 +20,14 @@ internal static class Config
 
     public const string ConsoleLogPath = "/tmp/server-output.log";
     public const string ConfigRoot = "/config/xdg/config/StardewValley";
+    public const string GamePath = "/data/game";
     public const string ModsPath = "/data/Mods";
     public const string OutputDir = "/data/diagnostics";
     public static readonly string CrashLogPath = $"{ConfigRoot}/ErrorLogs/SMAPI-crash.txt";
     public static readonly string SmapiLogPath = $"{ConfigRoot}/ErrorLogs/SMAPI-latest.txt";
 
     /// <summary>Volumes worth reporting free space for (game download, saves, settings).</summary>
-    public static readonly string[] DiskPaths = { "/data/game", ConfigRoot, "/data/settings" };
+    public static readonly string[] DiskPaths = { GamePath, ConfigRoot, "/data/settings" };
 
     /// <summary>
     /// Whether the report echoes this variable, by prefix — so a var added to Env.cs or compose shows

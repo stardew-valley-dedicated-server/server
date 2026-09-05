@@ -41,6 +41,13 @@ internal static class ZipWriter
             AddIfExists(archive, crashPath, "SMAPI-crash.txt");
         }
 
+        // Galaxy SDK log, one per game start; present only while an operator has GalaxyPeer.ini in
+        // the game dir (docs: troubleshooting, "Capturing Galaxy SDK logs").
+        foreach (var galaxyLog in FindAll(Config.GamePath, "GalaxyPeer-*.log"))
+        {
+            AddIfExists(archive, galaxyLog, Path.GetFileName(galaxyLog));
+        }
+
         return zipPath;
     }
 
@@ -84,21 +91,26 @@ internal static class ZipWriter
         }
     }
 
-    private static string? FindFirst(string root, string fileName)
+    private static string? FindFirst(string root, string fileName) =>
+        FindAll(root, fileName, SearchOption.AllDirectories).FirstOrDefault();
+
+    private static string[] FindAll(
+        string root,
+        string pattern,
+        SearchOption option = SearchOption.TopDirectoryOnly
+    )
     {
         if (!Directory.Exists(root))
         {
-            return null;
+            return Array.Empty<string>();
         }
         try
         {
-            return Directory
-                .EnumerateFiles(root, fileName, SearchOption.AllDirectories)
-                .FirstOrDefault();
+            return Directory.GetFiles(root, pattern, option);
         }
         catch
         {
-            return null;
+            return Array.Empty<string>();
         }
     }
 }
