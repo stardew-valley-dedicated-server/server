@@ -104,6 +104,8 @@ Players can reposition their cabin using the `!cabin` chat command on the farm. 
 
 This works under every strategy. Under `CabinStack` and `FarmhouseStack`, a moved-out cabin becomes a real, visible building that everyone can see and enter through its own door — under `FarmhouseStack` this is the way to let players meet inside each other's homes while non-movers keep the tidy shared farmhouse entrance.
 
+Under `CabinStack` the shared spot itself is off-limits: `!cabin` refuses a target that overlaps it, and a player whose cabin has moved out sees a door-less stand-in cabin there in place of their own.
+
 To forbid cabin moves entirely, set `AllowCabinRelocation` to `false` in `server-settings.json`:
 
 ```json

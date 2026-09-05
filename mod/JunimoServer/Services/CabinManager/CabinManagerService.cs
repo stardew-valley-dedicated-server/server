@@ -1056,7 +1056,7 @@ public partial class CabinManagerService : ModService
                 // real cabin's interior makes its owner's home unresolvable there (festival
                 // loadActors throws). No hidden cabin means nobody sees one at the spot.
                 var skinSource = farm.buildings.FirstOrDefault(b =>
-                    b.isCabin && b != cabin && b.IsInHiddenStack()
+                    b.isCabin && b.IsInHiddenStack()
                 );
                 if (skinSource != null)
                 {

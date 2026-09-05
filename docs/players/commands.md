@@ -9,7 +9,7 @@ Chat commands available to all players on a JunimoServer. Type in the chat box (
 | `!help` | Show available commands |
 | `!info` | Server info (farm, version, uptime, players, your ping) |
 | `!invitecode` | Show invite code to share with friends |
-| `!cabin` | Relocate your cabin to your right (must be on farm) |
+| `!cabin` | Relocate your cabin to your right (must be on farm, not onto the shared cabin spot) |
 
 Debris is cleared automatically when relocating.
 
