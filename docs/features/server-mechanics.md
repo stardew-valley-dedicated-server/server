@@ -17,8 +17,9 @@ The server runs an invisible "host" player that handles game progression:
 ### Pause Behavior
 
 - **Players online**: Game runs normally
-- **No players**: Game pauses between 6:10 AM and 1:00 AM
-- **After 1:00 AM**: Game unpauses to allow the forced pass-out at 2:00 AM
+- **No players**: Game pauses at whatever time the last player left, so the next player resumes exactly there
+- **Empty past 1:00 AM**: The server waits a grace period (`AUTO_SLEEP_GRACE_SECONDS`, default 5 minutes) for a dropped player to return, then the host sleeps and the next player arrives at 6:00 AM
+- **Everyone leaves mid-event**: A festival, wedding, or cutscene still running on the host is finished first, then the pause engages
 
 ### Progression Unlocks
 
