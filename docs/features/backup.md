@@ -87,20 +87,20 @@ docker compose stop server
 
 docker compose run --rm --no-deps --entrypoint sh server -c '
   set -eu
-  SAVE=Junimo_474497955193478706
-  cd /config/xdg/config/StardewValley/Saves/$SAVE
-  for f in $SAVE SaveGameInfo ${SAVE}_old SaveGameInfo_old; do
+  SAVE="Junimo_474497955193478706"
+  cd "/config/xdg/config/StardewValley/Saves/$SAVE"
+  for f in "$SAVE" SaveGameInfo "${SAVE}_old" SaveGameInfo_old; do
     [ -s "$f" ] || { echo "missing or empty: $f"; exit 1; }
   done
-  [ ! -e ${SAVE}_swap ] && [ ! -e SaveGameInfo_swap ] || { echo "leftover _swap files, clean up first"; exit 1; }
-  BACKUP=/config/xdg/config/StardewValley/Backups/${SAVE}_$(date +%Y%m%d-%H%M%S)
+  [ ! -e "${SAVE}_swap" ] && [ ! -e SaveGameInfo_swap ] || { echo "leftover _swap files, clean up first"; exit 1; }
+  BACKUP="/config/xdg/config/StardewValley/Backups/${SAVE}_$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP" && cp -a . "$BACKUP" && echo "backup: $BACKUP"
-  echo "current: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" $SAVE | tr "\n" " ")"
-  echo "old:     $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" ${SAVE}_old | tr "\n" " ")"
-  mv $SAVE ${SAVE}_swap && mv SaveGameInfo SaveGameInfo_swap
-  mv ${SAVE}_old $SAVE && mv SaveGameInfo_old SaveGameInfo
-  mv ${SAVE}_swap ${SAVE}_old && mv SaveGameInfo_swap SaveGameInfo_old
-  echo "swapped. main save now: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" $SAVE | tr "\n" " ")"
+  echo "current: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "$SAVE" | tr "\n" " ")"
+  echo "old:     $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "${SAVE}_old" | tr "\n" " ")"
+  mv "$SAVE" "${SAVE}_swap" && mv SaveGameInfo SaveGameInfo_swap
+  mv "${SAVE}_old" "$SAVE" && mv SaveGameInfo_old SaveGameInfo
+  mv "${SAVE}_swap" "${SAVE}_old" && mv SaveGameInfo_swap SaveGameInfo_old
+  echo "swapped. main save now: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "$SAVE" | tr "\n" " ")"
 '
 
 docker compose start server
@@ -123,7 +123,7 @@ docker compose exec server ls -la /config/xdg/config/StardewValley/Backups
 docker compose exec server rm -rf /config/xdg/config/StardewValley/Backups
 
 # Or remove a single one
-docker compose exec server rm -rf /config/xdg/config/StardewValley/Backups/<BACKUP_NAME>
+docker compose exec server rm -rf "/config/xdg/config/StardewValley/Backups/<BACKUP_NAME>"
 ```
 
 Restore a folder from a backup with the server stopped:
@@ -132,7 +132,7 @@ Restore a folder from a backup with the server stopped:
 docker compose stop server
 
 docker compose run --rm --no-deps --entrypoint sh server -c '
-  cp -a /config/xdg/config/StardewValley/Backups/<BACKUP_NAME>/. /config/xdg/config/StardewValley/Saves/<SAVE>/
+  cp -a "/config/xdg/config/StardewValley/Backups/<BACKUP_NAME>/." "/config/xdg/config/StardewValley/Saves/<SAVE>/"
 '
 
 docker compose start server
