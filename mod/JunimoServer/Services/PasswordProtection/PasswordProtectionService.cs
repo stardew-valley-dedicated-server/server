@@ -126,26 +126,6 @@ public class PasswordProtectionService : ModService
             }
         );
 
-        // The introduction snapshot must read IsPaused=false or the client's first fade-in
-        // never completes (black screen). Mask the flag only for the duration of the
-        // serialization instead of unpausing the world: an unpaused tick per join would let
-        // repeated lobby connections advance the clock (Game1.gameTimeInterval accumulates
-        // across pauses), and a lobby player never counts as present for the auto-pause.
-        harmony.Patch(
-            original: AccessTools.Method(
-                typeof(GameServer),
-                nameof(GameServer.sendServerIntroduction)
-            ),
-            prefix: new HarmonyMethod(
-                typeof(PasswordProtectionService),
-                nameof(SendServerIntroduction_MaskPause_Prefix)
-            ),
-            postfix: new HarmonyMethod(
-                typeof(PasswordProtectionService),
-                nameof(SendServerIntroduction_MaskPause_Postfix)
-            )
-        );
-
         // Filter messages from unauthenticated players
         harmony.Patch(
             original: AccessTools.Method(
@@ -288,32 +268,6 @@ public class PasswordProtectionService : ModService
 
         NetworkHelper.SendLocation(__instance, peer, lobbyGameLocation, forceCurrent: true);
         return true;
-    }
-
-    /// <summary>
-    /// PREFIX on sendServerIntroduction: present the world as unpaused inside the introduction
-    /// snapshot without unpausing it. The original serializes netWorldState synchronously, so
-    /// no game tick runs between this and the postfix.
-    /// </summary>
-    private static void SendServerIntroduction_MaskPause_Prefix(out bool __state)
-    {
-        __state = Game1.netWorldState.Value.IsPaused;
-        if (__state)
-        {
-            Game1.netWorldState.Value.IsPaused = false;
-        }
-    }
-
-    /// <summary>
-    /// POSTFIX on sendServerIntroduction: restore the pause state captured by the prefix. Runs
-    /// even when another prefix skipped the original.
-    /// </summary>
-    private static void SendServerIntroduction_MaskPause_Postfix(bool __state)
-    {
-        if (__state)
-        {
-            Game1.netWorldState.Value.IsPaused = true;
-        }
     }
 
     /// <summary>

@@ -173,6 +173,28 @@ public partial class CabinManagerService : ModService
             postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(OnServerJoined_Postfix))
         );
 
+        // Present the world as unpaused inside the introduction snapshot (prefix sets false,
+        // postfix restores) without actually unpausing it. An empty auto-paused server otherwise
+        // serializes IsPaused=true to a joining vanilla client, whose first fade-in never
+        // completes (black screen). A real unpause would let repeated lobby joins bank clock time
+        // (Game1.gameTimeInterval accrues across pauses) and a lobby player never counts as
+        // present for the auto-pause. Registered here unconditionally for the same reason as the
+        // disconnect heal above: PasswordProtectionService's patches are dead without a password.
+        harmony.Patch(
+            original: AccessTools.Method(
+                typeof(GameServer),
+                nameof(GameServer.sendServerIntroduction)
+            ),
+            prefix: new HarmonyMethod(
+                typeof(CabinManagerService),
+                nameof(SendServerIntroduction_MaskPause_Prefix)
+            ),
+            postfix: new HarmonyMethod(
+                typeof(CabinManagerService),
+                nameof(SendServerIntroduction_MaskPause_Postfix)
+            )
+        );
+
         // Always hook player disconnect to release abandoned slot claims, on ALL transports.
         // GameServer.playerDisconnected is the single choke point every transport routes through
         // (Steam SDR, GOG/Galaxy, LAN). This patch is registered here — unconditionally — rather
@@ -464,6 +486,32 @@ public partial class CabinManagerService : ModService
     private static void OnServerJoined_Postfix(long peer)
     {
         _instance?.OnServerJoined(peer);
+    }
+
+    /// <summary>
+    /// PREFIX on sendServerIntroduction: present the world as unpaused inside the introduction
+    /// snapshot without unpausing it. The original serializes netWorldState synchronously, so no
+    /// game tick runs between this and the postfix.
+    /// </summary>
+    private static void SendServerIntroduction_MaskPause_Prefix(out bool __state)
+    {
+        __state = Game1.netWorldState.Value.IsPaused;
+        if (__state)
+        {
+            Game1.netWorldState.Value.IsPaused = false;
+        }
+    }
+
+    /// <summary>
+    /// POSTFIX on sendServerIntroduction: restore the pause state captured by the prefix. Runs
+    /// even when another prefix skipped the original.
+    /// </summary>
+    private static void SendServerIntroduction_MaskPause_Postfix(bool __state)
+    {
+        if (__state)
+        {
+            Game1.netWorldState.Value.IsPaused = true;
+        }
     }
 
     // Postfix on GameServer.playerDisconnected — runs while the disconnecting farmhand is still
