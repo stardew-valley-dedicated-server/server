@@ -149,7 +149,7 @@ jobs:
 
             ${{ steps.changelog.outputs.upgrade-notes }}**Update**
             ```curl -fsSL -o docker-compose.yml ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.release-please.outputs.tag_name }}/docker-compose.yml && docker compose pull && docker compose up -d```
-            Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
+            No `curl`? Download the file from the link, then `docker compose pull && docker compose up -d`. Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
 
   stamp-issue-versions:
     name: Stamp Issue Versions

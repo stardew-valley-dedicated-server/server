@@ -10,6 +10,8 @@ curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-ser
 
 `.env`, saves, and settings are untouched. The post flags when `.env.example` gained new options.
 
+No `curl` (for example Windows PowerShell)? Download `docker-compose.yml` from the link in the command, replace yours, then run `docker compose pull && docker compose up -d`.
+
 A **docker-compose.yml does not match this image** warning at startup links the matching file.
 
 ## Customizing docker-compose
@@ -26,6 +28,10 @@ services:
 Settings such as ports and passwords go in `.env`; see [Environment Variables](/admins/configuration/environment).
 
 ## Upgrade Notes
+
+### Updates replace `docker-compose.yml`
+
+The update command overwrites `docker-compose.yml`. If you edited it by hand (extra mod mounts, port changes), move those edits to a `docker-compose.override.yml` before running the command, or they are lost and the server starts without them. See [Customizing docker-compose](#customizing-docker-compose).
 
 ### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
 

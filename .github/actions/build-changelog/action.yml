@@ -78,7 +78,7 @@ runs:
         changed=$(git diff --name-only "$BASE_OID" "$HEAD_OID" -- docker-compose.yml .env.example)
         notes=""
         if grep -qx 'docker-compose.yml' <<< "$changed"; then
-          notes+='⚠ `docker-compose.yml` changed — the update command below fetches the new one.'$'\n'
+          notes+='⚠ `docker-compose.yml` changed — the update command below replaces yours. Hand-edited it? Move the edits to `docker-compose.override.yml` first.'$'\n'
         fi
         if grep -qx '.env.example' <<< "$changed"; then
           notes+="⚠ \`.env.example\` changed — check [the new file](${REPO_URL}/blob/${HEAD_OID}/.env.example) for options to add to your \`.env\`."$'\n'
