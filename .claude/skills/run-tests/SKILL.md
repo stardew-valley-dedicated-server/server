@@ -50,6 +50,19 @@ make test-llm FILTER=Login_WithCorrectPassword
 `dotnet test` directly is not supported — the test assembly fails fast
 with a clear error message if invoked outside the custom runner.
 
+Two launch-time traps that produce a green-looking run with a hole in it:
+
+- **`FILTER` matches test *names*, never file names.** A file can hold classes named
+  differently from itself (`LobbyHomedSpouseTests.cs` holds `LobbyHomedSpouseHealTests` and
+  `LobbyHomedSpouseSteadyStateTests`), so `FILTER=LobbyHomedSpouseTests` runs nothing from it
+  and reports no error. After any filtered run, confirm the intended classes appear in
+  `ctrf-report.json` before treating them as covered.
+- **A full run needs `STEAM_ACCOUNTS` set in `.env.test`.** With the Steam classes in scope
+  and no accounts, preflight fails the whole run ("Requirements not satisfied") before any
+  test executes — nothing is skipped. The accounts overlap with CI's, so check
+  `gh run list --workflow e2e-tests.yml --status in_progress` is empty before enabling them,
+  or exclude the four Steam classes with an inclusion filter.
+
 ## Debugging Loop (LLM-Optimized)
 
 When tests fail, follow `docs/developers/testing/test-failure-runbook.md` exactly — it is the authoritative triage order, including container-log slicing and SSH-tunnel failures. The steps below are the quick reference for what each command shows:
