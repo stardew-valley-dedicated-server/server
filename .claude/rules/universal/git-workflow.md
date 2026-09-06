@@ -1,21 +1,25 @@
-# Stage git files explicitly by path — never `git add .`
-
-Project-specific git rules; generic git knowledge is assumed.
+# Git workflow
 
 ## Staging
 
-- Never use `git add .` or `git add -A`. Stage files explicitly by path.
-- Verify ignore status with `git check-ignore -v --no-index <path>` (without `--no-index` it reports nothing for tracked paths); parent patterns (e.g. `**/bin`) affect nested files. Tracked files inside an ignored directory: stage with `-f` or add a negation pattern.
-- `git commit` commits the **entire index**, not just what you staged. Run `git diff --cached --name-only` immediately before committing; `git restore --staged` any extras. Recovery for a bad commit: `git reset --soft HEAD~1` + re-stage — safe only while unpushed.
+- Stage by explicit path. Never `git add .` / `-A`.
+- `git diff --cached --name-only` before every commit; `git restore --staged` extras.
+- Ignore check: `git check-ignore -v --no-index <path>`. Tracked file in ignored dir: `git add -f`.
+
+## Remote
+
+- SSH only. Never HTTPS.
+- SSH unavailable (no key, no agent, `Permission denied`): stop, ask the user to enable it.
 
 ## Merging
 
-- `master` enforces strict "up to date before merge". A PR merges once its branch is up to date with `master`, it is approved, and its required checks pass. Update a behind branch (the PR's **Update branch** button) so checks re-run against the tip, then merge with `gh pr merge <num> --squash` — or `--squash --auto` to merge automatically once checks pass.
-- The PR author self-approves by commenting `!approve` on the PR (repo automation posts the approving review); `gh pr review --approve` fails for the author's own token.
+- Branch must be up to date with `master`, approved, green. Behind: use the PR's **Update branch** button.
+- Approve: comment `!approve` on the PR (`gh pr review --approve` fails for the author).
+- Merge: `gh pr merge <num> --squash [--auto]`.
 
 ## Chained PRs
 
-When a child PR depends on a parent PR, after the parent merges:
+After the parent merges (it was squashed, so plain `git rebase master` replays its commits):
 
 ```bash
 gh pr edit <child-num> --base master
@@ -24,36 +28,26 @@ git rebase --onto origin/master <old-parent-head> && git push --force-with-lease
 gh pr merge <child-num> --squash --auto
 ```
 
-Rebase with `--onto origin/master <old-parent-head>` (the parent branch's final commit), not plain `git rebase master`: the parent was squash-merged, so a plain rebase replays its now-squashed commits and conflicts or duplicates them.
-
 ## Rebasing
 
-- After resolving a commit's conflicts, **build before `git rebase --continue`**. Clearing the visible `<<<<<<<` markers is not "done" — a clean auto-merge can leave non-compiling code no marker flags, when the base branch refactored a type your commit uses in an *un-conflicted* region (e.g. a master commit turned a string setting into a typed enum; three conflicts resolved cleanly, then four `CS0029`/`CS1503` errors surfaced only on build, all in auto-merged hunks). An uncaught break gets baked into the rebased commit and propagates to every commit replayed on top.
-- Build once more at the end: later commits replay on the changed base, so one that applied cleanly against the old base can still be broken by the new one.
+- Build before every `git rebase --continue` and once at the end. Auto-merged hunks can break without conflict markers.
 
-## Commit messages
+## Commits and PRs
 
-Conventional commits, enforced by commitlint (`config-conventional`): body capped at 100 chars/line. Wrap body lines (use `git commit -F <file>`).
-
-No `Co-Authored-By` trailer on commits — same as the PR rule below. This deliberately overrides the Claude Code default of appending one.
-
-## PR Descriptions
-
-Bullet points of changes. No co-author attributions.
+- Conventional commits (commitlint), body lines max 100 chars, `git commit -F <file>`.
+- No `Co-Authored-By` trailer. No co-author attribution in PRs.
+- PR description: bullet points of changes.
 
 ## Bot review threads
 
-Every CodeRabbit/Greptile inline thread ends **resolved**, never merely outdated — an outdated-but-open thread reads as unaddressed to a human. CodeRabbit auto-resolves only threads its re-review of the pushed commit judges satisfied, so:
-
-- **Applied finding:** push the fix, then check the thread resolved. If the bot still holds out, reply in-thread naming the commit and what changed, and resolve it yourself.
-- **Rejected finding:** reply *inside the thread* (not a PR-level comment) with the reason and a citation, then resolve it. Rejections still get verified per `bot-review-blind-spots.md` — resolving is bookkeeping, not agreement.
-
-Resolve via GraphQL (`gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<PRRT_…>"}) { thread { isResolved } } }'`); thread ids come from `pullRequest.reviewThreads`. Reply to a thread with `gh api repos/<owner>/<repo>/pulls/<num>/comments/<root-comment-id>/replies -f body=…`.
+- Every CodeRabbit/Greptile thread ends resolved, never just outdated.
+- Applied: push, confirm resolved; else reply in-thread naming the commit, resolve.
+- Rejected: reply in-thread with reason and citation, resolve. Verify per `bot-review-blind-spots.md`.
+- Resolve: `gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<PRRT_…>"}) { thread { isResolved } } }'` (ids from `pullRequest.reviewThreads`).
+- Reply: `gh api repos/<owner>/<repo>/pulls/<num>/comments/<root-comment-id>/replies -f body=…`.
 
 ## Worktrees
 
-A worktree has **no `decompiled/`** — it's gitignored (~1 GB) and `.worktreeinclude` copies files, not directories. Read decompiled sources from the main checkout (`git worktree list` lists it first); every `decompiled/...` citation in rules and plans resolves against that checkout, not your worktree.
-
-Don't "solve" this by linking it in: `git worktree remove --force` deletes *through* a junction, destroying the main checkout's copy (gitignored, so unrecoverable), and ripgrep doesn't follow one — `Grep` would return silent zero-match results while `Read` on the same path works.
-
-Worktrees live at `../worktrees/<name>` — never inside the repo. Create them via EnterWorktree: the `WorktreeCreate` hook (`.claude/hooks/worktree-create.mjs`) places them there, branches `<name>` from `master` (so name it like a branch: `fix/...`, `feat/...`), copies the `.worktreeinclude` files, and runs `npm ci`. Don't hand-roll `git worktree add` — if the hook path is ever unavailable, replicate those steps yourself. `ExitWorktree` can leave but not remove a worktree mid-session; clean up with `git worktree remove --force "../worktrees/<name>"` (deletes uncommitted changes; keep the branch if a PR depends on it). On Windows `Filename too long`: `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"` then `git worktree prune`.
+- Location: `../worktrees/<name>`, never inside the repo. Create via EnterWorktree (hook branches `<name>` from `master`, copies `.worktreeinclude`, runs `npm ci`). Name like a branch: `fix/...`, `feat/...`.
+- No `decompiled/` in worktrees. Read it from the main checkout (`git worktree list`, first entry). Never link it in.
+- Remove: `git worktree remove --force "../worktrees/<name>"`. Windows `Filename too long`: `powershell.exe -NoProfile -Command "Remove-Item -LiteralPath '<abs-path>' -Recurse -Force"`, then `git worktree prune`.
