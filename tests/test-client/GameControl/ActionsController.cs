@@ -453,12 +453,15 @@ public class ActionsController
                 continue;
             }
 
+            var door = building.getPointForHumanDoor();
             cabins.Add(
                 new FarmBuildingInfo
                 {
                     Name = building.GetIndoors()?.NameOrUniqueName ?? "",
                     TileX = building.tileX.Value,
                     TileY = building.tileY.Value,
+                    DoorX = door.X,
+                    DoorY = door.Y,
                     // HasInterior == false means the door is dead: Building.doAction only warps
                     // the player inside when GetIndoors() != null, so a null interior is an
                     // unenterable (door-dead) cabin — what the dummy-cabin prop must be.
@@ -467,7 +470,15 @@ public class ActionsController
             );
         }
 
-        return new FarmBuildingsResult { Success = true, Cabins = cabins };
+        return new FarmBuildingsResult
+        {
+            Success = true,
+            Cabins = cabins,
+            // Game1.getFarm() answers from the current location's root when the player is
+            // inside a building, so a Farm replaced by a re-sent introduction while the player
+            // stood in one of its interiors is reachable here but absent from Game1.locations.
+            IsLiveFarm = Game1.locations.Contains(farm),
+        };
     }
 
     /// <summary>
@@ -630,6 +641,10 @@ public class FarmBuildingInfo
     public int TileX { get; set; }
     public int TileY { get; set; }
 
+    /// <summary>Tile of the human door (Building.getPointForHumanDoor): the walk-onto target.</summary>
+    public int DoorX { get; set; }
+    public int DoorY { get; set; }
+
     /// <summary>True if this building has an interior the player can enter (door is live).</summary>
     public bool HasInterior { get; set; }
 }
@@ -639,6 +654,12 @@ public class FarmBuildingsResult
     public bool Success { get; set; }
     public string? Error { get; set; }
     public List<FarmBuildingInfo> Cabins { get; set; } = new();
+
+    /// <summary>
+    /// True when the farm this view was read from is the one in Game1.locations. False means
+    /// the player stands inside an interior of a Farm that a re-sent introduction replaced.
+    /// </summary>
+    public bool IsLiveFarm { get; set; }
 }
 
 public class LocationWarpInfo

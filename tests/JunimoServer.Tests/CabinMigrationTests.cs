@@ -289,7 +289,8 @@ public class CabinMigrationTests : TestBase
     /// <summary>
     /// A connected peer sees every master cabin at its placed tile, enterable, after a
     /// CabinStack → None commit without reconnecting. The peer's intro-only phantom at the
-    /// stack spot stays until reconnect and is excluded.
+    /// stack spot (placed live by the !cabin move's re-introduction) is removed by the
+    /// commit's re-introduction, both without a reconnect.
     /// </summary>
     [Fact]
     public async Task StagedMigration_StackedToNone_ConnectedPeerSeesPlacedCabinsLive()
@@ -308,8 +309,8 @@ public class CabinMigrationTests : TestBase
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, 40, 18, ct);
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, 40, 30, ct);
 
-        // Move the cabin out of the stack at the standard footprint, then reconnect so the client
-        // receives a fresh Farm introduction carrying the door-dead dummy at the shared stack.
+        // Move the cabin out of the stack at the standard footprint; the move re-sends the Farm
+        // introduction, which carries the door-dead dummy at the shared stack.
         await CabinPlacementHelper.WarpAndClearFootprintAsync(GameClient, ct);
         CabinInfoResponse? movedCabin = null;
         var moved = await PollingHelper.WaitUntilAsync(
@@ -326,11 +327,9 @@ public class CabinMigrationTests : TestBase
         Assert.True(moved, "the primary's cabin should move out of the stack via !cabin");
         var movedTile = (movedCabin!.TileX, movedCabin.TileY);
 
-        await Farmers.DisconnectAndWaitForSlotAsync(ownerId, primary.FarmerName, ct);
-        await Farmers.ReconnectAsync(primary.FarmerName, ct: ct);
-
-        // Pre-condition: the client renders a door-dead dummy (HasInterior == false) alongside its
-        // own enterable moved cabin — the nulled interior the commit must heal.
+        // Pre-condition: without a reconnect, the client renders a door-dead dummy
+        // (HasInterior == false) alongside its own enterable moved cabin — the phantom the
+        // commit must remove.
         var sawDummy = await PollingHelper.WaitUntilAsync(
             WaitName.Polling_DummyCabin_VisibleInClientFarm,
             async () =>
@@ -445,6 +444,40 @@ public class CabinMigrationTests : TestBase
             converged,
             "after the → None commit every master cabin should be enterable at its placed tile in "
                 + "the connected peer's farm view without a reconnect (saw: "
+                + (
+                    lastView == null
+                        ? "null"
+                        : string.Join(
+                            ", ",
+                            lastView.Cabins.Select(c =>
+                                $"({c.TileX},{c.TileY},interior={c.HasInterior})"
+                            )
+                        )
+                )
+                + ")"
+        );
+
+        // The door-less phantom is intro-only state the commit cannot delta away; the commit
+        // re-sends the Farm introduction to the peer standing on the Farm, and under None the
+        // interceptor leaves the master Farm untouched.
+        var phantomGone = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinMigration_PhantomGoneLive,
+            async () =>
+            {
+                lastView = await GameClient.Actions.GetFarmBuildings(ct);
+                return lastView?.Success == true
+                    && lastView.IsLiveFarm
+                    && lastView.Cabins.All(c => c.HasInterior)
+                    && master.Cabins.All(m =>
+                        lastView.Cabins.Any(c => c.TileX == m.TileX && c.TileY == m.TileY)
+                    );
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            phantomGone,
+            "after the commit no door-less cabin should remain in the peer's view without a reconnect (saw: "
                 + (
                     lastView == null
                         ? "null"

@@ -120,6 +120,12 @@ public class PlayerInfo
 
     /// <summary>Whether the player is currently online.</summary>
     public bool IsOnline { get; set; }
+
+    /// <summary>
+    /// Unique name of the location the player is in, or is arriving in (the replicated
+    /// destination, ahead of the netcode interpolation window). Empty when unresolved.
+    /// </summary>
+    public string Location { get; set; } = "";
 }
 
 /// <summary>
@@ -1503,6 +1509,7 @@ public partial class ApiService : ModService
                         Id = farmer.UniqueMultiplayerID,
                         Name = farmer.Name ?? farmer.displayName ?? "Unknown",
                         IsOnline = true,
+                        Location = farmer.GetTargetLocation()?.NameOrUniqueName ?? "",
                     }
                 );
             }

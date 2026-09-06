@@ -19,7 +19,7 @@ Benefits:
 - No cabin placement conflicts
 - Each player still has their own private space
 
-Admins can move the shared spot every player sees their cabin at: `cabins stackspot` (server console) shows the current spot, `cabins stackspot <x> <y>` sets it, and the in-game `!stackspot` / `!stackspot place` admin chat command does the same visually. Connected players see the new spot after they reconnect.
+Admins can move the shared spot every player sees their cabin at: `cabins stackspot` (server console) shows the current spot, `cabins stackspot <x> <y>` sets it, and the in-game `!stackspot` / `!stackspot place` admin chat command does the same visually. Connected players see the new spot right away, except players inside a building, who see it after next leaving the farm (or a reconnect). A player changing areas at that exact moment may need to reconnect.
 
 ## FarmhouseStack
 
@@ -56,7 +56,7 @@ A rejected settings-file switch reverts only the server's active strategy — th
 
 Directions that materialize a cabin on a developed farm go through a staged, admin-driven migration. Nothing is ever destroyed: every placement is validated against the live farm (occupied or blocked spots are skipped, never cleared), the current strategy stays fully active while you stage, and the switch happens only at an explicit commit — so aborting is always safe.
 
-Prefer committing while the server is empty: players connected during the migration keep seeing the pre-migration cabin layout until they reconnect.
+Players connected during the commit get the new layout right away, except players inside a building, who get it after next leaving the farm (or a reconnect); the commit output names them. Commit at a calm moment: a player changing areas at that exact instant may need to reconnect.
 
 1. `cabins migrate start <strategy>` (server console) — validates the direction, auto-places what fits on the map's designated spots, and reports how many placements remain.
 2. Place the remainder anywhere valid: stand in-game where a cabin should go and run `!migrate place` (admin chat command, places to your right like `!cabin`), or use `cabins migrate place <x> <y>` from the console. `cabins migrate status` shows progress.

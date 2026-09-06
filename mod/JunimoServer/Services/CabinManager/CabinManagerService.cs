@@ -187,6 +187,17 @@ public partial class CabinManagerService : ModService
             )
         );
 
+        // Deferred Farm re-introduction rides behind the answer to a peer's own warp request
+        // (see CabinManagerService.FarmReintroduction).
+        harmony.Patch(
+            original: AccessTools.Method(
+                typeof(GameServer),
+                "warpFarmer",
+                new[] { typeof(Farmer), typeof(short), typeof(short), typeof(string), typeof(bool) }
+            ),
+            postfix: new HarmonyMethod(typeof(CabinManagerService), nameof(WarpFarmer_Postfix))
+        );
+
         // Defensive: make Utility.getHomeOfFarmer null-safe.
         // The vanilla implementation calls RequireLocation which throws KeyNotFoundException
         // if the cabin interior isn't findable yet (e.g. during new game setup, day transitions,
@@ -462,10 +473,13 @@ public partial class CabinManagerService : ModService
     private static void OnPlayerDisconnected_Postfix(long disconnectee)
     {
         CleanupAbandonedCabinClaim(disconnectee);
+        _instance?._pendingFarmReintroductions.Remove(disconnectee);
     }
 
     private void OnServerJoined(long peer)
     {
+        // The join introduction carries the current fiction; a queued re-send is moot.
+        _pendingFarmReintroductions.Remove(peer);
         AddPeer(peer);
         EnsureAtLeastXCabins(excludePeer: peer);
     }
@@ -782,9 +796,9 @@ public partial class CabinManagerService : ModService
     /// <summary>
     /// Sets the CabinStack shared stack spot (writes the persisted DefaultCabinLocation).
     /// CabinStack-only; refused during a staged migration (the migration owns the spot
-    /// choice via 'cabins migrate place'); footprint-validated. Connected players keep
-    /// seeing the old spot until they reconnect — the ghost position is written into each
-    /// peer's location-introduction message, and deltas rewrite warps, not positions.
+    /// choice via 'cabins migrate place'); footprint-validated. Connected players get a Farm
+    /// re-introduction — the ghost position lives only in each peer's location-introduction
+    /// copy, and deltas rewrite warps, not positions.
     /// </summary>
     public bool TrySetStackSpot(Point topLeft, out string message)
     {
@@ -820,8 +834,8 @@ public partial class CabinManagerService : ModService
         Data.DefaultCabinLocation = topLeft.ToVector2();
         Data.Write();
         message =
-            $"Stack spot set to ({topLeft.X},{topLeft.Y}). "
-            + "Connected players see it after they reconnect.";
+            $"Stack spot set to ({topLeft.X},{topLeft.Y})."
+            + DescribeDeferredReintroductions(ReintroduceFarmToOnlinePeers());
         Monitor.Log(message, LogLevel.Info);
         return true;
     }

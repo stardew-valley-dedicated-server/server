@@ -313,6 +313,13 @@ public class FarmBuildingInfo
     [JsonPropertyName("tileY")]
     public int TileY { get; set; }
 
+    /// <summary>Tile of the human door: the walk-onto target.</summary>
+    [JsonPropertyName("doorX")]
+    public int DoorX { get; set; }
+
+    [JsonPropertyName("doorY")]
+    public int DoorY { get; set; }
+
     /// <summary>True if this building has an interior the player can enter (door is live).</summary>
     [JsonPropertyName("hasInterior")]
     public bool HasInterior { get; set; }
@@ -328,6 +335,13 @@ public class FarmBuildingsResult
 
     [JsonPropertyName("cabins")]
     public List<FarmBuildingInfo> Cabins { get; set; } = new();
+
+    /// <summary>
+    /// True when the client's farm view is the Farm in Game1.locations; false when the player
+    /// stands inside an interior of a Farm that a re-sent introduction replaced.
+    /// </summary>
+    [JsonPropertyName("isLiveFarm")]
+    public bool IsLiveFarm { get; set; }
 }
 
 public class LocationWarpInfo

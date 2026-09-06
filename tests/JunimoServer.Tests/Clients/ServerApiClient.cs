@@ -91,6 +91,10 @@ public class PlayerInfo
 
     [JsonPropertyName("isOnline")]
     public bool IsOnline { get; set; }
+
+    /// <summary>Unique name of the location the server sees the player in (or arriving in).</summary>
+    [JsonPropertyName("location")]
+    public string Location { get; set; } = string.Empty;
 }
 
 /// <summary>
