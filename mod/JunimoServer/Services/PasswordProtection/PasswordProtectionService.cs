@@ -126,6 +126,26 @@ public class PasswordProtectionService : ModService
             }
         );
 
+        // The introduction snapshot must read IsPaused=false or the client's first fade-in
+        // never completes (black screen). Mask the flag only for the duration of the
+        // serialization instead of unpausing the world: an unpaused tick per join would let
+        // repeated lobby connections advance the clock (Game1.gameTimeInterval accumulates
+        // across pauses), and a lobby player never counts as present for the auto-pause.
+        harmony.Patch(
+            original: AccessTools.Method(
+                typeof(GameServer),
+                nameof(GameServer.sendServerIntroduction)
+            ),
+            prefix: new HarmonyMethod(
+                typeof(PasswordProtectionService),
+                nameof(SendServerIntroduction_MaskPause_Prefix)
+            ),
+            postfix: new HarmonyMethod(
+                typeof(PasswordProtectionService),
+                nameof(SendServerIntroduction_MaskPause_Postfix)
+            )
+        );
+
         // Filter messages from unauthenticated players
         harmony.Patch(
             original: AccessTools.Method(
@@ -271,6 +291,32 @@ public class PasswordProtectionService : ModService
     }
 
     /// <summary>
+    /// PREFIX on sendServerIntroduction: present the world as unpaused inside the introduction
+    /// snapshot without unpausing it. The original serializes netWorldState synchronously, so
+    /// no game tick runs between this and the postfix.
+    /// </summary>
+    private static void SendServerIntroduction_MaskPause_Prefix(out bool __state)
+    {
+        __state = Game1.netWorldState.Value.IsPaused;
+        if (__state)
+        {
+            Game1.netWorldState.Value.IsPaused = false;
+        }
+    }
+
+    /// <summary>
+    /// POSTFIX on sendServerIntroduction: restore the pause state captured by the prefix. Runs
+    /// even when another prefix skipped the original.
+    /// </summary>
+    private static void SendServerIntroduction_MaskPause_Postfix(bool __state)
+    {
+        if (__state)
+        {
+            Game1.netWorldState.Value.IsPaused = true;
+        }
+    }
+
+    /// <summary>
     /// Ensures the player has a valid, real (non-lobby) cabin assignment after vanilla's
     /// checkFarmhandRequest approves them. Delegates to the shared reconciliation core in
     /// CabinManagerService (ownership-first reassignment), which the load/day-start sweeps
@@ -311,15 +357,6 @@ public class PasswordProtectionService : ModService
         if (!IsEnabled || farmer?.Value == null)
         {
             return;
-        }
-
-        // Unpause the game before sendServerIntroduction runs.
-        // When no players are connected, the server is paused. If we don't unpause here,
-        // the initial world state sent to the client will have IsPaused=true, causing
-        // black screen on connect (the fade-in never completes while paused).
-        if (Game1.netWorldState.Value.IsPaused)
-        {
-            Game1.netWorldState.Value.IsPaused = false;
         }
 
         var farmerId = farmer.Value.UniqueMultiplayerID;
@@ -556,6 +593,9 @@ public class PasswordProtectionService : ModService
         {
             if (_pendingPostTransitionAuth.TryRemove(playerId, out _))
             {
+                // The player counts as present from now on; keep the world unpaused so the
+                // first delta they see after the transition is not a stale IsPaused=true.
+                Game1.netWorldState.Value.IsPaused = false;
                 _lobbyService.UnregisterUnauthenticatedPlayer(playerId);
                 _monitor.Log(
                     $"[Auth] Completed deferred barrier unregister for {playerId} after day transition",
@@ -638,10 +678,11 @@ public class PasswordProtectionService : ModService
                     authData.PlayerId,
                     "Authentication timeout. Disconnecting..."
                 );
-                // Remove auth data immediately to prevent repeated kick attempts on subsequent ticks
+                // Remove auth data immediately to prevent repeated kick attempts on subsequent ticks.
+                // The lobby registration stays until the kick's disconnect lands (OnPlayerDisconnected):
+                // dropping it here would count the player as present, and unpause, for the ticks in
+                // between.
                 _playerAuthData.TryRemove(authData.PlayerId, out _);
-                // Also unregister from lobby exclusions
-                _lobbyService.UnregisterUnauthenticatedPlayer(authData.PlayerId);
                 Game1.server.kick(authData.PlayerId);
                 continue;
             }
@@ -815,7 +856,10 @@ public class PasswordProtectionService : ModService
             return;
         }
 
-        // Safe to unregister immediately; no barriers active
+        // Safe to unregister immediately; no barriers active. Unpause first: the player counts
+        // as present from now on, and the warp below must not reach them under a stale
+        // IsPaused=true delta before the auto-pause re-evaluates at the end of the tick.
+        Game1.netWorldState.Value.IsPaused = false;
         _lobbyService.UnregisterUnauthenticatedPlayer(authData.PlayerId);
 
         // Always warp to cabin entry - matches vanilla game behavior on connect

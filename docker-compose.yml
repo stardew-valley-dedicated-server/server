@@ -29,6 +29,8 @@ services:
       ALLOW_INSECURE_SETUP: "${ALLOW_INSECURE_SETUP:-false}"
       SERVER_TPS: "${SERVER_TPS:-60}"
       SERVER_FPS: "${SERVER_FPS:-0}"
+      # Wall-clock grace before an empty server past 1:00 AM closes its day
+      AUTO_SLEEP_GRACE_SECONDS: "${AUTO_SLEEP_GRACE_SECONDS:-300}"
       # TPS-agnostic pacing kill-switch: false restores vanilla per-tick pacing (~60/TPS× slower)
       SDVD_TPS_AGNOSTIC_PACING: "${SDVD_TPS_AGNOSTIC_PACING:-true}"
       # Game settings file path (auto-created with defaults if missing)

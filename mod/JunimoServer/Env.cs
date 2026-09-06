@@ -26,6 +26,17 @@ internal class Env
 
     public static readonly int HealthCheckSeconds = ParseInt("HEALTH_CHECK_SECONDS", 300);
 
+    /// <summary>
+    /// Wall-clock seconds an empty server waits past 1:00 AM in-game before the host sleeps
+    /// and closes the day. Long enough for a dropped player to reconnect to the time they
+    /// left; short enough that the next player arrives at a fresh morning.
+    /// Default: 300
+    /// </summary>
+    public static readonly int AutoSleepGraceSeconds = Math.Max(
+        0,
+        ParseInt("AUTO_SLEEP_GRACE_SECONDS", 300)
+    );
+
     public static readonly bool ForceNewDebugGame = ParseBool("FORCE_NEW_DEBUG_GAME", false);
 
     /// <summary>

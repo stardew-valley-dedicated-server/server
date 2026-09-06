@@ -58,6 +58,9 @@ public partial class ApiService
                     case "/test/festival_state":
                         await WriteJsonAsync(response, await HandleGetTestFestivalStateAsync());
                         return;
+                    case "/test/farmevent_state":
+                        await WriteJsonAsync(response, await HandleGetTestFarmEventStateAsync());
+                        return;
                     case "/test/farmers":
                         await WriteJsonAsync(response, await HandleGetTestFarmersAsync(request));
                         return;
@@ -561,6 +564,34 @@ public partial class ApiService
     }
 
     [ApiEndpoint(
+        "GET",
+        "/test/farmevent_state",
+        Summary = "Read the host's active overnight FarmEvent (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestFarmEventStateResponse), 200)]
+    private async Task<TestFarmEventStateResponse> HandleGetTestFarmEventStateAsync()
+    {
+        var result = new TestFarmEventStateResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                result.Active = Game1.farmEvent != null;
+                result.Type = Game1.farmEvent?.GetType().Name;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
         "POST",
         "/test/farmevent",
         Summary = "Queue an overnight FarmEvent for the next night (test-only)",
@@ -579,6 +610,9 @@ public partial class ApiService
         StardewValley.Events.FarmEvent? farmEvent = type switch
         {
             "qiplane" => new StardewValley.Events.QiPlaneEvent(),
+            // Thunder + message only, no tile preconditions, and it takes several seconds of
+            // unpaused ticks to finish: the deterministic multi-tick farm event for pause tests.
+            "earthquake" => new StardewValley.Events.SoundInTheNightEvent(4),
             _ => null,
         };
 
@@ -587,7 +621,7 @@ public partial class ApiService
             return new TestFarmEventResponse
             {
                 Success = false,
-                Error = $"Unknown farm event type '{type}' (supported: qiplane)",
+                Error = $"Unknown farm event type '{type}' (supported: qiplane, earthquake)",
             };
         }
 
