@@ -1017,9 +1017,11 @@ public class AlwaysOnServer : ModService
 
     /// <summary>
     /// Pause the world whenever no authenticated player is present and the host is at rest,
-    /// at any time of day. Past 1:00 AM an empty server additionally starts a wall-clock grace
-    /// timer and, if nobody returns before it elapses, puts the host to sleep so the next
-    /// player arrives at a fresh 6:00 AM instead of minutes before the 2:00 AM pass-out.
+    /// at any time of day. From 1:00 AM (timeOfDay 2500) on, an empty server additionally starts
+    /// a wall-clock grace timer and, if nobody returns before it elapses, puts the host to sleep
+    /// so the next player arrives at a fresh 6:00 AM instead of minutes before the 2:00 AM
+    /// pass-out. The 2500 boundary is inclusive: an empty server frozen at exactly 1:00 AM must
+    /// roll over too, else it sits paused there until someone returns.
     /// The clock never runs with nobody present: the server is either paused, finishing
     /// something the pause would freeze, or inside the day transition.
     /// </summary>
@@ -1065,7 +1067,7 @@ public class AlwaysOnServer : ModService
             return;
         }
 
-        if (Game1.timeOfDay > 2500)
+        if (Game1.timeOfDay >= 2500)
         {
             _emptyPastCutoffSince ??= DateTime.UtcNow;
         }
@@ -1107,7 +1109,7 @@ public class AlwaysOnServer : ModService
         )
         {
             SleepHostNow(
-                $"Server empty past 1:00 AM for {Env.AutoSleepGraceSeconds}s, host going to sleep"
+                $"Server empty at or past 1:00 AM for {Env.AutoSleepGraceSeconds}s, host going to sleep"
             );
         }
     }
