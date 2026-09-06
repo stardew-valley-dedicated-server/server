@@ -19,6 +19,18 @@ namespace JunimoServer.Services.CabinManager;
 /// </summary>
 public static class CabinPlacementValidator
 {
+    /// <summary>
+    /// Validates a cabin-sized footprint at <paramref name="topLeft"/> without a cabin to
+    /// move: the probe is a detached Building, so no footprint is exempted as "its own tiles"
+    /// and the check is the same whether or not any cabin currently exists. Used for the
+    /// CabinStack shared stack spot, which is empty on the master.
+    /// </summary>
+    public static bool TryValidateFootprint(Farm farm, Point topLeft, out string failureReason)
+    {
+        var probe = new Building("Cabin", topLeft.ToVector2());
+        return TryValidate(farm, probe, topLeft, out failureReason);
+    }
+
     public static bool TryValidate(
         Farm farm,
         Building cabin,
