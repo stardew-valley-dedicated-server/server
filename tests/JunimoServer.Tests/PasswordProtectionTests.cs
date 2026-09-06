@@ -308,13 +308,13 @@ public class PasswordProtectionTests : TestBase
             $"Before day transition: {seasonBefore} {dayBefore} Y{yearBefore}, Time {statusBefore.TimeOfDay}"
         );
 
-        // Trigger a day transition by setting time to pass-out which forces the day to advance.
-        // The server's host bot auto-sleeps when no authenticated players are connected,
-        // and the lobby player is excluded from sleep checks.
-        var setTimeResult = await ServerApi.SetTime(TestTimings.PassOutTime, TestCt);
+        // Trigger a day transition: past 1:00 AM a server with no authenticated player pauses
+        // and, after AUTO_SLEEP_GRACE_SECONDS (seconds in the test config), the host sleeps.
+        // The lobby player does not count as present and is excluded from the sleep checks.
+        var setTimeResult = await ServerApi.SetTime(TestTimings.PrePassOutTime, TestCt);
         Assert.NotNull(setTimeResult);
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
-        Log("Set time to 2600, waiting for day transition...");
+        Log("Set time to 2550, waiting for the grace sleep and day transition...");
 
         // Wait for day to change and server to finish the transition
         var dayChanged = await DayChange.WaitAsync(dayBefore, seasonBefore, yearBefore, TestCt);

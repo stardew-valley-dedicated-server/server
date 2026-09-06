@@ -280,6 +280,12 @@ public class ServerContainer : IAsyncDisposable
                 "SDVD_TPS_AGNOSTIC_PACING",
                 TestEnvLoader.Get("SDVD_TPS_AGNOSTIC_PACING") ?? "true"
             )
+            // Tests that advance a day with no client connected wait on this grace, so it
+            // defaults to seconds here instead of the production 300.
+            .WithEnvironment(
+                "AUTO_SLEEP_GRACE_SECONDS",
+                TestEnvLoader.Get("AUTO_SLEEP_GRACE_SECONDS") ?? "5"
+            )
             // SERVER_FPS drives both the in-container draw cap and the recorder's
             // sample rate (they're literally the same value; sampling X11 faster
             // than the framebuffer updates is wasted). 0 = rendering disabled.

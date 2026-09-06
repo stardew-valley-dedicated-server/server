@@ -280,8 +280,9 @@ public class LobbyHomedSpouseSteadyStateTests : TestBase
     }
 
     /// <summary>
-    /// Advances one in-game day with NO clients connected: the host passes out at 2:00 AM
-    /// (same pattern as HostAutomationTests.HostPassesOut_WhenTimeReaches2AM).
+    /// Advances one in-game day with NO clients connected: past 1:00 AM the empty server
+    /// pauses and, after AUTO_SLEEP_GRACE_SECONDS (seconds in the test config), the host sleeps
+    /// (same pattern as HostAutomationTests.HostSleepsAfterGrace_WhenServerEmptyPastOneAm).
     /// </summary>
     private async Task AdvanceDayServerOnlyAsync(CancellationToken ct)
     {
@@ -440,7 +441,7 @@ public class LobbyHomedSpouseHealTests : TestBase
                 + $"(at '{poisonedNpc?.SpouseCurrentLocation}')."
         );
 
-        // One real day transition, server alone (host passes out at 2:00 AM).
+        // One real day transition, server alone (the host sleeps after the empty-server grace).
         var before = await ServerApi.GetStatus(ct);
         Assert.NotNull(before);
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);

@@ -175,7 +175,7 @@ public static class TestTimings
     /// <summary>One tick before 2:00 AM pass-out (2550 → 2600 in ~7s).</summary>
     public const int PrePassOutTime = 2550;
 
-    /// <summary>2:00 AM. Game forces performPassoutWarp() at this time.</summary>
+    /// <summary>2:00 AM. The game forces the host pass-out at this time.</summary>
     public const int PassOutTime = 2600;
 
     /// <summary>Start of the auto-pause window (6:00 AM). AlwaysOn pauses when no players connected.</summary>
