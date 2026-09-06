@@ -4,7 +4,7 @@ description: Serve the API and VNC web UI over HTTPS with a Let's Encrypt certif
 
 # HTTPS & Reverse Proxy
 
-By default the REST API (`API_PORT`) and the VNC web UI (`VNC_PORT`) are plain HTTP, which is fine for a home or LAN server. HTTPS keeps your API and VNC credentials off the wire, and it is required to show a live status widget on a web page, since browsers block plain-HTTP requests from HTTPS sites. This page sets it up with or without a domain: Let's Encrypt also issues certificates for a bare public IP.
+By default the REST API (`API_PORT`) and the VNC web UI (`VNC_PORT`) are plain HTTP, which is fine for a home or LAN server. HTTPS keeps your API and VNC credentials off the wire, and it is required to show the [live status widget](/admins/operations/public-status) on a web page, since browsers block plain-HTTP requests from HTTPS sites. This page sets it up with or without a domain: Let's Encrypt also issues certificates for a bare public IP.
 
 ## Setups
 

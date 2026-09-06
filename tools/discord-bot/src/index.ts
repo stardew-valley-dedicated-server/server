@@ -22,8 +22,8 @@ import {
     formatFooter,
     parseOwnerId,
 } from "./dashboard";
+import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
-import { resolveServerState, type StatusSignals } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -64,22 +64,6 @@ function getApiHeaders(): HeadersInit {
         headers.Authorization = `Bearer ${API_KEY}`;
     }
     return headers;
-}
-
-interface ServerStatus extends StatusSignals {
-    playerCount: number;
-    maxPlayers: number;
-    steamInviteCode: string | null;
-    gogInviteCode: string | null;
-    serverVersion: string;
-    lastUpdated: string;
-    farmName: string;
-    day: number;
-    season: string;
-    year: number;
-    timeOfDay: number;
-    farmTypeKey: string;
-    isPaused: boolean;
 }
 
 interface PlayerInfo {
@@ -558,11 +542,7 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
         .setFooter({ text: formatFooter(STATUS_DASHBOARD_REFRESH_RATE_FORMATTED, dashboardState.ownerId) });
 
     if (!status?.isOnline) {
-        const hint =
-            state.kind === "offline"
-                ? "No game data can be pulled right now. Check back later!"
-                : "Game data appears once the save is loaded.";
-        embed.setColor(state.color).setDescription(`${state.label} — **${state.detail}**\n\n_${hint}_`);
+        embed.setColor(state.color).setDescription(`${state.label} — **${state.detail}**\n\n_${state.hint}_`);
     } else {
         const seasonEmojis: Record<string, string> = {
             spring: "🌸 Spring",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveServerState } from "./serverState";
+import { resolveServerState } from "./discordState";
 
 describe("resolveServerState", () => {
     test("unreachable API is offline", () => {

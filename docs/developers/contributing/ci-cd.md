@@ -324,6 +324,8 @@ Add to the **`github-pages`** GitHub Environment (Settings → Environments):
 
 The R2 token must have **Object Read & Write** on this bucket (both restore and persist run), and `R2_ACCOUNT_ID` must be the account that owns it. The deploy mirrors with `aws s3 sync … --delete`, so this bucket must be dedicated to the docs snapshot — pointing it at a shared bucket (e.g. the E2E report bucket) would delete everything else in it, and a shared retention rule could sweep the snapshot. Leave all four settings empty to disable R2 (full-rebuild deploys still work; single-half deploys refuse); set some but not all and the deploy fails, so it's all-or-nothing.
 
+The **repository variable** `DOCS_TEST_SERVER_API_URL` holds the public test server's API base URL (for example `https://203.0.113.10/preview`). The docs build bakes it into the [Public Test Server](/community/test-server) page; when it is unset, the page shows no status widget.
+
 ## Deploy Server Pipeline
 
 [Open in Github](https://github.com/stardew-valley-dedicated-server/server/tree/master/.github/workflows/deploy-server.yml)
