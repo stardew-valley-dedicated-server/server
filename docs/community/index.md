@@ -6,6 +6,10 @@ description: The JunimoServer community — FAQ, where to get help, how to repor
 
 JunimoServer is a community project. Glad to have you here!
 
+## Play
+
+- [Public Test Server](/community/test-server): Try JunimoServer without hosting anything
+
 ## Get Help
 
 - [FAQ](/community/faq): Common questions

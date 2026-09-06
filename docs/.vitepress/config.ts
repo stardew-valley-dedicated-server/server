@@ -26,6 +26,8 @@ export default withMermaid(
             // Bake the build time into the bundle so the sidebar can show "Last built: …"
             define: {
                 __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+                // API base URL of the public test server, shown on community/test-server.md.
+                __DOCS_TEST_SERVER_API_URL__: JSON.stringify(process.env.DOCS_TEST_SERVER_API_URL ?? ""),
             },
             resolve: {
                 alias: [
@@ -205,6 +207,7 @@ export default withMermaid(
                             { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
                             { text: "Modern Docker Image", link: "/admins/operations/modern-docker" },
                             { text: "HTTPS & Reverse Proxy", link: "/admins/operations/reverse-proxy" },
+                            { text: "Public Server Status", link: "/admins/operations/public-status" },
                         ],
                     },
                     {
@@ -320,6 +323,7 @@ export default withMermaid(
                         text: "Community",
                         items: [
                             { text: "Overview", link: "/community/" },
+                            { text: "Public Test Server", link: "/community/test-server" },
                             { text: "FAQ", link: "/community/faq" },
                             { text: "Getting Help", link: "/community/getting-help" },
                             { text: "Reporting Bugs", link: "/community/reporting-bugs" },

@@ -33,7 +33,7 @@ If `API_KEY` is set, send it with every request:
 Authorization: Bearer <your-api-key>
 ```
 
-Each endpoint page in this reference says whether it needs the key. Health, status and the docs pages work without one.
+Each endpoint page in this reference says whether it needs the key. Health, status and the docs pages work without one. To show `/status` on a website, see [Public Server Status](/admins/operations/public-status).
 
 ### Example
 

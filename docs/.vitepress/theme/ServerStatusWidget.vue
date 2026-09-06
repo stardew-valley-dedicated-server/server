@@ -1,90 +1,100 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import {
+    resolveServerState,
+    type ServerState,
+    type ServerStateKind,
+    type ServerStatus,
+} from "../../../tools/discord-bot/src/serverState";
 
-interface ServerStatus {
-    serverName: string;
-    currentPlayers: number;
-    maxPlayers: number;
-    inviteCode: string;
-    isOnline: boolean;
-}
+type CodeKey = "steamInviteCode" | "gogInviteCode";
 
 const props = defineProps<{
+    /** HTTPS base URL of the API; `/status` is fetched under it. */
     apiUrl: string;
+    /** Header text; the farm name is not a display name. */
+    title?: string;
+    /** Poll interval in ms; 0 disables polling. */
     refreshInterval?: number;
 }>();
 
 const status = ref<ServerStatus | null>(null);
-const isLoading = ref(true);
-const error = ref<string | null>(null);
-const copied = ref(false);
+/** `null` until the first fetch settles. */
+const state = ref<ServerState | null>(null);
+const copiedKey = ref<CodeKey | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+const inviteCodes: { key: CodeKey; label: string }[] = [
+    { key: "steamInviteCode", label: "Steam invite code" },
+    { key: "gogInviteCode", label: "GOG invite code" },
+];
+
+const stateColors: Record<ServerStateKind, string> = {
+    online: "var(--vp-c-success-1)",
+    busy: "var(--vp-c-warning-1)",
+    loading: "var(--vp-c-warning-1)",
+    provisioning: "var(--vp-c-warning-1)",
+    offline: "var(--vp-c-danger-1)",
+};
+
 const playerPercentage = computed(() => {
-    if (!status.value) {
+    if (!status.value || status.value.maxPlayers <= 0) {
         return 0;
     }
-    return (status.value.currentPlayers / status.value.maxPlayers) * 100;
+    return Math.min(100, (status.value.playerCount / status.value.maxPlayers) * 100);
 });
 
-const statusColor = computed(() => {
-    if (!status.value?.isOnline) {
-        return "var(--vp-c-danger-1)";
+const farmDate = computed(() => {
+    if (!status.value) {
+        return "";
     }
-    if (status.value.currentPlayers >= status.value.maxPlayers) {
-        return "var(--vp-c-warning-1)";
-    }
-    return "var(--vp-c-success-1)";
+    const season = status.value.season ? status.value.season[0].toUpperCase() + status.value.season.slice(1) : "";
+    return `${status.value.farmName} Farm, ${season} ${status.value.day}, Year ${status.value.year}`;
 });
 
-const statusText = computed(() => {
-    if (!status.value?.isOnline) {
-        return "Offline";
-    }
-    if (status.value.currentPlayers >= status.value.maxPlayers) {
-        return "Full";
-    }
-    return "Online";
-});
+// A hung request must not settle after a newer one and overwrite its result.
+let latestRequest = 0;
 
 async function fetchStatus() {
-    // TODO: Replace mock with real API call
-    // const response = await fetch(props.apiUrl);
-    // const data = await response.json();
-
-    // Mock response for development
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
-
-    status.value = {
-        serverName: "JunimoServer Public Test",
-        currentPlayers: 3,
-        maxPlayers: 8,
-        inviteCode: "SG8ZJXDNMTK4",
-        isOnline: true,
-    };
-    error.value = null;
-    isLoading.value = false;
+    const request = ++latestRequest;
+    let data: ServerStatus | null = null;
+    try {
+        const response = await fetch(`${props.apiUrl.replace(/\/+$/, "")}/status`, { cache: "no-store" });
+        if (response.ok) {
+            data = (await response.json()) as ServerStatus;
+        }
+    } catch {
+        data = null;
+    }
+    if (request !== latestRequest) {
+        return;
+    }
+    status.value = data;
+    state.value = resolveServerState(data);
 }
 
-async function copyInviteCode() {
-    if (!status.value?.inviteCode) {
+async function copyInviteCode(key: CodeKey) {
+    const code = status.value?.[key];
+    if (!code) {
         return;
     }
     try {
-        await navigator.clipboard.writeText(status.value.inviteCode);
-        copied.value = true;
-        setTimeout(() => (copied.value = false), 2000);
+        await navigator.clipboard.writeText(code);
     } catch {
-        // Fallback for older browsers
+        // Fallback for browsers without the async clipboard API.
         const textarea = document.createElement("textarea");
-        textarea.value = status.value.inviteCode;
+        textarea.value = code;
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand("copy");
         document.body.removeChild(textarea);
-        copied.value = true;
-        setTimeout(() => (copied.value = false), 2000);
     }
+    copiedKey.value = key;
+    setTimeout(() => {
+        if (copiedKey.value === key) {
+            copiedKey.value = null;
+        }
+    }, 2000);
 }
 
 onMounted(() => {
@@ -104,62 +114,63 @@ onUnmounted(() => {
 
 <template>
     <div class="server-status-widget">
-        <!-- Loading State -->
-        <div v-if="isLoading" class="loading">
+        <div v-if="!state" class="loading">
             <div class="spinner"></div>
             <span>Connecting to server...</span>
         </div>
 
-        <!-- Error State -->
-        <div v-else-if="error" class="error">
-            <span class="error-icon">!</span>
-            <span>{{ error }}</span>
-        </div>
-
-        <!-- Server Info -->
-        <template v-else-if="status">
+        <template v-else>
             <div class="header">
                 <div class="server-info">
-                    <h3 class="server-name">{{ status.serverName }}</h3>
-                    <div class="status-badge" :style="{ '--status-color': statusColor }">
+                    <h3 class="server-name">{{ props.title ?? "Server Status" }}</h3>
+                    <div class="status-badge" :style="{ '--status-color': stateColors[state.kind] }">
                         <span class="status-dot"></span>
-                        <span class="status-text">{{ statusText }}</span>
+                        <span class="status-text">{{ state.label }}</span>
                     </div>
                 </div>
             </div>
 
-            <div class="stats">
-                <div class="stat">
-                    <span class="stat-label">Players</span>
-                    <div class="player-bar-container">
-                        <div class="player-bar">
-                            <div
-                                class="player-bar-fill"
-                                :style="{ width: `${playerPercentage}%` }"
-                            ></div>
+            <p class="note">{{ state.detail }}</p>
+
+            <template v-if="status?.isOnline">
+                <div class="stats">
+                    <div class="stat">
+                        <span class="stat-label">Players</span>
+                        <div class="player-bar-container">
+                            <div class="player-bar">
+                                <div class="player-bar-fill" :style="{ width: `${playerPercentage}%` }"></div>
+                            </div>
+                            <span class="player-count">{{ status.playerCount }}/{{ status.maxPlayers }}</span>
                         </div>
-                        <span class="player-count">{{ status.currentPlayers }}/{{ status.maxPlayers }}</span>
+                    </div>
+
+                    <div class="stat">
+                        <span class="stat-label">In-game date</span>
+                        <span class="farm-date">{{ farmDate }}</span>
                     </div>
                 </div>
 
-                <div class="stat">
-                    <span class="stat-label">Invite Code</span>
-                    <div class="invite-code-row">
-                        <code class="invite-code">{{ status.inviteCode || "N/A" }}</code>
-                        <button
-                            v-if="status.inviteCode"
-                            class="copy-btn"
-                            :class="{ copied }"
-                            @click="copyInviteCode"
-                            :title="copied ? 'Copied!' : 'Copy invite code'"
-                        >
-                            <span v-if="copied">&#10003;</span>
-                            <span v-else>&#128203;</span>
-                        </button>
+                <div class="stats">
+                    <div v-for="code in inviteCodes" :key="code.key" class="stat">
+                        <span class="stat-label">{{ code.label }}</span>
+                        <div class="invite-code-row">
+                            <code v-if="status[code.key]" class="invite-code">{{ status[code.key] }}</code>
+                            <span v-else class="invite-code pending">not yet available</span>
+                            <button
+                                v-if="status[code.key]"
+                                class="copy-btn"
+                                :class="{ copied: copiedKey === code.key }"
+                                :title="copiedKey === code.key ? 'Copied!' : `Copy ${code.label}`"
+                                @click="copyInviteCode(code.key)"
+                            >
+                                <span v-if="copiedKey === code.key">&#10003;</span>
+                                <span v-else>&#128203;</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-
+            </template>
+            <p v-else class="hint">{{ state.hint }}</p>
         </template>
     </div>
 </template>
@@ -212,27 +223,6 @@ onUnmounted(() => {
     to { transform: rotate(360deg); }
 }
 
-.error {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 32px;
-    color: var(--vp-c-danger-1);
-}
-
-.error-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: var(--vp-c-danger-soft);
-    border-radius: 50%;
-    font-weight: bold;
-    font-size: 14px;
-}
-
 .header {
     margin-bottom: 20px;
 }
@@ -280,11 +270,27 @@ onUnmounted(() => {
     50% { opacity: 0.6; transform: scale(0.9); }
 }
 
+.note,
+.hint {
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: var(--vp-c-text-2);
+}
+
+.hint {
+    margin-bottom: 0;
+    font-style: italic;
+}
+
 .stats {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+}
+
+.stats:last-child {
+    margin-bottom: 0;
 }
 
 @media (max-width: 480px) {
@@ -339,6 +345,12 @@ onUnmounted(() => {
     font-variant-numeric: tabular-nums;
 }
 
+.farm-date {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--vp-c-text-1);
+}
+
 .invite-code-row {
     display: flex;
     align-items: center;
@@ -359,6 +371,13 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.invite-code.pending {
+    color: var(--vp-c-text-3);
+    font-family: inherit;
+    font-style: italic;
+    letter-spacing: normal;
 }
 
 .copy-btn {
@@ -388,5 +407,4 @@ onUnmounted(() => {
     border-color: var(--vp-c-success-1);
     color: var(--vp-c-success-1);
 }
-
 </style>
