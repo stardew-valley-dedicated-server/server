@@ -434,9 +434,8 @@ public class HostAutomationTests : TestBase
     }
 
     /// <summary>
-    /// A festival date used to be excluded from the empty-server pause, so an empty server
-    /// ran through the whole festival day to the 2:00 AM pass-out. The pause now keys on
-    /// presence and the host being at rest, not on the calendar.
+    /// An empty server pauses on a festival date exactly as on any other day: the pause keys
+    /// on player presence and the host being at rest, not on the calendar.
     /// </summary>
     [Fact]
     [TestServer(Clients = 0, Exclusive = true)]
@@ -483,14 +482,16 @@ public class HostAutomationTests : TestBase
     }
 
     /// <summary>
-    /// Past 1:00 AM an empty server pauses like at any other time, then closes the day
-    /// through the host's own sleep once AUTO_SLEEP_GRACE_SECONDS (seconds in the test config)
-    /// elapse with nobody returning. The clock never runs unattended: it must still read the
-    /// value set here when the pause is confirmed, and the new day must start paused at 6:00.
+    /// At exactly 1:00 AM (timeOfDay 2500, the inclusive lower bound of the grace window) an
+    /// empty server pauses like at any other time, then closes the day through the host's own
+    /// sleep once AUTO_SLEEP_GRACE_SECONDS (seconds in the test config) elapse with nobody
+    /// returning. Pinning the boundary here guards the inclusive 2500 check against a regression
+    /// to a strict comparison. The clock never runs unattended: it must still read the value set
+    /// here when the pause is confirmed, and the new day must start paused at 6:00.
     /// </summary>
     [Fact]
     [TestServer(Clients = 0, Exclusive = true)]
-    public async Task HostSleepsAfterGrace_WhenServerEmptyPastOneAm()
+    public async Task HostSleepsAfterGrace_WhenServerEmptyAtOneAm()
     {
         await Connect.EnsureDisconnectedAsync();
         var ct = TestCt;
@@ -499,15 +500,15 @@ public class HostAutomationTests : TestBase
         var before = await ServerApi.GetStatus(ct);
         Assert.NotNull(before);
 
-        var setTime = await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
+        var setTime = await ServerApi.SetTime(TestTimings.OneAmTime, ct);
         Assert.True(setTime?.Success, $"SetTime failed: {setTime?.Error}");
 
         await WaitForPausedAsync(WaitName.Polling_HostAutomation_GracePauseConfirmed, ct);
         var paused = await ServerApi.GetStatus(ct);
         Assert.NotNull(paused);
         Assert.True(
-            paused.TimeOfDay == TestTimings.PrePassOutTime,
-            $"Empty server past 1:00 AM must pause at {TestTimings.PrePassOutTime}, got {paused.TimeOfDay} (the clock ran unattended)"
+            paused.TimeOfDay == TestTimings.OneAmTime,
+            $"Empty server at 1:00 AM must pause at {TestTimings.OneAmTime}, got {paused.TimeOfDay} (the clock ran unattended)"
         );
 
         var dayChanged = await DayChange.WaitAsync(before.Day, before.Season, before.Year, ct);
