@@ -4,6 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Settings;
+using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -228,15 +229,11 @@ public class NetworkTweaker : ModService
             y * 64 - (farmer.Sprite.getHeight() - 32) + 16
         );
 
-        // Call private sendLocation via reflection
-        var sendLocationMethod = AccessTools.Method(
-            typeof(GameServer),
-            "sendLocation",
-            new[] { typeof(long), typeof(GameLocation), typeof(bool) }
-        );
-        sendLocationMethod.Invoke(
+        NetworkHelper.SendLocation(
             __instance,
-            new object[] { farmer.UniqueMultiplayerID, location, false }
+            farmer.UniqueMultiplayerID,
+            location,
+            forceCurrent: false
         );
 
         return false; // Skip original

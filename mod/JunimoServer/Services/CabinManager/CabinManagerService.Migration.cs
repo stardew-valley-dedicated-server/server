@@ -513,20 +513,12 @@ public partial class CabinManagerService
                 + $"({spot.X},{spot.Y}).";
         }
 
-        // Connected peers hold intro-only state no delta can fix: the →CabinStack ghost position
-        // (master tile is hidden) and the →None phantom (master never had it). Re-sending the
-        // Farm intro would orphan a peer standing inside a cabin, so they reconnect instead.
-        if (OnlineFarmers.CountOthers() > 0)
-        {
-            message +=
-                migration.ToStrategy == CabinStrategy.CabinStack
-                    ? " Connected players keep seeing the pre-migration cabin layout until they "
-                        + "reconnect."
-                    : " Connected players who had moved their cabin may still see a stale cabin "
-                        + "at the old shared spot until they reconnect.";
-        }
-
         ApplyStrategyDurably(migration.ToStrategy);
+
+        // Connected peers hold intro-only state no delta can fix: the →CabinStack ghost position
+        // (master tile is hidden) and the →None phantom (master never had it). Re-send the Farm
+        // now that the strategy is flipped, so the interceptor emits the new fiction.
+        message += DescribeDeferredReintroductions(ReintroduceFarmToOnlinePeers());
 
         Data.ActiveMigration = null;
         Data.Write();

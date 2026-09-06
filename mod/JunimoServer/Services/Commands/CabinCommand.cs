@@ -124,6 +124,18 @@ public static class CabinCommand
                 cabinService.Data.Write();
 
                 cabin.Relocate(topLeft);
+
+                // The move itself replicates as deltas; the re-send fills the now-empty stack
+                // spot in the sender's copy with the phantom (CabinStack only, see the
+                // interceptor). The gate can still refuse a sender who stepped into a building
+                // between the on-Farm check above and here.
+                if (
+                    cabinService.options.IsCabinStack
+                    && !cabinService.TryReintroduceFarmNow(msg.SourceFarmer)
+                )
+                {
+                    cabinService.QueueFarmReintroduction(msg.SourceFarmer);
+                }
             }
         );
     }
@@ -205,11 +217,26 @@ public static class CabinCommand
                 )
             );
         }
-        helper.SendPrivateMessage(
-            msg.SourceFarmer,
-            cabinService.options.IsFarmHouseStack
-                ? "Cabin reset — you'll exit at the farmhouse again."
-                : "Cabin reset — it's back in the shared stack."
-        );
+        string reply;
+        if (cabinService.options.IsFarmHouseStack)
+        {
+            // No fiction to repair: the peer's copy shows every cabin hidden, and the position
+            // delta hides this one too.
+            reply = "Cabin reset — you'll exit at the farmhouse again.";
+        }
+        else if (cabinService.TryReintroduceFarmNow(msg.SourceFarmer))
+        {
+            reply = "Cabin reset — it's back in the shared stack.";
+        }
+        else
+        {
+            // Sender is inside a Farm building (their cabin, usually): the re-send waits for
+            // their next warp off the farm.
+            cabinService.QueueFarmReintroduction(msg.SourceFarmer);
+            reply =
+                "Cabin reset — it's back in the shared stack. You'll see it there after you "
+                + "next leave the farm (or reconnect).";
+        }
+        helper.SendPrivateMessage(msg.SourceFarmer, reply);
     }
 }

@@ -102,8 +102,21 @@ public enum WaitName
     Polling_CabinExitWarp_FarmhouseDoorOnClient,
     Polling_CabinExitWarp_OwnDoorOnClient,
 
-    // CabinPositionPersistenceTests.cs — !cabin reset (1)
+    // CabinPositionPersistenceTests.cs — !cabin reset (5)
     Polling_CabinReset_CabinHidden,
+
+    /// <summary>The !cabin move reached the client's farm view as a position delta.</summary>
+    Polling_CabinReset_MovedCabinOnClient,
+
+    /// <summary>/players reports the player inside its cabin (replicated location caught up).</summary>
+    Polling_CabinReset_ServerSeesPlayerInsideCabin,
+
+    /// <summary>The owner's client shows its cabin at the shared stack spot again after a
+    /// live Farm re-introduction (no reconnect).</summary>
+    Polling_CabinReset_OwnCabinAtStackSpotOnClient,
+
+    /// <summary>The queued Farm re-introduction landed after the owner's warp off the farm.</summary>
+    Polling_CabinReset_ReintroducedAfterWarpOffFarm,
 
     // CabinPositionPersistenceTests.cs — dummy cabin at shared stack (2)
     Polling_DummyCabin_VisibleInClientFarm,
@@ -250,6 +263,10 @@ public enum WaitName
     /// <summary>Every master cabin is enterable at its placed tile on a connected peer after a
     /// →None commit.</summary>
     Polling_CabinMigration_PlacedCabinsVisibleOnPeer,
+
+    /// <summary>The peer's door-less phantom is gone after the commit's Farm re-introduction,
+    /// without a reconnect.</summary>
+    Polling_CabinMigration_PhantomGoneLive,
 
     // CabinStrategyFarmhouseStackTests.cs + CabinStrategyTests.cs — cabin-link repair (2)
     /// <summary>Cabin gone from /cabins after /test/break_cabin_link nulled its back-link.</summary>

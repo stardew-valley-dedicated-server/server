@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using HarmonyLib;
@@ -25,7 +24,6 @@ public class PasswordProtectionService : ModService
     private readonly IMonitor _monitor;
     private readonly LobbyService _lobbyService;
     private readonly CabinManagerService _cabinManager;
-    private static MethodInfo _sendLocationMethod;
 
     /// <summary>
     /// Thread-safe dictionary tracking authentication state per player.
@@ -114,12 +112,6 @@ public class PasswordProtectionService : ModService
         // Vanilla checkFarmhandRequest skips sendLocation for the lobby cabin because
         // isAlwaysActiveLocation() returns true for building interiors nested in the
         // always-active Farm. Without this, ApplyWakeUpPosition crashes on the client.
-        _sendLocationMethod = AccessTools.Method(
-            typeof(GameServer),
-            "sendLocation",
-            new[] { typeof(long), typeof(GameLocation), typeof(bool) }
-        );
-
         harmony.Patch(
             original: AccessTools.Method(
                 typeof(GameServer),
@@ -237,7 +229,7 @@ public class PasswordProtectionService : ModService
         long peer
     )
     {
-        if (_instance == null || !_instance.IsEnabled || _sendLocationMethod == null)
+        if (_instance == null || !_instance.IsEnabled)
         {
             return true;
         }
@@ -274,7 +266,7 @@ public class PasswordProtectionService : ModService
             LogLevel.Debug
         );
 
-        _sendLocationMethod.Invoke(__instance, new object[] { peer, lobbyGameLocation, true });
+        NetworkHelper.SendLocation(__instance, peer, lobbyGameLocation, forceCurrent: true);
         return true;
     }
 

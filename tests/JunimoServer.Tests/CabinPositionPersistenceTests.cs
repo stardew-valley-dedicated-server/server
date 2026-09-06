@@ -268,26 +268,7 @@ public class CabinPositionPersistenceTests : TestBase
         Assert.NotNull(withIntent);
         Assert.Contains(ownerId, withIntent.SavedPositionPlayerIds);
 
-        // Resend each poll: /cabins is snapshot-backed, so the hide can lag the reset by a
-        // tick. Resending !cabin reset is idempotent — once hidden it just replies
-        // "nothing to reset".
-        CabinInfoResponse? afterReset = null;
-        CabinsResponse? snapshot = null;
-        var reset = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_CabinReset_CabinHidden,
-            async () =>
-            {
-                await GameClient.SendChat("!cabin reset");
-                snapshot = await ServerApi.GetCabins(ct);
-                afterReset = snapshot?.Cabins.FirstOrDefault(c => c.OwnerId == ownerId);
-                return afterReset?.IsHidden == true
-                    && snapshot?.SavedPositionPlayerIds.Contains(ownerId) == false;
-            },
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct
-        );
-
-        Assert.True(reset, "Cabin did not return to the hidden stack after !cabin reset");
+        await ResetCabinViaCommandAsync(ownerId, ct);
         Log($"Cabin reset to hidden stack; intent cleared for owner {ownerId}");
 
         await SleepToSaveAsync(ct);
@@ -642,6 +623,141 @@ public class CabinPositionPersistenceTests : TestBase
         await Exceptions.AssertNoExceptionsAsync("after other-home resolvability check");
     }
 
+    /// <summary>
+    /// !cabin reset without a reconnect: the owner stands on the Farm, so the server re-sends
+    /// the Farm introduction right away. The owner's client shows its cabin at the shared stack
+    /// spot again (nothing left at the moved tile), the door is live, and the interior entered
+    /// is the live one — IsLiveFarm proves the client did not walk into an orphaned pre-swap
+    /// copy, which a name-only location check could not tell apart.
+    /// </summary>
+    [Fact]
+    public async Task ResetCabin_LiveFarmReintroduction_OwnerEntersCabinAtStackSpot()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var client = await Farmers.ConnectFastAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+
+        var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
+        var stackSpot = await GetStackSpotAsync(ct);
+
+        await ResetCabinViaCommandAsync(ownerId, ct);
+
+        var view = await WaitForOwnCabinAtStackSpotAsync(
+            WaitName.Polling_CabinReset_OwnCabinAtStackSpotOnClient,
+            stackSpot,
+            movedTile,
+            ct
+        );
+        Log($"Client renders the reset cabin at the stack spot ({stackSpot.X},{stackSpot.Y})");
+
+        await EnterOwnCabinAsync(view, stackSpot, ct);
+
+        var stepOut = await GameClient.Actions.WalkOntoTile();
+        Assert.True(stepOut?.Success == true, $"step-out failed: {stepOut?.Error}");
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^Farm$", ct: ct));
+
+        await Exceptions.AssertNoExceptionsAsync("after live Farm re-introduction");
+    }
+
+    /// <summary>
+    /// !cabin reset from inside the cabin: an immediate re-send would orphan the interior the
+    /// owner stands in, so the server defers it and says so. The client stays inside, keeps its
+    /// live copy, exits onto the (still stale) Farm, and the re-send rides behind the answer to
+    /// the owner's next warp off the farm — after which the cabin renders at the stack spot and
+    /// is enterable.
+    /// </summary>
+    [Fact]
+    public async Task ResetCabin_FromInsideCabin_ReintroducedOnNextTripOffFarm()
+    {
+        var ct = TestCt;
+        await CreateNewGameOnServerAsync(farmType: 0, cabinStrategy: "CabinStack");
+
+        var client = await Farmers.ConnectFastAsync(ct: ct);
+        var ownerId = client.JoinResult.UniqueMultiplayerId;
+
+        var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
+        var stackSpot = await GetStackSpotAsync(ct);
+
+        // The move reaches the client as a position delta; poll the client's view for it.
+        FarmBuildingsResult? beforeReset = null;
+        var movedOnClient = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinReset_MovedCabinOnClient,
+            async () =>
+            {
+                beforeReset = await GameClient.Actions.GetFarmBuildings(ct);
+                return beforeReset?.Success == true
+                    && beforeReset.Cabins.Any(c =>
+                        (c.TileX, c.TileY) == movedTile && c.HasInterior
+                    );
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            movedOnClient,
+            $"the moved cabin never showed at {movedTile} on the client (saw: {DescribeView(beforeReset)})"
+        );
+        await EnterOwnCabinAsync(beforeReset!, movedTile, ct);
+
+        // The gate reads the server's replicated view of the player's location, which trails
+        // the client's warp by a farmer-delta period; wait until /players shows the cabin.
+        var serverSeesInside = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinReset_ServerSeesPlayerInsideCabin,
+            async () =>
+            {
+                var players = await ServerApi.GetPlayers(ct);
+                var me = players?.Players.FirstOrDefault(p => p.Id == ownerId);
+                return me?.Location.StartsWith("FarmHouse", StringComparison.Ordinal) == true;
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(serverSeesInside, "the server never saw the player inside the cabin");
+
+        await ResetCabinViaCommandAsync(ownerId, ct);
+        var reply = await GameClient.Chat.WaitForMessageContainingAsync(
+            new[] { "next leave the farm" }
+        );
+        Assert.NotNull(reply);
+
+        var state = await GameClient.GetState();
+        Assert.Matches("^FarmHouse.+", state?.Location ?? "");
+        var insideView = await GameClient.Actions.GetFarmBuildings(ct);
+        Assert.True(
+            insideView?.IsLiveFarm == true,
+            "the deferred reset must not replace the Farm under a player inside a cabin"
+        );
+
+        // Exit: the server re-pointed the interior warps at the stack spot's door (a delta), so
+        // the owner lands on the Farm even though their copy shows no cabin there yet.
+        var stepOut = await GameClient.Actions.WalkOntoTile();
+        Assert.True(stepOut?.Success == true, $"step-out failed: {stepOut?.Error}");
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^Farm$", ct: ct));
+
+        // Leaving the farm makes the client request the bus stop from the server; the queued
+        // Farm re-introduction follows that answer.
+        var offFarm = await GameClient.Actions.Warp("BusStop", 12, 24);
+        Assert.True(offFarm?.Success == true, $"warp to BusStop failed: {offFarm?.Error}");
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^BusStop$", ct: ct));
+
+        var view = await WaitForOwnCabinAtStackSpotAsync(
+            WaitName.Polling_CabinReset_ReintroducedAfterWarpOffFarm,
+            stackSpot,
+            movedTile,
+            ct
+        );
+        Log("Deferred Farm re-introduction landed after the warp off the farm");
+
+        var back = await GameClient.Actions.Warp("Farm", stackSpot.X, stackSpot.Y + 4);
+        Assert.True(back?.Success == true, $"warp to Farm failed: {back?.Error}");
+        Assert.NotNull(await GameClient.WaitForLocationAsync("^Farm$", ct: ct));
+        await EnterOwnCabinAsync(view, stackSpot, ct);
+
+        await Exceptions.AssertNoExceptionsAsync("after deferred Farm re-introduction");
+    }
+
     #region Helpers
 
     /// <summary>
@@ -678,6 +794,110 @@ public class CabinPositionPersistenceTests : TestBase
         Assert.True(ok, "Cabin did not move out of the hidden stack after !cabin");
         return (moved!.TileX, moved.TileY);
     }
+
+    /// <summary>
+    /// Sends !cabin reset until /cabins shows the owner's cabin hidden with the intent cleared.
+    /// Resend each poll: /cabins is snapshot-backed, so the hide can lag the reset by a tick,
+    /// and the command is idempotent — once hidden it just replies "nothing to reset".
+    /// </summary>
+    private async Task ResetCabinViaCommandAsync(long ownerId, CancellationToken ct)
+    {
+        var reset = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_CabinReset_CabinHidden,
+            async () =>
+            {
+                await GameClient.SendChat("!cabin reset");
+                var snapshot = await ServerApi.GetCabins(ct);
+                var afterReset = snapshot?.Cabins.FirstOrDefault(c => c.OwnerId == ownerId);
+                return afterReset?.IsHidden == true
+                    && snapshot?.SavedPositionPlayerIds.Contains(ownerId) == false;
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(reset, "Cabin did not return to the hidden stack after !cabin reset");
+    }
+
+    private async Task<(int X, int Y)> GetStackSpotAsync(CancellationToken ct)
+    {
+        var cabins = await ServerApi.GetCabins(ct);
+        Assert.NotNull(cabins?.StackSpot);
+        return (cabins!.StackSpot!.TileX, cabins.StackSpot.TileY);
+    }
+
+    /// <summary>
+    /// Polls the client's farm view until the owner's cabin renders at the stack spot with a
+    /// live door and nothing remains at <paramref name="movedTile"/>, i.e. the re-sent Farm
+    /// introduction (with its relocation fiction) replaced the client's copy.
+    /// </summary>
+    private async Task<FarmBuildingsResult> WaitForOwnCabinAtStackSpotAsync(
+        WaitName waitName,
+        (int X, int Y) stackSpot,
+        (int X, int Y) movedTile,
+        CancellationToken ct
+    )
+    {
+        FarmBuildingsResult? view = null;
+        var reintroduced = await PollingHelper.WaitUntilAsync(
+            waitName,
+            async () =>
+            {
+                view = await GameClient.Actions.GetFarmBuildings(ct);
+                if (view?.Success != true)
+                {
+                    return false;
+                }
+                return view.Cabins.Any(c => (c.TileX, c.TileY) == stackSpot && c.HasInterior)
+                    && view.Cabins.All(c => (c.TileX, c.TileY) != movedTile);
+            },
+            TestTimings.NetworkSyncTimeout,
+            cancellationToken: ct
+        );
+        Assert.True(
+            reintroduced,
+            "the client should render its reset cabin at the stack spot with nothing left at "
+                + $"the moved tile (saw: {DescribeView(view)})"
+        );
+        Assert.True(view!.IsLiveFarm, "the client's farm view is not the one in Game1.locations");
+        return view;
+    }
+
+    /// <summary>
+    /// Walks onto the door of the cabin at <paramref name="cabinTile"/> in the client's view
+    /// and asserts the client entered that cabin's live interior.
+    /// </summary>
+    private async Task EnterOwnCabinAsync(
+        FarmBuildingsResult view,
+        (int X, int Y) cabinTile,
+        CancellationToken ct
+    )
+    {
+        var cabin = view.Cabins.FirstOrDefault(c => (c.TileX, c.TileY) == cabinTile);
+        Assert.True(
+            cabin != null,
+            $"no cabin at {cabinTile} in the client's view: {DescribeView(view)}"
+        );
+
+        var enter = await GameClient.Actions.WalkOntoTile(cabin!.DoorX, cabin.DoorY, direction: 0);
+        Assert.True(enter?.Success == true, $"door entry failed: {enter?.Error}");
+        var inside = await GameClient.WaitForLocationAsync("^FarmHouse.+", ct: ct);
+        Assert.True(inside != null, "the client did not enter its cabin interior");
+        Assert.Equal(cabin.Name, inside!.Location);
+
+        var insideView = await GameClient.Actions.GetFarmBuildings(ct);
+        Assert.True(
+            insideView?.IsLiveFarm == true,
+            "the client entered an interior of an orphaned (replaced) Farm"
+        );
+    }
+
+    private static string DescribeView(FarmBuildingsResult? view) =>
+        view == null
+            ? "null"
+            : string.Join(
+                ", ",
+                view.Cabins.Select(c => $"({c.TileX},{c.TileY},interior={c.HasInterior})")
+            );
 
     /// <summary>
     /// Rewrites the in-container cabinStrategy via the shared settings-file helper; the
