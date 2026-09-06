@@ -28,6 +28,8 @@ Replace:
 
 Example: `http://localhost:5800`
 
+Behind the [HTTPS proxy](/admins/operations/reverse-proxy) the web UI is at the server's proxy URL plus `/vnc/`, and the plain-HTTP port is not reachable from outside.
+
 You'll be prompted to enter the VNC password configured in your `.env` file.
 
 ## VNC Settings Panel
@@ -97,7 +99,7 @@ The console command only lasts until the server restarts.
 If VNC won't load:
 
 1. Check `VNC_PASSWORD` is set in `.env`
-2. Verify firewall allows TCP on VNC port (default 5800)
-3. Use `http://` not `https://`
+2. Without a proxy: verify the firewall allows TCP on the VNC port (default 5800) and use `http://`, not `https://`
+3. Behind the HTTPS proxy: use the proxy URL plus `/vnc/`; the VNC port itself is not reachable from outside
 4. Try a different browser
 

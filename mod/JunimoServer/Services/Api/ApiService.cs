@@ -5260,7 +5260,7 @@ public partial class ApiService : ModService
     <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
 </head>
 <body>
-    <script id=""api-reference"" data-url=""/swagger/v1/swagger.json""></script>
+    <script id=""api-reference"" data-url=""swagger/v1/swagger.json""></script>
     <script src=""https://cdn.jsdelivr.net/npm/@scalar/api-reference""></script>
 </body>
 </html>";
