@@ -174,12 +174,15 @@ public partial class CabinManagerService : ModService
         );
 
         // Present the world as unpaused inside the introduction snapshot (prefix sets false,
-        // postfix restores) without actually unpausing it. An empty auto-paused server otherwise
+        // finalizer restores) without actually unpausing it. An empty auto-paused server otherwise
         // serializes IsPaused=true to a joining vanilla client, whose first fade-in never
         // completes (black screen). A real unpause would let repeated lobby joins bank clock time
         // (Game1.gameTimeInterval accrues across pauses) and a lobby player never counts as
         // present for the auto-pause. Registered here unconditionally for the same reason as the
         // disconnect heal above: PasswordProtectionService's patches are dead without a password.
+        // The restore is a finalizer, not a postfix: if the serialization (or an earlier patch)
+        // throws, a postfix would be skipped, stranding the world unpaused for the tick until
+        // HandleAutoPause re-pauses — exactly the one-tick clock-bank the mask exists to prevent.
         harmony.Patch(
             original: AccessTools.Method(
                 typeof(GameServer),
@@ -189,9 +192,9 @@ public partial class CabinManagerService : ModService
                 typeof(CabinManagerService),
                 nameof(SendServerIntroduction_MaskPause_Prefix)
             ),
-            postfix: new HarmonyMethod(
+            finalizer: new HarmonyMethod(
                 typeof(CabinManagerService),
-                nameof(SendServerIntroduction_MaskPause_Postfix)
+                nameof(SendServerIntroduction_MaskPause_Finalizer)
             )
         );
 
@@ -491,7 +494,7 @@ public partial class CabinManagerService : ModService
     /// <summary>
     /// PREFIX on sendServerIntroduction: present the world as unpaused inside the introduction
     /// snapshot without unpausing it. The original serializes netWorldState synchronously, so no
-    /// game tick runs between this and the postfix.
+    /// game tick runs between this and the finalizer.
     /// </summary>
     private static void SendServerIntroduction_MaskPause_Prefix(out bool __state)
     {
@@ -503,10 +506,12 @@ public partial class CabinManagerService : ModService
     }
 
     /// <summary>
-    /// POSTFIX on sendServerIntroduction: restore the pause state captured by the prefix. Runs
-    /// even when another prefix skipped the original.
+    /// FINALIZER on sendServerIntroduction: restore the pause state captured by the prefix. A
+    /// finalizer (not a postfix) so the restore also runs if the serialization or an earlier patch
+    /// throws — otherwise the world would be left unpaused for a tick. The exception is left to
+    /// propagate untouched.
     /// </summary>
-    private static void SendServerIntroduction_MaskPause_Postfix(bool __state)
+    private static void SendServerIntroduction_MaskPause_Finalizer(bool __state)
     {
         if (__state)
         {
