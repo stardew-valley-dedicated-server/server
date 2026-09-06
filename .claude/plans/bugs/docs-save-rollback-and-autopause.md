@@ -4,22 +4,22 @@
 **Priority:** 3 (high)
 **GitHub Issue(s):** none (Discord report)
 **Area:** docs
-**Related:** [`autopause-skips-festival-days.md`](./autopause-skips-festival-days.md) (the code fix; until it merges, the docs must describe the festival exception as current behavior); [`../features/restore-day-transition-backup.md`](../features/restore-day-transition-backup.md) (different feature: an in-mod hook around SMAPI's daily zip, not the game's `_old` pair)
+**Related:** [`autopause-skips-festival-days.md`](./autopause-skips-festival-days.md) (the bug that lost the reporter's day; fixed in a parallel session, and this plan documents the fixed behavior); [`../features/restore-day-transition-backup.md`](../features/restore-day-transition-backup.md) (different feature: an in-mod hook around SMAPI's daily zip, not the game's `_old` pair)
 **Observed:** production report — an operator lost a festival day and asked whether the game's `_old` save copy should exist and how to go back one day. Nothing in `docs/` answers either question. Separately, `docs/features/server-mechanics.md` quotes a 6:10 AM pause start that the code changed to 6:00 AM, and describes the 1:00 AM boundary as an "unpause" that a paused server can never reach.
 **Next step:** apply the four doc edits below in one PR; file the follow-up command as its own feature plan when picked up
 
 ## Symptom
 
 - No page mentions the game's own previous-save copy (the `_old` files inside every save folder), whether the server keeps it, or how to roll back one day with it. The backup page covers only SMAPI's daily zips and whole-volume tarballs, so the fastest recovery for "we lost a day" is invisible to operators.
-- `docs/features/server-mechanics.md` "Pause Behavior" is wrong on two points and silent on a third: it says the pause starts at 6:10 AM (the code pauses from 6:00), it says the game "unpauses" after 1:00 AM (a paused clock never reaches 1:00 AM; the rule is that an empty server is *not paused* once the clock is already past 1:00 AM, so a day players carried into the night still closes at the 2:00 AM pass-out), and it omits that festival days are never auto-paused at all.
-- `docs/community/faq.md` "Does time pass when I'm offline?" states the pause with no festival caveat.
+- `docs/features/server-mechanics.md` "Pause Behavior" is wrong on two points: it says the pause starts at 6:10 AM (the code pauses from 6:00), and it says the game "unpauses" after 1:00 AM (a paused clock never reaches 1:00 AM; the rule is that an empty server is *not paused* once the clock is already past 1:00 AM, so a day players carried into the night still closes at the 2:00 AM pass-out). It also says nothing about what happens when the last player leaves during a festival.
+- `docs/community/faq.md` "Does time pass when I'm offline?" does not point the reader anywhere for recovering a lost day.
 - The `saves` command docs and the backup page never say how the server decides which save to load, so an operator with several folders under `Saves/` cannot tell which one the rollback should target.
 
 ## Root cause
 
 The `_old` behavior is vanilla (`SaveGame.getSaveEnumerator`, `BackupNameSuffix = "_old"`): every save writes to a temp file, renames the current data file and `SaveGameInfo` to `<name>_old` / `SaveGameInfo_old`, then moves the new files into place. The game only reads the pair as a crash-recovery fallback (`SaveGame.TryReadSaveFileWithFallback`) and never surfaces it as "load yesterday". The server does not patch the save routine, and the mod's on-demand save (`SaveNow.TrySave`) drives the same enumerator, so the rotation happens on the server too. Nothing in the mod deletes `_old` files; the save-import and test clone paths merely skip copying them into a new folder. None of this was ever written down for operators.
 
-The pause docs drifted when `HandleAutoPause` moved the floor from 6:10 to 6:00 (the "pause the empty server at 6:00 instead of 6:10" change) and were imprecise about the 1:00 AM ceiling from the start. The festival exclusion has been in the code since the initial commit and was never documented.
+The pause docs drifted when `HandleAutoPause` moved the floor from 6:10 to 6:00 (the "pause the empty server at 6:00 instead of 6:10" change) and were imprecise about the 1:00 AM ceiling from the start.
 
 The active save is an explicit pointer, not a folder scan: `GameLoaderService` reads `SaveNameToLoad` from SMAPI global data under the key `JunimoHost.GameLoader`, which SMAPI stores as `.smapi/mod-data/junimohost.server/junimohost.gameloader.json` at the root of the saves volume (`/config/xdg/config/StardewValley/`, one level *above* `Saves/`; the key is lower-cased in the filename).
 
@@ -87,13 +87,13 @@ Replace the three "Pause Behavior" bullets with:
 - **Players online:** game runs normally.
 - **No players:** the clock is held wherever it stopped, any time between 6:00 AM and 1:00 AM.
 - **Past 1:00 AM with no players:** the game is not paused, so a day that players carried into the night still ends at the 2:00 AM pass-out instead of hanging.
-- **Festival days:** the empty-server pause does not apply, so a festival day nobody is online for runs through to the 2:00 AM pass-out and the next day begins.
+- **Festivals:** if the last player leaves during a festival, the festival ends first and the pause engages once the host is back home.
 
-When `autopause-skips-festival-days.md` merges, rewrite the last bullet to "the pause applies as on any other day; if the last player leaves during a festival, the festival ends first and the pause engages once the host is home." Note this dependency in the PR description, not in the doc.
+This describes the behavior with `autopause-skips-festival-days.md` applied. Merge that fix first, or in the same release, so the docs and the server agree.
 
 ### 4. `docs/community/faq.md`
 
-Extend "Does time pass when I'm offline?" with one sentence: festival days are the exception today, the clock keeps running with nobody online, and link to the rollback section for recovering a lost day. Same post-merge rewrite as above.
+Extend "Does time pass when I'm offline?" with one sentence linking to the rollback section for the case where a day was lost anyway.
 
 ### 5. Developer note on `IMAGE_VERSION` (small, same PR)
 
