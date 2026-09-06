@@ -30,6 +30,10 @@ This installs:
 - **Biome** - JS/TS formatter and linter, installed via the root `npm ci`
 - **git hooks** - Auto-format staged C# and JS/TS files on commit, validate commit messages, block direct pushes to `master`
 
+::: tip Running compose outside `make`
+`make` targets export `IMAGE_VERSION=local` to run compose against your local build (`sdvd/server:local`). A bare `docker compose run`/`exec` outside `make` defaults to `sdvd/server:latest` and pulls it; set `IMAGE_VERSION=local` in `.env` or your shell to reuse the local image ([variable reference](/developers/testing/e2e-testing)).
+:::
+
 #### Line Endings
 
 The repository enforces **LF line endings** for all text files via `.gitattributes` (`* text=auto eol=lf`). This keeps files identical on Windows and inside the Linux containers, and is required for shell scripts and Dockerfiles to run.
