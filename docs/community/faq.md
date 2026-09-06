@@ -26,7 +26,7 @@ Crops track their owner and won't die from lack of watering while you're offline
 
 ### Does time pass when I'm offline?
 
-Time pauses when no players are online, at whatever time the last player left. The one exception is after 1:00 AM: the server waits a few minutes for a dropped player to come back, then the host goes to sleep so the next player starts a fresh morning instead of minutes before the 2:00 AM pass-out. When players are connected, time runs normally. The game saves at the end of each in-game day.
+Time pauses when no players are online, freezing wherever the last player left off. One exception: if the server empties after 1:00 AM, it waits a few minutes for someone to return, then sleeps so the next player starts a fresh morning. With players connected, time runs normally, and the game saves at the end of each in-game day.
 
 ### Can I move my cabin?
 

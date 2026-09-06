@@ -1016,14 +1016,12 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Pause the world whenever no authenticated player is present and the host is at rest,
-    /// at any time of day. From 1:00 AM (timeOfDay 2500) on, an empty server additionally starts
-    /// a wall-clock grace timer and, if nobody returns before it elapses, puts the host to sleep
-    /// so the next player arrives at a fresh 6:00 AM instead of minutes before the 2:00 AM
-    /// pass-out. The 2500 boundary is inclusive: an empty server frozen at exactly 1:00 AM must
-    /// roll over too, else it sits paused there until someone returns.
-    /// The clock never runs with nobody present: the server is either paused, finishing
-    /// something the pause would freeze, or inside the day transition.
+    /// Pause the world whenever no authenticated player is present and the host is at rest, at
+    /// any time of day. From 1:00 AM on (timeOfDay >= 2500, inclusive) an empty server also runs
+    /// a wall-clock grace timer and, if nobody returns before it elapses, sleeps the host so the
+    /// next player arrives at a fresh 6:00 AM. The clock never runs with nobody present: the
+    /// server is either paused, finishing something the pause would freeze, or in the day
+    /// transition.
     /// </summary>
     private void HandleAutoPause()
     {
@@ -1082,9 +1080,8 @@ public class AlwaysOnServer : ModService
         var activity = CurrentHostActivity();
         if (activity != HostActivity.None)
         {
-            // Logged once per activity, whether or not the flag flips: the pause is usually
-            // already off here (sleep request, transition), and the run artifact must still show
-            // which in-flight thing held it off.
+            // Log once per activity change: the pause is usually already off here (sleep
+            // request, transition), but the run artifact must still show what held it off.
             if (activity != _lastHoldOff)
             {
                 _lastHoldOff = activity;
@@ -1141,9 +1138,8 @@ public class AlwaysOnServer : ModService
     /// What on the host would be frozen mid-flight by the pause. <see cref="HostActivity.None"/>
     /// means the host is at rest: no event (festival, wedding, cutscene), no pending warp
     /// (<c>locationRequest</c> is cleared on both the completed and the failed path, unlike
-    /// <c>isWarping</c>), no 2:00 AM pass-out in flight, and no farm event. Overnight farm events play
-    /// inside the day transition, which the transition guard already keeps unpaused; the farm
-    /// event term only matters for one ticking outside that window.
+    /// <c>isWarping</c>), no 2:00 AM pass-out in flight, and no farm event. The farm-event check
+    /// is defensive: overnight events play inside the day transition, which is already unpaused.
     /// </summary>
     private static HostActivity CurrentHostActivity()
     {
