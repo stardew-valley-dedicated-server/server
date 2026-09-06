@@ -759,6 +759,22 @@ public class TestFarmEventResponse
     public string? Type { get; set; }
 }
 
+/// <summary>Response from GET /test/farmevent_state. Mirrors the server-side TestFarmEventStateResponse DTO.</summary>
+public class TestFarmEventStateResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("active")]
+    public bool Active { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+}
+
 /// <summary>
 /// Response from /test/house_upgrade POST endpoint (test-only). Mirrors the server-side
 /// TestHouseUpgradeResponse DTO.
@@ -2317,6 +2333,18 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestFarmEventResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: whether an overnight FarmEvent is currently up on the host. Distinguishes a
+    /// completed event from one frozen mid-play, which the day counter and pause flag cannot.
+    /// GET /test/farmevent_state
+    /// </summary>
+    public async Task<TestFarmEventStateResponse?> GetFarmEventState(CancellationToken ct = default)
+    {
+        var response = await GetRetrySafeAsync("/test/farmevent_state", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestFarmEventStateResponse>(ct);
     }
 
     /// <summary>

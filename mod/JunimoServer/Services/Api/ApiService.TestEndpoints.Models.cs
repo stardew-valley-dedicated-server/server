@@ -120,6 +120,15 @@ public class TestFarmEventResponse
     public string? Type { get; set; }
 }
 
+/// <summary>Response for GET /test/farmevent_state: whether an overnight FarmEvent is up on the host.</summary>
+public class TestFarmEventStateResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public bool Active { get; set; }
+    public string? Type { get; set; }
+}
+
 /// <summary>
 /// Body for POST /test/saver_crop. Mutates an existing CropSaver entry in
 /// place. LocationName must be the entry key — the unique location name

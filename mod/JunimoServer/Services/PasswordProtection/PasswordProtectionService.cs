@@ -313,15 +313,6 @@ public class PasswordProtectionService : ModService
             return;
         }
 
-        // Unpause the game before sendServerIntroduction runs.
-        // When no players are connected, the server is paused. If we don't unpause here,
-        // the initial world state sent to the client will have IsPaused=true, causing
-        // black screen on connect (the fade-in never completes while paused).
-        if (Game1.netWorldState.Value.IsPaused)
-        {
-            Game1.netWorldState.Value.IsPaused = false;
-        }
-
         var farmerId = farmer.Value.UniqueMultiplayerID;
 
         // Skip host
@@ -556,6 +547,9 @@ public class PasswordProtectionService : ModService
         {
             if (_pendingPostTransitionAuth.TryRemove(playerId, out _))
             {
+                // The player counts as present from now on; keep the world unpaused so the
+                // first delta they see after the transition is not a stale IsPaused=true.
+                Game1.netWorldState.Value.IsPaused = false;
                 _lobbyService.UnregisterUnauthenticatedPlayer(playerId);
                 _monitor.Log(
                     $"[Auth] Completed deferred barrier unregister for {playerId} after day transition",
@@ -638,10 +632,11 @@ public class PasswordProtectionService : ModService
                     authData.PlayerId,
                     "Authentication timeout. Disconnecting..."
                 );
-                // Remove auth data immediately to prevent repeated kick attempts on subsequent ticks
+                // Remove auth data immediately to prevent repeated kick attempts on subsequent ticks.
+                // The lobby registration stays until the kick's disconnect lands (OnPlayerDisconnected):
+                // dropping it here would count the player as present, and unpause, for the ticks in
+                // between.
                 _playerAuthData.TryRemove(authData.PlayerId, out _);
-                // Also unregister from lobby exclusions
-                _lobbyService.UnregisterUnauthenticatedPlayer(authData.PlayerId);
                 Game1.server.kick(authData.PlayerId);
                 continue;
             }
@@ -815,7 +810,10 @@ public class PasswordProtectionService : ModService
             return;
         }
 
-        // Safe to unregister immediately; no barriers active
+        // Safe to unregister immediately; no barriers active. Unpause first: the player counts
+        // as present from now on, and the warp below must not reach them under a stale
+        // IsPaused=true delta before the auto-pause re-evaluates at the end of the tick.
+        Game1.netWorldState.Value.IsPaused = false;
         _lobbyService.UnregisterUnauthenticatedPlayer(authData.PlayerId);
 
         // Always warp to cabin entry - matches vanilla game behavior on connect

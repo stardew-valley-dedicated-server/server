@@ -5,6 +5,7 @@ using HarmonyLib;
 using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameManager;
+using JunimoServer.Services.Lobby;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -27,14 +28,29 @@ public class AlwaysOnServer : ModService
     /// </summary>
     public bool IsAutomating;
 
-    public bool clientPaused;
-
     /// <summary>
     /// Set to true when ShippingMenu should be active, then used
     /// </summary>
     private bool _isShippingMenuActive;
 
     private bool _warpingSleep;
+
+    // Wall-clock moment the server became empty past 1:00 AM; the host sleeps once
+    // Env.AutoSleepGraceSeconds elapse without an authenticated player returning.
+    private DateTime? _emptyPastCutoffSince;
+
+    // Wall-clock moment SleepHostNow was called. While set, the pause stays off so the sleep
+    // warp and ready-check can run; cleared once the day transition starts.
+    private DateTime? _hostSleepRequestedAt;
+
+    // A requested sleep that never reached the day transition by then is abandoned so the
+    // pause re-engages and the grace timer retries it.
+    private static readonly TimeSpan HostSleepRequestTimeout = TimeSpan.FromSeconds(60);
+
+    // The last activity that held the pause off, so each one is logged once, not per tick.
+    private HostActivity _lastHoldOff;
+
+    private readonly LobbyService _lobbyService;
 
     // Wall-clock start of the stuck-ShippingMenu window (seconds-based, so TPS-independent).
     private DateTime? _shippingMenuTimeoutStartTime;
@@ -50,11 +66,13 @@ public class AlwaysOnServer : ModService
         AlwaysOnConfig config,
         IModHelper helper,
         IMonitor monitor,
-        Harmony harmony
+        Harmony harmony,
+        LobbyService lobbyService
     )
         : base(helper, monitor)
     {
         Config = config;
+        _lobbyService = lobbyService;
 
         // Register console commands
         helper.ConsoleCommands.Register(
@@ -192,9 +210,11 @@ public class AlwaysOnServer : ModService
 
         // Reset all automation state regardless (OnSaveLoaded re-enables automation)
         IsAutomating = false;
-        clientPaused = false;
         _isShippingMenuActive = false;
         _warpingSleep = false;
+        _emptyPastCutoffSince = null;
+        _hostSleepRequestedAt = null;
+        _lastHoldOff = HostActivity.None;
         _shippingMenuTimeoutStartTime = null;
         _weddingStartTime = null;
         _handledWeddingGate = null;
@@ -996,35 +1016,197 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Pause the game when there are no clients connected.
-    /// After 2500 (1:00 AM), always unpause to allow the end-of-day pass-out sequence.
+    /// Pause the world whenever no authenticated player is present and the host is at rest, at
+    /// any time of day. From 1:00 AM on (timeOfDay >= 2500, inclusive) an empty server also runs
+    /// a wall-clock grace timer and, if nobody returns before it elapses, sleeps the host so the
+    /// next player arrives at a fresh 6:00 AM. The clock never runs with nobody present: the
+    /// server is either paused, finishing something the pause would freeze, or in the day
+    /// transition.
     /// </summary>
     private void HandleAutoPause()
     {
         // Never hold the pause while a day transition is in flight: HostPaused gates
         // Game1.UpdateOther (Game1.cs:4308 → 6436), which pumps the newDay screen fade — a
         // pause during that phase parks the transition indefinitely. An empty server's
-        // /newgame day-0 transition starts at 6:00, inside the pause window below (see
+        // /newgame day-0 transition starts at 6:00 (see
         // .claude/plans/bugs/newgame-stalls-after-forced-reload.md). Same predicate the /newgame
         // completion gate uses; the pause re-engages the tick after the transition settles.
         if (!GameManagerService.IsDayTransitionComplete())
         {
-            Game1.netWorldState.Value.IsPaused = false;
+            SetPaused(false, "day transition in flight");
+            _hostSleepRequestedAt = null;
+            _emptyPastCutoffSince = null;
             return;
         }
 
-        var numPlayers = Game1.otherFarmers.Count;
-        var isFestivalDay = SDateHelper.IsFestivalToday();
+        if (CountPresentPlayers() > 0)
+        {
+            SetPaused(false, "players present");
+            _emptyPastCutoffSince = null;
+            return;
+        }
 
-        if (numPlayers >= 1)
+        // A requested host sleep runs its warp + ready-check under the running loop; the
+        // transition guard above takes over once NewDay creates the sync.
+        if (_hostSleepRequestedAt is DateTime requestedAt)
         {
-            Game1.netWorldState.Value.IsPaused = clientPaused;
+            SetPaused(false, "host sleep requested");
+            if (DateTime.UtcNow - requestedAt > HostSleepRequestTimeout)
+            {
+                Monitor.Log(
+                    $"Host sleep did not reach the day transition within {HostSleepRequestTimeout.TotalSeconds:0}s; "
+                        + "re-engaging the pause and retrying after the grace period",
+                    LogLevel.Warn
+                );
+                _hostSleepRequestedAt = null;
+                _warpingSleep = false;
+                _emptyPastCutoffSince = null;
+            }
+            return;
         }
-        else if (numPlayers == 0 && !isFestivalDay)
+
+        if (Game1.timeOfDay >= 2500)
         {
-            // The 600 floor pauses at day start (6:00), not after the first 10-minute tick.
-            Game1.netWorldState.Value.IsPaused = Game1.timeOfDay is >= 600 and <= 2500;
+            _emptyPastCutoffSince ??= DateTime.UtcNow;
         }
+        else
+        {
+            _emptyPastCutoffSince = null;
+        }
+
+        // Anything still in flight needs the unpaused loop to finish (the pause gates
+        // UpdateCharacters/UpdateLocations/UpdateOther, Game1.cs:4308, and the farm-event
+        // tick, Game1.cs:4187): the pause waits, and the automation handlers wrap it up.
+        var activity = CurrentHostActivity();
+        if (activity != HostActivity.None)
+        {
+            // Log once per activity change: the pause is usually already off here (sleep
+            // request, transition), but the run artifact must still show what held it off.
+            if (activity != _lastHoldOff)
+            {
+                _lastHoldOff = activity;
+                Monitor.Log(
+                    $"Auto-pause held off: {DescribeHostActivity(activity)} (timeOfDay={Game1.timeOfDay})",
+                    LogLevel.Info
+                );
+            }
+            if (Game1.netWorldState.Value.IsPaused)
+            {
+                SetPaused(false, DescribeHostActivity(activity));
+            }
+            return;
+        }
+
+        _lastHoldOff = HostActivity.None;
+        SetPaused(true, "server empty, host at rest");
+
+        if (
+            _emptyPastCutoffSince is DateTime emptySince
+            && (DateTime.UtcNow - emptySince).TotalSeconds >= Env.AutoSleepGraceSeconds
+        )
+        {
+            SleepHostNow(
+                $"Server empty at or past 1:00 AM for {Env.AutoSleepGraceSeconds}s, host going to sleep"
+            );
+        }
+    }
+
+    /// <summary>
+    /// Authenticated players the world must keep running for. Disconnect-marked farmers
+    /// linger in <c>otherFarmers</c> until the engine removes them (see OnlineFarmers) and
+    /// unauthenticated lobby players only ever see the frozen lobby delta, so neither counts.
+    /// Allocation-free: the NetRootDictionary enumerator is a struct.
+    /// </summary>
+    private int CountPresentPlayers()
+    {
+        var count = 0;
+        foreach (var kvp in Game1.otherFarmers)
+        {
+            if (
+                Game1.Multiplayer.isDisconnecting(kvp.Value)
+                || _lobbyService.IsPlayerUnauthenticated(kvp.Key)
+            )
+            {
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// What on the host would be frozen mid-flight by the pause. <see cref="HostActivity.None"/>
+    /// means the host is at rest: no event (festival, wedding, cutscene), no pending warp
+    /// (<c>locationRequest</c> is cleared on both the completed and the failed path, unlike
+    /// <c>isWarping</c>), no 2:00 AM pass-out in flight, and no farm event. The farm-event check
+    /// is defensive: overnight events play inside the day transition, which is already unpaused.
+    /// </summary>
+    private static HostActivity CurrentHostActivity()
+    {
+        if (Game1.CurrentEvent != null)
+        {
+            return HostActivity.Event;
+        }
+        if (Game1.farmEvent != null)
+        {
+            return HostActivity.FarmEvent;
+        }
+        if (Game1.locationRequest != null)
+        {
+            return HostActivity.Warp;
+        }
+        // At 2:00 AM the pass-out is the only way the day can end, and it needs the running
+        // loop from the moment the clock crosses 2600 (UpdateOther fires startToPassOut) until
+        // the animation hands over to NewDay. Cover the whole span, not just the animation.
+        if (Game1.timeOfDay >= 2600 || Game1.player.FarmerSprite.isPassingOut())
+        {
+            return HostActivity.PassOut;
+        }
+        return HostActivity.None;
+    }
+
+    private enum HostActivity
+    {
+        None,
+        Event,
+        FarmEvent,
+        Warp,
+        PassOut,
+    }
+
+    /// <summary>Log text for a non-None activity. Called on transitions only.</summary>
+    private static string DescribeHostActivity(HostActivity activity)
+    {
+        switch (activity)
+        {
+            case HostActivity.Event:
+                var ev = Game1.CurrentEvent;
+                return ev == null ? "event in progress"
+                    : ev.isFestival ? "festival in progress"
+                    : ev.isWedding ? "wedding in progress"
+                    : $"event {ev.id} in progress";
+            case HostActivity.FarmEvent:
+                return $"farm event {Game1.farmEvent?.GetType().Name} in progress";
+            case HostActivity.Warp:
+                return $"warp to {Game1.locationRequest?.Name} pending";
+            default:
+                return "2:00 AM pass-out in flight";
+        }
+    }
+
+    /// <summary>Write the pause flag and log the transition once, never per tick.</summary>
+    private void SetPaused(bool paused, string reason)
+    {
+        if (Game1.netWorldState.Value.IsPaused == paused)
+        {
+            return;
+        }
+
+        Game1.netWorldState.Value.IsPaused = paused;
+        Monitor.Log(
+            $"Auto-pause {(paused ? "engaged" : "released")}: {reason} (timeOfDay={Game1.timeOfDay})",
+            LogLevel.Info
+        );
     }
 
     /// <summary>
@@ -1102,6 +1284,25 @@ public class AlwaysOnServer : ModService
         {
             return;
         }
+
+        SleepHostNow("Other players ready for sleep");
+    }
+
+    /// <summary>
+    /// Warp the host home (if not already there) and trigger Sleep_Yes. Shared by the
+    /// players-ready path and the empty-server grace path. The sleep-requested latch keeps
+    /// <see cref="HandleAutoPause"/> from pausing the warp or the sleep ready-check.
+    /// </summary>
+    private void SleepHostNow(string reason)
+    {
+        if (_warpingSleep)
+        {
+            return;
+        }
+
+        Monitor.Log(reason, LogLevel.Info);
+        _hostSleepRequestedAt = DateTime.UtcNow;
+        SetPaused(false, "host sleep requested");
 
         var home = Game1.player.homeLocation.Value;
 

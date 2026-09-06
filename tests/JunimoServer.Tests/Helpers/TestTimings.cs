@@ -169,20 +169,17 @@ public static class TestTimings
 
     #region Game Time Values
 
-    /// <summary>Game time for noon (12:00 PM). Mid-day, firmly inside the pause window.</summary>
+    /// <summary>Game time for noon (12:00 PM). Mid-day.</summary>
     public const int Noon = 1200;
+
+    /// <summary>1:00 AM — the inclusive lower bound of the empty-server grace-sleep window.</summary>
+    public const int OneAmTime = 2500;
 
     /// <summary>One tick before 2:00 AM pass-out (2550 → 2600 in ~7s).</summary>
     public const int PrePassOutTime = 2550;
 
-    /// <summary>2:00 AM. Game forces performPassoutWarp() at this time.</summary>
+    /// <summary>2:00 AM. The game forces the host pass-out at this time.</summary>
     public const int PassOutTime = 2600;
-
-    /// <summary>Start of the auto-pause window (6:00 AM). AlwaysOn pauses when no players connected.</summary>
-    public const int PauseWindowStart = 600;
-
-    /// <summary>End of the auto-pause window (1:00 AM). After this, game unpauses for pass-out sequence.</summary>
-    public const int PauseWindowEnd = 2500;
 
     #endregion
 

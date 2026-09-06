@@ -280,28 +280,23 @@ public class LobbyHomedSpouseSteadyStateTests : TestBase
     }
 
     /// <summary>
-    /// Advances one in-game day with NO clients connected: the host passes out at 2:00 AM
-    /// (same pattern as HostAutomationTests.HostPassesOut_WhenTimeReaches2AM).
+    /// Advances one in-game day with NO clients connected: past 1:00 AM the empty server
+    /// pauses and, after AUTO_SLEEP_GRACE_SECONDS (seconds in the test config), the host sleeps
+    /// (same pattern as HostAutomationTests.HostSleepsAfterGrace_WhenServerEmptyAtOneAm).
     /// </summary>
     private async Task AdvanceDayServerOnlyAsync(CancellationToken ct)
     {
         var before = await ServerApi.GetStatus(ct);
         Assert.NotNull(before);
 
+        // No clock-speed bump: the empty server is paused past 1:00 AM, so the grace sleep —
+        // not the frozen clock — drives the transition.
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
-        await ServerApi.SetClockSpeed(20, ct);
-        try
-        {
-            var dayChanged = await DayChange.WaitAsync(before.Day, before.Season, before.Year, ct);
-            Assert.True(
-                dayChanged,
-                $"Server-only day did not advance past {before.Season} {before.Day} Y{before.Year}."
-            );
-        }
-        finally
-        {
-            await ServerApi.SetClockSpeed(1, ct);
-        }
+        var dayChanged = await DayChange.WaitAsync(before.Day, before.Season, before.Year, ct);
+        Assert.True(
+            dayChanged,
+            $"Server-only day did not advance past {before.Season} {before.Day} Y{before.Year}."
+        );
     }
 
     private async Task AssertHomesUnchangedAsync(
@@ -440,20 +435,14 @@ public class LobbyHomedSpouseHealTests : TestBase
                 + $"(at '{poisonedNpc?.SpouseCurrentLocation}')."
         );
 
-        // One real day transition, server alone (host passes out at 2:00 AM).
+        // One real day transition, server alone (the host sleeps after the empty-server grace).
+        // No clock-speed bump: the empty server is paused past 1:00 AM, so the grace sleep —
+        // not the frozen clock — drives the transition.
         var before = await ServerApi.GetStatus(ct);
         Assert.NotNull(before);
         await ServerApi.SetTime(TestTimings.PrePassOutTime, ct);
-        await ServerApi.SetClockSpeed(20, ct);
-        try
-        {
-            var dayChanged = await DayChange.WaitAsync(before.Day, before.Season, before.Year, ct);
-            Assert.True(dayChanged, "Day did not advance for the heal transition.");
-        }
-        finally
-        {
-            await ServerApi.SetClockSpeed(1, ct);
-        }
+        var dayChanged = await DayChange.WaitAsync(before.Day, before.Season, before.Year, ct);
+        Assert.True(dayChanged, "Day did not advance for the heal transition.");
 
         // The DayStarted sweep must restore the farmhand to their OWN cabin (ownership-first
         // reassignment via the cabin's farmhandReference), scrub the lobby sleep hint, and pull

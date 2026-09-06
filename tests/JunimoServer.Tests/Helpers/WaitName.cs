@@ -159,12 +159,18 @@ public enum WaitName
     // FarmhandManagementTests.cs (1)
     Polling_FarmhandManagement_FarmhandGone,
 
-    // HostAutomationTests.cs (5)
+    // HostAutomationTests.cs (11)
     Polling_HostAutomation_NoPlayers,
     Polling_HostAutomation_PauseConfirmed,
     Polling_HostAutomation_TimeAdvanced,
     Polling_HostAutomation_UnpauseConfirmed,
     Polling_HostAutomation_TimeAdvancedSecond,
+    Polling_HostAutomation_FestivalDayPauseConfirmed,
+    Polling_HostAutomation_GracePauseConfirmed,
+    Polling_HostAutomation_NextDayPauseConfirmed,
+    Polling_HostAutomation_FarmEventDayPauseConfirmed,
+    Polling_HostAutomation_FarmEventCompleted,
+    Polling_HostAutomation_PassOutDayPauseConfirmed,
 
     // LobbyCommandsTestBase.cs (1)
     Polling_LobbyCommands_AdminGranted,
