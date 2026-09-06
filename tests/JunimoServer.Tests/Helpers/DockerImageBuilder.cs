@@ -241,7 +241,7 @@ public static class DockerImageBuilder
 
         var steamAuthTask = BuildAndEmitStatus(
             "docker",
-            "compose build steam-auth",
+            "compose -f docker-compose.yml -f docker-compose.dev.yml build steam-auth",
             "steam-service image",
             TestTimings.DockerBuildSteamAuthTimeout,
             "Building steam-service image",

@@ -204,9 +204,9 @@ jobs:
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
-            **Use it**
-            ```IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}```
-            ```docker compose pull && docker compose up -d```
+            ${{ steps.changelog.outputs.upgrade-notes }}**Update** (with `IMAGE_VERSION=preview` in `.env`)
+            ```curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml && docker compose pull && docker compose up -d```
+            Pin this build instead: `IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}`.
 
       - name: Update preview tracking tag
         env:

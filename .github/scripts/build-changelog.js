@@ -17,8 +17,8 @@ const VISIBLE_TYPES = ["feat", "fix", "perf", "revert", "docs"];
 const HIDDEN_TYPES = new Set(["style", "chore", "refactor", "test", "build", "ci"]);
 
 // We measure length in code points (what Discord counts), not JS string length. 3500 leaves room
-// under Discord's 4096-char description limit for the "Use it" block the caller appends, and under
-// the 6000-char limit for the whole embed.
+// under Discord's 4096-char description limit for the upgrade notes and "Update" block the caller
+// appends, and under the 6000-char limit for the whole embed.
 const BUDGET = 3500;
 
 const CONVENTIONAL_RE = /^([a-z]+)(\([^()]*\))?(!)?: \S/i;

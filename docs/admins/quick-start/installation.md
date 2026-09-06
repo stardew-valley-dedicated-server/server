@@ -10,10 +10,11 @@ For development, see [Building from Source](/developers/advanced/building-from-s
 
 ```sh
 mkdir junimoserver && cd junimoserver
-curl -O https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/.env.example
-mv .env.example .env
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml
+curl -fsSL -o .env https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/.env.example
 ```
+
+Don't edit `docker-compose.yml`: settings live in `.env`, anything else in a `docker-compose.override.yml` (see [Upgrading](/admins/operations/upgrading#customizing-docker-compose)).
 
 ## 2. Configure
 

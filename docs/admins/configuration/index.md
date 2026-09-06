@@ -32,7 +32,7 @@ See [Server Settings](/admins/configuration/server-settings) for full reference.
 
 ### .env File
 
-Docker and infrastructure settings like Steam credentials, VNC password, and port mappings. Create this file in the same directory as `docker-compose.yml`.
+Docker and infrastructure settings like Steam credentials, VNC password, and port mappings. Create this file in the same directory as `docker-compose.yml`. Don't edit `docker-compose.yml` (updates replace it); additions go in a `docker-compose.override.yml` (see [Upgrading](/admins/operations/upgrading#customizing-docker-compose)).
 
 Example minimal `.env`:
 

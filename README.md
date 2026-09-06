@@ -47,9 +47,9 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 1. **Create Configuration**:
 
-    Download the configuration files from GitHub:
-    - [`docker-compose.yml`](https://github.com/stardew-valley-dedicated-server/server/blob/master/docker-compose.yml)
-    - [`.env.example`](https://github.com/stardew-valley-dedicated-server/server/blob/master/.env.example)
+    Download the configuration files from the latest release:
+    - [`docker-compose.yml`](https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml)
+    - [`.env.example`](https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/.env.example)
 
     Rename `.env.example` to `.env` and configure your server. Here is a minimal example:
 

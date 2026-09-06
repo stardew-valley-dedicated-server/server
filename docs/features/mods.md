@@ -29,7 +29,7 @@ Extract mod folders into your `mods` directory.
 
 ### 3. Configure Docker Volume
 
-Add a volume bind mount in `docker-compose.yml`:
+Add a bind mount in a `docker-compose.override.yml` (not `docker-compose.yml`, which updates replace; see [Upgrading](/admins/operations/upgrading#customizing-docker-compose)):
 
 ```yaml
 services:

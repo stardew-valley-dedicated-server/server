@@ -161,32 +161,9 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: Create deploy directory
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.DEPLOY_SSH_HOST }}
-          username: ${{ secrets.DEPLOY_SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          script: mkdir -p ~/srv/${{ matrix.environment }}
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
-        with:
-          host: ${{ secrets.DEPLOY_SSH_HOST }}
-          username: ${{ secrets.DEPLOY_SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          source: "docker-compose.yml,.env,docker/proxy"
-          target: ~/srv/${{ matrix.environment }}
-
-      # Resolves what the alias (matrix.image_tag) actually points at, for the internal-ci
-      # notification: the image's revision label → the build tag on that commit → the
-      # IMAGE_VERSION operators would type. Reading the registry (not github.sha) is correct
-      # for all three triggers — workflow_run, release, workflow_dispatch. The alias could in
-      # principle move between this inspect and the VPS's `docker compose pull`, but that
-      # needs a full preview build to finish inside that window; accepted. This step must
-      # never fail the deploy: every lookup degrades to a short SHA or "unknown".
+      # Image revision label → build tag → the IMAGE_VERSION operators would type. The SHA selects
+      # the operator files below; the rest feeds the notification. The alias may move before the
+      # VPS pulls (needs a full preview build inside that window; accepted). Never fails the deploy.
       - name: Resolve deployed version
         id: version
         env:
@@ -242,6 +219,40 @@ jobs:
           jq -cn --arg commit "$commit_value" \
             '[{name: "Commit", value: $commit, inline: true}]' \
             | sed 's/^/failure_fields=/' >> "$GITHUB_OUTPUT"
+          echo "sha=$commit_sha" >> "$GITHUB_OUTPUT"
+
+      # github.sha can be newer than the image (redeploy after a compose bump on master).
+      - name: Check out operator files at the image's commit
+        env:
+          SHA: ${{ steps.version.outputs.sha }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          if [ "$SHA" = "$TRIGGER_SHA" ]; then
+            echo "Operator files already at $SHA"
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$SHA"
+          git checkout "$SHA" -- docker-compose.yml docker/proxy
+          echo "Operator files checked out at $SHA"
+
+      - name: Create deploy directory
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          script: mkdir -p ~/srv/${{ matrix.environment }}
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          source: "docker-compose.yml,.env,docker/proxy"
+          target: ~/srv/${{ matrix.environment }}
 
       - name: Pull and restart containers
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5

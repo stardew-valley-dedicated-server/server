@@ -2,15 +2,28 @@
 
 ## Quick Upgrade
 
-For most users with Docker images:
+Every release and preview post on Discord ends with an update command that fetches the matching `docker-compose.yml`, pulls, and restarts:
 
 ```sh
-docker compose pull
-docker compose down
-docker compose up -d
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml && docker compose pull && docker compose up -d
 ```
 
-Your save files and configuration are stored in Docker volumes and will be preserved.
+`.env`, saves, and settings are untouched. The post flags when `.env.example` gained new options.
+
+A **docker-compose.yml does not match this image** warning at startup links the matching file.
+
+## Customizing docker-compose
+
+Updates replace `docker-compose.yml`, so put your own changes in a `docker-compose.override.yml` next to it (Compose merges it automatically). Extra mods, for example:
+
+```yaml
+services:
+  server:
+    volumes:
+      - ./mods:/data/Mods/extra
+```
+
+Settings such as ports and passwords go in `.env`; see [Environment Variables](/admins/configuration/environment).
 
 ## Upgrade Notes
 
@@ -40,13 +53,7 @@ Set the image version in your `.env` file:
 IMAGE_VERSION=preview
 ```
 
-Then pull and restart:
-
-```sh
-docker compose pull
-docker compose down
-docker compose up -d
-```
+Then run the update command from the latest preview post on Discord (its `docker-compose.yml` comes from the preview's commit, not the latest release).
 
 ::: warning
 Preview builds may contain experimental features or bugs. Back up your saves before switching.
