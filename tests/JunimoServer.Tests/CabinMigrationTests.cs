@@ -22,9 +22,11 @@ namespace JunimoServer.Tests;
 public class CabinMigrationTests : TestBase
 {
     /// <summary>
-    /// Second designated cabin spot on the Standard farm (order: (23,31), (66,37), (17,10),
-    /// (17,48)). The first is the shared stack spot, which !cabin refuses. The primary's
-    /// !cabin-placed cabin obstructs it; auto-place must skip it and never move it.
+    /// Second designated cabin spot on the Standard farm's separate layout (Paths tile 30,
+    /// selected by the default CabinLayoutNearby=false; order: (23,31), (66,37), (17,10),
+    /// (17,48), (44,12), (39,32), (7,24)). The first is the shared stack spot, which !cabin
+    /// refuses. The primary's !cabin-placed cabin obstructs it; auto-place must skip it and
+    /// never move it.
     /// </summary>
     private const int ObstructedSpotX = 66;
     private const int ObstructedSpotY = 37;

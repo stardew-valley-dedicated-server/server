@@ -151,14 +151,7 @@ public partial class CabinManagerService
     private bool IsStackSpotResolved(Farm farm, CabinMigrationState migration)
     {
         var spot = GetEffectiveStackSpot(farm, migration);
-        var probe = farm.buildings.FirstOrDefault(b => b.isCabin && b.IsInHiddenStack());
-        if (probe == null)
-        {
-            // No hidden cabin means no ghost will ever render there — nothing to validate.
-            return true;
-        }
-
-        return CabinPlacementValidator.TryValidate(farm, probe, spot.ToPoint(), out _);
+        return CabinPlacementValidator.TryValidateFootprint(farm, spot.ToPoint(), out _);
     }
 
     /// <summary>
@@ -371,11 +364,7 @@ public partial class CabinManagerService
 
         // FarmhouseStack → CabinStack: no building moves — the placement chooses the spot
         // where the shared stack ghost will appear after commit.
-        var probe = farm.buildings.FirstOrDefault(b => b.isCabin && b.IsInHiddenStack());
-        if (
-            probe != null
-            && !CabinPlacementValidator.TryValidate(farm, probe, topLeft, out var ghostReason)
-        )
+        if (!CabinPlacementValidator.TryValidateFootprint(farm, topLeft, out var ghostReason))
         {
             message = $"Can't use ({topLeft.X},{topLeft.Y}) as the stack position: {ghostReason}.";
             return false;

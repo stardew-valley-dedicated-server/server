@@ -107,12 +107,7 @@ internal static class CabinsConsoleCommand
                     _monitor.Log(
                         $"Stack spot: ({s.Spot.X},{s.Spot.Y}) "
                             + (s.IsOverride ? "(override)" : "(map default)")
-                            + (
-                                !s.ObstructionChecked
-                                    ? " — obstruction not checked (stack is empty)"
-                                : s.IsObstructed ? $" — OBSTRUCTED: {s.ObstructionReason}"
-                                : ""
-                            ),
+                            + (s.IsObstructed ? $" — OBSTRUCTED: {s.ObstructionReason}" : ""),
                         LogLevel.Info
                     );
                 }
