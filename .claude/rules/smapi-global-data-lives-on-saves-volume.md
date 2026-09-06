@@ -5,7 +5,7 @@ paths:
 
 # Pick a persistence store by the lifetime it should have
 
-SMAPI global data (`helper.Data.ReadGlobalData`/`WriteGlobalData`) lives at `.smapi/mod-data/<mod-uid>/<key>.json` under the game data path, which is the `saves` volume mount (`docker-compose.yml`), keyed by mod id. It therefore survives `/newgame`, `/reload`, and a save-folder deletion, and dies only with the saves volume. Per-save state belongs in the save (`ReadSaveData`) or in a file inside the save folder (`FarmhandOwnershipService`'s store).
+SMAPI global data (`helper.Data.ReadGlobalData`/`WriteGlobalData`) lives at `.smapi/mod-data/<mod-uid>/<key>.json` under the game data path, which is the `saves` volume mount (`docker-compose.yml`), keyed by mod id. SMAPI lower-cases both the mod id and the key when building that path, so `WriteGlobalData("JunimoHost.GameLoader", …)` from `JunimoHost.Server` lands at `.smapi/mod-data/junimohost.server/junimohost.gameloader.json`; the `.smapi/mod-data/` directory sits at the root of the game data path (`/config/xdg/config/StardewValley/`), beside `Saves/`, not inside it. It therefore survives `/newgame`, `/reload`, and a save-folder deletion, and dies only with the saves volume. Per-save state belongs in the save (`ReadSaveData`) or in a file inside the save folder (`FarmhandOwnershipService`'s store).
 
 **Why:** A scheduler's run history had to outlive the world reset it performs — the reset re-rolls the save folder — while the old CI reset deleted the whole saves volume and wiped every global-data store with it. Establishing where the file actually lands took a scan of the SMAPI assembly plus the compose mount; the placement decides whether state survives a reset, a reload, or a volume wipe.
 

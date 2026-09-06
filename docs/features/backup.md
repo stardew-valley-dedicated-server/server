@@ -5,6 +5,7 @@
 | Backup Type | Frequency | Location | Managed By |
 |-------------|-----------|----------|------------|
 | SMAPI Auto-Backup | Once per day | `/data/game/save-backups` | SMAPI |
+| Previous save (game) | Every save | `_old` files inside the save folder | Game |
 | Docker Volumes | Persistent | Host filesystem | Docker |
 | Manual Backups | On-demand | Your choice | You |
 
@@ -53,6 +54,88 @@ docker compose exec server unzip "/data/game/save-backups/BACKUP_FILENAME.zip" -
 ```sh
 docker compose exec server ls -al /config/xdg/config/StardewValley/Saves
 docker compose restart
+```
+
+## Previous-Save Copy (`_old` files)
+
+Each save keeps the previous save alongside the new one, as `<save>_old` and `SaveGameInfo_old` in the same folder. The game uses these only for crash recovery, but you can roll back to them by hand. The server never deletes them, and they are **not** in [SMAPI's daily zips](#smapi-automatic-backups).
+
+This is one *save* behind — usually one in-game day, but not always: cabin migration and the [`farmhand`](/admins/operations/commands#farmhand) command each save without advancing the day, leaving `_old` at an earlier point of the same day. Check the dates the rollback prints before swapping.
+
+List the copies:
+
+```sh
+docker compose exec server sh -c 'ls -la /config/xdg/config/StardewValley/Saves/*/*_old'
+```
+
+### Finding your active save name
+
+The server loads the save named in a pointer file, not by scanning folders, so renaming a folder without updating it breaks startup. Print the active save name:
+
+```sh
+docker compose exec server sed -n 's/.*"SaveNameToLoad": *"\([^"]*\)".*/\1/p' /config/xdg/config/StardewValley/.smapi/mod-data/junimohost.server/junimohost.gameloader.json
+```
+
+Change the active save with the [`saves`](/admins/operations/commands#saves) command, not by renaming folders.
+
+### Rolling back one day
+
+Stop the server, swap the current save with its `_old` copy, then start again. The script backs up the folder first, prints both dates, and keeps every rename inside the save folder so an interrupted run leaves all files intact:
+
+```sh
+docker compose stop server
+
+docker compose run --rm --no-deps --entrypoint sh server -c '
+  set -eu
+  SAVE="Junimo_474497955193478706"
+  cd "/config/xdg/config/StardewValley/Saves/$SAVE"
+  for f in "$SAVE" SaveGameInfo "${SAVE}_old" SaveGameInfo_old; do
+    [ -s "$f" ] || { echo "missing or empty: $f"; exit 1; }
+  done
+  [ ! -e "${SAVE}_swap" ] && [ ! -e SaveGameInfo_swap ] || { echo "leftover _swap files, clean up first"; exit 1; }
+  BACKUP="/config/xdg/config/StardewValley/Backups/${SAVE}_$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP" && cp -a . "$BACKUP" && echo "backup: $BACKUP"
+  echo "current: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "$SAVE" | tr "\n" " ")"
+  echo "old:     $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "${SAVE}_old" | tr "\n" " ")"
+  mv "$SAVE" "${SAVE}_swap" && mv SaveGameInfo SaveGameInfo_swap
+  mv "${SAVE}_old" "$SAVE" && mv SaveGameInfo_old SaveGameInfo
+  mv "${SAVE}_swap" "${SAVE}_old" && mv SaveGameInfo_swap SaveGameInfo_old
+  echo "swapped. main save now: $(grep -oE "<(dayOfMonth|currentSeason|year)>[^<]*" "$SAVE" | tr "\n" " ")"
+'
+
+docker compose start server
+```
+
+- Replace the `SAVE=` line with your active save name (above).
+- Run from the compose directory in PowerShell, Git Bash, or a Unix shell — not `cmd.exe`.
+- Running it again swaps back.
+- The backup lands in `Backups/`, beside `Saves/`, so the game never lists it as a second save; the boot-time ownership sweep fixes its owner on restart.
+
+### Cleaning up rollback backups
+
+Rollback copies accumulate under `Backups/`. List them, then remove all or one:
+
+```sh
+# List rollback backups
+docker compose exec server ls -la /config/xdg/config/StardewValley/Backups
+
+# Remove all of them
+docker compose exec server rm -rf /config/xdg/config/StardewValley/Backups
+
+# Or remove a single one
+docker compose exec server rm -rf "/config/xdg/config/StardewValley/Backups/<BACKUP_NAME>"
+```
+
+Restore a folder from a backup with the server stopped:
+
+```sh
+docker compose stop server
+
+docker compose run --rm --no-deps --entrypoint sh server -c '
+  cp -a "/config/xdg/config/StardewValley/Backups/<BACKUP_NAME>/." "/config/xdg/config/StardewValley/Saves/<SAVE>/"
+'
+
+docker compose start server
 ```
 
 ## Docker Volume Persistence
@@ -171,6 +254,12 @@ server, see [Importing Saves](/admins/operations/importing-saves).
 :::
 
 ## Recovery Scenarios
+
+### Lost a Day
+
+1. The game keeps the previous save as `_old` files in the save folder
+2. Roll back one day with [Rolling back one day](#rolling-back-one-day)
+3. Check the printed dates before confirming — one save back is usually one day, not always
 
 ### Corrupted Save
 

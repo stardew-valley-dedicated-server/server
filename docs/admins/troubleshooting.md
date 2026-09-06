@@ -265,6 +265,10 @@ docker compose exec server ls -al /data/game/save-backups
 docker compose exec server unzip "/data/game/save-backups/BACKUP_FILENAME.zip" -d /config/xdg/config/StardewValley/Saves/
 ```
 
+### A day was lost / need to go back one day
+
+The game keeps the previous save as `_old` files in the save folder. See [Rolling back one day](/features/backup#rolling-back-one-day) to swap it in — it backs up the folder and prints both dates first.
+
 ## Mod Issues
 
 ### Mods not loading
