@@ -1,0 +1,19 @@
+# Routing for one server behind the HTTPS proxy; `args[0]` is the URL prefix ("" for
+# subdomain routing). The site address lives in Caddyfile.path / Caddyfile.subdomain.
+
+(server) {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+
+	redir {args[0]}/vnc {args[0]}/vnc/ 301
+	handle_path {args[0]}/vnc/* {
+		reverse_proxy server:5800
+	}
+
+	handle_path {args[0]}/* {
+		reverse_proxy server:{$API_PORT}
+	}
+}

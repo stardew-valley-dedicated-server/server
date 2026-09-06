@@ -345,8 +345,8 @@ The deploy server pipeline deploys server instances to a VPS. It supports multip
 Example `TARGETS` entries:
 
 ```json
-{"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
-{"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
+{"environment": "public-test-preview", "image_tag": "preview", "url_name": "preview", "on_preview": true, "on_release": false}
+{"environment": "public-test-latest", "image_tag": "latest", "url_name": "latest", "on_preview": false, "on_release": true}
 ```
 
 ### Setup Requirements
@@ -398,6 +398,8 @@ Add these under **Settings → Environments → Variables**, not as secrets.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DEPLOY_DISCORD_BOT_NICKNAME` | No | Discord bot nickname (defaults to the farm name) |
+| `DEPLOY_PUBLIC_HOST` | No | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); setting it enables the proxy. `SERVER_URL_NAME` comes from the matrix entry's `url_name` |
+| `DEPLOY_PROXY_ROUTING` | No | `path` (default) or `subdomain`, see the proxy docs |
 
 ### VPS Preparation
 

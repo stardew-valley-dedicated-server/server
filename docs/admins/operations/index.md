@@ -55,5 +55,6 @@ Save files are stored in the `saves` Docker volume.
 - [Console & Chat Commands](/admins/operations/commands)
 - [Importing Saves](/admins/operations/importing-saves)
 - [Networking](/admins/operations/networking)
+- [HTTPS & Reverse Proxy](/admins/operations/reverse-proxy)
 - [Upgrading](/admins/operations/upgrading)
 - [Web Interface (VNC)](/admins/operations/vnc) (advanced debugging only)

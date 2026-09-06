@@ -1,0 +1,6 @@
+# PROXY_ROUTING=subdomain: https://SERVER_URL_NAME.PUBLIC_HOST/... (PUBLIC_HOST must be a domain)
+import common.caddy
+
+{$SERVER_URL_NAME}.{$PUBLIC_HOST} {
+	import server ""
+}
