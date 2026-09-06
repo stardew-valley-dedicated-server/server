@@ -85,6 +85,7 @@ jobs:
           # discord-notify must exist in the tree for the `uses: ./…` steps below.
           sparse-checkout: |
             docker-compose.yml
+            docker/proxy
             .github/actions/discord-notify
           sparse-checkout-cone-mode: false
 
