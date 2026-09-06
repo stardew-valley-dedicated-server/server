@@ -1,0 +1,12 @@
+# PROXY_ROUTING=path: https://PUBLIC_HOST/SERVER_URL_NAME/...
+{
+	# Browsers send no SNI for bare-IP URLs; serve the host's certificate then.
+	default_sni {$PUBLIC_HOST}
+}
+
+import common.caddy
+
+{$PUBLIC_HOST} {
+	redir /{$SERVER_URL_NAME} /{$SERVER_URL_NAME}/ 301
+	import server /{$SERVER_URL_NAME}
+}

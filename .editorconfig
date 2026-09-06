@@ -14,6 +14,9 @@ indent_size = 2
 [Makefile]
 indent_style = tab
 
+[{Caddyfile*,*.caddy}]
+indent_style = tab
+
 [*.cs]
 # CSharpier only rewrites whitespace and never inserts braces; IDE0011 closes that
 # gap (build-time via EnforceCodeStyleInBuild in Directory.Build.props).

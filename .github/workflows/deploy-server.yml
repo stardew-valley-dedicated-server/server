@@ -50,15 +50,15 @@ jobs:
         run: |
           # Define deployment targets as JSON
           TARGETS='[
-            {"environment": "public-test-preview", "image_tag": "preview", "on_preview": true, "on_release": false}
+            {"environment": "public-test-preview", "image_tag": "preview", "url_name": "preview", "on_preview": true, "on_release": false}
           ]'
-          # {"environment": "public-test-latest", "image_tag": "latest", "on_preview": false, "on_release": true}
+          # {"environment": "public-test-latest", "image_tag": "latest", "url_name": "latest", "on_preview": false, "on_release": true}
 
           MATRIX=$(echo "$TARGETS" | jq -c '[.[] | select(
             (env.TRIGGER == "workflow_dispatch" and env.SELECTED == .environment) or
             (env.TRIGGER == "workflow_run" and env.WORKFLOW_SUCCESS == "success" and .on_preview) or
             (env.TRIGGER == "release" and .on_release)
-          ) | {environment, image_tag}]')
+          ) | {environment, image_tag, url_name}]')
 
           echo "matrix={\"include\":$MATRIX}" >> $GITHUB_OUTPUT
           echo "has_targets=$([ "$MATRIX" != "[]" ] && echo true || echo false)" >> $GITHUB_OUTPUT
@@ -106,6 +106,10 @@ jobs:
           DEPLOY_DISCORD_BOT_TOKEN: ${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
           DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
           DEPLOY_DISCORD_BOT_NICKNAME: ${{ vars.DEPLOY_DISCORD_BOT_NICKNAME }}
+          # Optional: enables the HTTPS proxy (docs: operations/reverse-proxy.md).
+          DEPLOY_PUBLIC_HOST: ${{ vars.DEPLOY_PUBLIC_HOST }}
+          DEPLOY_PROXY_ROUTING: ${{ vars.DEPLOY_PROXY_ROUTING }}
+          DEPLOY_SERVER_URL_NAME: ${{ matrix.url_name }}
         run: |
           echo "::group::Generate .env file for ${{ matrix.environment }}"
 
@@ -145,6 +149,13 @@ jobs:
           echo "DISCORD_BOT_TOKEN=$DEPLOY_DISCORD_BOT_TOKEN" >> .env
           echo "DISCORD_CHAT_CHANNEL_ID=$DEPLOY_DISCORD_CHAT_CHANNEL_ID" >> .env
           echo "DISCORD_BOT_NICKNAME=$DEPLOY_DISCORD_BOT_NICKNAME" >> .env
+          if [[ -n "$DEPLOY_PUBLIC_HOST" ]]; then
+            echo "# HTTPS proxy" >> .env
+            echo "COMPOSE_PROFILES=proxy" >> .env
+            echo "PUBLIC_HOST=$DEPLOY_PUBLIC_HOST" >> .env
+            echo "SERVER_URL_NAME=$DEPLOY_SERVER_URL_NAME" >> .env
+            echo "PROXY_ROUTING=${DEPLOY_PROXY_ROUTING:-path}" >> .env
+          fi
           echo "::endgroup::"
 
       - name: Create deploy directory
@@ -163,7 +174,7 @@ jobs:
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
-          source: "docker-compose.yml,.env"
+          source: "docker-compose.yml,.env,docker/proxy"
           target: ~/srv/${{ matrix.environment }}
 
       # Resolves what the alias (matrix.image_tag) actually points at, for the internal-ci
@@ -242,7 +253,7 @@ jobs:
             echo "::endgroup::"
 
             echo "::group::Stop containers"
-            docker compose down --timeout 30 || true
+            docker compose down --timeout 30 --remove-orphans || true
             echo "::endgroup::"
 
             # No steam-auth setup step: serve downloads the game itself on a fresh volume.
@@ -277,6 +288,27 @@ jobs:
             fi
             docker compose ps
             echo "::endgroup::"
+
+            # The proxy keeps retrying a failed certificate order instead of exiting, so
+            # `compose ps` stays green; only a request through the proxy proves it works.
+            envval() { grep -m1 "^$1=" .env | cut -d= -f2-; }
+            PUBLIC_HOST=$(envval PUBLIC_HOST)
+            if [[ -n "$PUBLIC_HOST" ]]; then
+              echo "::group::Proxy check"
+              SERVER_URL_NAME=$(envval SERVER_URL_NAME)
+              case "$(envval PROXY_ROUTING)" in
+                subdomain) url="https://$SERVER_URL_NAME.$PUBLIC_HOST/health" ;;
+                *) url="https://$PUBLIC_HOST/$SERVER_URL_NAME/health" ;;
+              esac
+              # Retries cover the certificate order, which can take a minute on first start.
+              if ! curl -fsS --retry 12 --retry-delay 10 --retry-all-errors "$url" > /dev/null; then
+                echo "::error::Proxy check failed: $url"
+                docker compose logs --tail=50 proxy
+                exit 1
+              fi
+              echo "$url OK"
+              echo "::endgroup::"
+            fi
 
       - name: Build summary
         run: |

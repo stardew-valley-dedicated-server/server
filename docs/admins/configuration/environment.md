@@ -21,6 +21,10 @@ These must be set for the server to function:
 | `VNC_PORT` | TCP port for VNC web interface | `5800` |
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
+| `PUBLIC_HOST` | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); when set, `VNC_PORT` and `API_PORT` bind to loopback | - |
+| `SERVER_URL_NAME` | This server's name in its URL behind the proxy | `server` |
+| `PROXY_ROUTING` | `path` (`https://HOST/NAME/`) or `subdomain` (`https://NAME.HOST/`) | `path` |
+| `COMPOSE_PROFILES` | `proxy` starts the bundled HTTPS proxy; leave unset to use your own | - |
 | `SERVER_FPS` | Render rate: `0` = rendering disabled, `N > 0` = render at N fps | `0` |
 | `VERBOSE_LOGGING` | Override verbose logging setting | - |
 
@@ -186,6 +190,7 @@ The server refuses to start without `VNC_PASSWORD`, or without `API_KEY` while `
 | 27015 | UDP | Steam query | No (relay handles NAT) |
 | 5800 | TCP | VNC web interface | Only for remote access |
 | 8080 | TCP | REST API | Only for external tools |
+| 80, 443 | TCP | HTTPS proxy (optional) | Only with the `proxy` profile |
 | 3001 | TCP | Steam auth (internal) | No |
 
 ## Changing Ports

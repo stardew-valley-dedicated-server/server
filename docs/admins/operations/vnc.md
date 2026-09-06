@@ -28,6 +28,8 @@ Replace:
 
 Example: `http://localhost:5800`
 
+Behind the [HTTPS proxy](/admins/operations/reverse-proxy) the web UI is at the server's proxy URL plus `/vnc/`, and the plain-HTTP port is not reachable from outside.
+
 You'll be prompted to enter the VNC password configured in your `.env` file.
 
 ## VNC Settings Panel

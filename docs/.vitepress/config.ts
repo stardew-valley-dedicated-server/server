@@ -204,6 +204,7 @@ export default withMermaid(
                             { text: "Upgrading", link: "/admins/operations/upgrading" },
                             { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
                             { text: "Modern Docker Image", link: "/admins/operations/modern-docker" },
+                            { text: "HTTPS & Reverse Proxy", link: "/admins/operations/reverse-proxy" },
                         ],
                     },
                     {
