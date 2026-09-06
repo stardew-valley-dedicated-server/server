@@ -105,12 +105,12 @@ export default withMermaid(
         `,
             ],
         ],
-        // Per-page social/SEO tags. `title`/`description` here are already resolved
-        // (page value, falling back to the site title/description), so the home page
+        // Per-page social/SEO tags. `description` here is already resolved
+        // (page value, falling back to the site description), so the home page
         // and description-less pages get sensible values. These tags replace the
         // page-invariant placeholders in `head` via mergeHead (property/name must be
         // the first attr key for the dedup to match).
-        transformHead({ pageData, siteConfig, title, description }) {
+        transformHead({ pageData, siteConfig, description }) {
             if (pageData.isNotFound) {
                 return [];
             }

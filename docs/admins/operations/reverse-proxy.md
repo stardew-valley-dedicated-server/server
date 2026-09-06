@@ -4,11 +4,11 @@ description: Serve the API and VNC web UI over HTTPS with a Let's Encrypt certif
 
 # HTTPS & Reverse Proxy
 
-By default the REST API (`API_PORT`) and the VNC web UI (`VNC_PORT`) are plain HTTP, which is fine for a home or LAN server. HTTPS is needed to show a live status widget on a web page, since browsers block plain-HTTP requests from HTTPS sites, and to keep your VNC and API credentials off the wire. This page sets it up with or without a domain: Let's Encrypt also issues certificates for a bare public IP.
+By default the REST API (`API_PORT`) and the VNC web UI (`VNC_PORT`) are plain HTTP, which is fine for a home or LAN server. HTTPS keeps your API and VNC credentials off the wire, and it is required to show a live status widget on a web page, since browsers block plain-HTTP requests from HTTPS sites. This page sets it up with or without a domain: Let's Encrypt also issues certificates for a bare public IP.
 
-## The three setups
+## Setups
 
-| Setup | For | You set | Reachable from outside |
+| Setup | Use case | Set | Exposed |
 |-------|-----|---------|------------------------|
 | No proxy (default) | Home and LAN servers | nothing | plain HTTP on `API_PORT` and `VNC_PORT` |
 | Bundled proxy | One server on a VPS | `COMPOSE_PROFILES=proxy`, `PUBLIC_HOST`, `SERVER_URL_NAME`, `PROXY_ROUTING` | HTTPS on 443 only |
@@ -33,7 +33,7 @@ Setting `PUBLIC_HOST` declares that a proxy sits in front of the server: the pla
 
 `path` works for an IP and for a domain. `subdomain` needs a domain, with a DNS record (or wildcard) for that name pointing at the host; with an IP host the certificate request fails, visible in `docker compose logs proxy`.
 
-## How the certificate works
+## Certificate
 
 The proxy requests short-lived Let's Encrypt certificates (six days, renewed automatically), the type Let's Encrypt issues for IP addresses; they work for domains too. Validation runs over port 80, so you need:
 
