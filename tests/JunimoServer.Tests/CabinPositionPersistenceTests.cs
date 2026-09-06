@@ -437,10 +437,10 @@ public class CabinPositionPersistenceTests : TestBase
 
     /// <summary>
     /// Guard (proxy) for the dummy-cabin cosmetic: a player whose cabin was moved via !cabin
-    /// triggers the new dummy-found branch in OnLocationIntroductionMessage on reconnect. The
-    /// mutation lives only in the per-peer message copy, so /cabins (master) can't see it —
-    /// this asserts the join completes, master's tile for the moved cabin is unchanged (the
-    /// dummy must not touch master state), and no errors fired.
+    /// takes the phantom branch in OnLocationIntroductionMessage on reconnect, which adds a
+    /// fresh door-less Building at the stack spot to that peer's message copy. Master
+    /// (/cabins) can't see it — this asserts the join completes, master's tile for the moved
+    /// cabin is unchanged (the phantom must not touch master state), and no errors fired.
     /// </summary>
     [Fact]
     public async Task DummyCabin_ReconnectAfterMove_JoinSucceedsAndMasterUnchanged()
@@ -454,7 +454,7 @@ public class CabinPositionPersistenceTests : TestBase
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
         Log($"Cabin placed at ({movedTile.X},{movedTile.Y}) for '{client.FarmerName}'");
 
-        // Disconnect and reconnect: the reconnect's location introduction runs the dummy branch.
+        // Disconnect and reconnect: the reconnect's location introduction runs the phantom branch.
         await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, ct);
         await Farmers.ReconnectAsync(client.FarmerName, ct: ct);
 
@@ -488,7 +488,7 @@ public class CabinPositionPersistenceTests : TestBase
         var movedTile = await MoveCabinViaCommandAsync(ownerId, ct);
 
         // Reconnect so the client receives a fresh Farm location introduction (where the
-        // dummy is injected into this peer's copy).
+        // phantom is added to this peer's copy).
         await Farmers.DisconnectAndWaitForSlotAsync(ownerId, client.FarmerName, ct);
         await Farmers.ReconnectAsync(client.FarmerName, ct: ct);
 

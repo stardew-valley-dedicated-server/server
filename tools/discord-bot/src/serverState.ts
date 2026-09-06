@@ -33,6 +33,7 @@ export interface ServerStatus extends StatusSignals {
     timeOfDay: number;
     farmTypeKey: string;
     isPaused: boolean;
+    version: number;
 }
 
 export type ServerStateKind =
