@@ -29,4 +29,4 @@ The more context you give, the faster we can help:
 - OS, Docker version, JunimoServer version
 - Mods installed (if any)
 - What you tried and what happened
-- Logs: `docker compose exec -it server diagnostics` zips logs and setup with passwords masked (see [Collect Diagnostics](/community/reporting-bugs#collect-diagnostics)), or paste from `docker compose logs -f`
+- Logs: `docker compose exec -it server diagnostics` zips logs and setup with passwords masked (see [Collect Diagnostics](/community/reporting-bugs#collect-diagnostics)). If you paste from `docker compose logs -f` instead, check the lines first: raw logs are not masked

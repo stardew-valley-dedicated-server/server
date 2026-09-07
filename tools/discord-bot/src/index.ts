@@ -1,3 +1,6 @@
+// Discord rejects nicknames over 32 characters; the full name stays on /status.
+const _nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
+
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {

@@ -223,6 +223,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+    latestRequest++; // a poll still in flight must not reschedule after disposal
     if (pollTimer) {
         clearTimeout(pollTimer);
     }

@@ -104,7 +104,7 @@ public class ServerStatus
     /// <summary>Whether the game clock is currently paused (no players connected, or time not passing).</summary>
     public bool IsPaused { get; set; }
 
-    /// <summary>Measured game ticks per second, averaged over the last 30 seconds (see /stats for the instant value and target).</summary>
+    /// <summary>Measured game ticks per second over at least the last 30 seconds (see /stats for the instant value and target).</summary>
     public double Tps { get; set; }
 
     /// <summary>
@@ -926,7 +926,12 @@ public partial class ApiService : ModService
     private DateTime _lastTpsUpdate = DateTime.UtcNow;
 
     // For /status; the window matches the public widget's 30-second poll.
-    private readonly RollingAverage _avgTps = new(30);
+    /// <summary>
+    /// Ticks and seconds per sample interval, averaged over the same window: their ratio is the
+    /// tick rate over the last 30 intervals (30+ seconds), so a long stall weighs by its duration.
+    /// </summary>
+    private readonly RollingAverage _tpsTicks = new(30);
+    private readonly RollingAverage _tpsSeconds = new(30);
 
     // ── Game thread wait time tracking for /stats endpoint ──
     private readonly RollingAverage _avgGameThreadWaitMs = new(60);
@@ -1308,7 +1313,8 @@ public partial class ApiService : ModService
         {
             var sample = _tickCount / tpsElapsed;
             Volatile.Write(ref _currentTps, sample);
-            _avgTps.Add(sample);
+            _tpsTicks.Add(_tickCount);
+            _tpsSeconds.Add(tpsElapsed);
             _tickCount = 0;
             _lastTpsUpdate = tpsNow;
         }
@@ -2767,7 +2773,8 @@ public partial class ApiService : ModService
         var modInfo = Helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
         var snap = _snapshot;
-        var tps = Math.Round(_avgTps.Average, 1);
+        var tpsSeconds = _tpsSeconds.Average;
+        var tps = tpsSeconds > 0 ? Math.Round(_tpsTicks.Average / tpsSeconds, 1) : 0;
 
         // Derive invite codes from file (thread-safe file read). The S-code is exposed only
         // once the Galaxy lobby carries the SteamLobbyId stamp — a vanilla Steam client
