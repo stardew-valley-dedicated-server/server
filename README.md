@@ -123,11 +123,11 @@ You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VE
 
 ## Documentation
 
-Explore the [full documentation](https://stardew-valley-dedicated-server.github.io/server/) to get started. Here's what you'll find:
+Explore the [full documentation](https://docs.junimoserver.com/) to get started. Here's what you'll find:
 
-- **[Getting Started](https://stardew-valley-dedicated-server.github.io/server/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
-- **[Server Guide](https://stardew-valley-dedicated-server.github.io/server/guide/using-the-server):** Learn how to use and manage your server.
-- **[Community](https://stardew-valley-dedicated-server.github.io/server/community/getting-help):** Find out how to get involved and get help.
+- **[Getting Started](https://docs.junimoserver.com/getting-started/introduction):** Step-by-step instructions on setting up and managing your server.
+- **[Server Guide](https://docs.junimoserver.com/guide/using-the-server):** Learn how to use and manage your server.
+- **[Community](https://docs.junimoserver.com/community/getting-help):** Find out how to get involved and get help.
 
 ## Support
 

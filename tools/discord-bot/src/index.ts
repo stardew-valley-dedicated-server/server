@@ -847,7 +847,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
                     `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
                     `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
-                    `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://stardew-valley-dedicated-server.github.io/server/features/cabin-strategies.html#cabinstack-default))`,
+                    `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://docs.junimoserver.com/features/cabin-strategies.html#cabinstack-default))`,
                 ];
 
                 await message.reply(lines.join("\n"));
