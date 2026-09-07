@@ -35,8 +35,7 @@ const configPath = path.join(docsDir, ".vitepress", "config.ts");
 // Local-only artifact; `.output/` is gitignored.
 const outPath = path.join(docsDir, ".output", "page-graph.html");
 
-const DEFAULT_ORIGIN = "https://stardew-valley-dedicated-server.github.io";
-const SITE_BASE = "/server";
+const DEFAULT_ORIGIN = "https://docs.junimoserver.com";
 const HOME_SECTION = "home";
 
 const SECTION_COLORS: Record<string, string> = {
@@ -69,7 +68,7 @@ function readSiteConfig(): { site: string; navSections: string[] } {
     // Slice to the nav block first so sidebar links (same shape) don't leak in.
     const navBlock = source.slice(source.indexOf("nav:"), source.indexOf("sidebar:"));
     const navSections = [...navBlock.matchAll(/link:\s*["']\/([^/"']+)\//g)].map((m) => m[1]);
-    return { site: origin.replace(/\/$/, "") + SITE_BASE, navSections: [...new Set(navSections)] };
+    return { site: origin.replace(/\/$/, ""), navSections: [...new Set(navSections)] };
 }
 
 /** Route id for a markdown file: `players/index.md` → `/players/`, `index.md` → `/`. */
