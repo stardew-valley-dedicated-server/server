@@ -310,6 +310,7 @@ export default withMermaid(
                         text: "Advanced",
                         items: [
                             { text: "Building from Source", link: "/developers/advanced/building-from-source" },
+                            { text: "Code Navigation (Serena)", link: "/developers/advanced/code-navigation" },
                             { text: "Decompiling", link: "/developers/advanced/decompiling" },
                             {
                                 text: "Client Manipulation Techniques",

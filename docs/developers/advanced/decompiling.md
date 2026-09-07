@@ -28,6 +28,10 @@ bash ./tools/decompile-sdv.sh
 
 This script will use decompilation tools to extract the C# source code from the Stardew Valley assemblies.
 
+::: tip Semantic search over the decompiled code
+Once decompiled, the `stardew-decompiled` [Serena project](/developers/advanced/code-navigation) lets an AI agent navigate the game code by symbol. Its config is committed at `decompiled/sdv-<version>/.serena/project.yml`; when a new game version lands (rare), move that `.serena` folder into the new version's directory — the `project_name` stays stable, so nothing else changes.
+:::
+
 ## Recompiling (Work in Progress)
 
 ::: warning Work in Progress
