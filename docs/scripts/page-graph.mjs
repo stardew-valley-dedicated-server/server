@@ -107,6 +107,10 @@ const PALETTE = ["#7ee787", "#f2a65a", "#c084fc", "#58a6ff", "#f778ba",
 const colors = { home: COLOR_OVERRIDES.home };
 sections.forEach((s, i) => { colors[s] = COLOR_OVERRIDES[s] || PALETTE[i % PALETTE.length]; });
 
+// Escape `<` so a value like a page title containing `</script>` can't break
+// out of the inline <script> the data is injected into.
+const js = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
+
 const html = render({ nodes, edges: edgeList }, colors, sections, site);
 mkdirSync(path.dirname(outPath), { recursive: true });
 writeFileSync(outPath, html);
@@ -165,12 +169,12 @@ function render(DATA, COLORS, SECTIONS, SITE) {
 </div>
 <div id="hint">Drag to pan · scroll to zoom · hover to preview links · Shift = only outgoing, Alt = only incoming · click nodes to pin (multi-select) · empty click clears · Ctrl/Cmd+click opens the page</div>
 <script>
-const DATA = ${JSON.stringify(DATA)};
-const SITE = ${JSON.stringify(SITE)};
-const COLORS = ${JSON.stringify(COLORS)};
+const DATA = ${js(DATA)};
+const SITE = ${js(SITE)};
+const COLORS = ${js(COLORS)};
 // Fixed-position columns (physics off) so nothing overlaps; pages are sorted by
 // URL so a section's subpages group together.
-const SECTIONS = ${JSON.stringify(SECTIONS)};
+const SECTIONS = ${js(SECTIONS)};
 const COL_GAP = 480;   // horizontal distance between section columns
 const ROW_GAP = 80;    // vertical distance between stacked pages
 const HDR_Y = -110;    // section header row
