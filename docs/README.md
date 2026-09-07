@@ -20,7 +20,7 @@ npm run preview
 
 ## Server Status Widget
 
-`npm run dev` serves a built-in fake `/status`, so the card on the Public Test Server page works
+`npm run dev` serves a built-in fake `/__status-stub/status`, so the card on the Public Test Server page works
 offline. To point dev or a local build at a real server instead, create `docs/.env.local`:
 
 ```sh
