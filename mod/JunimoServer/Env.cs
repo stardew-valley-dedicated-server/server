@@ -82,6 +82,14 @@ internal class Env
     public static readonly int ApiPort = ParseInt("API_PORT", 8080);
 
     /// <summary>
+    /// Display name of this deployment, exposed on /status for the Discord bot nickname and
+    /// the status widget. Distinct from the farm name (game-world state stored in the save) and
+    /// from SERVER_URL_NAME (the proxy routing key). Empty when unset.
+    /// </summary>
+    public static readonly string ServerName =
+        Environment.GetEnvironmentVariable("SERVER_NAME")?.Trim() ?? "";
+
+    /// <summary>
     /// Pid file of the startup script's phase responder (see ApiPortHandoff). Set by the server
     /// image, unset elsewhere.
     /// </summary>

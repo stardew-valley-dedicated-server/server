@@ -14,5 +14,5 @@ Thank you for your interest in contributing to JunimoServer! ❤️
 ## Resources
 
 - [Reporting Bugs](https://stardew-valley-dedicated-server.github.io/server/community/reporting-bugs) - How to report issues effectively
-- [CI/CD & Releases](https://stardew-valley-dedicated-server.github.io/server/community/contributing#ci-cd-pipeline) - Understanding the development workflow
+- [CI/CD & Releases](https://stardew-valley-dedicated-server.github.io/server/developers/contributing/ci-cd) - Understanding the development workflow
 - [Getting Help](https://stardew-valley-dedicated-server.github.io/server/community/getting-help) - Where to ask questions

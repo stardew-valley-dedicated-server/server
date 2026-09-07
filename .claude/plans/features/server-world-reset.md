@@ -348,6 +348,27 @@ console equivalents are `scheduler run world-reset` / `scheduler cancel world-re
 `SendPublicMessage` directly, and the existing WebSocket `chat_send` message remains the only
 external chat path.
 
+### Player-facing surfaces — part of this change, not a follow-up
+
+Players never see `GET /schedules`; they see the status card on the docs
+[Public Test Server](../../../docs/community/test-server.md) page and the Discord bot. Both
+must show the next reset the moment the task ships, so the "Resets" warning on that page
+stops being an open-ended threat and becomes a time:
+
+- **`GET /status`** (`ApiService`, public, no auth) gains `nextResetUtc`: the `world-reset`
+  job's `nextRunUtc`, `null` when the job is unarmed, dormant, or mid-run. Read from the
+  scheduler's snapshot field like every other status value — no marshal, no cron math.
+- **`ServerStatusWidget.vue`** shows a "Next reset" vital next to the clock and tick rate,
+  rendered as the viewer's local time with a relative hint ("in 2 days"), hidden when
+  `nextResetUtc` is `null`. `serverState.ts` carries the field on `ServerStatus`.
+- **Discord bot dashboard** (`dashboard.ts`) gets the same "Next reset" field, formatted with
+  Discord's relative-time markup so it needs no refresh to stay right.
+- `docs/admins/operations/public-status.md` documents the field in the `/status` contract
+  comment and the widget description.
+
+These land in milestone 2 with the task, and milestone 4's deploy check reads the value
+from the live card, not only from `GET /schedules`.
+
 ## CI changes (part of this change)
 
 - In `deploy-server.yml`, exactly three edits: add the `WORLD_RESET_CRON` line to the
@@ -436,9 +457,9 @@ gate is green. One PR is fine; four unvalidated commits in one push is not.
 | # | Milestone | Contents | Validation gate |
 |---|---|---|---|
 | 1 | **Lease + `GameManagerService` fixes** | Changes 1–4 above: `WorldDisruptionLease`, the second-new-game rejection, the reload-coalesce guard, failed-creation recovery, `IsDayTransitionComplete` move, the two HTTP handlers collapsed to one action, `TryReloadActiveWorld` holding the lease, `/newgame` fail-closed. No scheduler, no task. | Existing API and reload E2E green unchanged (the behaviour-preserving bar, same as the dispatcher extraction in the scheduler plan). New tests: `/newgame` during `/newgame` → 409; `/reload` during `/newgame` → 409; a creation that throws (injected via the test-only `POST /test/fail_next_newgame`) leaves the server on a loaded world. |
-| 2 | **Reset task** | `WorldResetTask` with countdown, quiet wait, kick, create, delete-after-confirm; env knobs, compose and docs wiring; `GET /test/saves`; harness properties. Requires the scheduler plan landed. | The Reset, Lock (both phases), Cancel, and Manual-overlap tests; run-artifact check that all four `world_reset_*` events fired. |
+| 2 | **Reset task** | `WorldResetTask` with countdown, quiet wait, kick, create, delete-after-confirm; env knobs, compose and docs wiring; `GET /test/saves`; harness properties. `nextResetUtc` on `GET /status`, the "Next reset" vital in `ServerStatusWidget.vue`, and the dashboard field in the Discord bot (Player-facing surfaces above). Requires the scheduler plan landed. | The Reset, Lock (both phases), Cancel, and Manual-overlap tests; run-artifact check that all four `world_reset_*` events fired; `GET /status` shows `nextResetUtc` equal to the job's `nextRunUtc` while armed and `null` after `POST /schedules/cancel`. |
 | 3 | **Countdown extraction + restart notification** | `CountdownAnnouncer` pulled out of the task (the task's behaviour is unchanged — milestone 2's tests are the regression net), `POST /notify/restart`, `ServerApiClient.NotifyRestartAsync`. | Milestone 2's tests still green; the Restart-notice-vs-reset tests. |
-| 4 | **Deployment wiring** | `deploy-server.yml` restart-warning block, `WORLD_RESET_CRON` in the generated `.env`, delete the graceful-shutdown placeholder and its input, set the GitHub Environment variable. | One real deploy to `public-test-preview` observed per the operational caveat above (status echo 200, step duration grew by N); `GET /schedules` on the deployed server shows `world-reset` armed with the expected `nextRunUtc`. |
+| 4 | **Deployment wiring** | `deploy-server.yml` restart-warning block, `WORLD_RESET_CRON` in the generated `.env`, delete the graceful-shutdown placeholder and its input, set the GitHub Environment variable. | One real deploy to `public-test-preview` observed per the operational caveat above (status echo 200, step duration grew by N); `GET /schedules` on the deployed server shows `world-reset` armed with the expected `nextRunUtc`, and the docs status card and Discord dashboard show the same time as "Next reset". |
 
 Milestone 1 is the one with the widest blast radius and no new feature to show for it — it
 must be reviewed as a refactor, on its own diff, before any reset code is in the tree.

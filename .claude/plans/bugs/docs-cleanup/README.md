@@ -59,7 +59,6 @@ Critical → High → Medium → Low; Low items are "while you're in the file" r
 | D5 | OpenAPI spec carries zero `parameters`/`requestBody`/`securitySchemes`; generator never emits them (`OpenApiGenerator.cs`) | Document params manually in `introduction.md` | Extend the generator (the generator is reflection-invoked with fixed positional args at Docker build time — see the `<remarks>` on `OpenApiGenerator.Generate`) |
 | D6 | `!event` documented as admin command; code has no role gate (`AlwaysOnFestivals.cs`) and broadcasts "Type !event to start now" to everyone | Reclassify as player command in both docs | Add an admin gate (contradicts the public broadcast — unlikely intended) |
 | D7 | `ci-cd.md` marks `DEPLOY_API_KEY` optional; workflow aborts without it (`deploy-server.yml`) | Mark Required: Yes | Relax the workflow check |
-| D8 | `getting-help.md` routes feature requests to GitHub Discussions; Discussions are disabled on the repo (`has_discussions:false`) | Route to Issues (`feature_request.yml` exists) + Discord | Enable Discussions |
 | D9 | `!authstatus` example shows a "(45s remaining)" countdown that doesn't exist (`AuthStatusCommand.cs`) | Show real `[OK]/[PENDING]` output | Implement the countdown |
 | D10 | `UPDATE_INTERVAL_MS` consumed by discord-bot but compose hardcodes `"30000"` | Leave undocumented (internal) | Interpolate `${UPDATE_INTERVAL_MS:-30000}` and document |
 

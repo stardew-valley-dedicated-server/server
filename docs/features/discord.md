@@ -38,7 +38,7 @@ Players on Discord can chat with players in-game and vice versa.
 
 The bot's nickname in your Discord server can be:
 - Your farm name (automatic)
-- A custom name (via `DISCORD_BOT_NICKNAME`)
+- The server's display name (via `SERVER_NAME`)
 
 ## Setup
 

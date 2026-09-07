@@ -1,3 +1,7 @@
+---
+description: Frequently asked questions about JunimoServer — cost, saves, players, GOG, offline behavior, mods, and common troubleshooting.
+---
+
 # FAQ
 
 ## General

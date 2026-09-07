@@ -68,17 +68,11 @@ pages.
   - `developers/index.md` omits 4 sidebar pages: events-schema, remote-host-setup,
     ci-log-masking-runbook, client-manipulation-techniques (all present in config.ts).
   - `admins/index.md` omits modern-docker (config.ts) and the operations overview.
-  - `community/index.md` omits its own contributing page — which is itself an 11-line pure
-    pointer page; consider folding it into the index and dropping the page (update config.ts).
 - **N4. `developers/index.md` says "6-step debugging procedure"** — runbook has 7 steps; fix
   together with plan 03 M12 (CLAUDE.md companion).
 
 ## Dead links & external references
 
-- `community/getting-help.md` Discussions row (404 — repo has Discussions disabled) and
-  `community/resources.md` `truman-world/puppy-stardew-server` (404) — fixes specified in plan 02
-  M15/M16; tracked here for the link-check gate.
-- `CONTRIBUTING.md` dead anchor `#ci-cd-pipeline` — plan 04 rider.
 - After all plans land, run the relative-link sweep again — consolidations in S1–S3 move anchor
   targets.
 

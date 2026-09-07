@@ -322,17 +322,31 @@ export default withMermaid(
                 "/community/": [
                     {
                         text: "Community",
+                        items: [{ text: "Overview", link: "/community/" }],
+                    },
+                    {
+                        text: "Try It Out",
+                        items: [{ text: "Public Test Server", link: "/community/test-server" }],
+                    },
+                    {
+                        text: "Get Help",
                         items: [
-                            { text: "Overview", link: "/community/" },
-                            { text: "Public Test Server", link: "/community/test-server" },
                             { text: "FAQ", link: "/community/faq" },
                             { text: "Getting Help", link: "/community/getting-help" },
                             { text: "Reporting Bugs", link: "/community/reporting-bugs" },
-                            { text: "Contributing", link: "/community/contributing" },
-                            { text: "Resources", link: "/community/resources" },
+                        ],
+                    },
+                    {
+                        text: "Contribute",
+                        items: [{ text: "Contributing", link: "/community/contributing" }],
+                    },
+                    {
+                        text: "Project",
+                        items: [
                             { text: "Roadmap", link: "/community/roadmap" },
                             { text: "Changelog", link: "/community/changelog" },
-                            { text: "Contributors", link: "/community/contributors" },
+                            { text: "Credits", link: "/community/credits" },
+                            { text: "Related Projects & Links", link: "/community/links" },
                         ],
                     },
                 ],
@@ -353,7 +367,7 @@ export default withMermaid(
             },
 
             footer: {
-                message: "Released under the MIT License.",
+                message: "Released under the MIT License. Not affiliated with or endorsed by ConcernedApe LLC.",
                 copyright: "Copyright © 2024-present JunimoServer Contributors",
             },
 

@@ -22,6 +22,7 @@ These must be set for the server to function:
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
 | `PUBLIC_HOST` | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); when set, `VNC_PORT` and `API_PORT` bind to loopback | - |
+| `SERVER_NAME` | Display name shown as the Discord bot nickname and on status widgets | (farm name) |
 | `SERVER_URL_NAME` | This server's name in its URL behind the proxy | `server` |
 | `PROXY_ROUTING` | `path` (`https://HOST/NAME/`) or `subdomain` (`https://NAME.HOST/`) | `path` |
 | `COMPOSE_PROFILES` | `proxy` starts the bundled HTTPS proxy; leave unset to use your own | - |
@@ -75,7 +76,6 @@ server's files to match.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DISCORD_BOT_TOKEN` | Discord bot token | - |
-| `DISCORD_BOT_NICKNAME` | Custom bot nickname | (farm name) |
 | `DISCORD_CHAT_CHANNEL_ID` | Channel ID for chat relay | - |
 | `STATUS_DASHBOARD_CHANNEL_ID` | Channel ID for the status dashboard | - |
 | `STATUS_DASHBOARD_REFRESH_RATE` | Dashboard update interval in seconds | `30` |

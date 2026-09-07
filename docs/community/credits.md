@@ -1,3 +1,7 @@
+---
+description: The projects JunimoServer builds on, and the people who contribute to it.
+---
+
 # Credits
 
 ## Built On
@@ -17,11 +21,3 @@ Thanks to **ConcernedApe** for Stardew Valley and **SMAPI maintainers** for maki
 See [GitHub contributors](https://github.com/stardew-valley-dedicated-server/server/graphs/contributors) for everyone who's contributed code.
 
 Want to contribute? See [Contributing](/community/contributing).
-
-## License
-
-MIT License. See [LICENSE](https://github.com/stardew-valley-dedicated-server/server/blob/master/LICENSE) for details.
-
-::: warning
-Not affiliated with or endorsed by ConcernedApe LLC. Stardew Valley is a trademark of ConcernedApe LLC.
-:::

@@ -21,7 +21,7 @@ A browser on an HTTPS page refuses to fetch plain `http://<ip>:8080/status`, so 
 Copy [`ServerStatusWidget.vue`](https://github.com/stardew-valley-dedicated-server/server/blob/master/docs/.vitepress/theme/ServerStatusWidget.vue) and the state mapping it imports, [`serverState.ts`](https://github.com/stardew-valley-dedicated-server/server/blob/master/tools/discord-bot/src/serverState.ts), into your theme and point the widget's import at the copied file. Register the component in `enhanceApp` and place it on a page:
 
 ```md
-<ServerStatusWidget api-url="https://203.0.113.10/farm" title="My Farm" />
+<ServerStatusWidget api-url="https://203.0.113.10/farm" />
 ```
 
 Props:
@@ -29,10 +29,9 @@ Props:
 | Prop | Description | Default |
 |------|-------------|---------|
 | `api-url` | HTTPS base URL of the API; the widget fetches `/status` under it | required |
-| `title` | Header text | `Server Status` |
 | `refresh-interval` | Poll interval in milliseconds; `0` disables polling | `30000` |
 
-The widget reports the same states as the Discord bot: **Online** (`isOnline` and `isReady`), **Busy** (`isOnline` but saving, changing day, or running an event), **Starting** (`isOnline` false: the container is downloading game files, launching the game, or loading the save), and **Offline** (the request failed).
+The header shows the server's `SERVER_NAME`, else the farm name, the same rule the Discord bot uses for its nickname. The widget reports the same states as the bot: **Online** (`isOnline` and `isReady`), **Busy** (`isOnline` but saving, changing day, or running an event), **Starting** (`isOnline` false: the container is downloading game files, launching the game, or loading the save), and **Offline** (the request failed). It also shows the image and Stardew versions, the in-game clock, the measured tick rate, the browser's round-trip to the API, and the uptime beside the Online badge. The top accent line fills over one refresh interval, and a reload resumes the cycle from the last poll.
 
 ### Anywhere else
 
@@ -45,5 +44,9 @@ const status = await res.json();
 // status.isOnline, status.isReady, status.phase ("downloading" or "starting" before the game runs),
 // status.playerCount, status.maxPlayers,
 // status.steamInviteCode (null until the Steam lobby is published), status.gogInviteCode,
-// status.farmName, status.season, status.day, status.year
+// status.farmName, status.serverName (SERVER_NAME, empty when unset),
+// status.season, status.day, status.year, status.timeOfDay,
+// status.serverVersion (the running image version), status.gameVersion,
+// status.tps (measured game ticks per second, a 30-second average),
+// status.startedAtUtc (when the server process started; null until known)
 ```

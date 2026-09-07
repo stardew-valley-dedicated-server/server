@@ -1,3 +1,6 @@
+// Discord rejects nicknames over 32 characters; the full name stays on /status.
+const _nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
+
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -24,6 +27,7 @@ import {
 } from "./dashboard";
 import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
+import { formatStardewTime } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -37,7 +41,6 @@ const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED =
     STATUS_DASHBOARD_REFRESH_RATE < 60
         ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds`
         : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`;
-const DISCORD_BOT_NICKNAME = process.env.DISCORD_BOT_NICKNAME;
 const COOLDOWN_DURATION_MS = 30000;
 const MAX_COMMANDS_PER_WINDOW = 10;
 const commandHistory = new Map<string, number[]>();
@@ -184,23 +187,31 @@ function reportStatusFetch(failure: string | null): void {
     statusFetchFailure = failure;
 }
 
-let lastActivityName: string | null = null;
+let lastPresenceSummary: string | null = null;
+let presenceShowsVersion = false;
 
 /**
- * Updates the bot's presence/status based on server state.
+ * Updates the bot's presence/status based on server state. The line has no room for both the
+ * player count and the server version, so it alternates between them each refresh.
  */
 async function updatePresence(): Promise<void> {
     const status = await fetchServerStatus();
     const state = resolveServerState(status);
 
     let activityName: string;
+    // Logged instead of activityName, so the alternation itself is not logged as a change.
+    let presenceSummary: string;
 
     if (state.kind === "online" && status) {
         const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
+        const version = `v${status.serverVersion}`;
         const inviteCode = status.steamInviteCode || status.gogInviteCode || "No code";
-        activityName = `${playerInfo} | ${inviteCode}`;
+        presenceShowsVersion = !presenceShowsVersion;
+        activityName = `${presenceShowsVersion ? version : playerInfo} | ${inviteCode}`;
+        presenceSummary = `${playerInfo} | ${version} | ${inviteCode}`;
     } else {
         activityName = `${state.label} — ${state.detail}`;
+        presenceSummary = activityName;
     }
 
     client.user?.setPresence({
@@ -214,25 +225,18 @@ async function updatePresence(): Promise<void> {
         status: state.presence,
     });
 
-    if (activityName !== lastActivityName) {
-        log.info(`Status updated: ${activityName}`);
-        lastActivityName = activityName;
+    if (presenceSummary !== lastPresenceSummary) {
+        log.info(`Status updated: ${presenceSummary}`);
+        lastPresenceSummary = presenceSummary;
     }
 }
 
 /**
- * Updates the bot's nickname in all guilds.
- * Uses DISCORD_BOT_NICKNAME env var if set, otherwise uses farm name from server.
+ * Updates the bot's nickname in all guilds: the server's display name (SERVER_NAME), else the farm name.
  */
 async function updateBotNickname(): Promise<void> {
-    let nickname = DISCORD_BOT_NICKNAME;
-
-    if (!nickname) {
-        const status = await fetchServerStatus();
-        if (status?.farmName) {
-            nickname = status.farmName;
-        }
-    }
+    const status = await fetchServerStatus();
+    const nickname = status?.serverName || status?.farmName;
 
     if (!nickname) {
         return;
@@ -704,22 +708,6 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
             }
         }
     }
-}
-
-// Helper to transform Stardew's 24h int format (e.g., 600, 1620) into standard time
-function formatStardewTime(timeInt: number): string {
-    if (timeInt === undefined || timeInt === null) {
-        return "??:??";
-    }
-    const hours24 = Math.floor(timeInt / 100);
-    const minutes = timeInt % 100;
-    const ampm = hours24 >= 12 ? "PM" : "AM";
-    let hours12 = hours24 % 12;
-    if (hours12 === 0) {
-        hours12 = 12;
-    }
-    const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
-    return `${hours12}:${minutesStr} ${ampm}`;
 }
 
 // Helper to match Stardew Farm types cleanly

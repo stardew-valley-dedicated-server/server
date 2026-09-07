@@ -165,9 +165,6 @@ Four related fixes (do as one rewrite pass; verify against `tools/steam-service/
 - `contributing/index.md`: add a "Working on the documentation" subsection (`make docs` flow;
   bun-only alternative for prose edits) — currently zero published-docs entry point for docs
   contributors (pairs with plan 03 H5).
-- `CONTRIBUTING.md` (repo root, companion touchpoint): anchor
-  `…/community/contributing#ci-cd-pipeline` targets a heading that doesn't exist in the 11-line
-  stub — link `…/developers/contributing/ci-cd` directly.
 - `mod/JunimoServer/Env.cs` (companion code-docstring touchpoint): the API_KEY XML doc claims
   "write operations (POST, DELETE) require the X-API-Key header" — actual contract is
   `Authorization: Bearer` on ALL non-public endpoints (`ApiService.cs`). This stale
