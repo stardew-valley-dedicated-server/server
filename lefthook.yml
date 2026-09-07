@@ -47,6 +47,7 @@ pre-push:
       # Single-quoted echoes: lefthook wraps the script in sh -c "...", so embedded
       # double-quotes would break that outer quoting and swallow the exit code.
       run: |
-        echo '✋ Direct push to master is blocked — open a PR instead.'
-        echo '   (Deliberate push? Temporarily remove the block-master hook in lefthook.yml.)'
+        echo '✋ Push blocked: master is checked out, so this hook blocks every push from it.'
+        echo '   Pushing/deleting another branch? Switch off master first (git switch <branch>).'
+        echo '   Really pushing to master? Temporarily remove the block-master hook in lefthook.yml.'
         exit 1
