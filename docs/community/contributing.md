@@ -1,11 +1,22 @@
+---
+description: Ways to contribute to JunimoServer — code, documentation, bug reports, testing, and helping other players and admins.
+---
+
 # Contributing
 
-Want to help out? Awesome.
+Want to help out? Awesome. You do not need to write code to make a difference.
 
-For code contributions, check the [Developer Contributing Guide](/developers/contributing/). It covers setup, commit conventions, and CI/CD.
+## Ways to Help
 
-Not a developer? Bug reports, docs improvements, and helping others on Discord are just as valuable.
+| I want to... | Start here |
+|--------------|------------|
+| Fix a bug or build a feature | [Development Setup](/developers/contributing/) covers tooling, commit conventions, and [CI/CD](/developers/contributing/ci-cd) |
+| Improve the docs | Every page has an **Edit this page on GitHub** link at the bottom |
+| Report a problem | [Reporting Bugs](/community/reporting-bugs) |
+| Test upcoming changes | Play on the [Public Test Server](/community/test-server) and report what breaks |
+| Shape what gets built | Vote on [open issues](https://github.com/stardew-valley-dedicated-server/server/issues) with 👍, or open one for a new idea |
+| Help other people | Answer questions on [Discord](https://discord.gg/w23GVXdSF7) |
 
-- [Development Setup](/developers/contributing/)
-- [CI/CD Pipelines](/developers/contributing/ci-cd)
-- [Reporting Bugs](/community/reporting-bugs)
+## Before Opening a Pull Request
+
+Check [open issues](https://github.com/stardew-valley-dedicated-server/server/issues) and [pull requests](https://github.com/stardew-valley-dedicated-server/server/pulls) first, and open an issue to discuss anything larger than a small fix.

@@ -106,7 +106,7 @@ jobs:
           DEPLOY_API_KEY: ${{ secrets.DEPLOY_API_KEY }}
           DEPLOY_DISCORD_BOT_TOKEN: ${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
           DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
-          DEPLOY_DISCORD_BOT_NICKNAME: ${{ vars.DEPLOY_DISCORD_BOT_NICKNAME }}
+          DEPLOY_SERVER_NAME: ${{ vars.DEPLOY_SERVER_NAME }}
           # Optional: enables the HTTPS proxy (docs: operations/reverse-proxy.md).
           DEPLOY_PUBLIC_HOST: ${{ vars.DEPLOY_PUBLIC_HOST }}
           DEPLOY_PROXY_ROUTING: ${{ vars.DEPLOY_PROXY_ROUTING }}
@@ -149,7 +149,7 @@ jobs:
           echo "# Discord bot (optional)" >> .env
           echo "DISCORD_BOT_TOKEN=$DEPLOY_DISCORD_BOT_TOKEN" >> .env
           echo "DISCORD_CHAT_CHANNEL_ID=$DEPLOY_DISCORD_CHAT_CHANNEL_ID" >> .env
-          echo "DISCORD_BOT_NICKNAME=$DEPLOY_DISCORD_BOT_NICKNAME" >> .env
+          echo "SERVER_NAME=$DEPLOY_SERVER_NAME" >> .env
           if [[ -n "$DEPLOY_PUBLIC_HOST" ]]; then
             echo "# HTTPS proxy" >> .env
             echo "COMPOSE_PROFILES=proxy" >> .env

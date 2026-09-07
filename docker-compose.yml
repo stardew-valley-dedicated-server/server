@@ -26,6 +26,8 @@ services:
       STEAM_AUTH_URL: "http://steam-auth:${STEAM_AUTH_PORT:-3001}"
       # Server configuration
       VNC_PASSWORD: "${VNC_PASSWORD:-}"
+      # Display name shown by the Discord bot and status widgets (empty = farm name)
+      SERVER_NAME: "${SERVER_NAME:-}"
       ALLOW_INSECURE_SETUP: "${ALLOW_INSECURE_SETUP:-false}"
       SERVER_TPS: "${SERVER_TPS:-60}"
       SERVER_FPS: "${SERVER_FPS:-0}"
@@ -91,8 +93,6 @@ services:
       API_URL: "http://server:${API_PORT:-8080}"
       # Min 20s to respect Discord rate limits, default 30s
       UPDATE_INTERVAL_MS: "30000"
-      # Bot nickname (optional, falls back to farm name)
-      DISCORD_BOT_NICKNAME: "${DISCORD_BOT_NICKNAME:-}"
       # Channel ID for two-way chat relay (optional)
       DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
       # Channel ID for status updates (optional, can be same as chat channel)

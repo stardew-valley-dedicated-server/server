@@ -96,7 +96,7 @@ The nickname is what your Discord server shows in place of the bot's username; t
 | Configuration | Behavior |
 |---------------|----------|
 | Not set | Uses the farm name from the game |
-| `DISCORD_BOT_NICKNAME=value` | Uses a fixed custom name |
+| `SERVER_NAME=value` | Uses the server's display name (set on the `server` service) |
 
 ## Troubleshooting
 
@@ -121,5 +121,5 @@ The nickname is what your Discord server shows in place of the bot's username; t
 
 ### Wrong Bot Nickname
 
-1. Check `DISCORD_BOT_NICKNAME` in `.env` and restart
+1. Check `SERVER_NAME` in `.env` and restart both services
 2. The bot needs the Change Nickname permission in your Discord server

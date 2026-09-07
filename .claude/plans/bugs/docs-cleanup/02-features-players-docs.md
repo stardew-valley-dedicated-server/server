@@ -6,7 +6,7 @@
 **Area:** docs
 **Related:** [`README.md`](README.md)
 **Observed:** docs audit 2026-06-13
-**Next step:** open a PR for H1 + M1–M16; settle D8/D9 before editing the affected pages
+**Next step:** open a PR for H1 + M1–M14; settle D9 before editing the affected pages
 
 **Objective:** Make the player- and feature-facing pages describe what the mod actually does —
 especially password-protection flow, invite codes, cabin behavior, and the REST feature summary.
@@ -93,11 +93,6 @@ path below (re-check the cited line before rewording — don't transcribe blind)
 - **M14. `players/troubleshooting.md` — game-version mismatch missing as a connect-failure cause.**
   Vanilla rejects lobbies with a different protocol version (decompiled `CoopMenu.cs`).
   Add a row.
-- **M15. `community/getting-help.md` — Discussions link 404s** **[DECISION D8]**:
-  `has_discussions:false` on the repo (checked 2026-06-13); `feature_request.yml` exists. Reroute
-  or enable Discussions.
-- **M16. `community/resources.md` — dead repo link.** `truman-world/puppy-stardew-server` 404s;
-  GitHub search shows `AmigaMeow/puppy-stardew-server` as the surviving repo. Fix or drop.
 
 ## Low (riders)
 

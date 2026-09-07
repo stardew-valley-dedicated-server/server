@@ -80,6 +80,12 @@ public class ServerStatus
     /// <summary>Name of the farm.</summary>
     public string FarmName { get; set; } = "";
 
+    /// <summary>Display name of this deployment (SERVER_NAME). Empty when unset.</summary>
+    public string ServerName { get; set; } = "";
+
+    /// <summary>ISO 8601 UTC time the server process started, or null if not yet known.</summary>
+    public string? StartedAtUtc { get; set; }
+
     /// <summary>Current day of the month (1-28).</summary>
     public int Day { get; set; }
 
@@ -97,6 +103,9 @@ public class ServerStatus
 
     /// <summary>Whether the game clock is currently paused (no players connected, or time not passing).</summary>
     public bool IsPaused { get; set; }
+
+    /// <summary>Measured game ticks per second, averaged over the last 30 seconds (see /stats for the instant value and target).</summary>
+    public double Tps { get; set; }
 
     /// <summary>
     /// Monotonic snapshot version used by /wait/* long-poll endpoints to
@@ -907,9 +916,7 @@ public partial class ApiService : ModService
 
     // ── Performance metrics for /stats endpoint ──
     private double _lastTickMs;
-    private double _avgTickMs;
-    private readonly Queue<double> _tickHistory = new();
-    private const int TickHistorySize = 60;
+    private readonly RollingAverage _avgTickMs = new(60);
     private readonly Stopwatch _tickStopwatch = new();
     private int _frameCount;
     private double _currentFps;
@@ -918,14 +925,11 @@ public partial class ApiService : ModService
     private double _currentTps;
     private DateTime _lastTpsUpdate = DateTime.UtcNow;
 
+    // For /status; the window matches the public widget's 30-second poll.
+    private readonly RollingAverage _avgTps = new(30);
+
     // ── Game thread wait time tracking for /stats endpoint ──
-    // Ring buffer + running sum for O(1) average with zero allocations.
-    private double _avgGameThreadWaitMs;
-    private const int GameThreadWaitBufferSize = 60;
-    private readonly double[] _gameThreadWaitBuffer = new double[GameThreadWaitBufferSize];
-    private int _gameThreadWaitIndex;
-    private int _gameThreadWaitCount;
-    private double _gameThreadWaitSum;
+    private readonly RollingAverage _avgGameThreadWaitMs = new(60);
     private readonly ConcurrentQueue<double> _completedWaitTimes = new();
 
     // ── Game state snapshot for read-only endpoints ──
@@ -1262,23 +1266,9 @@ public partial class ApiService : ModService
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
-        // Drain completed wait times and update rolling average (zero-allocation ring buffer)
         while (_completedWaitTimes.TryDequeue(out var waitMs))
         {
-            if (_gameThreadWaitCount == GameThreadWaitBufferSize)
-            {
-                _gameThreadWaitSum -= _gameThreadWaitBuffer[_gameThreadWaitIndex];
-            }
-            else
-            {
-                _gameThreadWaitCount++;
-            }
-
-            _gameThreadWaitBuffer[_gameThreadWaitIndex] = waitMs;
-            _gameThreadWaitSum += waitMs;
-            _gameThreadWaitIndex = (_gameThreadWaitIndex + 1) % GameThreadWaitBufferSize;
-
-            Volatile.Write(ref _avgGameThreadWaitMs, _gameThreadWaitSum / _gameThreadWaitCount);
+            _avgGameThreadWaitMs.Add(waitMs);
         }
     }
 
@@ -1307,14 +1297,8 @@ public partial class ApiService : ModService
         // Record tick timing for /stats
         _tickStopwatch.Stop();
         var tickMs = _tickStopwatch.Elapsed.TotalMilliseconds;
-        _tickHistory.Enqueue(tickMs);
-        if (_tickHistory.Count > TickHistorySize)
-        {
-            _tickHistory.Dequeue();
-        }
-
         Volatile.Write(ref _lastTickMs, tickMs);
-        Volatile.Write(ref _avgTickMs, _tickHistory.Average());
+        _avgTickMs.Add(tickMs);
 
         // TPS tracking (same pattern as FPS but for game ticks)
         _tickCount++;
@@ -1322,7 +1306,9 @@ public partial class ApiService : ModService
         var tpsElapsed = (tpsNow - _lastTpsUpdate).TotalSeconds;
         if (tpsElapsed >= 1.0)
         {
-            Volatile.Write(ref _currentTps, _tickCount / tpsElapsed);
+            var sample = _tickCount / tpsElapsed;
+            Volatile.Write(ref _currentTps, sample);
+            _avgTps.Add(sample);
             _tickCount = 0;
             _lastTpsUpdate = tpsNow;
         }
@@ -2781,6 +2767,7 @@ public partial class ApiService : ModService
         var modInfo = Helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
         var snap = _snapshot;
+        var tps = Math.Round(_avgTps.Average, 1);
 
         // Derive invite codes from file (thread-safe file read). The S-code is exposed only
         // once the Galaxy lobby carries the SteamLobbyId stamp — a vanilla Steam client
@@ -2811,6 +2798,9 @@ public partial class ApiService : ModService
                 IsReady = false,
                 DayTransitionComplete = false,
                 LastUpdated = snap.CapturedAt,
+                ServerName = Env.ServerName,
+                StartedAtUtc = ServerCommand.StartTimeUtc?.ToString("o"),
+                Tps = tps,
                 Version = snap.Version,
             };
         }
@@ -2828,12 +2818,15 @@ public partial class ApiService : ModService
             DayTransitionComplete = snap.DayTransitionComplete,
             LastUpdated = snap.CapturedAt,
             FarmName = snap.FarmName,
+            ServerName = Env.ServerName,
+            StartedAtUtc = ServerCommand.StartTimeUtc?.ToString("o"),
             Day = snap.Day,
             Season = snap.Season,
             Year = snap.Year,
             TimeOfDay = snap.TimeOfDay,
             FarmTypeKey = snap.FarmTypeKey,
             IsPaused = snap.IsPaused,
+            Tps = tps,
             Version = snap.Version,
         };
     }
@@ -2957,7 +2950,7 @@ public partial class ApiService : ModService
             resp.FailedFields,
             () =>
             {
-                resp.AvgGameThreadWaitMs = Volatile.Read(ref _avgGameThreadWaitMs);
+                resp.AvgGameThreadWaitMs = _avgGameThreadWaitMs.Average;
             }
         );
         TryRead(
@@ -4114,13 +4107,13 @@ public partial class ApiService : ModService
         {
             Fps = Math.Round(Volatile.Read(ref _currentFps), 1),
             Tps = Math.Round(Volatile.Read(ref _currentTps), 1),
-            AvgTickMs = Math.Round(Volatile.Read(ref _avgTickMs), 2),
+            AvgTickMs = Math.Round(_avgTickMs.Average, 2),
             MemoryMb = Math.Round(GC.GetTotalMemory(false) / 1024.0 / 1024.0, 1),
             GcGen0 = GC.CollectionCount(0),
             GcGen1 = GC.CollectionCount(1),
             GcGen2 = GC.CollectionCount(2),
             PendingActions = _dispatcher.PendingCount,
-            GameThreadWaitMs = Math.Round(Volatile.Read(ref _avgGameThreadWaitMs), 2),
+            GameThreadWaitMs = Math.Round(_avgGameThreadWaitMs.Average, 2),
             StartedAtUtc = startedAt?.ToString("o"),
             UptimeSeconds = startedAt is { } t ? (long)(DateTime.UtcNow - t).TotalSeconds : null,
         };

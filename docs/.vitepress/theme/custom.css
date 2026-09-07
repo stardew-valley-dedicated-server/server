@@ -109,6 +109,40 @@
     }
 }
 
+/*
+ * Tables - rounded like code blocks and custom blocks.
+ * Collapsed borders cannot be rounded, so the frame is drawn on the table
+ * and the cells keep only the inner grid lines.
+ */
+.vp-doc table {
+    width: fit-content;
+    max-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 8px;
+}
+
+.vp-doc tr {
+    border-top: 0;
+}
+
+.vp-doc th,
+.vp-doc td {
+    border: 0;
+    border-right: 1px solid var(--vp-c-divider);
+    border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc th:last-child,
+.vp-doc td:last-child {
+    border-right: 0;
+}
+
+.vp-doc tr:last-child td {
+    border-bottom: 0;
+}
+
 /* Wobble animation for Icon8 icons (not used by AnimatedIcons) */
 @keyframes wobble {
     0% {

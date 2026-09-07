@@ -1,12 +1,12 @@
 ---
-description: The JunimoServer community — FAQ, where to get help, how to report bugs, contributing, the project roadmap, and changelog.
+description: The JunimoServer community — try the public test server, get help, report bugs, contribute, and follow the roadmap and releases.
 ---
 
 # Community
 
 JunimoServer is a community project. Glad to have you here!
 
-## Play
+## Try It Out
 
 - [Public Test Server](/community/test-server): Try JunimoServer without hosting anything
 
@@ -18,18 +18,11 @@ JunimoServer is a community project. Glad to have you here!
 
 ## Contribute
 
-Contributions welcome: code, docs, bug reports, or helping others on Discord.
+- [Contributing](/community/contributing): Code, docs, bug reports, or helping others on Discord
 
-- [Development Setup](/developers/contributing/)
-- [Resources](/community/resources)
-
-## Project Info
+## Project
 
 - [Roadmap](/community/roadmap): What's planned
-- [Changelog](/community/changelog): What's changed
-- [Contributors](/community/contributors): People who made this happen
-
-## Links
-
-- [Discord](https://discord.gg/w23GVXdSF7)
-- [GitHub](https://github.com/stardew-valley-dedicated-server/server)
+- [Changelog](/community/changelog): What's changed and what ships next
+- [Credits](/community/credits): The projects JunimoServer builds on
+- [Related Projects & Links](/community/links): Stardew Valley and modding references

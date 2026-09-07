@@ -27,12 +27,18 @@ export interface ServerStatus extends StatusSignals {
     dayTransitionComplete: boolean;
     lastUpdated: string;
     farmName: string;
+    /** Deployment display name from SERVER_NAME; empty when unset. */
+    serverName: string;
+    /** ISO 8601 UTC time the server process started; null until known. */
+    startedAtUtc: string | null;
     day: number;
     season: string;
     year: number;
     timeOfDay: number;
     farmTypeKey: string;
     isPaused: boolean;
+    /** Measured game ticks per second, averaged over the last 30 seconds. */
+    tps: number;
     version: number;
 }
 
@@ -52,6 +58,14 @@ export interface ServerState {
 }
 
 const NO_GAME_DATA_HINT = "Game data appears once the save is loaded.";
+
+/** The game's HHMM clock integer (600, 1330, 2550) as a 12-hour time; hours past 24 are after midnight. */
+export function formatStardewTime(timeOfDay: number): string {
+    const hours24 = Math.floor(timeOfDay / 100) % 24;
+    const minutes = timeOfDay % 100;
+    const hours12 = hours24 % 12 || 12;
+    return `${hours12}:${String(minutes).padStart(2, "0")} ${hours24 < 12 ? "AM" : "PM"}`;
+}
 
 /** `null` is an unreachable /status: the port is closed, so the server is offline. */
 export function resolveServerState(status: StatusSignals | null): ServerState {

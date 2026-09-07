@@ -399,7 +399,7 @@ Add these under **Settings → Environments → Variables**, not as secrets.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DEPLOY_DISCORD_BOT_NICKNAME` | No | Discord bot nickname (defaults to the farm name) |
+| `DEPLOY_SERVER_NAME` | No | Display name shown as the Discord bot nickname and on status widgets (defaults to the farm name) |
 | `DEPLOY_PUBLIC_HOST` | No | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); setting it enables the proxy. `SERVER_URL_NAME` comes from the matrix entry's `url_name` |
 | `DEPLOY_PROXY_ROUTING` | No | `path` (default) or `subdomain`, see the proxy docs |
 

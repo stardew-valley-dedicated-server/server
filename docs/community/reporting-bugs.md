@@ -1,3 +1,7 @@
+---
+description: How to report a JunimoServer bug — what counts as a bug, how to collect a diagnostics bundle, and what a good report looks like.
+---
+
 # Reporting Bugs
 
 Found something broken? Every bug report helps improve the project.
