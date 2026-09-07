@@ -1,15 +1,24 @@
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vitepress";
+import { defineConfig, loadEnv } from "vitepress";
 import { useSidebar } from "vitepress-openapi";
 import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import spec from "../assets/openapi.json" with { type: "json" };
+import { STUB_BASE, statusStubPlugin } from "./statusStub";
 import { DEFAULT_THEME_ID, themes } from "./theme/themes";
 
 // Docs version: "latest" or "preview" (set via DOCS_VERSION env var during build)
 const docsVersion = process.env.DOCS_VERSION || "latest";
 const isPreview = docsVersion === "preview";
 const base = isPreview ? "/server/preview/" : "/server/";
+
+// API base URL of the public test server, shown on community/test-server.md. CI sets the
+// env var; locally a docs/.env.local file works too. Unset: the dev server stubs it
+// (statusStub.ts), a build ships the page without the card.
+const isBuild = process.argv.includes("build");
+const dotenv = loadEnv("", process.cwd(), "DOCS_");
+const testServerApiUrl =
+    process.env.DOCS_TEST_SERVER_API_URL || dotenv.DOCS_TEST_SERVER_API_URL || (isBuild ? "" : STUB_BASE);
 
 const origin = "https://stardew-valley-dedicated-server.github.io";
 const ogImage = `${origin}${base}og-image.png`;
@@ -26,8 +35,7 @@ export default withMermaid(
             // Bake the build time into the bundle so the sidebar can show "Last built: …"
             define: {
                 __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-                // API base URL of the public test server, shown on community/test-server.md.
-                __DOCS_TEST_SERVER_API_URL__: JSON.stringify(process.env.DOCS_TEST_SERVER_API_URL ?? ""),
+                __DOCS_TEST_SERVER_API_URL__: JSON.stringify(testServerApiUrl),
             },
             resolve: {
                 alias: [
@@ -39,6 +47,7 @@ export default withMermaid(
                 ],
             },
             plugins: [
+                statusStubPlugin(),
                 groupIconVitePlugin({
                     // Add custom icons which are not available otherwise
                     customIcon: {

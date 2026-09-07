@@ -5,6 +5,9 @@ node_modules/
 .vitepress/dist
 .vitepress/cache
 
+# Local overrides (DOCS_TEST_SERVER_API_URL for the status widget)
+.env.local
+
 # Generated at build time from Docker image (see scripts/fetch-openapi.sh)
 assets/openapi.json
 
