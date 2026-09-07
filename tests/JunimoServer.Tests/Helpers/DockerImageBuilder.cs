@@ -239,9 +239,15 @@ public static class DockerImageBuilder
         progress.Step("Building steam-service image", SetupStepStatus.Started);
         progress.Step("Building server image", SetupStepStatus.Started);
 
+        // Explicit -f drops Compose's automatic override merge; re-add it like the Makefile's COMPOSE.
+        var composeFiles = "-f docker-compose.yml -f docker-compose.dev.yml";
+        if (File.Exists(Path.Combine(ServerRepoDir, "docker-compose.override.yml")))
+        {
+            composeFiles += " -f docker-compose.override.yml";
+        }
         var steamAuthTask = BuildAndEmitStatus(
             "docker",
-            "compose -f docker-compose.yml -f docker-compose.dev.yml build steam-auth",
+            $"compose {composeFiles} build steam-auth",
             "steam-service image",
             TestTimings.DockerBuildSteamAuthTimeout,
             "Building steam-service image",

@@ -162,8 +162,8 @@ jobs:
           echo "::endgroup::"
 
       # Image revision label → build tag → the IMAGE_VERSION operators would type. The SHA selects
-      # the operator files below; the rest feeds the notification. The alias may move before the
-      # VPS pulls (needs a full preview build inside that window; accepted). Never fails the deploy.
+      # the operator files and the tag pins .env below (the alias may move before the VPS pulls);
+      # the rest feeds the notification. Never fails the deploy.
       - name: Resolve deployed version
         id: version
         env:
@@ -208,6 +208,9 @@ jobs:
           else
             version_value="unknown (\`$TAG\`)"
           fi
+          if [ -z "$sha" ]; then
+            echo "::warning::image revision unknown; operator files stay at the trigger commit and IMAGE_VERSION at the alias"
+          fi
           commit_sha=${sha:-$FALLBACK_SHA}
           commit_value="[\`${commit_sha:0:7}\`]($REPO_URL/commit/$commit_sha)"
 
@@ -220,13 +223,19 @@ jobs:
             '[{name: "Commit", value: $commit, inline: true}]' \
             | sed 's/^/failure_fields=/' >> "$GITHUB_OUTPUT"
           echo "sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # github.sha can be newer than the image (redeploy after a compose bump on master).
-      - name: Check out operator files at the image's commit
+      - name: Align operator files and IMAGE_VERSION with the image
         env:
           SHA: ${{ steps.version.outputs.sha }}
           TRIGGER_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          if [ -n "$VERSION" ]; then
+            sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=$VERSION/" .env
+            echo "IMAGE_VERSION pinned to $VERSION"
+          fi
           if [ "$SHA" = "$TRIGGER_SHA" ]; then
             echo "Operator files already at $SHA"
             exit 0

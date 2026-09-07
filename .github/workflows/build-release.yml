@@ -112,7 +112,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
 
-      # Fatal on purpose: the Discord post below links these assets.
+      # No continue-on-error: the Discord post below links these assets.
       - name: Attach operator files to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,8 +148,8 @@ jobs:
             ${{ steps.changelog.outputs.markdown }}
 
             ${{ steps.changelog.outputs.upgrade-notes }}**Update**
-            ```curl -fsSL -o docker-compose.yml ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.release-please.outputs.tag_name }}/docker-compose.yml && docker compose pull && docker compose up -d```
-            No `curl`? Download the file from the link, then `docker compose pull && docker compose up -d`. Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
+            ```curl -fsSL -o docker-compose.yml ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.release-please.outputs.tag_name }}/docker-compose.yml && docker compose pull && docker compose up -d --remove-orphans```
+            No `curl`? Download the file from the link, then `docker compose pull && docker compose up -d --remove-orphans`. Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
 
   stamp-issue-versions:
     name: Stamp Issue Versions

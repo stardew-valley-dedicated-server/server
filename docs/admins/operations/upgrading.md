@@ -5,12 +5,12 @@
 Every release and preview post on Discord ends with an update command that fetches the matching `docker-compose.yml`, pulls, and restarts:
 
 ```sh
-curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml && docker compose pull && docker compose up -d
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml && docker compose pull && docker compose up -d --remove-orphans
 ```
 
 `.env`, saves, and settings are untouched. The post flags when `.env.example` gained new options.
 
-No `curl` (for example Windows PowerShell)? Download `docker-compose.yml` from the link in the command, replace yours, then run `docker compose pull && docker compose up -d`.
+No `curl` (for example Windows PowerShell)? Download `docker-compose.yml` from the link in the command, replace yours, then run `docker compose pull && docker compose up -d --remove-orphans`.
 
 A **docker-compose.yml does not match this image** warning at startup links the matching file.
 

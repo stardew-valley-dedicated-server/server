@@ -84,7 +84,7 @@ Preview images are tagged with:
 docker pull sdvd/server:preview
 
 # Use preview: set IMAGE_VERSION=preview in .env, then
-docker compose pull && docker compose up -d
+docker compose pull && docker compose up -d --remove-orphans
 ```
 
 ### Batching Features

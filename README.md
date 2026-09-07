@@ -86,13 +86,13 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 ### Updating to a new version
 
-When a new version is released, update your server with:
+When a new version is released, run the update command from the release post on Discord, or:
 
 ```sh
-docker compose pull
-docker compose down
-docker compose up -d
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml && docker compose pull && docker compose up -d --remove-orphans
 ```
+
+This replaces `docker-compose.yml`, so keep your own changes in a `docker-compose.override.yml` (see [Upgrading](https://stardew-valley-dedicated-server.github.io/server/admins/operations/upgrading)).
 
 ### Using preview releases
 
@@ -111,12 +111,10 @@ To switch back to stable releases, remove the line or set it to `latest`:
 IMAGE_VERSION=latest
 ```
 
-After changing the version, run:
+After changing the version, run the update command from the matching release or preview post on Discord (a preview's `docker-compose.yml` comes from its own commit), or:
 
 ```sh
-docker compose pull
-docker compose down
-docker compose up -d
+docker compose pull && docker compose up -d --remove-orphans
 ```
 
 You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
