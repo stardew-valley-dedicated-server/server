@@ -11,7 +11,7 @@ interface ChannelConfig {
     commentBody: (value: string, docsUrl: string) => string;
 }
 
-const DOCS_URL = "https://stardew-valley-dedicated-server.github.io/server/admins/operations/upgrading";
+const DOCS_URL = "https://docs.junimoserver.com/admins/operations/upgrading";
 
 const CHANNELS: Record<string, ChannelConfig> = {
     preview: {

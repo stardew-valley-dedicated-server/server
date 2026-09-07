@@ -10,7 +10,7 @@ import { DEFAULT_THEME_ID, themes } from "./theme/themes";
 // Docs version: "latest" or "preview" (set via DOCS_VERSION env var during build)
 const docsVersion = process.env.DOCS_VERSION || "latest";
 const isPreview = docsVersion === "preview";
-const base = isPreview ? "/server/preview/" : "/server/";
+const base = isPreview ? "/preview/" : "/";
 
 // API base URL of the public test server, shown on community/test-server.md. CI sets the
 // env var; locally a docs/.env.local file works too. Unset: the dev server stubs it
@@ -20,7 +20,7 @@ const dotenv = loadEnv("", process.cwd(), "DOCS_");
 const testServerApiUrl =
     process.env.DOCS_TEST_SERVER_API_URL || dotenv.DOCS_TEST_SERVER_API_URL || (isBuild ? "" : STUB_BASE);
 
-const origin = "https://stardew-valley-dedicated-server.github.io";
+const origin = "https://docs.junimoserver.com";
 const ogImage = `${origin}${base}og-image.png`;
 
 const openApiSidebar = useSidebar({ spec, linkPrefix: "/developers/api/" });
@@ -151,7 +151,7 @@ export default withMermaid(
             // sitemap as `new URL(relativeUrl, hostname)`, so the hostname must carry
             // the deploy subpath (and its trailing slash — without it `new URL` resolves
             // against the parent and drops the base). `base` already differs per deploy
-            // (/server/ vs /server/preview/), keeping sitemap locs aligned with the
+            // (/ vs /preview/), keeping sitemap locs aligned with the
             // og:url/canonical tags, which also use `${origin}${base}`.
             hostname: `${origin}${base}`,
         },

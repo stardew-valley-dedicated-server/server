@@ -16,8 +16,8 @@ defineProps<{
 }>();
 
 const versions: Version[] = [
-    { id: "latest", name: "Latest", path: "/server/", badge: "unstable", badgeType: "warning" },
-    { id: "preview", name: "Preview", path: "/server/preview/", badge: "unstable", badgeType: "warning" },
+    { id: "latest", name: "Latest", path: "/", badge: "unstable", badgeType: "warning" },
+    { id: "preview", name: "Preview", path: "/preview/", badge: "unstable", badgeType: "warning" },
 ];
 
 const { isMediumScreen, extraMenuTarget, isInlineOpen, toggleInline } = useNavBarExtra("__versionSwitcherObserver");
@@ -28,7 +28,7 @@ const currentVersion = computed(() => {
         return versions[0];
     }
     const path = window.location.pathname;
-    if (path.startsWith("/server/preview")) {
+    if (path.startsWith("/preview")) {
         return versions.find((v) => v.id === "preview") || versions[0];
     }
     return versions[0];
@@ -43,10 +43,8 @@ function switchToVersion(version: Version) {
     let relativePath = currentPath;
 
     // Remove current version prefix to get relative path
-    if (currentPath.startsWith("/server/preview/")) {
-        relativePath = currentPath.replace("/server/preview", "");
-    } else if (currentPath.startsWith("/server/")) {
-        relativePath = currentPath.replace("/server", "");
+    if (currentPath.startsWith("/preview/")) {
+        relativePath = currentPath.replace("/preview", "");
     }
 
     if (!relativePath.startsWith("/")) {

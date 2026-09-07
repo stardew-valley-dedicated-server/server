@@ -80,7 +80,7 @@ runs:
         # This is the one place that URL lives; it's served from the docs site. Callers with no name
         # (internal CI) are left alone and keep the avatar their webhook is configured with.
         if [ -n "$USERNAME" ] && [ -z "$AVATAR_URL" ]; then
-          AVATAR_URL="https://stardew-valley-dedicated-server.github.io/server/logo.png"
+          AVATAR_URL="https://docs.junimoserver.com/logo.png"
         fi
 
         payload=$(jq -cn \
