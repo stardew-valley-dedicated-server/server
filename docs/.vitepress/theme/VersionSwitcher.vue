@@ -28,7 +28,7 @@ const currentVersion = computed(() => {
         return versions[0];
     }
     const path = window.location.pathname;
-    if (path.startsWith("/preview")) {
+    if (path.startsWith("/preview/")) {
         return versions.find((v) => v.id === "preview") || versions[0];
     }
     return versions[0];
