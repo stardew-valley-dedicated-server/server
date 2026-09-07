@@ -66,12 +66,11 @@ jobs:
           # Fallback: if no PR or couldn't extract version, bump patch from current release
           if [ -z "$NEXT_VERSION" ]; then
             echo "No release-please PR found, bumping patch version"
-            LATEST_TAG=$(git tag -l 'sdvd-server-v*' --sort=-version:refname | head -n 1)
-            if [ -z "$LATEST_TAG" ]; then
-              LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
-            fi
-            echo "Latest release tag: $LATEST_TAG"
-            CURRENT_VERSION=$(echo "$LATEST_TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+            # Release tags are v<version>; those up to 1.4.1 carry an sdvd-server- prefix.
+            # Strip both and pick the highest version, so neither prefix wins by name.
+            CURRENT_VERSION=$(git tag -l 'v[0-9]*' 'sdvd-server-v*' | sed -E 's/^(sdvd-server-)?v//' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            echo "Latest release version: $CURRENT_VERSION"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
             NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
@@ -186,7 +185,7 @@ jobs:
         with:
           head: ${{ github.sha }}
           # Everything since the previous build of either channel — same rule as issue stamping.
-          tag-match: sdvd-server-v* preview-[0-9]*
+          tag-match: v[0-9]* sdvd-server-v* preview-[0-9]*
 
       - name: Discord notification
         if: steps.changelog.outcome == 'success'
@@ -263,7 +262,7 @@ jobs:
           head-ref: ${{ github.sha }}
           # Base = the nearest earlier build of either channel on a previous commit (the action
           # ignores tags on this commit itself, including this run's own tracking tag).
-          tag-match: sdvd-server-v* preview-[0-9]*
+          tag-match: v[0-9]* sdvd-server-v* preview-[0-9]*
 
   build-steam-service-preview:
     name: Build Steam Service Preview

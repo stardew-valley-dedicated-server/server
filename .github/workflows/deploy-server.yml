@@ -206,15 +206,16 @@ jobs:
           # being deployed.
           version=""
           if [ -n "$sha" ]; then
-            tags=$(git ls-remote --tags origin 'preview-[0-9]*' 'sdvd-server-v*' 2>/dev/null \
+            tags=$(git ls-remote --tags origin 'preview-[0-9]*' 'v[0-9]*' 'sdvd-server-v*' 2>/dev/null \
               | awk -v s="$sha" '$1 == s { sub("refs/tags/", "", $2); sub(/\^\{\}$/, "", $2); print $2 }' || true)
             case "$TAG" in
-              latest) tag=$(grep -m1 '^sdvd-server-v' <<< "$tags" || true) ;;
+              latest) tag=$(grep -m1 -E '^(v[0-9]|sdvd-server-v)' <<< "$tags" || true) ;;
               *) tag=$(grep -m1 '^preview-' <<< "$tags" || true) ;;
             esac
             [ -n "$tag" ] || tag=$(head -n 1 <<< "$tags")
             case "$tag" in
               preview-*) rest=${tag#preview-}; version="${rest%.*}-preview.${rest##*.}" ;;
+              v[0-9]*) version=${tag#v} ;;
               sdvd-server-v*) version=${tag#sdvd-server-v} ;;
             esac
           fi

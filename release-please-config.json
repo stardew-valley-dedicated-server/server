@@ -3,6 +3,8 @@
     ".": {
       "release-type": "simple",
       "package-name": "sdvd-server",
+      "include-component-in-tag": false,
+      "pull-request-title-pattern": "chore${scope}: release ${version}",
       "extra-files": [
         {
           "type": "json",

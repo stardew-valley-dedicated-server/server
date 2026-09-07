@@ -122,7 +122,7 @@ jobs:
           head: ${{ needs.release-please.outputs.tag_name }}
           # Everything since the previous release — the stable stream carries a complete
           # changelog even when previews already announced parts of it.
-          tag-match: sdvd-server-v*
+          tag-match: v[0-9]* sdvd-server-v*
 
       - name: Discord notification
         if: steps.changelog.outcome == 'success'
@@ -167,7 +167,7 @@ jobs:
           value: ${{ needs.release-please.outputs.version }}
           channel: release
           head-ref: ${{ needs.release-please.outputs.tag_name }}
-          tag-match: sdvd-server-v*
+          tag-match: v[0-9]* sdvd-server-v*
 
   build-and-publish-steam-service:
     name: Build Steam Service
