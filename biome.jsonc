@@ -9,6 +9,7 @@
         "includes": [
             ".github/scripts/**",
             "docs/.vitepress/**",
+            "docs/scripts/**",
             "tests/test-ui/**",
             // Vendor-exported artwork/fonts, not authored source: public/ (copied verbatim
             // into the build) and src/assets/ (imported so Vite hashes them). Linting these is

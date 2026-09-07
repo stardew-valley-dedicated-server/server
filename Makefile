@@ -1,4 +1,4 @@
-.PHONY: docs docs-graph
+.PHONY: docs
 
 # Load configuration from .env (production settings, ports, etc.)
 -include .env

@@ -11,7 +11,7 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write --unsafe .",
 		"check": "npm run lint && npm run typecheck",
-		"graph": "node scripts/page-graph.mjs"
+		"graph": "bun scripts/page-graph.ts"
 	},
 	"keywords": [
 		"stardew-valley",
