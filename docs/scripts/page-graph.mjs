@@ -30,7 +30,10 @@ const navSections = [...new Set(
 )];
 
 const files = execSync('git ls-files "*.md"', { cwd: docsDir }).toString().trim().split("\n")
-  .filter((f) => !f.startsWith("node_modules") && f !== "README.md" && !f.includes("_partials"));
+  // Skip `[param].md` dynamic-route templates — they expand to generated pages
+  // at build, so as a single literal node they'd just be a dead placeholder.
+  .filter((f) => !f.startsWith("node_modules") && f !== "README.md"
+    && !f.includes("_partials") && !path.basename(f).startsWith("["));
 
 function toId(file) {
   let p = "/" + file.replace(/\\/g, "/");
@@ -49,6 +52,7 @@ for (const f of files) {
 }
 
 function resolveLink(srcId, link) {
+  link = link.trim().split(/\s+/)[0];      // drop an optional `"title"` after the URL
   link = link.split("#")[0].split("?")[0];
   if (!link) return null;
   let target;
@@ -69,7 +73,9 @@ function findPage(target) {
 
 const edges = new Set();
 function addLink(id, link) {
-  if (/^(https?:|mailto:|#)/.test(link) || !/^[./]/.test(link)) return;
+  // Reject only external/anchor links; bare relative links (`ci-cd.md`) are valid
+  // and resolveLink handles them. Non-pages fall out via findPage returning null.
+  if (/^(https?:|mailto:|#)/.test(link)) return;
   const found = findPage(resolveLink(id, link) || "");
   if (found && found !== id) edges.add(id + "|" + found);
 }
