@@ -154,6 +154,11 @@ docs:
 	@echo OpenAPI spec ready.
 	@bun --cwd=./docs run dev
 
+# Regenerate the documentation page-relationship graph (docs/.output/page-graph.html)
+docs-graph:
+	@bun --cwd=./docs run graph
+	@echo "Open docs/.output/page-graph.html in a browser."
+
 # Clean up everything, including all volumes
 clean:
 	@echo Cleaning up...
@@ -299,6 +304,7 @@ help:
 	@echo "  make down     - Stop the server"
 	@echo "  make restart  - Restart the server (preserves volumes)"
 	@echo "  make docs     - Start docs dev server (requires built image)"
+	@echo "  make docs-graph - Regenerate the docs page-relationship graph (HTML)"
 	@echo "  make clean    - Remove ALL containers, volumes and images"
 	@echo ""
 	@echo Testing:
