@@ -44,12 +44,12 @@ function switchToVersion(version: Version) {
 
     // Remove current version prefix to get relative path
     if (currentPath.startsWith("/preview/")) {
-        relativePath = currentPath.replace("/preview", "");
+        relativePath = currentPath.slice("/preview".length);
     }
 
-    if (!relativePath.startsWith("/")) {
-        relativePath = `/${relativePath}`;
-    }
+    // Exactly one leading slash: a path like /preview//host would otherwise become the
+    // protocol-relative //host and navigate off-site.
+    relativePath = `/${relativePath.replace(/^\/+/, "")}`;
 
     const newPath = version.path.replace(/\/$/, "") + relativePath;
     window.location.href = newPath;
