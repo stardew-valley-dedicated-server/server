@@ -111,10 +111,10 @@ To switch back to stable releases, remove the line or set it to `latest`:
 IMAGE_VERSION=latest
 ```
 
-After changing the version, run the update command from the matching release or preview post on Discord (a preview's `docker-compose.yml` comes from its own commit), or:
+After changing the version, fetch the matching `docker-compose.yml` as well. For a preview, run the update command from its post on Discord (the file comes from the preview's own commit). For stable:
 
 ```sh
-docker compose pull && docker compose up -d --remove-orphans
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml && docker compose pull && docker compose up -d --remove-orphans
 ```
 
 You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
