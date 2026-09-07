@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: 📚 Documentation
-    url: https://github.com/stardew-valley-dedicated-server/server/tree/master/docs
+    url: https://docs.junimoserver.com
     about: Check the documentation
   - name: 💬 Discord
     url: https://discord.gg/w23GVXdSF7
