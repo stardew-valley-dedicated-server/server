@@ -12,7 +12,7 @@ By default the REST API (`API_PORT`) and the VNC web UI (`VNC_PORT`) are plain H
 |-------|-----|---------|------------------------|
 | No proxy (default) | Home and LAN servers | nothing | plain HTTP on `API_PORT` and `VNC_PORT` |
 | Bundled proxy | One server on a VPS | `COMPOSE_PROFILES=proxy`, `PUBLIC_HOST`, `SERVER_URL_NAME`, `PROXY_ROUTING` | HTTPS on 443 only |
-| Your own proxy | A host with an existing or shared proxy | `PUBLIC_HOST`, `SERVER_URL_NAME`, a shared `proxy` network + your proxy's routing | whatever your proxy exposes |
+| Your own proxy | A host with an existing or shared proxy | `PUBLIC_HOST`, a shared `proxy` network + your proxy's routing | whatever your proxy exposes |
 
 Setting `PUBLIC_HOST` declares that a proxy sits in front of the server: the plain-HTTP ports then bind to loopback and are unreachable from outside. Set it only with a proxy in place.
 
