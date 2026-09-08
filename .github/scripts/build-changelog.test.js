@@ -12,10 +12,10 @@ const { buildChangelog, BUDGET } = require("./build-changelog.js");
 
 const OPTS = {
     repoUrl: "https://github.com/o/r",
-    baseTag: "preview-1.5.0.1",
+    baseTag: "v1.5.0-preview.1",
     headOid: "deadbee",
 };
-const COMPARE = "https://github.com/o/r/compare/preview-1.5.0.1...deadbee";
+const COMPARE = "https://github.com/o/r/compare/v1.5.0-preview.1...deadbee";
 
 test("lists visible types in release-please priority order under one Changes heading", () => {
     const result = buildChangelog(
@@ -189,6 +189,6 @@ test("release-please's release commit is excluded from every count", () => {
 
 test("zero commits reports no changes since the base tag", () => {
     const result = buildChangelog([], OPTS);
-    assert.equal(result.markdown, `No changes since \`preview-1.5.0.1\` · [diff](${COMPARE})`);
+    assert.equal(result.markdown, `No changes since \`v1.5.0-preview.1\` · [diff](${COMPARE})`);
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [0, 0, 0]);
 });
