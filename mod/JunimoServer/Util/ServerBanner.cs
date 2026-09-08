@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Shared;
 using StardewModdingAPI;
-using StardewValley.SDKs.GogGalaxy;
 
 namespace JunimoServer.Util;
 
@@ -45,8 +44,6 @@ public static class ServerBanner
         var externalIpValue = externalIp == IPAddress.None ? "n/a" : externalIp.ToString();
         var externalIcon = externalIp == IPAddress.None ? "х" : "✓";
 
-        var inviteCode = InviteCodeFile.Read(monitor);
-
         var networkingLines = GetNetworkingStatus();
 
         // IPs are masked: the banner is captured into the public E2E report, so it
@@ -63,25 +60,12 @@ public static class ServerBanner
         bannerLines.AddRange(networkingLines);
         bannerLines.Add("");
 
-        // Invite codes let anyone join, so they're masked in the banner (which is
-        // captured into the public report). The real code is still served verbatim
-        // via /tmp/invite-code.txt and the API for legitimate clients.
-        if (SteamGameServerService.IsInitialized && inviteCode != null)
-        {
-            var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
-            bannerLines.Add(
-                $"Invite Code (Steam): {GalaxyNetHelper.SteamInvitePrefix}{ChatRedaction.MaskValue(baseCode)}"
-            );
-            bannerLines.Add(
-                $"Invite Code (GOG):   {GalaxyNetHelper.GalaxyInvitePrefix}{ChatRedaction.MaskValue(baseCode)}"
-            );
-        }
-        else
-        {
-            bannerLines.Add(
-                $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "n/a")}"
-            );
-        }
+        // The code lets anyone join, so it's masked in the banner (which is captured into
+        // the public report). The real code is served verbatim by the API and the CLI.
+        var inviteCode = InviteCodes.Joinable;
+        bannerLines.Add(
+            $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "not yet available")}"
+        );
 
         monitor.LogBanner(bannerLines.ToArray());
     }

@@ -31,11 +31,11 @@ public class InviteCodeCommand
                     return;
                 }
 
-                var inviteCode = Game1.server.getInviteCode();
+                var inviteCode = InviteCodes.Joinable;
 
                 if (inviteCode == null)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "No invite code available.");
+                    helper.SendPrivateMessage(msg.SourceFarmer, "Invite code not yet available.");
                     return;
                 }
 
@@ -59,11 +59,11 @@ public class InviteCodeCommand
             return;
         }
 
-        var inviteCode = Game1.server.getInviteCode();
+        var inviteCode = InviteCodes.Joinable;
 
         if (inviteCode == null)
         {
-            _monitor.Log("No invite code available.", LogLevel.Warn);
+            _monitor.Log("Invite code not yet available.", LogLevel.Warn);
             return;
         }
 

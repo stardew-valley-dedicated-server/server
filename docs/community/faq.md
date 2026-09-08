@@ -20,7 +20,7 @@ Configurable via `MaxPlayers` in server settings. Default is 10. The game create
 
 ### Does it work with GOG?
 
-Yes, but with limitations. GOG connections have ~50% success rate compared to Steam's ~99%. This is due to NAT traversal differences. Steam players should use Steam invite codes, GOG players use GOG invite codes.
+Yes, but with limitations. GOG connections have ~50% success rate compared to Steam's ~99%. This is due to NAT traversal differences. The same invite code works for both: a GOG client reads it as a GOG lobby, a Steam client uses Steam's relay for it.
 
 ## Gameplay
 

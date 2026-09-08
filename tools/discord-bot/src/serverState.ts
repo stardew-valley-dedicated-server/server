@@ -59,6 +59,17 @@ export interface ServerState {
 
 const NO_GAME_DATA_HINT = "Game data appears once the save is loaded.";
 
+/**
+ * The one invite code to show players: the Steam code, once the Steam lobby is published.
+ * Both codes open the same lobby and a GOG client accepts either, but a Steam player who
+ * joins with the GOG code gets a Galaxy identity and a farmhand their Steam identity never
+ * sees. So nothing is shown until the Steam code is joinable, which is a few seconds after
+ * the lobby exists; the GOG code stays on `/status` for tooling.
+ */
+export function joinableInviteCode(status: Pick<ServerStatus, "steamInviteCode">): string | null {
+    return status.steamInviteCode || null;
+}
+
 /** The game's HHMM clock integer (600, 1330, 2550) as a 12-hour time; hours past 24 are after midnight. */
 export function formatStardewTime(timeOfDay: number): string {
     const hours24 = Math.floor(timeOfDay / 100) % 24;

@@ -30,7 +30,7 @@ import {
 } from "./dashboard";
 import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
-import { formatStardewTime } from "./serverState";
+import { formatStardewTime, joinableInviteCode } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -238,7 +238,7 @@ async function updatePresence(): Promise<void> {
     if (state.kind === "online" && status) {
         const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
         const version = `v${status.serverVersion}`;
-        const inviteCode = status.steamInviteCode || status.gogInviteCode || "No code";
+        const inviteCode = joinableInviteCode(status) ?? "No code";
         presenceShowsVersion = !presenceShowsVersion;
         activityName = `${presenceShowsVersion ? version : playerInfo} | ${inviteCode}`;
         presenceSummary = `${playerInfo} | ${version} | ${inviteCode}`;
@@ -614,8 +614,8 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
             },
             { name: "⏰ Clock Time", value: formatStardewTime(status.timeOfDay), inline: true },
             {
-                name: "🔑 Connection Code",
-                value: `\`${status.steamInviteCode || status.gogInviteCode || "None Available"}\``,
+                name: "🔑 Invite Code",
+                value: `\`${joinableInviteCode(status) ?? "None Available"}\``,
                 inline: false,
             },
         );
@@ -818,7 +818,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
                     `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
                     `📡 **Server State:** ${status.isReady ? "Ready ✓" : `Busy (${state.detail}) ⏳`}`,
-                    `🔑 **Invite Code:** \`${status.steamInviteCode || status.gogInviteCode || "None"}\``,
+                    `🔑 **Invite Code:** \`${joinableInviteCode(status) ?? "None"}\``,
                 ];
 
                 await message.reply(lines.join("\n"));

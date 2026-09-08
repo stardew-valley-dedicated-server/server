@@ -97,7 +97,7 @@ Refresh tokens are saved to `/data/steam-session/session-{username}.json` and re
 2. Galaxy creates a lobby and requests an encrypted app ticket
 3. Game server's `AuthService` fetches ticket from steam-auth via HTTP
 4. Steam-auth uses SteamKit2 to get an encrypted app ticket from Steam
-5. Ticket is returned and used to generate an invite code with "G" prefix
+5. Ticket is returned and used to generate the Galaxy invite code (G-prefixed); the S-prefixed code players receive is the same lobby id, handed out once the Steam lobby is published
 
 ### Lobbies are forced Public
 

@@ -97,6 +97,15 @@ public class GalaxyAuthService : ModService
     /// <summary>See <see cref="_steamLobbyPublished"/>.</summary>
     public static bool SteamLobbyPublished => _steamLobbyPublished;
 
+    /// <summary>
+    /// The invite code as the game generated it (G-prefixed); null until the Galaxy lobby exists.
+    /// <see cref="InviteCodes"/> derives every displayed form from it.
+    /// </summary>
+    private static volatile string _galaxyInviteCode;
+
+    /// <summary>See <see cref="_galaxyInviteCode"/>.</summary>
+    public static string GalaxyInviteCode => _galaxyInviteCode;
+
     /// <summary>True while a background re-sign-in ticket fetch is in flight; see
     /// <see cref="BeginGalaxyReSignIn"/>. Task-written, game-thread read, so volatile.</summary>
     private static volatile bool _galaxyReSignInInFlight;
@@ -237,6 +246,8 @@ public class GalaxyAuthService : ModService
         _lastSteamLobbyPrivacy = null;
         _pendingGalaxyLobbyUpdate = false;
         _steamLobbyPublished = false;
+        _galaxyInviteCode = null;
+        InviteCodeFile.Delete(_monitor);
 
         // Abandon a prior session's in-flight re-login — else it consumes a stale (gen-bumped) ticket
         // or re-stamps against the just-cleared lobby. The next reconnect re-arms it.
@@ -338,7 +349,7 @@ public class GalaxyAuthService : ModService
             )
         );
 
-        // Postfix on GetInviteCode to capture invite code for file/banner
+        // Postfix on GetInviteCode to capture the raw Galaxy code the displayed forms derive from
         // (More reliable than patching the private onGalaxyLobbyEnter callback)
         harmony.Patch(
             original: AccessTools.Method(typeof(GalaxySocket), nameof(GalaxySocket.GetInviteCode)),
@@ -500,6 +511,9 @@ public class GalaxyAuthService : ModService
                 _monitor.Log($"GalaxyNetServer.stopServer() threw: {ex.Message}", LogLevel.Trace);
             }
             servers.Remove(galaxyServer);
+            // The next lobby gets a new code; nothing may publish the dead one meanwhile.
+            _galaxyInviteCode = null;
+            InviteCodeFile.Delete(_monitor);
             _monitor.Log("Removed dead GalaxyNetServer for re-auth", LogLevel.Info);
         }
         catch (Exception ex)
@@ -760,7 +774,10 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static void UpdateGalaxyLobbyWithSteamLobbyId()
     {
+        // Game thread: the published code is stale until the new stamp lands, and stays
+        // withdrawn if stamping fails.
         _steamLobbyPublished = false;
+        InviteCodeFile.Delete(_monitor);
         if (_steamLobbyId == 0)
         {
             _monitor.Log("Cannot update Galaxy lobby: Steam lobby ID not set", LogLevel.Warn);
@@ -782,6 +799,15 @@ public class GalaxyAuthService : ModService
             galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
             _steamLobbyPublished = true;
             _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);
+
+            // The code is joinable from here: publish it for the CLI status line and print the banner.
+            // The banner prints once, so it waits for a code; the Galaxy code can arrive after this stamp.
+            var joinable = InviteCodes.Joinable;
+            if (joinable != null)
+            {
+                InviteCodeFile.Write(joinable, _monitor);
+                ServerBanner.Print(_monitor, _helper);
+            }
         }
         catch (Exception ex)
         {
@@ -1363,6 +1389,8 @@ public class GalaxyAuthService : ModService
         _steamLobbyId = 0;
         _lobbyCreationAttempted = false;
         _steamLobbyPublished = false;
+        _galaxyInviteCode = null;
+        InviteCodeFile.Delete(_monitor);
 
         // Reset Galaxy init state
         _galaxyInitComplete = false;
@@ -1518,8 +1546,7 @@ public class GalaxyAuthService : ModService
     }
 
     /// <summary>
-    /// Postfix on GetInviteCode to capture invite code for file/banner.
-    /// In GameServer mode, the original "S" prefix is correct.
+    /// Postfix on GetInviteCode: keeps the raw Galaxy code that every displayed form derives from.
     /// Also updates the Galaxy lobby with Steam lobby ID if available.
     /// </summary>
     /// <summary>
@@ -1556,8 +1583,7 @@ public class GalaxyAuthService : ModService
         try
         {
             _monitor.Log($"Galaxy invite code generated: {__result}", LogLevel.Debug);
-            InviteCodeFile.Write(__result, _monitor);
-            ServerBanner.Print(_monitor, _helper);
+            _galaxyInviteCode = __result;
 
             // If Steam lobby was already created, update Galaxy lobby with Steam lobby ID
             if (_steamLobbyId != 0)

@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { formatStardewTime } from "./serverState";
+import { formatStardewTime, joinableInviteCode } from "./serverState";
+
+describe("joinableInviteCode", () => {
+    test("is the Steam code once published", () => {
+        expect(joinableInviteCode({ steamInviteCode: "SABC" })).toBe("SABC");
+    });
+
+    test("is null before the Steam lobby is published, never the GOG code", () => {
+        expect(joinableInviteCode({ steamInviteCode: null })).toBeNull();
+        expect(joinableInviteCode({ steamInviteCode: "" })).toBeNull();
+    });
+});
 
 describe("formatStardewTime", () => {
     test("morning and afternoon", () => {

@@ -47,7 +47,7 @@ Benefits:
 
 GOG clients connect using Galaxy's P2P networking:
 
-- Invite codes prefixed with "G"
+- Joins with the same invite code as Steam; a GOG client reads either prefix as the Galaxy lobby id
 - Works through most NATs without port forwarding
 - Lower success rate (~50%) than Steam SDR
 

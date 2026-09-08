@@ -1,5 +1,5 @@
 ---
-description: Join the public JunimoServer test server — a free shared server running the newest preview build, with live status and invite codes for Steam and GOG.
+description: Join the public JunimoServer test server — a free shared server running the newest preview build, with live status and the invite code.
 ---
 
 <script setup>
@@ -38,7 +38,7 @@ Join if you're happy testing the rough edges: you want to help test preview buil
 
 ## How to join
 
-1. Copy the invite code for your platform from the status card above.
+1. Copy the invite code from the status card above. The same code works on Steam and GOG.
 2. Enter it in the game as described in [Joining a Server](/players/joining).
 
 | Status | Meaning |
