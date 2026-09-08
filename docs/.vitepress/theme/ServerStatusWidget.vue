@@ -230,40 +230,38 @@ onUnmounted(() => {
 
         <template v-else>
             <div class="header">
-                <div class="server-info">
-                    <div>
-                        <h3 class="server-name">{{ serverName || "Server Status" }}</h3>
-                        <p v-if="status?.serverVersion" class="version">
-                            <span class="version-chip">
-                                <span class="stat-label">Image</span>
-                                <code>{{ status.serverVersion }}</code>
-                            </span>
-                            <span v-if="status.gameVersion" class="version-chip">
-                                <span class="stat-label">Stardew</span>
-                                <code>{{ status.gameVersion }}</code>
-                            </span>
-                        </p>
+                <div class="title-row">
+                    <h3 class="server-name">{{ serverName || "Server Status" }}</h3>
+                    <div class="status-badge" :style="{ '--status-color': stateColors[state.kind] }">
+                        <span class="status-dot"></span>
+                        <span class="status-text">{{ state.label }}</span>
+                        <span v-if="uptime" class="status-uptime" title="Time since the server process last started">· {{ uptime }}</span>
                     </div>
-                    <div class="status">
-                        <div class="status-badge" :style="{ '--status-color': stateColors[state.kind] }">
-                            <span class="status-dot"></span>
-                            <span class="status-text">{{ state.label }}</span>
-                            <span v-if="uptime" class="status-uptime" title="Time since the server process last started">· {{ uptime }}</span>
-                        </div>
-                        <p v-if="status?.isOnline" class="vitals">
-                            <span v-for="vital in vitals" :key="vital.key" class="vital">
-                                <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path :d="vital.iconPath" />
-                                </svg>
-                                <span class="value">{{ vital.value }} <span class="unit">{{ vital.unit }}</span></span>
-                                <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img">
-                                    <title>{{ vital.info }}</title>
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
-                                </svg>
-                            </span>
-                        </p>
-                    </div>
+                </div>
+                <div class="meta-row">
+                    <p v-if="status?.serverVersion" class="version">
+                        <span class="version-chip">
+                            <span class="stat-label">Image</span>
+                            <code>{{ status.serverVersion }}</code>
+                        </span>
+                        <span v-if="status.gameVersion" class="version-chip">
+                            <span class="stat-label">Stardew</span>
+                            <code>{{ status.gameVersion }}</code>
+                        </span>
+                    </p>
+                    <p v-if="status?.isOnline" class="vitals">
+                        <span v-for="vital in vitals" :key="vital.key" class="vital">
+                            <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path :d="vital.iconPath" />
+                            </svg>
+                            <span class="value">{{ vital.value }} <span class="unit">{{ vital.unit }}</span></span>
+                            <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img">
+                                <title>{{ vital.info }}</title>
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
+                            </svg>
+                        </span>
+                    </p>
                 </div>
             </div>
 
@@ -280,6 +278,9 @@ onUnmounted(() => {
                             Players
                         </span>
                         <div class="player-bar-container">
+                            <span class="player-count">
+                                {{ status.playerCount }}<span class="player-max">/{{ status.maxPlayers }}</span>
+                            </span>
                             <div class="player-slots" :style="{ '--columns': playerSlotColumns }">
                                 <span
                                     v-for="slot in playerSlots"
@@ -288,9 +289,6 @@ onUnmounted(() => {
                                     :class="{ filled: slot <= status.playerCount }"
                                 ></span>
                             </div>
-                            <span class="player-count">
-                                {{ status.playerCount }}<span class="player-max">/{{ status.maxPlayers }}</span>
-                            </span>
                         </div>
                     </div>
 
@@ -306,7 +304,7 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <div class="stats">
+                <div class="stats single">
                     <div
                         class="stat"
                         :class="{ copyable: inviteCode, copied }"
@@ -347,6 +345,7 @@ onUnmounted(() => {
 <style scoped>
 .server-status-widget {
     position: relative;
+    container-type: inline-size; /* the layout below follows the card width, not the viewport */
     background: linear-gradient(
         135deg,
         color-mix(in srgb, var(--vp-c-bg-soft) 95%, var(--vp-c-brand-3) 5%),
@@ -511,16 +510,22 @@ onUnmounted(() => {
     margin-bottom: 16px;
 }
 
-.server-info {
+/* Title and status badge share a row at every width; chips and vitals sit below them. */
+.title-row,
+.meta-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
+}
+
+.meta-row {
     flex-wrap: wrap;
 }
 
 .server-name {
     margin: 0;
+    min-width: 0;
     font-size: 20px;
     line-height: 24px;
     font-weight: 700;
@@ -528,15 +533,10 @@ onUnmounted(() => {
     letter-spacing: -0.02em;
 }
 
-.status {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-}
-
-/* Title line height, so the badge sits on the title row. */
+/* Title line height, so the badge sits on the title row; never shrinks below its text. */
 .status-badge {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     gap: 6px;
     height: 24px;
@@ -659,9 +659,24 @@ onUnmounted(() => {
     margin-bottom: 0;
 }
 
-@media (max-width: 480px) {
+/* One card on its own row, e.g. the invite code. */
+.stats.single {
+    grid-template-columns: 1fr;
+}
+
+/* Narrow card: cards go single-column, and the player bar takes the full width with the
+   count below it so the slots keep a readable size. */
+@container (max-width: 560px) {
     .stats {
         grid-template-columns: 1fr;
+    }
+
+    .player-bar-container {
+        flex-wrap: wrap;
+    }
+
+    .player-slots {
+        flex-basis: 100%;
     }
 }
 
