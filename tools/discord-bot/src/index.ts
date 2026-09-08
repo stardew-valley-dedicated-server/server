@@ -122,10 +122,12 @@ interface WebSocketMessage {
     };
 }
 
-// Only request message intents if chat relay is enabled
-const intents = [GatewayIntentBits.Guilds];
+// Commands are addressed by mentioning the bot, and Discord delivers the content of such
+// messages without the privileged Message Content intent. That intent is needed only to
+// read every message in the chat relay channel.
+const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 if (CHAT_CHANNEL) {
-    intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+    intents.push(GatewayIntentBits.MessageContent);
 }
 
 // Relayed chat, player names and the farm name come from the game unchanged, so nothing the
@@ -765,29 +767,60 @@ function getFarmTypeName(key: string): string {
 // MAIN MESSAGE EVENT ROUTER (Commands + Chat Relay)
 // ============================================================================
 
+const COMMANDS = ["!status", "!players", "!server", "!help"];
+
+/**
+ * The command in a message addressed to this bot (`@Bot !status`), or null. The mention
+ * is what tells several bots in one Discord server apart and keeps these commands from
+ * colliding with the game's own `!` commands typed into the chat relay.
+ */
+function parseCommand(message: Message): string | null {
+    const botId = client.user?.id;
+    if (!botId || !message.mentions.has(botId)) {
+        return null;
+    }
+    const input = message.content
+        .replace(new RegExp(`<@!?${botId}>`, "g"), "")
+        .trim()
+        .toLowerCase();
+    return COMMANDS.includes(input) ? input : null;
+}
+
+/** Replies to a message, logging instead of throwing when the bot may not post in that channel. */
+async function reply(message: Message, content: string): Promise<Message | null> {
+    try {
+        return await message.reply(content);
+    } catch (error) {
+        const channelName = message.channel.isDMBased() ? "a DM" : `#${message.channel.name}`;
+        log.error(`Could not reply in ${channelName} (${message.guild?.name ?? "no guild"}): ${error}`);
+        return null;
+    }
+}
+
 client.on(Events.MessageCreate, async (message: Message) => {
     // Ignore bot messages
     if (message.author.bot) {
         return;
     }
 
-    const input = message.content.trim().toLowerCase();
-
     // --------------------------------------------------------------------------
     // BOT COMMAND HANDLING
     // --------------------------------------------------------------------------
 
-    const validCommands = ["!status", "!players", "!server", "!help"];
-    const isCommand = validCommands.includes(input);
-    if (isCommand) {
+    // The relay and dashboard channels keep their own purpose; commands there are
+    // treated like any other message (relayed into the game, or ignored).
+    const inOwnChannel =
+        (CHAT_CHANNEL !== null && isConfiguredChannel(message.channel, CHAT_CHANNEL)) ||
+        (DASHBOARD_CHANNEL !== null && isConfiguredChannel(message.channel, DASHBOARD_CHANNEL));
+    const input = inOwnChannel ? null : parseCommand(message);
+    if (input) {
         if (isRateLimited(message.author.id)) {
-            try {
-                const reply = await message.reply(
-                    "⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.",
-                );
-                setTimeout(() => reply.delete().catch(() => {}), 5000);
-            } catch (err) {
-                log.error(`Failed to send cooldown warning: ${err}`);
+            const warning = await reply(
+                message,
+                "⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.",
+            );
+            if (warning) {
+                setTimeout(() => warning.delete().catch(() => {}), 5000);
             }
             return;
         }
@@ -799,7 +832,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
                 const state = resolveServerState(status);
 
                 if (!status?.isOnline) {
-                    await message.reply(`**Server Status:** ${state.label} — ${state.detail}`);
+                    await reply(message, `**Server Status:** ${state.label} — ${state.detail}`);
                     return;
                 }
 
@@ -821,9 +854,9 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `🔑 **Invite Code:** \`${joinableInviteCode(status) ?? "None"}\``,
                 ];
 
-                await message.reply(lines.join("\n"));
+                await reply(message, lines.join("\n"));
             } catch (_e) {
-                await message.reply("⚠️ Failed to load server status.");
+                await reply(message, "⚠️ Failed to load server status.");
             }
             return;
         }
@@ -854,9 +887,9 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `• Available Vacancies: **${cabinsRes.availableCount}**`,
                 ];
 
-                await message.reply(lines.join("\n"));
+                await reply(message, lines.join("\n"));
             } catch (_e) {
-                await message.reply("⚠️ Failed to parse player lists and cabin layouts.");
+                await reply(message, "⚠️ Failed to parse player lists and cabin layouts.");
             }
             return;
         }
@@ -887,9 +920,9 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://docs.junimoserver.com/features/cabin-strategies.html#cabinstack-default))`,
                 ];
 
-                await message.reply(lines.join("\n"));
+                await reply(message, lines.join("\n"));
             } catch (_e) {
-                await message.reply("⚠️ Failed to retrieve system performance diagnostics.");
+                await reply(message, "⚠️ Failed to retrieve system performance diagnostics.");
             }
             return;
         }
@@ -897,13 +930,13 @@ client.on(Events.MessageCreate, async (message: Message) => {
         // COMMAND: !help
         if (input === "!help") {
             const helpLines = [
-                `🤖 **Stardew Server Bot Commands:**`,
-                `• \`!status\` - View current farm date, time, player counts, and invite codes.`,
+                `🤖 **Stardew Server Bot Commands** (mention me, e.g. <@${client.user?.id}> !status):`,
+                `• \`!status\` - View current farm date, time, player count, and the invite code.`,
                 `• \`!players\` - List who is online, and cabin availability.`,
                 `• \`!server\` - Check hardware telemetry (TPS/FPS/RAM) and farm settings.`,
                 `• \`!help\` - Display this command map.`,
             ];
-            await message.reply(helpLines.join("\n"));
+            await reply(message, helpLines.join("\n"));
             return;
         }
     }

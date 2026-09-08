@@ -92,6 +92,19 @@ Both guards depend on that volume:
 The ownership id protects only the dashboard message. Presence is global to the bot user, and each deployment rewrites the bot's nickname in every Discord server it is in, so two game servers sharing one bot token still overwrite each other's presence and nickname. Run one bot application per server.
 :::
 
+## Commands
+
+Mention the bot with a command to ask it directly, for example `@Preview !status`:
+
+| Command | Reply |
+|---------|-------|
+| `!status` | Farm name, date and time, players, and the invite code |
+| `!players` | Who is online and cabin availability |
+| `!server` | Tick rate, memory, and gameplay settings |
+| `!help` | This list |
+
+The bot answers in any channel it can read, except the chat relay and status dashboard channels, which keep their own purpose. Restrict where it answers by adjusting the bot's channel permissions in Discord. The mention is what tells several bots in one Discord server apart, and keeps the commands from colliding with the in-game `!` commands typed into the chat relay.
+
 ## Bot Nickname
 
 The nickname is what your Discord server shows in place of the bot's username; the username and profile picture themselves come from the Developer Portal.
