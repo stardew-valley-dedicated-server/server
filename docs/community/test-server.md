@@ -45,7 +45,7 @@ Join if you're happy testing the rough edges: you want to help test preview buil
 |--------|---------|
 | **Online** | Ready to join |
 | **Starting** | Booting or loading the save |
-| **Busy** | Saving or changing the day |
+| **Busy** | Saving, changing the day, or running an event |
 | **Offline** | Not reachable |
 
 Starting, Busy, and Offline usually clear within a few minutes.

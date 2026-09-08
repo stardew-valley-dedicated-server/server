@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
+    formatStardewDate,
     formatStardewTime,
     joinableInviteCode,
     resolveServerState,
@@ -79,13 +80,7 @@ const playerSlotColumns = computed(() => {
     return rows > 0 ? Math.ceil(playerSlots.value / rows) : 0;
 });
 
-const farmDate = computed(() => {
-    if (!status.value) {
-        return "";
-    }
-    const season = status.value.season ? status.value.season[0].toUpperCase() + status.value.season.slice(1) : "";
-    return `${season} ${status.value.day}, Year ${status.value.year}`;
-});
+const farmDate = computed(() => (status.value ? formatStardewDate(status.value) : ""));
 
 const clock = computed(() => (status.value ? formatStardewTime(status.value.timeOfDay) : ""));
 

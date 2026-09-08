@@ -1,4 +1,4 @@
-/** Discord presentation of a server state: emoji label, presence, and embed color. */
+/** Discord presentation of a server state: status emoji, presence, and embed color. */
 
 import { Colors, type PresenceStatusData } from "discord.js";
 import {
@@ -11,11 +11,13 @@ import {
 export type { ServerStateKind, ServerStatus, StatusSignals } from "./serverState";
 
 export interface DiscordServerState extends ServerState {
+    /** Colored dot for the presence line; the dashboard embed shows `color` instead. */
+    emoji: string;
     presence: PresenceStatusData;
     color: number;
 }
 
-const presentation: Record<ServerStateKind, { emoji: string; presence: PresenceStatusData; color: number }> = {
+const presentation: Record<ServerStateKind, Pick<DiscordServerState, "emoji" | "presence" | "color">> = {
     online: { emoji: "🟢", presence: "online", color: Colors.Blue },
     busy: { emoji: "🟡", presence: "online", color: Colors.Yellow },
     loading: { emoji: "🟡", presence: "idle", color: Colors.Yellow },
@@ -25,6 +27,5 @@ const presentation: Record<ServerStateKind, { emoji: string; presence: PresenceS
 
 export function resolveServerState(status: StatusSignals | null): DiscordServerState {
     const state = resolveSharedState(status);
-    const { emoji, presence, color } = presentation[state.kind];
-    return { ...state, label: `${emoji} ${state.label}`, presence, color };
+    return { ...state, ...presentation[state.kind] };
 }

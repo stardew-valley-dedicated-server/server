@@ -2,7 +2,7 @@
 
 Setup instructions for the Discord bot. See [Discord Integration](/features/discord) for the feature overview.
 
-The bot runs alongside your server, so its identity is your farm's: its nickname shows your farm name, and its presence shows your player count and invite code. That requires a Discord app of your own — free, one-time, about 5 minutes.
+The bot runs alongside your server, so its identity is your farm's: its nickname shows your farm name, and its presence shows your player count, version, and invite code. That requires a Discord app of your own — free, one-time, about 5 minutes.
 
 ## 1. Create the Bot
 
@@ -42,7 +42,7 @@ DISCORD_BOT_TOKEN=your_bot_token_here
 API_KEY=your_api_key_here
 ```
 
-Restart with `docker compose up -d`. The bot comes online and its presence shows the player count and invite code — no further setup needed. The features below are optional.
+Restart with `docker compose up -d`. The bot comes online and its presence shows the player count, version, and invite code — no further setup needed. The features below are optional.
 
 ## Chat Relay
 
@@ -71,11 +71,11 @@ The relay has no rate limit of its own. If spam is a concern, set Discord's slow
 
 ## Status Dashboard
 
-A status embed (farm name, date, players, invite code) posted to a channel and kept up to date by editing the same message in place.
+A status embed (state, players, in-game date, image and game version, tick rate, invite code) posted to a channel and kept up to date by editing the same message in place.
 
 ```sh
 STATUS_DASHBOARD_CHANNEL=farm-status
-# Seconds between updates (default 30)
+# Seconds between updates (default 30, minimum 20)
 STATUS_DASHBOARD_REFRESH_RATE=60
 ```
 
@@ -98,7 +98,7 @@ Mention the bot with a command to ask it directly, for example `@Preview !status
 
 | Command | Reply |
 |---------|-------|
-| `!status` | Farm name, date and time, players, and the invite code |
+| `!status` | Server state, players, in-game date, versions, tick rate, and the invite code |
 | `!players` | Who is online and cabin availability |
 | `!server` | Tick rate, memory, and gameplay settings |
 | `!help` | This list |

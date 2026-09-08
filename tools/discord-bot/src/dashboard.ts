@@ -1,11 +1,82 @@
 /**
- * Pure helpers for dashboard message ownership: footer stamping, owner-id parsing,
- * and classifying channel messages during the adoption scan.
+ * Pure helpers for the dashboard message: building the embed, footer stamping, owner-id
+ * parsing, and classifying channel messages during the adoption scan.
  */
 
-export const DASHBOARD_TITLE = "🧑‍🌾 Stardew Valley Server Status Dashboard";
+import { type APIEmbedField, EmbedBuilder } from "discord.js";
+import type { DiscordServerState } from "./discordState";
+import { formatStardewDate, formatStardewTime, joinableInviteCode, type ServerStatus } from "./serverState";
+
+export const DASHBOARD_TITLE = "Server Status";
+
+/** Dashboards posted under this title are still adopted; the next edit gives them the current one. */
+const LEGACY_DASHBOARD_TITLE = "🧑‍🌾 Stardew Valley Server Status Dashboard";
 
 const FOOTER_ID_SEPARATOR = " • id:";
+
+/** Footer stamp length: a UUID prefix keeps the footer short and is unique enough among the handful of deployments sharing a channel. */
+const STAMP_LENGTH = 8;
+
+/** Headline for a state: the label alone while online, otherwise with the reason. */
+export function formatStateLine(state: DiscordServerState): string {
+    return state.kind === "online" ? state.label : `${state.label} — ${state.detail}`;
+}
+
+/** Version strings as code chips; a version the mod has not reported yet shows a dash. */
+function versionChip(version: string): string {
+    return version ? `\`${version}\`` : "—";
+}
+
+/**
+ * The status fields of a running server, shared by the dashboard embed and the `!status`
+ * reply. Laid out like the docs site's status widget: state, players, and in-game date on
+ * one row, versions and tick rate on the next, and the invite code across the full width.
+ */
+export function buildStatusFields(status: ServerStatus, state: DiscordServerState): APIEmbedField[] {
+    const players = `**${status.playerCount}** / ${status.maxPlayers}${status.isPaused ? " _(paused)_" : ""}`;
+    const date = `${formatStardewDate(status)} · ${formatStardewTime(status.timeOfDay)}`;
+    const inviteCode = joinableInviteCode(status);
+    return [
+        { name: "Status", value: formatStateLine(state), inline: true },
+        { name: "Players", value: players, inline: true },
+        { name: "In-game date", value: date, inline: true },
+        { name: "Image", value: versionChip(status.serverVersion), inline: true },
+        { name: "Stardew", value: versionChip(status.gameVersion), inline: true },
+        { name: "Average TPS", value: status.tps.toFixed(1), inline: true },
+        { name: "Invite code", value: inviteCode ? `\`${inviteCode}\`` : "_not yet available_", inline: false },
+    ];
+}
+
+/** The dashboard embed for a /status response (null when unreachable). */
+export function buildDashboardEmbed(
+    status: ServerStatus | null,
+    state: DiscordServerState,
+    footerText: string,
+): EmbedBuilder {
+    const embed = new EmbedBuilder()
+        .setTitle(DASHBOARD_TITLE)
+        .setColor(state.color)
+        .setTimestamp()
+        .setFooter({ text: footerText });
+
+    if (!status?.isOnline) {
+        const lines = [`**${state.label}** — ${state.detail}`];
+        if (state.hint) {
+            lines.push(`_${state.hint}_`);
+        }
+        return embed.setDescription(lines.join("\n"));
+    }
+    return embed.addFields(buildStatusFields(status, state));
+}
+
+/** "30 seconds", "1 minute", "2 minutes"; a rate that is not a whole number of minutes stays in seconds. */
+export function formatRefreshRate(seconds: number): string {
+    if (seconds % 60 !== 0) {
+        return `${seconds} seconds`;
+    }
+    const minutes = seconds / 60;
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
 
 /**
  * Persisted dashboard state. `ownerId` is this deployment's identity, stamped into every
@@ -57,12 +128,12 @@ export interface EmbedLike {
 }
 
 /**
- * Builds the dashboard footer text. When `ownerId` is null (degraded mode,
- * persistence unavailable) no ownership stamp is included.
+ * Builds the dashboard footer text, stamped with the owner id's prefix. When `ownerId` is
+ * null (degraded mode, persistence unavailable) no ownership stamp is included.
  */
-export function formatFooter(refreshRateFormatted: string, ownerId: string | null): string {
-    const base = `Automatically updates every ${refreshRateFormatted}`;
-    return ownerId ? `${base}${FOOTER_ID_SEPARATOR}${ownerId}` : base;
+export function formatFooter(refreshSeconds: number, ownerId: string | null): string {
+    const base = `Automatically updates every ${formatRefreshRate(refreshSeconds)}`;
+    return ownerId ? `${base}${FOOTER_ID_SEPARATOR}${ownerId.slice(0, STAMP_LENGTH)}` : base;
 }
 
 /** Extracts the ownership stamp from a footer text, or null if none is present. */
@@ -80,7 +151,7 @@ export function parseOwnerId(footerText: string | null | undefined): string | nu
 
 /** A message is a dashboard iff its first embed carries the dashboard title. */
 export function isDashboardEmbed(embed: EmbedLike | null | undefined): boolean {
-    return embed?.title === DASHBOARD_TITLE;
+    return embed?.title === DASHBOARD_TITLE || embed?.title === LEGACY_DASHBOARD_TITLE;
 }
 
 /**
@@ -111,5 +182,6 @@ export function classifyDashboardEmbed(
     if (stamp === null) {
         return "legacy";
     }
-    return stamp === ownerId ? "mine" : "foreign";
+    // Prefix match: footers written before the stamp was shortened carry the full id.
+    return ownerId.startsWith(stamp) ? "mine" : "foreign";
 }

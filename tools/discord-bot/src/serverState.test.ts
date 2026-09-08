@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { formatStardewTime, joinableInviteCode } from "./serverState";
+import { formatStardewDate, formatStardewTime, joinableInviteCode } from "./serverState";
+
+describe("formatStardewDate", () => {
+    test("capitalized season, day, and year", () => {
+        expect(formatStardewDate({ season: "spring", day: 14, year: 1 })).toBe("Spring 14, Year 1");
+    });
+
+    test("tolerates a missing season", () => {
+        expect(formatStardewDate({ season: "", day: 1, year: 2 })).toBe("1, Year 2");
+    });
+});
 
 describe("joinableInviteCode", () => {
     test("is the Steam code once published", () => {

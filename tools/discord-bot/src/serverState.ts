@@ -70,6 +70,12 @@ export function joinableInviteCode(status: Pick<ServerStatus, "steamInviteCode">
     return status.steamInviteCode || null;
 }
 
+/** The in-game calendar as "Spring 14, Year 1". */
+export function formatStardewDate(status: Pick<ServerStatus, "day" | "season" | "year">): string {
+    const season = status.season ? `${status.season[0].toUpperCase()}${status.season.slice(1)} ` : "";
+    return `${season}${status.day}, Year ${status.year}`;
+}
+
 /** The game's HHMM clock integer (600, 1330, 2550) as a 12-hour time; hours past 24 are after midnight. */
 export function formatStardewTime(timeOfDay: number): string {
     const hours24 = Math.floor(timeOfDay / 100) % 24;

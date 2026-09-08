@@ -4,11 +4,11 @@ description: Show your server's live status on a website — what /status expose
 
 # Public Server Status
 
-The API's `/status` endpoint reports whether the server is online, how many players are connected, the current invite codes, and the in-game date. It needs no API key, so a web page can read it directly and show your players a live status card.
+The API's `/status` endpoint reports whether the server is online, how many players are connected, the invite code, and the in-game date. It needs no API key, so a web page can read it directly and show your players a live status card.
 
 ## What `/status` exposes
 
-The endpoint returns the fields documented in the [API reference](/developers/api/introduction). The invite codes look sensitive but are public information: JunimoServer forces the lobby public, so the code alone never gates entry. Turn on [password protection](/features/password-protection/) before publishing the status anywhere. Every other endpoint stays behind `API_KEY`.
+The endpoint returns the fields documented in the [API reference](/developers/api/introduction). The invite code looks sensitive but is public information: JunimoServer forces the lobby public, so the code alone never gates entry. Turn on [password protection](/features/password-protection/) before publishing the status anywhere. Every other endpoint stays behind `API_KEY`.
 
 ## The HTTPS requirement
 

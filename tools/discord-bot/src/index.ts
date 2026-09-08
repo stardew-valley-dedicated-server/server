@@ -7,7 +7,7 @@ import {
     DiscordAPIError,
     DiscordjsError,
     DiscordjsErrorCodes,
-    EmbedBuilder,
+    type EmbedBuilder,
     Events,
     GatewayCloseCodes,
     GatewayIntentBits,
@@ -21,16 +21,18 @@ import {
 } from "discord.js";
 import { type ChannelRef, describeChannelRef, matchesChannelRef, parseChannelRef } from "./channels";
 import {
+    buildDashboardEmbed,
+    buildStatusFields,
     classifyDashboardEmbed,
-    DASHBOARD_TITLE,
     type DashboardMessageKind,
     formatFooter,
+    formatStateLine,
     parseDashboardState,
     parseOwnerId,
 } from "./dashboard";
 import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
-import { formatStardewTime, joinableInviteCode } from "./serverState";
+import { joinableInviteCode } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -39,11 +41,12 @@ const API_KEY = process.env.API_KEY || "";
 const WS_URL = process.env.WS_URL || `${API_URL.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
 const CHAT_CHANNEL = parseChannelRef(process.env.DISCORD_CHAT_CHANNEL);
 const DASHBOARD_CHANNEL = parseChannelRef(process.env.STATUS_DASHBOARD_CHANNEL);
-const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE) || 30;
-const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED =
-    STATUS_DASHBOARD_REFRESH_RATE < 60
-        ? `${STATUS_DASHBOARD_REFRESH_RATE} seconds`
-        : `${Math.round(STATUS_DASHBOARD_REFRESH_RATE / 60)} minutes`;
+// Every update edits one message per channel; the same floor as the presence keeps Discord's rate limits at bay.
+const MIN_STATUS_DASHBOARD_REFRESH_RATE = 20;
+const STATUS_DASHBOARD_REFRESH_RATE = Math.max(
+    Number(process.env.STATUS_DASHBOARD_REFRESH_RATE) || 30,
+    MIN_STATUS_DASHBOARD_REFRESH_RATE,
+);
 const COOLDOWN_DURATION_MS = 30000;
 const MAX_COMMANDS_PER_WINDOW = 10;
 const commandHistory = new Map<string, number[]>();
@@ -245,7 +248,7 @@ async function updatePresence(): Promise<void> {
         activityName = `${presenceShowsVersion ? version : playerInfo} | ${inviteCode}`;
         presenceSummary = `${playerInfo} | ${version} | ${inviteCode}`;
     } else {
-        activityName = `${state.label} — ${state.detail}`;
+        activityName = `${state.emoji} ${state.label} — ${state.detail}`;
         presenceSummary = activityName;
     }
 
@@ -576,54 +579,10 @@ function clearTrackedMessage(channelId: string): void {
 }
 
 /** Builds the dashboard embed from the current server status. */
-async function buildDashboardEmbed(): Promise<EmbedBuilder> {
-    const status: ServerStatus | null = await fetchServerStatus();
-    const state = resolveServerState(status);
-
-    const embed = new EmbedBuilder()
-        .setTitle(DASHBOARD_TITLE)
-        .setTimestamp()
-        .setFooter({ text: formatFooter(STATUS_DASHBOARD_REFRESH_RATE_FORMATTED, dashboardState.ownerId) });
-
-    if (!status?.isOnline) {
-        embed.setColor(state.color).setDescription(`${state.label} — **${state.detail}**\n\n_${state.hint}_`);
-    } else {
-        const seasonEmojis: Record<string, string> = {
-            spring: "🌸 Spring",
-            summer: "☀️ Summer",
-            fall: "🍂 Fall",
-            winter: "❄️ Winter",
-        };
-        const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
-
-        embed.setColor(state.color).addFields(
-            { name: "🏡 Farm Name", value: status.farmName || "Our Farm", inline: true },
-            { name: "🗺️ Farm Layout", value: getFarmTypeName(status.farmTypeKey), inline: true },
-            {
-                name: "📶 Server Status",
-                value: status.isReady ? "✅ Ready & Running" : `⏳ ${state.detail}`,
-                inline: true,
-            },
-            {
-                name: "👥 Active Players",
-                value: `**${status.playerCount} / ${status.maxPlayers}** ${status.isPaused ? "_(Paused)_" : ""}`,
-                inline: true,
-            },
-            {
-                name: "📅 In-Game Date",
-                value: `Year ${status.year}, ${formattedSeason}, Day ${status.day}`,
-                inline: true,
-            },
-            { name: "⏰ Clock Time", value: formatStardewTime(status.timeOfDay), inline: true },
-            {
-                name: "🔑 Invite Code",
-                value: `\`${joinableInviteCode(status) ?? "None Available"}\``,
-                inline: false,
-            },
-        );
-    }
-
-    return embed;
+async function fetchDashboardEmbed(): Promise<EmbedBuilder> {
+    const status = await fetchServerStatus();
+    const footer = formatFooter(STATUS_DASHBOARD_REFRESH_RATE, dashboardState.ownerId);
+    return buildDashboardEmbed(status, resolveServerState(status), footer);
 }
 
 /** Interval entry point: updates the dashboard in every matching channel, skipping ticks that overlap. */
@@ -633,7 +592,7 @@ async function updateLiveDashboard(): Promise<void> {
     }
     dashboardUpdateInFlight = true;
     try {
-        const embed = await buildDashboardEmbed();
+        const embed = await fetchDashboardEmbed();
         for (const channel of resolveChannels(DASHBOARD_CHANNEL)) {
             try {
                 await runDashboardUpdate(channel, embed);
@@ -748,21 +707,6 @@ async function runDashboardUpdate(channel: PostableChannel, embed: EmbedBuilder)
     }
 }
 
-// Helper to match Stardew Farm types cleanly
-function getFarmTypeName(key: string): string {
-    const types: Record<string, string> = {
-        Standard: "Standard 🌾",
-        Riverland: "Riverland 🐟",
-        Forest: "Forest 🌲",
-        Hilltop: "Hilltop ⛏️",
-        Wilderness: "Wilderness 🦁",
-        FourCorners: "Four Corners 🗺️",
-        Beach: "Beach 🏖️",
-        MeadowlandsFarm: "Meadowlands 🐓",
-    };
-    return types[key] || key || "Unknown Type";
-}
-
 // ============================================================================
 // MAIN MESSAGE EVENT ROUTER (Commands + Chat Relay)
 // ============================================================================
@@ -815,10 +759,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
     const input = inOwnChannel ? null : parseCommand(message);
     if (input) {
         if (isRateLimited(message.author.id)) {
-            const warning = await reply(
-                message,
-                "⏳ **Whoa, slow down!** You're sending commands too quickly. Please wait a bit before trying again.",
-            );
+            const warning = await reply(message, "Too many commands; please wait a moment before trying again.");
             if (warning) {
                 setTimeout(() => warning.delete().catch(() => {}), 5000);
             }
@@ -832,31 +773,14 @@ client.on(Events.MessageCreate, async (message: Message) => {
                 const state = resolveServerState(status);
 
                 if (!status?.isOnline) {
-                    await reply(message, `**Server Status:** ${state.label} — ${state.detail}`);
+                    await reply(message, `**Status:** ${formatStateLine(state)}`);
                     return;
                 }
 
-                const seasonEmojis: Record<string, string> = {
-                    spring: "🌸 Spring",
-                    summer: "☀️ Summer",
-                    fall: "🍂 Fall",
-                    winter: "❄️ Winter",
-                };
-                const formattedSeason = seasonEmojis[status.season?.toLowerCase()] || status.season;
-
-                const lines = [
-                    `🏡 **Farm Name:** ${status.farmName}`,
-                    `🗺️ **Farm Type:** ${getFarmTypeName(status.farmTypeKey)}`,
-                    `👥 **Players:** ${status.playerCount}/${status.maxPlayers} ${status.isPaused ? "(⏸️ Paused)" : "(▶️ Live)"}`,
-                    `📅 **Date:** Day ${status.day} of ${formattedSeason}, Year ${status.year}`,
-                    `⏰ **Time:** ${formatStardewTime(status.timeOfDay)}`,
-                    `📡 **Server State:** ${status.isReady ? "Ready ✓" : `Busy (${state.detail}) ⏳`}`,
-                    `🔑 **Invite Code:** \`${joinableInviteCode(status) ?? "None"}\``,
-                ];
-
+                const lines = buildStatusFields(status, state).map((field) => `**${field.name}:** ${field.value}`);
                 await reply(message, lines.join("\n"));
             } catch (_e) {
-                await reply(message, "⚠️ Failed to load server status.");
+                await reply(message, "Could not load the server status.");
             }
             return;
         }
@@ -874,22 +798,16 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     ),
                 ]);
 
-                const onlineList = playersRes.players.filter((p) => p.isOnline).map((p) => `• 🟢 **${p.name}**`);
+                const online = playersRes.players.filter((p) => p.isOnline).map((p) => p.name);
 
                 const lines = [
-                    `📊 **Roster Information**`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `🟢 **Online Now (${onlineList.length}):**`,
-                    onlineList.length ? onlineList.join("\n") : "• Nobody online",
-                    `\n🛖 **Cabin Strategy & Real Estate:**`,
-                    `• Total Cabins Built: **${cabinsRes.totalCount}**`,
-                    `• Assigned to Players: **${cabinsRes.assignedCount}**`,
-                    `• Available Vacancies: **${cabinsRes.availableCount}**`,
+                    `**Online (${online.length}):** ${online.length ? online.join(", ") : "nobody"}`,
+                    `**Cabins:** ${cabinsRes.totalCount} built, ${cabinsRes.assignedCount} assigned, ${cabinsRes.availableCount} available`,
                 ];
 
                 await reply(message, lines.join("\n"));
             } catch (_e) {
-                await reply(message, "⚠️ Failed to parse player lists and cabin layouts.");
+                await reply(message, "Could not load the player list.");
             }
             return;
         }
@@ -906,23 +824,18 @@ client.on(Events.MessageCreate, async (message: Message) => {
                 ]);
 
                 const lines = [
-                    `⚙️ **Server Configuration & Telemetry**`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `🖥️ **Performance Metrics:**`,
-                    `• Tick Speed: **${stats.tps.toFixed(1)} / ${stats.targetTps} TPS** (Ticks Per Sec)`,
-                    `• (Web)VNC Frame Rate: **${stats.fps.toFixed(1)} FPS**`,
-                    `• Average Tick Time: **${stats.avgTickMs.toFixed(2)} ms**`,
-                    `• Ram Overhead: **${stats.memoryMb.toFixed(1)} MB**`,
-                    `\n🛠️ **Gameplay Rules:**`,
-                    `• Wallet-Type: **${settings.server.separateWallets ? "💰 Separate Wallets" : "🤝 Shared Wallet"}**`,
-                    `• Profit Margin Multiplier: **${settings.game.profitMargin}x**`,
-                    `• Night Monsters Spawn: **${settings.game.spawnMonstersAtNight}**`,
-                    `• Cabin Strategy: \`${settings.server.cabinStrategy}\` ([Learn More](https://docs.junimoserver.com/features/cabin-strategies.html#cabinstack-default))`,
+                    `**Tick rate:** ${stats.tps.toFixed(1)} / ${stats.targetTps} TPS, ${stats.avgTickMs.toFixed(2)} ms per tick`,
+                    `**Frame rate:** ${stats.fps.toFixed(1)} FPS`,
+                    `**Memory:** ${stats.memoryMb.toFixed(1)} MB`,
+                    `**Wallets:** ${settings.server.separateWallets ? "separate" : "shared"}`,
+                    `**Profit margin:** ${settings.game.profitMargin}x`,
+                    `**Monsters at night:** ${settings.game.spawnMonstersAtNight}`,
+                    `**Cabin strategy:** \`${settings.server.cabinStrategy}\` (<https://docs.junimoserver.com/features/cabin-strategies>)`,
                 ];
 
                 await reply(message, lines.join("\n"));
             } catch (_e) {
-                await reply(message, "⚠️ Failed to retrieve system performance diagnostics.");
+                await reply(message, "Could not load the server settings.");
             }
             return;
         }
@@ -930,11 +843,11 @@ client.on(Events.MessageCreate, async (message: Message) => {
         // COMMAND: !help
         if (input === "!help") {
             const helpLines = [
-                `🤖 **Stardew Server Bot Commands** (mention me, e.g. <@${client.user?.id}> !status):`,
-                `• \`!status\` - View current farm date, time, player count, and the invite code.`,
-                `• \`!players\` - List who is online, and cabin availability.`,
-                `• \`!server\` - Check hardware telemetry (TPS/FPS/RAM) and farm settings.`,
-                `• \`!help\` - Display this command map.`,
+                `**Commands** (mention me, e.g. <@${client.user?.id}> !status):`,
+                `\`!status\` - server state, players, in-game date, versions, tick rate, and the invite code`,
+                `\`!players\` - who is online, and cabin availability`,
+                `\`!server\` - tick rate, memory, and gameplay settings`,
+                `\`!help\` - this list`,
             ];
             await reply(message, helpLines.join("\n"));
             return;
@@ -1141,7 +1054,9 @@ client.once(Events.ClientReady, async () => {
         log.info(`Chat relay channel: ${describeChannelRef(CHAT_CHANNEL)}`);
     }
     if (DASHBOARD_CHANNEL) {
-        log.info(`Status dashboard channel: ${describeChannelRef(DASHBOARD_CHANNEL)}`);
+        log.info(
+            `Status dashboard channel: ${describeChannelRef(DASHBOARD_CHANNEL)}, updating every ${STATUS_DASHBOARD_REFRESH_RATE}s`,
+        );
     }
 
     // Perform startup checks
