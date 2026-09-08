@@ -65,7 +65,7 @@ curl https://203.0.113.10/farm/health
 
 ## Your own proxy
 
-When the host already runs a reverse proxy — or runs other services that should share one — skip the bundled `proxy` profile and route to the server from your proxy. Keep `PUBLIC_HOST` and `SERVER_URL_NAME` in `.env`: `PUBLIC_HOST` keeps the plain API and VNC ports on loopback, and routing then lives in your proxy rather than these variables.
+When the host already runs a reverse proxy — or runs other services that should share one — skip the bundled `proxy` profile and route to the server from your proxy. Keep `PUBLIC_HOST` in `.env` — it binds the plain API and VNC ports to loopback. Routing now lives in your proxy, not in these variables; `SERVER_URL_NAME` just names the path prefix the examples below route to.
 
 Connect the two through a dedicated external Docker network that both the proxy and the server join, rather than attaching the proxy to this stack's network — one shared network scales to every service on the host. Create it once:
 
@@ -134,7 +134,7 @@ services:
     environment:
       CONTAINERS: 1   # discover containers and their labels
       NETWORKS: 1     # resolve traefik.docker.network
-      # everything else stays denied: read-only, no POST/EXEC/write access
+      # Traefik also reads the events stream, on by default; POST and all write access stay denied
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [socket]
