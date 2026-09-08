@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
+    formatStardewDate,
     formatStardewTime,
+    formatUptime,
     joinableInviteCode,
     resolveServerState,
     type ServerState,
@@ -79,30 +81,9 @@ const playerSlotColumns = computed(() => {
     return rows > 0 ? Math.ceil(playerSlots.value / rows) : 0;
 });
 
-const farmDate = computed(() => {
-    if (!status.value) {
-        return "";
-    }
-    const season = status.value.season ? status.value.season[0].toUpperCase() + status.value.season.slice(1) : "";
-    return `${season} ${status.value.day}, Year ${status.value.year}`;
-});
+const farmDate = computed(() => (status.value ? formatStardewDate(status.value) : ""));
 
 const clock = computed(() => (status.value ? formatStardewTime(status.value.timeOfDay) : ""));
-
-/** Coarse uptime ("3d 4h", "4h 12m", "12m"); precise seconds would only churn between polls. */
-function formatUptime(startedAtUtc: string, now: number): string {
-    const totalMinutes = Math.max(0, Math.floor((now - Date.parse(startedAtUtc)) / 60000));
-    const days = Math.floor(totalMinutes / 1440);
-    const hours = Math.floor((totalMinutes % 1440) / 60);
-    const minutes = totalMinutes % 60;
-    if (days > 0) {
-        return `${days}d ${hours}h`;
-    }
-    if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-}
 
 /** Uptime shown inside the status badge while online; "" otherwise. */
 const uptime = computed(() =>
@@ -118,7 +99,7 @@ const vitals = computed(() => {
     const items = [
         {
             key: "tps",
-            iconPath: "M12 20V10M18 20V4M6 20v-4",
+            iconPath: "M3 12h4l3-8 4 16 3-8h4",
             value: status.value.tps.toFixed(1),
             unit: "TPS",
             info: "Game ticks per second the server actually runs, averaged over the last 30 seconds.",
@@ -127,7 +108,7 @@ const vitals = computed(() => {
     if (roundTripMs.value !== null) {
         items.push({
             key: "rtt",
-            iconPath: "M3 12h4l3-8 4 16 3-8h4",
+            iconPath: "M12 20V10M18 20V4M6 20v-4",
             value: String(roundTripMs.value),
             unit: "ms",
             info: "Round-trip from your browser to the server's API. A rough distance hint, not your in-game ping.",
@@ -235,18 +216,14 @@ onUnmounted(() => {
                     <div class="status-badge" :style="{ '--status-color': stateColors[state.kind] }">
                         <span class="status-dot"></span>
                         <span class="status-text">{{ state.label }}</span>
-                        <span v-if="uptime" class="status-uptime" title="Time since the server process last started">· {{ uptime }}</span>
+                        <span v-if="uptime" class="status-uptime" title="Time since the server process last started">· up {{ uptime }}</span>
                     </div>
                 </div>
                 <div class="meta-row">
                     <p v-if="status?.serverVersion" class="version">
                         <span class="version-chip">
-                            <span class="stat-label">Image</span>
+                            <span class="stat-label">Build Version</span>
                             <code>{{ status.serverVersion }}</code>
-                        </span>
-                        <span v-if="status.gameVersion" class="version-chip">
-                            <span class="stat-label">Stardew</span>
-                            <code>{{ status.gameVersion }}</code>
                         </span>
                     </p>
                     <p v-if="status?.isOnline" class="vitals">

@@ -78,7 +78,7 @@ server's files to match.
 | `DISCORD_BOT_TOKEN` | Discord bot token | - |
 | `DISCORD_CHAT_CHANNEL` | Chat relay channel, by name or ID | - |
 | `STATUS_DASHBOARD_CHANNEL` | Status dashboard channel, by name or ID | - |
-| `STATUS_DASHBOARD_REFRESH_RATE` | Dashboard update interval in seconds | `30` |
+| `STATUS_DASHBOARD_REFRESH_RATE` | Dashboard update interval in seconds, minimum 20 | `30` |
 
 See [Discord Integration](/admins/configuration/discord) for setup instructions.
 
