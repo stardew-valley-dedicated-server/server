@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatStardewDate, formatStardewTime, joinableInviteCode } from "./serverState";
+import { formatStardewDate, formatStardewTime, formatUptime, joinableInviteCode } from "./serverState";
 
 describe("formatStardewDate", () => {
     test("capitalized season, day, and year", () => {
@@ -35,5 +35,20 @@ describe("formatStardewTime", () => {
 
     test("hours past 24 are after midnight", () => {
         expect(formatStardewTime(2550)).toBe("1:50 AM");
+    });
+});
+
+describe("formatUptime", () => {
+    const start = "2026-01-01T00:00:00Z";
+    const startMs = Date.parse(start);
+
+    test("days+hours, hours+minutes, or just minutes", () => {
+        expect(formatUptime(start, startMs + (3 * 1440 + 4 * 60) * 60000)).toBe("3d 4h");
+        expect(formatUptime(start, startMs + (4 * 60 + 12) * 60000)).toBe("4h 12m");
+        expect(formatUptime(start, startMs + 12 * 60000)).toBe("12m");
+    });
+
+    test("clamps a start in the future to 0m", () => {
+        expect(formatUptime(start, startMs - 60000)).toBe("0m");
     });
 });

@@ -187,6 +187,9 @@ function startHeartbeat(): void {
 // Polled by several callers, so only reachability changes are logged.
 let statusFetchFailure: string | null | undefined;
 
+// The last status seen with live game data; shown on the dashboard while the server is unreachable.
+let lastKnownStatus: ServerStatus | null = null;
+
 /**
  * Fetches the server status from the HTTP API.
  */
@@ -204,6 +207,9 @@ async function fetchServerStatus(): Promise<ServerStatus | null> {
 
         const status = await response.json();
         reportStatusFetch(null);
+        if (status?.isOnline) {
+            lastKnownStatus = status;
+        }
         return status;
     } catch (error) {
         reportStatusFetch(error instanceof Error ? error.message : String(error));
@@ -241,14 +247,15 @@ async function updatePresence(): Promise<void> {
     let presenceSummary: string;
 
     if (state.kind === "online" && status) {
-        const playerInfo = `${status.playerCount}/${status.maxPlayers} players`;
+        const players = `${status.playerCount}/${status.maxPlayers} players`;
         const version = `v${status.serverVersion}`;
-        const inviteCode = joinableInviteCode(status) ?? "No code";
+        const invite = joinableInviteCode(status);
         presenceShowsVersion = !presenceShowsVersion;
-        activityName = `${presenceShowsVersion ? version : playerInfo} | ${inviteCode}`;
-        presenceSummary = `${playerInfo} | ${version} | ${inviteCode}`;
+        const lead = presenceShowsVersion ? version : players;
+        activityName = invite ? `${lead}, code ${invite}` : lead;
+        presenceSummary = invite ? `${players}, ${version}, code ${invite}` : `${players}, ${version}`;
     } else {
-        activityName = `${state.emoji} ${state.label} — ${state.detail}`;
+        activityName = state.detail;
         presenceSummary = activityName;
     }
 
@@ -581,8 +588,9 @@ function clearTrackedMessage(channelId: string): void {
 /** Builds the dashboard embed from the current server status. */
 async function fetchDashboardEmbed(): Promise<EmbedBuilder> {
     const status = await fetchServerStatus();
-    const footer = formatFooter(STATUS_DASHBOARD_REFRESH_RATE, dashboardState.ownerId);
-    return buildDashboardEmbed(status, resolveServerState(status), footer);
+    const lastChecked = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const footer = formatFooter(STATUS_DASHBOARD_REFRESH_RATE, dashboardState.ownerId, lastChecked);
+    return buildDashboardEmbed(status, resolveServerState(status), footer, lastKnownStatus);
 }
 
 /** Interval entry point: updates the dashboard in every matching channel, skipping ticks that overlap. */
@@ -777,7 +785,10 @@ client.on(Events.MessageCreate, async (message: Message) => {
                     return;
                 }
 
-                const lines = buildStatusFields(status, state).map((field) => `**${field.name}:** ${field.value}`);
+                const lines = [
+                    `**Status:** ${formatStateLine(state)}`,
+                    ...buildStatusFields(status).map((field) => `**${field.name}:** ${field.value}`),
+                ];
                 await reply(message, lines.join("\n"));
             } catch (_e) {
                 await reply(message, "Could not load the server status.");

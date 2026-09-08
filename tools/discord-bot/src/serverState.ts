@@ -84,21 +84,36 @@ export function formatStardewTime(timeOfDay: number): string {
     return `${hours12}:${String(minutes).padStart(2, "0")} ${hours24 < 12 ? "AM" : "PM"}`;
 }
 
+/** Coarse uptime for display ("3d 4h", "4h 12m", "12m"); precise seconds would only churn between polls. */
+export function formatUptime(startedAtUtc: string, now: number): string {
+    const totalMinutes = Math.max(0, Math.floor((now - Date.parse(startedAtUtc)) / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) {
+        return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+}
+
 /** `null` is an unreachable /status: the port is closed, so the server is offline. */
 export function resolveServerState(status: StatusSignals | null): ServerState {
     if (status === null) {
         return {
             kind: "offline",
             label: "Offline",
-            detail: "The server is offline.",
+            detail: "Currently unreachable.",
             hint: "No game data can be pulled right now. Check back later!",
         };
     }
 
     if (status.isOnline) {
         return status.isReady
-            ? { kind: "online", label: "Online", detail: "Ready & running." }
-            : { kind: "busy", label: "Busy", detail: "Saving, changing day, or running an event." };
+            ? { kind: "online", label: "Online", detail: "Ready to join" }
+            : { kind: "busy", label: "Busy", detail: "Saving or running an event." };
     }
 
     switch (status.phase) {

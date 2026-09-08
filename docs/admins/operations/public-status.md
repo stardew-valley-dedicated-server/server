@@ -8,7 +8,7 @@ The API's `/status` endpoint reports whether the server is online, how many play
 
 ## What `/status` exposes
 
-The endpoint returns the fields documented in the [API reference](/developers/api/introduction). The invite code looks sensitive but is public information: JunimoServer forces the lobby public, so the code alone never gates entry. Turn on [password protection](/features/password-protection/) before publishing the status anywhere. Every other endpoint stays behind `API_KEY`.
+The endpoint returns the fields documented in the [API reference](/developers/api/introduction). The invite code looks sensitive but is public information: JunimoServer forces the lobby public, so the code alone never gates entry. Turn on [password protection](/features/password-protection/) before publishing the status anywhere. The rest of the API needs `API_KEY`, so set one before exposing anything beyond `/status`.
 
 ## The HTTPS requirement
 
@@ -31,7 +31,7 @@ Props:
 | `api-url` | HTTPS base URL of the API; the widget fetches `/status` under it | required |
 | `refresh-interval` | Poll interval in milliseconds; `0` disables polling | `30000` |
 
-The header shows the server's `SERVER_NAME`, else the farm name, the same rule the Discord bot uses for its nickname. The widget reports the same states as the bot: **Online** (`isOnline` and `isReady`), **Busy** (`isOnline` but saving, changing day, or running an event), **Starting** (`isOnline` false: the container is downloading game files, launching the game, or loading the save), and **Offline** (the request failed). It also shows the image and Stardew versions, the in-game clock, the measured tick rate, the browser's round-trip to the API, and the uptime beside the Online badge. The top accent line fills over one refresh interval, and a reload resumes the cycle from the last poll.
+The header shows the server's `SERVER_NAME`, else the farm name, the same rule the Discord bot uses for its nickname. The widget reports the same states as the bot: **Online** (`isOnline` and `isReady`), **Busy** (`isOnline` but saving, changing day, or running an event), **Starting** (`isOnline` false: the container is downloading game files, launching the game, or loading the save), and **Offline** (the request failed). It also shows the image version, the in-game clock, the measured tick rate, the browser's round-trip to the API, and the uptime beside the Online badge. The top accent line fills over one refresh interval, and a reload resumes the cycle from the last poll.
 
 ### Anywhere else
 

@@ -14,6 +14,9 @@ import { resolveServerState, type ServerStatus } from "./discordState";
 
 const OWNER_ID = "3f2c8a1e-9b4d-4c6f-8a2e-1d5b7c9e0f3a";
 const OTHER_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const LAST_CHECKED = "1:30 PM";
+// A fixed "now" 3d 4h after ONLINE_STATUS.startedAtUtc, so uptime renders deterministically.
+const NOW = Date.parse("2026-01-01T00:00:00Z") + (3 * 1440 + 4 * 60) * 60000;
 
 function dashboardEmbed(footerText: string | null): EmbedLike {
     return {
@@ -49,40 +52,41 @@ const ONLINE_STATUS: ServerStatus = {
 describe("buildDashboardEmbed", () => {
     const FOOTER = "footer";
 
-    function fields(status: ServerStatus): Record<string, string> {
-        const embed = buildDashboardEmbed(status, resolveServerState(status), FOOTER).toJSON();
+    function fields(status: ServerStatus | null, lastKnown: ServerStatus | null = null): Record<string, string> {
+        const embed = buildDashboardEmbed(status, resolveServerState(status), FOOTER, lastKnown, NOW).toJSON();
         return Object.fromEntries((embed.fields ?? []).map((f) => [f.name, f.value]));
     }
 
-    test("online: one row of state, players, and date; one row of versions and tick rate; the invite code", () => {
-        const embed = buildDashboardEmbed(ONLINE_STATUS, resolveServerState(ONLINE_STATUS), FOOTER).toJSON();
+    test("online: headline with uptime, players/date inline, build version and invite full-width", () => {
+        const embed = buildDashboardEmbed(ONLINE_STATUS, resolveServerState(ONLINE_STATUS), FOOTER, null, NOW).toJSON();
         expect(embed.title).toBe(DASHBOARD_TITLE);
         expect(embed.footer?.text).toBe(FOOTER);
-        expect(embed.description).toBeUndefined();
+        expect(embed.description).toBe("**🟢 Online** · up 3d 4h");
+        expect(embed.color).toBe(resolveServerState(ONLINE_STATUS).color);
         expect(embed.fields?.map((f) => [f.name, f.inline])).toEqual([
-            ["Status", true],
             ["Players", true],
             ["In-game date", true],
-            ["Image", true],
-            ["Stardew", true],
-            ["Average TPS", true],
+            ["Build Version", false],
             ["Invite code", false],
         ]);
         expect(fields(ONLINE_STATUS)).toMatchObject({
-            Status: "Online",
-            Players: "**1** / 10",
-            "In-game date": "Spring 14, Year 1 · 6:50 AM",
-            Image: "`1.5.0-preview.134`",
-            Stardew: "`1.6.15`",
-            "Average TPS": "5.0",
+            Players: "`1 / 10`",
+            "In-game date": "`Spring 14, Year 1 · 6:50 AM`",
+            "Build Version": "`1.5.0-preview.134`",
             "Invite code": "`SGF0LUHHTYF5`",
         });
     });
 
-    test("busy shows the reason after the state, paused is marked on the players", () => {
-        const status = { ...ONLINE_STATUS, isReady: false, isPaused: true };
-        expect(fields(status).Status).toBe("Busy — Saving, changing day, or running an event.");
-        expect(fields(status).Players).toBe("**1** / 10 _(paused)_");
+    test("busy keeps the fields but leads with the busy headline and color", () => {
+        const status = { ...ONLINE_STATUS, isReady: false };
+        const embed = buildDashboardEmbed(status, resolveServerState(status), FOOTER, null, NOW).toJSON();
+        expect(embed.description).toBe("**🟠 Busy** · up 3d 4h");
+        expect(embed.color).toBe(resolveServerState(status).color);
+        expect(fields(status).Players).toBe("`1 / 10`");
+    });
+
+    test("a paused server is marked on the players value", () => {
+        expect(fields({ ...ONLINE_STATUS, isPaused: true }).Players).toBe("`1 / 10` _(paused)_");
     });
 
     test("the invite code is pending until the Steam lobby is published", () => {
@@ -90,51 +94,73 @@ describe("buildDashboardEmbed", () => {
     });
 
     test("a version the mod has not reported yet shows a dash", () => {
-        expect(fields({ ...ONLINE_STATUS, gameVersion: "" }).Stardew).toBe("—");
+        expect(fields({ ...ONLINE_STATUS, serverVersion: "" })["Build Version"]).toBe("—");
     });
 
-    test("not online: state and hint only, no fields", () => {
-        const embed = buildDashboardEmbed(null, resolveServerState(null), FOOTER).toJSON();
+    test("uptime is left off the headline when the server's start time is unknown", () => {
+        const status = { ...ONLINE_STATUS, startedAtUtc: null };
+        const embed = buildDashboardEmbed(status, resolveServerState(status), FOOTER, null, NOW).toJSON();
+        expect(embed.description).toBe("**🟢 Online**");
+    });
+
+    test("a state with no game data shows its hint in place of fields", () => {
+        const starting = { ...ONLINE_STATUS, isOnline: false, isReady: false, phase: "starting" };
+        const embed = buildDashboardEmbed(starting, resolveServerState(starting), FOOTER, null, NOW).toJSON();
+        expect(embed.description).toBe("**🟠 Starting**\n\nGame data appears once the save is loaded.");
         expect(embed.fields).toBeUndefined();
-        expect(embed.description).toBe(
-            "**Offline** — The server is offline.\n_No game data can be pulled right now. Check back later!_",
-        );
     });
 
-    test("no emoji anywhere in the embed", () => {
-        for (const status of [ONLINE_STATUS, null]) {
-            const json = JSON.stringify(buildDashboardEmbed(status, resolveServerState(status), FOOTER).toJSON());
-            expect(json).not.toMatch(/\p{Extended_Pictographic}/u);
-        }
+    test("offline without a last-known snapshot: headline + hint only, no fields", () => {
+        const embed = buildDashboardEmbed(null, resolveServerState(null), FOOTER).toJSON();
+        expect(embed.description).toBe("**🔴 Offline**\n\nNo game data can be pulled right now. Check back later!");
+        expect(embed.color).toBe(resolveServerState(null).color);
+        expect(embed.fields).toBeUndefined();
+    });
+
+    test("offline with a last-known snapshot shows its fields, without the invite", () => {
+        const embed = buildDashboardEmbed(null, resolveServerState(null), FOOTER, ONLINE_STATUS).toJSON();
+        expect(embed.description).toBe("**🔴 Offline**");
+        expect(embed.fields?.map((f) => f.name)).toEqual(["Players", "In-game date", "Build Version"]);
+        expect(fields(null, ONLINE_STATUS)).toMatchObject({
+            Players: "`1 / 10`",
+            "In-game date": "`Spring 14, Year 1 · 6:50 AM`",
+            "Build Version": "`1.5.0-preview.134`",
+        });
     });
 });
 
 describe("formatRefreshRate", () => {
     test("seconds unless the rate is a whole number of minutes", () => {
-        expect(formatRefreshRate(30)).toBe("30 seconds");
-        expect(formatRefreshRate(90)).toBe("90 seconds");
-        expect(formatRefreshRate(60)).toBe("1 minute");
-        expect(formatRefreshRate(120)).toBe("2 minutes");
+        expect(formatRefreshRate(30)).toBe("30s");
+        expect(formatRefreshRate(90)).toBe("90s");
+        expect(formatRefreshRate(60)).toBe("1m");
+        expect(formatRefreshRate(120)).toBe("2m");
     });
 });
 
 describe("formatFooter", () => {
-    test("stamps the owner id's prefix when present", () => {
-        expect(formatFooter(30, OWNER_ID)).toBe("Automatically updates every 30 seconds • id:3f2c8a1e");
+    test("cadence, last-checked time, and the owner id's prefix", () => {
+        expect(formatFooter(30, OWNER_ID, LAST_CHECKED)).toBe(
+            "↻ Updates every 30s · Last checked 1:30 PM · Server ID: 3f2c8a1e",
+        );
     });
 
-    test("omits the stamp in degraded mode", () => {
-        expect(formatFooter(120, null)).toBe("Automatically updates every 2 minutes");
+    test("omits the stamp when persistence is unavailable", () => {
+        expect(formatFooter(120, null, LAST_CHECKED)).toBe("↻ Updates every 2m · Last checked 1:30 PM");
     });
 });
 
 describe("parseOwnerId", () => {
     test("round-trips the stamp written by formatFooter", () => {
-        expect(parseOwnerId(formatFooter(30, OWNER_ID))).toBe(OWNER_ID.slice(0, 8));
+        expect(parseOwnerId(formatFooter(30, OWNER_ID, LAST_CHECKED))).toBe(OWNER_ID.slice(0, 8));
+    });
+
+    test("still reads the legacy footer format so older dashboards are re-adopted", () => {
+        expect(parseOwnerId("Automatically updates every 30 seconds • id:3f2c8a1e")).toBe("3f2c8a1e");
     });
 
     test("returns null for an unstamped footer", () => {
-        expect(parseOwnerId(formatFooter(30, null))).toBeNull();
+        expect(parseOwnerId(formatFooter(30, null, LAST_CHECKED))).toBeNull();
     });
 
     test("returns null for empty, null, and undefined input", () => {
@@ -144,8 +170,8 @@ describe("parseOwnerId", () => {
     });
 
     test("returns null when the separator is present but the id is empty", () => {
-        expect(parseOwnerId("Automatically updates every 30 seconds • id:")).toBeNull();
-        expect(parseOwnerId("Automatically updates every 30 seconds • id:   ")).toBeNull();
+        expect(parseOwnerId("↻ Updates every 30s · Last checked 1:30 PM · Server ID: ")).toBeNull();
+        expect(parseOwnerId("↻ Updates every 30s · Last checked 1:30 PM · Server ID:   ")).toBeNull();
     });
 });
 
@@ -173,27 +199,34 @@ describe("classifyDashboardEmbed", () => {
     });
 
     test("our stamp is mine", () => {
-        const embed = dashboardEmbed(formatFooter(30, OWNER_ID));
+        const embed = dashboardEmbed(formatFooter(30, OWNER_ID, LAST_CHECKED));
         expect(classifyDashboardEmbed(embed, OWNER_ID)).toBe("mine");
     });
 
     test("a footer stamped with our full id is still mine", () => {
-        const embed = dashboardEmbed(`Automatically updates every 30 seconds • id:${OWNER_ID}`);
+        const embed = dashboardEmbed(`↻ Updates every 30s · Last checked 1:30 PM · Server ID: ${OWNER_ID}`);
         expect(classifyDashboardEmbed(embed, OWNER_ID)).toBe("mine");
     });
 
     test("an unstamped dashboard is legacy", () => {
-        expect(classifyDashboardEmbed(dashboardEmbed(formatFooter(30, null)), OWNER_ID)).toBe("legacy");
+        expect(classifyDashboardEmbed(dashboardEmbed(formatFooter(30, null, LAST_CHECKED)), OWNER_ID)).toBe("legacy");
         expect(classifyDashboardEmbed(dashboardEmbed(null), OWNER_ID)).toBe("legacy");
     });
 
-    test("another deployment's stamp is foreign", () => {
-        const embed = dashboardEmbed(formatFooter(30, OTHER_ID));
-        expect(classifyDashboardEmbed(embed, OWNER_ID)).toBe("foreign");
+    test("another deployment's stamp is foreign, in the current and legacy formats", () => {
+        expect(classifyDashboardEmbed(dashboardEmbed(formatFooter(30, OTHER_ID, LAST_CHECKED)), OWNER_ID)).toBe(
+            "foreign",
+        );
+        expect(
+            classifyDashboardEmbed(
+                dashboardEmbed(`Automatically updates every 30 seconds • id:${OTHER_ID.slice(0, 8)}`),
+                OWNER_ID,
+            ),
+        ).toBe("foreign");
     });
 
     test("degraded mode adopts every dashboard by title, regardless of stamp", () => {
-        expect(classifyDashboardEmbed(dashboardEmbed(formatFooter(30, OTHER_ID)), null)).toBe("mine");
+        expect(classifyDashboardEmbed(dashboardEmbed(formatFooter(30, OTHER_ID, LAST_CHECKED)), null)).toBe("mine");
         expect(classifyDashboardEmbed(dashboardEmbed(null), null)).toBe("mine");
     });
 

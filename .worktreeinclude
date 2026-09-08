@@ -2,7 +2,9 @@
 # Plain repo-relative paths to single files, one per line — not full .gitignore
 # syntax, and not directories (the hook copies with copyFileSync).
 # .env: build reads GAME_PATH via Directory.Build.props. .env.test: E2E tests.
+# tools/discli-docker/.env: discli bot token, so `docker compose exec` works in worktrees.
 # node_modules is NOT copied — the hook runs `npm ci` in the worktree instead.
 .env
 .env.test
 .sdvd_runner_key
+tools/discli-docker/.env
