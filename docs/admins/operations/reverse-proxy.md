@@ -31,7 +31,7 @@ Setting `PUBLIC_HOST` declares that a proxy sits in front of the server: the pla
 | `path` | `https://PUBLIC_HOST/SERVER_URL_NAME/status`, `/players`, `/docs`, … | `https://PUBLIC_HOST/SERVER_URL_NAME/vnc/` |
 | `subdomain` | `https://SERVER_URL_NAME.PUBLIC_HOST/status`, … | `https://SERVER_URL_NAME.PUBLIC_HOST/vnc/` |
 
-`path` works for an IP and for a domain. `subdomain` needs a domain, with a DNS record (or wildcard) for that name pointing at the host; with an IP host the certificate request fails, visible in `docker compose logs proxy`.
+`path` works for an IP and for a domain. `subdomain` needs a domain, with a DNS record (or wildcard) for that name pointing at the host; with an IP host the certificate request fails, visible in the proxy's logs.
 
 ## Certificate
 
@@ -65,7 +65,7 @@ curl https://203.0.113.10/farm/health
 
 ## Your own proxy
 
-When the host already runs a reverse proxy — or runs other services that should share one — skip the bundled `proxy` profile and route to the server from your proxy. Keep `PUBLIC_HOST` in `.env` — it binds the plain API and VNC ports to loopback. Routing now lives in your proxy, not in these variables; `SERVER_URL_NAME` just names the path prefix the examples below route to.
+When the host already runs a reverse proxy — or runs other services that should share one — skip the bundled `proxy` profile and route to the server from your proxy. Keep `PUBLIC_HOST` in `.env` — it binds the plain API and VNC ports to loopback. Routing now lives in your proxy, not in these variables; `SERVER_URL_NAME` just names the path prefix the examples below route to. The examples assume a domain; for a bare IP, use the bundled proxy (or a proxy whose ACME client can request Let's Encrypt's short-lived profile, the type it issues for IP addresses).
 
 Connect the two through a dedicated external Docker network that both the proxy and the server join, rather than attaching the proxy to this stack's network — one shared network scales to every service on the host. Create it once:
 
