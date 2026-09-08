@@ -16,7 +16,7 @@ depend on this.
 (`"type": "module"`, run via Bun). It already:
 - Reads the server's HTTP API (`API_URL`, `Authorization: Bearer ${API_KEY}`) and WebSocket
   (`WS_URL`) for live status (`ServerStatus`, `WebSocketMessage` — `src/index.ts:35-53`).
-- Relays chat **game ↔ Discord channel** (`DISCORD_CHAT_CHANNEL_ID`, gated `GuildMessages` +
+- Relays chat **game ↔ Discord channel** (`DISCORD_CHAT_CHANNEL`, gated `GuildMessages` +
   `MessageContent` intents — `src/index.ts:55+`).
 - Sets a dynamic nickname / presence (rate-limit-aware, `UPDATE_INTERVAL_MS`).
 - Holds a bot token (`DISCORD_BOT_TOKEN`) with Read Message History.

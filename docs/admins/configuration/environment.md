@@ -76,8 +76,8 @@ server's files to match.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DISCORD_BOT_TOKEN` | Discord bot token | - |
-| `DISCORD_CHAT_CHANNEL_ID` | Channel ID for chat relay | - |
-| `STATUS_DASHBOARD_CHANNEL_ID` | Channel ID for the status dashboard | - |
+| `DISCORD_CHAT_CHANNEL` | Chat relay channel, by name or ID | - |
+| `STATUS_DASHBOARD_CHANNEL` | Status dashboard channel, by name or ID | - |
 | `STATUS_DASHBOARD_REFRESH_RATE` | Dashboard update interval in seconds | `30` |
 
 See [Discord Integration](/admins/configuration/discord) for setup instructions.
@@ -105,8 +105,8 @@ VNC_PASSWORD=your_secure_password
 
 # ===== Discord (optional) =====
 # DISCORD_BOT_TOKEN=your_bot_token
-# DISCORD_CHAT_CHANNEL_ID=123456789012345678
-# STATUS_DASHBOARD_CHANNEL_ID=123456789012345678
+# DISCORD_CHAT_CHANNEL=farm-chat
+# STATUS_DASHBOARD_CHANNEL=farm-status
 
 # ===== CI/Automation (optional) =====
 # STEAM_REFRESH_TOKEN=your_refresh_token

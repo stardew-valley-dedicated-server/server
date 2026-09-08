@@ -399,8 +399,8 @@ Add these under **Settings → Environments → Variables**, not as secrets.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DEPLOY_SERVER_NAME` | No | Display name shown as the Discord bot nickname and on status widgets (defaults to the farm name) |
-| `DEPLOY_DISCORD_CHAT_CHANNEL_ID` | No | Discord channel ID for the two-way [chat relay](/admins/configuration/discord#chat-relay) |
-| `DEPLOY_STATUS_DASHBOARD_CHANNEL_ID` | No | Discord channel ID for the [status dashboard](/admins/configuration/discord#status-dashboard) embed; may be the chat relay channel |
+| `DEPLOY_DISCORD_CHAT_CHANNEL` | No | Discord channel for the two-way [chat relay](/admins/configuration/discord#chat-relay), by name or ID |
+| `DEPLOY_STATUS_DASHBOARD_CHANNEL` | No | Discord channel for the [status dashboard](/admins/configuration/discord#status-dashboard) embed, by name or ID |
 | `DEPLOY_PUBLIC_HOST` | No | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); setting it enables the proxy. `SERVER_URL_NAME` comes from the matrix entry's `url_name` |
 | `DEPLOY_PROXY_ROUTING` | No | `path` (default) or `subdomain`, see the proxy docs |
 

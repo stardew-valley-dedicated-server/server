@@ -93,10 +93,10 @@ services:
       API_URL: "http://server:${API_PORT:-8080}"
       # Min 20s to respect Discord rate limits, default 30s
       UPDATE_INTERVAL_MS: "30000"
-      # Channel ID for two-way chat relay (optional)
-      DISCORD_CHAT_CHANNEL_ID: "${DISCORD_CHAT_CHANNEL_ID:-}"
-      # Channel ID for status updates (optional, can be same as chat channel)
-      STATUS_DASHBOARD_CHANNEL_ID: "${STATUS_DASHBOARD_CHANNEL_ID:-}"
+      # Channel name or ID for two-way chat relay (optional)
+      DISCORD_CHAT_CHANNEL: "${DISCORD_CHAT_CHANNEL:-}"
+      # Channel name or ID for status updates (optional, can be same as chat channel)
+      STATUS_DASHBOARD_CHANNEL: "${STATUS_DASHBOARD_CHANNEL:-}"
       # Refresh rate for status updates (optional, default 30s)
       STATUS_DASHBOARD_REFRESH_RATE: "${STATUS_DASHBOARD_REFRESH_RATE:-}"
       # API key (must match server's API_KEY if set)
