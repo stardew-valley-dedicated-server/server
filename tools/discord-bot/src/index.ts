@@ -1,6 +1,3 @@
-// Discord rejects nicknames over 32 characters; the full name stays on /status.
-const _nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
-
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -236,7 +233,8 @@ async function updatePresence(): Promise<void> {
  */
 async function updateBotNickname(): Promise<void> {
     const status = await fetchServerStatus();
-    const nickname = status?.serverName || status?.farmName;
+    // Discord rejects nicknames over 32 characters; the full name stays on /status.
+    const nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
 
     if (!nickname) {
         return;
