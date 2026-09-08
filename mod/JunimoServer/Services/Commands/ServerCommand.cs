@@ -46,7 +46,7 @@ public class ServerCommand
                 var farmName = Game1.player?.farmName.Value ?? "Unknown";
                 var playerCount = Game1.server?.connectionsCount ?? 0;
                 var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
-                var inviteCode = Game1.server.getInviteCode() ?? "N/A";
+                var inviteCode = InviteCodes.Joinable ?? "not yet available";
                 var uptime = DateTime.UtcNow - _startTimeUtc;
                 var season = Game1.currentSeason ?? "unknown";
 
@@ -125,7 +125,7 @@ public class ServerCommand
         var farmName = Game1.player?.farmName.Value ?? "Unknown";
         var playerCount = Game1.server?.connectionsCount ?? 0;
         var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
-        var inviteCode = Game1.server.getInviteCode() ?? "N/A";
+        var inviteCode = InviteCodes.Joinable ?? "not yet available";
         var uptime = DateTime.UtcNow - _startTimeUtc;
         var season = Game1.currentSeason ?? "unknown";
 

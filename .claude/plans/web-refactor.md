@@ -35,7 +35,6 @@ Replace the AsyncAPI/WebSocket-based communication in `/web` with the server's H
     /api/game/players    → http://server:8080/players
     /api/game/map/players → http://server:8080/map/players
     /api/game/farmhands  → http://server:8080/farmhands
-    /api/game/invite-code → http://server:8080/invite-code
     /api/game/health     → http://server:8080/health
     /api/game/rendering  → http://server:8080/rendering
     /api/game/time       → http://server:8080/time
@@ -58,7 +57,6 @@ Replace the AsyncAPI/WebSocket-based communication in `/web` with the server's H
     - `usePlayersOnline()` — `GET /api/game/players`
     - `useMapPlayers()` — `GET /api/game/map/players` (with optional polling interval via `useIntervalFn` from `@vueuse/core`)
     - `useFarmhands()` — `GET /api/game/farmhands`
-    - `useInviteCode()` — `GET /api/game/invite-code`
 - Each returns the standard `useFetch` result (`data`, `pending`, `error`, `refresh`)
 - TypeScript interfaces for response shapes, matching the server DTOs
 

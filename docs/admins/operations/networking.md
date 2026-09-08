@@ -23,7 +23,7 @@ Steam clients connect through Valve's Steam Datagram Relay network. All traffic 
 
 ### GOG Galaxy
 
-GOG clients connect using Galaxy P2P networking. Invite codes start with "G". Works through most NATs without port forwarding, but has lower success rates than Steam SDR.
+GOG clients connect using Galaxy P2P networking with the same invite code Steam players use. Works through most NATs without port forwarding, but has lower success rates than Steam SDR.
 
 ### Direct IP
 
@@ -146,7 +146,7 @@ SDR takes a few seconds to initialize. Wait and retry.
 
 ### GOG Clients Can't Connect
 
-1. Verify invite code starts with "G"
+1. Verify the invite code is current (`info` in the CLI)
 2. Run `netdebug nat` to check NAT type
 3. Try having player connect from different network
 4. If the server log shows no connection attempt at all, [capture the Galaxy SDK

@@ -81,7 +81,7 @@ public class NavigationTests : TestBase
     /// </summary>
     [Fact]
     [TestServer(Clients = 0, WithSteam = true)]
-    public async Task ServerApi_GetInviteCode_ShouldReturnValidCode()
+    public async Task ServerApi_GetStatus_ShouldReturnInviteCode()
     {
         // Galaxy invite code may arrive asynchronously; poll briefly
         var ct = TestCt;
@@ -89,8 +89,8 @@ public class NavigationTests : TestBase
             WaitName.Polling_Navigation_HasGalaxyInviteCode,
             async () =>
             {
-                var r = await ServerApi.GetInviteCode(ct);
-                return r != null && !string.IsNullOrEmpty(r.InviteCode);
+                var r = await ServerApi.GetStatus(ct);
+                return !string.IsNullOrEmpty(r?.InviteCode);
             },
             TimeSpan.FromSeconds(10),
             cancellationToken: ct
@@ -98,13 +98,13 @@ public class NavigationTests : TestBase
 
         Assert.True(hasCode, "Server must have a valid invite code (WithSteam=true)");
 
-        var response = await ServerApi.GetInviteCode(ct);
-        Assert.NotNull(response);
+        var status = await ServerApi.GetStatus(ct);
+        Assert.NotNull(status);
         Assert.False(
-            string.IsNullOrEmpty(response.InviteCode),
+            string.IsNullOrEmpty(status.InviteCode),
             "Should return a non-empty invite code"
         );
-        Log($"Invite code: {response.InviteCode}");
+        Log($"Invite code: {status.InviteCode}");
     }
 
     [Fact]

@@ -2,13 +2,12 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
     formatStardewTime,
+    joinableInviteCode,
     resolveServerState,
     type ServerState,
     type ServerStateKind,
     type ServerStatus,
 } from "../../../tools/discord-bot/src/serverState";
-
-type CodeKey = "steamInviteCode" | "gogInviteCode";
 
 const props = defineProps<{
     /** HTTPS base URL of the API; `/status` is fetched under it. */
@@ -22,7 +21,7 @@ const status = ref<ServerStatus | null>(null);
 const serverName = ref("");
 /** `null` until the first fetch settles. */
 const state = ref<ServerState | null>(null);
-const copiedKey = ref<CodeKey | null>(null);
+const copied = ref(false);
 const refreshInterval = props.refreshInterval ?? 30000;
 const roundTripMs = ref<number | null>(null);
 /** Epoch ms of the last settled poll; keys the refresh bar and anchors the next poll. */
@@ -60,21 +59,8 @@ function writeCache(poll: CachedPoll | null) {
     }
 }
 
-// Brand marks are the `steam` and `gogdotcom` glyphs from @iconify-json/simple-icons (24×24 viewBox).
-const inviteCodes: { key: CodeKey; label: string; iconPath: string }[] = [
-    {
-        key: "steamInviteCode",
-        label: "Steam invite code",
-        iconPath:
-            "M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658a3.4 3.4 0 0 1 1.912-.59q.094.001.188.006l2.861-4.142V8.91a4.53 4.53 0 0 1 4.524-4.524c2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911l.004.159a3.39 3.39 0 0 1-3.39 3.396a3.41 3.41 0 0 1-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0M7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25a2.551 2.551 0 0 0 3.337-3.324a2.547 2.547 0 0 0-3.255-1.413l1.523.63a1.878 1.878 0 0 1-1.445 3.467zm11.415-9.303a3.02 3.02 0 0 0-3.015-3.015a3.015 3.015 0 1 0 3.015 3.015m-5.273-.005a2.264 2.264 0 1 1 4.531 0a2.267 2.267 0 0 1-2.266 2.265a2.264 2.264 0 0 1-2.265-2.265",
-    },
-    {
-        key: "gogInviteCode",
-        label: "GOG invite code",
-        iconPath:
-            "M7.15 15.24H4.36a.4.4 0 0 0-.4.4v2c0 .21.18.4.4.4h2.8v1.32h-3.5c-.56 0-1.02-.46-1.02-1.03v-3.39c0-.56.46-1.02 1.03-1.02h3.48zm1.01-3.7c0 .58-.47 1.05-1.05 1.05H2.63v-1.35h3.78a.4.4 0 0 0 .4-.4V6.39a.4.4 0 0 0-.4-.4H4.39a.4.4 0 0 0-.41.4v2.02c0 .23.18.4.4.4H6v1.35H3.68c-.58 0-1.05-.46-1.05-1.04V5.68c0-.57.47-1.04 1.05-1.04H7.1c.58 0 1.05.47 1.05 1.04v5.86zm13.2 7.82h-1.32v-4.12h-.93a.4.4 0 0 0-.4.4v3.72h-1.33v-4.12h-.93a.4.4 0 0 0-.4.4v3.72h-1.33v-4.42c0-.56.46-1.02 1.03-1.02h5.61zm.01-7.82c0 .58-.47 1.05-1.05 1.05h-4.48v-1.35h3.78a.4.4 0 0 0 .4-.4V6.39a.4.4 0 0 0-.4-.4h-2.03a.4.4 0 0 0-.4.4v2.02c0 .23.18.4.4.4h1.62v1.35H16.9c-.58 0-1.05-.46-1.05-1.04V5.68c0-.57.47-1.04 1.05-1.04h3.43c.58 0 1.05.47 1.05 1.04v5.86zm-7.65-6.9h-3.44c-.58 0-1.04.47-1.04 1.04v3.44c0 .58.46 1.04 1.04 1.04h3.44c.57 0 1.04-.46 1.04-1.04V5.68c0-.57-.47-1.04-1.04-1.04m-.3 1.75v2.02a.4.4 0 0 1-.4.4h-2.03a.4.4 0 0 1-.4-.4V6.4c0-.22.17-.4.4-.4H13c.23 0 .4.18.4.4zm-.79 7.53H9.24c-.57 0-1.03.46-1.03 1.02v3.39c0 .57.46 1.03 1.03 1.03h3.39c.57 0 1.03-.46 1.03-1.03v-3.39c0-.56-.46-1.02-1.03-1.02m-.3 1.72v2a.4.4 0 0 1-.4.4v-.01H9.94a.4.4 0 0 1-.4-.4v-1.99c0-.22.18-.4.4-.4h2c.22 0 .4.18.4.4zM23.49 1.1a1.74 1.74 0 0 0-1.24-.52H1.75A1.74 1.74 0 0 0 0 2.33v19.34a1.74 1.74 0 0 0 1.75 1.75h20.5A1.74 1.74 0 0 0 24 21.67V2.33c0-.48-.2-.92-.51-1.24m0 20.58a1.23 1.23 0 0 1-1.24 1.24H1.75A1.23 1.23 0 0 1 .5 21.67V2.33a1.23 1.23 0 0 1 1.24-1.24h20.5a1.24 1.24 0 0 1 1.24 1.24v19.34z",
-    },
-];
+/** The code players paste in-game; null until the lobby is published. */
+const inviteCode = computed(() => (status.value ? joinableInviteCode(status.value) : null));
 
 const stateColors: Record<ServerStateKind, string> = {
     online: "var(--vp-c-success-1)",
@@ -189,8 +175,8 @@ async function fetchStatus() {
     }
 }
 
-async function copyInviteCode(key: CodeKey) {
-    const code = status.value?.[key];
+async function copyInviteCode() {
+    const code = inviteCode.value;
     if (!code) {
         return;
     }
@@ -205,11 +191,9 @@ async function copyInviteCode(key: CodeKey) {
         document.execCommand("copy");
         document.body.removeChild(textarea);
     }
-    copiedKey.value = key;
+    copied.value = true;
     setTimeout(() => {
-        if (copiedKey.value === key) {
-            copiedKey.value = null;
-        }
+        copied.value = false;
     }, 2000);
 }
 
@@ -324,28 +308,26 @@ onUnmounted(() => {
 
                 <div class="stats">
                     <div
-                        v-for="code in inviteCodes"
-                        :key="code.key"
                         class="stat"
-                        :class="{ copyable: status[code.key], copied: copiedKey === code.key }"
-                        :role="status[code.key] ? 'button' : undefined"
-                        :tabindex="status[code.key] ? 0 : undefined"
-                        :title="status[code.key] ? (copiedKey === code.key ? 'Copied!' : `Copy ${code.label}`) : undefined"
-                        @click="copyInviteCode(code.key)"
-                        @keydown.enter.prevent="copyInviteCode(code.key)"
-                        @keydown.space.prevent="copyInviteCode(code.key)"
+                        :class="{ copyable: inviteCode, copied }"
+                        :role="inviteCode ? 'button' : undefined"
+                        :tabindex="inviteCode ? 0 : undefined"
+                        :title="inviteCode ? (copied ? 'Copied!' : 'Copy invite code') : undefined"
+                        @click="copyInviteCode()"
+                        @keydown.enter.prevent="copyInviteCode()"
+                        @keydown.space.prevent="copyInviteCode()"
                     >
                         <span class="stat-label">
-                            <svg class="stat-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                <path :d="code.iconPath" />
+                            <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
                             </svg>
-                            {{ code.label }}
+                            Invite code
                         </span>
                         <div class="invite-code-row">
-                            <code v-if="status[code.key]" class="invite-code">{{ status[code.key] }}</code>
+                            <code v-if="inviteCode" class="invite-code">{{ inviteCode }}</code>
                             <span v-else class="invite-code pending">not yet available</span>
-                            <span v-if="status[code.key]" class="copy-icon" aria-hidden="true">
-                                <svg v-if="copiedKey === code.key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <span v-if="inviteCode" class="copy-icon" aria-hidden="true">
+                                <svg v-if="copied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M20 6 9 17l-5-5" />
                                 </svg>
                                 <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

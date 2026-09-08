@@ -269,10 +269,10 @@ public class ConnectionHelper
                 // Re-fetch invite code in case server regenerated it after connection loss
                 if (_serverApi != null)
                 {
-                    var freshCode = await _serverApi.GetInviteCode();
-                    if (!string.IsNullOrEmpty(freshCode?.InviteCode))
+                    var freshCode = (await _serverApi.GetStatus())?.InviteCode;
+                    if (!string.IsNullOrEmpty(freshCode))
                     {
-                        inviteCode = freshCode.InviteCode;
+                        inviteCode = freshCode;
                     }
                 }
             }
@@ -592,10 +592,10 @@ public class ConnectionHelper
             {
                 if (_serverApi != null)
                 {
-                    var freshCode = await _serverApi.GetInviteCode();
-                    if (!string.IsNullOrEmpty(freshCode?.InviteCode))
+                    var freshCode = (await _serverApi.GetStatus())?.InviteCode;
+                    if (!string.IsNullOrEmpty(freshCode))
                     {
-                        currentInviteCode = freshCode.InviteCode;
+                        currentInviteCode = freshCode;
                     }
                 }
             },

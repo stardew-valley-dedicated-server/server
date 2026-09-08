@@ -62,6 +62,21 @@ public static class InviteCodeFile
     }
 
     /// <summary>
+    /// Removes the file, so readers see no code rather than a stale one.
+    /// </summary>
+    public static void Delete(IMonitor monitor)
+    {
+        try
+        {
+            File.Delete(FilePath);
+        }
+        catch (Exception ex)
+        {
+            monitor.Log($"Failed to delete '{FilePath}': {ex.Message}", LogLevel.Warn);
+        }
+    }
+
+    /// <summary>
     /// Reads the invite code from the file.
     /// </summary>
     /// <returns>The invite code, or null if it could not be read.</returns>

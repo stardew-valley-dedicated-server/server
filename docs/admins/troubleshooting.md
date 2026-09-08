@@ -152,7 +152,7 @@ Check for these log messages:
 
 ### GOG clients specifically failing
 
-- Verify invite code starts with "G"
+- Verify the invite code is current (`info` in the CLI)
 - Run `netdebug nat` to check NAT type
 - GOG has ~50% success rate vs Steam's ~99%
 

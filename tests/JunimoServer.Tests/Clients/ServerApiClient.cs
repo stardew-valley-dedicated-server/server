@@ -114,18 +114,6 @@ public class PlayersResponse
 }
 
 /// <summary>
-/// Response from the /invite-code endpoint.
-/// </summary>
-public class InviteCodeResponse
-{
-    [JsonPropertyName("inviteCode")]
-    public string? InviteCode { get; set; }
-
-    [JsonPropertyName("error")]
-    public string? Error { get; set; }
-}
-
-/// <summary>
 /// Response from the <c>/diagnostics/state</c> endpoint. Ground-truth live
 /// game-engine state for test-failure analysis. Populated best-effort on the
 /// server — missing fields are listed in <see cref="FailedFields"/> and the
@@ -1793,17 +1781,6 @@ public class ServerApiClient : IDisposable
         var response = await GetRetrySafeAsync(path, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<DiagnosticsStateResponse>(ct);
-    }
-
-    /// <summary>
-    /// Gets the current invite code.
-    /// GET /invite-code
-    /// </summary>
-    public async Task<InviteCodeResponse?> GetInviteCode(CancellationToken ct = default)
-    {
-        var response = await GetRetrySafeAsync("/invite-code", ct);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<InviteCodeResponse>(ct);
     }
 
     /// <summary>

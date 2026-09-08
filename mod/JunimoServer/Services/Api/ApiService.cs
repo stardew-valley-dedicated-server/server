@@ -30,7 +30,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Buildings;
 using StardewValley.Locations;
-using StardewValley.SDKs.GogGalaxy;
 
 namespace JunimoServer.Services.Api;
 
@@ -151,18 +150,6 @@ public class PlayersResponse
     /// for a newer snapshot.
     /// </summary>
     public long Version { get; set; }
-}
-
-/// <summary>
-/// Response containing the server invite code.
-/// </summary>
-public class InviteCodeResponse
-{
-    /// <summary>The invite code, or null if not available.</summary>
-    public string? InviteCode { get; set; }
-
-    /// <summary>Error message if invite code is not available.</summary>
-    public string? Error { get; set; }
 }
 
 /// <summary>
@@ -2172,9 +2159,6 @@ public partial class ApiService : ModService
                     case "/players":
                         await WriteJsonAsync(response, HandleGetPlayers());
                         break;
-                    case "/invite-code":
-                        await WriteJsonAsync(response, HandleGetInviteCode());
-                        break;
                     case "/farmhands":
                         await ProfileFarmhandsAsync(response);
                         break;
@@ -2780,18 +2764,8 @@ public partial class ApiService : ModService
         // once the Galaxy lobby carries the SteamLobbyId stamp — a vanilla Steam client
         // completes an S-code join by reading that stamp, so showing the code any earlier
         // (e.g. on GameServer init alone) hands out a code that still fails to join.
-        var inviteCode = InviteCodeFile.Read(Monitor);
-        string? steamInviteCode = null;
-        string? gogInviteCode = null;
-        if (!string.IsNullOrEmpty(inviteCode))
-        {
-            var baseCode = inviteCode.Length > 1 ? inviteCode.Substring(1) : inviteCode;
-            gogInviteCode = GalaxyNetHelper.GalaxyInvitePrefix + baseCode;
-            if (Auth.GalaxyAuthService.SteamLobbyPublished)
-            {
-                steamInviteCode = GalaxyNetHelper.SteamInvitePrefix + baseCode;
-            }
-        }
+        var steamInviteCode = InviteCodes.Steam;
+        var gogInviteCode = InviteCodes.Gog;
 
         if (!snap.IsOnline)
         {
@@ -2845,18 +2819,6 @@ public partial class ApiService : ModService
     {
         var snap = _snapshot;
         return new PlayersResponse { Players = snap.Players, Version = snap.Version };
-    }
-
-    [ApiEndpoint("GET", "/invite-code", Summary = "Get invite code", Tag = "Server")]
-    [ApiResponse(typeof(InviteCodeResponse), 200, Description = "Current server invite code")]
-    private InviteCodeResponse HandleGetInviteCode()
-    {
-        var inviteCode = InviteCodeFile.Read(Monitor);
-        if (string.IsNullOrEmpty(inviteCode))
-        {
-            return new InviteCodeResponse { InviteCode = null, Error = "No invite code available" };
-        }
-        return new InviteCodeResponse { InviteCode = inviteCode };
     }
 
     /// <summary>
