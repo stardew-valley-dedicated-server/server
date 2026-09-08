@@ -110,6 +110,13 @@ describe("buildDashboardEmbed", () => {
         expect(embed.fields).toBeUndefined();
     });
 
+    test("a starting server with a last-known snapshot still shows its hint, not stale fields", () => {
+        const starting = { ...ONLINE_STATUS, isOnline: false, isReady: false, phase: "starting" };
+        const embed = buildDashboardEmbed(starting, resolveServerState(starting), FOOTER, ONLINE_STATUS, NOW).toJSON();
+        expect(embed.description).toBe("**🟠 Starting**\n\nGame data appears once the save is loaded.");
+        expect(embed.fields).toBeUndefined();
+    });
+
     test("offline without a last-known snapshot: headline + hint only, no fields", () => {
         const embed = buildDashboardEmbed(null, resolveServerState(null), FOOTER).toJSON();
         expect(embed.description).toBe("**🔴 Offline**\n\nNo game data can be pulled right now. Check back later!");

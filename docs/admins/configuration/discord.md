@@ -71,7 +71,7 @@ The relay has no rate limit of its own. If spam is a concern, set Discord's slow
 
 ## Status Dashboard
 
-A status embed (state, players, in-game date, image and game version, tick rate, invite code) posted to a channel and kept up to date by editing the same message in place.
+A status embed (state, players, in-game date, image version, uptime, invite code) posted to a channel and kept up to date by editing the same message in place.
 
 ```sh
 STATUS_DASHBOARD_CHANNEL=farm-status

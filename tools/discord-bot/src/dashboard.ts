@@ -73,7 +73,9 @@ export function buildDashboardEmbed(
     lastKnown: ServerStatus | null = null,
     now: number = Date.now(),
 ): EmbedBuilder {
-    const hasLastKnown = !status?.isOnline && lastKnown !== null;
+    // Only an unreachable server (status null) falls back to the snapshot; a `starting`/`loading`
+    // server has its own no-game-data hint, so stale fields never masquerade as its live state.
+    const hasLastKnown = status === null && lastKnown !== null;
     // Uptime rides the headline beside the label (a live server only), like the docs widget's badge.
     const uptime = status?.isOnline && status.startedAtUtc ? ` · up ${formatUptime(status.startedAtUtc, now)}` : "";
     const headline = `**${state.emoji} ${state.label}**${uptime}`;
