@@ -88,7 +88,7 @@ services:
       - traefik.http.routers.api.entrypoints=websecure
       - traefik.http.routers.api.tls.certresolver=le
       - traefik.http.routers.api.service=api
-      - traefik.http.services.api.loadbalancer.server.port=8080   # = API_PORT
+      - traefik.http.services.api.loadbalancer.server.port=${API_PORT:-8080}
       # VNC web UI at /vnc/ — prefix stripped, WebSocket passes through natively
       - traefik.http.routers.vnc.rule=Host(`farm.example.com`) && PathPrefix(`/vnc`)
       - traefik.http.routers.vnc.entrypoints=websecure
@@ -103,7 +103,7 @@ networks:
     external: true
 ```
 
-The `/vnc` router is more specific than the root API router, so Traefik's default rule-length priority sends `/vnc/*` to the VNC UI and everything else to the API. Reach VNC at `https://farm.example.com/vnc/` (trailing slash), the same URL the bundled proxy uses. This is subdomain routing; for path routing add a `stripprefix` for `/SERVER_URL_NAME` to the API router too.
+The `/vnc` router is more specific than the root API router, so Traefik's default rule-length priority sends `/vnc/*` to the VNC UI and everything else to the API. Reach VNC at `https://farm.example.com/vnc/` (trailing slash), the same URL the bundled proxy uses. This is subdomain routing; for path routing, prefix both routers with `/SERVER_URL_NAME`: give the API router a `PathPrefix` rule for `/SERVER_URL_NAME` and a matching `stripprefix`, and change the VNC rule to match `/SERVER_URL_NAME/vnc` and strip that same prefix.
 
 ### Recommended: Traefik with a socket proxy
 
