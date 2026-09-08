@@ -50,12 +50,15 @@ Two-way chat between a Discord channel and the game.
 
 1. Create a dedicated text channel — every message in it is sent to the game, and all game chat appears there
 2. In the Developer Portal, open your app → **Bot** → enable **Message Content Intent**. Discord gates reading message content behind this switch; without it the bot cannot see Discord messages
-3. Get the channel ID: enable **User Settings** → **Advanced** → **Developer Mode**, then right-click the channel → **Copy ID**
-4. Add to `.env`:
+3. Add the channel to `.env`, by name or by ID:
 
 ```sh
-DISCORD_CHAT_CHANNEL_ID=123456789012345678
+DISCORD_CHAT_CHANNEL=farm-chat
 ```
+
+::: tip Channel names and IDs
+A name is resolved in every Discord server the bot is in, so one configuration serves a production server and a test server with the same channel layout. An ID targets exactly one channel; get it by enabling **User Settings** → **Advanced** → **Developer Mode**, then right-click the channel → **Copy ID**.
+:::
 
 | Direction | Format |
 |-----------|--------|
@@ -71,12 +74,12 @@ The relay has no rate limit of its own. If spam is a concern, set Discord's slow
 A status embed (farm name, date, players, invite code) posted to a channel and kept up to date by editing the same message in place.
 
 ```sh
-STATUS_DASHBOARD_CHANNEL_ID=123456789012345678
+STATUS_DASHBOARD_CHANNEL=farm-status
 # Seconds between updates (default 30)
 STATUS_DASHBOARD_REFRESH_RATE=60
 ```
 
-The dashboard may share a channel with the chat relay.
+The channel is given by name or ID, as for the chat relay, and may be the same channel. With a name, every Discord server the bot is in gets its own dashboard.
 
 The dashboard message is owned by your deployment: the bot stamps an ownership id into the embed footer and persists it in the `discord-bot-data` volume (shipped in the compose file), so the same message survives restarts and server resets. If a second server posts its dashboard to the same channel, the bot detects the foreign dashboard, logs a warning, and leaves it untouched instead of overwriting it.
 
@@ -103,13 +106,13 @@ The nickname is what your Discord server shows in place of the bot's username; t
 ### Bot Not Coming Online
 
 1. Verify `DISCORD_BOT_TOKEN` is correct
-2. If `DISCORD_CHAT_CHANNEL_ID` is set, **Message Content Intent** must be enabled — otherwise the bot logs `Discord refused the bot's gateway intents` and stops
+2. If `DISCORD_CHAT_CHANNEL` is set, **Message Content Intent** must be enabled — otherwise the bot logs `Discord refused the bot's gateway intents` and stops
 3. Check logs: `docker compose logs -f discord-bot`
 
 ### Messages Not Relaying
 
 1. Verify Message Content Intent is enabled
-2. Check `DISCORD_CHAT_CHANNEL_ID` is correct
+2. Check `DISCORD_CHAT_CHANNEL` matches the channel's name or ID; the startup log lists the channel it resolved to, or a `not found` warning
 3. Ensure the bot can read and send in that channel
 4. Run `docker compose logs discord-bot`: `Cannot reach the server WebSocket` means the server API is not up yet or `API_ENABLED` is false; `closed the WebSocket before authentication completed` usually means `API_KEY` differs between the two services; if the keys match, check the server logs
 

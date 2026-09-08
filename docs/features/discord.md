@@ -21,7 +21,7 @@ While online, the status displays current player count, max players, and the inv
 
 ### Status Dashboard
 
-An auto-updating embed posted to a channel of your choice, showing farm name and layout, in-game date and time, player count, and the invite code. The bot edits the same message in place on a configurable interval (via `STATUS_DASHBOARD_CHANNEL_ID`).
+An auto-updating embed posted to a channel of your choice (`STATUS_DASHBOARD_CHANNEL`), showing farm name and layout, in-game date and time, player count, and the invite code. The bot edits the same message in place on a configurable interval (`STATUS_DASHBOARD_REFRESH_RATE`).
 
 ### Chat Relay
 
