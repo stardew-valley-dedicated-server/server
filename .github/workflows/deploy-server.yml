@@ -105,7 +105,7 @@ jobs:
           DEPLOY_VNC_PASSWORD: ${{ secrets.DEPLOY_VNC_PASSWORD }}
           DEPLOY_API_KEY: ${{ secrets.DEPLOY_API_KEY }}
           DEPLOY_DISCORD_BOT_TOKEN: ${{ secrets.DEPLOY_DISCORD_BOT_TOKEN }}
-          DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ secrets.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
+          DEPLOY_DISCORD_CHAT_CHANNEL_ID: ${{ vars.DEPLOY_DISCORD_CHAT_CHANNEL_ID }}
           DEPLOY_STATUS_DASHBOARD_CHANNEL_ID: ${{ vars.DEPLOY_STATUS_DASHBOARD_CHANNEL_ID }}
           DEPLOY_SERVER_NAME: ${{ vars.DEPLOY_SERVER_NAME }}
           # Optional: enables the HTTPS proxy (docs: operations/reverse-proxy.md).
