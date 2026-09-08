@@ -204,7 +204,7 @@ jobs:
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
-            ${{ steps.changelog.outputs.upgrade-notes }}**Update** (preview users only, `IMAGE_VERSION=preview` in `.env`; on `latest`, wait for the release post)
+            ${{ steps.changelog.outputs.upgrade-notes }}**Update** (preview users only — `IMAGE_VERSION=preview`; on `latest`, wait for the release post)
             ```curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml && docker compose pull && docker compose up -d --remove-orphans```
             No `curl`? Download the file from the link, then `docker compose pull && docker compose up -d --remove-orphans`. Pin this build instead: `IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}`.
 

@@ -18,6 +18,9 @@ GAME_DOWNLOAD_MARKER="${GAME_DEST_DIR}/.download-manifest-413150"
 API_PORT="${API_PORT:-8080}"
 # Lifecycle phase served on the API port until the mod takes over: "downloading" | "starting".
 PHASE_FILE="/tmp/startup-phase"
+# SDVD_COMPOSE_REV of the docker-compose.yml this image ships with (validate-pr.yml keeps them
+# equal). Keep it a bare unindented assignment — validate-pr.yml greps this exact line.
+EXPECTED_COMPOSE_REV=1
 
 # Validate required environment variables
 validate_environment() {
@@ -61,9 +64,6 @@ validate_environment() {
         exit 1
     fi
 }
-
-# SDVD_COMPOSE_REV of the docker-compose.yml this image ships with (validate-pr.yml keeps them equal).
-EXPECTED_COMPOSE_REV=1
 
 check_compose_revision() {
     local actual="${SDVD_COMPOSE_REV:-unset}" url

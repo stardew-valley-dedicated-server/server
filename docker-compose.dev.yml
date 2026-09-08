@@ -1,4 +1,4 @@
-# Sidecar build contexts for local builds; the Makefile layers this over docker-compose.yml.
+# Sidecar build contexts for local builds; `make` and the E2E test harness layer this over docker-compose.yml.
 services:
   steam-auth:
     build:

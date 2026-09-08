@@ -114,6 +114,5 @@ volumes:
   steam-session:
   game-data:
   saves:
-  settings:
   discord-bot-data:
   proxy-data:
